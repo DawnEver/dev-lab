@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from _box_fake import quiet
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
-from lab_commons.box import BOX_ENV, GB, Capacity, holdings
+from lab_commons.box import BOX_ENV, GB, Capacity, Holding, holdings
 from lab_commons.compute import probe as compute_probe
 from lab_commons.compute.model import (
     BRANCH,
@@ -54,9 +54,11 @@ from dev_lab.dev.forgeclaim import (
     this_machine,
 )
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND, behind
+from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetick import tick
+from dev_lab.dev.forgewait import NEVER_FITS, Box
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.producer import ProducerExit, release_reason
@@ -515,6 +517,60 @@ def test_a_big_job_is_skipped_and_a_smaller_lower_ranked_one_is_claimed(server, 
     _head_and_pr(tips)
     roomy = Supply('G', Resources(cpu=4, mem_gb=64), BOX.listed)
     assert [w.sha for w in _tick(repo, server, supply=roomy, demand=_sized(head=8, topic_a=40)).claimed] == [lane, head]
+
+
+def _box_of(gib: int, *held: Holding) -> Box:
+    size = Capacity(cpu=4.0, mem_bytes=gib * GB, seats={})
+    return Box(size, list(held), quiet(size), NOW.timestamp())
+
+
+def test_a_box_holds_back_a_smaller_part_that_would_delay_a_waiting_larger_one(server, tmp_path: Path) -> None:
+    """The G starvation of 2026-10-25: smaller claims kept taking the memory a ranked-first part waited for.
+
+    The boosted PR (20 GB) waits for a verify's 16 GB claim to end in an hour; the head (14 GB) fits now but held
+    for its day it would leave 18 GB then, so it is held back, naming whom it waits behind. PLANTED CONTROL: a
+    4 GB head leaves 28 GB, delays nothing, and is claimed.
+    """
+    repo, tips = _origin(tmp_path)
+    head, lane = _head_and_pr(tips, claim_pr=False)
+    verify = Holding('verify:lane', 4242, 1, 16 * GB, {}, NOW.timestamp() + 3600)
+    free = Supply('G', Resources(cpu=4, mem_gb=16), BOX.listed)
+    report = _tick(repo, server, supply=free, demand=_sized(head=14, topic_a=20), box=_box_of(32, verify))
+    assert report.claimed == ()
+    blocked = {item.candidate.sha: item.blocked for item in report.queue}
+    assert blocked[lane] == (
+        f'{NOT_ADMITTED}: lacking mem_gb (20 asked, 16 free); earliest start 2026-10-10T13:00Z (in 1.0 h), '
+        'after verify:lane (pid 4242) until 2026-10-10T13:00Z'
+    )
+    assert blocked[head].startswith(f'{NOT_ADMITTED}: queued behind topic/a@{lane[:12]}:base, which ranks first')
+    Recorder.received.clear()
+    _head_and_pr(tips, claim_pr=False)
+    control = _tick(repo, server, supply=free, demand=_sized(head=4, topic_a=20), box=_box_of(32, verify))
+    assert [w.sha for w in control.claimed] == [head]
+
+
+def test_a_part_larger_than_every_live_host_is_refused_on_its_commit_at_once(server, tmp_path: Path) -> None:
+    """No host can ever fit it: an answer naming the remedy, never an endless wait. The head behind it still runs.
+
+    PLANTED CONTROL: a live host of 256 GB serving it is on the cards -- it waits for that host, refused nowhere.
+    """
+    repo, tips = _origin(tmp_path)
+    head, lane = _head_and_pr(tips, claim_pr=False)
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=40), box=_box_of(32))
+    assert [w.sha for w in report.claimed] == [head]
+    (refusal,) = [
+        r['body'] for r in Recorder.received if r['method'] == 'POST' and r['path'] == f'{API}/statuses/{lane}'
+    ]
+    assert refusal['state'] == 'error'
+    assert refusal['description'].startswith(f'{REFUSED_AT_COMMIT} {NEVER_FITS} here: mem_gb 40 asked of a 32 size')
+    assert report.queue == ()
+    Recorder.received.clear()
+    _head_and_pr(tips, claim_pr=False)
+    big = HostCard('big', 'bob', 'windows', NOW.isoformat(), supply={'cpu': 64}, size={'cpu': 64, 'mem_gb': 256})
+    waits = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=40), box=_box_of(32), cards=[big])
+    assert not [r for r in Recorder.received if r['method'] == 'POST' and r['path'] == f'{API}/statuses/{lane}']
+    (waiting,) = waits.queue
+    assert waiting.blocked.endswith(f'{NEVER_FITS} here: mem_gb 40 asked of a 32 size')
 
 
 def _claimed_as(tips: dict[str, str]) -> list[str]:

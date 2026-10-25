@@ -39,9 +39,12 @@ assertion no checker can verify is the declaration that lies.
 
 from __future__ import annotations
 
+import getpass
 import http.client
 import json
+import os
 import re
+import socket
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -96,6 +99,7 @@ __all__ = [
     'refresh_credential',
     'store_credential',
     'token_for',
+    'user_agent',
 ]
 
 #: The clause matches the declaration.
@@ -133,6 +137,21 @@ class UnreadableRemote(OSError):
 #: HTTPS and nothing else; a caller substituting one has made that choice in CODE, which is what a
 #: comment asserting that a URL is fine never was.
 type Transport = Callable[[str, float], http.client.HTTPConnection]
+
+
+def user_agent(forge: Forge) -> str:
+    """``dev-lab (<login>@<machine>; <owner>/<repo>)``: who sent a request, so the forge's log can attribute its load.
+
+    Measured 2026-10-24: 9425 requests in ten minutes reached the forge from two login nodes with no
+    User-Agent, so which of five accounts and seven repos sent them could not be read off the log. The
+    machine is ``$HARNESS_MACHINE``, else the short hostname (as :func:`dev_lab.dev.forgeclaim.this_machine`).
+    """
+    try:
+        login = getpass.getuser()
+    except (OSError, KeyError):
+        login = '?'
+    machine = os.environ.get('HARNESS_MACHINE', '').strip() or socket.gethostname().split('.')[0]
+    return f'dev-lab ({login}@{machine}; {forge.owner}/{forge.repo})'
 
 
 def https_transport(host: str, timeout: float) -> http.client.HTTPSConnection:
@@ -383,7 +402,11 @@ def call(
             method,
             path,
             body=data,
-            headers={'Authorization': f'token {token}', 'Content-Type': 'application/json'},
+            headers={
+                'Authorization': f'token {token}',
+                'Content-Type': 'application/json',
+                'User-Agent': user_agent(forge),
+            },
         )
         response = conn.getresponse()
         payload = response.read()

@@ -1,4 +1,4 @@
-"""SUPERSEDED-PRS-CLOSE: a salvaged PR is commented, closed and its branch LOSSLESS-deleted; refusals touch nothing.
+"""SUPERSEDED-PRS-CLOSE: a salvaged PR is closed and commented, its branch never deleted; refusals touch nothing.
 
 Real git (a bare origin and a clone) and the stateful fake forge. PLANTED CONTROLS: an unnamed open PR is
 untouched; a closed target, a merged replacement and a closed replacement each refuse before any write.
@@ -50,7 +50,7 @@ def _setup(tmp_path: Path) -> tuple[Path, StateForge, int, int, int]:
     )
 
 
-def _close(work: Path, forge: StateForge, numbers: tuple[int, ...], by: int) -> tuple[int, list[str]]:
+def _close(work: Path, forge: StateForge, numbers: tuple[int, ...], by: int | str) -> tuple[int, list[str]]:
     said: list[str] = []
     code = close_superseded(
         work,
@@ -61,18 +61,17 @@ def _close(work: Path, forge: StateForge, numbers: tuple[int, ...], by: int) -> 
         session='s',
         fetch=fetch_origin,
         say=said.append,
-        alarm=lambda _a: None,
     )
     return code, said
 
 
-def test_a_salvaged_pr_is_commented_closed_and_its_branch_deleted(tmp_path: Path) -> None:
+def test_a_salvaged_pr_is_closed_and_commented_and_its_branch_kept(tmp_path: Path) -> None:
     work, forge, old, new, other = _setup(tmp_path)
     code, _ = _close(work, forge, (old,), new)
     assert code == 0
     assert forge.pulls[old]['state'] == 'closed'
     assert [c['body'] for c in forge.comments[old]][-1].endswith(f'superseded by #{new}: salvaged')
-    assert not git_out(work, 'ls-remote', '--heads', 'origin', 'pr/old')
+    assert git_out(work, 'ls-remote', '--heads', 'origin', 'pr/old'), 'remote ref deletion is never this verb'
     assert forge.pulls[other]['state'] == 'open', 'PLANTED: an unnamed PR is untouched'
 
 
@@ -119,3 +118,24 @@ def test_a_close_that_fails_writes_no_comment_and_stops(tmp_path: Path, monkeypa
     assert not forge.comments[old]
     assert forge.pulls[other]['state'] == 'open', 'the PRs after the failure are untouched'
     assert any('stopped' in line for line in said)
+
+
+def test_a_commit_carrier_supersedes_without_an_open_pr(tmp_path: Path) -> None:
+    """``--by <sha|ref>``: the salvage may live on a commit with no PR; the comment names its sha."""
+    work, forge, old, _, other = _setup(tmp_path)
+    carrier = git_out(work, 'rev-parse', 'origin/pr/new')
+    code, said = _close(work, forge, (old,), 'pr/new')
+    assert code == 0, said
+    assert forge.pulls[old]['state'] == 'closed'
+    assert forge.comments[old][-1]['body'].endswith(f'superseded by {carrier[:12]}: salvaged')
+    assert git_out(work, 'ls-remote', '--heads', 'origin', 'pr/old')
+    assert forge.pulls[other]['state'] == 'open'
+
+
+def test_an_unresolvable_carrier_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
+    work, forge, old, _, _ = _setup(tmp_path)
+    code, said = _close(work, forge, (old,), 'no-such-ref')
+    assert code == 1
+    assert forge.pulls[old]['state'] == 'open'
+    assert not forge.comments[old]
+    assert any('no-such-ref' in line and 'refused' in line for line in said)

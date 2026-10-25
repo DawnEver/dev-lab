@@ -85,9 +85,9 @@ auto_sync_quiet = "10 min"  # the default
 | author | its `pr/*` branch, push, PR, `forge sync`, fixes its own PR's reds | merges another branch |
 | producer | produces the parts it claimed | produces unclaimed parts |
 | forge | the ONLY merger of `integrate/main` | merges a PR lacking a part |
-| steward | keeps the pipeline flowing: producers alive, every PR judged, stuck PRs routed to their authors, `promote`, break-glass | hand merges, direct pushes to `integrate/main`, runs suites |
+| integrator | keeps the pipeline flowing: producers alive, every PR judged, stuck PRs routed to their authors, `promote`, break-glass | hand merges, direct pushes to `integrate/main`, runs suites |
 
-Who the steward is, and where it runs, moves; nothing records it. A steward is a session like any other: it
+Who the integrator is, and where it runs, moves; nothing records it. An integrator is a session like any other: it
 reads the forge and writes nothing else.
 
 ## What enforces it
@@ -100,7 +100,7 @@ reads the forge and writes nothing else.
 | no long-lived child | `branchset.sessions` names only the integration branch; anything else is merged and deleted |
 | every repo declares the flow | `famtests.branchset.assert_the_pr_flow_is_declared` |
 
-## The steward's loop
+## The integrator's loop
 
 Each tick, and nothing else:
 
@@ -113,7 +113,7 @@ Each tick, and nothing else:
 6. A PR left open after its head landed is closed by the forge's tick; to do it now:
    `python -m dev_lab.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
 
-A steward runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
+An integrator runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
 ## The PR reviewer is advisory
 
@@ -144,7 +144,9 @@ over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices 
 That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), until a
 session reviews it and releases it: `python -m dev_lab.dev.forge status post <sha> --context tests/review-hold
 --state success --description "reviewed by <who>"`. So an unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
-nothing. A failed command posts `error` and is not retried on that head.
+nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review
+(a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run on host
+<host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
 through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
@@ -156,7 +158,8 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 ```toml
 [tool.lab_commons.review]
 # {range}: <base>..<head>; {paths}: the slice's paths, one argument each; {lens}: strict | standard | light
-command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--lens", "{lens}",
+# {capabilities.ai_lab.python}: THIS host's ai-lab interpreter; the module reads the method it packages
+command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--range", "{range}", "--lens", "{lens}",
            "--model", "<id>", "--paths", "{paths}"]
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 200000    # one slice
@@ -168,7 +171,7 @@ claim_stale = "1 h"        # the default
 ```
 
 Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
-command a host checks it can start it -- a missing interpreter or module is `unsupported` and posts nothing --
+command a host checks it can start it -- a missing executable, module or capability posts `error` with its reason, like every failure --
 then posts `tests/review` = `pending`, `claimed by <host> at <time>, reviewing`, and replaces it with the final
 status. Any other host skips a head whose `tests/review` carries any status, pending included, unless it is a
 released claim (`released by ...`) or a claim older than `claim_stale` (default `"1 h"`, above the command's
@@ -303,14 +306,19 @@ push admission row checks the same standing when the holder pushes it.
 
 - Take the newer STRUCTURE, then re-express your own content inside it. When upstream extracted or split a
   file, your edits go to the new home.
+- `MERGE-RESOLUTION-DECLARED` (`dev_lab.dev.mergeresolution`): a merge whose parents conflict lists each
+  conflicted file once, `<path>: <class> -- <why>`. The forge enforces it: a PR is not merged while a merge
+  commit its head adds over integration leaves one undeclared (`forgemerge.decide`), whoever made that merge,
+  client or web UI. A message cannot be amended, so the remedy is to redo that merge with the declaration. The
+  `merge-resolution` commit-msg hook makes the same judgement early, on the merge being committed.
 - A shared count or pin that conflicts is arithmetic to redo on the merged tree, never a side to pick
   ([alignment](alignment.md)).
 - Price a batch before touching a tree: `git merge-tree --write-tree --name-only <integration> origin/<branch>`
   lists a merge's conflicts without a checkout.
 
-## Waking the steward
+## Waking the integrator
 
-The steward may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
+The integrator may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
 carries no state: it only means "derive again now". Polling is the floor that makes a lost wake harmless.
 
 **The observer is `forge serve`, on EVERY host.** No host owns integration. Each serve tick derives the

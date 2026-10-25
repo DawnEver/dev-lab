@@ -24,10 +24,12 @@ WHAT IS SAVED: under ``archive-to`` (default :data:`ARCHIVE_TO`) ``/<yyyymmdd>/<
 and branch), ``dirty.patch`` (``git diff HEAD --binary``: every uncommitted tracked change) and ``untracked/``
 (the untracked, non-ignored files, small by construction).
 
-WHAT IS NOT SAFE TO REMOVE, checked rather than assumed: an IGNORED file outside the declared outputs, a venv and
-the regenerable caches (:data:`REGENERABLE`) -- a local ``.env``, an ignored probe -- is neither moved nor saved,
-so it is listed and the tree is NOT safe; and a DETACHED HEAD whose commit no ref contains is lost to ``gc`` once
-the tree goes, so it is named and the tree is NOT safe until a branch or tag holds it.
+WHAT IS NOT SAFE TO REMOVE, checked rather than assumed: a DETACHED HEAD whose commit no ref contains is lost to
+``gc`` once the tree goes, so it is named and the tree is NOT safe until a branch or tag holds it. An ignored file
+outside the declared outputs is NOT work (user ruling 2026-10-25: what git does not track goes with the tree).
+
+:func:`home_outputs` is the outputs move alone, VERIFIED, for :func:`dev_lab.dev.reclaim.reclaim` to chain the
+removal on: it returns ``''`` only when every output file has a byte-identical copy home.
 """
 
 from __future__ import annotations
@@ -49,17 +51,13 @@ from dev_lab.dev.liverun import describe, occupants
 if TYPE_CHECKING:
     from dev_lab.dev.liverun import Census
 
-__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'REGENERABLE', 'Archived', 'archive', 'volume']
+__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'Archived', 'archive', 'home_outputs', 'volume']
 
 #: The family default of what a worktree's runs produce and the main checkout keeps (``docs-src/dev/output-tree``).
 OUTPUTS: Final = ('output/logs',)
 #: Where the saved work of an archived tree goes, relative to the main checkout.
 ARCHIVE_TO: Final = 'output/worktree-archive'
 _VENV_MARK: Final = 'pyvenv.cfg'
-#: Ignored directories a tool rebuilds on its next run: losing them loses nothing.
-REGENERABLE: Final = frozenset(
-    {'__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache', '.hypothesis', 'node_modules', 'target'}
-)
 
 
 @dataclass(frozen=True)
@@ -73,13 +71,12 @@ class Archived:
     identical: tuple[Path, ...] = ()
     renamed: tuple[Path, ...] = ()
     conflicts: tuple[Path, ...] = ()
-    stranded: tuple[Path, ...] = ()  # ignored files neither moved nor saved
     unreachable: str = ''  # a detached HEAD commit no ref contains
 
     @property
     def safe(self) -> bool:
         """Whether nothing the tree holds is lost by removing it now."""
-        return self.refused is None and not self.conflicts and not self.stranded and not self.unreachable
+        return self.refused is None and not self.conflicts and not self.unreachable
 
     def lines(self) -> tuple[str, ...]:
         """One report line per fact, then the verdict on removal."""
@@ -90,7 +87,6 @@ class Archived:
             f' file, {len(self.identical)} identical skipped; work saved in {self.saved}'
         )
         tail = [f'  KEPT {path} (both names taken by different bytes)' for path in self.conflicts]
-        tail += [f'  IGNORED {path} (neither an output nor saved)' for path in self.stranded]
         if self.unreachable:
             tail.append(f'  DETACHED {self.unreachable} (no ref contains it; branch or tag it first)')
         verdict = (
@@ -142,34 +138,6 @@ def _save(tree: Path, saved: Path) -> None:
             shutil.copy2(source, target)
 
 
-def _regenerable(rel: Path) -> bool:
-    return rel.suffix == '.pyc' or any(part in REGENERABLE for part in rel.parts)
-
-
-def _stranded(tree: Path, outputs: tuple[str, ...]) -> tuple[Path, ...]:
-    """Ignored files outside *outputs*, venvs and :data:`REGENERABLE` -- what a removal would lose unsaved."""
-    listed = git_out(tree, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z')
-    if listed is None:
-        msg = f'git could not list the ignored files of {tree}'
-        raise RuntimeError(msg)
-    tops = [Path(one) for one in outputs]
-    kept: list[Path] = []
-    for entry in filter(None, listed.split('\0')):
-        rel = Path(entry.rstrip('/'))
-        if any(rel.is_relative_to(top) for top in tops) or _regenerable(rel):
-            continue
-        path = tree / rel
-        found = [one.relative_to(tree) for one in _files(path)] if path.is_dir() else [rel]
-        kept += [
-            one
-            for one in found
-            if not any(one.is_relative_to(top) for top in tops)
-            and not _regenerable(one)
-            and not _in_venv((tree / one).parent, tree)
-        ]
-    return tuple(sorted(kept))
-
-
 def _unreachable(tree: Path) -> str:
     """The detached HEAD sha no ref contains, or ``''`` -- a branch's commits survive the tree in its ref."""
     if (git_out(tree, 'branch', '--show-current') or '').strip():
@@ -193,23 +161,8 @@ def _files(top: Path) -> list[Path]:
     return found
 
 
-def archive(main: Path, name: str, *, census: Census = processes, today: date | None = None) -> Archived:
-    """Move worktree *name*'s outputs into *main*, save its work, and say whether it is safe to remove."""
-    main = main.resolve()
-    outputs, target = _declared(main)
-    saved = main / target / (today or datetime.now(UTC).astimezone().date()).strftime('%Y%m%d') / name
-    registered = worktrees(main)
-    if registered is None:
-        return Archived(name, saved, refused=f'git could not list the worktrees of {main}')
-    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
-    if len(found) != 1:
-        return Archived(name, saved, refused=f'{len(found)} linked worktrees of {main} are named {name!r}')
-    tree = found[0]
-    if live := occupants(tree, census=census):
-        return Archived(name, saved, refused=f'the tree is live:\n{describe(live)}')
-    if volume(tree) != volume(main):
-        return Archived(name, saved, refused='the tree is on another volume, where a move is a copy')
-    _save(tree, saved)
+def _move(main: Path, tree: Path, name: str, outputs: tuple[str, ...]) -> tuple[list[Path], ...]:
+    """Rename every file under *outputs* of *tree* to the same path in *main*: moved, identical, renamed, conflicts."""
     moved, identical, renamed, conflicts = [], [], [], []
     for rel_top in outputs:
         for source in _files(tree / rel_top):
@@ -227,6 +180,27 @@ def archive(main: Path, name: str, *, census: Census = processes, today: date | 
                 identical.append(beside.relative_to(main))
             else:
                 conflicts.append(rel)
+    return moved, identical, renamed, conflicts
+
+
+def archive(main: Path, name: str, *, census: Census = processes, today: date | None = None) -> Archived:
+    """Move worktree *name*'s outputs into *main*, save its work, and say whether it is safe to remove."""
+    main = main.resolve()
+    outputs, target = _declared(main)
+    saved = main / target / (today or datetime.now(UTC).astimezone().date()).strftime('%Y%m%d') / name
+    registered = worktrees(main)
+    if registered is None:
+        return Archived(name, saved, refused=f'git could not list the worktrees of {main}')
+    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
+    if len(found) != 1:
+        return Archived(name, saved, refused=f'{len(found)} linked worktrees of {main} are named {name!r}')
+    tree = found[0]
+    if live := occupants(tree, census=census):
+        return Archived(name, saved, refused=f'the tree is live:\n{describe(live)}')
+    if volume(tree) != volume(main):
+        return Archived(name, saved, refused='the tree is on another volume, where a move is a copy')
+    _save(tree, saved)
+    moved, identical, renamed, conflicts = _move(main, tree, name, outputs)
     return Archived(
         name,
         saved,
@@ -235,6 +209,26 @@ def archive(main: Path, name: str, *, census: Census = processes, today: date | 
         tuple(identical),
         tuple(renamed),
         tuple(conflicts),
-        stranded=_stranded(tree, outputs),
         unreachable=_unreachable(tree),
     )
+
+
+def home_outputs(main: Path, tree: Path) -> str:
+    """Move *tree*'s outputs into *main* and VERIFY each landed; ``''`` when verified, else why not.
+
+    *tree* is a linked worktree or an orphan directory of *main*. Nothing outside the outputs is touched.
+    """
+    main = main.resolve()
+    try:
+        outputs, _ = _declared(main)
+        if any((tree / top).exists() for top in outputs) and volume(tree) != volume(main):
+            return 'outputs not archived home: the tree is on another volume, where a move is a copy'
+        moved, identical, renamed, conflicts = _move(main, tree, tree.name, outputs)
+    except (OSError, ValueError) as error:
+        return f'outputs not archived home: {error}'
+    if conflicts:
+        return f'outputs not archived home: both names taken by different bytes for {conflicts[0]}'
+    missing = [rel for rel in (*moved, *renamed, *identical) if not (main / rel).is_file()]
+    if missing:
+        return f'outputs not verified home: {missing[0]} is not there'
+    return ''

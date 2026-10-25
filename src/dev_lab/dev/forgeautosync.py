@@ -1,6 +1,6 @@
 """AUTO-SYNC: the forge merges integration INTO a behind ``pr/*`` head, so no PR waits for a hand ``forge sync``.
 
-User ruling 2026-10-21: integration is an automatic mechanism; a steward cannot hand-merge every PR whose base
+User ruling 2026-10-21: integration is an automatic mechanism; an integrator cannot hand-merge every PR whose base
 moved. On wherever the forge merges PRs (``[tool.lab_commons.integrator] pr_merges_since``; no switch of its own),
 the integration step of ``forge serve`` (:func:`dev_lab.dev.forgeintegration.tick`, given its host) asks
 :func:`plan` of each open PR into integration that the forge did not merge this tick, and :func:`sync` carries
@@ -49,7 +49,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgenotice import duration
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.labsession import machine_env
-from dev_lab.dev.lockcheck import LOCK, mount_submodules, stale
+from dev_lab.dev.lockcheck import FRESHENED, LOCK, mount_submodules, refreshable, stale
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import door_upgrade
@@ -153,7 +153,7 @@ def claim(host: str, tip: str, now: datetime) -> str:
 def _git(root: Path, *argv: str) -> tuple[int, str]:
     done = _door.run(
         [_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-        check=False, timeout=_GIT_TIMEOUT_S, env=machine_env(),  # a machine merge is the forge's, no session's
+        check=False, timeout=_GIT_TIMEOUT_S, env=machine_env(root),  # a machine merge is the forge's, no session's
     )  # fmt: skip
     return done.returncode, (done.stdout + done.stderr).strip()
 
@@ -242,11 +242,11 @@ def _relock(
     found = stale(tree) if resolve is None else stale(tree, resolve=resolve)
     if not conflicted and not found:
         return
-    if unrun := [line for line in found if not line.startswith(f'{LOCK} is not the newest resolution')]:
+    if unrun := [line for line in found if not refreshable(line)]:
         raise SyncRefused(RELOCK.format(why='; '.join(unrun)))
     if (exited := upgrade(tree)) != 0:
         raise SyncRefused(RELOCK.format(why=f'the dependency door exited {exited}'))
-    _must(tree, 'add', '--', LOCK)
+    _must(tree, 'add', '--', *(path for path in FRESHENED if (tree / path).is_file()))
 
 
 def sync(

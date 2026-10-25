@@ -19,12 +19,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MERGE-OR-DELETE',
         (
-            'A merged branch is DELETED and an unmerged one is MERGED, with no third state: parking work as an '
-            '`archive/*` tag (or a renamed branch nobody tracks) hides it from everyone and is debt exactly like '
-            'an undeclared branch -- `branchset` lists it, deletes it when its tip is held by a declared branch, '
-            'and names it to merge otherwise.'
+            'A merged branch is DELETED and an unmerged one is MERGED, no third state: an `archive/*` tag or '
+            'untracked rename hides work and is debt like an undeclared branch -- `branchset` lists it, deletes it '
+            'when a declared branch holds its tip, else names it to merge; a worktree is a lease for one task, so '
+            'a tree unlocked, unoccupied, with no TRACKED change and its content landed on the trunk or a declared '
+            'session is reclaimed by `branchset --apply` and the session debris hook, each kept tree listed with '
+            'its reason: what git does not track goes with it, its run outputs moved home and verified first, then '
+            '`git worktree remove --force` and its branch.'
         ),
-        ('tests/test_dev_branchset_apply.py',),
+        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
     ),
     (
         'MERGE-DEVIATIONS-NAMED',
@@ -43,9 +46,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A conflicted merge commit lists every conflicted file once as `<path>: <class> -- <why>`, the class '
             'one of newer-structure, simpler-side, one-source, deleted-as-baggage, renamed-to-reality or '
             'both-needed (the resolution principles), every class with its why; the conflicted set is recomputed '
-            'from the parents` trees, never trusted from the message, and the commit-msg hook refuses '
-            'committing a merge that leaves one undeclared or '
-            'declares one the parents do not conflict on.'
+            'from the parents` trees, never trusted from the message; the FORGE enforces it, refusing to merge a PR '
+            'whose head adds a merge commit that leaves one undeclared or declares one the parents do not '
+            'conflict on (the remedy is to redo that merge, a message cannot be amended), and the commit-msg '
+            'hook makes the same judgement early on the merge being committed.'
         ),
         ('tests/test_dev_mergeresolution.py',),
     ),

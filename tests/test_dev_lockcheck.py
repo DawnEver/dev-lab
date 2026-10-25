@@ -21,8 +21,17 @@ import pytest
 from dev_lab.dev import forgeheadgate
 from dev_lab.dev.famtests.lockpin import LockNotPinned, assert_the_lock_is_pinned
 from dev_lab.dev.githooks.table import base_rows
-from dev_lab.dev.lockcheck import DOOR, REMEDY, lock_problems, stale, unreasoned_holds
-from dev_lab.dev.relock import _worktree
+from dev_lab.dev.lockcheck import (
+    DOOR,
+    REMEDY,
+    UNRESOLVED,
+    lock_problems,
+    newest_stable,
+    pin_stable,
+    stale,
+    unreasoned_holds,
+)
+from dev_lab.dev.relock import detached_worktree
 
 _GIT = shutil.which('git') or 'git'
 _UV = shutil.which('uv') or 'uv'
@@ -127,7 +136,7 @@ def test_a_resolution_that_cannot_reach_its_source_refuses_with_its_diagnosis(wo
     _locked(root, _manifest(kit, index, '"dep",'))
     shutil.rmtree(kit, onexc=lambda func, path, _: (Path(path).chmod(0o700), func(path)))
     (why,) = stale(root)
-    assert why.startswith('the newest resolution could not run ('), why
+    assert why.startswith(f'{UNRESOLVED} ('), why
     assert 'REFUSED' in why or 'gave up' in why, 'the netverb diagnosis is carried'
 
 
@@ -224,7 +233,7 @@ def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: p
     before = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
     # A pre-push hook runs with GIT_DIR naming the repository pushing: the mount must not inherit it.
     monkeypatch.setenv('GIT_DIR', _git_ok(repo, 'rev-parse', '--absolute-git-dir'))
-    with _worktree(repo, mounted) as tree:
+    with detached_worktree(repo, mounted) as tree:
         assert tree != repo, 'the control: HEAD moved on, so a separate tree is built'
         assert (tree / 'components' / 'engine' / 'crate.txt').is_file()
     monkeypatch.delenv('GIT_DIR')  # the checks below are the repository's own, outside the hook
@@ -288,3 +297,62 @@ trunk = 'main'
 sessions = ['integrate/main']
 ephemeral = ['pr/*']
 """
+
+
+def test_a_rust_repo_pins_one_exact_toolchain_version(tmp_path: Path) -> None:
+    """User ruling 2026-10-25: the Rust toolchain is pinned like the lock -- one exact version, never a channel name.
+
+    PLANTED control: the same repository pinned at an exact version, and one with no Rust, pass.
+    """
+    root = tmp_path / 'r'
+    root.mkdir()
+    _git(root, 'init', '-q', '-b', 'main')
+    python = {'pyproject.toml': '[project]\nname = "x"\nversion = "0"\n', 'uv.lock': 'version = 1\n'}
+    assert lock_problems(root, _commit(root, python)) == (), 'a repository with no Rust pins no toolchain'
+    unpinned = _commit(root, {'Cargo.toml': '[workspace]\n'})
+    assert lock_problems(root, unpinned) == (
+        f'{unpinned[:12]} commits Rust but no rust-toolchain.toml: its toolchain would be whatever is installed',
+    )
+    for channel in ('stable', 'nightly', '1.99'):
+        floating = _commit(root, {'rust-toolchain.toml': f'[toolchain]\nchannel = "{channel}"\n'})
+        assert lock_problems(root, floating) == (
+            f'{floating[:12]} rust-toolchain.toml pins channel "{channel}", not one exact version like "1.99.1"',
+        )
+    assert lock_problems(root, _commit(root, {'rust-toolchain.toml': '[toolchain]\nchannel = "1.99.1"\n'})) == ()
+
+
+def _rustup(output: str) -> object:
+    attempt = type('Attempt', (), {'output': output})()
+    return type('Report', (), {'ok': True, 'remedy': '', 'attempts': (attempt,)})()
+
+
+def test_the_newest_stable_is_what_rustup_check_reports() -> None:
+    behind = (
+        'stable-x86_64-pc-windows-msvc - Update available : 1.93.1 (01f6ddf75 2026-02-11) -> 1.99.1 (58cf8f9c3 '
+        '2026-10-13)\nrustup - Update available : 1.28.2 -> 1.29.2\n'
+    )
+    current = 'stable-x86_64-unknown-linux-gnu - Up to date : 1.99.1 (58cf8f9c3 2026-10-13)\n'
+    assert newest_stable(check=lambda: _rustup(behind)) == '1.99.1'
+    assert newest_stable(check=lambda: _rustup(current)) == '1.99.1'
+    with pytest.raises(OSError, match='rustup check named no stable toolchain'):
+        newest_stable(check=lambda: _rustup('nightly-x86_64 - Up to date : 1.100.0-nightly\n'))
+
+
+def test_a_toolchain_behind_the_newest_stable_is_stale_and_pinning_moves_only_its_channel(tmp_path: Path) -> None:
+    """PLANTED control: the same tree pinned at the newest stable is fresh."""
+    (tmp_path / 'rust-toolchain.toml').write_text(
+        '[toolchain]\nchannel = "1.99.0"\ncomponents = ["clippy"]\n', encoding='utf-8'
+    )
+
+    def fresh(_tree: Path) -> object:
+        return _rustup('')
+
+    assert stale(tmp_path, resolve=fresh, stable=lambda: '1.99.1') == (
+        'rust-toolchain.toml is not the newest stable: 1.99.0 -> 1.99.1',
+    )
+    pin_stable(tmp_path, '1.99.1')
+    assert (tmp_path / 'rust-toolchain.toml').read_text(encoding='utf-8') == (
+        '[toolchain]\nchannel = "1.99.1"\ncomponents = ["clippy"]\n'
+    )
+    assert stale(tmp_path, resolve=fresh, stable=lambda: '1.99.1') == ()
+    assert stale(tmp_path / 'none', resolve=fresh, stable=lambda: '9.9.9') == (), 'no toolchain, no reading'

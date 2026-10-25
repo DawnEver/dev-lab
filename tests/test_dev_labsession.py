@@ -7,13 +7,15 @@ launcher's.
 
 from __future__ import annotations
 
+import inspect
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import labsession
+from dev_lab.dev import forgeautosync, labsession, relock
 from dev_lab.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
@@ -55,7 +57,9 @@ def test_a_malformed_session_is_refused_rather_than_stamped(tmp_path: Path) -> N
 
 
 def test_machine_env_drops_the_session() -> None:
-    assert labsession.machine_env({labsession.ENV: _ID, 'PATH': 'p'}) == {'PATH': 'p'}
+    env = labsession.machine_env(env={labsession.ENV: _ID, 'PATH': 'p'})
+    assert labsession.ENV not in env
+    assert env['PATH'] == 'p'
 
 
 def test_sessions_reads_the_trailers_between_two_commits(tmp_path: Path) -> None:
@@ -81,3 +85,40 @@ def test_sessions_reads_the_trailers_between_two_commits(tmp_path: Path) -> None
 def test_the_base_table_runs_the_stamp_at_commit_msg() -> None:
     rows = {row['id']: row for row in base_rows()['commit-msg']}
     assert rows['lab-session']['run'] == ['python', '-m', 'dev_lab.dev.labsession']
+
+
+def _bare_env(tmp_path: Path) -> dict[str, str]:
+    """An environment with NO git identity anywhere: an HPC account with no gitconfig and a GECOS name."""
+    home = tmp_path / 'home'
+    home.mkdir()
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('GIT_', 'EMAIL'))}
+    env.update(HOME=str(home), USERPROFILE=str(home), XDG_CONFIG_HOME=str(home), GIT_CONFIG_NOSYSTEM='1')
+    env.update(GIT_CONFIG_GLOBAL=str(home / 'none'))
+    return env
+
+
+def test_a_forge_commit_is_authored_and_committed_by_the_forge(tmp_path: Path) -> None:
+    repo = tmp_path / 'repo'
+    bare = _bare_env(tmp_path)
+    subprocess.run([_GIT, 'init', '-q', str(repo)], check=True, env=bare)
+    subprocess.run([_GIT, '-C', str(repo), 'remote', 'add', 'origin', 'https://git.example.org:3000/o/r.git'],
+                   check=True, env=bare)  # fmt: skip
+    env = labsession.machine_env(repo, env=bare)
+    subprocess.run([_GIT, '-C', str(repo), 'commit', '-q', '--allow-empty', '-m', 'build(deps): relock'],
+                   check=True, env=env)  # fmt: skip
+    who = subprocess.run([_GIT, '-C', str(repo), 'show', '-s', '--format=%an <%ae>|%cn <%ce>'],
+                         capture_output=True, text=True, encoding='utf-8', check=True,
+                         env=bare).stdout.strip()  # fmt: skip
+    assert who == 'Forge <forge@git.example.org>|Forge <forge@git.example.org>'
+
+
+def test_a_forge_with_no_readable_remote_signs_as_invalid(tmp_path: Path) -> None:
+    env = labsession.machine_env(tmp_path, env={})
+    assert (env['GIT_AUTHOR_NAME'], env['GIT_COMMITTER_EMAIL']) == ('Forge', 'forge@invalid')
+
+
+def test_every_forge_git_call_runs_under_the_machine_env() -> None:
+    """No forge module that commits or merges builds its git env any other way (the one source)."""
+    for module in (forgeautosync, relock):
+        source = inspect.getsource(module._git)
+        assert 'env=machine_env(root)' in source, module.__name__

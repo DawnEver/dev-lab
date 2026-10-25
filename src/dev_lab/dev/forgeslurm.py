@@ -10,17 +10,29 @@ account's STANDING read locally each tick -- its supply
 :func:`dev_lab.dev.diskusage.read_usage`), the last day's core-hours per run from ``sacct``,
 and the partitions, quota and storage a host card publishes. An unreadable quota is stated on the card
 (``storage: unread``) and leaves files uncapped; a home at its file limit claims nothing and the card says so.
+
+A JOB SLURM KILLED IS READ, NAMED AND LEARNED (:meth:`SlurmCluster.killed`; Ada 2026-10-25, 24 h: 71
+``OUT_OF_MEMORY`` jobs and 14 % ``TIMEOUT``, none visible on a PR). ``sacct`` gives each its ask and its use
+(``ReqMem``/``MaxRSS``, ``Timelimit``/``Elapsed``); an OOM's ask is recorded grown by
+:data:`~lab_commons.compute.learned.OOM_GROWTH` and held to the most any grant gives
+(:func:`~lab_commons.hpc.plan.grantable_gb`), so the part's next run asks for more. A TIMEOUT needs nothing
+here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.learned.Measured.killed`).
+
+A FORGE JOB WHOSE RUN IS GONE IS CANCELLED (:meth:`SlurmCluster.strays`; Ada 2026-10-25: 25 % of a day's
+core-hours). A run whose ref is gone cancels its own jobs (:func:`dev_lab.dev.forgerun._cancel_orphan`); a job
+no run file names at all -- its run lost to another owner, or dropped -- had nobody to cancel it.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import re
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from lab_commons.box import declared_seats
 from lab_commons.compute import learned
@@ -34,6 +46,7 @@ from lab_commons.hpc.cluster import Runner, Unreachable, probe, scancel, submitt
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
+from lab_commons.hpc.plan import grantable_gb
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_cells, run_shas
 from lab_commons.hpc.run import _STARTED as STARTED  # the one spelling of a started task's squeue states
@@ -45,11 +58,54 @@ from lab_commons.hpc.watch import PENDING, settle
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
 from dev_lab.dev.forgerecords import read_allocation
-from dev_lab.dev.forgerunstate import Cluster, Draining, Run, Standing, Started, Unrecorded
+from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from dev_lab.dev.forgestuck import parse_duration
 
-__all__ = ['SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
+__all__ = ['KILLED', 'SlurmCluster', 'killed_jobs', 'progress_text', 'slurm_cluster', 'standing_of']
+
+#: The ``sacct`` states of a job Slurm killed for its ask: memory, or time.
+KILLED: Final = ('OUT_OF_MEMORY', 'TIMEOUT')
+#: A forge job's name (:func:`lab_commons.hpc.run.job_name`, and the schema-1 ``run-<sha12>``).
+_FORGE_JOB: Final = re.compile(r'run-[0-9a-f]{12}(-.+)?')
+_KILLED_FIELDS: Final = 'JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
+_SIZE: Final = re.compile(r'([\d.]+)([KMGT]?)')
+_MB_PER: Final = {'K': 1 / 1024, '': 1 / 1024 / 1024, 'M': 1, 'G': 1024, 'T': 1024 * 1024}
+
+
+def _mb(text: str) -> int:
+    """``4G``, ``8000M``, ``4300000K`` (or ``4Gn``/``4Gc`` of older Slurm) in MB; empty is 0."""
+    match = _SIZE.match(text.strip())
+    return round(float(match.group(1)) * _MB_PER[match.group(2)]) if match else 0
+
+
+def _seconds(text: str) -> int:
+    return round(parse_duration(text)) if text.strip() and text.strip()[0].isdigit() else 0
+
+
+def killed_jobs(sacct: str) -> tuple[Killed, ...]:
+    """Each job of ``sacct -n -P -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit`` in a :data:`KILLED` state.
+
+    The ask is the job's own row; ``MaxRSS`` is its steps' (``7_0.batch``), the largest; a job is killed when its
+    row or a step's state is.
+    """
+    jobs: dict[str, list[str]] = {}
+    used: dict[str, int] = {}
+    for line in sacct.splitlines():
+        job, state, req, rss, elapsed, limit = (*line.split('|'), '', '', '', '', '')[:6]
+        base, dot, _step = job.strip().partition('.')
+        state = state.split()[0] if state.strip() else ''
+        if not dot:
+            jobs[base] = [state, req, elapsed, limit]
+            continue
+        used[base] = max(used.get(base, 0), _mb(rss))
+        if state in KILLED and base in jobs and jobs[base][0] not in KILLED:
+            jobs[base][0] = state
+    return tuple(
+        Killed(job, state, _mb(req), used.get(job, 0), _seconds(limit), _seconds(elapsed))
+        for job, (state, req, elapsed, limit) in jobs.items()
+        if state in KILLED
+    )
 
 
 def progress_text(where_: Progress) -> str:
@@ -168,6 +224,29 @@ class SlurmCluster:
             raise Unrecorded(msg)
         return records[-1]
 
+    def killed(self, run: Run) -> tuple[Killed, ...]:
+        """*run*'s jobs Slurm killed for memory or time (:func:`killed_jobs`); an OOM's ask is learned grown.
+
+        Grown by :data:`~lab_commons.compute.learned.OOM_GROWTH`, held to the most any grant gives, never
+        lowering a known ask (:func:`~lab_commons.compute.learned.record_ask`): one learned store, read by the next
+        run's admission and plan.
+        """
+        state, shell = load_state(run.sha, run.platform, self.machine, self._runners())
+        ids = [str(job) for one in state['rounds'] for job in one['job_ids']]
+        if not ids:
+            return ()
+        found = killed_jobs(shell(f'sacct -n -P -j {",".join(ids)} -o {_KILLED_FIELDS}', None))
+        oom = [one.asked_mb for one in found if one.state == 'OUT_OF_MEMORY']
+        if oom:
+            grants = self.machine.grants
+            ceiling = grantable_gb([(g, probe(self.connect(g), g.slurm_account)) for g in grants])
+            ask_gb = max(oom) / 1024 * learned.OOM_GROWTH
+            ask_gb = ask_gb if ceiling is None else min(ask_gb, ceiling)
+            learned.record_ask(
+                run.repo_url, learned.SLURM, needs_of(run.platform), ask_gb, safety=self.config.policy.safety
+            )
+        return found
+
     def progress(self, run: Run) -> str:
         """Where the run's current job is, from the cluster's run state and one ``squeue``."""
         return progress_text(where(run.sha, run.platform, self.machine, self.connect, policy=self.config.policy))
@@ -175,6 +254,20 @@ class SlurmCluster:
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""
         return cancel_run(run.sha, run.platform, self.machine, self.connect, also=run.job_ids, aliases=run.job_aliases)
+
+    def strays(self, held: Callable[[], set[str]]) -> list[str]:
+        """Cancel this account's forge jobs whose name *held* does not return; the ids cancelled, one per array.
+
+        Squeue is read BEFORE *held*: a run file is saved before its sbatch (``submitting``), so a job seen
+        here whose name is not held has no run left -- never one submitted between the two reads.
+        """
+        shell = self.connect(self.machine.grants[0])
+        jobs = [line.partition('|') for line in shell("squeue -h --me -o '%F|%j'", None).splitlines()]
+        names = held()
+        stray = sorted({job for job, _, name in jobs if _FORGE_JOB.fullmatch(name) and name not in names})
+        if stray:
+            scancel(shell, stray)
+        return stray
 
     def withdraw(self, run: Run) -> list[str]:
         """Withdraw *run*'s pending tasks, keep its started ones; the ids still started."""

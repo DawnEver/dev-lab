@@ -114,7 +114,7 @@ VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
     ('python', '-m', 'dev_lab.dev.forge', 'watch'): 'read-only: prints a commit verdict until settled or a deadline',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
-        'closes open PRs salvaged into another OPEN, unmerged PR, then LOSSLESS-DELETEs their branches'
+        'closes open PRs salvaged into another OPEN, unmerged PR or a commit; never deletes a branch'
     ),
     ('python', '-m', 'dev_lab.dev.branchprune', 'delete'): (
         'LOSSLESS-DELETE: a remote branch only when every commit on it is held elsewhere'

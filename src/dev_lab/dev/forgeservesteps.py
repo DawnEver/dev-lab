@@ -60,7 +60,7 @@ def starved(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """A ``starved`` issue for each part NO host admits, read across every card; any host may raise it."""
+    """A ``starved`` issue for each part NO host admits, read across every card; the repo's poller raises it."""
     schedule = load_schedule(root)
     try:
         queue, _ = forge_queue(root, built, cards, now=forge_now(built), schedule=schedule)
@@ -122,7 +122,7 @@ def tidy_runs(
 
 
 def hygiene(root: Path, built: Client, *, say: Callable[[str], None]) -> None:
-    """The repo's issue hygiene, on any host every tick (idempotent: a raced close is a no-op); a failure is said."""
+    """The repo's issue hygiene, on the repo's poller (idempotent: a raced close is a no-op); a failure is said."""
     try:
         for line in issue_tidy(built, load_hygiene(root)):
             say(f'[serve] tidy: {line}')

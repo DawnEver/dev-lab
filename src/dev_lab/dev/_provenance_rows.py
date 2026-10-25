@@ -135,6 +135,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgeintent': ('original',),
     'forgenotice': ('original',),
     'forgetry': ('original',),
+    'forgewait': ('original',),
     'branchnotices': ('original',),
     'lockcheck': ('original',),
     'relock': ('original',),
@@ -146,6 +147,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgereview': ('original',),
     'forgereview_findings': ('original',),
     # ORIGINAL: the review read the whole diff or nothing; the slice budget and lenses are new here.
+    'forgereview_command': ('original',),
     'forgereview_scope': ('original',),
     'integrate': ('original',),
     'forgepulls': ('original',),
@@ -163,6 +165,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgeschedule': ('original',),
     'forgequeue': ('original',),
     'forgehosts': ('original',),
+    'forgepoller': ('original',),
+    'forgesettled': ('original',),
     'forgeprovides': ('original',),
     'forgetidy': ('original',),
     'branchprune': ('original',),
@@ -241,12 +245,15 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'injectedtext': ('original',),
     # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun': ('original',),
+    'servelanes': ('original',),
     'servelock': ('original',),
     'servetask': ('original',),
     'workstation': ('original',),
     'hostrefresh': ('original',),
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees': ('original',),
+    # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
+    'reclaim': ('original',),
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
     'privatemarkers': ('original',),
@@ -524,6 +531,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgestuck': ('original',),
     'forgewatch': ('original',),
     'liverun': ('original',),
+    'metrics': ('original',),
     'monthsummary': ('original',),
     'prsuperseded': ('original',),
     'worktree_archive': ('original',),

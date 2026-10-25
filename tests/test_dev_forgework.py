@@ -163,6 +163,20 @@ def test_github_requests_carry_the_headers_its_api_demands(server) -> None:
     assert headers['User-Agent']
 
 
+@pytest.mark.parametrize(
+    ('forge', 'root'),
+    [(Forge('f.example', 'o', 'r'), '/api/v1/repos/o/r'), (Forge('github.com', 'o', 'r'), '/repos/o/r')],
+)
+def test_every_request_names_dev_lab_its_host_and_its_repo(server, forge, root, monkeypatch) -> None:
+    """The forge's log attributes load (2026-10-24: 9425 requests in 10 min, none naming who sent them)."""
+    monkeypatch.setenv('HARNESS_MACHINE', 'login7')
+    _answer('GET', f'{root}/issues/7', (200, _ISSUE))
+    _client(forge, _Loopback(server)).issue_view(7)
+    agent = _Recorder.received[0]['headers']['User-Agent']
+    assert agent.startswith('dev-lab (')
+    assert '@login7; o/r)' in agent
+
+
 # --------------------------------------------------------------------------------------------
 # retry, then report -- netverb's diagnosis vocabulary, over HTTP
 

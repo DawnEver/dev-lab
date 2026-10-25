@@ -294,6 +294,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`dev_lab.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`dev_lab.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
+* :mod:`dev_lab.dev.forgepoller` -- ONE POLLER PER REPO: a lease on the hosts issue picks the host that polls.
+* :mod:`dev_lab.dev.forgesettled` -- a commit whose every part is settled is read once, its history kept.
 * :mod:`dev_lab.dev.forgeprovides` -- what a host provides (machine-file ``[capabilities]``); no live host
   having a part's need-set is named.
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
@@ -319,7 +321,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
 * :mod:`dev_lab.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<part> parts.
 * :mod:`dev_lab.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
-* :mod:`dev_lab.dev.forgepulls` -- PR list/retarget and ONE marker-found comment per subject, both forges.
+* :mod:`dev_lab.dev.forgepulls` -- PR list/retarget, ONE marker-found comment per subject, the incremental issue
+  read, both forges.
 * :mod:`dev_lab.dev.integrate` -- integration by refs alone: ``merge <branch>`` (merge-tree, the commit-msg
   stage and the merge audit, compare-and-swap) and ``promote <sha>`` (the local trunk FAST-FORWARDS to a
   full-PASS integration commit). Neither checks out nor pushes.
@@ -329,9 +332,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeautosync` -- the serve tick merges integration into a behind ``pr/*`` PR head.
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
 * :mod:`dev_lab.dev.forgetry` -- ``forge try <paths>``: named tests on a host with room now, or ``no room`` at once.
+* :mod:`dev_lab.dev.forgewait` -- a part's wait answered, bounded and seen: why a box does not admit it, until when.
 * :mod:`dev_lab.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
+* :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
+* :mod:`dev_lab.dev.metrics` -- the toolchain's baseline: refusals and hand actions, one JSONL per kind, and their read.
 * :mod:`dev_lab.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`dev_lab.dev.mergeresolution` -- a conflicted merge names, per conflicted file, how it was resolved and why.
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
@@ -358,16 +364,18 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
-* :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented, closed,
-  and its branch deleted through LOSSLESS-DELETE; every serve tick, and ``forge pr close-landed``.
-* :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr>``
-  closes salvaged PRs and deletes their branches through LOSSLESS-DELETE.
+* :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
+  its branch left to the prune; every serve tick, and ``forge pr close-landed``.
+* :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
+  closes salvaged PRs with an evidence comment; it never deletes a branch.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a PR waits on a scarce part only where its diff reaches it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
-* :mod:`dev_lab.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
+* :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
+* :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
+* :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
 * :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.
 * :mod:`dev_lab.dev.workstation` -- a Windows workstation as a serve host in one run, and the Task's serve loop.

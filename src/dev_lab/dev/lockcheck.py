@@ -11,16 +11,20 @@ A COMMIT IS REFUSED (:func:`lock_problems`, judged at a sha, never a dirty worki
 * it commits no ``uv.lock``;
 * it HOLDS a requirement below the newest -- an upper bound (``<``, ``<=``), an exact pin (``==``, ``===``,
   ``~=``) or a git requirement at a ref -- with no reason: a comment on its line or the comment line above
-  (:func:`unreasoned_holds`). A reasoned range is the one way to stay below latest (e.g. ``<3.14``: pyo3 ABI).
+  (:func:`unreasoned_holds`). A reasoned range is the one way to stay below latest (e.g. ``<3.14``: pyo3 ABI);
+* it commits Rust (a ``Cargo.toml``) without a root ``rust-toolchain.toml`` pinning ONE exact version, never a
+  channel name like ``stable`` (user ruling 2026-10-25: the toolchain is pinned exactly like the lock;
+  :func:`toolchain_problems`).
 
-Both read git objects only and never touch the network.
+All read git objects only and never touch the network.
 
 PIN AND FRESHNESS ARE THE FORGE'S ALONE (user rulings 2026-10-22 and 2026-10-24): a local hook keeps only
 irreversible-harm and second-scale format checks, so no pre-push row reads the lock. The forge judges the PIN in
 the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``HEAD``), and a PR head's
 freshness as a status (:mod:`dev_lab.dev.forgeheadgate`). The serve tick keeps integration at the newest
 resolution itself through a relock pull request (:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one
-staleness reading -- and a lane takes it with ``forge sync``.
+staleness reading, of the lock and of the toolchain against :func:`newest_stable` --
+and a lane takes it with ``forge sync``.
 """
 
 from __future__ import annotations
@@ -40,11 +44,18 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 __all__ = [
-    'DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'mount_submodules', 'stale', 'unreasoned_holds',
+    'DOOR', 'FRESHENED', 'LOCK', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'lock_problems', 'mount_submodules',
+    'newest_stable', 'pin_stable', 'refreshable', 'stale', 'toolchain_problems', 'unreasoned_holds',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
 LOCK: Final = 'uv.lock'
+#: The Rust toolchain pin every repository committing Rust carries at its root.
+TOOLCHAIN: Final = 'rust-toolchain.toml'
+#: The pinned inputs the forge keeps at the newest; a :func:`stale` sentence naming one is :func:`refreshable`.
+FRESHENED: Final = (LOCK, TOOLCHAIN)
+#: How every :func:`stale` sentence for a resolution that could not run begins -- a refusal, never an admission.
+UNRESOLVED: Final = 'the newest resolution could not run'
 #: The one remedy for a missing or stale lock.
 #: The door, never a bare ``uv lock --upgrade``: an agent guard refuses a bare dependency mutation, so a
 #: remedy naming one would be a refusal pointing at another refusal.
@@ -63,6 +74,12 @@ _NAME: Final = re.compile(r'^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*(?:\[[^\]]*\])?\s*(
 _CLAUSE: Final = re.compile(r'^\s*(?P<op>~=|===|==|!=|<=|>=|<|>)\s*[\w.*+!-]+\s*$')
 #: The operators that keep a requirement BELOW the newest; a floor (``>=``, ``>``) or an exclusion does not.
 _HOLDING: Final = frozenset({'<', '<=', '==', '===', '~='})
+_CHANNEL: Final = re.compile(r'^(?P<lead>\s*channel\s*=\s*)["\'](?P<channel>[^"\'\n]*)["\']', re.MULTILINE)
+_EXACT: Final = re.compile(r'^\d+\.\d+\.\d+$')
+#: ``rustup check``'s stable line: ``Up to date : <v> (...)`` or ``Update available : <old> (...) -> <v> (...)``.
+_STABLE: Final = re.compile(
+    r'^stable-\S+ - (?:Up to date : |Update available : .*-> )(?P<version>\d+\.\d+\.\d+)\b', re.MULTILINE
+)
 
 
 def _git(root: Path, *argv: str, env: Mapping[str, str] | None = None) -> tuple[int, str]:
@@ -156,20 +173,76 @@ def _dry_run(tree: Path) -> Report:
     return run_network_verb([uv, 'lock', '--upgrade', '--dry-run'], cwd=tree, timeout=RESOLVE_TIMEOUT_S)
 
 
-def stale(tree: Path, *, resolve: Callable[[Path], Report] = _dry_run) -> tuple[str, ...]:
-    """Why the lock in *tree* is not at the newest resolution, one sentence each; empty when it is.
+def _rustup_check() -> Report:
+    rustup = shutil.which('rustup') or 'rustup'
+    return run_network_verb([rustup, 'check'], timeout=RESOLVE_TIMEOUT_S)
+
+
+def newest_stable(*, check: Callable[[], Report] = _rustup_check) -> str:
+    """The newest stable Rust version (``1.99.1``) as *check*, ``rustup check``, reports it; RAISES on none."""
+    report = check()
+    output = report.attempts[-1].output if report.attempts else ''
+    if not report.ok or not (found := _STABLE.search(output)):
+        msg = f'rustup check named no stable toolchain ({report.remedy}): {output.strip()[-200:]}'
+        raise OSError(msg)
+    return found['version']
+
+
+def _channel(text: str) -> str | None:
+    found = _CHANNEL.search(text)
+    return found['channel'] if found else None
+
+
+def toolchain_problems(root: Path, sha: str) -> tuple[str, ...]:
+    """Why commit *sha* of *root* does not pin one exact Rust toolchain, one sentence; empty without Rust."""
+    _, names = _git(root, 'ls-tree', '-r', '--name-only', sha)
+    if not any(name.rsplit('/', 1)[-1] == 'Cargo.toml' for name in names.splitlines()):
+        return ()
+    if _git(root, 'cat-file', '-e', f'{sha}:{TOOLCHAIN}')[0] != 0:
+        return (f'{sha[:12]} commits Rust but no {TOOLCHAIN}: its toolchain would be whatever is installed',)
+    channel = _channel(_git(root, 'show', f'{sha}:{TOOLCHAIN}')[1])
+    if channel is None or not _EXACT.match(channel):
+        return (f'{sha[:12]} {TOOLCHAIN} pins channel "{channel}", not one exact version like "1.99.1"',)
+    return ()
+
+
+def pin_stable(tree: Path, version: str) -> None:
+    """Rewrite the channel of *tree*'s :data:`TOOLCHAIN` to *version*, every other line as it was."""
+    path = tree / TOOLCHAIN
+    text = path.read_text(encoding='utf-8')
+    path.write_text(_CHANNEL.sub(lambda m: f'{m["lead"]}"{version}"', text, count=1), encoding='utf-8')
+
+
+def refreshable(sentence: str) -> bool:
+    """Whether a :func:`stale` sentence names a :data:`FRESHENED` input the dependency door moves."""
+    return sentence.startswith(tuple(f'{path} is not the newest ' for path in FRESHENED))
+
+
+def stale(
+    tree: Path, *, resolve: Callable[[Path], Report] = _dry_run, stable: Callable[[], str] = newest_stable
+) -> tuple[str, ...]:
+    """Why the lock or the toolchain in *tree* is not at the newest, one sentence each; empty when both are.
 
     A resolution that could not run is one sentence carrying its diagnosis, so it refuses rather than admits.
+    The toolchain is read against *stable* only where *tree* pins one.
     """
     try:
         report = resolve(tree)
     except OSError as why:
-        return (f'the newest resolution could not run: {why}',)
+        return (f'{UNRESOLVED}: {why}',)
     output = report.attempts[-1].output if report.attempts else ''
     if not report.ok:
         tail = ' | '.join(line.strip() for line in output.strip().splitlines()[-4:])
-        return (f'the newest resolution could not run ({report.remedy}): {tail}',)
-    return tuple(f'{LOCK} is not the newest resolution: {change.strip()}' for change in _CHANGE.findall(output))
+        return (f'{UNRESOLVED} ({report.remedy}): {tail}',)
+    found = tuple(f'{LOCK} is not the newest resolution: {change.strip()}' for change in _CHANGE.findall(output))
+    if not (tree / TOOLCHAIN).is_file():
+        return found
+    try:
+        newest = stable()
+    except OSError as why:
+        return (*found, f'the newest stable toolchain could not be read: {why}')
+    pinned = _channel((tree / TOOLCHAIN).read_text(encoding='utf-8'))
+    return found if pinned == newest else (*found, f'{TOOLCHAIN} is not the newest stable: {pinned} -> {newest}')
 
 
 def lock_problems(root: Path, sha: str) -> tuple[str, ...]:
@@ -177,4 +250,5 @@ def lock_problems(root: Path, sha: str) -> tuple[str, ...]:
     if _git(root, 'cat-file', '-e', f'{sha}:{LOCK}')[0] != 0:
         return (f'{sha[:12]} commits no {LOCK}: its environment would be whatever resolves on the day',)
     _, manifest = _git(root, 'show', f'{sha}:pyproject.toml')
-    return tuple(f'{hold} holds a requirement below the newest with no reason' for hold in unreasoned_holds(manifest))
+    holds = tuple(f'{hold} holds a requirement below the newest with no reason' for hold in unreasoned_holds(manifest))
+    return holds + toolchain_problems(root, sha)

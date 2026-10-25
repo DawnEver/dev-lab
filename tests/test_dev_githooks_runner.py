@@ -17,6 +17,7 @@ import pytest
 from dev_lab.dev.githooks import main as githooks_main
 from dev_lab.dev.githooks.runner import ZERO_SHA, parse_push_lines, resolve, run_stage
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
+from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
 _GIT = shutil.which('git') or 'git'
 
@@ -309,3 +310,18 @@ def test_the_verbose_env_shows_the_passes(repo: Path, capsys, monkeypatch) -> No
     hook = Hook(stage='commit-msg', id='cz', run=('tool',))
     assert run_stage('commit-msg', ['m'], root=repo, hooks=(hook,), runner=_Recorder()) == 0
     assert '[githooks] commit-msg cz: passed' in capsys.readouterr().out
+
+
+def test_a_refusing_stage_logs_one_refusal_per_hook_and_a_push_is_counted(repo: Path) -> None:
+    """P0 metrics: a refusal names its hook and stage; an advisory stage refuses nothing; every pre-push counts."""
+
+    def fail(_argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return 1, 'no'
+
+    bad = Hook(stage='commit-msg', id='cz', run=('cz',))
+    assert run_stage('commit-msg', ['.git/COMMIT_EDITMSG'], root=repo, hooks=(bad,), runner=fail) == 1
+    late = Hook(stage='post-commit', id='notes', run=('n',), always_run=True)
+    assert run_stage('post-commit', root=repo, hooks=(late,), runner=fail) == 0
+    assert run_stage('pre-push', ['origin', 'u'], root=repo, hooks=(), runner=fail) == 0
+    assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL)] == [('cz', 'commit-msg')]
+    assert len(read(PUSH)) == 1

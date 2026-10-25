@@ -78,6 +78,11 @@ def rules_pages() -> tuple[Path, ...]:
     return _existing(tuple(n for n in _tracked() if n.startswith('.claude/rules/') and n.endswith('.md')))
 
 
+def docs_pages() -> tuple[Path, ...]:
+    """Every tracked markdown page under ``docs-src/`` -- the developer and user documentation."""
+    return _existing(tuple(n for n in _tracked() if n.startswith('docs-src/') and n.endswith('.md')))
+
+
 def memory_entries() -> tuple[Path, ...]:
     """Every tracked markdown entry under ``.claude/memory/`` -- this repo's durable findings.
 
