@@ -156,7 +156,7 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 ```toml
 [tool.lab_commons.review]
 # {range}: <base>..<head>; {paths}: the slice's paths, one argument each; {lens}: strict | standard | light
-command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--lens", "{lens}",
+command = ["ai-lab", "review", "--method", "{capabilities.sharp_review.path}", "--range", "{range}", "--lens", "{lens}",
            "--model", "<id>", "--paths", "{paths}"]
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 200000    # one slice
@@ -168,7 +168,7 @@ claim_stale = "1 h"        # the default
 ```
 
 Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
-command a host checks it can start it -- a missing interpreter or module is `unsupported` and posts nothing --
+command a host checks it can start it -- a missing executable, module or capability posts `error` with its reason, like every failure --
 then posts `tests/review` = `pending`, `claimed by <host> at <time>, reviewing`, and replaces it with the final
 status. Any other host skips a head whose `tests/review` carries any status, pending included, unless it is a
 released claim (`released by ...`) or a claim older than `claim_stale` (default `"1 h"`, above the command's

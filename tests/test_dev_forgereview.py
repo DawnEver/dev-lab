@@ -26,9 +26,9 @@ from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import (
     CLAIMED,
     DEFAULT_CLAIM_STALE,
+    HOST_FIELD,
     RANGE_FIELD,
     REFUSED_EXIT,
-    RELEASED,
     RETIRED_KEYS,
     REVIEW_CONTEXT,
     TAKEOVER_PENDING,
@@ -198,8 +198,8 @@ def _can(_argv: Sequence[str], _root: Path) -> str | None:
     return None  # every fake command can start
 
 
-def test_a_host_without_the_commands_interpreter_or_module_is_unsupported_and_posts_nothing(tmp_path: Path) -> None:
-    """Checked BEFORE the claim. PLANTED control: the same head on a host that can run it is reviewed."""
+def test_a_host_without_the_commands_interpreter_or_module_posts_error_with_its_reason(tmp_path: Path) -> None:
+    """Checked BEFORE the claim: any failure is ``tests/review: error`` naming why, and the command never ran."""
     interpreter = sys.executable
     assert 'not installed' in (can_start([str(tmp_path / 'no-such-python'), '-m', 'ai_lab.review'], tmp_path) or '')
     assert 'cannot import' in (can_start([interpreter, '-m', 'no_such_module_for_review'], tmp_path) or '')
@@ -210,14 +210,19 @@ def test_a_host_without_the_commands_interpreter_or_module_is_unsupported_and_po
     forge, number = _forge(head)
     command = FakeCommand()
     lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=can_start, host='box')
-    assert 'unsupported' in lines[0]
-    assert 'nothing posted' in lines[0]
+    assert 'not installed' in lines[0]
     assert command.ran == []
-    assert forge.statuses.get(head, []) == []
-    assert forge.comments[number] == []
-    _tick(work, forge, command)
     (status,) = status_list(forge, head)
-    assert status.state == 'success'
+    assert (status.state, status.context) == ('error', REVIEW_CONTEXT)
+    assert "'reviewer' is not installed" in status.description
+    assert forge.comments[number] == []
+
+
+def test_the_declared_command_is_the_installed_ai_lab_with_only_the_method_a_capability() -> None:
+    """P4: the forge runs ``ai-lab review`` from the machine install; the method path is the one capability left."""
+    declared = review_from((Path(__file__).parents[1] / 'pyproject.toml').read_text(encoding='utf-8'), 'pyproject')
+    assert declared.command[:2] == ('ai-lab', 'review')
+    assert {m['name'] for arg in declared.command for m in HOST_FIELD.finditer(arg)} == {'sharp_review'}
 
 
 def test_a_host_value_field_is_replaced_by_the_hosts_declared_capability() -> None:
@@ -231,8 +236,8 @@ def test_a_host_value_field_is_replaced_by_the_hosts_declared_capability() -> No
 
 
 @pytest.mark.parametrize('host', [{}, {'ai_lab': {}}], ids=['no capability', 'no key'])
-def test_a_host_value_this_host_does_not_declare_is_unsupported_and_posts_nothing(tmp_path: Path, host) -> None:
-    """Checked BEFORE the claim. PLANTED control: the host that declares it reviews the same head."""
+def test_a_host_value_this_host_does_not_declare_posts_error_naming_it(tmp_path: Path, host) -> None:
+    """Checked BEFORE the claim: ``error`` naming the capability. PLANTED control: a declaring host runs it."""
     declared = Review(command=('{capabilities.ai_lab.python}', '--range', RANGE_FIELD))
     with pytest.raises(ReviewUnsupported, match=r'\[capabilities\.ai_lab\] python'):
         command_for(declared, 'a..b', host)
@@ -241,17 +246,19 @@ def test_a_host_value_this_host_does_not_declare_is_unsupported_and_posts_nothin
     command = FakeCommand()
     kw = {'base': 'integrate/main', 'run': command, 'ready': _can, 'host': 'box'}
     lines = review_tick(work, forge, declared, capabilities=host, **kw)
-    assert 'unsupported' in lines[0]
-    assert 'nothing posted' in lines[0]
+    assert '[capabilities.ai_lab] python' in lines[0]
     assert command.ran == []
-    assert forge.statuses.get(head, []) == []
+    (status,) = status_list(forge, head)
+    assert status.state == 'error'
+    assert '[capabilities.ai_lab] python' in status.description
+    forge, _ = _forge(head)
     review_tick(work, forge, declared, capabilities={'ai_lab': {'python': 'py'}}, **kw)
     ((argv, _),) = command.ran
     assert argv[0] == 'py'
 
 
-def test_a_command_that_turns_out_unsupported_releases_its_claim(tmp_path: Path) -> None:
-    """PLANTED control: the released head is claimed and reviewed by the next host at once."""
+def test_a_command_that_turns_out_unsupported_replaces_its_claim_with_error(tmp_path: Path) -> None:
+    """It started and then could not: the claim becomes ``error`` naming why, never a silent release."""
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
 
@@ -260,11 +267,9 @@ def test_a_command_that_turns_out_unsupported_releases_its_claim(tmp_path: Path)
         raise ReviewUnsupported(msg)
 
     review_tick(work, forge, _DECLARED, base='integrate/main', run=absent, ready=_can, host='A')
-    (released,) = status_list(forge, head)
-    assert released.state == 'pending'
-    assert released.description.startswith(f'{RELEASED} A')
-    _tick(work, forge, FakeCommand())
-    assert status_list(forge, head)[0].state == 'success'
+    (failed,) = status_list(forge, head)
+    assert failed.state == 'error'
+    assert 'cannot import its module' in failed.description
 
 
 def test_two_hosts_on_one_new_head_only_the_first_claims_and_reviews(tmp_path: Path) -> None:
