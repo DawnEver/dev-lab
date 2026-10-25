@@ -27,6 +27,7 @@ from dev_lab.dev.forgereview import (
     CLAIMED,
     DEFAULT_CLAIM_STALE,
     HOST_FIELD,
+    HOST_UNABLE,
     RANGE_FIELD,
     REFUSED_EXIT,
     RETIRED_KEYS,
@@ -270,6 +271,50 @@ def test_a_command_that_turns_out_unsupported_replaces_its_claim_with_error(tmp_
     (failed,) = status_list(forge, head)
     assert failed.state == 'error'
     assert 'cannot import its module' in failed.description
+
+
+def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp_path: Path) -> None:
+    """A fact about the HOST, not the head: ``error`` names host and reason, once; a capable host still reviews.
+
+    PLANTED control: a command that ran and was refused on the head stays a settled error nobody re-runs.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    declared = Review(command=('{capabilities.ai_lab.python}', '--range', RANGE_FIELD))
+    command = FakeCommand()
+    kw = {'base': 'integrate/main', 'run': command}
+    review_tick(work, forge, declared, ready=_can, host='A', **kw)
+    review_tick(work, forge, declared, ready=_can, host='A', **kw)  # unfixed: no second identical post
+    (unable,) = forge.statuses[head]
+    assert unable['state'] == 'error'
+    assert unable['description'].startswith(f'{HOST_UNABLE} A: ')
+    assert '[capabilities.ai_lab] python' in unable['description']
+    review_tick(work, forge, declared, ready=_can, host='B', capabilities={'ai_lab': {'python': 'py'}}, **kw)
+    assert len(command.ran) == 1
+    assert status_list(forge, head)[0].state == 'success'
+    assert len(forge.comments[number]) == 1
+
+    def absent(_argv: Sequence[str], _root: Path) -> str:
+        msg = 'unsupported: the review command cannot import its module on this host'
+        raise ReviewUnsupported(msg)
+
+    forge, _ = _forge(head)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=absent, ready=_can, host='A')
+    assert status_list(forge, head)[0].description.startswith(f'{HOST_UNABLE} A: ')
+    retried = FakeCommand()
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=retried, ready=_can, host='A')
+    assert retried.ran  # the same host, fixed, reviews on a later tick
+
+    def refusing(_argv: Sequence[str], _root: Path) -> str:
+        msg = 'bad range'
+        raise ReviewRefused(msg)
+
+    forge, _ = _forge(head)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing, ready=_can, host='A')
+    later = FakeCommand()
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=later, ready=_can, host='B')
+    assert later.ran == []
+    assert status_list(forge, head)[0].state == 'error'
 
 
 def test_two_hosts_on_one_new_head_only_the_first_claims_and_reviews(tmp_path: Path) -> None:

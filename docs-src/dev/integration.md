@@ -144,7 +144,9 @@ over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices 
 That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), until a
 session reviews it and releases it: `python -m dev_lab.dev.forge status post <sha> --context tests/review-hold
 --state success --description "reviewed by <who>"`. So an unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
-nothing. A failed command posts `error` and is not retried on that head.
+nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review
+(a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run on host
+<host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
 through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
