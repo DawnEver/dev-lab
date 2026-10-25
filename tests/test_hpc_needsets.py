@@ -89,9 +89,10 @@ def test_this_repo_names_its_off_cluster_tests_as_resources() -> None:
     """The live checkout, ``node`` and the ``codex`` CLI are one host's kit, and the cluster's per-sha tree has none.
 
     So they are ONE resource, ``workstation``: every host carrying one carries all three, and three parts would
-    queue three times on the one host that can serve them.
+    queue three times on the one host that can serve them. One host serves it, so it is also SCARCE: a PR
+    waits on it only where its diff reaches a workstation test (:mod:`dev_lab.dev.forgescarce`).
     """
     declared = (Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8')
     vocabulary = read_vocabulary(declared)
-    assert vocabulary == Vocabulary(('workstation',))
+    assert vocabulary == Vocabulary(('workstation',), scarce=('workstation',))
     assert selecting(vocabulary, BASE) == 'not workstation'
