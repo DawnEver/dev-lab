@@ -98,6 +98,21 @@ def test_the_commit_msg_hook_refuses_an_undeclared_conflict_and_passes_a_declare
     assert mergeresolution.main([str(message)]) == 0, capsys.readouterr().err
 
 
+def test_every_merge_a_head_adds_is_judged_and_only_the_undeclared_ones_are_named(conflicting: Path) -> None:
+    """The range form: a plain commit and a declared merge pass; the undeclared merge is named by sha."""
+    _git(conflicting, 'commit', '-q', '-m', 'merge lane\n\nsrc/a.py: simpler-side -- main holds the newer X')
+    _commit(conflicting, {'src/d.py': 'D = 1\n'}, 'plain')
+    _git(conflicting, 'checkout', '-q', 'lane')
+    _commit(conflicting, {'src/a.py': 'X = 4\n'}, 'lane again')
+    _git(conflicting, 'checkout', '-q', 'main')
+    _git(conflicting, 'merge', '-q', '-s', 'ours', '-m', 'merge lane again', 'lane')
+    head = _git(conflicting, 'rev-parse', 'HEAD')
+    ((sha, problems),) = mergeresolution.unresolved(conflicting, 'main~3', 'HEAD')
+    assert sha == head
+    assert problems[0].startswith('src/a.py: not declared')
+    assert mergeresolution.unresolved(conflicting, 'HEAD', 'HEAD') == ()
+
+
 def test_a_plain_commit_is_not_judged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _git(tmp_path, 'init', '-q', '-b', 'main')
     monkeypatch.chdir(tmp_path)

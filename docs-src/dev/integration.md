@@ -303,6 +303,11 @@ push admission row checks the same standing when the holder pushes it.
 
 - Take the newer STRUCTURE, then re-express your own content inside it. When upstream extracted or split a
   file, your edits go to the new home.
+- `MERGE-RESOLUTION-DECLARED` (`dev_lab.dev.mergeresolution`): a merge whose parents conflict lists each
+  conflicted file once, `<path>: <class> -- <why>`. The forge enforces it: a PR is not merged while a merge
+  commit its head adds over integration leaves one undeclared (`forgemerge.decide`), whoever made that merge,
+  client or web UI. A message cannot be amended, so the remedy is to redo that merge with the declaration. The
+  `merge-resolution` commit-msg hook makes the same judgement early, on the merge being committed.
 - A shared count or pin that conflicts is arithmetic to redo on the merged tree, never a side to pick
   ([alignment](alignment.md)).
 - Price a batch before touching a tree: `git merge-tree --write-tree --name-only <integration> origin/<branch>`

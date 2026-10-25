@@ -43,9 +43,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A conflicted merge commit lists every conflicted file once as `<path>: <class> -- <why>`, the class '
             'one of newer-structure, simpler-side, one-source, deleted-as-baggage, renamed-to-reality or '
             'both-needed (the resolution principles), every class with its why; the conflicted set is recomputed '
-            'from the parents` trees, never trusted from the message, and the commit-msg hook refuses '
-            'committing a merge that leaves one undeclared or '
-            'declares one the parents do not conflict on.'
+            'from the parents` trees, never trusted from the message; the FORGE enforces it, refusing to merge a PR '
+            'whose head adds a merge commit that leaves one undeclared or declares one the parents do not '
+            'conflict on (the remedy is to redo that merge, a message cannot be amended), and the commit-msg '
+            'hook makes the same judgement early on the merge being committed.'
         ),
         ('tests/test_dev_mergeresolution.py',),
     ),

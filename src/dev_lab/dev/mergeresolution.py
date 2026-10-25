@@ -26,8 +26,12 @@ STRATEGY-BLIND ON PURPOSE. ``-s ours`` and ``-X ours|theirs`` stop on no conflic
 finds the parents' one: a strategy that picks a side silently IS the unreviewed resolution this rule names, so
 it is declared like any other. The index cannot answer instead -- every stage is resolved by commit-msg time.
 
-WHEN IT RUNS: the ``commit-msg`` hook beside ``merge-audit`` (the family base's ``merge-resolution`` row), on the
-merge being committed (HEAD plus ``MERGE_HEAD``); any other commit costs one file check.
+WHERE IT IS ENFORCED: on the FORGE, which no client can skip -- a PR into integration is not merged while a merge
+commit its head adds over integration leaves a conflicted file undeclared (:func:`unresolved`, asked by
+:func:`dev_lab.dev.forgemerge.decide`), so a web-UI or forge-made merge meets it too. A merge message cannot be
+amended, so the remedy is to redo that merge with the declaration. The ``commit-msg`` hook beside ``merge-audit``
+(the family base's ``merge-resolution`` row) is the same :func:`judge` on the one merge being committed (HEAD
+plus ``MERGE_HEAD``), telling the author early; any other commit costs one file check.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ from dev_lab.dev.mergeaudit import MergeAuditError, pending_parents
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-__all__ = ['CLASSES', 'conflicted', 'main', 'pending', 'undeclared']
+__all__ = ['CLASSES', 'conflicted', 'judge', 'main', 'pending', 'undeclared', 'unresolved']
 
 #: How a conflicted file may be resolved -- one class per resolution principle:
 #: ``newer-structure`` the newer structure, the other side's content re-expressed inside it;
@@ -108,15 +112,35 @@ def undeclared(conflicts: Sequence[str], message: str) -> tuple[str, ...]:
     return tuple(problems)
 
 
-def pending(root: Path, message: str) -> tuple[str, ...]:
-    """What *message* fails to declare about the merge being committed in *root*; empty for a non-merge.
+def judge(root: Path, parents: Sequence[str], message: str) -> tuple[str, ...]:
+    """What *message* fails to declare about a merge of *parents*; empty for a non-merge.
 
     An octopus is :mod:`dev_lab.dev.mergeaudit`'s refusal, not repeated here.
     """
-    parents = pending_parents(root)
-    if parents is None or len(parents) != _PARENTS:
+    if len(parents) != _PARENTS:
         return ()
     return undeclared(conflicted(root, parents), message)
+
+
+def pending(root: Path, message: str) -> tuple[str, ...]:
+    """What *message* fails to declare about the merge being committed in *root*; empty for a non-merge."""
+    return judge(root, pending_parents(root) or (), message)
+
+
+def unresolved(root: Path, base: str, head: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Each merge commit *head* adds over *base* paired with what its message fails to declare, oldest first."""
+    argv = [_GIT, '-C', str(root), 'log', '--merges', '--reverse', '-z', '--format=%H %P%n%B', f'{base}..{head}']
+    done = _door.run(argv, capture_output=True, check=False, timeout=_GIT_TIMEOUT_S)
+    if done.returncode:
+        msg = f'git log failed: {done.stderr.decode("utf-8", "replace").strip()}'
+        raise MergeAuditError(msg)
+    found = []
+    for record in filter(None, done.stdout.decode('utf-8', 'surrogateescape').split('\0')):
+        line, _, message = record.partition('\n')
+        sha, *parents = line.split()
+        if problems := judge(root, parents, message):
+            found.append((sha, problems))
+    return tuple(found)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
