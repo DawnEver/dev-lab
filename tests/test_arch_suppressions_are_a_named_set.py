@@ -227,6 +227,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'tests/**',
     ): 'a test that cannot read a private member cannot pin a private invariant',
     (
+        'src/dev_lab/dev/forgeheadgate.py',
+        'BLE001',
+        'except Exception as why:',
+    ): 'the serve tick gates every open PR head in turn; one head whose gate raises (git, network, a corrupt '
+    'tree) is one line for that head and must not end the tick for the others',
+    (
         'src/dev_lab/supervise/components/resources.py',
         'PLC0415',
         'import psutil',
