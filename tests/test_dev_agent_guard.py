@@ -370,3 +370,14 @@ def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -
         check=False,
     )
     assert (done.returncode, done.stdout) == (0, ''), done.stderr
+
+
+def test_the_engine_reads_the_live_run_absent_key_python_writes() -> None:
+    """``LIVE_RUN_ABSENT`` is written by ``run_engine`` and read by ``deny-commands.js``: one spelling, pinned here.
+
+    The engine cannot import Python, so the two spellings are held equal by this test. PLANTED control: the
+    engine reads SOME ``input.<key> === true`` gate, so a renamed key fails here rather than passing unread.
+    """
+    engine = (Path(agenthooks.__file__).parent / 'deny-commands.js').read_text(encoding='utf-8')
+    assert f'input.{agenthooks.LIVE_RUN_ABSENT} === true' in engine
+    assert 'input.dev_lab_renamed_key === true' not in engine, 'CONTROL: the probe is a literal match'
