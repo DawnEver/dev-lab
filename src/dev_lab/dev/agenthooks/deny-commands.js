@@ -464,6 +464,9 @@ for (const rule of rules) {
   }
   let liveReason = '';
   if (hit && rule.when === 'live-run') {
+    // A PROBE judging which rule owns a shape sets this (run_engine(live_run=False)): its own suite is a
+    // run in the checkout it probes. The tool never sends the key, so no agent command can set it.
+    if (input.dev_lab_live_run_absent === true) continue;
     liveReason = liveRunRefusal(input.cwd ? repoRoot(targetDir(cmd, input.cwd)) : null, sessionRoot);
     hit = liveReason !== '';
   }
