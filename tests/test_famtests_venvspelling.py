@@ -49,7 +49,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: margin is unchanged at 40: a floor 41 files behind the tree no longer separates a clean walk from
 #: a broken one, and widening the margin is how this arm is kept while the guard is given up.
 #:
-#: RE-MEASURED 2026-10-06 AT 192, the SAME DAY AND BY THE SAME ARITHMETIC, after `dev.branchset_push`
+#: RE-MEASURED 2026-10-06 AT 192, the SAME DAY AND BY THE SAME ARITHMETIC, after the push-time branch-set hook
 #: landed -- ONE-BRANCH-PER-SESSION refused AT PUSH TIME rather than only by the census that runs
 #: after the push it judges. 192 against 151 is 41 clear, one past the margin again, and the answer is
 #: the same one: the floor moves to 152 and the margin does not move.

@@ -81,8 +81,8 @@ SHARED: tuple[SharedDoor, ...] = (
             '`--no-sync`, which is also the correct fix on its own terms: `uv run` with no `--extra` '
             're-syncs WITHOUT the extras the preceding step just installed, and that is the prune '
             'shape measured taking one environment from 113 distributions to 30. The remaining '
-            '`uv sync` serves the committed `uv.lock`, which the `lock` pre-push row keeps at the newest '
-            'resolution (PIN + FRESHNESS, user ruling 2026-10-17).'
+            '`uv sync` serves the committed `uv.lock`, which the forge keeps pinned (`famtests.lockpin`) '
+            'and at the newest resolution (PIN + FRESHNESS, user ruling 2026-10-17).'
         ),
     ),
 )

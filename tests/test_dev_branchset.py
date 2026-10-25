@@ -1,6 +1,6 @@
 """ONE-BRANCH-PER-SESSION, driven on REAL repositories with a REAL bare origin.
 
-The declaration, the census, the merge-and-delete candidates and the famtest are each driven against
+The declaration, the census and the merge-and-delete candidates are each driven against
 a planted repository, clean side first, so a guard that refuses everything cannot pass here.
 """
 
@@ -20,12 +20,6 @@ from dev_lab.dev.branchset import (
     declared_branchset,
     main,
     merge_candidates,
-)
-from dev_lab.dev.famtests.branchset import (
-    BranchSetViolation,
-    assert_local_branches_declared,
-    assert_origin_branches_declared,
-    assert_the_planted_branchset_is_policed,
 )
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 
@@ -83,17 +77,6 @@ def test_a_clean_checkout_reads_clean_and_planted_debris_is_named(tmp_path: Path
     assert found.undeclared_origin == ('feat/stray',)
     assert found.local_debt == ('feat/stray', 'merged')
     assert found.unpushed == ('wip',)
-    with pytest.raises(BranchSetViolation, match='feat/stray'):
-        assert_origin_branches_declared(root=work, branchset=_DECLARED)
-    with pytest.raises(BranchSetViolation, match='feat/stray'):
-        assert_local_branches_declared(root=work, branchset=_DECLARED)
-
-
-def test_unpushed_work_is_reported_and_never_a_red(tmp_path: Path) -> None:
-    work = plant_checkout(tmp_path, trunk='main').work
-    _run(work, 'switch', '-q', '-c', 'wip')
-    commit(work, 'wip.txt')
-    assert assert_local_branches_declared(root=work, branchset=_DECLARED) == ('wip',)
 
 
 def test_a_candidate_is_deletable_only_when_the_trunk_or_a_session_branch_holds_its_tip(tmp_path: Path) -> None:
@@ -120,23 +103,8 @@ def test_the_cli_lists_the_candidates_from_the_declaration(tmp_path: Path, capsy
     assert 'delete  local   landed' in capsys.readouterr().out
 
 
-def test_the_shipped_planted_control_passes(tmp_path: Path) -> None:
-    assert_the_planted_branchset_is_policed(tmp_path, trunk='main')
-
-
-@pytest.mark.workstation
-def test_this_repo_carries_only_its_declared_branches() -> None:
-    """lab-commons adopts its own rule: origin carries exactly its declared set, ephemeral namespaces included."""
-    root = Path(__file__).resolve().parents[1]
-    declared = declared_branchset(root)
-    assert_origin_branches_declared(root=root, branchset=declared)
-    found = census(root, declared)
-    assert found is not None
-    assert found.undeclared_origin == ()
-
-
-def test_two_open_ephemeral_heads_pass_and_an_undeclared_branch_still_reds(tmp_path: Path) -> None:
-    """Two open ``pr/*`` heads are declared by the namespace; PLANTED control: an unmerged ``feat/*`` reds."""
+def test_two_open_ephemeral_heads_are_declared_and_an_undeclared_branch_is_debt(tmp_path: Path) -> None:
+    """Two open ``pr/*`` heads are declared by the namespace; PLANTED control: an unmerged ``feat/*`` is debt."""
     work = plant_checkout(tmp_path, trunk='main').work
     for name in ('pr/one', 'pr/two', 'feat/stray'):
         _run(work, 'switch', '-q', '-c', name, 'main')
@@ -144,10 +112,12 @@ def test_two_open_ephemeral_heads_pass_and_an_undeclared_branch_still_reds(tmp_p
         _run(work, 'push', '-q', 'origin', name)
     _run(work, 'switch', '-q', 'main')
     with_stray = BranchSet('main', _DECLARED.sessions | {'feat/stray'}, ephemeral=('pr/*',))
-    assert assert_origin_branches_declared(root=work, branchset=with_stray) == ()
-    without_stray = BranchSet('main', _DECLARED.sessions, ephemeral=('pr/*',))
-    with pytest.raises(BranchSetViolation, match='feat/stray'):
-        assert_origin_branches_declared(root=work, branchset=without_stray)
+    clean = census(work, with_stray)
+    assert clean is not None
+    assert clean.undeclared_origin == ()
+    debt = census(work, BranchSet('main', _DECLARED.sessions, ephemeral=('pr/*',)))
+    assert debt is not None
+    assert debt.undeclared_origin == ('feat/stray',)
 
 
 def test_an_omitted_ephemeral_is_the_family_pr_namespace_and_an_empty_list_opts_out() -> None:

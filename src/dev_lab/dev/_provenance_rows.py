@@ -133,7 +133,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgelabels': ('original',),
     'forgepublish': ('original',),
     'forgeintent': ('original',),
-    'behindpush': ('original',),
     'forgenotice': ('original',),
     'forgetry': ('original',),
     'branchnotices': ('original',),
@@ -229,10 +228,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset': ('original',),
     'family': ('original',),
-    # ORIGINAL, and it supersedes no consumer file: ONE-BRANCH-PER-SESSION has been DECLARED since
-    # 2026-10-04, and what is new here is WHERE it is enforced -- in a pre-push hook, where the
-    # decision is still open, rather than only by the census that runs after the push it judges.
-    'branchset_push': ('original',),
+    # ORIGINAL: one parse of git's pre-push refspec lines for every pre-push row.
+    'refspec': ('original',),
+    # ORIGINAL: the lock PIN moved from a pre-push row into the repo's own forge-judged suite (2026-10-24).
+    'lockpin': ('original',),
+    # ORIGINAL: lock freshness and branch set as forge statuses on a PR head (2026-10-24).
+    'forgeheadgate': ('original',),
     # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
     'autodoors': ('original',),
     # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).

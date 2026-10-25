@@ -34,10 +34,10 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.branchset_push import pushed_refs
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgenotice import integration_comment, read
 from dev_lab.dev.labsession import ENV
+from dev_lab.dev.refspec import pushed_refs
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
