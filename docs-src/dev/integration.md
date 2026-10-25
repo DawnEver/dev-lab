@@ -85,9 +85,9 @@ auto_sync_quiet = "10 min"  # the default
 | author | its `pr/*` branch, push, PR, `forge sync`, fixes its own PR's reds | merges another branch |
 | producer | produces the parts it claimed | produces unclaimed parts |
 | forge | the ONLY merger of `integrate/main` | merges a PR lacking a part |
-| steward | keeps the pipeline flowing: producers alive, every PR judged, stuck PRs routed to their authors, `promote`, break-glass | hand merges, direct pushes to `integrate/main`, runs suites |
+| integrator | keeps the pipeline flowing: producers alive, every PR judged, stuck PRs routed to their authors, `promote`, break-glass | hand merges, direct pushes to `integrate/main`, runs suites |
 
-Who the steward is, and where it runs, moves; nothing records it. A steward is a session like any other: it
+Who the integrator is, and where it runs, moves; nothing records it. An integrator is a session like any other: it
 reads the forge and writes nothing else.
 
 ## What enforces it
@@ -100,7 +100,7 @@ reads the forge and writes nothing else.
 | no long-lived child | `branchset.sessions` names only the integration branch; anything else is merged and deleted |
 | every repo declares the flow | `famtests.branchset.assert_the_pr_flow_is_declared` |
 
-## The steward's loop
+## The integrator's loop
 
 Each tick, and nothing else:
 
@@ -113,7 +113,7 @@ Each tick, and nothing else:
 6. A PR left open after its head landed is closed by the forge's tick; to do it now:
    `python -m dev_lab.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
 
-A steward runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
+An integrator runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
 ## The PR reviewer is advisory
 
@@ -315,9 +315,9 @@ push admission row checks the same standing when the holder pushes it.
 - Price a batch before touching a tree: `git merge-tree --write-tree --name-only <integration> origin/<branch>`
   lists a merge's conflicts without a checkout.
 
-## Waking the steward
+## Waking the integrator
 
-The steward may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
+The integrator may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
 carries no state: it only means "derive again now". Polling is the floor that makes a lost wake harmless.
 
 **The observer is `forge serve`, on EVERY host.** No host owns integration. Each serve tick derives the

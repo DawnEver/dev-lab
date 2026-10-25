@@ -6,7 +6,8 @@ run records, ``tick`` for requests and claims, ``queue`` for the read-only statu
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
 for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` to drop a host card,
 ``request <producer> --sha <sha>`` to publish a request,
-``pr close-landed [N...]`` to close landed PRs, ``pr close-superseded N... --by M`` to close salvaged ones,
+``pr close-landed [N...]`` to close landed PRs, ``pr close-superseded N... --by <M|sha>``
+to close salvaged ones (neither deletes a branch),
 ``cancel-stuck <sha>`` for the forge's own stuck tasks, ``watch <sha>`` to follow a verdict read-only,
 ``notices`` for a session's PR notices; anything
 else is the issue/PR door. The verbs
@@ -124,7 +125,10 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='dev_lab.dev.forge',
         description='issue and PR verbs on the forge',
-        epilog='also: pr close-landed [N...], issue claim|status N, status post|list SHA; token: auth login|status',
+        epilog=(
+            'also: pr close-landed [N...], pr close-superseded N... --by <M|sha|ref>, '
+            'issue claim|status N, status post|list SHA; token: auth login|status'
+        ),
     )
     nouns = parser.add_subparsers(dest='noun', required=True)
     issue = nouns.add_parser('issue').add_subparsers(dest='verb', required=True)

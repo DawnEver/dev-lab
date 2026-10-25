@@ -181,7 +181,7 @@ def test_a_red_pr_stays_open_with_what_is_missing_in_its_one_comment(tmp_path: P
 def test_the_integration_verb_prints_the_tick_lines_before_the_branch_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``forge integration`` is the steward's whole loop, so its rendering is part of the flow.
+    """``forge integration`` is the integrator's whole loop, so its rendering is part of the flow.
 
     PLANTED control: the same tick with no child prints the one placeholder line instead.
     """

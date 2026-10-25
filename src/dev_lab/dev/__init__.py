@@ -362,10 +362,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
-* :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented, closed,
-  and its branch deleted through LOSSLESS-DELETE; every serve tick, and ``forge pr close-landed``.
-* :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr>``
-  closes salvaged PRs and deletes their branches through LOSSLESS-DELETE.
+* :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
+  its branch left to the prune; every serve tick, and ``forge pr close-landed``.
+* :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
+  closes salvaged PRs with an evidence comment; it never deletes a branch.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a PR waits on a scarce part only where its diff reaches it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
