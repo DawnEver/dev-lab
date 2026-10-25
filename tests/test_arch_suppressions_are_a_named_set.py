@@ -262,17 +262,17 @@ ALLOWED: Final[dict[Site, str]] = {
         'except Exception:',
     ): 'folding every pint failure into one answer IS the contract; one typo must not crash the scan',
     (
-        'tests/test_hpc_run.py',
+        'tests/test_dev_hpc_records.py',
         'C901',
         'def __call__(self, command: str, stdin: str | None = None) -> str:',
     ): 'the fake cluster answers one branch per verb; splitting it hides which verbs the flow sends',
     (
-        'tests/test_hpc_run.py',
+        'tests/test_dev_hpc_records.py',
         'PLR0911',
         'def __call__(self, command: str, stdin: str | None = None) -> str:',
     ): 'the same fake: one return per verb it answers',
     (
-        'tests/test_hpc_run.py',
+        'tests/test_dev_hpc_records.py',
         'PLR0912',
         'def __call__(self, command: str, stdin: str | None = None) -> str:',
     ): 'the same fake: one branch per verb it answers',
