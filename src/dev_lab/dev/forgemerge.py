@@ -12,7 +12,7 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 * every ``tests/<part>`` part of its head stands PASS (:func:`dev_lab.dev.platformparts.standing`), except a
   scarce part its diff does not reach -- WAIVED, run on integration after the merge
   (:mod:`dev_lab.dev.forgescarce`, user ruling 2026-10-22);
-* its review is not HELD: a head over the review cap waits for its sliced review's ``success``
+* its review is not HELD: a pending ``tests/review-hold`` waits until a session releases it with ``success``
   (:func:`review_hold`); every other review state stays advisory;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
@@ -36,7 +36,7 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
-from dev_lab.dev.platformparts import OVER_CAP, REVIEW_CONTEXT, standing
+from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -54,11 +54,11 @@ FORGE_PULL: Final = 'Forge-Pull'
 
 
 def review_hold(statuses: Sequence[CommitStatus]) -> str | None:
-    """Why a merge of the commit waits on its review, or ``None``: only a latest :data:`OVER_CAP` hold waits."""
-    latest = next((one for one in statuses if one.context == REVIEW_CONTEXT), None)
-    if latest is None or latest.state != 'pending' or not latest.description.startswith(OVER_CAP):
+    """Why a merge of the commit waits on its review, or ``None``: a latest :data:`HOLD_CONTEXT` not yet released."""
+    latest = next((one for one in statuses if one.context == HOLD_CONTEXT), None)
+    if latest is None or latest.state == 'success':
         return None
-    return f'{REVIEW_CONTEXT} is {latest.description!r}'
+    return f'{HOLD_CONTEXT} is {latest.state}: {latest.description}'
 
 
 @dataclass(frozen=True)
