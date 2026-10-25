@@ -3,8 +3,9 @@
 A ref of a ``coalesce`` class (:attr:`lab_commons.compute.model.Schedule.coalesce`) has at most one run of
 a part in flight across the fleet: its current tip waits behind that run and is tested next as one batch --
 per-test carry makes it cheap. At its holder's next tick that run's NOT-YET-STARTED tasks are withdrawn for the
-tip and its STARTED ones drain (``draining``) -- never cancelled -- so the tip carries them (NEWEST-HEAD-ONLY,
-user ruling 2026-10-22, :mod:`dev_lab.dev.forgerun`); one already ``publishing`` its gathered
+tip and its STARTED ones drain (``draining``) to their learned deadline, past which one is cancelled and left to
+the tip -- so the tip carries what finished (NEWEST-HEAD-ONLY, user rulings 2026-10-22 and 2026-10-24 "B",
+:mod:`dev_lab.dev.forgerun`); one already ``publishing`` its gathered
 record finishes. A ref of any other class is tested at every pushed sha. The run in
 flight is read from the claims already on the forge (:mod:`dev_lab.dev.forgeclaim`), on the tip's
 first-parent history: the same on every host, unlike a host's reflog -- for a child of integration (a PR, a

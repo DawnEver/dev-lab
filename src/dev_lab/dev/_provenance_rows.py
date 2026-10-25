@@ -155,6 +155,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'labsession': ('original',),
     'pradmit': ('original',),
     'forgerun': ('original',),
+    'forgerunpost': ('original',),
     'forgerunstate': ('original',),
     'components': ('original',),
     'componentbump': ('original',),
