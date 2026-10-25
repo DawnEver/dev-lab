@@ -85,7 +85,7 @@ from dev_lab.dev.forgealarm import STARVED, Alarm
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND
 from dev_lab.dev.forgeorigin import head_login, origin_host_of
 from dev_lab.dev.forgepulls import pr_list
-from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
+from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_deadline, parse_paths
 from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, ForgeCallFailed, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
@@ -94,6 +94,7 @@ from dev_lab.dev.platformparts import part_refs
 __all__ = [
     'NOT_ADMITTED',
     'NO_HOST',
+    'NO_ROOM',
     'OVER_BUDGET',
     'candidates',
     'coalesced',
@@ -113,6 +114,8 @@ __all__ = [
 NO_HOST: Final = 'no host'
 OVER_BUDGET: Final = 'over budget'
 NOT_ADMITTED: Final = 'not admitted'
+#: Why a request is refused once its deadline passed unclaimed: an answer, never a wait (``forge try``).
+NO_ROOM: Final = 'no room'
 
 _TRACKING: Final = 'refs/remotes/origin/'
 
@@ -342,6 +345,8 @@ def _requests(
         number = int(raw['number'])
         origin = str((raw.get('user') or {}).get('login', ''))
         host = _REQUEST_HOST.search(raw.get('body') or '')
+        deadline = parse_deadline(raw.get('body') or '')
+        late = f'{NO_ROOM}: unclaimed at its deadline {deadline.isoformat()}' if deadline and now > deadline else ''
         found.append(
             Candidate(
                 repo,
@@ -357,6 +362,7 @@ def _requests(
                 origin_host=host['host'] if host else '',
                 producer=producer,
                 paths=paths,
+                refused=late,
             )
         )
     return found

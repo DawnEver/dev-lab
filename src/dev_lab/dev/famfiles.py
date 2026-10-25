@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.famconfig import Delta
 
 __all__ = [
+    'GENERATED',
     'MANAGED',
     'OWNED',
     'PROJECT_FILES',
@@ -63,10 +64,15 @@ class ProjectFile:
     path: str
     kind: str
     how: str
+    generated: bool = False  # the mechanism writes the WHOLE file: a reviewer reads the generator, not this
 
 
 def _m(path: str, how: str) -> ProjectFile:
     return ProjectFile(path, MANAGED, how)
+
+
+def _g(path: str, how: str) -> ProjectFile:
+    return ProjectFile(path, MANAGED, how, generated=True)
 
 
 def _o(path: str, why: str) -> ProjectFile:
@@ -79,18 +85,18 @@ def _o(path: str, why: str) -> ProjectFile:
 PROJECT_FILES: Final[dict[str, ProjectFile]] = {
     row.path: row
     for row in (
-        _m('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta'),
-        _m('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta'),
-        _m('.rgignore', 'famconfig RENDERED: what ripgrep and the agent Grep tool skip (attic/), plus the repo Delta'),
+        _g('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta'),
+        _g('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta'),
+        _g('.rgignore', 'famconfig RENDERED: what ripgrep and the agent Grep tool skip (attic/), plus the repo Delta'),
         _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
         _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
-        _m('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
-        _m('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
-        _m('.github/workflows/python-verify.yml', 'ciworkflows RENDERED from TOML: THE family CI definition'),
-        _m('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.lab_commons.ci]'),
-        _m('uv.lock', 'famtests.lockpin pins it on the forge; the forge relock keeps it newest (PIN + FRESHNESS)'),
+        _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
+        _g('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
+        _g('.github/workflows/python-verify.yml', 'ciworkflows RENDERED from TOML: THE family CI definition'),
+        _g('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.lab_commons.ci]'),
+        _g('uv.lock', 'famtests.lockpin pins it on the forge; the forge relock keeps it newest (PIN + FRESHNESS)'),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o(
@@ -101,6 +107,9 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _o('CHANGELOG.md', 'the repo`s release history'),
     )
 }
+
+#: Every family file a mechanism writes whole: what a PR review never reads (:mod:`dev_lab.dev.forgereview_scope`).
+GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated)
 
 
 def _git_lines(root: Path, *args: str) -> tuple[str, ...]:

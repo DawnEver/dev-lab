@@ -113,10 +113,20 @@ class Ticked:
     said: tuple[tuple[Child, Feedback], ...]
 
 
-def alarms(said: Sequence[tuple[Child, Feedback]], policy: Policy, repo: str) -> list[Alarm]:
-    """An ``integration`` alarm per child that conflicts with integration or is past ``behind_max``."""
+def alarms(said: Sequence[tuple[Child, Feedback]], policy: Policy, repo: str, *, now: datetime) -> list[Alarm]:
+    """An ``integration`` alarm per child that conflicts or is past ``behind_max``, and per notice the integrator takes.
+
+    The integrator TAKES a notice no live session answered ``notice_escalate`` after it opened
+    (:func:`forgenotice.escalated`): one issue row per notice id, closed when its head goes green.
+    """
     found = []
+    escalate = forgenotice.duration('notice_escalate', policy.notice_escalate)
     for child, one in said:
+        block = forgenotice.read(one.text)
+        for notice in block.notices:
+            if not notice.acked and forgenotice.escalated(notice, block, now, escalate):
+                subject = f'the integrator takes #{notice.pr} {notice.branch}: {notice.kind}, no live owner'
+                found.append(Alarm(INTEGRATION, repo, subject, notice.line(), about=f'notice {notice.id}'))
         why = [f'conflicts in {", ".join(one.conflicts)}'] if one.conflicts else []
         why += [f'{one.behind} behind (bound {policy.behind_max})'] if one.behind > policy.behind_max else []
         if why:

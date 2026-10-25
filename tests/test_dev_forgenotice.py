@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from _branch_repos import clone_pair
@@ -15,9 +16,12 @@ from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
 from dev_lab.dev import forgenotice
-from dev_lab.dev.forgeintegration import tick
+from dev_lab.dev.forgeintegration import Child, Feedback, alarms, tick
 from dev_lab.dev.labsession import TRAILER
 from dev_lab.dev.lanepolicy import Policy, policy_from
+
+if TYPE_CHECKING:
+    from dev_lab.dev.forgework import Client
 
 SESSION = 'session_aaaabbbbcccc'
 _NOW = datetime.now(UTC) + timedelta(minutes=5)
@@ -146,3 +150,17 @@ def test_the_notice_durations_are_declared_with_a_unit() -> None:
     assert forgenotice.duration('notice_escalate', policy.notice_escalate) == timedelta(minutes=30)
     with pytest.raises(ValueError, match='needs a unit'):
         forgenotice.duration('notice_escalate', '2')
+
+
+def test_an_escalated_notice_is_an_integration_alarm_naming_it_and_an_owned_fresh_one_is_not() -> None:
+    """The integrator TAKES a notice no live session answered: one ``integration`` row per notice id."""
+    now = datetime(2026, 10, 24, 12, tzinfo=UTC)
+    old = (now - timedelta(hours=3)).isoformat(timespec='seconds')
+    fresh = (now - timedelta(minutes=5)).isoformat(timespec='seconds')
+    owned = forgenotice.Notice(7, 'pr/x', 'a' * 40, forgenotice.RED, (SESSION,), 'tests/base failure', fresh)
+    orphan = forgenotice.Notice(7, 'pr/x', 'a' * 40, forgenotice.CONFLICT, (SESSION,), 'conflicts', old)
+    text = forgenotice.write('integration says', forgenotice.Block('a' * 40, (owned, orphan)))
+    said = [(Child('pr/x', 'a' * 40, client=cast('Client', None), pr=7), Feedback(text, 'pending', 'waiting'))]
+    found = alarms(said, Policy(), 'o/r', now=now)
+    assert [one.about for one in found] == [f'notice {orphan.id}']
+    assert 'the integrator takes #7 pr/x: conflict' in found[0].subject

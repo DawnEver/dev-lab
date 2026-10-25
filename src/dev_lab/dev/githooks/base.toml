@@ -25,7 +25,7 @@
 # SCRATCH-IS-NEVER-COMMITTED: dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set
 # (dev_lab.dev.famtests.branchset, dev_lab.dev.branchprune), the lock PIN (dev_lab.dev.famtests.lockpin) and its
 # FRESHNESS (dev_lab.dev.relock; user ruling 2026-10-24), the behind bound (an `integration` alarm,
-# dev_lab.dev.forgeintegration) and PR admission (`forge pr create`, dev_lab.dev.pradmit). No local half-gate
+# dev_lab.dev.forgeintegration) and PR advice (`forge pr create`, dev_lab.dev.pradmit, never a refusal). No local half-gate
 # (a lock or behind bound read at push) remains. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
 
 [[pre-commit]]

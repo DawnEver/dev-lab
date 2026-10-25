@@ -338,8 +338,27 @@ def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
 
 
+def test_the_stray_hook_spells_no_interpreter_and_runs_through_the_launcher() -> None:
+    """One door resolves the venv per platform: a hook naming ``.venv`` drifts from it (motronics pins this)."""
+    assert '.venv' not in agent_guard.STRAY_COMMAND
+    assert agent_guard.STRAY_COMMAND.startswith('node ')
+    assert agent_guard.LAUNCHER_REL in agent_guard.STRAY_COMMAND
+
+
+def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Path) -> None:
+    """Absent: written. Present: the repo's own door, left as it is."""
+    agent_guard.install_guard(tmp_path)
+    assert (tmp_path / agent_guard.LAUNCHER_REL).read_text(encoding='utf-8') == agent_guard.launcher_source()
+    other = tmp_path / 'other'
+    (other / agent_guard.LAUNCHER_REL).parent.mkdir(parents=True)
+    (other / agent_guard.LAUNCHER_REL).write_text('// the repo own launcher\n', encoding='utf-8')
+    agent_guard.install_guard(other)
+    assert (other / agent_guard.LAUNCHER_REL).read_text(encoding='utf-8') == '// the repo own launcher\n'
+
+
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
+    agent_guard.install_guard(tmp_path)
     env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
     done = subprocess.run(
         [_SHELL, '-c', agent_guard.STRAY_COMMAND],

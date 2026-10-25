@@ -298,6 +298,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   having a part's need-set is named.
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`dev_lab.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
+* :mod:`dev_lab.dev.forgerunpost` -- a cluster run's forge posts (progress, release), saved steps and alarms.
 * :mod:`dev_lab.dev.forgerunstate` -- a cluster run's state file, its schema upgrades, and the Slurm protocol.
 * :mod:`dev_lab.dev.components` -- the engines a product mounts under ``components/``, declared once.
 * :mod:`dev_lab.dev.componentbump` -- one forge-green engine commit at a time becomes a one-pointer lane.
@@ -327,12 +328,14 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgemerge` -- the forge's server-side merge of a green PR into integration.
 * :mod:`dev_lab.dev.forgeautosync` -- the serve tick merges integration into a behind ``pr/*`` PR head.
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
+* :mod:`dev_lab.dev.forgetry` -- ``forge try <paths>``: named tests on a host with room now, or ``no room`` at once.
 * :mod:`dev_lab.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
+* :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`dev_lab.dev.mergeresolution` -- a conflicted merge names, per conflicted file, how it was resolved and why.
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
-* :mod:`dev_lab.dev.pradmit` -- PR admission: ONE-SESSION-ONE-PR and NO-STACKED-PRS at ``pr create`` and push.
+* :mod:`dev_lab.dev.pradmit` -- PR advice: ONE-SESSION-ONE-PR and NO-STACKED-PRS told at ``pr create``, never a refusal.
 * :mod:`dev_lab.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`dev_lab.dev.forgecli` -- the ``python -m dev_lab.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`dev_lab.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.

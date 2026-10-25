@@ -30,6 +30,7 @@ from dev_lab.dev import (
     forgeproduce,
     forgerounds,
     forgerun,
+    forgerunpost,
     forgerunstate,
     forgeserve,
     forgeservesteps,
@@ -881,7 +882,7 @@ def test_a_cluster_run_whose_ref_moved_on_is_kept_and_advanced(monkeypatch, tmp_
     """A PART UNDER TEST IS NOT SUPERSEDED (design item 9): a push to B never cancels A's cluster run."""
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     forge = _Forge()
-    monkeypatch.setattr(forgerun, 'status_post', forge.post)
+    monkeypatch.setattr(forgerunpost, 'status_post', forge.post)
     monkeypatch.setattr(forgerun, 'advance', lambda _root, run, **_k: run)
     run = forgerunstate.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', str(tmp_path), ME.description(),
                        phase=forgerunstate.SUBMITTED, job_ids=('77',))  # fmt: skip
@@ -1093,7 +1094,7 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
     _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learnt.append((a, k)))
     declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
     ((_root, _item, run), how) = learnt[0]
-    assert (run.peak_mem_gb, how) == (declared.mem_gb, {'killed': True})
+    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'killed': True})
 
 
 def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Path) -> None:
@@ -1101,9 +1102,9 @@ def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Pat
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     item = Work('integrate/main', SHA, 'windows', 'mine', ME)
-    first = forgeproduce.box_claim(item, BOX, root=tmp_path).mem_gb
+    first = forgeproduce.box_claim(item, BOX, root=tmp_path)['mem_gb']
     _killed_for_memory(monkeypatch, tmp_path)
-    again = forgeproduce.box_claim(item, BOX, root=tmp_path).mem_gb
+    again = forgeproduce.box_claim(item, BOX, root=tmp_path)['mem_gb']
     assert again == min(first * learned.OOM_GROWTH * learned.BOX_HEADROOM, BOX.mem_bytes / GB) > first
 
 
@@ -1169,6 +1170,10 @@ def test_a_host_producing_one_part_claims_another_that_fits_while_it_runs(monkey
 def test_a_producer_stopped_on_purpose_ends_the_claiming(monkeypatch, tmp_path: Path) -> None:
     """A stop (stoprun) means serve exits: no round after it, the live producer is waited for, nothing new starts.
 
+    Deterministic by construction: the beat is the default (minutes), so the only wake-up is a producer
+    ending, and the live producer ends only once the stopped one's result is RECORDED. A short beat raced
+    the stopped producer's own bookkeeping: a beat that fired before it recorded ran a second round.
+
     PLANTED CONTROL: the same two producers, neither stopped, and a later round runs.
     """
     other, third = 'b' * 40, 'c' * 40
@@ -1177,20 +1182,29 @@ def test_a_producer_stopped_on_purpose_ends_the_claiming(monkeypatch, tmp_path: 
         Work('feat/a', other, 'windows', 'mine', ME, argv=('lives',)),
     )
     later = (_claimed(Work('feat/b', third, 'windows', 'mine', ME, argv=('never',))),)
+    original = forgerounds.Producing._one
 
     def run(stopped_pid: int) -> tuple[list[dict], list[dict]]:
-        ended = threading.Event()
-        procs = {
-            'stopped': _Sets(ended, code=-9, pid=77),
-            'lives': _Sets(threading.Event(), beats=10),
-            'never': _Proc(0),
-        }
+        recorded = threading.Event()
+
+        def recording(self: forgerounds.Producing, item: Work) -> None:
+            try:
+                original(self, item)
+            finally:
+                if item.argv == ('stopped',):
+                    recorded.set()
+
+        class _AfterStopped(_Proc):
+            def wait(self, timeout: float | None = None) -> int:
+                assert recorded.wait(timeout=10), 'the stopped producer never recorded its result'
+                return super().wait(timeout)
+
+        procs = {'stopped': _Proc(-9, pid=77), 'lives': _AfterStopped(0), 'never': _Proc(0)}
+        monkeypatch.setattr(forgerounds.Producing, '_one', recording)
         monkeypatch.setattr(forgeproduce, 'was_stopped', lambda pid: pid == stopped_pid)
         ticks: list[dict] = []
         spawned: list[dict] = []
-        _serve(
-            monkeypatch, tmp_path, _claimed(*claims), procs, ticks=ticks, later=later, table=QUICK, spawned=spawned,
-        )  # fmt: skip
+        _serve(monkeypatch, tmp_path, _claimed(*claims), procs, ticks=ticks, later=later, spawned=spawned)
         return ticks, spawned
 
     ticks, spawned = run(77)

@@ -14,6 +14,7 @@ import argparse
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 
 from lab_commons.log import emit
@@ -38,8 +39,17 @@ class RequestRefused(ValueError):
     """A request no serve host could reproduce; the message names why. Nothing was published."""
 
 
-def publish(root: Path, client: Client, producer: str, sha: str, *, label: str, paths: Sequence[str] = ()) -> Issue:
-    """Open the request issue for *producer* at *sha*, labelled *label*, once every check passes.
+def publish(
+    root: Path,
+    client: Client,
+    producer: str,
+    sha: str,
+    *,
+    label: str,
+    paths: Sequence[str] = (),
+    deadline: datetime | None = None,
+) -> Issue:
+    """Open the request issue for *producer* at *sha*, labelled *label*, once every check passes, until *deadline*.
 
     Raises:
         RequestRefused: the producer is undeclared or unsized at the sha, origin serves no ref containing it,
@@ -53,7 +63,9 @@ def publish(root: Path, client: Client, producer: str, sha: str, *, label: str, 
     if why := unserved(root, sha) or unreproducible(root, sha):
         raise RequestRefused(why)
     ensure_labels(client, [label, DONE_LABEL])
-    issue = client.issue_create(f'request {producer} at {sha[:12]}', request_body(producer, sha, paths))
+    issue = client.issue_create(
+        f'request {producer} at {sha[:12]}', request_body(producer, sha, paths, deadline=deadline)
+    )
     add_label(client, issue.number, label)
     return issue
 

@@ -46,6 +46,7 @@ from dev_lab.dev import (
     forgesync,
     forgetick,
     forgetidy,
+    forgetry,
     forgewatch,
     pradmit,
     prlanded,
@@ -77,6 +78,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'hosts': forgehosts.main,
     'request': forgepublish.main,
     'cancel-stuck': forgestuck.main,
+    'try': forgetry.main,
     'watch': forgewatch.main,
 }
 
@@ -172,10 +174,11 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            why := pradmit.create_refusal(root, client, head=args.head, base=args.base)
+            said := pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
-            emit(f'[forge] pr create REFUSED -- {why}', err=True)
-            return 1
+            lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
+            emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
+            args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
