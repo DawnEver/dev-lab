@@ -8,11 +8,16 @@ Measured 2026-10-12 deploying three accounts on one cluster: every one of these 
   :func:`dev_lab.dev.forgeauth.tick_refusal`); the deploy runs it as a subprocess, as a person runs it.
 * THE CREDENTIAL STORE (:func:`store_problem`). A tick reads its token through git's credential helper;
   no helper means no token, and a ``store`` file another user can read is a leaked token.
-* THE TOOLS (:func:`tool_plan`). ``uv`` always, plus every ``needs`` a served repo declares, looked up on
-  the TICK'S PATH (cron's, not the login shell's). ``uv`` and the Rust toolchain come from their
-  OFFICIAL installers into ``~/.local/bin`` and ``~/.cargo/bin`` -- user-space, removable, and with no
-  PATH modification, because the tick's PATH already names both directories; ``cmake`` comes through
-  ``uv tool``. Anything else is the cluster's to provide, so it is refused by name.
+* THE TOOLS (:func:`tool_plan`). ``uv`` always, plus every ``needs`` a served repo declares. Present is
+  CAPABILITY, not lookup (:func:`runs`): ``<tool> --version`` exits 0 in the TICK'S environment (cron's
+  PATH, then the grant setup) -- a rustup shim with no toolchain is on the PATH and is not a cargo.
+  ``uv`` and the Rust toolchain come from their OFFICIAL installers into ``~/.local/bin`` and
+  ``~/.cargo/bin`` -- user-space and removable; the installers edit no shell file, and ``cmake`` comes
+  through ``uv tool``. Anything else is the cluster's to provide, so it is refused by name.
+* ONE LOGIN ENVIRONMENT (:func:`login_files`, :func:`login_line`). The tick's PATH names those two
+  directories; the account's login shell must too, or a tool runs for cron and not for its person (Ada
+  2026-10-25: three accounts had cargo only for cron). The deploy writes one marked line into the files
+  bash reads, once, backing each up first.
 * THE SERVE'S GIT (:func:`merge_tree_refusal`). Every serve tick's trial merge runs
   ``git merge-tree --write-tree`` (git >= 2.38); cron's ``/usr/bin/git`` can be older (Ada 2026-10-17:
   2.31.1, every tick refused with merge-tree's usage). The floor is PROVEN on a toy repository, never read
@@ -26,15 +31,27 @@ Measured 2026-10-12 deploying three accounts on one cluster: every one of these 
 from __future__ import annotations
 
 import re
+import shlex
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.hpchost.spec import Deployment
+from dev_lab.dev.hpchost.spec import Deployment, tick_dirs
 
-__all__ = ['INSTALLERS', 'MERGE_TREE_GIT', 'grant_of', 'merge_tree_refusal', 'store_problem', 'tool_plan']
+__all__ = [
+    'INSTALLERS',
+    'LOGIN_MARK',
+    'MERGE_TREE_GIT',
+    'grant_of',
+    'login_files',
+    'login_line',
+    'merge_tree_refusal',
+    'runs',
+    'store_problem',
+    'tool_plan',
+]
 
 #: The git every serve tick needs: its trial merge (:mod:`dev_lab.dev.trialmerge`) and ``integrate``.
 MERGE_TREE_GIT: Final = 'git >= 2.38 (`git merge-tree --write-tree`, the serve tick trial merge)'
@@ -51,6 +68,41 @@ INSTALLERS: Final = {
 }
 
 _PRIVATE: Final = 0o077
+
+#: The marker of the one line the deploy writes into a login file; its presence means the line is there.
+LOGIN_MARK: Final = '# lab-commons-deploy:path'
+
+
+def runs(sh: Sequence[str], environment: str, tool: str) -> bool:
+    """Whether ``<tool> --version`` exits 0 under the shell prefix *environment*, run through the *sh* argv."""
+    try:
+        done = _door.run(
+            [*sh, f'{environment}; {shlex.quote(tool)} --version'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=_PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except OSError:
+        return False
+    return done.returncode == 0
+
+
+def login_files(home: Path) -> list[Path]:
+    """The files bash reads: the first of its login files that exists (else ``.bash_profile``), and ``.bashrc``.
+
+    Creating ``.bash_profile`` beside an existing ``.profile`` would shadow it, so an existing one is used.
+    """
+    login = ('.bash_profile', '.bash_login', '.profile')
+    first = next((home / name for name in login if (home / name).exists()), home / login[0])
+    return [first, home / '.bashrc']
+
+
+def login_line(home: Path) -> str:
+    """The marked line that puts the tick PATH's user-install directories first in a login shell."""
+    return f'export PATH="{":".join(tick_dirs(home)[:2])}:$PATH" {LOGIN_MARK}'
 
 
 def store_problem(helper: str, store: Path, *, mode: int | None) -> str:

@@ -42,6 +42,28 @@ def test_uv_is_always_needed_and_each_tool_is_installed_or_refused() -> None:
     assert deploy_checks.tool_plan(['cargo', 'cc'], found=lambda _t: True) == ([], [])
 
 
+#: A fake shell: its one argument is the command line; a tool runs when its name starts with "good".
+_RUNS_GOOD: Final = 'import sys; sys.exit(0 if sys.argv[1].split("; ")[-1].startswith("good") else 1)'
+FAKE_SH: Final = (sys.executable, '-c', _RUNS_GOOD)
+
+
+def test_a_tool_is_present_when_its_version_runs_in_the_tick_environment() -> None:
+    """Capability, not lookup: a rustup shim with no toolchain is on the PATH and fails ``--version``."""
+    assert deploy_checks.runs(FAKE_SH, 'PATH=/x', 'good-tool')
+    assert not deploy_checks.runs(FAKE_SH, 'PATH=/x', 'shim')
+    assert not deploy_checks.runs(('no-such-shell-anywhere',), 'PATH=/x', 'good-tool'), 'a shell that cannot start'
+
+
+def test_the_login_files_are_the_ones_bash_reads_and_the_line_names_the_tick_installs(tmp_path: Path) -> None:
+    assert deploy_checks.login_files(tmp_path) == [tmp_path / '.bash_profile', tmp_path / '.bashrc']
+    (tmp_path / '.profile').write_text('', encoding='utf-8')
+    assert deploy_checks.login_files(tmp_path) == [tmp_path / '.profile', tmp_path / '.bashrc'], 'never shadow it'
+    line = deploy_checks.login_line(tmp_path)
+    assert str(tmp_path / '.local/bin') in line
+    assert str(tmp_path / '.cargo/bin') in line
+    assert line.endswith(deploy_checks.LOGIN_MARK)
+
+
 SPEC: Final = Deployment('login02', 'src', '3.13', (Repo('dev-lab', URL, 'trunk'),), '', ('shortq', 'defq'))
 
 
