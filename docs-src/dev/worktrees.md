@@ -35,6 +35,14 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 3. Re-render `.gitignore` from the family base ([project files](project-files.md)).
 4. Move any misplaced tree with the command the red names.
 
+## Reclaiming a finished tree
+
+A worktree is a lease on a branch for one task. It ends when the branch's content is landed (on the trunk or a
+declared session) and the tree holds nothing that exists nowhere else. `dev_lab.dev.reclaim.reclaimable` is the
+one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
+and the session debris hook runs the former, so a finished tree no longer pins its branch forever. The exact
+criteria are in [auto mode runs the doors](auto-doors.md).
+
 ## Archiving a tree before removing it
 
 `python -m dev_lab.dev.worktrees --archive <name>` (`dev_lab.dev.worktree_archive`) is the step before

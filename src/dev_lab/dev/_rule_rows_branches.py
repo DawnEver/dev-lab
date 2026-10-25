@@ -22,9 +22,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A merged branch is DELETED and an unmerged one is MERGED, with no third state: parking work as an '
             '`archive/*` tag (or a renamed branch nobody tracks) hides it from everyone and is debt exactly like '
             'an undeclared branch -- `branchset` lists it, deletes it when its tip is held by a declared branch, '
-            'and names it to merge otherwise.'
+            'and names it to merge otherwise; a worktree is a lease on a branch for one task, so a tree that is '
+            'clean, unlocked, unoccupied and whose content is landed on the trunk or a declared session is '
+            'reclaimed (`git worktree remove`, then its branch) by `branchset --apply` and the session debris '
+            'hook, every kept tree listed with its reason.'
         ),
-        ('tests/test_dev_branchset_apply.py',),
+        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
     ),
     (
         'MERGE-DEVIATIONS-NAMED',
