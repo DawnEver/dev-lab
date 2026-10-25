@@ -149,7 +149,7 @@ def reserve(
     """
     size = capacity()
     try:
-        held = take(box_claim(item, size, root=root), f'{item.context}@{item.sha[:12]}', key=item.context,
+        held = take(box_claim(item, size, root=root), item.wall_s, f'{item.context}@{item.sha[:12]}', key=item.context,
                     capacity=size, read=read)  # fmt: skip
     except Refused as refused:
         return str(refused)
