@@ -330,6 +330,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'which on a shared checkout is rarely the tree you meant.',
         'remedy': f'Name the commit the tree starts from: git worktree add --detach {WORKTREES_REL}/<name> <sha>',
         'needs': None,
+        # A HINT (toolchain plan P3): a tree cut at the wrong commit is removed and re-added; nothing is lost.
+        'severity': 'hint',
         'refuses': (
             'git worktree add ../probe',
             'git worktree add --detach /tmp/probe',
