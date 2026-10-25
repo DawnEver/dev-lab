@@ -158,7 +158,7 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 ```toml
 [tool.lab_commons.review]
 # {range}: <base>..<head>; {paths}: the slice's paths, one argument each; {lens}: strict | standard | light
-command = ["ai-lab", "review", "--method", "{capabilities.sharp_review.path}", "--range", "{range}", "--lens", "{lens}",
+command = ["ai-lab", "review", "--range", "{range}", "--lens", "{lens}",
            "--model", "<id>", "--paths", "{paths}"]
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 200000    # one slice

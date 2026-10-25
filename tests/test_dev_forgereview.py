@@ -219,11 +219,12 @@ def test_a_host_without_the_commands_interpreter_or_module_posts_error_with_its_
     assert forge.comments[number] == []
 
 
-def test_the_declared_command_is_the_installed_ai_lab_with_only_the_method_a_capability() -> None:
-    """P4: the forge runs ``ai-lab review`` from the machine install; the method path is the one capability left."""
+def test_the_declared_command_is_the_installed_ai_lab_and_names_no_host_value() -> None:
+    """P4: the forge runs ``ai-lab review`` from the machine install, and the method is ai-lab's own: no capability."""
     declared = review_from((Path(__file__).parents[1] / 'pyproject.toml').read_text(encoding='utf-8'), 'pyproject')
     assert declared.command[:2] == ('ai-lab', 'review')
-    assert {m['name'] for arg in declared.command for m in HOST_FIELD.finditer(arg)} == {'sharp_review'}
+    assert {m['name'] for arg in declared.command for m in HOST_FIELD.finditer(arg)} == set()
+    assert '--method' not in declared.command
 
 
 def test_a_host_value_field_is_replaced_by_the_hosts_declared_capability() -> None:

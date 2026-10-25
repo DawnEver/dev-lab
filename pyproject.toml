@@ -87,12 +87,12 @@ integration = "integrate/main"
 merges_only_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-IS-MERGES-ONLY from here on: the split base (lab-commons 8c401f0 rewritten)
 pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha: the split base
 
-# The advisory PR review (dev_lab.dev.forgereview): the installed `ai-lab review`. The one host value left
-# is the sharp-review method path ([capabilities.sharp_review] in the machine file) while its data lives in cc-market.
+# The advisory PR review (dev_lab.dev.forgereview): the installed `ai-lab review`, which reads the sharp-review
+# method it packages (PLAN-a-short-robust-toolchain P4), so the command names no host value.
 [tool.lab_commons.review]
 command = [
     "ai-lab", "review",
-    "--method", "{capabilities.sharp_review.path}", "--range", "{range}", "--model", "claude-sonnet-5-5",
+    "--range", "{range}", "--model", "claude-sonnet-5-5",
 ]
 
 # This repo's layer over the family hook base (dev_lab/dev/githooks/base.toml); run by
