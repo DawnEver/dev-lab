@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev.forgealarm import AUTH, EVENT, Alarm, main, repeat_window, sound
+from dev_lab.dev.forgealarm import AUTH, EVENT, INTEGRATION, Alarm, main, repeat_window, sound
+from dev_lab.dev.metrics import HOST_FAILURE, read
 from dev_lab.supervise.alert import Delivery, Notice
 
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -90,3 +91,13 @@ def test_a_process_that_imports_no_dev_code_raises_one_through_the_cli(capsys) -
         'the deploy refused r',
         'its retired table',
     )
+
+
+def test_a_failure_alarm_is_a_host_failure_once_per_window_and_a_prompt_is_not() -> None:
+    """P0 metrics: a failure that reached a person by alarm, not as a PR status; a repeat is the same failure."""
+    sound(ALARM, alerts={}, now=NOW)
+    sound(ALARM, alerts={}, now=NOW + timedelta(minutes=1))
+    sound(Alarm(INTEGRATION, 'https://f/o/r.git', 'lane ready', ''), alerts={}, now=NOW)
+    assert [(line['lab.rule.id'], line['vcs.repository.url.full']) for line in read(HOST_FAILURE)] == [
+        (AUTH, 'https://f/o/r.git')
+    ]

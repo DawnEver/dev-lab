@@ -33,13 +33,20 @@ everything all red instead of reading as green.
 from __future__ import annotations
 
 import json
+import os
+import sys
+import time
 from pathlib import Path
 
 import pytest
 
+if os.name == 'nt':
+    import _winapi
+
 from dev_lab.dev import agenthooks
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy
+from dev_lab.dev.metrics import REFUSAL, read
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
 # whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
@@ -461,3 +468,28 @@ def test_a_refusal_wins_over_a_hint_on_the_same_line(tmp_path: Path) -> None:
     rules = _rows(tmp_path, _HINT, _DENY)
     assert agenthooks.decide('grep -r x src && rm -rf build', rules) == 'D'
     assert agenthooks.decide('rm -rf build', rules) == 'D'
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    """A directory link with no privilege: a junction on Windows, a symlink elsewhere."""
+    if os.name == 'nt':
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+def test_a_refusal_is_one_metrics_line_written_without_delaying_the_refusal(tmp_path: Path) -> None:
+    """P0 metrics: the engine hands the refusal to the one writer, detached; a session with no venv logs nothing."""
+    session = tmp_path / 'session'
+    (session / '.git').mkdir(parents=True)
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    rules = _rows(hooks, _DENY)
+    assert agenthooks.decide('rm -rf build', rules, cwd=session) == 'D'
+    assert read(REFUSAL) == []
+    _link_dir(session / '.venv', Path(sys.executable).parents[1])
+    assert agenthooks.decide('rm -rf build', rules, cwd=session) == 'D'
+    deadline = time.monotonic() + 60
+    while not read(REFUSAL) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL)] == [('PLANTED-DENY', 'agent-guard')]
