@@ -243,7 +243,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'S108',
         "CANDIDATE: Final = '/var/tmp/lab-supervise-candidate'",
     ): 'the candidate build lives on a Linux server under /var/tmp ON PURPOSE: outside the live tree and not '
-    'swept by a reboot; it is a fixed, root-owned path on the target, not a shared temp file',
+    'swept by a reboot; a predictable name the supervisor tears down before each use (its owner is not checked)',
     (
         'src/dev_lab/supervise/loop.py',
         'BLE001',
