@@ -13,7 +13,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.installdoor import floating_requirements
-from dev_lab.dev.lockcheck import unreasoned_holds
+from dev_lab.dev.lockcheck import TOOLCHAIN, newest_stable, pin_stable, unreasoned_holds
 from dev_lab.dev.venvpath import venv_interpreter
 
 
@@ -139,13 +139,20 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
 
 
 def lock_upgrade(
-    root: Path, python: str, *, run: Callable[..., Any], dry_run: bool, environment: dict[str, str]
+    root: Path,
+    python: str,
+    *,
+    run: Callable[..., Any],
+    dry_run: bool,
+    environment: dict[str, str],
+    stable: Callable[[], str] = newest_stable,
 ) -> int:
     """Rewrite *root*'s lock at the newest resolution -- the remedy :mod:`dev_lab.dev.lockcheck` names.
 
     The holds lockcheck refuses at push are refused HERE first, before anything resolves: a lock written
-    under an unreasoned hold would only be refused again at the push. Only the lock moves in this step; the
-    environment then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`.
+    under an unreasoned hold would only be refused again at the push. Only the lock -- and a pinned
+    ``rust-toolchain.toml``, moved to *stable* (user ruling 2026-10-25) -- moves in this step; the environment
+    then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`.
     """
     holds = unreasoned_holds((root / 'pyproject.toml').read_text(encoding='utf-8'))
     if holds:
@@ -155,4 +162,7 @@ def lock_upgrade(
     if dry_run:
         emit('would run: ' + ' '.join(command))
         return 0
-    return run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
+    code = run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
+    if code == 0 and (root / TOOLCHAIN).is_file():
+        pin_stable(root, stable())
+    return code
