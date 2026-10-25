@@ -24,8 +24,8 @@
 # a local copy only refused the same push twice: the tracked-tree scans (TRACKED-CITES-NO-EPHEMERAL,
 # SCRATCH-IS-NEVER-COMMITTED: dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set
 # (dev_lab.dev.famtests.branchset), the behind bound (an `integration` alarm, dev_lab.dev.forgeintegration)
-# and PR admission (`forge pr create`, dev_lab.dev.pradmit). A repo may still declare any of those modules
-# as a row of its own. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
+# and PR advice (`forge pr create`, dev_lab.dev.pradmit, never a refusal). A repo may still declare the first
+# three as a row of its own. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
 
 [[pre-commit]]
 id = "check-added-large-files"

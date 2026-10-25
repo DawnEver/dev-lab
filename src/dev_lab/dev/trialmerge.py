@@ -90,7 +90,7 @@ def shares_unmerged(root: Path, head: str, other: str, tip: str) -> bool:
     """Whether *head* holds a commit of *other* that *tip* does not: *head* is STACKED on *other*.
 
     Read off the merge bases, so it holds however far either side moved after the cut. The one owner of
-    the stack question: the PR admission (:mod:`dev_lab.dev.pradmit`) and the forge's auto-sync ask it.
+    the stack question: the PR advice (:mod:`dev_lab.dev.pradmit`) and the forge's auto-sync ask it.
     """
     bases = _git(root, 'merge-base', '--all', head, other).stdout.split()
     return any(not contains(root, tip, base) for base in bases)
