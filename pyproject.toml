@@ -87,11 +87,11 @@ integration = "integrate/main"
 merges_only_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-IS-MERGES-ONLY from here on: the split base (lab-commons 8c401f0 rewritten)
 pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha: the split base
 
-# The advisory PR review (dev_lab.dev.forgereview). WHAT is declared here; WHERE (the ai-lab runtime
-# interpreter, the sharp-review method) is each reviewing host's [capabilities.*] in its machine file.
+# The advisory PR review (dev_lab.dev.forgereview): the installed `ai-lab review`. The one host value left
+# is the sharp-review method path ([capabilities.sharp_review] in the machine file) while its data lives in cc-market.
 [tool.lab_commons.review]
 command = [
-    "{capabilities.ai_lab.python}", "-m", "ai_lab.review",
+    "ai-lab", "review",
     "--method", "{capabilities.sharp_review.path}", "--range", "{range}", "--model", "claude-sonnet-5-5",
 ]
 

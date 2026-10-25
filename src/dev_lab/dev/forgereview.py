@@ -40,7 +40,8 @@ nothing and posts nothing), drafts skipped, generated files never read, ``max_to
     [tool.lab_commons.review]
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light
     # {capabilities.<name>.<key>}: THIS host's machine-file value (the repo says WHAT, the host says WHERE)
-    command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--method", "{capabilities.sharp_review.path}",
+    # the installed `ai-lab` console script; the method path stays a capability while its data lives in cc-market
+    command = ["ai-lab", "review", "--method", "{capabilities.sharp_review.path}",
                "--range", "{range}", "--lens", "{lens}", "--model", "<id>", "--paths", "{paths}"]
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_diff_bytes = 200000    # one slice: what one reviewer reads
@@ -49,9 +50,12 @@ nothing and posts nothing), drafts skipped, generated files never read, ``max_to
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
 
-A host value the command names but this host's ``[capabilities]`` does not declare is ``unsupported`` and posts
-nothing, like a command it cannot start. BEFORE it runs the command, the host checks it can start it
-(:func:`can_start`: a missing interpreter or module is ``unsupported`` and posts nothing), then CLAIMS the head:
+ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
+but this host's ``[capabilities]`` does not declare, a command it cannot start (:func:`can_start`: a missing
+executable or module, checked BEFORE the claim), or one that turns out unable to run (:class:`ReviewUnsupported`)
+-- posts :data:`HOST_UNABLE` naming the host and why, once: a fact about the host, so the head stays claimable by a
+capable host, or by this one once fixed. A command that ran and refused or printed no known findings is the head's
+own ``error``, and that head is not retried. Otherwise the host CLAIMS the head:
 a ``pending`` status ``claimed by <host> at <time>, reviewing``. Every other host skips a head whose review status is
 anything but a released (``released by``) or stale claim (:func:`claimable`), so N serving hosts review a head once.
 
@@ -152,8 +156,12 @@ DEFAULT_CLAIM_STALE: Final = '1 h'
 #: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
 CLAIMED: Final = 'claimed by'
 
-#: A claim given back (``pending``): the head is free again at once.
+#: A claim given back by hand (``pending``): the head is free again at once.
 RELEASED: Final = 'released by'
+
+#: What an ``error`` says when THIS HOST cannot run the review (:class:`ReviewUnsupported`): a fact about the host,
+#: not the head, so the head stays claimable -- by a capable host, or by this one once it is fixed.
+HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 
 _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
 _PROBE: Final = 'import importlib.util, sys; sys.exit(importlib.util.find_spec(sys.argv[1]) is None)'
@@ -223,9 +231,9 @@ class ReviewRefused(OSError):
 
 
 class ReviewUnsupported(OSError):
-    """The host cannot run the declared command at all (its interpreter or module is missing): ``unsupported``.
+    """The host cannot run the declared command at all (absent, a module missing, a capability undeclared).
 
-    Nothing is posted, so the head's one attempt is left for a host that can run it.
+    Like every failure it posts ``error`` naming why.
     """
 
 
@@ -245,7 +253,7 @@ def stale_after(review: Review) -> timedelta:
 def can_start(argv: Sequence[str], root: Path) -> str | None:
     """Why this host cannot start *argv* (its executable absent, or its ``-m`` module unimportable); ``None`` if it can.
 
-    Checked BEFORE a claim is posted, so a host that cannot review posts nothing.
+    Checked BEFORE a claim is posted; the reason becomes the ``error`` status.
     """
     found = shutil.which(argv[0]) or (argv[0] if Path(argv[0]).is_file() else None)
     if found is None:
@@ -259,8 +267,11 @@ def can_start(argv: Sequence[str], root: Path) -> str | None:
 
 
 def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> bool:
-    """Whether a head whose review status is *status* may be claimed: none, a released claim, or a stale one."""
-    if status is None:
+    """Whether a head whose review status is *status* may be claimed: none, a released or stale claim, or a host unable.
+
+    A host that could not run the review (:data:`HOST_UNABLE`) is the host's fault, never the head's.
+    """
+    if status is None or (status.state, status.description.startswith(HOST_UNABLE)) == ('error', True):
         return True
     if status.state != 'pending':
         return False
@@ -357,6 +368,19 @@ def _scope(root: Path, client: Client, review: Review, pull: PullRequest, target
     return plan(root, target, pull.head_sha, review.budget, done, sliceable=PATHS_FIELD in review.command)
 
 
+def _unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
+    """Post :data:`HOST_UNABLE` naming *host* and *why* on *pull*'s head (not again if it already says so); the line.
+
+    The head stays claimable: another host, or this one once fixed, reviews it on a later tick.
+    """
+    head = pull.head_sha
+    said = f'{HOST_UNABLE} {host}: {why}'[:_DESCRIPTION]
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if latest is None or (latest.state, latest.description) != ('error', said):
+        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=said)
+    return f'#{pull.number} {head[:12]}: {said}'
+
+
 def _settle(client: Client, pull: PullRequest, found: Findings) -> str:
     """Replace the claim on *pull*'s head with the final status *found* earns (and its comment); the line said."""
     head = pull.head_sha
@@ -394,8 +418,9 @@ def review_tick(
     """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
 
     The declared command reviews ``<merge base>..<head>`` and prints the findings JSON; one comment and one
-    :data:`REVIEW_CONTEXT` status per head are posted from it. A command that fails, or prints anything but a
-    known findings version, posts ``error`` naming why, and is not retried on that head.
+    :data:`REVIEW_CONTEXT` status per head are posted from it. A host that cannot run it posts
+    :data:`HOST_UNABLE` and leaves the head claimable; a command that fails or prints anything but a known findings
+    version posts ``error`` naming why, and is not retried on that head.
     """
     lines: list[str] = []
     target = f'origin/{base}'
@@ -418,19 +443,17 @@ def review_tick(
             cannot = ready(argvs[0], root)
         except ReviewUnsupported as unsupported:
             cannot = str(unsupported)
-        if cannot is not None:  # checked first: a host that cannot review posts nothing
-            lines.append(f'#{pull.number} {head[:12]}: {cannot}; nothing posted')
-            break
+        if cannot is not None:  # checked before the claim: the HOST cannot, the head stays claimable
+            lines.append(_unable(client, pull, host, cannot))
+            continue
         claim = f'{CLAIMED} {host} at {clock().isoformat(timespec="seconds")}, reviewing'
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
         try:
             synth = command_for(review, scope.range, capabilities, synthesis=True)
             found = parse_findings(gather(scope.range, argvs, synth, run, root))
-        except ReviewUnsupported as unsupported:  # it started and then could not: give the claim back
-            why = f'{RELEASED} {host}: {unsupported}'[:_DESCRIPTION]
-            status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
-            lines.append(f'#{pull.number} {head[:12]}: {unsupported}; the claim is released')
-            break
+        except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
+            lines.append(_unable(client, pull, host, str(unsupported)))
+            continue
         except (UnknownSchemaVersion, ReviewRefused) as named:
             why = f'not reviewed: {named}'[:_DESCRIPTION]
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)

@@ -144,7 +144,9 @@ over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices 
 That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), until a
 session reviews it and releases it: `python -m dev_lab.dev.forge status post <sha> --context tests/review-hold
 --state success --description "reviewed by <who>"`. So an unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
-nothing. A failed command posts `error` and is not retried on that head.
+nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review
+(a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run on host
+<host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
 through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
@@ -156,7 +158,7 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 ```toml
 [tool.lab_commons.review]
 # {range}: <base>..<head>; {paths}: the slice's paths, one argument each; {lens}: strict | standard | light
-command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--lens", "{lens}",
+command = ["ai-lab", "review", "--method", "{capabilities.sharp_review.path}", "--range", "{range}", "--lens", "{lens}",
            "--model", "<id>", "--paths", "{paths}"]
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 200000    # one slice
@@ -168,7 +170,7 @@ claim_stale = "1 h"        # the default
 ```
 
 Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
-command a host checks it can start it -- a missing interpreter or module is `unsupported` and posts nothing --
+command a host checks it can start it -- a missing executable, module or capability posts `error` with its reason, like every failure --
 then posts `tests/review` = `pending`, `claimed by <host> at <time>, reviewing`, and replaces it with the final
 status. Any other host skips a head whose `tests/review` carries any status, pending included, unless it is a
 released claim (`released by ...`) or a claim older than `claim_stale` (default `"1 h"`, above the command's
