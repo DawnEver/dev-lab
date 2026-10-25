@@ -1,9 +1,9 @@
 """The LOCAL WORKTREE CLEANUP DOOR: ``python -m dev_lab.dev.worktrees [--root R] [--prune]``.
 
 User rulings 2026-10-04 (AUTO-MODE-RUNS-THE-DOORS): local cleanup is a checked door an agent may run
-unattended, nothing here pushes or touches origin, and a worktree is removed ONLY when it is CLEAN --
-nothing modified, staged or untracked (``git status --porcelain`` empty). Work is committed or cleared
-by a human first; ``--prune`` never moves work aside to make a tree removable. ``--archive NAME`` is the
+unattended and nothing here pushes or touches origin. User ruling 2026-10-25: the work is what git TRACKS;
+everything else (scratch, untracked, ignored) goes with the tree, its run outputs moved home first.
+``--archive NAME`` is the
 step before a deliberate removal (:mod:`dev_lab.dev.worktree_archive`): it moves the tree's outputs home,
 saves its work, and reports whether removing it loses anything -- it removes nothing itself.
 
@@ -12,12 +12,12 @@ and then ``; git worktree remove --force``. The archive helper failed, ``mv`` ne
 let the removal delete five worktrees' ignored ``output/``. So:
 
 * a worktree is a LEASE on a branch for one task, and the decision is ONE function,
-  :func:`dev_lab.dev.reclaim.reclaimable`: a linked tree goes only when it is unlocked, clean (every ignored
-  path REGENERABLE -- an ignored ``output/`` is work and BLOCKS it), its content is LANDED on the trunk or a
-  declared session (``git cherry``, or a squash merge whose origin ref is gone) and no process occupies it.
-  Removal is ``git worktree remove`` WITHOUT ``--force``; its branch then goes through ``branchset --apply``.
-* a directory under ``.claude/worktrees/`` that git does not register goes only when every file in it is
-  regenerable; one that holds anything else is listed with it and refused.
+  :func:`dev_lab.dev.reclaim.reclaimable`: a linked tree goes only when it is unlocked, no TRACKED file is
+  changed (staged or not), its content is LANDED on the trunk or a declared session (``git cherry``, or a
+  squash merge whose origin ref is gone) and no process occupies it. Its outputs are moved home and VERIFIED,
+  and only then -- chained, never after a ``;`` -- ``git worktree remove --force``; its branch then goes
+  through ``branchset --apply``.
+* a directory under ``.claude/worktrees/`` that git does not register: outputs home, verified, then deleted.
 * run it from the SessionStart/Stop debris hook: it prints what it removed and every kept tree with its reason.
 """
 
@@ -31,10 +31,10 @@ from lab_commons.log import emit
 
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
 from dev_lab.dev.checkout import authority_for, worktrees
-from dev_lab.dev.reclaim import REGENERABLE, blockers, reclaim, regenerable
+from dev_lab.dev.reclaim import blockers, reclaim
 from dev_lab.dev.worktree_archive import archive
 
-__all__ = ['REGENERABLE', 'blockers', 'main', 'prune', 'regenerable']
+__all__ = ['blockers', 'main', 'prune']
 
 
 def prune(root: Path, *, apply: bool, occupied: Callable[[Path], bool] | None = None) -> tuple[str, ...] | None:
@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--prune',
         action='store_true',
-        help='reclaim clean, landed, unoccupied worktrees (and their branches); never --force, never origin',
+        help='reclaim landed, unoccupied worktrees with no tracked change (outputs moved home first); never origin',
     )
     parser.add_argument(
         '--archive',

@@ -3,8 +3,9 @@
 Worktrees created for a task (by an agent, a human, codex) were never reclaimed: :mod:`dev_lab.dev.checkout`
 DETECTED them and ``branchset --apply`` deleted merged local branches but skipped every branch checked out in a
 worktree, so a finished tree pinned its branch forever. First principles: a lease ends when its branch's CONTENT
-is landed (or its PR closed and its origin ref deleted after a squash merge) AND the tree holds nothing that exists
-nowhere else. :func:`reclaimable` is that one decision, built on :mod:`dev_lab.dev.checkout`'s readings (content
+is landed (or its PR closed and its origin ref deleted after a squash merge) AND no TRACKED file is changed:
+what git does not track is not the work and goes with the tree, its run outputs moved home first (user ruling
+2026-10-25). :func:`reclaimable` is that one decision, built on :mod:`dev_lab.dev.checkout`'s readings (content
 by ``git cherry``, never ancestry; ``None`` when git cannot answer); :func:`reclaim` acts on it. The doors are
 ``python -m dev_lab.dev.worktrees --prune`` (which the session debris hook runs) and ``python -m
 dev_lab.dev.branchset --apply``, which reclaims first so the freed branch is deleted in the same run.
@@ -14,11 +15,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
-from fnmatch import fnmatch
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
@@ -35,67 +34,24 @@ from dev_lab.dev.checkout import (
     worktrees,
 )
 from dev_lab.dev.liverun import occupants
+from dev_lab.dev.worktree_archive import home_outputs
 
-__all__ = ['REGENERABLE', 'Lease', 'blockers', 'reclaim', 'reclaimable', 'regenerable']
-
-#: THE family default: ignored path parts (``fnmatch`` patterns) a build or a tool regenerates on
-#: demand, so they may go with their tree. A repo adds its own in ``[tool.lab_commons.worktrees]
-#: regenerable`` of its ``pyproject.toml``; anything ignored and not matched is WORK and blocks.
-REGENERABLE: Final = frozenset(
-    {
-        '__pycache__',
-        '.pytest_cache',
-        '.ruff_cache',
-        '.mypy_cache',
-        '.venv',
-        'node_modules',
-        '.verify',
-        '*.egg-info',
-        '*.py[cod]',
-        '.coverage*',
-        'htmlcov',
-        'build',
-        'dist',
-        'target',
-        '__version__.py',
-    }
-)
+__all__ = ['Lease', 'blockers', 'reclaim', 'reclaimable']
 
 #: How many paths a kept line names before it counts the rest.
 _SHOWN: Final = 5
 
 
-def regenerable(tree: Path) -> frozenset[str]:
-    """:data:`REGENERABLE` plus *tree*'s declared ``[tool.lab_commons.worktrees] regenerable``."""
-    manifest = tree / 'pyproject.toml'
-    if not manifest.is_file():
-        return REGENERABLE
-    with manifest.open('rb') as handle:
-        declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('worktrees', {})
-    extra = declared.get('regenerable', [])
-    if not isinstance(extra, list) or not all(isinstance(item, str) for item in extra):
-        msg = f'[tool.lab_commons.worktrees] regenerable in {manifest} must be a list of strings, got {extra!r}'
-        raise ValueError(msg)
-    return REGENERABLE | frozenset(extra)
-
-
-def _is_regenerable(path: str, patterns: frozenset[str]) -> bool:
-    return any(fnmatch(part, pattern) for part in PurePosixPath(path).parts for pattern in patterns)
-
-
 def blockers(tree: Path) -> tuple[str, ...] | None:
-    """Every path that stops *tree* from being removed: modified, staged, untracked, or ignored work."""
-    out = git_out(tree, 'status', '--porcelain', '--ignored=matching')
+    """Every TRACKED path changed in *tree*, staged or not. Untracked and ignored files are not the work.
+
+    User ruling 2026-10-25: the work is committed; what git does not track (scratch, untracked, ignored:
+    ``.venv``, caches, builds) goes with the tree, except run outputs, which :func:`reclaim` moves home first.
+    """
+    out = git_out(tree, 'status', '--porcelain', '--untracked-files=no')
     if out is None:
         return None
-    patterns = regenerable(tree)
-    found: list[str] = []
-    for line in out.splitlines():
-        code, path = line[:2], line[3:].strip().rstrip('/')
-        if code == '!!' and _is_regenerable(path, patterns):
-            continue
-        found.append(f'{code.strip() or "?"} {path}')
-    return tuple(found)
+    return tuple(f'{line[:2].strip()} {line[3:].strip()}' for line in out.splitlines() if line.strip())
 
 
 def _shown(paths: tuple[str, ...] | list[str]) -> str:
@@ -186,19 +142,10 @@ def _tree_reason(tree: Path, branch: str, holders: tuple[str, ...], *, locked: b
     if blocking is None:
         return 'unreadable'
     if blocking:
-        return f'not clean -- commit or clear first: {_shown(blocking)}'
+        return f'tracked changes -- commit or revert first: {_shown(blocking)}'
     if not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
     return ''
-
-
-def _orphan_reason(orphan: Path, patterns: frozenset[str]) -> str:
-    work = sorted(
-        p.relative_to(orphan).as_posix()
-        for p in orphan.rglob('*')
-        if not p.is_dir() and not _is_regenerable(p.relative_to(orphan).as_posix(), patterns)
-    )
-    return f'unregistered and holds more than regenerable files -- a human decides: {_shown(work)}' if work else ''
 
 
 def reclaimable(
@@ -213,14 +160,13 @@ def reclaimable(
     A linked worktree (never the main one) is reclaimable iff ALL hold, checked in this order:
 
     * not ``git worktree lock``-ed;
-    * CLEAN: nothing staged, modified or untracked, and every ignored path regenerable (:func:`blockers`);
+    * no TRACKED change, staged or not (:func:`blockers`) -- untracked and ignored files never block;
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
     * UNOCCUPIED: no process works in, executes from or reads it (LIVE-RUN's :func:`occupants` by default).
 
-    An orphan directory under *home* is reclaimable iff every file in it is regenerable and nothing occupies
-    it. *holders* are the refs whose content counts as landed: the trunk's authority and every declared session
-    (``dev_lab.dev.branchset.holders``).
+    An orphan directory under *home* is reclaimable iff nothing occupies it. *holders* are the refs whose content counts
+    as landed: the trunk's authority and every declared session (``dev_lab.dev.branchset.holders``).
     """
     trees = worktrees(root)
     locked = _locked(root)
@@ -233,10 +179,7 @@ def reclaimable(
         tree = path.resolve()
         reason = _tree_reason(tree, branch, holders, locked=tree in locked)
         leases.append(Lease(tree, branch, reason or (_LIVE if is_occupied(tree) else '')))
-    patterns = regenerable(root)
-    for orphan in orphans:
-        reason = _orphan_reason(orphan, patterns)
-        leases.append(Lease(orphan, '', reason or (_LIVE if is_occupied(orphan) else '')))
+    leases += [Lease(orphan, '', _LIVE if is_occupied(orphan) else '') for orphan in orphans]
     return tuple(leases)
 
 
@@ -250,9 +193,11 @@ def reclaim(
 ) -> tuple[str, ...] | None:
     """Remove every reclaimable lease; one line per lease, a kept one with its reason. ``None``: unreadable.
 
-    A worktree goes by ``git worktree remove`` WITHOUT ``--force``, so git's own clean check stands behind
-    this one; its branch stays for ``dev_lab.dev.branchset.apply_local``, which deletes it pinned to its sha.
-    An orphan holds only regenerable files and goes by ``shutil.rmtree``. Without *apply* nothing is touched.
+    Every lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_archive.home_outputs`) and
+    the copy verified; only then does a worktree go by ``git worktree remove --force`` (its untracked and
+    ignored content is declared disposable) or an orphan by ``shutil.rmtree``. An unverified archive keeps
+    the lease, with the reason. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``,
+    which deletes it pinned to its sha. Without *apply* nothing is touched.
     """
     leases = reclaimable(root, holders, home=home, occupied=occupied)
     if leases is None:
@@ -264,8 +209,10 @@ def reclaim(
             out.append(f'kept     {label}  ({lease.reason})')
         elif not apply:
             out.append(f'prunable {label}')
+        elif unarchived := home_outputs(root, lease.path):
+            out.append(f'kept     {label}  ({unarchived}; nothing was deleted)')
         elif lease.branch:
-            done = git_out(root, 'worktree', 'remove', str(lease.path)) is not None
+            done = git_out(root, 'worktree', 'remove', '--force', str(lease.path)) is not None
             out.append(f'{"removed " if done else "FAILED  "} {label}')
         else:
             try:
