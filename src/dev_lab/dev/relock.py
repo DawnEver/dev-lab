@@ -32,7 +32,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.labsession import machine_env
-from dev_lab.dev.lockcheck import LOCK, mount_submodules, stale
+from dev_lab.dev.lockcheck import FRESHENED, TOOLCHAIN, mount_submodules, newest_stable, refreshable, stale
 from dev_lab.dev.netverb import run_network_verb
 
 if TYPE_CHECKING:
@@ -74,8 +74,11 @@ def dist_of(change: str) -> str:
     """The distribution a :func:`~dev_lab.dev.lockcheck.stale` sentence names.
 
     The sentence is ``uv.lock is not the newest resolution: Update pint v0.26.1 -> v0.26.2``; the word after
-    the verb is the distribution, and a sentence of another shape answers ``'lock'`` rather than guessing.
+    the verb is the distribution, a toolchain sentence answers ``'rust'``, and a sentence of another shape
+    answers ``'lock'`` rather than guessing.
     """
+    if change.startswith(f'{TOOLCHAIN} '):
+        return 'rust'
     _, _, rest = change.partition('resolution: ')
     words = rest.split()
     name = words[1] if len(words) >= _NAME_INDEX and words[0] in _VERBS else ''
@@ -87,16 +90,18 @@ def branch_for(dist: str, sha: str) -> str:
     return f'{PREFIX}-{dist}-{sha[:SHORT]}'
 
 
-def decision(tree: Path, sha: str, *, resolve: Callable[[Path], Report] | None = None) -> Relock | None:
+def decision(
+    tree: Path, sha: str, *, resolve: Callable[[Path], Report] | None = None, stable: Callable[[], str] = newest_stable
+) -> Relock | None:
     """The relock *tree* (a checkout of integration at *sha*) needs, or ``None`` when its lock is the newest.
 
     *resolve* is the resolution :func:`stale` reads; left out it dry-runs ``uv lock --upgrade``, exactly as the
-    pre-push row does. A resolution that could not run RAISES rather than relocks.
+    pre-push row does; *stable* is the newest Rust stable. A resolution that could not run RAISES, never relocks.
     """
-    found = stale(tree) if resolve is None else stale(tree, resolve=resolve)
+    found = stale(tree, stable=stable) if resolve is None else stale(tree, resolve=resolve, stable=stable)
     if not found:
         return None
-    if not all(line.startswith(f'{LOCK} is not the newest resolution') for line in found):
+    if not all(refreshable(line) for line in found):
         raise RelockFailed('; '.join(found))
     dist = dist_of(found[0])
     branch = branch_for(dist, sha)
@@ -160,13 +165,15 @@ def carry(
     pulls: Callable[[], Sequence[PullRequest]],
     create: Callable[..., PullRequest],
     resolve: Callable[[Path], Report] | None = None,
+    stable: Callable[[], str] = newest_stable,
     upgrade: Callable[[Path], int] = door_upgrade,
     push: Callable[[Path, str], None] = _push,
 ) -> str:
     """Relock ``origin/<integration>`` of *root* through one pull request, if it needs one; the line said.
 
     *pulls* lists the open pull requests and *create* opens one (``Client.pr_create``'s signature); *resolve*,
-    *upgrade* and *push* are the resolution, the door and the push, each a seam a test plants.
+    *stable*, *upgrade* and *push* are the resolution, the newest Rust stable, the door and the push, each a
+    seam a test plants.
     """
     for pull in pulls():
         if pull.head.startswith(f'{PREFIX}-'):
@@ -177,16 +184,17 @@ def carry(
         msg = f'there is no {base} in {root} to relock'
         raise RelockFailed(msg)
     with _worktree(root, sha) as tree:
-        found = decision(tree, sha, resolve=resolve)
+        found = decision(tree, sha, resolve=resolve, stable=stable)
         if found is None:
             return f'the lock of {policy.integration} at {sha[:SHORT]} is the newest resolution'
         if (exited := upgrade(tree)) != 0:
             msg = f'the dependency door exited {exited} relocking {found.dist} at {sha[:SHORT]}'
             raise RelockFailed(msg)
-        if not _must(tree, 'status', '--porcelain', '--', LOCK):
-            msg = f'the dependency door left {LOCK} unchanged though the resolution moves {found.dist}'
+        pinned = [path for path in FRESHENED if (tree / path).is_file()]
+        if not _must(tree, 'status', '--porcelain', '--', *pinned):
+            msg = f'the dependency door left {" and ".join(pinned)} unchanged though the resolution moves {found.dist}'
             raise RelockFailed(msg)
-        _must(tree, 'commit', '-q', '-m', found.title, '-m', found.body, '--', LOCK)
+        _must(tree, 'commit', '-q', '-m', found.title, '-m', found.body, '--', *pinned)
         push(tree, found.branch)
     opened = create(found.title, found.body, head=found.branch, base=policy.integration)
     return f'relocked {found.dist} onto {found.branch}: {opened.url}'

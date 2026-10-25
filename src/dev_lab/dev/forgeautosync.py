@@ -49,7 +49,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgenotice import duration
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.labsession import machine_env
-from dev_lab.dev.lockcheck import LOCK, mount_submodules, stale
+from dev_lab.dev.lockcheck import FRESHENED, LOCK, mount_submodules, refreshable, stale
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import door_upgrade
@@ -242,11 +242,11 @@ def _relock(
     found = stale(tree) if resolve is None else stale(tree, resolve=resolve)
     if not conflicted and not found:
         return
-    if unrun := [line for line in found if not line.startswith(f'{LOCK} is not the newest resolution')]:
+    if unrun := [line for line in found if not refreshable(line)]:
         raise SyncRefused(RELOCK.format(why='; '.join(unrun)))
     if (exited := upgrade(tree)) != 0:
         raise SyncRefused(RELOCK.format(why=f'the dependency door exited {exited}'))
-    _must(tree, 'add', '--', LOCK)
+    _must(tree, 'add', '--', *(path for path in FRESHENED if (tree / path).is_file()))
 
 
 def sync(
