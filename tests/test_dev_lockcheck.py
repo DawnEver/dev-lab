@@ -316,7 +316,10 @@ def test_a_toolchain_behind_the_newest_stable_is_stale_and_pinning_moves_only_it
     (tmp_path / 'rust-toolchain.toml').write_text(
         '[toolchain]\nchannel = "1.99.0"\ncomponents = ["clippy"]\n', encoding='utf-8'
     )
-    fresh = lambda _tree: _rustup('')  # noqa: E731
+
+    def fresh(_tree: Path) -> object:
+        return _rustup('')
+
     assert stale(tmp_path, resolve=fresh, stable=lambda: '1.99.1') == (
         'rust-toolchain.toml is not the newest stable: 1.99.0 -> 1.99.1',
     )
