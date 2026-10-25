@@ -37,9 +37,8 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    The same door is the INTEGRATOR'S BACK DOOR (user ruling 2026-10-21): the integrator may merge a PR the
    forge cannot auto-merge. Merge its head into `integrate/main` locally (`git merge --no-ff`, never a rebase),
    write `Break-Glass: <named reason>` in the merge message beside any `Merge-Audit:` lines, and push. The
-   notice records WHO (the commit author) and WHY (the reason). `ONE-SESSION-ONE-PR` and `NO-STACKED-PRS` do
-   not stand in its way: they judge only the birth of a PR (`forge pr create`, a NEW `pr/*` at pre-push), and
-   this push updates integration (`tests/test_dev_pradmit.py::test_the_integrators_back_door_merge_is_not_judged`).
+   notice records WHO (the commit author) and WHY (the reason).
+
 4. `main` moves only by `integrate promote <sha>` on a full PASS, as below.
 
 All maintenance happens on gitea (user ruling 2026-10-19): PRs are opened, judged and merged there, and
@@ -240,11 +239,13 @@ with a comment saying why. Each child carries one PR at most.
 `Lab-Session:` trailer (`dev_lab.dev.labsession`). A commit without `LAB_SESSION` is never refused, agent or
 human (user ruling 2026-10-21): it carries no trailer and the rule does not judge it, so a path no launcher
 starts (the VS Code Claude extension, the codex desktop app, `codc` attached to a shared app-server) keeps
-committing. Only a session that has an id is judged. `Claude-Session:` is prose nothing reads. `forge pr create` refuses a head that shares a session with another open head and name that head's branch
-(`dev_lab.dev.pradmit`). A split is an entry of `pradmit.SPLITS` with its reason, under a pinned ceiling.
+committing. Only a session that has an id is judged. `Claude-Session:` is prose nothing reads. The rule is the guidance of a
+development agent focused on ONE task: it gathers all of its work on one PR. A PR never blocks the flow (user
+ruling 2026-10-25): `forge pr create` always opens the PR, and for a head that shares a session with another open
+head it names that head's branch, on stderr and as an `Admission:` line in the PR body (`dev_lab.dev.pradmit`).
 
-`NO-STACKED-PRS`: `forge pr create` refuses a head holding a commit of another open PR's head that integration
-does not hold (`trialmerge.shares_unmerged`). Wait for that PR to merge, or fold the work into it.
+`NO-STACKED-PRS`: `forge pr create` tells a head holding a commit of another open PR's head that integration does
+not hold (`trialmerge.shares_unmerged`) that it is stacked and lands only after that PR, and opens it anyway.
 
 ## The integration tick
 

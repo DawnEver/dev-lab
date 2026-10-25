@@ -1,8 +1,8 @@
-"""ONE-SESSION-ONE-PR and NO-STACKED-PRS, driven on a REAL repository with real ``origin/*`` refs.
+"""ONE-SESSION-ONE-PR and NO-STACKED-PRS ADVISE, driven on a REAL repository with real ``origin/*`` refs.
 
-PLANTED CONTROLS on each side: a second head of the same session is refused naming the first head's branch, a
-head of another session passes; a head holding another open head's unmerged commit is refused, the same
-commit once in integration passes; a declared split admits its session; only a NEW ``pr/*`` is judged at push.
+PLANTED CONTROLS on each side: a second head of the same session is told the first head's branch, a head of
+another session hears nothing; a head holding another open head's unmerged commit is told it is stacked, the
+same commit once in integration is not a stack. Nothing here refuses (user ruling 2026-10-25).
 """
 
 from __future__ import annotations
@@ -16,11 +16,9 @@ import pytest
 from dev_lab.dev import pradmit
 from dev_lab.dev.forgework import PullRequest
 from dev_lab.dev.labsession import TRAILER
-from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.trialmerge import shares_unmerged
 
 _GIT = shutil.which('git') or 'git'
-_ZERO = '0' * 40
 _TIP = 'refs/remotes/origin/integrate/main'
 
 
@@ -61,56 +59,35 @@ def _open(number: int, branch: str, sha: str) -> PullRequest:
     return PullRequest(number, branch, 'open', '', f'u/{number}', 'a', branch, 'integrate/main', head_sha=sha)
 
 
-def test_a_second_head_of_one_session_is_refused_naming_the_first(repo: Path) -> None:
+def test_a_second_head_of_one_session_is_told_the_first(repo: Path) -> None:
     first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
     second = _head(repo, 'pr/second', ('feat: b', 'session-one'))
-    why = pradmit.refusal(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)])
-    assert why is not None
-    assert '#7' in why
-    assert 'pr/first' in why
-    assert 'session-one' in why
+    (said,) = pradmit.advice(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)])
+    assert '#7' in said
+    assert 'pr/first' in said
+    assert 'session-one' in said
 
 
-def test_a_head_of_another_session_is_admitted(repo: Path) -> None:
+def test_a_head_of_another_session_hears_nothing(repo: Path) -> None:
     first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
     second = _head(repo, 'pr/second', ('feat: b', 'session-two'), ('feat: c (a human)', ''))
-    assert pradmit.refusal(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)]) is None
+    assert pradmit.advice(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)]) == ()
 
 
 def test_heads_whose_commits_carry_no_session_are_not_judged(repo: Path) -> None:
-    """User ruling 2026-10-21: a commit with no id is not judged; the planted control is the refusal above."""
+    """User ruling 2026-10-21: a commit with no id is not judged; the planted control is the advice above."""
     first = _head(repo, 'pr/first', ('feat: a', ''))
     second = _head(repo, 'pr/second', ('feat: b', ''))
-    assert pradmit.refusal(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)]) is None
-    _git(repo, 'checkout', '-q', '-B', 'pr/third', _TIP)
-    third = _commit(repo, 'feat: c')
-    assert pradmit.push_refusal(repo, lines=[_line('pr/third', third)], policy=Policy()) == (0, '')
+    assert pradmit.advice(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)]) == ()
 
 
-def test_the_integrators_back_door_merge_is_not_judged(repo: Path) -> None:
-    """The integrator's break-glass merge updates integration, not a new `pr/*`: neither rule judges it."""
-    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
-    stacked = _head(repo, 'pr/stacked', ('feat: b', 'session-one'), start='pr/first')
-    tip = _git(repo, 'rev-parse', _TIP)
-    line = f'refs/heads/integrate/main {stacked} refs/heads/integrate/main {tip}'
-    assert pradmit.refusal(repo, head=stacked, tip=_TIP, others=[_open(7, 'pr/first', first)]) is not None
-    assert pradmit.push_refusal(repo, lines=[line], policy=Policy()) == (0, '')
-
-
-def test_a_declared_split_admits_its_session(repo: Path, monkeypatch) -> None:
-    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
-    second = _head(repo, 'pr/second', ('feat: b', 'session-one'))
-    monkeypatch.setattr(pradmit, 'SPLITS', (('session-one', 'two unrelated fixes, the user asked for two PRs'),))
-    assert pradmit.refusal(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)]) is None
-
-
-def test_a_head_stacked_on_another_open_head_is_refused(repo: Path) -> None:
+def test_a_head_stacked_on_another_open_head_is_told_so(repo: Path) -> None:
     first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
     stacked = _head(repo, 'pr/stacked', ('feat: b', 'session-two'), start='pr/first')
-    why = pradmit.refusal(repo, head=stacked, tip=_TIP, others=[_open(7, 'pr/first', first)])
-    assert why is not None
-    assert 'stacked' in why
-    assert '#7' in why
+    grown = _head(repo, 'pr/first', ('feat: a2', 'session-one'), start=first)  # it moved on after the cut
+    (said,) = pradmit.advice(repo, head=stacked, tip=_TIP, others=[_open(7, 'pr/first', grown)])
+    assert 'stacked' in said
+    assert '#7' in said
 
 
 def test_the_same_commit_once_in_integration_is_not_a_stack(repo: Path) -> None:
@@ -118,7 +95,7 @@ def test_the_same_commit_once_in_integration_is_not_a_stack(repo: Path) -> None:
     _git(repo, 'update-ref', _TIP, first)  # integration took pr/first; its PR is still listed open
     later = _head(repo, 'pr/later', ('feat: b', 'session-two'))
     assert not shares_unmerged(repo, later, first, _TIP)
-    assert pradmit.refusal(repo, head=later, tip=_TIP, others=[_open(7, 'pr/first', first)]) is None
+    assert pradmit.advice(repo, head=later, tip=_TIP, others=[_open(7, 'pr/first', first)]) == ()
 
 
 def test_a_head_that_moved_past_the_shared_commit_is_still_a_stack(repo: Path) -> None:
@@ -131,60 +108,34 @@ def test_a_head_that_moved_past_the_shared_commit_is_still_a_stack(repo: Path) -
 
 def test_the_head_itself_is_never_its_own_other(repo: Path) -> None:
     head = _head(repo, 'pr/first', ('feat: a', 'session-one'))
-    assert pradmit.refusal(repo, head=head, tip=_TIP, others=[_open(7, 'pr/first', head)]) is None
+    assert pradmit.advice(repo, head=head, tip=_TIP, others=[_open(7, 'pr/first', head)]) == ()
 
 
-def _line(branch: str, sha: str, remote: str = _ZERO) -> str:
-    return f'refs/heads/{branch} {sha} refs/heads/{branch} {remote}'
-
-
-def test_a_new_pr_branch_of_an_open_session_is_refused_at_push(repo: Path) -> None:
-    _head(repo, 'pr/first', ('feat: a', 'session-one'))
-    _git(repo, 'checkout', '-q', '-B', 'pr/second', _TIP)
-    second = _commit(repo, 'feat: b', 'session-one')
-    code, text = pradmit.push_refusal(repo, lines=[_line('pr/second', second)], policy=Policy())
-    assert code == pradmit.REFUSED
-    assert 'pr/first' in text
-
-
-def test_an_update_or_a_non_pr_branch_is_not_judged_at_push(repo: Path) -> None:
-    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
-    _git(repo, 'checkout', '-q', '-B', 'pr/second', _TIP)
-    second = _commit(repo, 'feat: b', 'session-one')
-    assert pradmit.push_refusal(repo, lines=[_line('pr/second', second, remote=first)], policy=Policy()) == (0, '')
-    assert pradmit.push_refusal(repo, lines=[_line('lane/second', second)], policy=Policy()) == (0, '')
-
-
-def test_a_merged_pr_branch_is_not_an_open_head_at_push(repo: Path) -> None:
-    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
-    _git(repo, 'update-ref', _TIP, first)
-    _git(repo, 'checkout', '-q', '-B', 'pr/second', _TIP)
-    second = _commit(repo, 'feat: b', 'session-one')
-    assert pradmit.push_refusal(repo, lines=[_line('pr/second', second)], policy=Policy()) == (0, '')
-
-
-def test_the_split_set_is_reasoned_and_its_ceiling_only_falls() -> None:
-    """ESCAPE-HATCH-CEILING: every split names its reason, and the count is pinned. Lower this pin, never raise it."""
-    ceiling = 0
-    assert all(session and reason.strip() for session, reason in pradmit.SPLITS)
-    assert len(pradmit.SPLITS) == ceiling, 'a freed split lowers the ceiling here in the same commit'
-
-
-def test_create_refusal_reads_the_forges_open_prs(repo: Path, monkeypatch) -> None:
+def test_create_advice_reads_the_forges_open_prs(repo: Path, monkeypatch) -> None:
     first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
     _head(repo, 'pr/second', ('feat: b', 'session-one'))
     listed = [_open(7, 'pr/first', first)]
     monkeypatch.setattr(pradmit, 'pr_list', lambda _client: listed)
-    why = pradmit.create_refusal(repo, object(), head='pr/second', base='integrate/main')
-    assert why is not None
-    assert 'pr/first' in why
-    listed[:] = []  # PLANTED CONTROL: with no other open PR the same head is admitted
-    assert pradmit.create_refusal(repo, object(), head='pr/second', base='integrate/main') is None
+    (said,) = pradmit.create_advice(repo, object(), head='pr/second', base='integrate/main')
+    assert 'pr/first' in said
+    listed[:] = []  # PLANTED CONTROL: with no other open PR the same head hears nothing
+    assert pradmit.create_advice(repo, object(), head='pr/second', base='integrate/main') == ()
 
 
-def test_create_refusal_asks_for_a_fetch_when_an_open_head_is_not_here(repo: Path, monkeypatch) -> None:
+def test_an_open_head_not_fetched_is_named_unjudged_and_never_refuses(repo: Path, monkeypatch) -> None:
     _head(repo, 'pr/second', ('feat: b', 'session-one'))
     monkeypatch.setattr(pradmit, 'pr_list', lambda _client: [_open(7, 'pr/first', 'f' * 40)])
-    why = pradmit.create_refusal(repo, object(), head='pr/second', base='integrate/main')
-    assert why is not None
-    assert 'fetch' in why
+    (said,) = pradmit.create_advice(repo, object(), head='pr/second', base='integrate/main')
+    assert 'fetch' in said
+    assert '#7' in said
+
+
+def test_a_head_carrying_another_open_head_whole_is_told_it_lands_it(repo: Path) -> None:
+    """A milestone that merges an open PR whole carries it; PLANTED CONTROL: a partial share is a stack."""
+    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
+    carrier = _head(repo, 'pr/milestone', ('merge: first', 'session-two'), start='pr/first')
+    (said,) = pradmit.advice(repo, head=carrier, tip=_TIP, others=[_open(7, 'pr/first', first)])
+    assert 'carries open PR #7' in said
+    grown = _head(repo, 'pr/first', ('feat: a2', 'session-one'), start=first)
+    (said,) = pradmit.advice(repo, head=carrier, tip=_TIP, others=[_open(7, 'pr/first', grown)])
+    assert 'stacked' in said
