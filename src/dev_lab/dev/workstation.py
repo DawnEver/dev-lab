@@ -49,6 +49,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -404,12 +405,19 @@ def serve(
     lock: Path | None = None,
     out: IO[str] | None = None,
     programs: Programs | None = None,
+    period_s: float | None = None,
 ) -> int:
-    """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock; the worst exit.
+    """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock, each in a LANE; the worst exit.
 
     dev-lab is refreshed first, then each repo in order (:func:`dev_lab.dev.hostrefresh.refresh`):
     a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
     The serving dev-lab checkout's own hooks are re-installed whenever they are not live (stale after a move).
+
+    ONE BUSY REPO NEVER STARVES THE OTHERS (incident 2026-10-25: a wdg-lab part held the one host lock for
+    an hour, and dev-lab's card read STALE with its whole queue unclaimed). Each repo serves in a lane of its
+    own; a lane whose serve ended serves again *period_s* later (the ``[schedule] tick_minutes``) while any
+    other lane's serve still runs, so its card keeps ticking and its queue keeps being claimed against the
+    one box ledger. dev-lab is never refreshed again inside one call: the other lanes run its code.
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
     table = section('serve')
@@ -424,29 +432,80 @@ def serve(
         emit(f'[serve] refused: {undeclared}', err=True)
         return 2
     step = Step(Tools(git=tools.git), dry=False)
+    period = float(section('schedule').get('tick_minutes', 5)) * 60 if period_s is None else period_s
+    streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
+
+    def refreshed(name: str) -> int:
+        checkout = Path(root) / name
+        emit(f'[serve] {name}', flush=True)
+        if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
+            emit(f'[serve] {name} released, not served this tick: {why}', err=True)
+            return 2
+        # the serving kit's own shims follow it (plan R1): kept current by the machine, never by hand
+        if name == KIT and (rc := _hooks(step, tools, checkout, name)):
+            emit(f'[serve] {name}: its hooks were not re-installed (exit {rc}); the old shims stay', err=True)
+        return 0
+
+    def served(name: str) -> int:
+        rc = run(host_serve_argv(), cwd=Path(root) / name, check=False, **streams).returncode
+        if rc:
+            emit(f'[serve] {name} exited {rc}', err=True)
+        return rc
+
     with held(lock or default_lock()) as mine:
         if not mine:
             emit('[serve] another forge serve holds the lock; this one does nothing', err=True)
             return 0
         if why:
             return _stand_down(tools, Path(root), repos, why)
-        worst = 0
-        for name in sorted(repos, key=lambda repo: repo != KIT):
-            checkout = Path(root) / name
-            emit(f'[serve] {name}', flush=True)
-            if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
-                emit(f'[serve] {name} released, not served this tick: {why}', err=True)
-                worst = max(worst, 2)
-                continue
-            # the serving kit's own shims follow it (plan R1): kept current by the machine, never by hand
-            if name == KIT and (rc := _hooks(step, tools, checkout, name)):
-                emit(f'[serve] {name}: its hooks were not re-installed (exit {rc}); the old shims stay', err=True)
-            streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
-            rc = run(host_serve_argv(), cwd=checkout, check=False, **streams).returncode
-            if rc:
-                emit(f'[serve] {name} exited {rc}', err=True)
-            worst = max(worst, rc)
-    return worst
+        return _lanes(sorted(repos, key=lambda repo: repo != KIT), refreshed, served, period_s=period)
+
+
+def _lanes(
+    names: Sequence[str], refreshed: Callable[[str], int], served: Callable[[str], int], *, period_s: float
+) -> int:
+    """Refresh each of *names* in order, serving each in a thread of its own as soon as it is fresh; the worst exit.
+
+    A lane whose serve ended waits *period_s* and serves again (refreshing first, except the kit) while any
+    other lane's serve still runs; once none runs, every lane ends.
+    """
+    busy = set(names)  # a lane yet to start counts as running, so an early lane never ends before it starts
+    worst = [0]
+    cond = threading.Condition()
+
+    def ended(name: str, rc: int) -> None:
+        with cond:
+            worst[0] = max(worst[0], rc)
+            busy.discard(name)
+            cond.notify_all()
+
+    def lane(name: str) -> None:
+        rc = 3  # a lane that raised reports a crash and never holds the others
+        try:
+            rc = served(name)
+            while True:
+                ended(name, rc)
+                with cond:
+                    if cond.wait_for(lambda: not busy, period_s):
+                        return
+                    busy.add(name)
+                rc = 3
+                if name != KIT and (rc := refreshed(name)):
+                    return
+                rc = served(name)
+        finally:
+            ended(name, rc)
+
+    threads: list[threading.Thread] = []
+    for name in names:
+        if rc := refreshed(name):
+            ended(name, rc)
+            continue
+        threads.append(threading.Thread(target=lane, args=(name,), name=f'serve-{name}'))
+        threads[-1].start()
+    for thread in threads:
+        thread.join()
+    return worst[0]
 
 
 def main(argv: Sequence[str] | None = None) -> int:

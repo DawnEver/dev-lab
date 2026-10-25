@@ -72,6 +72,9 @@ output = "output/logs"
 # from [tool.lab_commons.hpc].
 [tool.lab_commons.tests]
 resources = ["workstation"]
+# SCARCE-PARTS-BY-REACH (dev_lab.dev.forgescarce): one host serves it, so a PR waits on it only where its
+# diff reaches a workstation test; integration runs it in full.
+scarce = ["workstation"]
 produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 # The tool FLOORS this repo's parts need (D21): `<tool> = {floor = "<version>", reason = "<why>"}`. A

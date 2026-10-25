@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -313,10 +314,33 @@ def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst
     _serving(box)
     worst, ran = _serve(box, tmp_path, {'beta': 1})
     assert worst == 1
-    assert [cwd.name for _, cwd in ran] == ['dev-lab', 'alpha', 'beta']
-    argv, cwd = ran[0]
-    assert argv == host_serve_argv(), 'the HOST kit serves every repo; a repo venv only runs its producers'
-    assert cwd == box.root / 'dev-lab'
+    assert sorted(cwd.name for _, cwd in ran) == ['alpha', 'beta', 'dev-lab'], 'each repo is served once'
+    assert {tuple(argv) for argv, _ in ran} == {tuple(host_serve_argv())}, 'the HOST kit serves every repo'
+
+
+def test_one_busy_repo_never_starves_the_others(box: Box, tmp_path: Path) -> None:
+    """Incident 2026-10-25: one repo's long part held the host lock and every other repo's card went STALE.
+
+    Each repo serves in a lane of its own: while alpha's serve still runs, beta and dev-lab serve again one
+    period after their last serve ended. PLANTED CONTROL: once alpha ends nobody serves again -- the Task's
+    next tick does.
+    """
+    _serving(box)
+    release, ran, lock = threading.Event(), [], threading.Lock()
+
+    def run(_argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
+        with lock:
+            ran.append(cwd.name)
+            if ran.count('beta') >= 2 and ran.count('dev-lab') >= 2:
+                release.set()
+        if cwd.name == 'alpha':
+            assert release.wait(30), 'the other repos were never served again while alpha ran'
+        return _Done(0)
+
+    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs, period_s=0.01) == 0
+    assert ran.count('alpha') == 1
+    assert ran.count('beta') >= 2
+    assert ran.count('dev-lab') >= 2
 
 
 def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: Path) -> None:
@@ -339,7 +363,8 @@ def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: 
     synced = calls.index(f'bootstrap {alpha}', seen)
     assert moved < synced < served['alpha'], 'moved, then synced, then served'
     assert f'bootstrap {box.root / "beta"}' not in calls[seen:], 'an unchanged venv is not synced'
-    assert served['dev-lab'] <= calls.index(f'git -C {alpha} fetch -q', seen), 'dev-lab first'
+    kit = calls.index(f'git -C {box.root / "dev-lab"} fetch -q', seen)
+    assert kit < calls.index(f'git -C {alpha} fetch -q', seen), 'dev-lab is refreshed first'
     again = len(box.calls())
     assert _serve(box, tmp_path)[0] == 0
     assert not [c for c in box.calls()[again:] if c.startswith('bootstrap')], 'the stamp makes a second tick quiet'

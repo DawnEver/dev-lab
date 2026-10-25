@@ -3,7 +3,7 @@
 The workstation counterpart of a cluster account's crontab lines (:mod:`dev_lab.dev.hpchost.deploy`). ONE
 Task, ``lab-forge-serve``, serves every repo the machine file declares (``[serve] repos``): its action
 runs :mod:`dev_lab.dev.workstation` ``serve`` from the dev-lab checkout, which takes the
-per-user serve lock once (:mod:`dev_lab.dev.servelock`) and serves each repo in turn from its own
+per-user serve lock once (:mod:`dev_lab.dev.servelock`) and serves each repo in a lane of its own from its
 checkout and venv. One Task and not one per repo, because the lock is per host: per-repo Tasks firing
 on the same minute would either overlap (per-repo locks) or starve all but the first (one lock).
 :mod:`dev_lab.dev.workstation` ``deploy`` writes it; nothing else does.
