@@ -21,8 +21,9 @@ anything changes (:mod:`dev_lab.dev.hpchost.account`: git's credential helper an
 it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy repository --
 IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
 before its tick) -- or refuse naming that environment; clone or update each checkout; install ``uv`` and
-every declared ``needs`` the tick's PATH
-lacks, or refuse naming it; build each ``.venv`` with the repo's own ``[tool.lab_commons.hpc] install``
+every declared ``needs`` whose ``--version`` does not run in the tick's environment, or refuse naming it;
+make the login shell's PATH name the tick's user installs (one marked line in the files bash reads, written
+once, the file backed up first); build each ``.venv`` with the repo's own ``[tool.lab_commons.hpc] install``
 (and its ``native`` build) -- exactly what its committed lock pins, nothing installed over it -- skipped when
 the key of its inputs (the lock's hash among them) is unchanged; warn, naming the recipe, when a repo declares an rclone
 artefact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
@@ -45,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import socket
 import sys
@@ -61,7 +63,15 @@ from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 
 from dev_lab.dev.hpchost.account import ApiCheck, auth_check, credentials, grant
-from dev_lab.dev.hpchost.checks import MERGE_TREE_GIT, merge_tree_refusal, tool_plan
+from dev_lab.dev.hpchost.checks import (
+    LOGIN_MARK,
+    MERGE_TREE_GIT,
+    login_files,
+    login_line,
+    merge_tree_refusal,
+    runs,
+    tool_plan,
+)
 from dev_lab.dev.hpchost.spec import (
     DEFAULT_PYTHON,
     DEFAULT_ROOT,
@@ -85,6 +95,7 @@ __all__ = ['deploy', 'main']
 
 
 _which = shutil.which
+_runs = runs
 
 
 def _proves(git: Sequence[str], scratch: Path) -> str:
@@ -232,24 +243,26 @@ def _slurm_dirs() -> list[str] | str:
     return [str(Path(where).parent) for where in found.values() if where is not None]
 
 
-def _tools(step: Step, spec: Deployment, home: Path, slurm: Sequence[str], refused: Refused) -> int:
+def _tools(
+    step: Step, spec: Deployment, home: Path, refused: Refused, *, slurm: Sequence[str], setup: Sequence[str]
+) -> int:
     """``uv`` and each repo's ``needs``; a repo whose declaration, or a need of which, is refused is refused alone."""
-    emit("[tools] uv and every declared `needs`, on the tick's PATH")
+    emit("[tools] uv and every declared `needs`, by `<tool> --version` in the tick's environment")
     needs: dict[str, tuple[str, ...]] = {}
     for repo in _healthy(spec, refused):
         try:
             needs[repo.name] = () if step.dry else declared(checkout_of(spec, home, repo)).needs
         except REFUSALS as why:
             _refuse(refused, repo, str(why))
-    path = os.pathsep.join(tick_dirs(home, slurm))
+    environment = tick_environment(home, slurm, setup)
     wanted = [need for each in needs.values() for need in each]
-    installs, failed = tool_plan(wanted, found=lambda tool: _which(tool, path=path) is not None)
+    installs, failed = tool_plan(wanted, found=lambda tool: _runs(step.tools.sh, environment, tool))
     for tool, script in installs:
         if step.change(f'install {tool}: {script}', [*step.tools.sh, script]):
             failed.append(tool)
     remedy = (
-        f'not on the tick PATH ({":".join(tick_dirs(home, slurm))}) and not installable here; ask for it on the '
-        'login node, or link it into ~/.local/bin, and re-run'
+        f'does not run (`--version`) in the tick environment (`{environment}`) and is not installable here; '
+        'ask for it on the login node, or link it into ~/.local/bin, and re-run'
     )
     if 'uv' in failed:  # every tick needs it: no repo can be served
         emit(f'deploy refused: uv {remedy}', err=True)
@@ -313,6 +326,22 @@ def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink) -> 
     return 2
 
 
+def _login(step: Step, home: Path) -> int:
+    """One marked :func:`login_line` in each of :func:`login_files`, written once, each file backed up first."""
+    emit("[login] the login shell's PATH names the tick's user installs")
+    line = login_line(home)
+    for path in login_files(home):
+        if path.is_file() and LOGIN_MARK in path.read_text(encoding='utf-8', errors='replace'):
+            emit(f'  {path}: current')
+            continue
+        file, backup = shlex.quote(str(path)), shlex.quote(f'{path}.lab-deploy.bak')
+        keep = f'[ ! -e {file} ] || [ -e {backup} ] || cp -p {file} {backup}'
+        script = f'{{ {keep}; }} && echo {shlex.quote(line)} >> {file}'
+        if rc := step.change(f'{path}: back up, then append {line}', [*step.tools.sh, script]):
+            return rc
+    return 0
+
+
 def deploy(
     argv: Sequence[str],
     *,
@@ -357,7 +386,8 @@ def deploy(
         lambda: _declare(step, spec, path),
         lambda: _serve_git(step, home, path, slurm, setup),
         lambda: _each(step, spec, home, f'[checkouts] under ~/{spec.root}', update, refused=refused),
-        lambda: _tools(step, spec, home, slurm, refused),
+        lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
+        lambda: _login(step, home),
         lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),
         lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
         lambda: _cron(step, spec, home, refused, slurm=slurm, setup=setup),
