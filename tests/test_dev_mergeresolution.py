@@ -15,9 +15,12 @@ _GIT = shutil.which('git') or 'git'
 
 
 def test_the_classes_are_the_resolution_principles() -> None:
-    assert frozenset({
-        'newer-structure', 'simpler-side', 'one-source', 'deleted-as-baggage', 'renamed-to-reality', 'both-needed'
-    }) == CLASSES
+    assert (
+        frozenset(
+            {'newer-structure', 'simpler-side', 'one-source', 'deleted-as-baggage', 'renamed-to-reality', 'both-needed'}
+        )
+        == CLASSES
+    )
 
 
 def test_every_conflicted_file_declared_once_with_a_class_passes() -> None:

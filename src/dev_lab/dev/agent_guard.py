@@ -40,7 +40,6 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.agenthooks import STAMP, engine_source
-from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 __all__ = [
     'ABSENT',
@@ -49,6 +48,7 @@ __all__ = [
     'GUARDED',
     'HOOK_COMMAND',
     'INSTALLED',
+    'LAUNCHER_REL',
     'NOTHING_DECLARED',
     'PART_NAMES',
     'RULES_REL',
@@ -60,6 +60,7 @@ __all__ = [
     'engine_beside',
     'guard_installation',
     'install_guard',
+    'launcher_source',
     'report_guard',
     'wire_settings',
 ]
@@ -104,15 +105,22 @@ HOOK_COMMAND: Final = (
     '{ echo "agent-guard: the engine exited $? -- refused (fail closed)" >&2; exit 2; }'
 )
 
-#: The STRAY-FILE-REFUSED census (:mod:`dev_lab.dev.codeplace` ``stray``), run by this checkout's own venv
-#: interpreter -- each layout derived from :data:`dev_lab.dev.venvpath.VENV_LAYOUTS`, never typed. A checkout
-#: with no venv is NOT blocked (decision 7, 2026-10-22): the census is a report, and a missing interpreter
-#: is the bootstrap's to fix, not every shell call's.
-STRAY_COMMAND: Final = (
-    'for p in '
-    + ' '.join(f'"$CLAUDE_PROJECT_DIR/{"/".join(layout)}"' for layout in VENV_LAYOUTS.values())
-    + '; do [ -x "$p" ] && exec "$p" -m dev_lab.dev.codeplace stray; done; exit 0'
-)
+#: THE ONE DOOR a hook reaches this checkout's interpreter through: a node launcher that resolves the venv
+#: per platform (and the main checkout's from a linked worktree). A hook spelling ``.venv`` inline drifts
+#: from it -- motronics pins that (``test_no_hook_spells_its_own_interpreter``). A repo's own launcher at
+#: this path is kept: the install writes it only where none is.
+LAUNCHER_REL: Final = '.claude/hooks/py.js'
+_LAUNCHER_SHIPPED: Final = Path(__file__).resolve().with_name('agent_launcher.js')
+
+
+def launcher_source() -> str:
+    """The shipped launcher's text."""
+    return _LAUNCHER_SHIPPED.read_text(encoding='utf-8')
+
+
+#: The STRAY-FILE-REFUSED census (:mod:`dev_lab.dev.codeplace` ``stray``), through :data:`LAUNCHER_REL`. A
+#: checkout with no venv is NOT blocked (decision 7, 2026-10-22): the launcher exits 0 without one.
+STRAY_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.codeplace stray'
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +414,14 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
         engine.parent.mkdir(parents=True, exist_ok=True)
         engine.write_text(engine_source(), encoding='utf-8')
         actions.append(f'engine {"replaced" if status != ABSENT else "installed"}: {engine}')
+
+    launcher = repo / LAUNCHER_REL
+    if launcher.exists():
+        actions.append(f'launcher already present, kept: {launcher}')
+    else:
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.write_text(launcher_source(), encoding='utf-8')
+        actions.append(f'launcher installed: {launcher}')
 
     settings_path = repo / SETTINGS_REL
     before: dict[str, Any] = {}
