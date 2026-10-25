@@ -27,9 +27,10 @@ from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, stale
 from dev_lab.dev.relock import _worktree
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from dev_lab.dev.forgeintegration import Child
     from dev_lab.dev.forgework import Client
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     'TICK_BUDGET_S',
     'branchset_verdict',
     'judge',
+    'judge_heads',
     'lock_verdict',
 ]
 
@@ -98,4 +100,29 @@ def judge(
             state, text = 'error', f'the head could not be checked out to resolve: {why}'
         status_post(client, head, context=LOCK_CONTEXT, state=state, description=text)
         lines.append(f'{LOCK_CONTEXT}: {state}')
+    return lines
+
+
+def judge_heads(
+    root: Path,
+    origin: Client,
+    children: Sequence[Child],
+    gate: Callable[..., list[str]],
+    monotonic: Callable[[], float],
+) -> list[str]:
+    """*gate* on each child's head, oldest PR first, starting none once :data:`TICK_BUDGET_S` is spent.
+
+    A gate that raises is one line for its head; the next head is still judged.
+    """
+    lines: list[str] = []
+    start = monotonic()
+    for child in sorted(children, key=lambda c: c.pr or 0):
+        where = f'{child.branch} #{child.pr}'
+        if monotonic() - start >= TICK_BUDGET_S:
+            lines.append(f'{where}: gate waits for the next tick (budget {TICK_BUDGET_S:.0f} s spent)')
+            continue
+        try:
+            lines += [f'{where}: {line}' for line in gate(root, origin, child.head, child.branch)]
+        except Exception as why:  # noqa: BLE001 -- one head's defect must not end the tick for the others
+            lines.append(f'{where}: gate raised {type(why).__name__}: {why}')
     return lines

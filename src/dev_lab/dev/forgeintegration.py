@@ -323,33 +323,8 @@ def tick(
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
     if host:
-        lines += _gated(root, origin, [c for c in children if c.pr is not None], gate, monotonic)
+        lines += forgeheadgate.judge_heads(root, origin, [c for c in children if c.pr is not None], gate, monotonic)
     return Ticked(tuple(lines), tuple(said))
-
-
-def _gated(
-    root: Path,
-    origin: Client,
-    children: Sequence[Child],
-    gate: Callable[..., list[str]],
-    monotonic: Callable[[], float],
-) -> list[str]:
-    """The PR-head statuses (:mod:`dev_lab.dev.forgeheadgate`), oldest PR first, within the tick's budget.
-
-    A gate that raises is one line for its head; the next head is still judged.
-    """
-    lines: list[str] = []
-    start = monotonic()
-    for child in sorted(children, key=lambda c: c.pr or 0):
-        where = f'{child.branch} #{child.pr}'
-        if monotonic() - start >= forgeheadgate.TICK_BUDGET_S:
-            lines.append(f'{where}: gate waits for the next tick (budget {forgeheadgate.TICK_BUDGET_S:.0f} s spent)')
-            continue
-        try:
-            lines += [f'{where}: {line}' for line in gate(root, origin, child.head, child.branch)]
-        except Exception as why:  # noqa: BLE001 -- one head's defect must not end the tick for the others
-            lines.append(f'{where}: gate raised {type(why).__name__}: {why}')
-    return lines
 
 
 def _noticed(root: Path, child: Child, policy: Policy, said: Feedback, *, number: int, now: datetime | None) -> str:
