@@ -67,7 +67,9 @@ def room(cards: Sequence[HostCard], declared: Declared, now: datetime) -> tuple[
 
 
 def _head(root: Path) -> str:
-    shown = _door.run([_GIT, '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True)
+    shown = _door.run(
+        [_GIT, '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True, encoding='utf-8', check=True
+    )
     return shown.stdout.strip()
 
 
