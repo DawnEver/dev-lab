@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.box import Demand, Refused, box_path, hold, holdings
+from lab_commons.box import Refused, box_path, hold, holdings
 from lab_commons.compute.durable import durable_text
 
 if TYPE_CHECKING:
@@ -107,7 +107,7 @@ def run_once(key: RunKey, work: Callable[[], str], *, directory: Path, poll_s: f
     name = seat(key)
     while True:
         mine = uuid.uuid4().hex[:12]
-        held = hold(Demand(cpu=0, mem_gb=0, wall_s=RUN_WALL_S, seats={name: 1}), name, 0.0, key=f'{name}:{mine}')
+        held = hold({name: 1}, RUN_WALL_S, name, 0.0, key=f'{name}:{mine}')
         try:
             held.__enter__()
         except Refused:

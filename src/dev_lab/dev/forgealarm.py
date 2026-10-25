@@ -22,7 +22,7 @@ EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.f
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
 notify reads the tick's output); it carries no token, only the kind, the repo, a subject and a body.
 WHERE THE FAMILY'S OWN CHANNELS ARE CONFIGURED THEY ARE USED TOO: the machine file's ``[alerts]``
-table (:mod:`lab_commons.config`) drives :class:`lab_commons.supervise.alert.Notifier` -- Telegram,
+table (:mod:`lab_commons.config`) drives :class:`dev_lab.supervise.alert.Notifier` -- Telegram,
 email, webhook -- exactly as supervision does. No table, or none enabled, delivers nothing beyond the
 line, and says so on the line (``"delivered": []``).
 AND EVERY ALARM A TICK RAISES RIDES ON THAT HOST'S CARD (:mod:`dev_lab.dev.forgehosts`), which
@@ -49,8 +49,9 @@ from typing import Any, Final
 from lab_commons.compute.durable import durable_text, read_table
 from lab_commons.config import config_path, section
 from lab_commons.log import emit
-from lab_commons.supervise.alert import Notice, Notifier
-from lab_commons.supervise.verdict import Severity
+
+from dev_lab.supervise.alert import Notice, Notifier
+from dev_lab.supervise.verdict import Severity
 
 __all__ = [
     'AUTH',
