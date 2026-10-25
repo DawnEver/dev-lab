@@ -87,7 +87,7 @@ Write issues and comments only through `python -m dev_lab.dev.forge issue ...`. 
 | read a local log to know if a sha is green | `forge status list <sha>` or `forge queue` |
 | push `main` after a local heavy run | `integrate promote <sha>` then `git push origin main` (the steward), when every part is a full PASS |
 | hold a branch "for later" | merge it or delete it ([one branch per session](branch-set.md)) |
-| push a lane branch to origin | keep lanes local; the pre-push hook refuses an undeclared branch ([the push-time check](branch-set.md#the-push-time-check)) |
+| push a lane branch to origin | keep lanes local; an undeclared origin branch reds on the forge (the forge judges the branch set: [branch set](branch-set.md#judged-on-the-forge-never-at-push)) |
 | delete merged origin branches by hand | declare `prune_merged = true`; every serving host prunes them ([pruning origin](branch-set.md#pruning-origin)) |
 | submit a cluster job from your box | nothing; the cluster's `forge serve` claims it ([HPC clusters](hpc.md)) |
 | write a findings file under `output/` | a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry |
@@ -189,11 +189,12 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
 Upgrading lab-commons brings two changes to every repo that opts into the base hook table
 (`[tool.lab_commons.hooks]`):
 
-1. **The pre-push hook refuses an undeclared branch.** The base table was missing its `branchset-push` row, so
+1. **The pre-push hook refuses an undeclared branch.** The base table was missing its push-time branch-set row, so
    from the TOML hook migration (2026-10-11) until 2026-10-13 this check never ran. A push of any branch that
    `[tool.lab_commons.branchset]` does not name is now refused. Before you upgrade, declare every session branch
    that really lives on origin, or its next push is refused. Agent lanes stay local. Superseded 2026-10-23
-   (toolchain plan P3): the base table no longer carries the row, and the forge's branch-set test judges origin.
+   (toolchain plan P3): the base table no longer carries the row, and the forge's branch-set test judges origin. Retired 2026-10-24: the
+   module is gone, so no repo can declare the row either.
 2. **Merged branches are pruned from origin.** Opt in (every serving host prunes, idempotently):
 
 ```toml
