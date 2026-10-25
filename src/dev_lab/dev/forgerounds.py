@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import sys
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
@@ -32,12 +33,13 @@ from lab_commons.hpc.needsets import needs_of
 from dev_lab.dev import forgerun, forgerunstate
 from dev_lab.dev.forgealarm import AUTH, Alarm
 from dev_lab.dev.forgeclaim import Work
-from dev_lab.dev.forgehosts import card_host, publish_card
+from dev_lab.dev.forgehosts import HostCard, card_host, publish_card
 from dev_lab.dev.forgeproduce import Produced, box_claim
 from dev_lab.dev.forgetick import TickReport, tick
+from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import ForgeCallFailed
 
-__all__ = ['Producing', 'Rounds', 'locked_fetch', 'reserve', 'supply_now']
+__all__ = ['Producing', 'Rounds', 'box_now', 'locked_fetch', 'reserve', 'supply_now']
 
 
 def locked_fetch(fetch: Callable[[Path], None]) -> Callable[[Path], None]:
@@ -59,6 +61,7 @@ class Rounds:
     share; *supplied* is :func:`supply_now` with its host bound, *holding* the box ledger's claims now (none on a
     cluster); *runs* the cluster runs here, each NOT YET SUBMITTED one running at *sized* of its need-set -- a
     submitted one's tasks are already held in the cluster's standing, and counting them twice starved the queue.
+    *room* is this box as a round's pass sees it (:func:`box_now`; ``None`` on a cluster), *cards* every host card.
     """
 
     root: Path
@@ -74,6 +77,8 @@ class Rounds:
     carding: Mapping[str, Any]
     produce: Callable[..., Produced]
     latest: dict[str, Any] = dataclasses.field(default_factory=dict)  # the last round: what the card shows
+    room: Callable[[Sequence[Holding]], Box | None] = lambda _held: None
+    cards: Sequence[HostCard] = ()
 
     def __post_init__(self) -> None:
         """The producers, publishing this host's card at every beat."""
@@ -100,11 +105,12 @@ class Rounds:
         # a run Slurm holds is in the standing already (every pending and running task): only an unsubmitted one is not
         unsubmitted = (forgerunstate.CLAIMED_PHASE, forgerunstate.SUBMITTING)
         running = [self.sized(needs_of(run.platform)) for run in self.runs if run.phase in unsubmitted]
+        box = self.room(held)
         ticked = _tick(
             self.repo, self.root, self.alarm, **self.ticking,
-            supply=supply, running=running,
+            supply=supply, running=running, box=box, cards=self.cards,
         )  # fmt: skip
-        self.latest.update(ticked=ticked, supply=supply, held=held)
+        self.latest.update(ticked=ticked, supply=supply, held=held, box=box)
         for line in ticked.lines:
             self.say(line)
         local = [item for item in ticked.claimed if item.cluster is None or item.holder is None]
@@ -119,6 +125,7 @@ class Rounds:
         publish_card(
             self.root, ticked.queue, claimed, **self.carding, artefacts=ticked.artefacts,
             supply=self.latest['supply'], progress=progress,
+            size=self.latest['box'].size() if self.latest.get('box') else {},
             running=(*(f'{run.sha[:12]} {run.platform}' for run in self.runs),
                      *(f'{one.what} (pid {one.pid})' for one in self.latest['held'])),
         )  # fmt: skip
@@ -136,6 +143,17 @@ def supply_now(
     if standing is not None:
         return dataclasses.replace(standing.supply, scope=name)
     return probe.box(name, capacity=capacity(), holdings=held, read=read)
+
+
+def box_now(
+    held: Sequence[Holding],
+    *,
+    capacity: Callable[[], Capacity] = Capacity.read,
+    read: Read = Reading.now,
+    clock: Callable[[], float] = time.time,
+) -> Box:
+    """The box as a round's claim pass sees it: its size, the ledger's claims *held*, the OS, the clock."""
+    return Box(capacity(), list(held), read, clock())
 
 
 def reserve(

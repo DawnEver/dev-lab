@@ -41,6 +41,11 @@ claim is taken before the part is claimed, and its producer adopts it (:mod:`dev
 A CLUSTER part asks what its
 last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
+
+A WAIT IS ANSWERED, BOUNDED AND SEEN (:mod:`dev_lab.dev.forgewait`). Given its *box*, a tick tells every part
+it does not admit when it could start and protects that start from lower-ranked parts; a part larger than
+this box that no live host in *cards* can take is refused on its commit at once, naming the remedy; and a
+part waiting ``not admitted`` past the schedule's ``request_unadmitted_hours`` is told on ``waits/<part>``.
 """
 
 from __future__ import annotations
@@ -89,10 +94,12 @@ from dev_lab.dev.forgeclaim import (
     Claim,
     Work,
     forge_now,
+    refuse,
     serving,
     this_machine,
     this_seat,
 )
+from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerequest import declared_request, remind, request_authors
@@ -101,6 +108,7 @@ from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
+from dev_lab.dev.forgewait import Box, nowhere, tell
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import derived, origin_url, parts_of, this_platform
@@ -148,6 +156,8 @@ def tick(
     authors: Collection[str] | None = None,
     serves: Serves | None = None,
     reserve: Callable[[Work], int | str] | None = None,
+    box: Box | None = None,
+    cards: Sequence[HostCard] = (),
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -169,6 +179,8 @@ def tick(
     claims (default: the machine file's ``[serve] parts``, :mod:`lab_commons.compute.serves`): a part its rule
     skips waits, named, for another host. *reserve* takes a local part's box claim before it is claimed (its
     ledger row, or why the box refused it); ``None`` (a cluster seat, a dry run's caller) takes none.
+    *box* is this box as the pass sees it (:class:`~dev_lab.dev.forgewait.Box`; ``None`` on a cluster seat) and
+    *cards* every host card, read for whether a part too large for this box fits any live host.
     """
     lines: list[str] = []
     try:
@@ -209,15 +221,27 @@ def tick(
         taken=list(running), trunks=(policy.integration, policy.trunk),
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
-        serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve,
+        serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve, box=box,
     )  # fmt: skip
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
         priority=(priority or Priority.of(section(PRIORITY_TABLE))).matches,
     )  # fmt: skip
     for item in ranked:
         taken.consider(item)
+    answered = set()
+    for key, (one, asked, seen) in taken.unfit.items():
+        why = nowhere(asked, seen, cards, me=machine, now=now)
+        if why and not dry_run:
+            done = refuse(built, one, why)
+            answered.add(key)
+            taken.work = [done if item is one else item for item in taken.work]
+            taken.pending = [item for item in taken.pending if item is not one]
+            lines.append(f'refused {one.context} {one.ref}@{one.sha[:12]}: {why}')
+    taken.queue = [item for item in taken.queue if item.candidate.key not in answered]
     if not dry_run:
         lines += remind(built, taken.queue, hours=schedule.request_unadmitted_hours, host=machine or login)
+        lines += tell(built, taken.queue, taken.claimed, history=history, hours=schedule.request_unadmitted_hours,
+                      host=machine or login)  # fmt: skip
     work, claimed, refused, queue = taken.work, taken.claimed, taken.refused, taken.queue
     for item in work:
         who = f' by {item.holder.login}@{item.holder.machine or "-"}' if item.holder else ''

@@ -137,6 +137,7 @@ class HostCard:
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
     serves: str = EVERY  # machine-file [serve] parts: which parts this host claims
     withholds: tuple[str, ...] = ()  # machine-file [serve] withhold: resources it keeps for its own work
+    size: Mapping[str, float] = field(default_factory=dict)  # a box's cpu and mem_gb after its reserve; {}: unstated
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -357,13 +358,14 @@ def publish_card(
     priority: Mapping[str, Sequence[str]] | None = None,
     serves: str = EVERY,
     withholds: Sequence[str] = (),
+    size: Mapping[str, float] | None = None,
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
     *progress* is what each local part it holds has done so far, by ``(sha, platform)`` (``producing 42m``),
     published while they run. *supply* is what the tick admitted against (default: the cluster
     standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
-    ``[serve] parts`` rule.
+    ``[serve] parts`` rule, *size* a box's size (what a part larger than any live host is refused against).
     """
     progress = progress or {}
     built = client(root)
@@ -390,6 +392,7 @@ def publish_card(
             priority=dict(priority or {}),
             serves=serves,
             withholds=tuple(sorted(withholds)),
+            size=dict(size or {}),
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:
