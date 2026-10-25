@@ -34,9 +34,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box.demand import Demand
+from lab_commons.box.demand import CPU, MEM_GB, cores, seats
 from lab_commons.compute.execute import CACHED, RAN, LocalExecutor, Offer, presence_check
 from lab_commons.compute.graph import Graph
+from lab_commons.compute.model import Demand
 from lab_commons.compute.presence import cached
 from lab_commons.compute.store import Nondeterministic, Result, ResultStore
 from lab_commons.compute.unit import Engine, Environment, Unit, environment_here
@@ -119,11 +120,12 @@ class ForgeResults:
 
 @dataclass(frozen=True)
 class UnitJob:
-    """What a unit Job's request carries: the unit hash, its bundle's ref, its size and its needs."""
+    """What a unit Job's request carries: the unit hash, its bundle's ref, its size, its wall and its needs."""
 
     unit_hash: str
     bundle: Ref
     demand: Demand
+    wall_s: int
     needs: tuple[str, ...]
 
     def paths(self) -> tuple[str, ...]:
@@ -132,7 +134,7 @@ class UnitJob:
         return (
             f'unit={self.unit_hash}',
             f'bundle={ref.backend}|{ref.key}|{ref.bytes}|{ref.sha256}',
-            f'size={d.cpu}|{d.mem_gb}|{d.wall_s}',
+            f'size={cores(d)}|{d[MEM_GB]}|{self.wall_s}',
             f'needs={"+".join(self.needs)}',
         )
 
@@ -156,13 +158,14 @@ class UnitJob:
             job = cls(
                 tokens['unit'],
                 Ref(backend, key, int(size), sha256),
-                Demand(int(cpu), float(mem_gb), int(wall_s), {}),
+                Demand({CPU: int(cpu), MEM_GB: float(mem_gb)}),
+                int(wall_s),
                 needs,
             )
         except (KeyError, ValueError) as why:
             msg = f'{spelling}: {why}'
             raise UndeclaredRequest(msg) from None
-        if job.demand.cpu <= 0:
+        if cores(job.demand) <= 0:
             msg = f'{spelling}: a compute unit requires positive cpu, not a coreless resource claim'
             raise UndeclaredRequest(msg)
         return job
@@ -175,9 +178,9 @@ def unit_request(paths: Sequence[str]) -> Declared:
         UNIT,
         ('-m', __name__, *paths),
         frozenset(job.needs),
-        float(job.demand.cpu),
-        job.demand.mem_gb,
-        job.demand.wall_s / 3600,
+        float(cores(job.demand)),
+        job.demand[MEM_GB],
+        job.wall_s / 3600,
     )
 
 
@@ -193,7 +196,8 @@ def _manifest(unit: Unit) -> dict[str, Any]:
         'params': dict(unit.params),
         'files': sorted(set(unit.inputs) - set(unit.params)),
         'outputs': list(unit.outputs),
-        'demand': asdict(unit.demand),
+        'demand': dict(unit.demand),
+        'wall_s': unit.wall_s,
     }
 
 
@@ -202,7 +206,9 @@ def _unit_of(tree: Path) -> tuple[Unit, dict[str, Path]]:
     env = raw['engine']['environment']
     engine = Engine(raw['engine']['name'], raw['engine']['version'], Environment(**env) if env else None)
     files = {name: tree / 'files' / name for name in raw['files']}
-    unit = Unit(engine, raw['entry'], {**raw['params'], **files}, tuple(raw['outputs']), Demand(**raw['demand']))
+    unit = Unit(
+        engine, raw['entry'], {**raw['params'], **files}, tuple(raw['outputs']), Demand(raw['demand']), raw['wall_s']
+    )
     return unit, files
 
 
@@ -230,7 +236,7 @@ def offering(
             store = store_for(load_config(root), client, client.forge.repo, size=bundle.stat().st_size)
             ref = store.put(run_id(sha, UNIT, unit_hash[:16], now()), bundle)
         vendor = () if env is not None else (unit.engine.name,)
-        job = UnitJob(unit_hash, ref, unit.demand, tuple(sorted({*vendor, *unit.demand.seats})))
+        job = UnitJob(unit_hash, ref, unit.demand, unit.wall_s, tuple(sorted({*vendor, *seats(unit.demand)})))
         issue = publish(root, client, UNIT, sha, label=load_schedule(root).request_label, paths=job.paths())
         return f'#{issue.number}'
 

@@ -36,7 +36,7 @@ from typing import Final
 import pytest
 from _box_fake import ended
 from lab_commons import box
-from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Refused, hold, write_ended
+from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Refused, hold, write_ended
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
 from lab_commons.hpc.needsets import BASE, Vocabulary
@@ -956,7 +956,7 @@ def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeyp
     key = verify.run_key(root, ('tests/a.py',))
     answer = {'code': EXIT_CODES[Conclusion.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
     (box / f'{key.digest()}.r1.result').write_text(json.dumps(answer), encoding='utf-8')
-    with hold(Demand(0, 0, 60, {seat(key): 1}), 'leader', 1, key=f'{seat(key)}:r1'):
+    with hold({seat(key): 1}, 60, 'leader', 1, key=f'{seat(key)}:r1'):
         assert verify.main(['tests/a.py']) == EXIT_CODES[Conclusion.FAIL]
 
 
@@ -1197,13 +1197,14 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
 #: A child that claims EVERY core of its box ledger and holds them until killed.
 _HOLD_SEAT: Final = (
     'import math, time\n'
-    'from lab_commons.box import Capacity, Demand, hold\n'
+    'from lab_commons.box import Capacity, hold\n'
+    'from lab_commons.compute.model import Demand\n'
     'from lab_commons.box.supply import Reading\n'
     'size = Capacity.read()\n'
     'cores = math.floor(size.cpu)\n'
     # a quiet reading, so the planted holder is ALWAYS admitted however loaded the machine running it is
     'whole = Reading(size.cpu + size.kept_cpu, size.cpu + size.kept_cpu, 2**40, 2**40)\n'
-    "with hold(Demand(cpu=cores, mem_gb=0.5, wall_s=600, seats={}), 'planted-holder', 5, key='planted',\n"
+    "with hold(Demand(cpu=cores, mem_gb=0.5), 600, 'planted-holder', 5, key='planted',\n"
     '          read=lambda _pids: whole):\n'
     "    print('held', flush=True)\n"
     '    time.sleep(600)\n'
