@@ -14,7 +14,9 @@ and the partitions, quota and storage a host card publishes. An unreadable quota
 
 from __future__ import annotations
 
+import json
 import math
+import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -28,12 +30,13 @@ from lab_commons.config import config_path
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.allocation import resolve
 from lab_commons.hpc.builds import builds_at
-from lab_commons.hpc.cluster import Runner, Unreachable, probe, submitter
+from lab_commons.hpc.cluster import Runner, Unreachable, probe, scancel, submitter
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_cells, run_shas
+from lab_commons.hpc.run import _STARTED as STARTED  # the one spelling of a started task's squeue states
 from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run, withdraw_pending
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.slurm import FORGE_SESSION
@@ -42,8 +45,9 @@ from lab_commons.hpc.watch import PENDING, settle
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
 from dev_lab.dev.forgerecords import read_allocation
-from dev_lab.dev.forgerunstate import Cluster, Run, Standing, Unrecorded
+from dev_lab.dev.forgerunstate import Cluster, Draining, Run, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
+from dev_lab.dev.forgestuck import parse_duration
 
 __all__ = ['SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
 
@@ -177,6 +181,43 @@ class SlurmCluster:
         return withdraw_pending(
             run.sha, run.platform, self.machine, self.connect, also=run.job_ids, aliases=run.job_aliases
         )
+
+    def started_tasks(self, run: Run) -> Draining:
+        """*run*'s started tasks, each priced as the packer priced it: its items' estimate times ``policy.safety``.
+
+        The estimate is :meth:`lab_commons.compute.learned.Measured.estimate` over the learned table -- durations,
+        floors, overheads, an unmeasured file at ``cost.seconds`` -- and ``policy.safety`` is the margin the plan
+        turns it into a ``--time`` with (:func:`lab_commons.hpc.plan.plan`): one source, no new constant. A task
+        of no round's manifest is priced at the prior alone. Start and now are both the cluster's clock.
+        """
+        state, shell = load_state(run.sha, run.platform, self.machine, self._runners())
+        names = ','.join((job_name(run.sha, run.platform), *run.job_aliases))
+        lines = shell(f"date +%s; squeue -h --me -n {names} -t {STARTED} -o '%i|%M'", None).split()
+        now = float(lines[0])
+        measured = learned.Measured.of(learned.learned(run.repo_url))
+        cost, safety = self.config.cost, self.config.policy.safety
+        manifests: dict[str, dict[str, Any]] = {}
+        tasks = []
+        for row in lines[1:]:
+            job_id, _, elapsed = row.partition('|')
+            base, _, index = job_id.partition('_')
+            ids: list[list[str]] = []
+            for one in state['rounds']:
+                if base in {str(job) for job in one.get('job_ids', ())} and index.isdigit():
+                    run_dir = one['run_dir']
+                    if run_dir not in manifests:
+                        manifests[run_dir] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
+                    start, stop = manifests[run_dir]['shards'][int(index)]
+                    ids = [list(item.get('ids', ())) for item in manifests[run_dir]['items'][start:stop]]
+            seconds = sum(measured.estimate(ids, cost)[0]) if ids else cost.seconds
+            tasks.append(Started(job_id, now - parse_duration(elapsed), seconds * safety))
+        return Draining(now, tuple(tasks))
+
+    def cancel_tasks(self, run: Run, ids: list[str]) -> list[str]:
+        """``scancel`` exactly these tasks of *run*, under the account holding its run state."""
+        if ids:
+            scancel(load_state(run.sha, run.platform, self.machine, self._runners())[1], ids)
+        return list(ids)
 
     def standing(self) -> Standing:
         """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""

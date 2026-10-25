@@ -47,13 +47,18 @@ PROGRESS TRAVELS ON THE CLAIM. Whenever where the run stands changes -- ``buildi
 (:class:`dev_lab.dev.forgeclaim.Claim`), so any machine with a forge credential sees it; the final
 status links the run record.
 
-NEWEST-HEAD-ONLY: A COALESCED REF'S RUN LOSES ITS PENDING TASKS THE TICK ITS REF MOVES ON, AND NO STARTED TASK
-(user ruling 2026-10-22). A run of a ``Schedule.coalesce`` class whose sha is no longer its ref's tip has every
-NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a STARTED task is never cancelled
-for supersession -- the run keeps its claim as ``draining`` until the last one ends, then is released as
-superseded naming the tip and dropped -- one alarm. The tip waits behind it (:mod:`forgecoalesce`), so its run
-carries every outcome the drained tasks finished (:mod:`dev_lab.dev.forgecarry`). Only a deliberate stop
-(:func:`lab_commons.hpc.run.cancel_run`) kills a started task. Ada 2026-10-22: 44% of a week's forge core-h was
+NEWEST-HEAD-ONLY: A COALESCED REF'S RUN LOSES ITS PENDING TASKS THE TICK ITS REF MOVES ON, AND ITS STARTED ONES
+DRAIN TO A DEADLINE (user rulings 2026-10-22, 2026-10-24 "B"). A run of a ``Schedule.coalesce`` class whose sha is
+no longer its ref's tip has every NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a
+STARTED task drains -- the run keeps its claim as ``draining`` -- until its DEADLINE: its learned limit (the
+packer's estimate times ``policy.safety``, the figure its ``--time`` was cut from) counted from supersession or
+its own start, whichever is later (:func:`overdue`). Past it, that task alone is cancelled and its tests are left
+for the tip. Once none runs the run is released as superseded naming the tip and dropped -- one alarm. The tip
+waits behind it (:mod:`forgecoalesce`), so its run carries every outcome the drained tasks finished
+(:mod:`dev_lab.dev.forgecarry`). Ada 2026-10-24: five superseded heads of live PRs held one account up to 1 d 16 h.
+A run whose REF IS GONE (merged or closed) has no tip to drain for: unless the integration tip carries its
+result (equivalent, P6), every job is cancelled, started ones too (:func:`_ref_gone`).
+Ada 2026-10-22: 44% of a week's forge core-h was
 cancelled while running, 34 points of it for supersession. A DOCS-ONLY tip
 never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
 submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
@@ -70,23 +75,22 @@ THE RUN STATE -- the file, its schema and the cluster protocol -- lives in :mod:
 from __future__ import annotations
 
 import dataclasses
-import shlex
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
 from lab_commons.hpc.records import read_record, write_record
-from lab_commons.hpc.run import NoRoom
 from lab_commons.hpc.tree import NotSubmitted
 
-from dev_lab.dev import forgeship
+from dev_lab.dev import forgerunpost, forgeship
 from dev_lab.dev.artefacts import MissingOutput, run_id
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgecarry import equivalent, publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from dev_lab.dev.forgecoalesce import DRAINING, PUBLISHING
 from dev_lab.dev.forgeroute import pyproject_at, route
+from dev_lab.dev.forgerunpost import DESCRIPTION_MAX
 from dev_lab.dev.forgerunstate import (
     CLAIMED_PHASE,
     GATHERED,
@@ -94,26 +98,28 @@ from dev_lab.dev.forgerunstate import (
     SUBMITTED,
     SUBMITTING,
     Cluster,
+    Draining,
     Run,
     Unrecorded,
     drop,
     save,
 )
 from dev_lab.dev.forgeschedule import coalesced, tip_of
-from dev_lab.dev.forgestatus import status_history, status_post
+from dev_lab.dev.forgestatus import status_history
 from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 
-__all__ = ['advance', 'start']
+__all__ = ['advance', 'overdue', 'start']
 
 #: What a tick may do with a run (:func:`_hold`).
 _ADVANCE: Final = 'advance'
 _WAIT: Final = 'wait'
 _GONE: Final = 'gone'
 
-#: A status description is short on every forge.
-_DESCRIPTION_MAX: Final = 140
+#: :func:`_superseding_tip` for a run whose ref is gone (merged or closed) and no live head carries it.
+_REF_GONE: Final = '(ref gone)'
 
 
 def start(work: Work, owner: Claim) -> Run:
@@ -166,10 +172,10 @@ def advance(
                 say(f'{tag}: routed {one.area} {one.action}' + (f' #{one.number}' if one.number else ''))
             run = _ship(root, run, client=client, cluster=cluster, say=say, tag=tag)
             say(publish(root, Path(run.record), client=client, ref=run.ref, sha=run.sha, platform=run.platform))
-            run = _step(run, phase=PUBLISHED)
+            run = forgerunpost.step(run, phase=PUBLISHED)
     except (MissingOutput, NotSubmitted, PartRefusal) as why:
         say(f'{tag}: {why}')
-        _release(client, run, _release_reason(run, why, alarm), say)
+        forgerunpost.release(client, run, forgerunpost.release_reason_for(run, why, alarm), say)
         drop(run)
         return None
     drop(run)
@@ -203,11 +209,11 @@ def _gather(
     if record is None:
         # hpc submits retry rounds inside a gather: re-read every round's job id each tick (Ada,
         # 2026-10-12: the submit's r0 id was still shown while r2 ran).
-        run = _step(run, job_ids=tuple(cluster.submitted(run)) or ids or run.job_ids)
+        run = forgerunpost.step(run, job_ids=tuple(cluster.submitted(run)) or ids or run.job_ids)
         say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
-        return _report(client, run, cluster.progress(run), lease, say)
-    run = _step(run, phase=GATHERED, record=str(record))
-    return _report(client, run, PUBLISHING, lease, say)
+        return forgerunpost.report(client, run, cluster.progress(run), lease, say)
+    run = forgerunpost.step(run, phase=GATHERED, record=str(record))
+    return forgerunpost.report(client, run, PUBLISHING, lease, say)
 
 
 def _superseding_tip(root: Path, run: Run) -> str:
@@ -215,10 +221,43 @@ def _superseding_tip(root: Path, run: Run) -> str:
 
     A DOCS-ONLY tip never supersedes (DOCS-ONLY-CARRIES, :func:`dev_lab.dev.forgecarry.docs_only`): no test's
     footprint reaches its diff, so its part IS this run's result, posted on it too when it lands (:func:`publish`).
+    :data:`_REF_GONE` when the ref itself is gone and no live head carries the run (:func:`_ref_gone`).
     """
+    if _ref_gone(root, run):
+        return _REF_GONE
     tip = tip_of(root, run.ref)
     moved = tip and tip != run.sha and coalesced(root, run.ref)
     return tip if moved and not equivalent(root, run.sha, tip) else ''
+
+
+def _integration(root: Path) -> str:
+    """*root*'s integration branch."""
+    return load_policy(root).integration
+
+
+def _ref_gone(root: Path, run: Run) -> bool:
+    """Whether *run*'s ref has no tip (merged or closed, deleted) and its result carries to no live head.
+
+    NEWEST-HEAD-ONLY drains a superseded run's started tasks because its tip carries them; a gone ref has no
+    tip. The integration tip is the one live head left that may carry it (DOCS-ONLY-CARRIES, P6).
+    """
+    if tip_of(root, run.ref):
+        return False
+    integration = tip_of(root, _integration(root))
+    return not (integration and equivalent(root, run.sha, integration))
+
+
+def _cancel_orphan(
+    client: Client, run: Run, *, cluster: Cluster, say: Callable[[str], None], alarm: Callable[[Alarm], None], tag: str
+) -> None:
+    """Cancel every job of *run* -- started ones too -- release it superseded and drop it: one alarm."""
+    ids = cluster.cancel(run)
+    reason = f'released: superseded -- {run.ref} is gone and no live head carries its result'[:DESCRIPTION_MAX]
+    why = f'jobs {" ".join(ids) or "none"} cancelled'
+    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was orphaned', why))
+    say(f'{tag}: {why} -- {reason}')
+    forgerunpost.release(client, run, reason, say)
+    drop(run)
 
 
 def _supersede(
@@ -232,25 +271,48 @@ def _supersede(
     alarm: Callable[[Alarm], None],
     tag: str,
 ) -> Run | None:
-    """Withdraw *run*'s NOT-YET-STARTED tasks; drain its started ones; then release it superseded by *tip*.
+    """Withdraw *run*'s NOT-YET-STARTED tasks; drain its started ones to their deadline; then release it.
 
-    NEWEST-HEAD-ONLY (user ruling 2026-10-22): a started task is never cancelled for supersession. While one
-    runs, the run keeps its claim -- so the tip waits behind it (:mod:`dev_lab.dev.forgecoalesce`) and its
-    run carries what the drained tasks finished (:mod:`dev_lab.dev.forgecarry`) -- and is returned. Once
-    none runs it is released and dropped: one alarm.
+    NEWEST-HEAD-ONLY (user rulings 2026-10-22, 2026-10-24 "B"): while a started task runs within its deadline
+    (:func:`overdue`) the run keeps its claim -- so the tip waits behind it (:mod:`dev_lab.dev.forgecoalesce`)
+    and its run carries what the drained tasks finished (:mod:`dev_lab.dev.forgecarry`) -- and is returned. A
+    task past its deadline is cancelled alone, its tests left for the tip. Once none runs the run is released
+    superseded by *tip* and dropped: one alarm.
     """
-    started = cluster.withdraw(run)
+    if tip == _REF_GONE:  # no tip to drain for: every job goes, started ones too
+        _cancel_orphan(client, run, cluster=cluster, say=say, alarm=alarm, tag=tag)
+        return None
+    started, cut = cluster.withdraw(run), []
     if started:
-        say(f'{tag}: superseded by {tip[:12]} -- pending tasks withdrawn, draining jobs {" ".join(started)}')
-        return _report(client, run, f'{DRAINING} {len(started)} started job(s) for {tip[:12]}', lease, say)
+        drain = cluster.started_tasks(run)
+        if not run.superseded_at:
+            run = forgerunpost.step(run, superseded_at=drain.now)
+        if late := overdue(drain, since=run.superseded_at):
+            cut = cluster.cancel_tasks(run, late)
+            say(f'{tag}: superseded by {tip[:12]} -- past their deadline, tasks {" ".join(cut)} cancelled')
+        left = [one.job_id for one in drain.tasks if one.job_id not in cut]
+        if left or not drain.tasks:  # an unread task is never judged late: it drains
+            say(f'{tag}: superseded by {tip[:12]} -- pending tasks withdrawn, draining jobs {" ".join(started)}')
+            count = len(left) if drain.tasks else len(started)
+            return forgerunpost.report(client, run, f'{DRAINING} {count} started job(s) for {tip[:12]}', lease, say)
     reason = f'released: superseded -- {run.ref} moved on to {tip[:12]}; its slot goes to the tip'
-    reason = reason[:_DESCRIPTION_MAX]
-    why = 'pending tasks withdrawn, no started task cancelled'
+    reason = reason[:DESCRIPTION_MAX]
+    why = 'pending tasks withdrawn, ' + (
+        f'tasks {" ".join(cut)} cancelled past their deadline' if cut else 'no started task cancelled'
+    )
     alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded by {tip[:12]}', why))
     say(f'{tag}: {why} -- {reason}')
-    _release(client, run, reason, say)
+    forgerunpost.release(client, run, reason, say)
     drop(run)
     return None
+
+
+def overdue(drain: Draining, *, since: float) -> list[str]:
+    """The started tasks of *drain* past their deadline: their limit after *since* or their start, the later.
+
+    A task started just before supersession is never cut short below its own limit.
+    """
+    return [one.job_id for one in drain.tasks if drain.now > max(since, one.started_at) + one.limit_s]
 
 
 def _settle(
@@ -275,10 +337,10 @@ def _settle(
         reason = f'{RETRYABLE} -- never submitted; claimable again'
     else:
         reason = f'released: superseded -- never submitted, and {run.ref} moved on'
-    reason = reason[:_DESCRIPTION_MAX]
+    reason = reason[:DESCRIPTION_MAX]
     alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', f'{why}; {reason}'))
     say(f'{run_tag(run.platform, run.sha)}: {why} -- {reason}')
-    _release(client, run, reason, say)
+    forgerunpost.release(client, run, reason, say)
     drop(run)
 
 
@@ -301,41 +363,16 @@ def _submit(
     if not ids:
         orphans = cluster.orphans(run)
         if orphans and run.phase == CLAIMED_PHASE:
-            alarm(_orphaned(run, orphans))
+            alarm(forgerunpost.orphaned(run, orphans))
             say(f'{tag}: orphaned jobs {" ".join(orphans)} -- not resubmitted')
             return None
         if orphans:
             cancelled = cluster.cancel(dataclasses.replace(run, job_ids=tuple(orphans)))
             say(f'{tag}: an interrupted submit left jobs {" ".join(cancelled)} -- cancelled, resubmitting')
-        run = _report(client, _step(run, phase=SUBMITTING), 'building', lease, say)
+        run = forgerunpost.report(client, forgerunpost.step(run, phase=SUBMITTING), 'building', lease, say)
         ids = cluster.submit(run)
         say(f'{tag}: submitted jobs {" ".join(ids)}')
-    return _step(run, phase=SUBMITTED, job_ids=tuple(ids))
-
-
-def _report(client: Client, run: Run, progress: str, lease: timedelta, say: Callable[[str], None]) -> Run:
-    """Re-post the owner's claim carrying *progress* when it changed; the run with it recorded."""
-    if not progress or progress == run.progress:
-        return run
-    renewed = dataclasses.replace(run.claim, until=forge_now(client) + lease, progress=progress)
-    context = part_context(run.platform)
-    try:
-        status_post(client, run.sha, context=context, state='pending', description=renewed.description())
-    except ForgeCallFailed as failed:  # a missed progress post is not a dead run; the next tick posts it
-        say(f'{run_tag(run.platform, run.sha)}: could not post progress: {failed}')
-        return run
-    return _step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
-
-
-def _release_reason(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:
-    """Why a run that ran no judged test is released: a missing declared output alarms and fails the run."""
-    if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
-        alarm(Alarm(RUN, run.repo_url, f'the run of {run.sha[:12]} lacks a declared output', str(why)))
-        return f'declared outputs missing: {why}'[:_DESCRIPTION_MAX]
-    if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
-        return f'{RETRYABLE} -- this host had no room: {why}'[:_DESCRIPTION_MAX]
-    log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named
-    return f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}'.strip()
+    return forgerunpost.step(run, phase=SUBMITTED, job_ids=tuple(ids))
 
 
 def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callable[[str], None], tag: str) -> Run:
@@ -345,19 +382,15 @@ def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callab
         return run
     if not run.artefact:
         account = run.claim.hpc.rpartition('/')[2]  # the claim owner's cluster account names the writer
-        run = _step(run, artefact=run_id(run.sha, run.platform, account, forge_now(client)))
+        run = forgerunpost.step(run, artefact=run_id(run.sha, run.platform, account, forge_now(client)))
     ref = forgeship.store_outputs(
         root, client, cluster.tree(run), run.outputs, ident=run.artefact, workdir=Path(run.output)
     )
-    run = _step(run, record=str(write_record({**record, 'artefacts': [ref.manifest()]}, Path(run.record).parent)))
+    run = forgerunpost.step(
+        run, record=str(write_record({**record, 'artefacts': [ref.manifest()]}, Path(run.record).parent))
+    )
     say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.key} ({ref.bytes} bytes)')
     return run
-
-
-def _step(run: Run, **changes: object) -> Run:
-    moved = dataclasses.replace(run, **changes)
-    save(moved)
-    return moved
 
 
 def _hold(
@@ -397,7 +430,7 @@ def _hold(
         return _WAIT, run
     if held.state != MINE:
         holder = held.holder or renewal
-        alarm(_lost(run, holder))
+        alarm(forgerunpost.lost(run, holder))
         say(f'{tag}: lost the race to {holder.login}@{holder.machine} -- standing down')
         drop(run)
         return _GONE, run
@@ -406,31 +439,3 @@ def _hold(
         run = dataclasses.replace(run, owner=renewal.description())
         save(run)
     return _ADVANCE, run
-
-
-def _release(client: Client, run: Run, reason: str, say: Callable[[str], None]) -> None:
-    try:
-        status_post(client, run.sha, context=part_context(run.platform), state='error', description=reason)
-    except ForgeCallFailed as failed:
-        say(f'{run_tag(run.platform, run.sha)} could not release: {failed}')
-
-
-def _lost(run: Run, holder: Claim) -> Alarm:
-    return Alarm(
-        LEASE,
-        run.repo_url,
-        f'lost the claim on {run.sha[:12]} to {holder.login}@{holder.machine}',
-        f'{holder.description()} holds {part_context(run.platform)} now; this run stood down. Its Slurm jobs '
-        f'({" ".join(run.job_ids) or "none submitted"}) keep running unless cancelled: scancel them if the '
-        'new owner re-runs the commit.',
-    )
-
-
-def _orphaned(run: Run, jobs: list[str]) -> Alarm:
-    return Alarm(
-        LEASE,
-        run.repo_url,
-        f'orphaned Slurm jobs for {run.sha[:12]}',
-        f'jobs {shlex.join(jobs)} run under this account but no run state was recorded, so the tick will not '
-        'resubmit. Remedy: scancel them; the next tick submits the run afresh.',
-    )
