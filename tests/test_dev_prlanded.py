@@ -1,7 +1,8 @@
-"""LANDED-PRS-CLOSE: an open PR whose head is already on its base is closed, commented once, and its branch pruned.
+"""LANDED-PRS-CLOSE: an open PR whose head is on its base is closed and commented once; its branch is kept.
 
 Real git (a bare ``origin`` and a clone) and the stateful fake forge for the PRs. PLANTED CONTROLS: beside the
-contained PR that is closed and pruned, a PR with a commit of its own is untouched; a second tick does nothing.
+contained PR that is closed (its branch left to the forge's prune), a PR with a commit of its own is untouched;
+a second tick does nothing.
 """
 
 from __future__ import annotations
@@ -51,11 +52,13 @@ def _setup(tmp_path: Path) -> tuple[Path, StateForge, int, int, str]:
 
 def _tick(work: Path, forge: StateForge, numbers: tuple[int, ...] = ()) -> tuple[int, list[str]]:
     said: list[str] = []
-    code = close_landed(work, forge, numbers, session='s', fetch=fetch_origin, say=said.append, alarm=lambda _a: None)
+    code = close_landed(work, forge, numbers, session='s', fetch=fetch_origin, say=said.append)
     return code, said
 
 
-def test_a_contained_pr_is_closed_commented_and_pruned_and_an_uncontained_one_untouched(tmp_path: Path) -> None:
+def test_a_contained_pr_is_closed_and_commented_its_branch_kept_and_an_uncontained_one_untouched(
+    tmp_path: Path,
+) -> None:
     work, forge, done, still, head = _setup(tmp_path)
     code, said = _tick(work, forge)
     assert code == 0
@@ -65,7 +68,7 @@ def test_a_contained_pr_is_closed_commented_and_pruned_and_an_uncontained_one_un
     (comment,) = forge.comments[done]
     merge = git_out(work, 'rev-parse', 'origin/integrate/main')
     assert f'landed: head {head[:12]} is on integrate/main (merged by {merge[:12]})' in comment['body']
-    assert not _on_origin(work, 'pr/done')
+    assert _on_origin(work, 'pr/done'), 'remote ref deletion is the prune_merged data, never this verb'
     assert _on_origin(work, 'pr/open')
     events = [json.loads(line) for line in said if line.startswith('{')]
     assert {(e['event'], e['pr']) for e in events if e['event'] == EVENT} == {(EVENT, done)}

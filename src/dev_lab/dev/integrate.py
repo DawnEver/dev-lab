@@ -29,6 +29,7 @@ from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
+from dev_lab.dev import metrics
 from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgestatus import status_list
@@ -40,6 +41,9 @@ from dev_lab.dev.trialmerge import contains, rev
 __all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'promote']
 
 _GIT: Final = shutil.which('git') or 'git'
+
+#: The refusal's id in the metrics log (:mod:`dev_lab.dev.metrics`).
+_RULE: Final = 'integrate-promote'
 
 
 class IntegrateRefused(RuntimeError):
@@ -114,6 +118,12 @@ def promote(root: Path, client: Client, sha: str) -> Promotion:
     return found
 
 
+def _log(root: Path, kind: str, sha: str) -> None:
+    """The metrics line of one promotion (:mod:`dev_lab.dev.metrics`): a hand action, or its refusal."""
+    named = {'rule': _RULE, 'reason': 'integrate'} if kind == metrics.REFUSAL else {'lab_action': 'integrate promote'}
+    metrics.record(kind, repo=metrics.repo_of(root), vcs_ref_head_revision=sha, **named)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -132,16 +142,19 @@ def main(
         found = promote(root, client or client_for(root), args.sha)
         trunk = _policy(root, args.sha).trunk
     except IntegrateRefused as refused:
+        _log(root, metrics.REFUSAL, args.sha)
         emit(f'[integrate] REFUSED: {refused}', err=True)
         return 2
     except (ForgeCallFailed, OSError) as failed:
         emit(f'[integrate] {failed}', err=True)
         return 1
     if found.action == 'refused':
+        _log(root, metrics.REFUSAL, args.sha)
         emit(f'[integrate] REFUSED: {trunk} stays where it is.', err=True)
         for reason in found.reasons:
             emit(f'[integrate]   {reason}', err=True)
         return 2
+    _log(root, metrics.HAND_ACTION, args.sha)
     verb = 'already at' if found.action == 'current' else 'fast-forwarded to'
     emit(f'[integrate] {trunk} {verb} {found.sha}; publish it: git push origin {trunk}')
     return 0

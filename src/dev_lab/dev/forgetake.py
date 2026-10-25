@@ -14,11 +14,19 @@ ON A BOX THE LEDGER DECIDES LAST, AND ONCE: a local part is claimed only after i
 (*reserve*, :func:`dev_lab.dev.forgerounds.reserve`) at exactly the demand its producer declares; the
 producer adopts that row, so a started part is never refused by the same box a moment later. A part the
 ledger refuses posts nothing -- it stays open and waits ``not admitted`` -- so no false ``error`` is published.
+
+ON A BOX A WAIT IS BOUNDED AND SAID (:mod:`dev_lab.dev.forgewait`): a part the box does not admit is told its
+outlook -- larger than the box (``never fits``, kept in :attr:`ClaimPass.unfit` for the tick to answer), its
+earliest start and the claims that end first, or no start while the room is used outside the ledger -- and a
+part with a start is PROTECTED: a lower-ranked one is claimed past it only when that does not delay its start
+(:meth:`~dev_lab.dev.forgewait.Box.delays`, the ledger's backfill rule), so a stream of small parts never
+starves a large one.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,6 +35,7 @@ from pathlib import Path
 from lab_commons.box import Claim as BoxClaim
 from lab_commons.box import release
 from lab_commons.compute.admission import Admission, admit
+from lab_commons.compute.learned import BOX_WALL_S
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.compute.serves import Serves
 from lab_commons.hpc.declared import OutdatedKit
@@ -58,6 +67,7 @@ from dev_lab.dev.forgerequest import (
 )
 from dev_lab.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgewait import Box, Outlook
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
 
@@ -97,6 +107,20 @@ class ClaimPass:
     serves: Serves = dataclasses.field(default_factory=Serves)  # [serve] parts: a skipped part waits for another host
     #: Takes a LOCAL part's box claim before it is claimed: its ledger row, or why the box refused (None: no box).
     reserve: Callable[[Work], int | str] | None = None
+    #: This box as the pass sees it (None: a cluster seat): what tells a waiting part its outlook and protects it.
+    box: Box | None = None
+    ahead: list[tuple[str, Mapping[str, float]]] = dataclasses.field(default_factory=list)  # (key, demand) to protect
+    over: dict[str, tuple[Candidate, Mapping[str, float], Outlook]] = dataclasses.field(default_factory=dict)
+
+    @property
+    def unfit(self) -> dict[str, tuple[Work, Mapping[str, float], Outlook]]:
+        """Every open part larger than this box: its work, its demand and its outlook, by candidate key."""
+        works = {(one.sha, one.platform): one for one in self.work if one.state in CLAIMABLE}
+        return {
+            key: (works[wanted.sha, wanted.platform], demand, seen)
+            for key, (wanted, demand, seen) in self.over.items()
+            if (wanted.sha, wanted.platform) in works
+        }
 
     def consider(self, item: Ranked) -> None:
         """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
@@ -231,14 +255,40 @@ class ClaimPass:
         return why, needed
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
-        job = self._job(wanted, needed)
-        verdict = admit(job, self.size(wanted, needed), self.supply, running=self.taken)
+        job, demand = self._job(wanted, needed), self.size(wanted, needed)
+        verdict = admit(job, demand, self.supply, running=self.taken)
         self.admitted[wanted.key] = (job, verdict)
-        return '' if verdict else f'{NOT_ADMITTED}: {verdict.why}'
+        if verdict:
+            return self._behind(wanted, demand)
+        if self.box is None:
+            return f'{NOT_ADMITTED}: {verdict.why}'
+        seen = self.box.outlook(demand)
+        if seen.over:
+            self.over[wanted.key] = (wanted, demand, seen)
+        elif not math.isinf(seen.start):
+            self.ahead.append((wanted.key, demand))
+        return f'{NOT_ADMITTED}: {verdict.why}; {seen.text(self.box.now)}'
+
+    def _wall_s(self, wanted: Candidate) -> int:
+        """How long *wanted*'s box claim holds: a request's declared wall, else a part's day."""
+        return round(self._declared(wanted).wall_h * 3600) if wanted.kind == REQUEST else BOX_WALL_S
+
+    def _behind(self, wanted: Candidate, demand: Mapping[str, float]) -> str:
+        """Why *wanted*, admitted, still waits: claiming it would delay a higher-ranked part's start (``''``: never)."""
+        if self.box is None or not self.ahead:
+            return ''
+        wall_s = self._wall_s(wanted)
+        for key, ahead in self.ahead:
+            if self.box.delays(ahead, demand, wall_s):
+                return f'{NOT_ADMITTED}: queued behind {key}, which ranks first: claiming this would delay its start'
+        return ''
 
     def _took(self, wanted: Candidate, needed: frozenset[str]) -> None:
-        """Count *wanted*'s claim as running at its demand."""
-        self.taken.append(Resources(self.size(wanted, needed)))
+        """Count *wanted*'s claim as running at its demand -- in the box's view too, until its wall."""
+        demand = self.size(wanted, needed)
+        self.taken.append(Resources(demand))
+        if self.box is not None:
+            self.box.hold(demand, self._wall_s(wanted))
 
     def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
         if one.cluster is not None and one.cluster.outputs and self.store_why:

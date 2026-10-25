@@ -204,6 +204,7 @@ def _gather(
     try:
         record = cluster.gather(run)
     except Unrecorded as why:
+        forgerunpost.killed(client, run, cluster.killed(run), say, tag)
         _settle(root, run, client=client, why=str(why), say=say, alarm=alarm, ran=True)
         return None
     if record is None:
@@ -212,6 +213,7 @@ def _gather(
         run = forgerunpost.step(run, job_ids=tuple(cluster.submitted(run)) or ids or run.job_ids)
         say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
         return forgerunpost.report(client, run, cluster.progress(run), lease, say)
+    forgerunpost.killed(client, run, cluster.killed(run), say, tag)
     run = forgerunpost.step(run, phase=GATHERED, record=str(record))
     return forgerunpost.report(client, run, PUBLISHING, lease, say)
 

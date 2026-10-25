@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -41,12 +42,14 @@ __all__ = [
     'Cluster',
     'Draining',
     'ForeignSchema',
+    'Killed',
     'Run',
     'Standing',
     'Started',
     'Unrecorded',
     'directory',
     'drop',
+    'held_names',
     'live',
     'save',
 ]
@@ -100,6 +103,22 @@ class Draining:
     tasks: tuple[Started, ...]
 
 
+@dataclass(frozen=True)
+class Killed:
+    """One job Slurm killed (:data:`KILLED`): what it asked and what it used, in MB and seconds."""
+
+    job: str
+    state: str
+    asked_mb: int
+    used_mb: int
+    asked_s: int
+    used_s: int
+
+    def text(self) -> str:
+        """``7_0 OUT_OF_MEMORY 4199/4096 MB 190/3600 s`` -- used over asked."""
+        return f'{self.job} {self.state} {self.used_mb}/{self.asked_mb} MB {self.used_s}/{self.asked_s} s'
+
+
 class Cluster(Protocol):
     """What a run needs from Slurm, through this login node's own shell (:class:`dev_lab.dev.forgeserve`)."""
 
@@ -114,6 +133,12 @@ class Cluster(Protocol):
 
     def gather(self, run: Run) -> Path | None:
         """One short gather: the record written into ``run.output``, or ``None`` while Slurm still runs it."""
+
+    def killed(self, run: Run) -> tuple[Killed, ...]:
+        """*run*'s jobs Slurm killed for memory or time, each with its ask and use; their asks learned."""
+
+    def strays(self, held: Callable[[], set[str]]) -> list[str]:
+        """Cancel every forge job (``run-<sha12>...``) whose name *held* does not return; the ids cancelled."""
 
     def tree(self, run: Run) -> Path:
         """The run's work tree as this login node sees it -- where its declared outputs are globbed."""
@@ -188,6 +213,23 @@ def save(run: Run) -> Path:
     target = _path(run)
     target.parent.mkdir(parents=True, exist_ok=True)
     return durable_write(target, json.dumps(asdict(run), indent=2).encode('utf-8'))
+
+
+#: A run file's name: ``<repo12>-<sha>-<part>-<scope>.json`` (:func:`_path`).
+_FILE: Final = re.compile(r'[0-9a-f]{12}-(?P<sha>[0-9a-f]{40})-(?P<part>.+)-[^-]+\.json')
+
+
+def held_names() -> set[str]:
+    """The Slurm job names every run file here holds, of ANY repo or schema: ``run-<sha12>-<part>`` and ``run-<sha12>``.
+
+    Read from the file NAMES, so a file this tool cannot parse still holds its jobs; a forge job of no name here
+    has no run left to gather it (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.strays`).
+    """
+    names: set[str] = set()
+    for path in directory().glob('*.json') if directory().is_dir() else ():
+        if found := _FILE.fullmatch(path.name):
+            names |= {f'run-{found["sha"][:12]}-{found["part"]}', f'run-{found["sha"][:12]}'}
+    return names
 
 
 def touch(run: Run) -> None:

@@ -55,6 +55,7 @@ from lab_commons.log import emit
 __all__ = [
     'ENGINES',
     'ENGINE_SUFFIX',
+    'LIVE_RUN_ABSENT',
     'STAMP',
     'EngineNotReadable',
     'EngineNotShipped',
@@ -79,6 +80,9 @@ STAMP: Final = 'Engine shipped by lab-commons: dev_lab.dev.agenthooks'
 
 #: The engine reads a payload and writes a decision; nothing here waits on a network or an editor.
 _ENGINE_TIMEOUT_S: Final = 60
+
+#: The payload key a PROBE sets to judge every ``when: 'live-run'`` row as if no run were live (:func:`run_engine`).
+LIVE_RUN_ABSENT: Final = 'dev_lab_live_run_absent'
 
 _HERE: Final = Path(__file__).resolve().parent
 
@@ -152,6 +156,7 @@ def run_engine(
     tool: str = 'Bash',
     agent_id: str | None = None,
     hint: bool = False,
+    live_run: bool = True,
 ) -> str | None:
     """THE ONE RUNNER. Drive the engine AT *engine* over one Bash command; the reason, or ``None``.
 
@@ -179,6 +184,10 @@ def run_engine(
         agent_id: the payload's subagent id; ``None`` sends none, as the main session does.
         hint: ask for the HINT instead -- the ``additionalContext`` a ``severity: hint`` row hands the agent
             on a call it lets run.
+        live_run: judge ``when: 'live-run'`` rows against the box's process table, as the tool does. A
+            PROBE of which rule owns a shape passes ``False``: the probing suite is itself a run in the
+            checkout it probes, so the state row would answer for every shape it covers (wdg-lab cutover,
+            2026-10-25). The payload key carrying it is one the tool never sends, so no agent command can.
 
     Returns:
         The ``permissionDecisionReason`` when the engine denies (with *hint*, the ``additionalContext`` it
@@ -199,6 +208,7 @@ def run_engine(
         'tool_input': {'command': command},
         'cwd': str(cwd) if cwd is not None else '',
         **({'agent_id': agent_id} if agent_id is not None else {}),
+        **({} if live_run else {LIVE_RUN_ABSENT: True}),
     }
     done = _door.run(
         [node_executable(), str(engine), str(rules)],

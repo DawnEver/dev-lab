@@ -50,12 +50,14 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import metrics
 from dev_lab.dev.branchset import BranchSetNotDeclared, branchset_at
 from dev_lab.dev.breakglass import BREAK_GLASS, reason
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 
 __all__ = [
+    'HOOK_ID',
     'MERGED_BRANCH',
     'P2',
     'P3',
@@ -70,6 +72,8 @@ P2: Final = 'PUBLISH-IS-THE-LOCAL-REF'
 P3: Final = 'SESSION-HISTORY-ONLY-GROWS'
 P4: Final = 'INTEGRATION-IS-MERGES-ONLY'
 P5: Final = 'INTEGRATION-TAKES-ONLY-FORGE-MERGES'
+#: The id this guard runs under in ``githooks/base.toml``: its refusals are logged under it, so a bypass is too.
+HOOK_ID: Final = 'session-branch'
 #: The trailer an integration merge names its merged branch under.
 MERGED_BRANCH: Final = 'Merged-Branch'
 
@@ -138,6 +142,10 @@ def _forge_merges_only(root: Path, policy: Policy, old: str, new: str) -> list[s
     added = listed.stdout.split()
     unglassed = [sha for sha in added if not reason(_git(root, 'log', '-1', '--format=%B', sha).stdout)]
     if not unglassed:
+        if added:
+            metrics.record(
+                metrics.BYPASS, repo=metrics.repo_of(root), rule=HOOK_ID, reason=BREAK_GLASS, vcs_ref_head_revision=new
+            )
         return []
     return [
         (

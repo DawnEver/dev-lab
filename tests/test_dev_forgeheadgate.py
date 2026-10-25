@@ -14,6 +14,7 @@ from dev_lab.dev import forgeheadgate
 from dev_lab.dev.forgeintegration import tick
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.lockcheck import UNRESOLVED
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -49,7 +50,7 @@ def statuses(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Statuses:
         def __exit__(self, *_exc: object) -> None:
             return None
 
-    monkeypatch.setattr(forgeheadgate, '_worktree', lambda _root, _sha: _Tree())
+    monkeypatch.setattr(forgeheadgate, 'detached_worktree', lambda _root, _sha: _Tree())
     return store
 
 
@@ -61,7 +62,7 @@ def _reads(*answers: tuple[str, ...]) -> Callable[[Path], tuple[str, ...]]:
 @pytest.mark.usefixtures('statuses')
 def test_an_error_is_re_judged_and_a_verdict_latches(tmp_path: Path) -> None:
     """SR-20261024-001: only success/failure are terminal; an error (or pending) is judged again on the same sha."""
-    read = _reads(('the newest resolution could not run: timeout',), (), ())
+    read = _reads((f'{UNRESOLVED}: timeout',), (), ())
     assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read) == ['branchset: success', 'lock/fresh: error']
     assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read) == ['lock/fresh: success']
     assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read) == [], 'CONTROL: a verdict latches'
@@ -73,7 +74,7 @@ def test_a_checkout_that_fails_is_an_error_and_is_retried(tmp_path: Path, monkey
         msg = 'disk full'
         raise OSError(msg)
 
-    monkeypatch.setattr(forgeheadgate, '_worktree', broken)
+    monkeypatch.setattr(forgeheadgate, 'detached_worktree', broken)
     assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=_reads()) == [
         'branchset: success',
         'lock/fresh: error',

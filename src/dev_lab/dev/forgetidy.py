@@ -46,7 +46,7 @@ from lab_commons.log import emit
 from dev_lab.dev.forgealarm import ISSUE_KINDS
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
-from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comment_upsert, marker_kinds
+from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comment_upsert, forget_issue, marker_kinds
 from dev_lab.dev.forgepulls import issues as list_issues
 from dev_lab.dev.forgeroute import still_red, title_of
 from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, client_for
@@ -185,6 +185,7 @@ def _remove(client: Client, one: Closing, state: str) -> str:
             if state == 'open':
                 client.issue_close(one.number)
             return f'delete refused ({refused.report.attempts[-1].returncode}), closed instead'
+        forget_issue(client, one.number)
         return 'deleted'
     client.issue_close(one.number)
     return 'closed'

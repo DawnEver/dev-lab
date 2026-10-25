@@ -96,9 +96,28 @@ def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_p
     (why,) = found.missing
     assert '`c.txt`' in why
     assert 'merge `integrate/main` into the branch' in why
-    run_git(work, 'merge', '-q', '-X', 'ours', '--no-edit', 'origin/integrate/main')
+    declared = 'merge integration\n\nc.txt: simpler-side -- the branch holds the live value\n'
+    run_git(work, 'merge', '-q', '-X', 'ours', '-m', declared, 'origin/integrate/main')
     synced = git_out(work, 'rev-parse', 'HEAD')
     assert decide(work, POLICY, branch='pr/x', number=4, head=synced, statuses=_statuses(_green())).ready
+
+
+def test_a_pr_whose_head_holds_an_undeclared_conflicted_merge_waits_naming_it(tmp_path: Path) -> None:
+    """MERGE-RESOLUTION-DECLARED on the forge: a merge no client hook met is refused by sha, file and remedy.
+
+    PLANTED control: the declared redo of the same merge is ready (the test above).
+    """
+    work = _tested(tmp_path)
+    advance(work, 'integrate/main', 'c.txt', 'ours\n')
+    run_git(work, 'checkout', '-q', '-B', 'pr/x', 'origin/main')
+    commit(work, 'c.txt', 'theirs\n')
+    run_git(work, 'merge', '-q', '-X', 'ours', '--no-edit', 'origin/integrate/main')
+    synced = git_out(work, 'rev-parse', 'HEAD')
+    found = decide(work, POLICY, branch='pr/x', number=4, head=synced, statuses=_statuses(_green()))
+    (why,) = found.missing
+    assert f'merge {synced[:12]}' in why
+    assert 'c.txt: not declared' in why
+    assert 'redo that merge' in why
 
 
 def test_the_merge_door_is_a_merge_commit_pinned_to_the_judged_head() -> None:
@@ -162,7 +181,7 @@ def test_a_red_pr_stays_open_with_what_is_missing_in_its_one_comment(tmp_path: P
 def test_the_integration_verb_prints_the_tick_lines_before_the_branch_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``forge integration`` is the steward's whole loop, so its rendering is part of the flow.
+    """``forge integration`` is the integrator's whole loop, so its rendering is part of the flow.
 
     PLANTED control: the same tick with no child prints the one placeholder line instead.
     """

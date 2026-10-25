@@ -1,5 +1,6 @@
 """The target environment, not the interpreter running the door, owns exclusion."""
 
+import functools
 import json
 import os
 import shutil
@@ -451,3 +452,23 @@ def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     assert dep.main(['--bootstrap', str(lane)], run=run, cwd=lane) == 0
     assert (True, True) in seen, 'the sync ran with the engine mounted'
+
+
+def test_lock_upgrade_moves_a_pinned_rust_toolchain_to_the_newest_stable(tmp_path) -> None:
+    """User ruling 2026-10-25: the door that refreshes the lock refreshes ``rust-toolchain.toml`` with it.
+
+    PLANTED control: a failed resolution moves neither.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
+    pin = tmp_path / 'rust-toolchain.toml'
+    pin.write_text('[toolchain]\nchannel = "1.99.0"\n', encoding='utf-8')
+    _, run = _recording()
+
+    def failing(_argv, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=1, stdout='', stderr='')
+
+    upgrade = functools.partial(_dep_project.lock_upgrade, tmp_path, 'py', dry_run=False, environment={})
+    assert upgrade(run=failing, stable=lambda: '1.99.1') != 0
+    assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.0"\n'
+    assert upgrade(run=run, stable=lambda: '1.99.1') == 0
+    assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.1"\n'

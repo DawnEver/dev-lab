@@ -77,6 +77,7 @@ from dev_lab.dev.forgeintent import Intent, forget, journal
 from dev_lab.dev.forgelabels import LabelMissing
 from dev_lab.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
+from dev_lab.dev.forgewait import claim_vector
 from dev_lab.dev.forgework import Client, ForgeCallFailed
 from dev_lab.dev.platformparts import origin_url, parts_of, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
@@ -163,9 +164,7 @@ def box_claim(item: Work, capacity: Capacity, *, root: Path | None = None) -> De
     """The :class:`Demand` *item* runs in the box at: the tick's admitted demand, else priced as a box part."""
     needs = needs_of(item.platform)
     asked = item.demand or box_demand(_origin(root), needs, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
-    seats = {name: 1 for name in needs if name in capacity.seats}
-    cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
-    return Demand({**seats, 'cpu': cpu, 'mem_gb': asked['mem_gb']})
+    return claim_vector(asked, capacity, needs)
 
 
 def _pump(stream: Iterable[str], tag: str, say: Callable[[str], None], heard: list[str]) -> None:

@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     if verb == 'allocate':
         return allocate.allocate(rest)
     if verb == 'tick' and rest:
-        return max(tick.tick(name, home=Path.home()) for name in rest)
+        probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
+        return max(tick.tick(name, home=Path.home(), probed=probed) for name in rest)
     emit(_USAGE, err=True)
     return 2

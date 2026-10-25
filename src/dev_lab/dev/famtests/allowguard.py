@@ -202,7 +202,7 @@ def contradictions(settings: Path, rules: Path, *, cwd: Path, engine: Path | Non
         if not command:
             continue
         probed.append(entry)
-        reason = run_engine(judge, command, rules, cwd=cwd)
+        reason = run_engine(judge, command, rules, cwd=cwd, live_run=False)
         if reason is not None:
             refused[entry] = reason
     return Scan(probed=tuple(probed), refused=refused)

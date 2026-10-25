@@ -3,8 +3,9 @@
 The counterpart of a cluster account's ``python -m dev_lab.dev.hpchost deploy``, and it reuses that
 deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 
-``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>]
-[--root DIR] [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat:
+``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>] [--root DIR]
+[--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. Nothing is reserved for the person at the
+box (user ruling 2026-10-25): they DECLARE their use as a ledger claim (``python -m lab_commons.box claim``).
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
@@ -15,7 +16,8 @@ deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 4. VENVS: ``-m dev_lab.dev.dep --bootstrap <checkout>`` when the venv is missing or its ``pyproject.toml``
    or ``uv.lock`` changed since its last sync (a stamp in the venv, written only after a sync succeeds).
 5. HOOKS: ``-m dev_lab.dev.hook_install --install`` in each checkout whose hooks are not live.
-6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``) and
+6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
+   row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken) and
    ``[serve] repos, root`` merged in place; every other table, key and comment is kept, and
    ``--dry-run`` prints the diff.
 7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`dev_lab.dev.servetask`), registered from
@@ -68,9 +70,10 @@ from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv, venv_python
-from dev_lab.dev.hpchost.spec import KIT, host_serve_argv
+from dev_lab.dev.hpchost.spec import KIT
 from dev_lab.dev.hpchost.steps import Step, Tools
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, held
 
 if sys.platform == 'win32':
@@ -79,6 +82,7 @@ if sys.platform == 'win32':
 __all__ = [
     'FORGE_ROLE',
     'JMAG_PROGIDS',
+    'JMAG_SOLVER_IMAGES',
     'REGISTRY_TABLE',
     'WORKSTATION',
     'NoRegistry',
@@ -99,6 +103,13 @@ _WORKSTATION_KIT: Final = ('node', 'codex')
 
 #: The COM classes a ``jmag`` host drives: the Designer and its Scheduler.
 JMAG_PROGIDS: Final = ('designer.Application', 'scheduler.JobApplication')
+
+#: The images whose running count is the JMAG seats in use: ONE per solve. The solver kernel family as the
+#: installation ships it (motronics ``hamilton/adapters/jmag/processes.py``, checked 2026-09-19 against
+#: JMAG-Designer25.1). Not ``execsolver.exe`` -- it launches ``jam.exe``, so counting both counts one solve
+#: twice -- and not ``scheduler.exe`` or ``designer.exe``: a seat is a SOLVE, never an open Designer (user
+#: correction 2026-10-16).
+JMAG_SOLVER_IMAGES: Final = ('jam.exe', 'jam_c.exe', 'jam_intel_mpi_b.exe', 'jam_intel_mpi_c.exe')
 
 _REMEDIES: Final = {
     'uv': 'install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"',
@@ -212,6 +223,8 @@ def _capabilities(text: str) -> dict[str, dict[str, Any]]:
             msg = f'--capabilities {item!r}: expected <name> or <name>:<seats>'
             raise argparse.ArgumentTypeError(msg)
         out[name] = {'seats': int(seats)} if seats else {}
+        if name == 'jmag':
+            out[name]['in_use'] = {'process': list(JMAG_SOLVER_IMAGES)}
     try:
         return provided(out)
     except ValueError as bad:
@@ -404,12 +417,19 @@ def serve(
     lock: Path | None = None,
     out: IO[str] | None = None,
     programs: Programs | None = None,
+    period_s: float | None = None,
 ) -> int:
-    """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock; the worst exit.
+    """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock, each in a LANE; the worst exit.
 
     dev-lab is refreshed first, then each repo in order (:func:`dev_lab.dev.hostrefresh.refresh`):
     a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
     The serving dev-lab checkout's own hooks are re-installed whenever they are not live (stale after a move).
+
+    ONE BUSY REPO NEVER STARVES THE OTHERS (incident 2026-10-25: a wdg-lab part held the one host lock for
+    an hour, and dev-lab's card read STALE with its whole queue unclaimed). Each repo serves in a lane of its
+    own; a lane whose serve ended serves again *period_s* later (the ``[schedule] tick_minutes``) while any
+    other lane's serve still runs, so its card keeps ticking and its queue keeps being claimed against the
+    one box ledger. dev-lab is never refreshed again inside one call: the other lanes run its code.
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
     table = section('serve')
@@ -424,29 +444,25 @@ def serve(
         emit(f'[serve] refused: {undeclared}', err=True)
         return 2
     step = Step(Tools(git=tools.git), dry=False)
+
+    def refreshed(name: str) -> int:
+        checkout = Path(root) / name
+        emit(f'[serve] {name}', flush=True)
+        if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
+            emit(f'[serve] {name} released, not served this tick: {why}', err=True)
+            return 2
+        # the serving kit's own shims follow it (plan R1): kept current by the machine, never by hand
+        if name == KIT and (rc := _hooks(step, tools, checkout, name)):
+            emit(f'[serve] {name}: its hooks were not re-installed (exit {rc}); the old shims stay', err=True)
+        return 0
+
     with held(lock or default_lock()) as mine:
         if not mine:
             emit('[serve] another forge serve holds the lock; this one does nothing', err=True)
             return 0
         if why:
             return _stand_down(tools, Path(root), repos, why)
-        worst = 0
-        for name in sorted(repos, key=lambda repo: repo != KIT):
-            checkout = Path(root) / name
-            emit(f'[serve] {name}', flush=True)
-            if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
-                emit(f'[serve] {name} released, not served this tick: {why}', err=True)
-                worst = max(worst, 2)
-                continue
-            # the serving kit's own shims follow it (plan R1): kept current by the machine, never by hand
-            if name == KIT and (rc := _hooks(step, tools, checkout, name)):
-                emit(f'[serve] {name}: its hooks were not re-installed (exit {rc}); the old shims stay', err=True)
-            streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
-            rc = run(host_serve_argv(), cwd=checkout, check=False, **streams).returncode
-            if rc:
-                emit(f'[serve] {name} exited {rc}', err=True)
-            worst = max(worst, rc)
-    return worst
+        return serve_lanes(repos, refreshed, serving(Path(root), run, out), period_s=period_s)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

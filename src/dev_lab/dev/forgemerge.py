@@ -18,7 +18,10 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
   (:func:`dev_lab.dev.mergeaudit.judge`, the same judgement the commit-msg hook makes) -- its message
-  names the branch (``Merged-Branch:``), so INTEGRATION-IS-MERGES-ONLY holds of it too.
+  names the branch (``Merged-Branch:``), so INTEGRATION-IS-MERGES-ONLY holds of it too;
+* every merge commit its head adds over integration declares each file its parents conflict on
+  (:func:`dev_lab.dev.mergeresolution.unresolved`, MERGE-RESOLUTION-DECLARED) -- the one place no client and no
+  web-UI merge can skip it.
 
 Otherwise the PR stays open and the missing conditions are said in its one integration comment. The merge
 is a MERGE COMMIT (``Do: merge``, never squash or rebase), pinned to the judged head (``head_commit_id``: a
@@ -36,6 +39,7 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
+from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
@@ -118,6 +122,16 @@ def decide(
         except MergeAuditError as error:
             problems = (str(error),)
         missing += [f'a merge the audit passes: {problem}' for problem in problems]
+    try:
+        undeclared = unresolved(root, base, head)
+    except MergeAuditError as error:
+        undeclared = (('?', (str(error),)),)
+    missing += [
+        f'merge {sha[:12]} declaring its resolution (MERGE-RESOLUTION-DECLARED): {"; ".join(problems)} -- a merge '
+        f'message cannot be amended, so redo that merge with one `<path>: <class> -- <why>` line per conflicted '
+        f'file and push the redone branch'
+        for sha, problems in undeclared
+    ]
     return Decision(tuple(missing), message)
 
 

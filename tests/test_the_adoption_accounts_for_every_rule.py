@@ -26,8 +26,8 @@ NINE rather than the ten it was until 2026-09-21, because NETWORK-RETRY-THEN-REP
 day by the arrival of ``dev.dep_observe``, whose two transports are ``run_network_verb`` calls.
 :data:`_ABSENT_CEILING` came down with it, which is the only direction it has ever moved. Three name
 machinery this repo does not have (a gate runner, a hook directory, a production entry point) --
-adoptable, and unbuilt. Four are about a SUBJECT this library does not have (an accuracy matrix, an
-acceptance bar, a capability registry, a retired-name registry): a library with no solvers has
+adoptable, and unbuilt. Three are about a SUBJECT this library does not have (an accuracy matrix, an
+acceptance bar, a capability registry): a library with no solvers has
 nothing to declare unsupported. One is a shape no file in this tree can reach: the push obligation
 is a fact about origin. And one is CIRCULAR rather than merely unbuilt -- HOOKS-ARE-WIRED cannot be
 closed by shipping a hook and a guard in the same edit, because the guard would then pass by
@@ -131,6 +131,7 @@ _ENFORCED = {
         guard('tests/_arch_corpus.py'),
     ),
     'MODULE-SIZE-ALARM': (guard('tests/test_arch_module_size_alarm.py'),),
+    'RETIRED-NAMES-REGISTERED': (guard('tests/test_arch_retired_spellings.py'), guard('tests/_arch_corpus.py')),
     'NAMED-SETS-NOT-COUNTS': (
         guard('tests/test_arch_module_size_alarm.py'),
         guard('tests/test_arch_skips_are_a_named_set.py'),
@@ -229,7 +230,6 @@ _ABSENT_REASONS = {
     ),
     'IMPLEMENT-EVERYTHING': 'no combination matrix and no accuracy tag: the subject is absent',
     'PRODUCTION-ENTRY-POINT': 'a library with no CLI has no production entry point to reproduce through',
-    'RETIRED-NAMES-REGISTERED': 'no retired-spelling registry in this tree yet',
     'SHARED-CHECKOUT': 'the push obligation is a fact about origin, not about any file here',
     'UNSUPPORTED-RAISES': 'no capability registry: there is no unsupported combination to refuse',
 }
@@ -249,7 +249,9 @@ _ABSENT = frozenset(_ABSENT_REASONS)
 #: down in the same edit. The number has never gone up, and neither has the reason for it.
 #: 8 -> 9 on 2026-10-22, and it is a MOVE rather than a widening: ONE-BOX-ONE-LOCK is enforced where the
 #: box lives (lab-commons), and this repo, split out of it, has no box to enforce it over.
-_ABSENT_CEILING = 9
+#: 9 -> 8 on 2026-10-25: RETIRED-NAMES-REGISTERED closed by its registry and scan
+#: (``tests/test_arch_retired_spellings.py``), when the integrator rename came over from lab-commons.
+_ABSENT_CEILING = 8
 
 
 def _adoption() -> Adoption:

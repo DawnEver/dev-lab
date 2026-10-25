@@ -69,7 +69,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 /** The tools whose `tool_input.command` the shell executes. */
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
@@ -382,11 +382,17 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
  * refusal: a checkout without the kit has nobody to ask. A crash or a timeout REFUSES, unlike the rest of
  * this engine, because the harm this row guards (a run's tree changed under it) cannot be undone.
  */
+/** The session checkout's own interpreter, or null: a checkout without a venv has nobody to ask. */
+function venvPython(sessionRoot) {
+  const tail = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
+  const python = sessionRoot ? path.join(sessionRoot, '.venv', ...tail) : '';
+  return python && fs.existsSync(python) ? python : null;
+}
+
 function liveRunRefusal(target, sessionRoot) {
   if (!target || !sessionRoot) return '';
-  const tail = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
-  const python = path.join(sessionRoot, '.venv', ...tail);
-  if (!fs.existsSync(python)) return '';
+  const python = venvPython(sessionRoot);
+  if (!python) return '';
   const done = spawnSync(python, ['-m', 'dev_lab.dev.liverun', '--tree', target], {
     encoding: 'utf8',
     timeout: 15000,
@@ -402,6 +408,19 @@ function liveRunRefusal(target, sessionRoot) {
   const why = done.error ? done.error.message : `exit ${done.status}${said ? '' : ', no answer'}`;
   return `TREE-HAS-A-LIVE-RUN: could not confirm that no run executes from ${target} (${why}); re-run when ` +
     `python -m dev_lab.dev.liverun --tree ${target} answers.`;
+}
+
+/* A refusal is a line of the toolchain's metrics (P0, dev_lab.dev.metrics): appended by the ONE writer, in a
+ * DETACHED interpreter, so the refusal the agent sees waits for nothing. No interpreter, no line. */
+function logRefusal(name, where) {
+  const python = venvPython(sessionRoot);
+  if (!python) return;
+  try {
+    const argv = ['-m', 'dev_lab.dev.metrics', 'record', 'refusal', '--rule', name, '--reason', 'agent-guard'];
+    spawn(python, argv, { cwd: where, detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  } catch {
+    // a metrics line never blocks the refusal it describes
+  }
 }
 
 /** Does `rule` fire on any executed text? */
@@ -445,12 +464,16 @@ for (const rule of rules) {
   }
   let liveReason = '';
   if (hit && rule.when === 'live-run') {
+    // A PROBE judging which rule owns a shape sets this (run_engine(live_run=False)): its own suite is a
+    // run in the checkout it probes. The tool never sends the key, so no agent command can set it.
+    if (input.dev_lab_live_run_absent === true) continue;
     liveReason = liveRunRefusal(input.cwd ? repoRoot(targetDir(cmd, input.cwd)) : null, sessionRoot);
     hit = liveReason !== '';
   }
   if (hit && rule.severity === 'hint') {
     hints.push(String(rule.reason || rule.name).replaceAll('{root}', root));
   } else if (hit) {
+    logRefusal(rule.name, input.cwd ? repoRoot(targetDir(cmd, input.cwd)) || input.cwd : sessionRoot);
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {

@@ -15,7 +15,8 @@ origin's branch hygiene (:mod:`dev_lab.dev.branchprune`), raised by whichever ho
 branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
 (``stale-branch``), which are never deleted; and an account whose storage is still near its quota after
 the retention pass (``storage``), and jobs on a cluster account that carry no session tag
-(``untagged``). And one is a fact about a UNIT, not a host: the same commit and context gave
+(``untagged``), and a served repo's declared tool that no longer runs on its account (``needs``).
+And one is a fact about a UNIT, not a host: the same commit and context gave
 two different results (``nondeterminism``, :func:`dev_lab.dev.forgeoutbox.flush`) -- the first stands.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
@@ -50,6 +51,7 @@ from lab_commons.compute.durable import durable_text, read_table
 from lab_commons.config import config_path, section
 from lab_commons.log import emit
 
+from dev_lab.dev import metrics
 from dev_lab.supervise.alert import Notice, Notifier
 from dev_lab.supervise.verdict import Severity
 
@@ -60,6 +62,7 @@ __all__ = [
     'INTEGRATION',
     'ISSUE_KINDS',
     'LEASE',
+    'NEEDS',
     'NONDETERMINISM',
     'PRUNED',
     'RUN',
@@ -99,6 +102,12 @@ NONDETERMINISM: Final = 'nondeterminism'
 STORAGE: Final = 'storage'
 #: Jobs on a cluster account carry no session tag: they hold an unthrottled share (:mod:`lab_commons.hpc.allocation`).
 UNTAGGED: Final = 'untagged'
+#: A served repo's declared need no longer runs on its cluster account (:mod:`dev_lab.dev.hpchost.tick`).
+NEEDS: Final = 'needs'
+
+
+#: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.
+PROMPTS: Final = (INTEGRATION, STALE_BRANCH)
 
 
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:
@@ -150,6 +159,8 @@ def sound(
     last = _last(path)
     due = key not in last or now - datetime.fromisoformat(last[key]) >= repeat_window(table)
     delivered: tuple[str, ...] = ()
+    if due and alarm.kind not in PROMPTS:
+        metrics.record(metrics.HOST_FAILURE, repo=alarm.repo, rule=alarm.kind, reason=alarm.kind)
     if due:
         notice = Notice(subject=alarm.subject, body=alarm.body, severity=Severity.CRITICAL)
         results = deliver(notice)

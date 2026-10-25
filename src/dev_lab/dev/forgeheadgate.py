@@ -23,8 +23,8 @@ from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.branchset import BranchSetNotDeclared, branchset_at
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, stale
-from dev_lab.dev.relock import _worktree
+from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, UNRESOLVED, stale
+from dev_lab.dev.relock import detached_worktree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -62,7 +62,7 @@ def lock_verdict(tree: Path, *, read: Callable[[Path], tuple[str, ...]] = stale)
     why = read(tree)
     if not why:
         return 'success', f'{LOCK} is the newest resolution'
-    if why[0].startswith('the newest resolution could not run'):
+    if why[0].startswith(UNRESOLVED):
         return 'error', why[0]
     moved = '; '.join(one.split(': ', 1)[-1] for one in why)
     return 'failure', f'stale {LOCK}: {LOCK_REMEDY} ({moved})'
@@ -94,7 +94,7 @@ def judge(
         lines.append(f'{BRANCHSET_CONTEXT}: {state}')
     if LOCK_CONTEXT not in have:
         try:
-            with _worktree(root, head) as tree:
+            with detached_worktree(root, head) as tree:
                 state, text = lock_verdict(tree, read=read)
         except OSError as why:
             state, text = 'error', f'the head could not be checked out to resolve: {why}'

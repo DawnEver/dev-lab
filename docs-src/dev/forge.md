@@ -39,7 +39,37 @@ Each tick it:
 4. runs every claimed local part at once, one thread each (streamed, each claim renewed every third of the
    lease), or advances a cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
 5. posts the part with its record attached, and edits its host card;
-6. on every host, keeps one forge issue per integration row and prompts the session whose row it is when it writes one ([integration alarm](#alarms)).
+6. ON THE ONE POLLER of the repo ([one poller per repo](#one-poller-per-repo)): closes landed PRs, prunes
+   merged branches and old records, tidies the issues, raises starved parts, keeps one forge issue per
+   integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms)),
+   runs the advisory review and the relock.
+
+### One poller per repo
+
+Measured 2026-10-24 on the gitea host (2 cores): 9425 API requests in ten minutes, 97% from two Ada login
+nodes, gitea at 135% CPU -- five accounts each ran `hpchost tick` for seven repos every five minutes, and every
+tick re-derived the same repo-wide answers. So the repo-wide poll (step 6) runs on ONE host per repo:
+
+- **The lease is a comment on the hosts issue** (`forgepoller`, marker `poller`): `holder: <card host>` and
+  `until: <forge time>`, judged on the FORGE's clock. Accounts on a cluster share no writable file, so the
+  forge is the one place every host can read.
+- A live lease held by another host: this host claims, produces, advances its runs and publishes its card,
+  and polls nothing. Its own live lease: renewed, no read-back. None or expired: written, read back, and the
+  host polls only if the read-back names it; racing creators keep the OLDEST lease comment and each deletes
+  its own younger one. A lease lives three tick periods (`POLL_LEASE_TICKS`), so a dead holder is replaced
+  within fifteen minutes at the default `tick_minutes = 5`.
+- A race both hosts win costs one duplicate poll, never a wrong answer: every polled step was already idempotent.
+- `[serve] poller: <host>` in the serve log names the holder each tick.
+
+What every host still reads, kept small:
+
+- **Issues incrementally**: a `client_for` client keeps every issue in `issues-<owner>-<repo>.json` in the
+  outbox and asks only `since=` the forge's clock at its last read (less two minutes); a cold cache reads in
+  full once, and an issue the tidy deletes is forgotten by it (`forgepulls.issues`).
+- **Statuses of unsettled heads only**: a commit whose every derived part has a settled latest status never
+  changes, so its history is kept in `settled-<owner>-<repo>.json` and never asked again
+  (`forgesettled`); a claim still reads afresh, so the cache can cost a refused claim, never a duplicate.
+- **Every request names its sender**: `User-Agent: dev-lab (<login>@<machine>; <owner>/<repo>)`.
 
 - `forge tick` is the same claim step without producing (`--dry-run` to preview).
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
@@ -129,32 +159,120 @@ Each tick it:
 
 ### Deploy a Windows workstation
 
-The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, run once per box, as the user who serves:
+The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, and the complete runbook for a JMAG
+workstation (WS1, WS2): run once per box, in PowerShell, as the user who serves. A JMAG workstation does a
+person's heavy JMAG work FIRST: the person declares it (step 8), and the forge takes only what lies outside it.
+
+**1. Prerequisites.**
+
+- Logged on as the serving user: the `lab-forge-serve` Task runs as that user while they are logged on, and
+  JMAG's COM classes and licence are theirs.
+- `git` (`winget install --id Git.Git -e`) and `uv`
+  (`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`) on `PATH`; with
+  `workstation` declared also `node` and `codex`; with `jmag`, JMAG-Designer installed (its installer registers
+  `designer.Application` and `scheduler.JobApplication`). The deploy probes each and refuses everything missing
+  together, each with its remedy.
+- Disk: the deploy checks none. Each repo is a checkout plus its own `.venv` under `--root` (default `~\src`);
+  the serve lock and log live in `%LOCALAPPDATA%\lab-forge`. Check the drive first (`Get-PSDrive C`, or the
+  drive holding `--root`), leaving room for JMAG's own scratch.
+- The registry role: this machine's entry in the synced `hosts.json` carries role `"forge"`, and
+  `~/.config/lab-commons/config.toml` names it (`[workstation] registry = "<path>"`); see the rule below.
+
+**2. dev-lab checkout and bootstrap.**
 
 ```
-uv run --no-project --with "dev-lab @ git+<forge>/dev-lab.git@integrate/main" -- python -m dev_lab.dev.workstation deploy --forge <forge> --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 --dry-run
+git clone -b integrate/main <forge>/dev-lab.git $HOME\src\dev-lab   # sign in once; Git Credential Manager stores it
+cd $HOME\src\dev-lab
+uv sync --frozen                                                   # the venv from the commit's lock
 ```
 
-**The one manual step** comes first: store your own git credential for the forge (`git clone <forge>/dev-lab.git`
-anywhere and sign in, or `python -m dev_lab.dev.forge auth login`). The deploy only asks `git ls-remote` with
-prompting off, so it never reads or prints the credential, and with none stored it refuses naming this step.
+**3. The forge credential**, from that checkout (its `origin` is on the forge):
+`.venv\Scripts\python.exe -m dev_lab.dev.forge auth login`, then `... forge auth status` ([credentials](#credentials)).
+The deploy only asks `git ls-remote` with prompting off, so it never reads or prints the credential, and with
+none stored it refuses naming this step.
 
-Read the `--dry-run` output (every action, plus the machine-file diff), then run it again without `--dry-run`.
-A second run changes nothing. In order, it:
+**4. Deploy, dry run first.**
 
-1. probes for `uv` and `git`, `node` when the `node` capability is declared, and JMAG Designer's
-   `designer.Application` and `scheduler.JobApplication` COM classes when `jmag` is. Everything missing is
-   refused together, each item with its remedy;
-2. clones each repo into `--root` (default `~/src`) at `--ref` (default `integrate/main`, the branch a serving kit
-   follows), or fast-forwards an existing clean checkout. A dirty checkout is refused;
+```
+.venv\Scripts\python.exe -m dev_lab.dev.workstation deploy --forge <forge> --repos dev-lab,<repo>,... `
+    --capabilities workstation,jmag:4 --dry-run
+```
+
+Read every action and the machine-file diff, then run it again without `--dry-run`. A second run changes
+nothing. In order, it:
+
+1. probes the prerequisites above;
+2. clones each repo into `--root` at `--ref` (default `integrate/main`, the branch a serving kit follows), or
+   fast-forwards an existing clean checkout. A dirty checkout is refused;
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
-4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`) and `[serve] repos, root` into
-   `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
+4. merges into `~/.config/lab-commons/config.toml`: `[capabilities.<name>]` (`jmag:4` is `seats = 4`; a `jmag`
+   row also gets `in_use = { process = [...] }`, step 7) and `[serve] repos, root`. It writes no `[reserve]`:
+   nothing is reserved for the person at the box (step 8). Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.
 
 A workstation declares no `[deploy]`: nothing moves its checkouts between deploys except the user.
+
+**5. Which capabilities to declare.**
+
+- `workstation` alone: a developer box with the live checkout and the agent kit; it owes no JMAG seat.
+- `workstation,jmag:<N>`: a JMAG box. `N` is the JMAG seats it may run at once -- concurrent SOLVES (`jam.exe`
+  / Scheduler jobs), never open Designers (user correction 2026-10-16); a `jmag` part needs one.
+
+**6. The machine file a JMAG workstation ends with** (four seats):
+
+```toml
+[workstation]
+registry = "<synced folder>/hosts.json"
+
+[capabilities.workstation]
+
+[capabilities.jmag]
+seats = 4
+in_use = { process = ["jam.exe", "jam_c.exe", "jam_intel_mpi_b.exe", "jam_intel_mpi_c.exe"] }
+
+[serve]
+repos = ["dev-lab", "<repo>"]
+root = "C:\\Users\\<user>\\src"
+```
+
+**7. A seat is measured like a core** ([box resources](box-resources.md), rule 2). `in_use` names the JMAG
+solver images (`workstation.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
+`jam.exe`, nor `scheduler.exe` or `designer.exe`), so a solve a person starts from Designer or the Scheduler is
+a seat taken though no ledger claim holds it. Free JMAG seats are
+`seats - max(held by ledger claims, jam processes running)`: with the file above the forge runs up to four JMAG
+parts, one while the person runs three solves, none while they run four or more. An unreadable process table, or
+a `supply` probe that cannot say, lends no seat and the refusal names why. `[reserve] cpu_margin` (default 1
+core) and `mem_margin` (default 0.10 of memory) are OS HEADROOM, kept free above what the OS shows in use so the
+machine stays responsive; they are not a reservation for people and deploy leaves them at their defaults.
+
+**8. People and sessions declare their use** (user ruling 2026-10-25). Nothing on the box is reserved for a
+person by configuration. Before heavy work -- a JMAG study, a long Designer session, a sweep -- the person (or an
+agent session) declares what it will use, for how long, as an ordinary claim on the box's ONE ledger:
+
+```
+python -m lab_commons.box claim --cpu 8 --mem-gb 32 --seat jmag=2 --wall 4h --why "motor study, Designer"
+python -m lab_commons.box claims          # every claim on this box: id, owner: why, cpu, memory, seats, time left
+python -m lab_commons.box release <id>    # done early: give it back now
+```
+
+No process runs under the claim. It is owned by the person (`<user>: <why>`), lives until its `--wall`
+(`<n>[s|m|h|d]`, at most 7 days) or `release`, and is reaped at its deadline like any dead holder. The forge
+then uses only what lies OUTSIDE all declared claims: a forge part that would not fit beside the claim waits
+`not admitted`, and the refusal names the person's claim and its deadline. Use nobody declared still counts as
+a safety net -- running solver processes are seats taken, measured cores and memory are busy -- via
+`max(held, observed)`, so forgetting to declare never hurts the person; declaring is the primary path because it
+also covers the work the person is ABOUT to start.
+
+**9. Verify.** `python -m dev_lab.dev.forge queue` from any machine: the host's card shows its OS, its `supply`
+(the `jmag` count is the measured free seats above), its last tick, what it holds and each ledger claim running
+on it. A card older than three of its ticks is flagged stale: the Task is not running (logged off, disabled, or
+failing -- read the log).
+
+**10. Stop, disable, logs.** `schtasks /Change /TN lab-forge-serve /DISABLE` (`/ENABLE` resumes), then stop a
+serve still running with `python -m dev_lab.dev.stoprun --pid <pid>`, which releases its claim as `stopped`.
+The serve and every child it starts write `%LOCALAPPDATA%\lab-forge\serve.log`, rotated to `serve.log.1` at 4 MiB.
 
 **Which workstation serves is declared in ONE place**: the synced workstation registry `hosts.json`
 (`{"hosts": [{"name", "computer", "roles": [...], ...}]}`), named per machine by
@@ -291,9 +409,9 @@ lower-ranked one is still claimed, so several parts run on one host at once.
   `LAB_COMMONS_BOX_CPU`, `dev.verifybox.claimed_width`) -- holding against the
   capacity it was sized by (`box run --capacity`; [box resources](box-resources.md)). A cluster part asks what its last Slurm run measured.
 - **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); on a box, what its
-  ONE ledger can still admit (`compute.probe.box`): its capacity after the `[reserve]` margins (`cpu_margin`,
-  default 1 core; `mem_margin`, default 0.25 of its memory) less every claim on it -- each producer serve runs
-  and each interactive `verify` alike.
+  ONE ledger can still admit (`compute.probe.box`): its capacity after the `[reserve]` OS headroom (`cpu_margin`,
+  default 1 core; `mem_margin`, default 0.10 of its memory) less every claim on it -- each producer serve runs,
+  each interactive `verify` and each claim a person declared (`box claim`) alike.
 - **Running**: each cluster run in flight here at its learned demand, and each part this tick already claimed.
 - **Two parts of one sha** are never claimed by one box in one tick: each is judged in its sha's tree.
 - A job that does not fit waits `not admitted: lacking <resource>`; when every live host serving it says so,
@@ -324,9 +442,9 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
   is, its OS, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
   last tick, what it holds, what else `running` on it (each box ledger claim), and why each candidate it saw
   waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
-  the hidden `forge-hosts` marker (or the title), read off every page in every state; a failed lookup, or a
+  the hidden `forge-hosts` marker (or the title), read off the issue cache in every state; a failed lookup, or a
   listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
-- **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge serve` on every host every tick): the rules and
+- **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge serve` on the repo's poller every tick): the rules and
   their defaults are in [issues](issues.md#issues-never-rot). It says so in ONE comment on the hosts issue.
 - `compute.model.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
 
@@ -349,7 +467,7 @@ renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an
 pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
 BLOCKED red to route), keyed by state, branch and tip, so a new row is delivered at once
-([the integration branch](integration.md#waking-the-steward)). The same host raises origin's branch hygiene:
+([the integration branch](integration.md#waking-the-integrator)). The same host raises origin's branch hygiene:
 `pruned` (the merged branches it deleted, or a prune that failed) and `stale-branch` (unmerged branches idle
 past the grace, never deleted; see [pruning origin](branch-set.md#pruning-origin)). The machine file's
 `[alerts]` table (telegram, email, webhook) delivers them; one `(kind, repo[, about])` is delivered at most
@@ -420,7 +538,7 @@ THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 
 
 Configuration applied through the forge's API or web UI; enabling it is the human's decision.
 
-- **Push whitelist**: only the steward's account may update `main` (the client side: SESSION-HISTORY-ONLY-GROWS). A consumer's protection script applies
+- **Push whitelist**: only the integrator's account may update `main` (the client side: SESSION-HISTORY-ONLY-GROWS). A consumer's protection script applies
   it from a declared constant, so a new machine's account is added in code, not in the UI.
 - **Required status check**: `tests/base` at least; parts are derived, so a required context per need-set
   goes stale when a marker changes. Enable it only once real parts exist on `main`'s tip; a required context

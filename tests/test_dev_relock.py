@@ -215,3 +215,28 @@ def test_a_relock_commit_is_the_forges_and_carries_no_session(monkeypatch, tmp_p
     relock._git(tmp_path, 'status')
     assert 'LAB_SESSION' not in seen['env']
     assert 'PATH' in {key.upper() for key in seen['env']}
+
+
+def test_a_toolchain_behind_the_newest_stable_is_carried_like_a_stale_lock(world: tuple[Path, Path, str]) -> None:
+    """User ruling 2026-10-25: the forge refreshes ``rust-toolchain.toml`` by the same pull request as the lock."""
+    clone, origin, _ = world
+    seed = origin.parent / 'seed'
+    (seed / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.0"\n', encoding='utf-8')
+    _git(seed, 'add', '-A')
+    _git(seed, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'pin')
+    _git(seed, 'push', '-q', str(origin), 'integrate/main')
+    _git(clone, 'fetch', '-q', 'origin')
+    sha = _git(clone, 'rev-parse', 'origin/integrate/main')
+
+    def bumped(tree: Path) -> int:
+        (tree / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.1"\n', encoding='utf-8')
+        return 0
+
+    forge = _Forge()
+    said = carry(
+        clone, Policy(), pulls=forge.pulls, create=forge.create, resolve=_fresh, stable=lambda: '1.99.1',
+        upgrade=bumped,
+    )  # fmt: skip
+    branch = branch_for('rust', sha)
+    assert said == f'relocked rust onto {branch}: https://forge/pulls/99'
+    assert _git(origin, 'diff', '--name-only', sha, branch) == 'rust-toolchain.toml'

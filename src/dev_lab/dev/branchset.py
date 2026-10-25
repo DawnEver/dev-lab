@@ -34,6 +34,7 @@ import dataclasses
 import fnmatch
 import subprocess
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
@@ -42,6 +43,7 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
+from dev_lab.dev.reclaim import reclaim
 
 __all__ = [
     'ARCHIVE_PREFIX',
@@ -58,6 +60,7 @@ __all__ = [
     'branchset_from',
     'census',
     'declared_branchset',
+    'holders',
     'main',
     'merge_candidates',
 ]
@@ -242,7 +245,7 @@ def census(root: Path, branchset: BranchSet) -> Census | None:
     return Census(tuple(n for n in remote if not branchset.admits(n)), tuple(debt), tuple(unpushed))
 
 
-def _holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
+def holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
     """The refs whose history makes a tip safe to delete: the trunk's authority and every session."""
     refs = [authority_for(root, branchset.trunk)]
     for session in sorted(branchset.sessions):
@@ -266,7 +269,7 @@ def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] 
     parked = _archive_tags(root)
     if remote is None or local is None or parked is None:
         return None
-    holders = _holders(root, branchset)
+    held_by = holders(root, branchset)
     rows: list[Candidate] = []
     for where, names, prefix in (
         ('local', local, 'refs/heads/'),
@@ -276,7 +279,7 @@ def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] 
         for name in names:
             if name in branchset.declared:
                 continue
-            held = any(git_out(root, 'merge-base', '--is-ancestor', f'{prefix}{name}', h) is not None for h in holders)
+            held = any(git_out(root, 'merge-base', '--is-ancestor', f'{prefix}{name}', h) is not None for h in held_by)
             rows.append(Candidate(name, where, held))
     return tuple(rows)
 
@@ -287,7 +290,9 @@ def _checked_out(root: Path) -> frozenset[str]:
     return frozenset(name for name, _, tree in rows if tree.strip())
 
 
-def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
+def apply_local(
+    root: Path, branchset: BranchSet, *, occupied: Callable[[Path], bool] | None = None
+) -> tuple[str, ...] | None:
     """THE LOCAL CLEANUP DOOR: delete every deletable LOCAL candidate; one line per branch. ``None``: unread.
 
     User ruling 2026-10-04: local cleanup is a door, but a push or a REMOTE deletion is never automatic.
@@ -295,21 +300,24 @@ def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
     FRESH ``merge-base --is-ancestor`` and is pinned to the sha that check saw (``update-ref -d <ref>
     <sha>``), so a branch that moved in between is kept, never lost. A declared branch, a branch with
     commits origin lacks, and a branch checked out in ANY worktree (clean or not -- ruling 2026-10-04:
-    a tree is committed or cleared first) are never touched.
+    a tree is committed or cleared first) are never touched -- so every RECLAIMABLE worktree goes FIRST
+    (:func:`dev_lab.dev.reclaim.reclaim`: clean, landed on a holder, unlocked, unoccupied), which is what
+    frees its branch for the delete below; every kept tree is listed with its reason.
     """
+    held_by = holders(root, branchset)
+    trees = reclaim(root, held_by, occupied=occupied)
     rows = merge_candidates(root, branchset)
-    if rows is None:
+    if rows is None or trees is None:
         return None
-    holders = _holders(root, branchset)
     busy = _checked_out(root)
-    out: list[str] = []
+    out: list[str] = list(trees)
     for row in rows:
         if row.where == 'origin':
             hint = f'(human: git push origin --delete {row.name})' if row.deletable else '(merge first)'
             out.append(f'listed   origin  {row.name}  {hint}')
             continue
         if row.where == 'tag':
-            out.append(_drop_tag(root, row, holders))
+            out.append(_drop_tag(root, row, held_by))
             continue
         ref = f'refs/heads/{row.name}'
         sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
@@ -317,7 +325,7 @@ def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
             out.append(f'kept     local   {row.name}  (not held by a declared branch)')
         elif row.name in busy or _unpushed(root, row.name) != 0:
             out.append(f'kept     local   {row.name}  (checked out in a worktree, or holds commits origin lacks)')
-        elif not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in holders):
+        elif not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in held_by):
             out.append(f'kept     local   {row.name}  (ancestry re-check failed)')
         else:
             done = git_out(root, 'update-ref', '-d', ref, sha) is not None
@@ -343,7 +351,11 @@ def main(argv: list[str] | None = None) -> int:
     """List the merge-and-delete candidates; ``--apply`` deletes the deletable LOCAL ones. Exit 2: unread."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.branchset', description=main.__doc__)
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout to read (default: cwd)')
-    parser.add_argument('--apply', action='store_true', help='delete deletable LOCAL branches; origin is listed only')
+    parser.add_argument(
+        '--apply',
+        action='store_true',
+        help='reclaim landed worktrees, then delete deletable LOCAL branches; origin is listed only',
+    )
     args = parser.parse_args(argv)
     root = args.root
     if args.apply:
