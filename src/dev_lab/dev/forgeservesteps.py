@@ -93,7 +93,12 @@ def prompt(
         review_step(root, built, policy=policy, say=say, host=host)  # advisory: the review host follows the integrator
         glass = break_glass(root, policy, repo)
         red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
-        raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo), *glass, *red], alarm=alarm)
+        raise_once(
+            built,
+            INTEGRATION,
+            [*found, *sync_alarms(ticked.said, policy, repo, now=forge_now(built)), *glass, *red],
+            alarm=alarm,
+        )
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
 
