@@ -38,6 +38,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import metrics
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
@@ -301,7 +302,20 @@ def run_stage(
         argvs = _argvs(hook, stage, git_args, chosen)
         if _report(stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=env or {})):
             failed.append(hook.id)
+    _log(root, stage, failed)
     return _verdict(stage, failed)
+
+
+def _log(root: Path, stage: str, failed: Sequence[str]) -> None:
+    """The stage's metrics (:mod:`dev_lab.dev.metrics`): one refusal per failed hook, and every pre-push as a push."""
+    refused = () if stage in ADVISORY else failed
+    if stage != 'pre-push' and not refused:
+        return
+    repo = metrics.repo_of(root)
+    if stage == 'pre-push':
+        metrics.record(metrics.PUSH, repo=repo)
+    for hook_id in refused:
+        metrics.record(metrics.REFUSAL, repo=repo, rule=hook_id, reason=stage)
 
 
 def _verdict(stage: str, failed: Sequence[str]) -> int:

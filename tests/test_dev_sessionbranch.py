@@ -16,6 +16,7 @@ import pytest
 
 from dev_lab.dev.breakglass import notices
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.metrics import BYPASS, read
 from dev_lab.dev.sessionbranch import P2, P3, P5
 
 _GIT = shutil.which('git') or 'git'
@@ -382,6 +383,7 @@ def test_break_glass_admits_a_direct_push_only_when_every_new_commit_names_its_r
     done = _push(repo, 'int/line')
     assert (done.returncode == 0) is admitted, done.stderr
     assert _remote(repo, 'int/line') == (_git(repo, 'rev-parse', 'HEAD') if admitted else before)
+    assert [line['lab.rule.id'] for line in read(BYPASS)] == (['session-branch'] if admitted else [])
     if not admitted:
         assert P5 in done.stderr
         assert 'Break-Glass: <reason>' in done.stderr

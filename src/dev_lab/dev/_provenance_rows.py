@@ -526,6 +526,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgestuck': ('original',),
     'forgewatch': ('original',),
     'liverun': ('original',),
+    'metrics': ('original',),
     'monthsummary': ('original',),
     'prsuperseded': ('original',),
     'worktree_archive': ('original',),

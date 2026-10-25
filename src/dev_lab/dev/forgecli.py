@@ -48,6 +48,7 @@ from dev_lab.dev import (
     forgetidy,
     forgetry,
     forgewatch,
+    metrics,
     pradmit,
     prlanded,
     prsuperseded,
@@ -90,8 +91,14 @@ ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
 
 
 def main(argv: Sequence[str]) -> int:
-    """Route *argv* to the door owning its noun; returns that door's exit code."""
-    args = list(argv)
+    """Route *argv* to the door owning its noun; returns that door's exit code, a hand verb's success logged."""
+    code = _route(list(argv))
+    if code == 0:
+        metrics.hand_action(Path.cwd(), argv)
+    return code
+
+
+def _route(args: list[str]) -> int:
     if args[:1] and (retired := refusal('forge', args[0])):
         emit(retired, err=True)
         return 2

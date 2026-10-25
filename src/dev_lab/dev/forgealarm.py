@@ -51,6 +51,7 @@ from lab_commons.compute.durable import durable_text, read_table
 from lab_commons.config import config_path, section
 from lab_commons.log import emit
 
+from dev_lab.dev import metrics
 from dev_lab.supervise.alert import Notice, Notifier
 from dev_lab.supervise.verdict import Severity
 
@@ -105,6 +106,10 @@ UNTAGGED: Final = 'untagged'
 NEEDS: Final = 'needs'
 
 
+#: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.
+PROMPTS: Final = (INTEGRATION, STALE_BRANCH)
+
+
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:
     """How long one delivery waits before it is delivered again: ``[alerts] repeat_hours``, absent 6 h."""
     return timedelta(hours=float(alerts.get('repeat_hours', 6)))
@@ -154,6 +159,8 @@ def sound(
     last = _last(path)
     due = key not in last or now - datetime.fromisoformat(last[key]) >= repeat_window(table)
     delivered: tuple[str, ...] = ()
+    if due and alarm.kind not in PROMPTS:
+        metrics.record(metrics.HOST_FAILURE, repo=alarm.repo, rule=alarm.kind, reason=alarm.kind)
     if due:
         notice = Notice(subject=alarm.subject, body=alarm.body, severity=Severity.CRITICAL)
         results = deliver(notice)
