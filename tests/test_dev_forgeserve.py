@@ -1135,7 +1135,7 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
     _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learnt.append((a, k)))
     declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
     ((_root, _item, run), how) = learnt[0]
-    assert (run.peak_mem_gb, how) == (declared.mem_gb, {'killed': True})
+    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'killed': True})
 
 
 def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Path) -> None:
@@ -1143,9 +1143,9 @@ def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Pat
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     item = Work('integrate/main', SHA, 'windows', 'mine', ME)
-    first = forgeproduce.box_claim(item, BOX, root=tmp_path).mem_gb
+    first = forgeproduce.box_claim(item, BOX, root=tmp_path)['mem_gb']
     _killed_for_memory(monkeypatch, tmp_path)
-    again = forgeproduce.box_claim(item, BOX, root=tmp_path).mem_gb
+    again = forgeproduce.box_claim(item, BOX, root=tmp_path)['mem_gb']
     assert again == min(first * learned.OOM_GROWTH * learned.BOX_HEADROOM, BOX.mem_bytes / GB) > first
 
 

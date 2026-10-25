@@ -25,11 +25,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, ProcessEnd, Refused, command, read_ended
+from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, ProcessEnd, Refused, command, read_ended
 from lab_commons.box.ledger import holdings
 from lab_commons.box.supply import Reading, room
 from lab_commons.compute import learned
-from lab_commons.compute.model import Resources
+from lab_commons.compute.model import Demand, Resources
 
 from dev_lab.dev.forgedemand import refresh_checkout
 from dev_lab.dev.platformparts import origin_url
@@ -173,7 +173,7 @@ def claimed_width(argv: Sequence[str], cpu: str | None, *, xdist: bool) -> list[
 
 def selection_demand(workers: int, mem_gb: float) -> Demand:
     """A selection's box claim: one core per worker (one when serial), its measured memory, its wall."""
-    return Demand(cpu=max(1, workers), mem_gb=mem_gb, wall_s=SELECTION_WALL_S, seats={})
+    return Demand(cpu=max(1, workers), mem_gb=mem_gb)
 
 
 def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tuple[list[str], Path | None]:
@@ -192,7 +192,14 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     demand = selection_demand(workers, selection_mem_gb(repo, files, workers))
     run = [*argv, *width]
     return command(
-        run, demand, queue_s, key=f'verify:{root}', what=f'verify:{root.name}', outcome=outcome, capacity=size
+        run,
+        demand,
+        SELECTION_WALL_S,
+        queue_s,
+        key=f'verify:{root}',
+        what=f'verify:{root.name}',
+        outcome=outcome,
+        capacity=size,
     ), outcome
 
 

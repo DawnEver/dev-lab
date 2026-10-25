@@ -227,6 +227,36 @@ ALLOWED: Final[dict[Site, str]] = {
         'tests/**',
     ): 'a test that cannot read a private member cannot pin a private invariant',
     (
+        'src/dev_lab/supervise/components/resources.py',
+        'PLC0415',
+        'import psutil',
+    ): 'psutil is optional on a supervised host; importing it inside the check turns its absence into a '
+    'reported anomaly instead of a supervisor that cannot start',
+    (
+        'src/dev_lab/supervise/components/resources.py',
+        'BLE001',
+        'except Exception:',
+    ): 'a process sampled by psutil can vanish or be denied mid-read (several unrelated types); such a '
+    'process is skipped as gone, never a crashed resource check',
+    (
+        'src/dev_lab/supervise/deploy.py',
+        'S108',
+        "CANDIDATE: Final = '/var/tmp/lab-supervise-candidate'",
+    ): 'the candidate build lives on a Linux server under /var/tmp ON PURPOSE: outside the live tree and not '
+    'swept by a reboot; a predictable name the supervisor tears down before each use (its owner is not checked)',
+    (
+        'src/dev_lab/supervise/loop.py',
+        'BLE001',
+        'except Exception as exc:',
+    ): 'the supervisor loop isolates each component check: whatever a check raises becomes a CRITICAL '
+    'anomaly naming the type, so one faulty component cannot stop supervision of the rest',
+    (
+        'src/dev_lab/supervise/remedy.py',
+        'BLE001',
+        'except Exception as exc:',
+    ): 'a component-supplied remedy handler may raise anything; the failure is reported as the step '
+    'outcome so the remedy ladder can escalate rather than the supervisor dying',
+    (
         'src/dev_lab/dev/quantity_values.py',
         'BLE001',
         'except Exception:',
