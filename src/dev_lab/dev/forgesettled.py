@@ -16,7 +16,7 @@ import dataclasses
 import json
 import os
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.forgestatus import CommitStatus, status_history
 from dev_lab.dev.platformparts import derived, parts_of
@@ -50,9 +50,9 @@ class SettledHistories:
         self._memo: dict[str, tuple[CommitStatus, ...]] = {}
         home = client.cache_dir
         self._path = None if home is None else home / f'settled-{client.forge.owner}-{client.forge.repo}.json'
-        self._kept: dict[str, list[dict[str, object]]] = self._load()
+        self._kept: dict[str, list[dict[str, Any]]] = self._load()
 
-    def _load(self) -> dict[str, list[dict[str, object]]]:
+    def _load(self) -> dict[str, list[dict[str, Any]]]:
         if self._path is None:
             return {}
         try:
@@ -67,7 +67,7 @@ class SettledHistories:
             return self._memo[sha]
         if sha in self._kept:
             try:
-                found = tuple(CommitStatus(**raw) for raw in self._kept[sha])  # type: ignore[arg-type]
+                found = tuple(CommitStatus(**raw) for raw in self._kept[sha])
             except TypeError:
                 found = None
             if found is not None:
