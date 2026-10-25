@@ -296,6 +296,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   having a part's need-set is named.
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`dev_lab.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
+* :mod:`dev_lab.dev.forgerunpost` -- a cluster run's forge posts (progress, release), saved steps and alarms.
 * :mod:`dev_lab.dev.forgerunstate` -- a cluster run's state file, its schema upgrades, and the Slurm protocol.
 * :mod:`dev_lab.dev.components` -- the engines a product mounts under ``components/``, declared once.
 * :mod:`dev_lab.dev.componentbump` -- one forge-green engine commit at a time becomes a one-pointer lane.
