@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 from _box_fake import quiet
@@ -16,6 +17,8 @@ from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeschedule import NOT_ADMITTED
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgewait import NEVER_FITS, Box, nowhere, tell, wait_context
+from dev_lab.dev.forgework import Client
+from dev_lab.dev.platformparts import part_context
 
 NOW = datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
 T0 = NOW.timestamp()
@@ -119,6 +122,10 @@ class _Posts:
         self.made.append((sha, context, state, description))
 
 
+#: tell() never reads its client when post and history are given.
+_NO_CLIENT = cast('Client', None)
+
+
 def test_a_part_waiting_past_the_bound_is_told_once_an_hour_and_settled_when_claimed() -> None:
     """PLANTED CONTROLS: under the bound, a request (told on its issue), or a fleet hold -- nothing is posted."""
     post = _Posts()
@@ -129,22 +136,20 @@ def test_a_part_waiting_past_the_bound_is_told_once_an_hour_and_settled_when_cla
         _ranked('base', 9.0, blocked, kind=REQUEST, sha='c' * 40),
         _ranked('base', 9.0, 'waiting behind its ref run', sha='d' * 40),
     ]
-    said = tell(None, queue, [], history=lambda _sha: (), hours=6.0, host='G', post=post)  # type: ignore[arg-type]
+    said = tell(_NO_CLIENT, queue, [], history=lambda _sha: (), hours=6.0, host='G', post=post)
     head = 'waited 7 h on G: lacking mem_gb (12.4 asked, 0 free); earliest start 2026-10-25T13:00Z'
     assert post.made == [('a' * 40, 'waits/base', 'pending', head)]
     assert len(said) == 1
     told = CommitStatus(wait_context('base'), 'pending', head, '', id=7)
     post.made.clear()
-    tell(None, queue[:1], [], history=lambda _sha: (told,), hours=6.0, host='G', post=post)  # type: ignore[arg-type]
+    tell(_NO_CLIENT, queue[:1], [], history=lambda _sha: (told,), hours=6.0, host='G', post=post)
     assert post.made == [], 'told this hour already'
     claimed = Work('pr/x', 'a' * 40, 'base', MINE)
-    tell(None, [], [claimed], history=lambda _sha: (told,), hours=6.0, host='G', post=post)  # type: ignore[arg-type]
+    tell(_NO_CLIENT, [], [claimed], history=lambda _sha: (told,), hours=6.0, host='G', post=post)
     assert post.made == [('a' * 40, 'waits/base', 'success', 'claimed by G')]
 
 
 def test_the_wait_context_is_never_a_part_context() -> None:
-    from dev_lab.dev.platformparts import part_context  # noqa: PLC0415 -- the one comparison this test makes
-
     assert not wait_context('base').startswith(part_context(''))
 
 
