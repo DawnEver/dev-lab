@@ -116,6 +116,7 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
     monkeypatch.setenv('FAKE_ID', 'alice')
     monkeypatch.setenv('FAKE_SACCT', SACCT)
     monkeypatch.setattr(deploy, '_which', lambda name, **_kw: f'/x/{name}')
+    monkeypatch.setattr(deploy, '_runs', lambda _sh, _env, _tool: True)  # every tool runs unless a test says not
     monkeypatch.setattr(deploy, '_proves', lambda _git, _scratch: '')  # every git qualifies unless a test says not
     calls = tmp_path / 'calls.log'
     crontab = tmp_path / 'crontab.txt'
@@ -308,7 +309,7 @@ def test_a_missing_tool_is_installed_or_refused_by_name(
     box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The uv and cargo installers are the official ones, into ~/.local and ~/.cargo; cc cannot, so it is refused."""
-    monkeypatch.setattr(deploy, '_which', lambda name, **_kw: None if name in {'uv', 'cargo'} else f'/x/{name}')
+    monkeypatch.setattr(deploy, '_runs', lambda _sh, _env, tool: tool not in {'uv', 'cargo'})
     monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     assert box.run(*DECLARE) == 0
     installs = [line for line in box.logged().splitlines() if line.startswith('sh curl')]
@@ -316,11 +317,36 @@ def test_a_missing_tool_is_installed_or_refused_by_name(
     assert 'UV_NO_MODIFY_PATH=1' in installs[0]
     assert '--no-modify-path' in installs[1]
     monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cc',)))
-    monkeypatch.setattr(deploy, '_which', lambda name, **_kw: None if name == 'cc' else f'/x/{name}')
+    monkeypatch.setattr(deploy, '_runs', lambda _sh, _env, tool: tool != 'cc')
     assert box.run() == 2
     err = capsys.readouterr().err
     assert 'cc' in err
     assert '.local/bin' in err
+
+
+def test_a_tool_is_probed_by_its_version_in_the_tick_environment(box: Box, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Present is CAPABILITY: ``cargo --version`` under the tick's PATH and grant setup, never a PATH lookup."""
+    probed: list[tuple[str, str]] = []
+    monkeypatch.setattr(deploy, '_runs', lambda _sh, env, tool: probed.append((env, tool)) or True)
+    monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
+    assert box.run(*DECLARE) == 0
+    assert {tool for _env, tool in probed} == {'uv', 'cargo'}
+    assert all(env == deploy_spec.tick_environment(box.home, [str(Path('/x'))]) for env, _tool in probed)
+
+
+def test_the_login_shell_gets_the_tick_user_installs_once_with_a_backup(box: Box) -> None:
+    """Measured on Ada 2026-10-25: cargo ran for cron only. The login files get one marked line, written once."""
+    (box.home / '.bashrc').write_text('alias ll=ls\n', encoding='utf-8')
+    assert box.run(*DECLARE) == 0
+    edits = [line for line in box.logged().splitlines() if deploy.LOGIN_MARK in line]
+    assert len(edits) == 2, edits
+    bashrc = next(line for line in edits if '.bashrc' in line)
+    assert '.lab-deploy.bak' in bashrc
+    assert str(box.home / '.cargo/bin') in bashrc
+    for name in ('.bash_profile', '.bashrc'):
+        (box.home / name).write_text(deploy.login_line(box.home) + '\n', encoding='utf-8')
+    assert box.run() == 0
+    assert len([line for line in box.logged().splitlines() if deploy.LOGIN_MARK in line]) == 2, 'already marked'
 
 
 def test_the_deploy_writes_this_accounts_own_grant_once(box: Box) -> None:
