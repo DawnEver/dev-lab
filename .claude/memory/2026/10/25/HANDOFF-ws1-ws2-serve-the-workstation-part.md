@@ -19,11 +19,18 @@ created: 2026-10-25
 
 1. Disk: WS2 alarmed at 843/944 GB on 2026-10-16. Each claimed part makes a worktree and a venv under the
    repo checkouts. Free space first; report what you removed (never delete another person's work or `attic/`).
-2. `git`, `uv` on PATH (`uv --version`, `git --version`).
+2. Tools on PATH: `git`, `uv`, and whatever the `workstation` capability probes for (at least `node` and
+   `codex` per review SR-20261025-003). Trust the deploy, not this list: its dry run refuses every missing
+   tool together, each with its remedy -- install those and re-run.
 3. A forge credential for this user: `git clone https://gitea.mingyangbao.site/Tianjie-Zou-Team/dev-lab.git`
-   somewhere and sign in, or `python -m dev_lab.dev.forge auth login` (input hidden). Never print the token.
-4. `~/.config/lab-commons/config.toml` must name the registry:
-   `[workstation]` `registry = "<this box's path to>/Sync/workstation/jmag-job-system/hosts.json"`.
+   somewhere and sign in (Git Credential Manager stores it). On a fresh box dev_lab is not installed yet, so
+   do NOT use a bare `python -m dev_lab...`; after the deploy, use `$HOME\src\dev-lab\.venv\Scripts\python.exe`.
+   Never print the token.
+4. The machine file (`$env:LAB_COMMONS_CONFIG` if set, else `~/.config/lab-commons/config.toml`):
+   - must name the registry: `[workstation]` `registry = "<this box's path to>/Sync/workstation/jmag-job-system/hosts.json"`;
+   - must NOT still declare `[capabilities.jmag]` (WS2 declared `jmag = 4` before): the deploy only MERGES the
+     tables you pass and keeps the rest, so an old `[capabilities.jmag]` keeps offering JMAG. Delete that table
+     by hand now (keep a copy of the file first); it comes back with the JMAG deploy later.
 
 ## Deploy (PowerShell)
 
@@ -49,12 +56,15 @@ Scheduled Task `lab-forge-serve` (every 5 min, only while logged on, windowless)
 
 ## Stop
 
-`schtasks /Change /TN lab-forge-serve /DISABLE`, then `python -m dev_lab.dev.stoprun --pid <pid>` for a running
-serve (its producers stop first; its claim is released as `error: stopped`).
+1. `schtasks /Change /TN lab-forge-serve /DISABLE` -- stops new ticks; it does not kill a running one.
+2. Find the running FORGE serve (not the Task's `pythonw -m dev_lab.dev.workstation serve` parent -- stoprun
+   refuses that pid with exit 3): `Get-CimInstance Win32_Process | ? CommandLine -match 'dev_lab.dev.forge serve' | select ProcessId,CommandLine`.
+3. `$HOME\src\dev-lab\.venv\Scripts\python.exe -m dev_lab.dev.stoprun --pid <that pid>` for each: its producers
+   stop first and its claim is released as `error: stopped`; the workstation parent then exits by itself.
 
 ## Later (not now)
 
 - After lab-commons #414 and dev-lab #136 land and dev-lab relocks: re-run the deploy with
   `--capabilities workstation,jmag:<seats>` (WS1/WS2 have several solve seats each). No fixed margin: people
-  declare JMAG work with `python -m lab_commons.box claim --seat jmag=<k> --cpu <n> --mem-gb <g> --wall <h> --why "<text>"`
+  declare JMAG work with `<dev-lab .venv python> -m lab_commons.box claim --seat jmag=<k> --cpu <n> --mem-gb <g> --wall <h> --why "<text>"`
   and the forge only uses what lies outside every declared claim; observed solver processes still count.
