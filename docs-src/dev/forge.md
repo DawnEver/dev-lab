@@ -126,32 +126,108 @@ Each tick it:
 
 ### Deploy a Windows workstation
 
-The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, run once per box, as the user who serves:
+The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, and the complete runbook for a JMAG
+workstation (WS1, WS2): run once per box, in PowerShell, as the user who serves. A JMAG workstation does a
+person's heavy JMAG work FIRST; the forge takes only what is left, measured (step 7).
+
+**1. Prerequisites.**
+
+- Logged on as the serving user: the `lab-forge-serve` Task runs as that user while they are logged on, and
+  JMAG's COM classes and licence are theirs.
+- `git` (`winget install --id Git.Git -e`) and `uv`
+  (`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`) on `PATH`; with
+  `workstation` declared also `node` and `codex`; with `jmag`, JMAG-Designer installed (its installer registers
+  `designer.Application` and `scheduler.JobApplication`). The deploy probes each and refuses everything missing
+  together, each with its remedy.
+- Disk: the deploy checks none. Each repo is a checkout plus its own `.venv` under `--root` (default `~\src`);
+  the serve lock and log live in `%LOCALAPPDATA%\lab-forge`. Check the drive first (`Get-PSDrive C`, or the
+  drive holding `--root`), leaving room for JMAG's own scratch.
+- The registry role: this machine's entry in the synced `hosts.json` carries role `"forge"`, and
+  `~/.config/lab-commons/config.toml` names it (`[workstation] registry = "<path>"`); see the rule below.
+
+**2. dev-lab checkout and bootstrap.**
 
 ```
-uv run --no-project --with "dev-lab @ git+<forge>/dev-lab.git@integrate/main" -- python -m dev_lab.dev.workstation deploy --forge <forge> --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 --dry-run
+git clone -b integrate/main <forge>/dev-lab.git $HOME\src\dev-lab   # sign in once; Git Credential Manager stores it
+cd $HOME\src\dev-lab
+uv sync --frozen                                                   # the venv from the commit's lock
 ```
 
-**The one manual step** comes first: store your own git credential for the forge (`git clone <forge>/dev-lab.git`
-anywhere and sign in, or `python -m dev_lab.dev.forge auth login`). The deploy only asks `git ls-remote` with
-prompting off, so it never reads or prints the credential, and with none stored it refuses naming this step.
+**3. The forge credential**, from that checkout (its `origin` is on the forge):
+`.venv\Scripts\python.exe -m dev_lab.dev.forge auth login`, then `... forge auth status` ([credentials](#credentials)).
+The deploy only asks `git ls-remote` with prompting off, so it never reads or prints the credential, and with
+none stored it refuses naming this step.
 
-Read the `--dry-run` output (every action, plus the machine-file diff), then run it again without `--dry-run`.
-A second run changes nothing. In order, it:
+**4. Deploy, dry run first.**
 
-1. probes for `uv` and `git`, `node` when the `node` capability is declared, and JMAG Designer's
-   `designer.Application` and `scheduler.JobApplication` COM classes when `jmag` is. Everything missing is
-   refused together, each item with its remedy;
-2. clones each repo into `--root` (default `~/src`) at `--ref` (default `integrate/main`, the branch a serving kit
-   follows), or fast-forwards an existing clean checkout. A dirty checkout is refused;
+```
+.venv\Scripts\python.exe -m dev_lab.dev.workstation deploy --forge <forge> --repos dev-lab,<repo>,... `
+    --capabilities workstation,jmag:4 --seat-margin jmag=2 --cpu-margin 8 --mem-margin 0.25 --dry-run
+```
+
+Read every action and the machine-file diff, then run it again without `--dry-run`. A second run changes
+nothing. In order, it:
+
+1. probes the prerequisites above;
+2. clones each repo into `--root` at `--ref` (default `integrate/main`, the branch a serving kit follows), or
+   fast-forwards an existing clean checkout. A dirty checkout is refused;
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
-4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`) and `[serve] repos, root` into
-   `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
+4. merges into `~/.config/lab-commons/config.toml`: `[capabilities.<name>]` (`jmag:4` is `seats = 4`; a `jmag`
+   row also gets `in_use = { process = [...] }`, step 7), `[reserve]` with each margin given (a key not given is
+   left as the file has it), and `[serve] repos, root`. Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.
 
 A workstation declares no `[deploy]`: nothing moves its checkouts between deploys except the user.
+
+**5. Which capabilities to declare.**
+
+- `workstation` alone: a developer box with the live checkout and the agent kit; it owes no JMAG seat.
+- `workstation,jmag:<N>`: a JMAG box. `N` is the JMAG seats it may run at once -- concurrent SOLVES (`jam.exe`
+  / Scheduler jobs), never open Designers (user correction 2026-10-16); a `jmag` part needs one.
+
+**6. The machine file a JMAG workstation ends with** (four seats, two always the person's):
+
+```toml
+[workstation]
+registry = "<synced folder>/hosts.json"
+
+[capabilities.workstation]
+
+[capabilities.jmag]
+seats = 4
+in_use = { process = ["jam.exe", "jam_c.exe", "jam_intel_mpi_b.exe", "jam_intel_mpi_c.exe"] }
+
+[reserve]
+cpu_margin = 8.0
+mem_margin = 0.25
+seat_margin = { jmag = 2 }
+
+[serve]
+repos = ["dev-lab", "<repo>"]
+root = "C:\\Users\\<user>\\src"
+```
+
+**7. A seat is measured like a core** ([box resources](box-resources.md), rule 2). `in_use` names the JMAG
+solver images (`workstation.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
+`jam.exe`, nor `scheduler.exe` or `designer.exe`), so a solve a person starts from Designer or the Scheduler is
+a seat taken though no ledger claim holds it. Free JMAG seats are
+`seats - max(held by ledger claims, jam processes running) - seat_margin`: with the file above the forge runs
+at most two JMAG parts, one while the person runs three solves, none while they run four or more. An unreadable
+process table, or a `supply` probe that cannot say, lends no seat and the refusal names why. `cpu_margin`
+(cores, default 1) and `mem_margin` (fraction of memory, default 0.10) are kept free above what the OS shows in
+use: size them for the person's own Designer and pre/post work. A margin is kept, never reserved for a waiter:
+nothing is lent or preempted (user ruling 2026-10-14).
+
+**8. Verify.** `python -m dev_lab.dev.forge queue` from any machine: the host's card shows its OS, its `supply`
+(the `jmag` count is the measured free seats above), its last tick, what it holds and each ledger claim running
+on it. A card older than three of its ticks is flagged stale: the Task is not running (logged off, disabled, or
+failing -- read the log).
+
+**9. Stop, disable, logs.** `schtasks /Change /TN lab-forge-serve /DISABLE` (`/ENABLE` resumes), then stop a
+serve still running with `python -m dev_lab.dev.stoprun --pid <pid>`, which releases its claim as `stopped`.
+The serve and every child it starts write `%LOCALAPPDATA%\lab-forge\serve.log`, rotated to `serve.log.1` at 4 MiB.
 
 **Which workstation serves is declared in ONE place**: the synced workstation registry `hosts.json`
 (`{"hosts": [{"name", "computer", "roles": [...], ...}]}`), named per machine by

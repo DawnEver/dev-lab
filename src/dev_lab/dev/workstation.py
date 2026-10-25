@@ -3,8 +3,9 @@
 The counterpart of a cluster account's ``python -m dev_lab.dev.hpchost deploy``, and it reuses that
 deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 
-``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>]
-[--root DIR] [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat:
+``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--seat-margin jmag=2]
+[--cpu-margin N] [--mem-margin F] [--forge <https base>] [--root DIR] [--ref BRANCH] [--dry-run]``, each step
+reporting and safe to repeat:
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
@@ -15,7 +16,9 @@ deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 4. VENVS: ``-m dev_lab.dev.dep --bootstrap <checkout>`` when the venv is missing or its ``pyproject.toml``
    or ``uv.lock`` changed since its last sync (a stamp in the venv, written only after a sync succeeds).
 5. HOOKS: ``-m dev_lab.dev.hook_install --install`` in each checkout whose hooks are not live.
-6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``) and
+6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
+   row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken),
+   ``[reserve]`` with each margin given (``cpu_margin``, ``mem_margin``, ``seat_margin``) and
    ``[serve] repos, root`` merged in place; every other table, key and comment is kept, and
    ``--dry-run`` prints the diff.
 7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`dev_lab.dev.servetask`), registered from
@@ -79,6 +82,7 @@ if sys.platform == 'win32':
 __all__ = [
     'FORGE_ROLE',
     'JMAG_PROGIDS',
+    'JMAG_SOLVER_IMAGES',
     'REGISTRY_TABLE',
     'WORKSTATION',
     'NoRegistry',
@@ -99,6 +103,13 @@ _WORKSTATION_KIT: Final = ('node', 'codex')
 
 #: The COM classes a ``jmag`` host drives: the Designer and its Scheduler.
 JMAG_PROGIDS: Final = ('designer.Application', 'scheduler.JobApplication')
+
+#: The images whose running count is the JMAG seats in use: ONE per solve. The solver kernel family as the
+#: installation ships it (motronics ``hamilton/adapters/jmag/processes.py``, checked 2026-09-19 against
+#: JMAG-Designer25.1). Not ``execsolver.exe`` -- it launches ``jam.exe``, so counting both counts one solve
+#: twice -- and not ``scheduler.exe`` or ``designer.exe``: a seat is a SOLVE, never an open Designer (user
+#: correction 2026-10-16).
+JMAG_SOLVER_IMAGES: Final = ('jam.exe', 'jam_c.exe', 'jam_intel_mpi_b.exe', 'jam_intel_mpi_c.exe')
 
 _REMEDIES: Final = {
     'uv': 'install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"',
@@ -212,10 +223,32 @@ def _capabilities(text: str) -> dict[str, dict[str, Any]]:
             msg = f'--capabilities {item!r}: expected <name> or <name>:<seats>'
             raise argparse.ArgumentTypeError(msg)
         out[name] = {'seats': int(seats)} if seats else {}
+        if name == 'jmag':
+            out[name]['in_use'] = {'process': list(JMAG_SOLVER_IMAGES)}
     try:
         return provided(out)
     except ValueError as bad:
         raise argparse.ArgumentTypeError(str(bad)) from None
+
+
+def _seat_margin(text: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for item in filter(None, (part.strip() for part in text.split(','))):
+        name, sep, count = item.partition('=')
+        if not sep or not count.isdigit():
+            msg = f'--seat-margin {item!r}: expected <name>=<seats kept>'
+            raise argparse.ArgumentTypeError(msg)
+        out[name] = int(count)
+    return out
+
+
+def _reserve(args: argparse.Namespace) -> dict[str, Any]:
+    """The ``[reserve]`` keys this deploy was given; a seat margin for a capability not declared is refused."""
+    if stray := sorted(set(args.seat_margin) - set(args.capabilities)):
+        msg = f'--seat-margin names {", ".join(stray)}, not declared in --capabilities'
+        raise ValueError(msg)
+    given = {'cpu_margin': args.cpu_margin, 'mem_margin': args.mem_margin, 'seat_margin': args.seat_margin or None}
+    return {key: value for key, value in given.items() if value is not None}
 
 
 def _repos(text: str) -> tuple[str, ...]:
@@ -232,6 +265,9 @@ def _parser() -> argparse.ArgumentParser:
     dep = verbs.add_parser('deploy', help='make this workstation a forge serve host')
     dep.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {KIT}')
     dep.add_argument('--capabilities', type=_capabilities, default={}, help='comma-separated name or name:seats')
+    dep.add_argument('--cpu-margin', type=float, help='[reserve] cores the forge never takes (default 1)')
+    dep.add_argument('--mem-margin', type=float, help='[reserve] memory fraction the forge never takes (default 0.1)')
+    dep.add_argument('--seat-margin', type=_seat_margin, default={}, help='[reserve] seats never lent: name=N,...')
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
     dep.add_argument('--root', type=Path, default=Path.home() / 'src', help='checkouts live in <root>/<repo>')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
@@ -367,7 +403,12 @@ def _checkouts(
 
 def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy)."""
-    args = _parser().parse_args(['deploy', *argv])
+    parser = _parser()
+    args = parser.parse_args(['deploy', *argv])
+    try:
+        reserve = _reserve(args)
+    except ValueError as bad:
+        parser.error(str(bad))
     tools = programs or Programs()
     args.root = args.root.expanduser().absolute()
     checkouts = {name: args.root / name for name in args.repos}
@@ -381,6 +422,8 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     step = Step(Tools(git=tools.git), dry=args.dry_run)
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
     tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
+    if reserve:
+        tables['reserve'] = reserve
     tables['serve'] = {'repos': [name for name in args.repos if name not in refused], 'root': str(args.root)}
     rc = _machine_file(step, tables) or _task(step, tools, checkouts[KIT])
     for name, why in refused.items():

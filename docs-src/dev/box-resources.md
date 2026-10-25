@@ -12,8 +12,12 @@ take; it is admitted only when the MEASURED room holds it, and it runs inside a 
    the box's room (`box.supply.room`): cores idle and memory available NOW, less what every held claim has not
    taken yet (declared minus in use), less the machine file's `[reserve]` margins (`cpu_margin`, default 1
    core; `mem_margin`, default 0.10 of its memory) -- never more than the box's size less every declaration.
-   An editor, a vendor GUI or another user's session counts because the OS counts it. Tool seats are declared:
-   `[capabilities.<name>] seats`, 1 when undeclared.
+   An editor, a vendor GUI or another user's session counts because the OS counts it. A tool seat is supply
+   like a core: its size is `[capabilities.<name>] seats` (1 when undeclared) or its `supply` probe's count,
+   and a row declaring `in_use = { process = [images] }` is OBSERVED -- free seats are
+   `size - max(held by claims, those images running) - [reserve] seat_margin.<name>`, max because a claim's
+   own solver is in the process table too. An unreadable observation or a probe that cannot say lends no
+   seat, naming why.
 3. **The claim is the limit.** `box.run` runs the process tree inside a Windows Job Object or a Linux
    systemd scope (on Slurm, the allocation or an RSS watchdog): killed past its memory or wall, so a claim is
    never exceeded and never idle-but-held. Where nothing can enforce, the run is refused.
