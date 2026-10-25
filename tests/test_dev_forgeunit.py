@@ -6,6 +6,7 @@ the HTTP fake in ``test_dev_forgerecords.py``); archives are stdlib gzip tars.
 
 from __future__ import annotations
 
+import functools
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -15,6 +16,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _box_fake import quiet
+from lab_commons import box as lab_box
+from lab_commons.box import Capacity
 from lab_commons.compute.execute import OFFERED, LocalExecutor, Where
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.model import Demand
@@ -167,6 +171,9 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
     assert (producer, sha) == (UNIT, env.sha)
     assert UnitJob.of(paths).unit_hash == offered.unit_hash
 
+    size = Capacity(cpu=2.0, mem_bytes=2 * 1024**3, seats={})  # a box of known size, not this machine's load
+    held = functools.partial(lab_box.hold, capacity=size, read=quiet(size))
+    monkeypatch.setattr(forgeunit, 'LocalExecutor', functools.partial(LocalExecutor, hold=held))
     code = forgeunit.main(list(paths), cwd=repo, client=client, store=tmp_path / 'serve')
     assert code == 0
     assert RAN_HERE == ['square']  # the serve host ran it, in-process, with the same executor
