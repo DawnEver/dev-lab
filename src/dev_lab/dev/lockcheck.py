@@ -1,4 +1,4 @@
-"""PIN -- the pre-push check that a pushed commit COMMITS its lock and holds nothing below the newest unreasoned.
+"""PIN -- the reading that a commit COMMITS its lock and holds nothing below the newest unreasoned.
 
 User ruling 2026-10-17, superseding the same day's "dependencies float": floating broke a consumer with no
 commit of its own (lab-commons renamed a module, and every venv that resolved the new tip broke), and a host's
@@ -6,22 +6,21 @@ queue refused a declaration its newer kit did not know. So every family repo COM
 install is ``uv sync --frozen`` from it (:mod:`dev_lab.dev.dep`, the served venvs): a commit's code and its
 exact dependencies are tested together and identical on every host. The lock is the reproducibility.
 
-A PUSHED COMMIT IS REFUSED (:func:`lock_problems`, judged at the pushed sha, never a dirty working tree) when
+A COMMIT IS REFUSED (:func:`lock_problems`, judged at a sha, never a dirty working tree) when
 
 * it commits no ``uv.lock``;
 * it HOLDS a requirement below the newest -- an upper bound (``<``, ``<=``), an exact pin (``==``, ``===``,
   ``~=``) or a git requirement at a ref -- with no reason: a comment on its line or the comment line above
   (:func:`unreasoned_holds`). A reasoned range is the one way to stay below latest (e.g. ``<3.14``: pyo3 ABI).
 
-Both read git objects only: the row costs milliseconds and never touches the network.
+Both read git objects only and never touch the network.
 
-FRESHNESS IS THE FORGE'S ALONE (2026-10-21 for lanes; user ruling 2026-10-22 for every branch): a hook keeps
-only irreversible-harm and second-scale checks, and a resolution is neither -- it is minutes of network that
-refused a push whenever any dependency published. The serve tick keeps integration at the newest resolution
-itself through a relock pull request (:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one
+PIN AND FRESHNESS ARE THE FORGE'S ALONE (user rulings 2026-10-22 and 2026-10-24): a local hook keeps only
+irreversible-harm and second-scale format checks, so no pre-push row reads the lock. The forge judges the PIN in
+the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``HEAD``), and a PR head's
+freshness as a status (:mod:`dev_lab.dev.forgeheadgate`). The serve tick keeps integration at the newest
+resolution itself through a relock pull request (:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one
 staleness reading -- and a lane takes it with ``forge sync``.
-Exit codes: ``0`` allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carries no content
-and is allowed, and a sha a remote branch already holds was judged when it was first pushed (:func:`published`).
 """
 
 from __future__ import annotations
@@ -29,22 +28,19 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
-from lab_commons.log import emit
 
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.netverb import Report, run_network_verb
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Mapping
 
 __all__ = [
-    'DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'mount_submodules', 'published', 'pushed_refs',
-    'stale', 'unreasoned_holds',
+    'DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'mount_submodules', 'stale', 'unreasoned_holds',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
@@ -60,9 +56,6 @@ REMEDY: Final = (
 #: How long one resolution may take, in seconds: a cold cache resolving every source is the slow case.
 RESOLVE_TIMEOUT_S: Final = 600.0
 
-_DELETED: Final = '0' * 40
-_BRANCHES: Final = 'refs/heads/'
-_REFSPEC_FIELDS: Final = 4
 #: The change lines ``uv lock --dry-run`` prints, one per package it would move.
 _CHANGE: Final = re.compile(r'^(?:Update|Add|Remove)\s+\S.*$', re.MULTILINE)
 _QUOTED: Final = re.compile(r'"([^"\n]*)"|\'([^\'\n]*)\'')
@@ -185,41 +178,3 @@ def lock_problems(root: Path, sha: str) -> tuple[str, ...]:
         return (f'{sha[:12]} commits no {LOCK}: its environment would be whatever resolves on the day',)
     _, manifest = _git(root, 'show', f'{sha}:pyproject.toml')
     return tuple(f'{hold} holds a requirement below the newest with no reason' for hold in unreasoned_holds(manifest))
-
-
-def pushed_refs(lines: Iterable[str]) -> tuple[tuple[str, str], ...]:
-    """``(sha, branch)`` per pre-push line putting a commit on a branch; deletions and non-branch refs are skipped."""
-    found = []
-    for line in lines:
-        fields = line.split()
-        if len(fields) == _REFSPEC_FIELDS and fields[1] != _DELETED and fields[2].startswith(_BRANCHES):
-            found.append((fields[1], fields[2].removeprefix(_BRANCHES)))
-    return tuple(dict.fromkeys(found))
-
-
-def published(root: Path, sha: str) -> bool:
-    """Whether a remote branch already holds *sha*: it was judged when it was first pushed, so it is not judged again.
-
-    A promotion fast-forwards `main` to a sha the integration branch already carries; re-resolving it against
-    a newer kit would refuse every verified sha the moment any dependency moved.
-    """
-    code, held = _git(root, 'branch', '-r', '--contains', sha)
-    return code == 0 and bool(held.strip())
-
-
-def main(argv: Sequence[str] | None = None, *, lines: Iterable[str] | None = None) -> int:
-    """``python -m dev_lab.dev.lockcheck [ROOT]`` -- the pre-push entry: refspec lines on stdin."""
-    args = list(sys.argv[1:] if argv is None else argv)
-    root = Path(args[0]) if args else Path.cwd()
-    if lines is None:
-        lines = () if sys.stdin.isatty() else sys.stdin.read().splitlines()
-    shas = dict.fromkeys(sha for sha, _ in pushed_refs(lines) if not published(root, sha))
-    refused = [f'{sha[:12]}: {why}' for sha in shas for why in lock_problems(root, sha)]
-    if not refused:
-        return 0
-    emit('[lock] REFUSED -- ' + '\n[lock]   '.join(refused) + f'\n[lock]   REMEDY: {REMEDY}.', err=True)
-    return 1
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())

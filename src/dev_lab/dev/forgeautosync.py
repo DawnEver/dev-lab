@@ -12,7 +12,7 @@ out a ``sync`` plan:
   pushed meanwhile. The new head gets its parts by the normal path;
 * its lock is relocked when the merge leaves it stale or conflicted, through the dependency door
   (:func:`dev_lab.dev.relock.door_upgrade`, the one writer of a lock) and the same staleness reading as
-  the ``lock`` row (:func:`dev_lab.dev.lockcheck.stale`) -- inside the merge commit, so no hand relock follows;
+  the relock (:func:`dev_lab.dev.lockcheck.stale`) -- inside the merge commit, so no hand relock follows;
 * the merge passes the merge audit (:func:`dev_lab.dev.mergeaudit.judge`) before it is committed, and the
   commit runs the repository's hooks (``MERGE-DEVIATIONS-NAMED``).
 

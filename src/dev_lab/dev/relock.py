@@ -2,8 +2,8 @@
 
 FRESHNESS IS ONE PARTY'S JOB (2026-10-21). The ``lock`` pre-push row used to judge every push on freshness, so
 whenever any dependency published, every lane carried a hand-made relock commit before each push and stacked
-branches repeated it. Now every push is judged on its PIN alone (:mod:`dev_lab.dev.lockcheck`; lanes
-2026-10-21, every branch 2026-10-22), and each
+branches repeated it. Now every commit is judged on its PIN alone, on the forge
+(:mod:`dev_lab.dev.famtests.lockpin`; lanes 2026-10-21, every branch 2026-10-22, off the pre-push 2026-10-24), and each
 ``forge serve`` tick runs :func:`carry` (:func:`dev_lab.dev.forgeservesteps.relock`):
 
 * an open pull request whose head is under :data:`PREFIX` is waited for -- nothing resolves, nothing is pushed;

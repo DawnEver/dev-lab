@@ -143,7 +143,7 @@ def lock_upgrade(
 ) -> int:
     """Rewrite *root*'s lock at the newest resolution -- the remedy :mod:`dev_lab.dev.lockcheck` names.
 
-    The holds lockcheck refuses at push are refused HERE first, before anything resolves: a lock written
+    The holds the forge refuses (famtests.lockpin) are refused HERE first, before anything resolves: a lock written
     under an unreasoned hold would only be refused again at the push. Only the lock moves in this step; the
     environment then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`.
     """
