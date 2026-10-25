@@ -118,15 +118,33 @@ A steward runs no test, merges no branch by hand, and pushes nothing to `integra
 ## The PR reviewer is advisory
 
 `PR-REVIEW-IS-ADVISORY` (`dev_lab.dev.forgereview`). The forge only orchestrates: each open, non-draft PR
-into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares, run on
-`<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 2, read by
-`dev_lab.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
-of the findings and a `tests/review` commit status. **It gates nothing but one state**: `tests/review` is
-never a part, so `integrate promote` and push admission never wait on it, and the forge's auto-merge waits
-only on a diff over the cap: that head is not reviewed by the command but HELD (`pending`, `over the cap:
-review in slices, then post success`) until a session reviews it in slices and posts `success`, so an
-unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
-nothing; a new head is reviewed afresh. A failed command posts `error` and is not retried on that head.
+into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares; its stdout is
+the sharp-review findings JSON (`schema_version` 2, read by `dev_lab.dev.forgereview_findings`; an unknown
+version is refused by name). The forge posts one PR comment of the findings and a `tests/review` commit status.
+
+**What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
+slice, not whether a head is read at all:
+
+- *The branch's own change.* The range starts at the merge base with `integrate/main`, which a merge of
+  `integrate/main` moves with it -- so merged-in upstream work is never re-read.
+- *Since the last review.* When an earlier head of the same PR was reviewed (its review comment is the record)
+  and no merge of `integrate/main` came after it, the range starts there: a push is read for what it added.
+- *Minus generated files.* The family's whole-file renders (`famfiles.GENERATED`: `uv.lock`, the rendered
+  ignores, hooks and workflows) and the repo's `derived` globs (goldens, rendered blocks). Their generator is
+  reviewed, not its output. A head of only generated files is `success`, nothing to review.
+- *In slices, one lens each.* The reviewable files are packed, a directory kept whole when it fits, into slices
+  of at most `max_diff_bytes`; each runs the command once with `{paths}` and `{lens}` -- `strict` for the
+  `strict` globs (hooks, rules, `tests/architecture`, contracts), `light` for the `light` ones (docs, memory,
+  Markdown), `standard` for the rest. The outputs merge into one document (a finding once per id); a declared
+  `synthesis` command then reads it (`{findings}`) over the whole range for what crosses slices.
+
+**It gates nothing but one state**: `tests/review` is never a part, so `integrate promote` and push admission
+never wait on it, and the forge's auto-merge waits only on a head the slices cannot hold -- its reviewable change
+over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices for a command without `{paths}`.
+That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), until a
+session reviews it and releases it: `python -m dev_lab.dev.forge status post <sha> --context tests/review-hold
+--state success --description "reviewed by <who>"`. So an unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
+nothing. A failed command posts `error` and is not retried on that head.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
 through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
@@ -137,10 +155,16 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 
 ```toml
 [tool.lab_commons.review]
-# {range}: <merge base>..<head>; the command names its method and its model (the catalogue has no default)
-command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
-max_diff_bytes = 200000   # a larger diff is not reviewed
-claim_stale = "1 h"       # the default
+# {range}: <base>..<head>; {paths}: the slice's paths, one argument each; {lens}: strict | standard | light
+command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--lens", "{lens}",
+           "--model", "<id>", "--paths", "{paths}"]
+synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
+max_diff_bytes = 200000    # one slice
+max_total_bytes = 4000000  # one head
+derived = []               # generated-file globs beyond famfiles.GENERATED
+strict = ["**/hooks/**", "**/rules/**", "tests/architecture/**", "**/contracts/**"]  # the default
+light = ["docs-src/**", "**/.claude/memory/**", "**/*.md"]                          # the default
+claim_stale = "1 h"        # the default
 ```
 
 Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
