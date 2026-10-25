@@ -104,7 +104,7 @@ if TYPE_CHECKING:
 __all__ = [
     'BASE',
     'CONTEXT_PREFIX',
-    'OVER_CAP',
+    'HOLD_CONTEXT',
     'PART_FIELD',
     'REVIEW_CONTEXT',
     'UNCLAIMED',
@@ -138,10 +138,10 @@ CONTEXT_PREFIX: Final = 'tests/'
 #: review state a merge waits on is :func:`dev_lab.dev.forgemerge.review_hold`'s.
 REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
-#: The ``pending`` review description of a head whose diff is over ``max_diff_bytes``: the ONE review state a
-#: merge waits on (:func:`dev_lab.dev.forgemerge.review_hold`), so an unreviewable head is never
-#: advisory-skipped into an auto-merge.
-OVER_CAP: Final = 'over the cap: review in slices, then post success'
+#: The review HOLD's context: posted ``pending`` on a head the review slices cannot hold, released by a
+#: ``success`` a session posts once it reviewed the head. Never a part; the ONE review context a merge waits on
+#: (:func:`dev_lab.dev.forgemerge.review_hold`), so an unreviewable head is never skipped into an auto-merge.
+HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
@@ -383,7 +383,7 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
     parts: dict[str, Part] = {}
     problems: list[str] = []
     for status in statuses:
-        if not status.context.startswith(CONTEXT_PREFIX) or status.context == REVIEW_CONTEXT:
+        if not status.context.startswith(CONTEXT_PREFIX) or status.context in {REVIEW_CONTEXT, HOLD_CONTEXT}:
             continue
         name = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)
