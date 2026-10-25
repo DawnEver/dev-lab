@@ -29,21 +29,17 @@ from dev_lab.dev.forgereview import (
     HOST_FIELD,
     HOST_UNABLE,
     RANGE_FIELD,
-    REFUSED_EXIT,
     RETIRED_KEYS,
     REVIEW_CONTEXT,
     TAKEOVER_PENDING,
     Review,
-    ReviewRefused,
-    ReviewUnsupported,
-    can_start,
     command_for,
     render,
     review_from,
     review_tick,
-    run_command,
     step,
 )
+from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_scope import OVER_CAP
 from dev_lab.dev.forgestatus import CommitStatus, status_list
@@ -219,11 +215,14 @@ def test_a_host_without_the_commands_interpreter_or_module_posts_error_with_its_
     assert forge.comments[number] == []
 
 
-def test_the_declared_command_is_the_installed_ai_lab_and_names_no_host_value() -> None:
-    """P4: the forge runs ``ai-lab review`` from the machine install, and the method is ai-lab's own: no capability."""
+def test_the_declared_command_is_the_ai_lab_review_module_on_the_hosts_python() -> None:
+    """The forge runs ``python -m ai_lab.review`` on the host's declared ai-lab interpreter (no console script).
+
+    The method is ai-lab's own, so ``ai_lab`` is the only host value and no ``--method`` is passed.
+    """
     declared = review_from((Path(__file__).parents[1] / 'pyproject.toml').read_text(encoding='utf-8'), 'pyproject')
-    assert declared.command[:2] == ('ai-lab', 'review')
-    assert {m['name'] for arg in declared.command for m in HOST_FIELD.finditer(arg)} == set()
+    assert declared.command[:3] == ('{capabilities.ai_lab.python}', '-m', 'ai_lab.review')
+    assert {m['name'] for arg in declared.command for m in HOST_FIELD.finditer(arg)} == {'ai_lab'}
     assert '--method' not in declared.command
 
 

@@ -40,8 +40,9 @@ nothing and posts nothing), drafts skipped, generated files never read, ``max_to
     [tool.lab_commons.review]
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light
     # {capabilities.<name>.<key>}: THIS host's machine-file value (the repo says WHAT, the host says WHERE)
-    # the installed `ai-lab` console script; it reads the sharp-review method it packages
-    command = ["ai-lab", "review", "--range", "{range}", "--lens", "{lens}", "--model", "<id>", "--paths", "{paths}"]
+    # the ai-lab review module on THIS host's ai-lab interpreter; it reads the sharp-review method it packages
+    command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--range", "{range}", "--lens", "{lens}",
+               "--model", "<id>", "--paths", "{paths}"]
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_diff_bytes = 200000    # one slice: what one reviewer reads
     max_total_bytes = 4000000  # one head: past it, held for a session
@@ -68,7 +69,6 @@ from __future__ import annotations
 
 import dataclasses
 import re
-import shutil
 import subprocess
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
@@ -78,13 +78,13 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
-import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.config import section
 from lab_commons.units import Q_
 
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comment_upsert, pr_list
+from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import (
     Findings,
     FindingsInvalid,
@@ -107,19 +107,16 @@ __all__ = [
     'HOST_FIELD',
     'OVER_CAP',
     'RANGE_FIELD',
-    'REFUSED_EXIT',
     'RETIRED_KEYS',
     'REVIEW_CONTEXT',
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
     'Review',
-    'ReviewRefused', 'ReviewUnsupported',
     'command_for',
     'load_review',
     'render',
     'review_from',
     'review_tick',
-    'run_command',
     'step',
 ]  # fmt: skip
 
@@ -138,9 +135,6 @@ LIGHT: Final = ('docs-src/**', '**/.claude/memory/**', '**/*.md')
 
 #: A placeholder for a value THIS host declares: ``{capabilities.<name>.<key>}`` (``~`` expanded).
 HOST_FIELD: Final = re.compile(r'\{capabilities\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
-
-#: The exit a review command REFUSES with (a bad method, version or range): empty stdout, the reason on stderr.
-REFUSED_EXIT: Final = 2
 
 #: A reviewer status meaning its provider cannot serve this run at all: the review needs a takeover.
 TAKEOVER_KINDS: Final = frozenset({'exhausted', 'auth'})
@@ -163,18 +157,15 @@ RELEASED: Final = 'released by'
 HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 
 _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
-_PROBE: Final = 'import importlib.util, sys; sys.exit(importlib.util.find_spec(sys.argv[1]) is None)'
 
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
     'model': 'the review command chooses its model (declare it in `command`: `--model <id>`)',
     'max_tokens': 'the review command bounds its own output',
-    'rules': 'the review method reads its own rules and profiles (`--method <dir>` in `command`)',
+    'rules': 'the review command reads the rules and profiles of the method it packages',
 }
 
 _TABLE: Final = 'review'
-_MISSING_MODULE: Final = 'No module named'  # what `python -m <absent>` says
-_COMMAND_TIMEOUT_S: Final = 1800
 _DESCRIPTION: Final = 240  # a commit-status description is short
 
 
@@ -225,17 +216,6 @@ def load_review(root: Path) -> Review:
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
 
 
-class ReviewRefused(OSError):
-    """The review command refused the request (exit :data:`REFUSED_EXIT`), naming why on stderr."""
-
-
-class ReviewUnsupported(OSError):
-    """The host cannot run the declared command at all (absent, a module missing, a capability undeclared).
-
-    Like every failure it posts ``error`` naming why.
-    """
-
-
 def stale_after(review: Review) -> timedelta:
     """*review*'s ``claim_stale``; a bare number or a non-duration is refused naming it."""
     try:
@@ -247,22 +227,6 @@ def stale_after(review: Review) -> timedelta:
         msg = f'claim_stale {review.claim_stale!r} is not a duration (it needs a unit); write one such as "1 h"'
         raise ValueError(msg)
     return timedelta(seconds=float(quantity.m_as('s')))
-
-
-def can_start(argv: Sequence[str], root: Path) -> str | None:
-    """Why this host cannot start *argv* (its executable absent, or its ``-m`` module unimportable); ``None`` if it can.
-
-    Checked BEFORE a claim is posted; the reason becomes the ``error`` status.
-    """
-    found = shutil.which(argv[0]) or (argv[0] if Path(argv[0]).is_file() else None)
-    if found is None:
-        return f'unsupported: the review command {argv[0]!r} is not installed on this host'
-    match argv:
-        case [_, '-m', module, *_]:
-            probe = _door.run([found, '-c', _PROBE, module], cwd=root, capture_output=True, timeout=120, check=False)
-            if probe.returncode != 0:
-                return f'unsupported: the review command cannot import {module!r} on this host'
-    return None
 
 
 def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> bool:
@@ -311,29 +275,6 @@ def _passed(root: Path, client: Client, head: str, now: datetime, stale: timedel
         status_post(client, head, context=REVIEW_CONTEXT, state=carry.verdict.state, description=why,
                     target_url=carry.verdict.url)  # fmt: skip
     return None if carry is None else carry.hold
-
-
-def run_command(argv: Sequence[str], root: Path) -> str:
-    """The stdout of the declared command run in *root*; :class:`ReviewRefused` or :class:`OSError` on a failure."""
-    try:
-        done = _door.run(
-            list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=_COMMAND_TIMEOUT_S, check=False,
-        )  # fmt: skip
-    except FileNotFoundError:
-        msg = f'unsupported: the review command {argv[0]!r} is not installed on this host'
-        raise ReviewUnsupported(msg) from None
-    why = done.stderr.strip()[-300:]
-    if done.returncode != 0 and _MISSING_MODULE in done.stderr:
-        msg = f'unsupported: the review command cannot import its module on this host ({why})'
-        raise ReviewUnsupported(msg)
-    if done.returncode == REFUSED_EXIT:
-        msg = f'the review command refused: {why}'
-        raise ReviewRefused(msg)
-    if done.returncode != 0:
-        msg = f'the review command exited {done.returncode}: {why}'
-        raise OSError(msg)
-    return done.stdout
 
 
 def command_for(
