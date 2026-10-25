@@ -30,6 +30,7 @@ from dev_lab.dev import (
     forgeproduce,
     forgerounds,
     forgerun,
+    forgerunpost,
     forgerunstate,
     forgeserve,
     forgeservesteps,
@@ -883,7 +884,7 @@ def test_a_cluster_run_whose_ref_moved_on_is_kept_and_advanced(monkeypatch, tmp_
     """A PART UNDER TEST IS NOT SUPERSEDED (design item 9): a push to B never cancels A's cluster run."""
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     forge = _Forge()
-    monkeypatch.setattr(forgerun, 'status_post', forge.post)
+    monkeypatch.setattr(forgerunpost, 'status_post', forge.post)
     monkeypatch.setattr(forgerun, 'advance', lambda _root, run, **_k: run)
     run = forgerunstate.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', str(tmp_path), ME.description(),
                        phase=forgerunstate.SUBMITTED, job_ids=('77',))  # fmt: skip

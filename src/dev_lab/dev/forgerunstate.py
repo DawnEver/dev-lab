@@ -39,9 +39,11 @@ __all__ = [
     'SUBMITTED',
     'SUBMITTING',
     'Cluster',
+    'Draining',
     'ForeignSchema',
     'Run',
     'Standing',
+    'Started',
     'Unrecorded',
     'directory',
     'drop',
@@ -78,6 +80,26 @@ class Standing:
     facts: dict[str, object] = dataclasses.field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class Started:
+    """One STARTED array task: its id (``7683032_12``), its start and its limit, seconds on the cluster's clock.
+
+    *limit_s* is the packer's estimate of its items times ``policy.safety`` -- the figure its ``--time`` was cut from.
+    """
+
+    job_id: str
+    started_at: float
+    limit_s: float
+
+
+@dataclass(frozen=True)
+class Draining:
+    """A run's started tasks as the cluster read them, and the cluster's clock *now* at that read."""
+
+    now: float
+    tasks: tuple[Started, ...]
+
+
 class Cluster(Protocol):
     """What a run needs from Slurm, through this login node's own shell (:class:`dev_lab.dev.forgeserve`)."""
 
@@ -104,6 +126,12 @@ class Cluster(Protocol):
 
     def withdraw(self, run: Run) -> list[str]:
         """Withdraw *run*'s NOT-YET-STARTED tasks; the job ids still started (``[]``: nothing left running)."""
+
+    def started_tasks(self, run: Run) -> Draining:
+        """*run*'s STARTED tasks, each with its start and learned limit, on the cluster's clock."""
+
+    def cancel_tasks(self, run: Run, ids: list[str]) -> list[str]:
+        """``scancel`` these tasks of *run* only -- a superseded run's task past its deadline; the ids cancelled."""
 
     def standing(self) -> Standing:
         """The account's supply, core-hours used per run in the last day, and the partitions and quota."""
@@ -132,6 +160,8 @@ class Run:
     #: Slurm job names this run's jobs may bear besides :func:`lab_commons.hpc.run.job_name` -- an
     #: upgraded run's, sbatched by a tool that named jobs otherwise (:data:`_UPGRADES`).
     job_aliases: tuple[str, ...] = ()
+    #: When the run was first found superseded, on the cluster's clock; ``0.0`` while it is not.
+    superseded_at: float = 0.0
 
     @property
     def claim(self) -> Claim:
