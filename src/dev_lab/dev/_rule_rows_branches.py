@@ -19,15 +19,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MERGE-OR-DELETE',
         (
-            'A merged branch is DELETED and an unmerged one is MERGED, with no third state: parking work as an '
-            '`archive/*` tag (or a renamed branch nobody tracks) hides it from everyone and is debt exactly like '
-            'an undeclared branch -- `branchset` lists it, deletes it when its tip is held by a declared branch, '
-            'and names it to merge otherwise; a worktree is a lease on a branch for one task, so a tree that is '
-            'unlocked, unoccupied, has no change to a TRACKED file and whose content is landed on the trunk or a '
-            'declared session is reclaimed by `branchset --apply` and the session debris hook, every kept tree '
-            'listed with its reason: what git does not track (scratch, untracked, ignored) is not the work and '
-            'goes with it, its run outputs moved home and verified first, and only then `git worktree remove '
-            '--force` and its branch.'
+            'A merged branch is DELETED and an unmerged one is MERGED, no third state: an `archive/*` tag or '
+            'untracked rename hides work and is debt like an undeclared branch -- `branchset` lists it, deletes it '
+            'when a declared branch holds its tip, else names it to merge; a worktree is a lease for one task, so '
+            'a tree unlocked, unoccupied, with no TRACKED change and its content landed on the trunk or a declared '
+            'session is reclaimed by `branchset --apply` and the session debris hook, each kept tree listed with '
+            'its reason: what git does not track goes with it, its run outputs moved home and verified first, then '
+            '`git worktree remove --force` and its branch.'
         ),
         ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
     ),
