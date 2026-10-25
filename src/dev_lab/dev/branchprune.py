@@ -1,7 +1,7 @@
 """MERGED-BRANCHES-PRUNED: the forge deletes the origin branches integration has finished with.
 
-User ruling 2026-10-13: "origin should not carry this much garbage -- build the mechanism." The push-time
-check (:mod:`dev_lab.dev.branchset_push`) stops a lane reaching origin, but declared feature branches
+User ruling 2026-10-13: "origin should not carry this much garbage -- build the mechanism." The forge's
+``branchset`` status (:mod:`dev_lab.dev.forgeheadgate`) reds a PR head its set does not admit, but branches
 still FINISH, and a finished branch left on origin is debt nobody owns. So EVERY serving host surveys origin
 on its serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``. No host owns this: a
 deletion is pinned to the judged sha, so two hosts racing delete once and the second finds it gone (a no-op).
