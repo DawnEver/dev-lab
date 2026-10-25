@@ -153,7 +153,7 @@ def claim(host: str, tip: str, now: datetime) -> str:
 def _git(root: Path, *argv: str) -> tuple[int, str]:
     done = _door.run(
         [_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-        check=False, timeout=_GIT_TIMEOUT_S, env=machine_env(),  # a machine merge is the forge's, no session's
+        check=False, timeout=_GIT_TIMEOUT_S, env=machine_env(root),  # a machine merge is the forge's, no session's
     )  # fmt: skip
     return done.returncode, (done.stdout + done.stderr).strip()
 
