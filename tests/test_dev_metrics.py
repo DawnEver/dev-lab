@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -93,7 +94,7 @@ def test_the_read_computes_every_metric_of_the_plan() -> None:
     assert (found.candidate_false_positives, found.false_positive_share) == (1, 0.5)
     assert found.open_prs == 1
     assert found.host_failures_without_status == 1
-    assert json.dumps(found.__dict__)
+    assert json.dumps(dataclasses.asdict(found))
 
 
 def test_the_forge_cli_logs_a_hand_verb_only_when_it_succeeded(monkeypatch: pytest.MonkeyPatch) -> None:
