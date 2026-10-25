@@ -51,7 +51,6 @@ import shutil
 import socket
 import subprocess
 import sys
-import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -71,9 +70,10 @@ from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv, venv_python
-from dev_lab.dev.hpchost.spec import KIT, host_serve_argv
+from dev_lab.dev.hpchost.spec import KIT
 from dev_lab.dev.hpchost.steps import Step, Tools
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, held
 
 if sys.platform == 'win32':
@@ -444,8 +444,6 @@ def serve(
         emit(f'[serve] refused: {undeclared}', err=True)
         return 2
     step = Step(Tools(git=tools.git), dry=False)
-    period = float(section('schedule').get('tick_minutes', 5)) * 60 if period_s is None else period_s
-    streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
 
     def refreshed(name: str) -> int:
         checkout = Path(root) / name
@@ -458,66 +456,13 @@ def serve(
             emit(f'[serve] {name}: its hooks were not re-installed (exit {rc}); the old shims stay', err=True)
         return 0
 
-    def served(name: str) -> int:
-        rc = run(host_serve_argv(), cwd=Path(root) / name, check=False, **streams).returncode
-        if rc:
-            emit(f'[serve] {name} exited {rc}', err=True)
-        return rc
-
     with held(lock or default_lock()) as mine:
         if not mine:
             emit('[serve] another forge serve holds the lock; this one does nothing', err=True)
             return 0
         if why:
             return _stand_down(tools, Path(root), repos, why)
-        return _lanes(sorted(repos, key=lambda repo: repo != KIT), refreshed, served, period_s=period)
-
-
-def _lanes(
-    names: Sequence[str], refreshed: Callable[[str], int], served: Callable[[str], int], *, period_s: float
-) -> int:
-    """Refresh each of *names* in order, serving each in a thread of its own as soon as it is fresh; the worst exit.
-
-    A lane whose serve ended waits *period_s* and serves again (refreshing first, except the kit) while any
-    other lane's serve still runs; once none runs, every lane ends.
-    """
-    busy = set(names)  # a lane yet to start counts as running, so an early lane never ends before it starts
-    worst = [0]
-    cond = threading.Condition()
-
-    def ended(name: str, rc: int) -> None:
-        with cond:
-            worst[0] = max(worst[0], rc)
-            busy.discard(name)
-            cond.notify_all()
-
-    def lane(name: str) -> None:
-        rc = 3  # a lane that raised reports a crash and never holds the others
-        try:
-            rc = served(name)
-            while True:
-                ended(name, rc)
-                with cond:
-                    if cond.wait_for(lambda: not busy, period_s):
-                        return
-                    busy.add(name)
-                rc = 3
-                if name != KIT and (rc := refreshed(name)):
-                    return
-                rc = served(name)
-        finally:
-            ended(name, rc)
-
-    threads: list[threading.Thread] = []
-    for name in names:
-        if rc := refreshed(name):
-            ended(name, rc)
-            continue
-        threads.append(threading.Thread(target=lane, args=(name,), name=f'serve-{name}'))
-        threads[-1].start()
-    for thread in threads:
-        thread.join()
-    return worst[0]
+        return serve_lanes(repos, refreshed, serving(Path(root), run, out), period_s=period_s)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
