@@ -24,14 +24,20 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import shutil
 import subprocess
+import sys
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from lab_commons.proc import kill_process_tree
 
+from dev_lab.dev import liverun
 from dev_lab.dev.agent_guard import ENGINE_REL, RULES_REL, install_guard
-from dev_lab.dev.agenthooks import NoNode, node_executable
+from dev_lab.dev.agenthooks import NoNode, node_executable, run_engine
 from dev_lab.dev.famtests.agentguard import (
     GuardNotLive,
     assert_committed_rules_are_rendered,
@@ -47,7 +53,7 @@ from dev_lab.dev.famtests.agentguard import (
     shipped_rules,
 )
 from dev_lab.dev.hook_adoption import HookAdoption, render
-from dev_lab.dev.hooks import DenyRule
+from dev_lab.dev.hooks import DENY_RULES, DenyRule
 
 _GIT = shutil.which('git') or 'git'
 _NODE = shutil.which('node')
@@ -311,3 +317,47 @@ def test_a_door_keyed_by_a_live_rule_passes(tmp_path: Path) -> None:
 
 def test_this_repo_keys_its_doors_by_live_rules() -> None:
     assert_doors_name_live_rules(root=Path(__file__).resolve().parents[1])
+
+
+# --------------------------------------------------------------------------------------------
+# a probe judges the SHAPE, never the state of the box it runs on
+
+
+@pytest.fixture
+def live_repo(tmp_path: Path) -> Iterator[Path]:
+    """A repo with the REAL guard and the FULL family registry, its venv this interpreter, and a run in it."""
+    root = tmp_path / 'live'
+    root.mkdir()
+    subprocess.run([_GIT, 'init', '-q'], cwd=root, check=True, capture_output=True, timeout=60)
+    install_guard(root)
+    absent = frozenset(rule.id for rule in DENY_RULES if rule.needs is not None)
+    (root / RULES_REL).write_text(render(HookAdoption(app_name='f', declared_absent=absent)), encoding='utf-8')
+    if os.name == 'nt':
+        shell = os.environ.get('COMSPEC', 'cmd.exe')
+        subprocess.run([shell, '/c', 'mklink', '/J', str(root / '.venv'), sys.prefix], check=True, capture_output=True)
+    else:
+        (root / '.venv').symlink_to(sys.prefix, target_is_directory=True)
+    sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'], cwd=root)
+    try:
+        deadline = time.monotonic() + 60
+        while not liverun.live_runs(root) and time.monotonic() < deadline:
+            time.sleep(0.5)
+        assert liverun.live_runs(root), 'the planted run never became a live run'
+        yield root
+    finally:
+        kill_process_tree(sleeper.pid)
+        sleeper.wait(timeout=30)
+
+
+@pytest.mark.workstation
+def test_a_probe_names_the_shape_rule_while_a_run_is_live_in_the_tree(live_repo: Path) -> None:
+    """INCIDENT (wdg-lab cutover): the probing suite IS a live run, so TREE-HAS-A-LIVE-RUN answered first."""
+    assert_refused_by(root=live_repo, command='git stash', rule='GIT-STASH')
+
+
+@pytest.mark.workstation
+def test_the_installed_guard_still_refuses_a_live_tree_by_its_live_run(live_repo: Path) -> None:
+    """PLANTED CONTROL: production judges the box; only the probe takes the live-run state as absent."""
+    reason = run_engine(live_repo / ENGINE_REL, 'git stash', live_repo / RULES_REL, cwd=live_repo)
+    assert reason is not None
+    assert reason.startswith('TREE-HAS-A-LIVE-RUN:'), reason
