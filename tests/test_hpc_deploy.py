@@ -555,3 +555,36 @@ def test_a_tick_of_an_undeclared_repo_is_refused(box: Box, capsys: pytest.Captur
     assert box.run(*DECLARE) == 0
     assert _tick(box, 'gamma', []) == 2
     assert 'gamma is not a served repo' in capsys.readouterr().err
+
+
+def test_a_tick_whose_declared_need_no_longer_runs_serves_nothing_and_alarms_naming_account_and_tool(
+    box: Box, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every tick RE-ASSERTS the deploy's ``needs`` with the same probe, once per tool per tick.
+
+    Ada 2026-10-25: cargo ran at deploy and was gone later; every tick claimed parts its build could not make.
+    """
+    assert box.run(*DECLARE) == 0
+    probed: list[str] = []
+    monkeypatch.setattr(tick, '_runs', lambda _sh, _env, tool: probed.append(tool) or tool != 'cargo')
+    monkeypatch.setattr(tick, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo', 'cmake')))
+    alarms: list[object] = []
+    cache: dict[str, bool] = {}
+    served: list[tuple[list[str], Path, str]] = []
+
+    def run(argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
+        served.append((argv, cwd, ''))
+        return _Done(0)
+
+    for name in ('alpha', 'beta'):
+        code = tick.tick(
+            name, home=box.home, config=box.machine, tools=box.tools, run=run, alarm=alarms.append, probed=cache
+        )
+        assert code == 2
+    assert served == [], 'a repo whose need fails claims nothing'
+    assert sorted(probed) == ['cargo', 'cmake'], 'one probe per tool per tick'
+    first = alarms[0]
+    assert 'cargo' in first.subject
+    assert tick.account() in first.subject
+    assert 'cmake' not in first.subject
+    assert first.repo == f'{URL}/alpha.git'
