@@ -326,6 +326,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgemerge` -- the forge's server-side merge of a green PR into integration.
 * :mod:`dev_lab.dev.forgeautosync` -- the serve tick merges integration into a behind ``pr/*`` PR head.
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
+* :mod:`dev_lab.dev.forgetry` -- ``forge try <paths>``: named tests on a host with room now, or ``no room`` at once.
 * :mod:`dev_lab.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
