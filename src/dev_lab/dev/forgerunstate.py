@@ -41,6 +41,7 @@ __all__ = [
     'Cluster',
     'Draining',
     'ForeignSchema',
+    'Killed',
     'Run',
     'Standing',
     'Started',
@@ -100,6 +101,22 @@ class Draining:
     tasks: tuple[Started, ...]
 
 
+@dataclass(frozen=True)
+class Killed:
+    """One job Slurm killed (:data:`KILLED`): what it asked and what it used, in MB and seconds."""
+
+    job: str
+    state: str
+    asked_mb: int
+    used_mb: int
+    asked_s: int
+    used_s: int
+
+    def text(self) -> str:
+        """``7_0 OUT_OF_MEMORY 4199/4096 MB 190/3600 s`` -- used over asked."""
+        return f'{self.job} {self.state} {self.used_mb}/{self.asked_mb} MB {self.used_s}/{self.asked_s} s'
+
+
 class Cluster(Protocol):
     """What a run needs from Slurm, through this login node's own shell (:class:`dev_lab.dev.forgeserve`)."""
 
@@ -114,6 +131,9 @@ class Cluster(Protocol):
 
     def gather(self, run: Run) -> Path | None:
         """One short gather: the record written into ``run.output``, or ``None`` while Slurm still runs it."""
+
+    def killed(self, run: Run) -> tuple[Killed, ...]:
+        """*run*'s jobs Slurm killed for memory or time, each with its ask and use; their asks learned."""
 
     def tree(self, run: Run) -> Path:
         """The run's work tree as this login node sees it -- where its declared outputs are globbed."""

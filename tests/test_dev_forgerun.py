@@ -119,6 +119,9 @@ class _Slurm:
     def gather(self, _run: forgerunstate.Run) -> Path | None:
         return self.record if self.done else None
 
+    def killed(self, _run: forgerunstate.Run) -> tuple[forgerunstate.Killed, ...]:
+        return ()
+
     def progress(self, _run: forgerunstate.Run) -> str:
         return self.phrase
 
@@ -993,3 +996,69 @@ def test_the_ref_gone_tip_never_rebinds_a_hold_verdict() -> None:
     """``_hold``'s verdicts and ``_superseding_tip``'s ref-gone sentinel are two names: neither shadows the other."""
     assert forgerun._GONE == 'gone'
     assert forgerun._REF_GONE not in {forgerun._ADVANCE, forgerun._WAIT, forgerun._GONE}
+
+
+#: ``sacct -n -P -j 7,8 -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit`` of one OOM, one timeout, one success.
+_SACCT_KILLED = """7_0|OUT_OF_MEMORY|4G||00:03:10|01:00:00
+7_0.batch|OUT_OF_MEMORY||4300000K|00:03:10|
+7_0.extern|COMPLETED||1000K|00:03:10|
+7_1|COMPLETED|4G||00:10:00|01:00:00
+7_1.batch|COMPLETED||2000000K|00:10:00|
+8_0|TIMEOUT|8000M||01:00:02|01:00:00
+8_0.batch|CANCELLED||5000000K|01:00:03|
+"""
+
+
+def test_a_job_slurm_killed_for_memory_or_time_is_read_with_its_ask_and_use_and_the_oom_ask_learned(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-10-25, 24 h: 71 OUT_OF_MEMORY and 14 % TIMEOUT jobs, none of them visible on a PR.
+
+    Each killed job is read from ``sacct`` with what it asked and what it used; an OOM's ask is learned grown,
+    held to the most any grant gives, so the next run of the part asks for more. PLANTED CONTROL: the
+    completed task is not reported.
+    """
+    asked: list[str] = []
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return _SACCT_KILLED
+
+    state = {'rounds': [{'job_ids': ['7']}, {'job_ids': ['8']}]}
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
+    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 6.0)
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
+    cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
+    run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
+    oom, timeout = cluster.killed(run)
+    assert asked[-1] == 'sacct -n -P -j 7,8 -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
+    assert (oom.job, oom.state, oom.asked_mb, oom.used_mb) == ('7_0', 'OUT_OF_MEMORY', 4096, 4199)
+    assert (timeout.job, timeout.state, timeout.asked_s, timeout.used_s) == ('8_0', 'TIMEOUT', 3600, 3602)
+    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(6.0, rel=1e-12, abs=0.0)
+
+
+class _Killed(_Slurm):
+    """Its record is written; one of its jobs died OUT_OF_MEMORY on the way."""
+
+    def killed(self, _run: forgerunstate.Run) -> tuple[forgerunstate.Killed, ...]:
+        return (forgerunstate.Killed('7_0', 'OUT_OF_MEMORY', 4096, 4199, 3600, 190),)
+
+
+def test_a_gathered_run_with_killed_jobs_posts_them_as_their_own_status(home: Path, monkeypatch) -> None:
+    store, slurm = _Store(), _Killed(home / 'run.json.gz')
+    monkeypatch.setattr(forgecarry, 'post', lambda _root, _path: 'posted')
+    contexts: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        forgerun,
+        'status_post',
+        lambda _c, _sha, *, context, state, description: contexts.append((context, state, description)),
+    )
+    _start(home, store)
+    _tick(store, slurm)
+    slurm.done = True
+    _tick(store, slurm)
+    [(context, state, description)] = contexts
+    assert (context, state) == ('slurm/linux', 'failure')
+    assert '1 OUT_OF_MEMORY' in description
+    assert '4199/4096 MB' in description
