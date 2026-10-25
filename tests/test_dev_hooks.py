@@ -261,7 +261,7 @@ def test_the_shared_checkout_rewrites_are_each_refused_by_a_row(command: str, ru
 # irreversible harm behind it refused hundreds of calls and was routed around, so it is said instead.
 
 #: The rows that hint rather than refuse, as a NAMED SET: a count would not say which row changed severity.
-HINT_ROWS = frozenset({'BARE-PYTHON', 'NETWORK-VERB', 'RECURSIVE-GREP'})
+HINT_ROWS = frozenset({'BARE-PYTHON', 'NETWORK-VERB', 'RECURSIVE-GREP', 'WORKTREE-BASE-IS-EXPLICIT'})
 
 
 def test_the_hint_rows_are_a_named_set() -> None:
