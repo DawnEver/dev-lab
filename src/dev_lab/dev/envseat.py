@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.box import POLL_S, Claim, Demand, Holding, hold, holdings
+from lab_commons.box import POLL_S, Claim, Holding, hold, holdings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -45,8 +45,7 @@ class EnvironmentSeat:
     @contextmanager
     def held(self) -> Iterator[Claim]:
         """Hold the environment for the operation, or raise :class:`~lab_commons.box.Refused` naming its holder."""
-        demand = Demand(cpu=0, mem_gb=0.0, wall_s=SEAT_WALL_S, seats={self.seat: 1})
-        with hold(demand, self.what, self.wait_s, poll_s=self.poll_s, key=self.seat) as claim:
+        with hold({self.seat: 1}, SEAT_WALL_S, self.what, self.wait_s, poll_s=self.poll_s, key=self.seat) as claim:
             yield claim
 
     @staticmethod
