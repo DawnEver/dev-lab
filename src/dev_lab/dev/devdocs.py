@@ -81,7 +81,7 @@ PAGES: Final[tuple[Page, ...]] = (
     Page(
         'the-three-participants',
         'The three participants',
-        'Who does what: the human, the authors, the producers, the forge and the steward',
+        'Who does what: the human, the authors, the producers, the forge and the integrator',
     ),
     Page(
         'verdict-model',

@@ -85,7 +85,7 @@ Write issues and comments only through `python -m dev_lab.dev.forge issue ...`. 
 | you used to | now |
 |---|---|
 | read a local log to know if a sha is green | `forge status list <sha>` or `forge queue` |
-| push `main` after a local heavy run | `integrate promote <sha>` then `git push origin main` (the steward), when every part is a full PASS |
+| push `main` after a local heavy run | `integrate promote <sha>` then `git push origin main` (the integrator), when every part is a full PASS |
 | hold a branch "for later" | merge it or delete it ([one branch per session](branch-set.md)) |
 | push a lane branch to origin | keep lanes local; the pre-push hook refuses an undeclared branch ([the push-time check](branch-set.md#the-push-time-check)) |
 | delete merged origin branches by hand | declare `prune_merged = true`; every serving host prunes them ([pruning origin](branch-set.md#pruning-origin)) |

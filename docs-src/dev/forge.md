@@ -346,7 +346,7 @@ renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an
 pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
 BLOCKED red to route), keyed by state, branch and tip, so a new row is delivered at once
-([the integration branch](integration.md#waking-the-steward)). The same host raises origin's branch hygiene:
+([the integration branch](integration.md#waking-the-integrator)). The same host raises origin's branch hygiene:
 `pruned` (the merged branches it deleted, or a prune that failed) and `stale-branch` (unmerged branches idle
 past the grace, never deleted; see [pruning origin](branch-set.md#pruning-origin)). The machine file's
 `[alerts]` table (telegram, email, webhook) delivers them; one `(kind, repo[, about])` is delivered at most
@@ -417,7 +417,7 @@ THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 
 
 Configuration applied through the forge's API or web UI; enabling it is the human's decision.
 
-- **Push whitelist**: only the steward's account may update `main` (the client side: SESSION-HISTORY-ONLY-GROWS). A consumer's protection script applies
+- **Push whitelist**: only the integrator's account may update `main` (the client side: SESSION-HISTORY-ONLY-GROWS). A consumer's protection script applies
   it from a declared constant, so a new machine's account is added in code, not in the UI.
 - **Required status check**: `tests/base` at least; parts are derived, so a required context per need-set
   goes stale when a marker changes. Enable it only once real parts exist on `main`'s tip; a required context
