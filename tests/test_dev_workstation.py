@@ -153,7 +153,7 @@ def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: B
     jmag = {'seats': 4, 'in_use': {'process': list(workstation.JMAG_SOLVER_IMAGES)}}
     assert declared['capabilities'] == {'workstation': {}, 'jmag': jmag}, 'a jmag seat is observed by its solvers'
     assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'root': str(box.root)}
-    assert 'reserve' not in declared, 'no delegate named, no [reserve] written'
+    assert 'reserve' not in declared, 'deploy reserves nothing: the OS headroom keeps its defaults'
     assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'dev-lab')
 
 
@@ -270,27 +270,17 @@ def test_a_missing_checkout_without_a_forge_is_refused(box: Box, capsys: pytest.
     assert 'pass --forge' in capsys.readouterr().err
 
 
-def test_the_reserve_margins_are_written_and_a_hand_kept_key_stays(box: Box) -> None:
-    hand = '\n[reserve]\nmem_margin = 0.2  # mine\n'
-    box.machine.write_text(box.machine.read_text(encoding='utf-8') + hand, encoding='utf-8')
-    assert box.deploy('--cpu-margin', '4', '--seat-margin', 'jmag=2') == 0
-    text = box.machine.read_text(encoding='utf-8')
-    assert tomllib.loads(text)['reserve'] == {'mem_margin': 0.2, 'cpu_margin': 4.0, 'seat_margin': {'jmag': 2}}
-    assert 'mem_margin = 0.2  # mine' in text
-    assert box.deploy('--cpu-margin', '4', '--seat-margin', 'jmag=2') == 0
-    assert box.machine.read_text(encoding='utf-8') == text, 'a second run changes nothing'
-
-
 def test_a_jmag_solver_image_is_the_solver_and_never_its_launcher_or_service() -> None:
     images = set(workstation.JMAG_SOLVER_IMAGES)
     assert 'jam.exe' in images
     assert images.isdisjoint({'execsolver.exe', 'scheduler.exe', 'designer.exe'}), 'one solve counts once'
 
 
-@pytest.mark.parametrize('margin', ['jmag=x', 'jmag', 'femm=1', 'jmag=-1'])
-def test_a_bad_seat_margin_is_refused(margin: str) -> None:
+@pytest.mark.parametrize('flag', ['--seat-margin=jmag=2', '--cpu-margin=8', '--mem-margin=0.25'])
+def test_deploy_reserves_nothing_for_people(flag: str) -> None:
+    """A person DECLARES their use (``box claim``, ruling 2026-10-25): deploy writes no margin for them."""
     with pytest.raises(SystemExit):
-        workstation.deploy(['--repos', REPOS, '--capabilities', 'jmag:4', '--seat-margin', margin])
+        workstation.deploy(['--repos', REPOS, '--capabilities', 'jmag:4', flag])
 
 
 def test_the_repos_must_include_lab_commons_the_task_runs_from() -> None:

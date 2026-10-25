@@ -15,9 +15,13 @@ take; it is admitted only when the MEASURED room holds it, and it runs inside a 
    An editor, a vendor GUI or another user's session counts because the OS counts it. A tool seat is supply
    like a core: its size is `[capabilities.<name>] seats` (1 when undeclared) or its `supply` probe's count,
    and a row declaring `in_use = { process = [images] }` is OBSERVED -- free seats are
-   `size - max(held by claims, those images running) - [reserve] seat_margin.<name>`, max because a claim's
-   own solver is in the process table too. An unreadable observation or a probe that cannot say lends no
-   seat, naming why.
+   `size - max(held by claims, those images running)`, max because a claim's own solver is in the process
+   table too. An unreadable observation or a probe that cannot say lends no seat, naming why. The `[reserve]`
+   margins are OS headroom, not a reservation for people: nothing is reserved for anyone by configuration. A
+   person or session DECLARES its use as an ordinary claim with no process under it --
+   `python -m lab_commons.box claim --cpu N --mem-gb G --seat jmag=K --wall 4h --why "<text>"`, listed by
+   `box claims`, dropped by `box release <id>`, reaped at its wall -- and every admission gets only the room
+   outside it (user ruling 2026-10-25).
 3. **The claim is the limit.** `box.run` runs the process tree inside a Windows Job Object or a Linux
    systemd scope (on Slurm, the allocation or an RSS watchdog): killed past its memory or wall, so a claim is
    never exceeded and never idle-but-held. Where nothing can enforce, the run is refused.

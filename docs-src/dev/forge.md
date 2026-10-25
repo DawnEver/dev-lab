@@ -128,7 +128,7 @@ Each tick it:
 
 The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, and the complete runbook for a JMAG
 workstation (WS1, WS2): run once per box, in PowerShell, as the user who serves. A JMAG workstation does a
-person's heavy JMAG work FIRST; the forge takes only what is left, measured (step 7).
+person's heavy JMAG work FIRST: the person declares it (step 8), and the forge takes only what lies outside it.
 
 **1. Prerequisites.**
 
@@ -162,7 +162,7 @@ none stored it refuses naming this step.
 
 ```
 .venv\Scripts\python.exe -m dev_lab.dev.workstation deploy --forge <forge> --repos dev-lab,<repo>,... `
-    --capabilities workstation,jmag:4 --seat-margin jmag=2 --cpu-margin 8 --mem-margin 0.25 --dry-run
+    --capabilities workstation,jmag:4 --dry-run
 ```
 
 Read every action and the machine-file diff, then run it again without `--dry-run`. A second run changes
@@ -174,8 +174,8 @@ nothing. In order, it:
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
 4. merges into `~/.config/lab-commons/config.toml`: `[capabilities.<name>]` (`jmag:4` is `seats = 4`; a `jmag`
-   row also gets `in_use = { process = [...] }`, step 7), `[reserve]` with each margin given (a key not given is
-   left as the file has it), and `[serve] repos, root`. Every other table, key and comment is kept;
+   row also gets `in_use = { process = [...] }`, step 7) and `[serve] repos, root`. It writes no `[reserve]`:
+   nothing is reserved for the person at the box (step 8). Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.
 
@@ -187,7 +187,7 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
 - `workstation,jmag:<N>`: a JMAG box. `N` is the JMAG seats it may run at once -- concurrent SOLVES (`jam.exe`
   / Scheduler jobs), never open Designers (user correction 2026-10-16); a `jmag` part needs one.
 
-**6. The machine file a JMAG workstation ends with** (four seats, two always the person's):
+**6. The machine file a JMAG workstation ends with** (four seats):
 
 ```toml
 [workstation]
@@ -199,11 +199,6 @@ registry = "<synced folder>/hosts.json"
 seats = 4
 in_use = { process = ["jam.exe", "jam_c.exe", "jam_intel_mpi_b.exe", "jam_intel_mpi_c.exe"] }
 
-[reserve]
-cpu_margin = 8.0
-mem_margin = 0.25
-seat_margin = { jmag = 2 }
-
 [serve]
 repos = ["dev-lab", "<repo>"]
 root = "C:\\Users\\<user>\\src"
@@ -213,19 +208,36 @@ root = "C:\\Users\\<user>\\src"
 solver images (`workstation.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
 `jam.exe`, nor `scheduler.exe` or `designer.exe`), so a solve a person starts from Designer or the Scheduler is
 a seat taken though no ledger claim holds it. Free JMAG seats are
-`seats - max(held by ledger claims, jam processes running) - seat_margin`: with the file above the forge runs
-at most two JMAG parts, one while the person runs three solves, none while they run four or more. An unreadable
-process table, or a `supply` probe that cannot say, lends no seat and the refusal names why. `cpu_margin`
-(cores, default 1) and `mem_margin` (fraction of memory, default 0.10) are kept free above what the OS shows in
-use: size them for the person's own Designer and pre/post work. A margin is kept, never reserved for a waiter:
-nothing is lent or preempted (user ruling 2026-10-14).
+`seats - max(held by ledger claims, jam processes running)`: with the file above the forge runs up to four JMAG
+parts, one while the person runs three solves, none while they run four or more. An unreadable process table, or
+a `supply` probe that cannot say, lends no seat and the refusal names why. `[reserve] cpu_margin` (default 1
+core) and `mem_margin` (default 0.10 of memory) are OS HEADROOM, kept free above what the OS shows in use so the
+machine stays responsive; they are not a reservation for people and deploy leaves them at their defaults.
 
-**8. Verify.** `python -m dev_lab.dev.forge queue` from any machine: the host's card shows its OS, its `supply`
+**8. People and sessions declare their use** (user ruling 2026-10-25). Nothing on the box is reserved for a
+person by configuration. Before heavy work -- a JMAG study, a long Designer session, a sweep -- the person (or an
+agent session) declares what it will use, for how long, as an ordinary claim on the box's ONE ledger:
+
+```
+python -m lab_commons.box claim --cpu 8 --mem-gb 32 --seat jmag=2 --wall 4h --why "motor study, Designer"
+python -m lab_commons.box claims          # every claim on this box: id, owner: why, cpu, memory, seats, time left
+python -m lab_commons.box release <id>    # done early: give it back now
+```
+
+No process runs under the claim. It is owned by the person (`<user>: <why>`), lives until its `--wall`
+(`<n>[s|m|h|d]`, at most 7 days) or `release`, and is reaped at its deadline like any dead holder. The forge
+then uses only what lies OUTSIDE all declared claims: a forge part that would not fit beside the claim waits
+`not admitted`, and the refusal names the person's claim and its deadline. Use nobody declared still counts as
+a safety net -- running solver processes are seats taken, measured cores and memory are busy -- via
+`max(held, observed)`, so forgetting to declare never hurts the person; declaring is the primary path because it
+also covers the work the person is ABOUT to start.
+
+**9. Verify.** `python -m dev_lab.dev.forge queue` from any machine: the host's card shows its OS, its `supply`
 (the `jmag` count is the measured free seats above), its last tick, what it holds and each ledger claim running
 on it. A card older than three of its ticks is flagged stale: the Task is not running (logged off, disabled, or
 failing -- read the log).
 
-**9. Stop, disable, logs.** `schtasks /Change /TN lab-forge-serve /DISABLE` (`/ENABLE` resumes), then stop a
+**10. Stop, disable, logs.** `schtasks /Change /TN lab-forge-serve /DISABLE` (`/ENABLE` resumes), then stop a
 serve still running with `python -m dev_lab.dev.stoprun --pid <pid>`, which releases its claim as `stopped`.
 The serve and every child it starts write `%LOCALAPPDATA%\lab-forge\serve.log`, rotated to `serve.log.1` at 4 MiB.
 
@@ -364,9 +376,9 @@ lower-ranked one is still claimed, so several parts run on one host at once.
   `LAB_COMMONS_BOX_CPU`, `dev.verifybox.claimed_width`) -- holding against the
   capacity it was sized by (`box run --capacity`; [box resources](box-resources.md)). A cluster part asks what its last Slurm run measured.
 - **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); on a box, what its
-  ONE ledger can still admit (`compute.probe.box`): its capacity after the `[reserve]` margins (`cpu_margin`,
-  default 1 core; `mem_margin`, default 0.25 of its memory) less every claim on it -- each producer serve runs
-  and each interactive `verify` alike.
+  ONE ledger can still admit (`compute.probe.box`): its capacity after the `[reserve]` OS headroom (`cpu_margin`,
+  default 1 core; `mem_margin`, default 0.10 of its memory) less every claim on it -- each producer serve runs,
+  each interactive `verify` and each claim a person declared (`box claim`) alike.
 - **Running**: each cluster run in flight here at its learned demand, and each part this tick already claimed.
 - **Two parts of one sha** are never claimed by one box in one tick: each is judged in its sha's tree.
 - A job that does not fit waits `not admitted: lacking <resource>`; when every live host serving it says so,
