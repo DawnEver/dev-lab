@@ -382,7 +382,7 @@ def test_lock_upgrade_rewrites_the_lock_at_the_newest_then_builds_exactly_it(tmp
 
 
 def test_lock_upgrade_refuses_an_unreasoned_hold_before_resolving_anything(tmp_path, capsys) -> None:
-    """PLANTED CONTROL: the same hold lockcheck refuses at push is refused here, and nothing runs."""
+    """PLANTED CONTROL: the same hold the forge refuses (famtests.lockpin) is refused here, and nothing runs."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer==1"]\n', encoding='utf-8'
     )

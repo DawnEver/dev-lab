@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -45,7 +46,7 @@ from lab_commons.compute.model import Schedule
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import forgeautosync, forgenotice
+from dev_lab.dev import forgeautosync, forgeheadgate, forgenotice
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
@@ -290,11 +291,14 @@ def tick(
     host: str = '',
     clock: Callable[[Client], datetime] = forge_now,
     sync: Callable[..., str] = forgeautosync.sync,
+    gate: Callable[..., list[str]] = forgeheadgate.judge,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> Ticked:
     """One pass over every child branch on *origin*: its open PRs into integration, then the classed lanes.
 
     Given the serving *host* and ``pr_merges_since`` declared (auto-sync rides auto-merge), a PR the forge did not
-    merge is auto-synced (:mod:`dev_lab.dev.forgeautosync`); ``forge integration`` passes no host and only reports.
+    merge is auto-synced (:mod:`dev_lab.dev.forgeautosync`), and every open PR head carries its lock and branch-set
+    statuses (:mod:`dev_lab.dev.forgeheadgate`); ``forge integration`` passes no host and only reports.
     """
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
@@ -328,6 +332,8 @@ def tick(
         said.append((child, one))
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
+    if host:
+        lines += forgeheadgate.judge_heads(root, origin, [c for c in children if c.pr is not None], gate, monotonic)
     return Ticked(tuple(lines), tuple(said))
 
 
