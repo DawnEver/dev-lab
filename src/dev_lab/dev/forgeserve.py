@@ -135,10 +135,11 @@ from dev_lab.dev.forgeintent import reattach
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgeproduce import Produced, demote_unreachable, produce
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
-from dev_lab.dev.forgerounds import Rounds, locked_fetch, reserve, supply_now
+from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
 from dev_lab.dev.forgeservesteps import hygiene, prompt, relock, retain_storage, starved, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
+from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.prlanded import serve_close_landed
@@ -180,6 +181,7 @@ def serve(
     holding: Callable[[], Sequence[Holding]] = holdings,
     retain: Callable[..., retention.Freed | None] = retention.serve_pass,
     reserving: Callable[..., int | str] = reserve,
+    boxed: Callable[[Sequence[Holding]], Box | None] = box_now,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 
@@ -187,7 +189,8 @@ def serve(
     anything reads them; *supplied* is what a round admits against
     (:func:`~dev_lab.dev.forgerounds.supply_now`), *holding* the box ledger's claims now, *retain* the
     retention pass, *reserving* what takes a local part's box claim before the tick claims it
-    (:func:`~dev_lab.dev.forgerounds.reserve`; none on a cluster seat) -- each a seam a test fakes.
+    (:func:`~dev_lab.dev.forgerounds.reserve`; none on a cluster seat), *boxed* this box as a round's pass sees
+    it (:func:`~dev_lab.dev.forgerounds.box_now`; none on a cluster seat) -- each a seam a test fakes.
     """
     repo = origin_url(root)
     table = section('schedule') if table is None else table
@@ -233,6 +236,7 @@ def serve(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
             fetch=fetched, beat_s=beat_s,
         ),
+        room=(lambda _held: None) if seat is not None else boxed, cards=cards,
     )  # fmt: skip
     rounds, produced = host_rounds.serve(beat_s)
     demote_unreachable(produced)
