@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from lab_commons.hpc.needsets import read_vocabulary, scarce_parts
 
 from dev_lab.dev import platformparts, pushgate
 from dev_lab.dev.branchset import declared_branchset
@@ -39,3 +40,13 @@ def test_every_part_this_repo_needs_has_a_producer(monkeypatch: pytest.MonkeyPat
         'workstation',
     ]
     assert platformparts.cluster_part(ROOT, 'HEAD').collect == ''
+
+
+def test_the_workstation_part_is_scarce_so_a_pr_waits_on_it_only_by_reach() -> None:
+    """Incident 2026-10-25: 13 open PRs waited on tests/workstation, which one host serves, whatever they touched.
+
+    SCARCE-PARTS-BY-REACH (:mod:`dev_lab.dev.forgescarce`) waives a scarce part a PR's diff cannot reach; the
+    part is scarce only by this declaration. PLANTED CONTROL: base is never scarce.
+    """
+    vocabulary = read_vocabulary((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
+    assert scarce_parts(['base', 'workstation'], vocabulary.scarce) == {'workstation'}
