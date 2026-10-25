@@ -96,12 +96,15 @@ Each tick it:
   hash keys the served venv. So a RUN judges its environment against the checkout's own lock and nothing
   else: `verify` refuses as STALE only when a git-installed package's commit differs from the one `uv.lock` at
   HEAD pins (`dev_lab.dev.lockpins`) -- never against a dependency's remote tip, which would leave every
-  commit locked before its dependency moved without a producible part. The `lock` pre-push row (`dev_lab.dev.lockcheck`) refuses a pushed commit
+  commit locked before its dependency moved without a producible part. The forge refuses (`dev_lab.dev.famtests.lockpin`, in the repo's own suite at the
+  checked-out sha; no pre-push row reads the lock, user ruling 2026-10-24) a commit
   that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
   pin, a git rev) with no reason on its line or the comment line above. A reasoned range is the only way to
-  stay below latest. Every push is judged on its pin alone (user ruling 2026-10-22): freshness is ONE party's job, the forge's --
+  stay below latest. Every commit is judged on its pin alone (user ruling 2026-10-22): freshness is ONE party's job, the forge's --
   each serve tick relocks `origin/<integration>` itself through one `pr/relock-<dist>-<sha>` pull request
-  (`dev_lab.dev.relock`), which merges like any other, and a lane takes it with `forge sync`. By hand, one
+  (`dev_lab.dev.relock`), which merges like any other, and a lane takes it with `forge sync`. Every open PR head into integration
+  carries a `lock/fresh` status (`dev_lab.dev.forgeheadgate`, once per head sha): `failure` reads
+  ``stale uv.lock: run `<venv python> -m dev_lab.dev.dep --lock-upgrade [ROOT]`, then commit uv.lock (<moves>)``. By hand, one
   upgrades through the door `<venv python> -m dev_lab.dev.dep --lock-upgrade
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
   fixes, tests and commits. A

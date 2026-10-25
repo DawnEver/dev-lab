@@ -338,8 +338,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'PIN + FRESHNESS (user ruling 2026-10-17): the COMMITTED uv.lock is what an environment is, so every '
             'path that mutates one -- a bootstrap, a served venv, a host refresh, or a git hook spelled as a '
             'project run, an install door nobody declared -- is `uv sync --frozen` from the lock of the commit or '
-            'does not touch the environment at all; the `lock` pre-push row refuses a hold below the newest with '
-            'no reason and, on integration or trunk, a lock not at the newest (the forge relocks integration); and '
+            'does not touch the environment at all; the forge refuses a missing lock or a hold below the newest '
+            'with no reason (famtests.lockpin) and relocks integration to the newest (relock); and '
             'which commands re-resolve is MEASURED per tool, never read off a flag name.'
         ),
         ('tests/test_dev_installdoor.py', 'tests/test_dev_lockcheck.py'),

@@ -1,6 +1,7 @@
-"""PIN at push (user ruling 2026-10-17); FRESHNESS is the forge's alone (user ruling 2026-10-22).
+"""PIN and FRESHNESS are the forge's alone (user rulings 2026-10-17, 2026-10-22, 2026-10-24).
 
-The pre-push row judges a pushed commit's PIN: it commits ``uv.lock`` and holds nothing below the newest unreasoned.
+The repo's own suite judges the checked-out commit's PIN on the forge (:mod:`dev_lab.dev.famtests.lockpin`): it
+commits ``uv.lock`` and holds nothing below the newest unreasoned. No pre-push row reads the lock.
 The staleness reading :func:`stale` is the forge relock's (dev_lab.dev.relock), driven here on REAL planted
 repositories with the REAL ``uv``, offline: the in-house git dependency is a local repository, and the PyPI-shaped
 one a find-links directory of planted wheels. Each refusal has a planted control that passes.
@@ -17,8 +18,10 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import forgeheadgate
+from dev_lab.dev.famtests.lockpin import LockNotPinned, assert_the_lock_is_pinned
 from dev_lab.dev.githooks.table import base_rows
-from dev_lab.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_refs, stale, unreasoned_holds
+from dev_lab.dev.lockcheck import DOOR, REMEDY, lock_problems, stale, unreasoned_holds
 from dev_lab.dev.relock import _worktree
 
 _GIT = shutil.which('git') or 'git'
@@ -128,7 +131,8 @@ def test_a_resolution_that_cannot_reach_its_source_refuses_with_its_diagnosis(wo
     assert 'REFUSED' in why or 'gave up' in why, 'the netverb diagnosis is carried'
 
 
-def test_no_lock_is_refused_and_a_deletion_only_push_is_never_judged(tmp_path: Path, capsys) -> None:
+def test_no_lock_is_refused_on_the_forge_and_a_pinned_checkout_passes(tmp_path: Path) -> None:
+    """PLANTED: a checkout committing no lock reds through the consumer body; committing one greens it."""
     root = tmp_path / 'r'
     root.mkdir()
     _git(root, 'init', '-q', '-b', 'main')
@@ -136,13 +140,14 @@ def test_no_lock_is_refused_and_a_deletion_only_push_is_never_judged(tmp_path: P
     assert lock_problems(root, bare) == (
         f'{bare[:12]} commits no uv.lock: its environment would be whatever resolves on the day',
     )
+    with pytest.raises(LockNotPinned, match=re.escape(REMEDY)):
+        assert_the_lock_is_pinned(root)
+    _commit(root, {'uv.lock': 'version = 1\n'})
+    assert_the_lock_is_pinned(root)
 
-    deletion = f'(delete) {"0" * 40} refs/heads/x {bare}'
-    assert pushed_refs([deletion, f'refs/tags/t {bare} refs/tags/t {"0" * 40}']) == ()
-    assert main([str(root)], lines=[deletion]) == 0, 'a deletion-only push is exempt'
-    assert main([str(root)], lines=[f'refs/heads/x {bare} refs/heads/x {"0" * 40}']) == 1
-    assert REMEDY in capsys.readouterr().err
-    assert REMEDY.count('uv lock --upgrade') == 1
+
+def test_this_repo_pins_its_lock() -> None:
+    assert_the_lock_is_pinned(Path(__file__).resolve().parents[1])
 
 
 def test_the_remedy_names_a_door_an_agent_guard_admits() -> None:
@@ -175,9 +180,10 @@ def test_a_hold_names_its_reason_on_its_line_or_the_line_above() -> None:
     )
 
 
-def test_the_family_hook_base_runs_the_lock_check_at_push() -> None:
-    rows = {row['id']: row for row in base_rows()['pre-push']}
-    assert rows['lock']['run'] == ['python', '-m', 'dev_lab.dev.lockcheck']
+def test_no_family_pre_push_row_reads_the_lock_or_the_branch_set() -> None:
+    """User ruling 2026-10-24: lock and branch set are judged on the forge only, never at a local push."""
+    runs = {' '.join(row['run']) for row in base_rows()['pre-push']}
+    assert not {run for run in runs if 'lockcheck' in run or 'branchset' in run or 'behind' in run}, runs
 
 
 _GIT_EXE = shutil.which('git') or 'git'
@@ -227,36 +233,58 @@ def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: p
     assert _git_ok(repo / 'components' / 'engine', 'status', '--porcelain') == '', 'the checkout still works'
 
 
-def test_a_sha_already_on_a_remote_branch_is_not_judged_again(tmp_path: Path) -> None:
-    """A promotion fast-forwards a branch to a sha origin already holds: it was judged when it was first pushed.
+def test_the_pin_is_never_judged_on_freshness(world: tuple[Path, Path, Path]) -> None:
+    """FRESHNESS is the forge relock's alone (user ruling 2026-10-22): the PIN reading never resolves.
 
-    Measured 2026-10-19: numerics-lab f52debf passed every part, `integrate promote` moved main to it, and the
-    push of main was refused because lab-commons had moved since -- so a verified sha could never reach main.
-    """
-    root = tmp_path / 'r'
-    root.mkdir()
-    _git(root, 'init', '-q', '-b', 'main')
-    old = _commit(root, {'pyproject.toml': '[project]\nname = "x"\nversion = "0"\n'})
-    _git(root, 'update-ref', 'refs/remotes/origin/integrate/main', old)
-    new = _commit(root, {'pyproject.toml': '[project]\nname = "x"\nversion = "1"\n'})
-
-    assert main([str(root)], lines=[f'refs/heads/main {old} refs/heads/main {"0" * 40}']) == 0
-    # Planted control: a sha no remote branch holds is still judged (it commits no lock -> refused).
-    assert main([str(root)], lines=[f'refs/heads/main {new} refs/heads/main {old}']) == 1
-
-
-def test_no_push_is_judged_on_freshness_and_every_push_keeps_its_pin(world: tuple[Path, Path, Path]) -> None:
-    """FRESHNESS is the forge's alone (user ruling 2026-10-22): its relock keeps integration at the newest.
-
-    A push to any branch -- lane, integration or trunk -- is never refused for a dependency that moved under it,
-    so the hook never resolves. PLANTED CONTROL: an unreasoned hold is still refused on every branch.
+    PLANTED CONTROL: the lock really is behind its kit and still pins; an unreasoned hold is still refused.
     """
     root, kit, index = world
     old = _locked(root, _manifest(kit, index, '"dep",'))
     _commit(kit, {'README': 'moved'})
     assert stale(root), 'CONTROL: the lock really is behind its kit'
-    zero = '0' * 40
+    assert lock_problems(root, old) == ()
     unheld = _locked(root, _manifest(kit, index, '"dep<2",'))
-    for branch in ('pr/x', 'integrate/main', 'main'):
-        assert main([str(root)], lines=[f'refs/heads/{branch} {old} refs/heads/{branch} {zero}']) == 0, branch
-        assert main([str(root)], lines=[f'refs/heads/{branch} {unheld} refs/heads/{branch} {zero}']) == 1, branch
+    assert lock_problems(root, unheld)
+
+
+def test_a_stale_lock_head_gets_a_red_forge_status_naming_the_relock(
+    world: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """User ruling 2026-10-24: the forge says a stale lock on the PR head, ``failure`` with the one remedy.
+
+    PLANTED CONTROL: the same head at the newest resolution is ``success``; a head already judged is not re-resolved.
+    """
+    posted: dict[str, list[tuple[str, str, str]]] = {}
+
+    def post(_client: object, sha: str, *, context: str, state: str, description: str) -> None:
+        posted.setdefault(sha, []).append((context, state, description))
+
+    def listed(_client: object, sha: str) -> tuple[object, ...]:
+        return tuple(type('S', (), {'context': one[0], 'state': one[1]})() for one in posted.get(sha, []))
+
+    monkeypatch.setattr(forgeheadgate, 'status_post', post)
+    monkeypatch.setattr(forgeheadgate, 'status_list', listed)
+    root, kit, index = world
+    fresh = _locked(root, _manifest(kit, index, '"dep",') + BRANCHSET)
+    forgeheadgate.judge(root, None, fresh, 'pr/x')
+    assert posted[fresh] == [
+        ('branchset', 'success', 'pr/x is declared'),
+        ('lock/fresh', 'success', 'uv.lock is the newest resolution'),
+    ]
+    _commit(kit, {'README': 'moved'})
+    stale_head = _commit(root, {'x.txt': 'x'})
+    assert forgeheadgate.judge(root, None, stale_head, 'lane/x') == ['branchset: failure', 'lock/fresh: failure']
+    (_, state, text) = posted[stale_head][1]
+    assert state == 'failure'
+    assert text.startswith(f'stale uv.lock: {forgeheadgate.LOCK_REMEDY} (Update kit'), text
+    assert f'run `{DOOR}`, then commit uv.lock' == forgeheadgate.LOCK_REMEDY
+    assert 'lane/x is undeclared' in posted[stale_head][0][2]
+    assert forgeheadgate.judge(root, None, stale_head, 'lane/x') == [], 'judged once per head sha'
+
+
+BRANCHSET = """
+[tool.lab_commons.branchset]
+trunk = 'main'
+sessions = ['integrate/main']
+ephemeral = ['pr/*']
+"""
