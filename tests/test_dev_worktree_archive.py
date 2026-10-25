@@ -164,21 +164,9 @@ def test_the_worktrees_door_archives_and_reports_safe_to_remove(work: Path, caps
     assert _lane(work).is_dir()
 
 
-def test_an_ignored_file_outside_the_outputs_makes_the_tree_not_safe(work: Path) -> None:
-    """``results/`` is ignored and not a declared output: removing the tree would lose it unsaved."""
+def test_an_ignored_file_outside_the_outputs_is_not_work(work: Path) -> None:
+    """Ruling 2026-10-25: what git does not track goes with the tree; only the outputs travel."""
     _plant(_lane(work) / 'results' / 'local.env', 'TOKEN_PATH=x')
-    _plant(_lane(work) / 'pkg' / '__pycache__' / 'm.cpython-313.pyc', 'bytecode')
-    done = archive(work, 'lane', census=_idle, today=_DAY)
-    assert not done.safe
-    assert done.stranded == (Path('results/local.env'),)
-    assert any('IGNORED results' in line for line in done.lines())
-
-
-def test_a_regenerable_cache_alone_keeps_the_tree_safe(work: Path) -> None:
-    """PLANTED CONTROL for the test above: an ignored cache a tool rebuilds is not work."""
-    (_lane(work) / '.gitignore').write_text('output/\n.claude/\nresults/\n.venv/\n__pycache__/\n', encoding='utf-8')
-    _run(_lane(work), 'commit', '-q', '-am', 'ignore caches')
-    _plant(_lane(work) / 'pkg' / '__pycache__' / 'm.cpython-313.pyc', 'bytecode')
     done = archive(work, 'lane', census=_idle, today=_DAY)
     assert done.safe, done.lines()
 

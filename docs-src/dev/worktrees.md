@@ -38,7 +38,13 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 ## Reclaiming a finished tree
 
 A worktree is a lease on a branch for one task. It ends when the branch's content is landed (on the trunk or a
-declared session) and the tree holds nothing that exists nowhere else. `dev_lab.dev.reclaim.reclaimable` is the
+declared session) and no TRACKED file is changed. What git does not track -- scratch one-offs, untracked files,
+ignored `.venv`, caches, builds -- is not the work (the work is committed; a finding belongs in memory) and goes
+with the tree (user ruling 2026-10-25). The one exception is run output: every `archive-outputs` directory is
+moved home and the copy verified first, and only on a verified archive does `git worktree remove --force` run;
+an archive that cannot be verified keeps the tree and prints why. An orphan directory under the worktree home
+goes the same way. What blocks reclaim: a tracked change (staged or not), commits not landed (`git cherry`), a
+live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
 and the session debris hook runs the former, so a finished tree no longer pins its branch forever. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
@@ -48,6 +54,7 @@ criteria are in [auto mode runs the doors](auto-doors.md).
 `python -m dev_lab.dev.worktrees --archive <name>` (`dev_lab.dev.worktree_archive`) is the step before
 a deliberate removal. It removes nothing; it reports `safe to remove` or why not.
 
+- Saves no ignored file outside the outputs: what git does not track is not the work.
 - Refuses a tree with an occupant (`dev_lab.dev.liverun.occupants`: a process working in it, executing from
   it, or reading it -- another session's tree is live) and a tree on another volume (a move there is a copy).
 - Saves `HEAD.txt`, `dirty.patch` (`git diff HEAD --binary`) and the untracked non-ignored files under
