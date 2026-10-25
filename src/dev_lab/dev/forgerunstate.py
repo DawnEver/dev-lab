@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -48,6 +49,7 @@ __all__ = [
     'Unrecorded',
     'directory',
     'drop',
+    'held_names',
     'live',
     'save',
 ]
@@ -135,6 +137,9 @@ class Cluster(Protocol):
     def killed(self, run: Run) -> tuple[Killed, ...]:
         """*run*'s jobs Slurm killed for memory or time, each with its ask and use; their asks learned."""
 
+    def strays(self, held: Callable[[], set[str]]) -> list[str]:
+        """Cancel every forge job (``run-<sha12>...``) whose name *held* does not return; the ids cancelled."""
+
     def tree(self, run: Run) -> Path:
         """The run's work tree as this login node sees it -- where its declared outputs are globbed."""
 
@@ -208,6 +213,23 @@ def save(run: Run) -> Path:
     target = _path(run)
     target.parent.mkdir(parents=True, exist_ok=True)
     return durable_write(target, json.dumps(asdict(run), indent=2).encode('utf-8'))
+
+
+#: A run file's name: ``<repo12>-<sha>-<part>-<scope>.json`` (:func:`_path`).
+_FILE: Final = re.compile(r'[0-9a-f]{12}-(?P<sha>[0-9a-f]{40})-(?P<part>.+)-[^-]+\.json')
+
+
+def held_names() -> set[str]:
+    """The Slurm job names every run file here holds, of ANY repo or schema: ``run-<sha12>-<part>`` and ``run-<sha12>``.
+
+    Read from the file NAMES, so a file this tool cannot parse still holds its jobs; a forge job of no name here
+    has no run left to gather it (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.strays`).
+    """
+    names: set[str] = set()
+    for path in directory().glob('*.json') if directory().is_dir() else ():
+        if found := _FILE.fullmatch(path.name):
+            names |= {f'run-{found["sha"][:12]}-{found["part"]}', f'run-{found["sha"][:12]}'}
+    return names
 
 
 def touch(run: Run) -> None:

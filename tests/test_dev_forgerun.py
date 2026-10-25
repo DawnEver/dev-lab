@@ -1062,3 +1062,37 @@ def test_a_gathered_run_with_killed_jobs_posts_them_as_their_own_status(home: Pa
     assert (context, state) == ('slurm/linux', 'failure')
     assert '1 OUT_OF_MEMORY' in description
     assert '4199/4096 MB' in description
+
+
+def test_a_forge_job_whose_run_is_gone_is_cancelled_and_one_whose_run_lives_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-10-25, 24 h: 25 % of core-hours went to jobs no run state named any more.
+
+    Squeue is read BEFORE the run files, so a job sbatched after the read had its run file saved first
+    (``submitting`` is journaled before sbatch) and is never taken for a stray. PLANTED CONTROLS: a job of a
+    live run, and a job of another name, are kept.
+    """
+    order: list[str] = []
+    cancelled: list[str] = []
+
+    def runner(command: str, _stdin: object) -> str:
+        order.append(command.split(maxsplit=1)[0])
+        return f'9001|run-{"a" * 12}-base\n9002|run-{"b" * 12}-base\n9003|interactive\n9001|run-{"a" * 12}-base\n'
+
+    def held() -> set[str]:
+        order.append('held')
+        return {f'run-{"b" * 12}-base'}
+
+    monkeypatch.setattr(forgeslurm, 'scancel', lambda _shell, ids: cancelled.extend(ids))
+    machine: Any = SimpleNamespace(grants=[object()])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: runner)
+    assert cluster.strays(held) == ['9001']
+    assert cancelled == ['9001']
+    assert order[:2] == ['squeue', 'held']
+
+
+def test_every_run_file_here_holds_its_job_names_whatever_its_repo(home: Path) -> None:
+    store = _Store()
+    _start(home, store)
+    assert forgerunstate.held_names() == {f'run-{SHA[:12]}-linux', f'run-{SHA[:12]}'}

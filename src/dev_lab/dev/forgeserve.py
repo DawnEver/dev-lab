@@ -159,6 +159,15 @@ class ServeReport:
     broken: tuple[str, ...]
 
 
+def _cancel_strays(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge jobs no run file holds, every tick, runs in flight or not: one alarm, counted."""
+    if stray := slurm.strays(forgerunstate.held_names):
+        body = f'jobs {" ".join(stray)} carried a forge job name no run file here holds; cancelled'
+        alarm(Alarm(RUN, repo, f'{len(stray)} orphaned forge job(s) cancelled on {seat}', body, about='strays'))
+
+
 def serve(
     root: Path,
     *,
@@ -204,6 +213,8 @@ def serve(
     priority = Priority.of(section(PRIORITY_TABLE))
     serves = Serves.of(section(SERVE_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
+    if slurm is not None:
+        _cancel_strays(slurm, repo, seat, alarm)
     if standing is not None and (untagged := standing.facts.get('untagged')):
         body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
         alarm(Alarm(UNTAGGED, repo, f'{untagged} untagged job task(s) on {seat}', body, about=str(seat)))

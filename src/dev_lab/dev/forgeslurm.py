@@ -17,6 +17,10 @@ A JOB SLURM KILLED IS READ, NAMED AND LEARNED (:meth:`SlurmCluster.killed`; Ada 
 :data:`~lab_commons.compute.learned.OOM_GROWTH` and held to the most any grant gives
 (:func:`~lab_commons.hpc.plan.grantable_gb`), so the part's next run asks for more. A TIMEOUT needs nothing
 here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.learned.Measured.killed`).
+
+A FORGE JOB WHOSE RUN IS GONE IS CANCELLED (:meth:`SlurmCluster.strays`; Ada 2026-10-25: 25 % of a day's
+core-hours). A run whose ref is gone cancels its own jobs (:func:`dev_lab.dev.forgerun._cancel_orphan`); a job
+no run file names at all -- its run lost to another owner, or dropped -- had nobody to cancel it.
 """
 
 from __future__ import annotations
@@ -62,6 +66,8 @@ __all__ = ['KILLED', 'SlurmCluster', 'killed_jobs', 'progress_text', 'slurm_clus
 
 #: The ``sacct`` states of a job Slurm killed for its ask: memory, or time.
 KILLED: Final = ('OUT_OF_MEMORY', 'TIMEOUT')
+#: A forge job's name (:func:`lab_commons.hpc.run.job_name`, and the schema-1 ``run-<sha12>``).
+_FORGE_JOB: Final = re.compile(r'run-[0-9a-f]{12}(-.+)?')
 _KILLED_FIELDS: Final = 'JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
 _SIZE: Final = re.compile(r'([\d.]+)([KMGT]?)')
 _MB_PER: Final = {'K': 1 / 1024, '': 1 / 1024 / 1024, 'M': 1, 'G': 1024, 'T': 1024 * 1024}
@@ -248,6 +254,20 @@ class SlurmCluster:
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""
         return cancel_run(run.sha, run.platform, self.machine, self.connect, also=run.job_ids, aliases=run.job_aliases)
+
+    def strays(self, held: Callable[[], set[str]]) -> list[str]:
+        """Cancel this account's forge jobs whose name *held* does not return; the ids cancelled, one per array.
+
+        Squeue is read BEFORE *held*: a run file is saved before its sbatch (``submitting``), so a job seen
+        here whose name is not held has no run left -- never one submitted between the two reads.
+        """
+        shell = self.connect(self.machine.grants[0])
+        jobs = [line.partition('|') for line in shell("squeue -h --me -o '%F|%j'", None).splitlines()]
+        names = held()
+        stray = sorted({job for job, _, name in jobs if _FORGE_JOB.fullmatch(name) and name not in names})
+        if stray:
+            scancel(shell, stray)
+        return stray
 
     def withdraw(self, run: Run) -> list[str]:
         """Withdraw *run*'s pending tasks, keep its started ones; the ids still started."""
