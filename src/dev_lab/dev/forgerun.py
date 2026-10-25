@@ -105,7 +105,7 @@ from dev_lab.dev.forgerunstate import (
     save,
 )
 from dev_lab.dev.forgeschedule import coalesced, tip_of
-from dev_lab.dev.forgestatus import status_history, status_post
+from dev_lab.dev.forgestatus import status_history
 from dev_lab.dev.forgework import Client, ForgeCallFailed
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
@@ -204,7 +204,7 @@ def _gather(
     try:
         record = cluster.gather(run)
     except Unrecorded as why:
-        _post_killed(client, run, cluster=cluster, say=say, tag=tag)
+        forgerunpost.killed(client, run, cluster.killed(run), say, tag)
         _settle(root, run, client=client, why=str(why), say=say, alarm=alarm, ran=True)
         return None
     if record is None:
@@ -213,34 +213,9 @@ def _gather(
         run = forgerunpost.step(run, job_ids=tuple(cluster.submitted(run)) or ids or run.job_ids)
         say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
         return forgerunpost.report(client, run, cluster.progress(run), lease, say)
-    _post_killed(client, run, cluster=cluster, say=say, tag=tag)
+    forgerunpost.killed(client, run, cluster.killed(run), say, tag)
     run = forgerunpost.step(run, phase=GATHERED, record=str(record))
     return forgerunpost.report(client, run, PUBLISHING, lease, say)
-
-
-def _post_killed(client: Client, run: Run, *, cluster: Cluster, say: Callable[[str], None], tag: str) -> None:
-    """Post the jobs Slurm killed for memory or time as ``slurm/<part>`` ``failure``: counts, the worst used/asked.
-
-    Their own context, so the part's verdict stays the record's; the asks are already learned
-    (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.killed`). Nothing killed posts nothing.
-    """
-    killed = cluster.killed(run)
-    if not killed:
-        return
-    say(f'{tag}: killed by Slurm: {"; ".join(one.text() for one in killed)}')
-    words = []
-    for state in sorted({one.state for one in killed}):
-        some = [one for one in killed if one.state == state]
-        worst = max(some, key=lambda one: one.used_mb if state == 'OUT_OF_MEMORY' else one.used_s)
-        used = (
-            f'{worst.used_mb}/{worst.asked_mb} MB' if state == 'OUT_OF_MEMORY' else f'{worst.used_s}/{worst.asked_s} s'
-        )
-        words.append(f'{len(some)} {state} (worst {worst.job} used/asked {used})')
-    description = f'{"; ".join(words)}; next ask learned'[:DESCRIPTION_MAX]
-    try:
-        status_post(client, run.sha, context=f'slurm/{run.platform}', state='failure', description=description)
-    except ForgeCallFailed as failed:  # a missed report is not a dead run
-        say(f'{tag}: could not post the killed jobs: {failed}')
 
 
 def _superseding_tip(root: Path, run: Run) -> str:

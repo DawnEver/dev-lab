@@ -32,7 +32,7 @@ from lab_commons.hpc.run import NoRoom
 from lab_commons.hpc.slurm import FORGE_SESSION, Node, Quota, Snapshot, parse_usage
 from lab_commons.hpc.tree import NotSubmitted
 
-from dev_lab.dev import artefacts, forgecarry, forgerun, forgerunstate, forgeship, forgeslurm
+from dev_lab.dev import artefacts, forgecarry, forgerun, forgerunpost, forgerunstate, forgeship, forgeslurm
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
 from dev_lab.dev.forgecoalesce import DRAINING
@@ -1050,7 +1050,7 @@ def test_a_gathered_run_with_killed_jobs_posts_them_as_their_own_status(home: Pa
     monkeypatch.setattr(forgecarry, 'post', lambda _root, _path: 'posted')
     contexts: list[tuple[str, str, str]] = []
     monkeypatch.setattr(
-        forgerun,
+        forgerunpost,
         'status_post',
         lambda _c, _sha, *, context, state, description: contexts.append((context, state, description)),
     )
@@ -1058,7 +1058,7 @@ def test_a_gathered_run_with_killed_jobs_posts_them_as_their_own_status(home: Pa
     _tick(store, slurm)
     slurm.done = True
     _tick(store, slurm)
-    [(context, state, description)] = contexts
+    [(context, state, description)] = [one for one in contexts if one[0].startswith('slurm/')]
     assert (context, state) == ('slurm/linux', 'failure')
     assert '1 OUT_OF_MEMORY' in description
     assert '4199/4096 MB' in description
