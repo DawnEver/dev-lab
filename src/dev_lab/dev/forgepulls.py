@@ -115,10 +115,26 @@ def _cached_issues(client: Client, home: Path) -> dict[int, Mapping[str, Any]]:
     query = {'state': 'all', 'type': 'issues'} | ({'since': cursor} if cursor else {})
     listed = pages(client, f'{client.repo}/issues', query)
     held |= {int(raw['number']): raw for raw in listed if not is_pull(raw)}
+    if cursor and _ghosts(client, held):
+        listed = pages(client, f'{client.repo}/issues', {'state': 'all', 'type': 'issues'})
+        held = {int(raw['number']): raw for raw in listed if not is_pull(raw)}
     if client.answered:
         read_at = parsedate_to_datetime(client.answered).astimezone(UTC) - ISSUE_OVERLAP
         _save(path, {'cursor': read_at.strftime('%Y-%m-%dT%H:%M:%SZ'), 'issues': held})
     return held
+
+
+def _ghosts(client: Client, held: Mapping[int, Mapping[str, Any]]) -> bool:
+    """Whether *held* lists more open issues than the repository counts: one was DELETED since the cursor.
+
+    A ``since=`` read never says an issue is gone, and only the deleting host can :func:`forget_issue`.
+    Gitea's ``open_issues_count`` excludes pulls (``open_pr_counter`` beside it); GitHub's counts them, so
+    the check is gitea's only.
+    """
+    repo = client.call('GET', client.repo)
+    if not isinstance(repo, Mapping) or 'open_pr_counter' not in repo:
+        return False
+    return sum(raw.get('state') == 'open' for raw in held.values()) > int(repo['open_issues_count'])
 
 
 def _save(path: Path, saved: Mapping[str, Any]) -> None:

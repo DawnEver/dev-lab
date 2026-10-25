@@ -80,3 +80,18 @@ def test_a_deleted_issue_is_forgotten_by_the_cache(tmp_path: Path) -> None:
     forge.call('DELETE', f'{forge.repo}/issues/{number}')
     forget_issue(forge, number)
     assert issues(forge) == ()
+
+
+def test_an_issue_another_host_deleted_is_not_listed_from_its_cache(tmp_path: Path) -> None:
+    """A cache holding more open issues than the repository counts re-reads in full.
+
+    A ``since=`` read never says an issue is gone, and only the deleting host forgets it: every OTHER host's
+    cache would list a deleted open issue for ever (a route then edits it, a tidy deletes it again).
+    """
+    forge = _cached(tmp_path)
+    kept, doomed = forge.add_issue('kept'), forge.add_issue('doomed')
+    issues(forge)
+    forge.call('DELETE', f'{forge.repo}/issues/{doomed}')  # by another host: this cache is not told
+    forge.now_http = 'Mon, 12 Oct 2026 12:05:00 GMT'
+    assert [raw['number'] for raw in issues(forge, state='open')] == [kept]
+    assert [raw['number'] for raw in issues(forge, state='all')] == [kept]
