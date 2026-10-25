@@ -52,7 +52,7 @@ NOT_OURS = ('stdout', 'stderr')
 #: must read, while raising the headroom would widen the waiver, which is the move this guard's own
 #: docstring calls giving up the arm to keep it.
 #:
-#: RE-MEASURED 2026-10-03: 149 tracked modules. ``lab_commons.supervise`` landed that day and
+#: RE-MEASURED 2026-10-03: 149 tracked modules. ``dev_lab.supervise`` landed that day and
 #: carried the population past the 140 this pair allowed, so the arm said so -- which is what it is
 #: for. NOTE HOW IT SAID SO LATE: ``source_modules()`` walks TRACKED files, so while the package was
 #: untracked this guard could not see twelve new modules and stayed green. The number below is the

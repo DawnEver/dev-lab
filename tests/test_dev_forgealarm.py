@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 from lab_commons.config import CONFIG_ENV
-from lab_commons.supervise.alert import Delivery, Notice
 
 from dev_lab.dev.forgealarm import AUTH, EVENT, Alarm, main, repeat_window, sound
+from dev_lab.supervise.alert import Delivery, Notice
 
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
 ALARM = Alarm(AUTH, 'https://f/o/r.git', 'the forge refused the stored credential', 'remedy: auth login')

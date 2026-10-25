@@ -6,6 +6,7 @@ the HTTP fake in ``test_dev_forgerecords.py``); archives are stdlib gzip tars.
 
 from __future__ import annotations
 
+import functools
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -15,9 +16,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from lab_commons.box.demand import Demand
+from _box_fake import quiet
+from lab_commons import box as lab_box
+from lab_commons.box import Capacity
 from lab_commons.compute.execute import OFFERED, LocalExecutor, Where
 from lab_commons.compute.graph import Graph
+from lab_commons.compute.model import Demand
 from lab_commons.compute.store import Nondeterministic, Record, ResultStore, result_hash
 from lab_commons.compute.unit import Engine, Unit, environment_here
 
@@ -31,7 +35,7 @@ from dev_lab.dev.forgeunit import ForgeResults, UnitJob, offering, result_name, 
 
 _GIT = shutil.which('git') or 'git'
 UNIT_HASH = 'ab' * 32
-SMALL = Demand(1, 0.5, 600, {})
+SMALL = Demand(cpu=1, mem_gb=0.5)
 RAN_HERE: list[str] = []
 
 
@@ -78,7 +82,9 @@ def stored(store: ResultStore, text: str, host: str) -> tuple[Path, Record]:
 
 
 def test_a_job_spells_its_unit_bundle_size_and_needs_as_paths() -> None:
-    job = UnitJob(UNIT_HASH, Ref('forge', 'k.tar.gz', 10, 'f' * 64), Demand(2, 6.0, 7200, {}), ('femm', 'windows'))
+    job = UnitJob(
+        UNIT_HASH, Ref('forge', 'k.tar.gz', 10, 'f' * 64), Demand(cpu=2, mem_gb=6.0), 7200, ('femm', 'windows')
+    )
     assert UnitJob.of(job.paths()) == job
     declared = unit_request(job.paths())
     assert declared.argv == ('-m', 'dev_lab.dev.forgeunit', *job.paths())
@@ -112,7 +118,7 @@ def test_the_first_posted_result_wins_and_a_differing_one_alarms(tmp_path: Path,
 
 
 def test_a_sized_compute_unit_keeps_its_positive_fractional_memory() -> None:
-    job = UnitJob(UNIT_HASH, Ref('forge', 'k.tar.gz', 10, 'f' * 64), Demand(1, 0.25, 60, {}), ())
+    job = UnitJob(UNIT_HASH, Ref('forge', 'k.tar.gz', 10, 'f' * 64), Demand(cpu=1, mem_gb=0.25), 60, ())
     assert UnitJob.of(job.paths()) == job
 
 
@@ -146,7 +152,9 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
 
     monkeypatch.setattr(forgeunit, 'publish', publish)
     (tmp_path / 'n.txt').write_text('5', encoding='utf-8')
-    unit = Unit(Engine.ours('t.square', env), f'{__name__}:square', {'n': tmp_path / 'n.txt', 'k': 1}, ('out',), SMALL)
+    unit = Unit(
+        Engine.ours('t.square', env), f'{__name__}:square', {'n': tmp_path / 'n.txt', 'k': 1}, ('out',), SMALL, 600
+    )
     client = forge.client()
     tier = ForgeResults(client)
     box = LocalExecutor(
@@ -163,6 +171,9 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
     assert (producer, sha) == (UNIT, env.sha)
     assert UnitJob.of(paths).unit_hash == offered.unit_hash
 
+    size = Capacity(cpu=2.0, mem_bytes=2 * 1024**3, seats={})  # a box of known size, not this machine's load
+    held = functools.partial(lab_box.hold, capacity=size, read=quiet(size))
+    monkeypatch.setattr(forgeunit, 'LocalExecutor', functools.partial(LocalExecutor, hold=held))
     code = forgeunit.main(list(paths), cwd=repo, client=client, store=tmp_path / 'serve')
     assert code == 0
     assert RAN_HERE == ['square']  # the serve host ran it, in-process, with the same executor
@@ -187,7 +198,9 @@ def test_a_bundle_that_is_not_its_jobs_unit_is_refused(
         forgeunit, 'publish', lambda *_a, **kw: published.append(kw['paths']) or SimpleNamespace(number=1)
     )
     (tmp_path / 'n.txt').write_text('5', encoding='utf-8')
-    unit = Unit(Engine.ours('t.square', env), f'{__name__}:square', {'n': tmp_path / 'n.txt', 'k': 1}, ('out',), SMALL)
+    unit = Unit(
+        Engine.ours('t.square', env), f'{__name__}:square', {'n': tmp_path / 'n.txt', 'k': 1}, ('out',), SMALL, 600
+    )
     offering(repo, forge.client(), env.sha)(unit, 'cd' * 32, {'n': tmp_path / 'n.txt'})
     code = forgeunit.main(list(published[0]), cwd=repo, client=forge.client(), store=tmp_path / 's')
     assert code == 2

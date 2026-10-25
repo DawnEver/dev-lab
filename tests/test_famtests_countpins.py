@@ -253,7 +253,7 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: with a headroom so a tree that grows past it must RE-MEASURE rather than keep a number that would
 #: refuse only a total collapse.
 #:
-#: RE-MEASURED 2026-10-03: 407 constants, after ``lab_commons.supervise``'s suite landed five
+#: RE-MEASURED 2026-10-03: 407 constants, after ``dev_lab.supervise``'s suite landed five
 #: modules in this tree. 407 against 315 is 92 clear, past the 90 headroom, so this arm said so
 #: rather than absorbing it -- which is exactly what the pair is for. Re-priced on the same ~80%
 #: both earlier readings used: 325. THE HEADROOM IS UNCHANGED AT 90; raising it is how the arm is

@@ -12,7 +12,8 @@ from pathlib import Path
 
 from lab_commons.box import Capacity, ProcessEnd, Refused, write_ended
 from lab_commons.box.supply import Reading
-from lab_commons.supervise.process.base import Ran
+
+from dev_lab.supervise.process.base import Ran
 
 
 def ended(code: int, reason: str = 'exit') -> ProcessEnd:
