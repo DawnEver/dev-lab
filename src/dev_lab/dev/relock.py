@@ -40,7 +40,10 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
     from dev_lab.dev.netverb import Report
 
-__all__ = ['PREFIX', 'Relock', 'RelockFailed', 'branch_for', 'carry', 'decision', 'dist_of', 'door_upgrade']
+__all__ = [
+    'PREFIX', 'Relock', 'RelockFailed', 'branch_for', 'carry', 'decision', 'detached_worktree', 'dist_of',
+    'door_upgrade',
+]  # fmt: skip
 
 #: The prefix every relock branch carries, inside the declared ephemeral ``pr/*`` namespace.
 PREFIX: Final = 'pr/relock'
@@ -132,7 +135,7 @@ def _must(root: Path, *argv: str) -> str:
 
 
 @contextlib.contextmanager
-def _worktree(root: Path, sha: str) -> Iterator[Path]:
+def detached_worktree(root: Path, sha: str) -> Iterator[Path]:
     """A detached worktree of *root* at *sha* under its git directory, with its submodules; removed after."""
     common = Path(_must(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
     tree = common / 'relock' / sha[:SHORT]
@@ -183,7 +186,7 @@ def carry(
     if code != 0:
         msg = f'there is no {base} in {root} to relock'
         raise RelockFailed(msg)
-    with _worktree(root, sha) as tree:
+    with detached_worktree(root, sha) as tree:
         found = decision(tree, sha, resolve=resolve, stable=stable)
         if found is None:
             return f'the lock of {policy.integration} at {sha[:SHORT]} is the newest resolution'

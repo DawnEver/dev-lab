@@ -23,7 +23,8 @@ irreversible-harm and second-scale format checks, so no pre-push row reads the l
 the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``HEAD``), and a PR head's
 freshness as a status (:mod:`dev_lab.dev.forgeheadgate`). The serve tick keeps integration at the newest
 resolution itself through a relock pull request (:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one
-staleness reading, of the lock and of the toolchain against :func:`newest_stable` -- and a lane takes it with ``forge sync``.
+staleness reading, of the lock and of the toolchain against :func:`newest_stable` --
+and a lane takes it with ``forge sync``.
 """
 
 from __future__ import annotations
@@ -43,8 +44,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 __all__ = [
-    'DOOR', 'FRESHENED', 'LOCK', 'REMEDY', 'TOOLCHAIN', 'lock_problems', 'mount_submodules', 'newest_stable',
-    'pin_stable', 'refreshable', 'stale', 'toolchain_problems', 'unreasoned_holds',
+    'DOOR', 'FRESHENED', 'LOCK', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'lock_problems', 'mount_submodules',
+    'newest_stable', 'pin_stable', 'refreshable', 'stale', 'toolchain_problems', 'unreasoned_holds',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
@@ -53,6 +54,8 @@ LOCK: Final = 'uv.lock'
 TOOLCHAIN: Final = 'rust-toolchain.toml'
 #: The pinned inputs the forge keeps at the newest; a :func:`stale` sentence naming one is :func:`refreshable`.
 FRESHENED: Final = (LOCK, TOOLCHAIN)
+#: How every :func:`stale` sentence for a resolution that could not run begins -- a refusal, never an admission.
+UNRESOLVED: Final = 'the newest resolution could not run'
 #: The one remedy for a missing or stale lock.
 #: The door, never a bare ``uv lock --upgrade``: an agent guard refuses a bare dependency mutation, so a
 #: remedy naming one would be a refusal pointing at another refusal.
@@ -226,11 +229,11 @@ def stale(
     try:
         report = resolve(tree)
     except OSError as why:
-        return (f'the newest resolution could not run: {why}',)
+        return (f'{UNRESOLVED}: {why}',)
     output = report.attempts[-1].output if report.attempts else ''
     if not report.ok:
         tail = ' | '.join(line.strip() for line in output.strip().splitlines()[-4:])
-        return (f'the newest resolution could not run ({report.remedy}): {tail}',)
+        return (f'{UNRESOLVED} ({report.remedy}): {tail}',)
     found = tuple(f'{LOCK} is not the newest resolution: {change.strip()}' for change in _CHANGE.findall(output))
     if not (tree / TOOLCHAIN).is_file():
         return found

@@ -21,8 +21,17 @@ import pytest
 from dev_lab.dev import forgeheadgate
 from dev_lab.dev.famtests.lockpin import LockNotPinned, assert_the_lock_is_pinned
 from dev_lab.dev.githooks.table import base_rows
-from dev_lab.dev.lockcheck import DOOR, REMEDY, lock_problems, newest_stable, pin_stable, stale, unreasoned_holds
-from dev_lab.dev.relock import _worktree
+from dev_lab.dev.lockcheck import (
+    DOOR,
+    REMEDY,
+    UNRESOLVED,
+    lock_problems,
+    newest_stable,
+    pin_stable,
+    stale,
+    unreasoned_holds,
+)
+from dev_lab.dev.relock import detached_worktree
 
 _GIT = shutil.which('git') or 'git'
 _UV = shutil.which('uv') or 'uv'
@@ -127,7 +136,7 @@ def test_a_resolution_that_cannot_reach_its_source_refuses_with_its_diagnosis(wo
     _locked(root, _manifest(kit, index, '"dep",'))
     shutil.rmtree(kit, onexc=lambda func, path, _: (Path(path).chmod(0o700), func(path)))
     (why,) = stale(root)
-    assert why.startswith('the newest resolution could not run ('), why
+    assert why.startswith(f'{UNRESOLVED} ('), why
     assert 'REFUSED' in why or 'gave up' in why, 'the netverb diagnosis is carried'
 
 
@@ -224,7 +233,7 @@ def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: p
     before = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
     # A pre-push hook runs with GIT_DIR naming the repository pushing: the mount must not inherit it.
     monkeypatch.setenv('GIT_DIR', _git_ok(repo, 'rev-parse', '--absolute-git-dir'))
-    with _worktree(repo, mounted) as tree:
+    with detached_worktree(repo, mounted) as tree:
         assert tree != repo, 'the control: HEAD moved on, so a separate tree is built'
         assert (tree / 'components' / 'engine' / 'crate.txt').is_file()
     monkeypatch.delenv('GIT_DIR')  # the checks below are the repository's own, outside the hook
