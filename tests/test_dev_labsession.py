@@ -107,7 +107,8 @@ def test_a_forge_commit_is_authored_and_committed_by_the_forge(tmp_path: Path) -
     subprocess.run([_GIT, '-C', str(repo), 'commit', '-q', '--allow-empty', '-m', 'build(deps): relock'],
                    check=True, env=env)  # fmt: skip
     who = subprocess.run([_GIT, '-C', str(repo), 'show', '-s', '--format=%an <%ae>|%cn <%ce>'],
-                         capture_output=True, text=True, check=True, env=bare).stdout.strip()  # fmt: skip
+                         capture_output=True, text=True, encoding='utf-8', check=True,
+                         env=bare).stdout.strip()  # fmt: skip
     assert who == 'Forge <forge@git.example.org>|Forge <forge@git.example.org>'
 
 

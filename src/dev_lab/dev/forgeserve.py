@@ -133,7 +133,7 @@ from dev_lab.dev.forgealarm import (
     sound,
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
-from dev_lab.dev.forgehosts import HostsIssueLost, card_host, card_owners, read_cards, recording
+from dev_lab.dev.forgehosts import HostCard, HostsIssueLost, card_host, card_owners, read_cards, recording
 from dev_lab.dev.forgeintent import reattach
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgepoller import elect
@@ -272,13 +272,7 @@ def serve(
         alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
-        serve_close_landed(root, client(root), say=say, alarm=alarm)
-        serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
-        serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
-        hygiene(root, client(root), say=say)
-        starved(root, repo, client(root), cards, say=say, alarm=alarm)
-        prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
-        relock(root, repo, client(root), say=say, alarm=alarm)
+        _repo_wide(root, repo, client, name, cards, clock=clock, say=say, alarm=alarm)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -287,6 +281,27 @@ def serve(
     published = tuple(flush(root, client=client))
     lines = tuple(line for one in rounds for line in one.lines)
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
+
+
+def _repo_wide(
+    root: Path,
+    repo: str,
+    client: Callable[[Path], Client],
+    name: str,
+    cards: Sequence[HostCard],
+    *,
+    clock: Callable[[], datetime],
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], object],
+) -> None:
+    """The repo-wide passes only the elected poller runs (:func:`polls`): close, prune, starve, prompt, relock."""
+    serve_close_landed(root, client(root), say=say, alarm=alarm)
+    serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+    serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+    hygiene(root, client(root), say=say)
+    starved(root, repo, client(root), cards, say=say, alarm=alarm)
+    prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
+    relock(root, repo, client(root), say=say, alarm=alarm)
 
 
 #: How many tick periods a poller lease outlives its last renewal (:mod:`dev_lab.dev.forgepoller`).
