@@ -25,21 +25,41 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, forge_from_remote
 
-__all__ = ['ENV', 'TRAILER', 'machine_env', 'main', 'sessions', 'stamp']
+__all__ = ['ENV', 'FORGE_NAME', 'TRAILER', 'forge_email', 'machine_env', 'main', 'sessions', 'stamp']
 
 #: The environment variable the launcher issues the session id in.
 ENV: Final = 'LAB_SESSION'
 #: The commit trailer this hook writes.
 TRAILER: Final = 'Lab-Session'
+#: The author and committer name of every commit the forge makes.
+FORGE_NAME: Final = 'Forge'
 
 _ID: Final = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$')
 
 
-def machine_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
-    """*env* (default: this process's) without the session: a forge commit is no session's."""
-    return {key: value for key, value in (os.environ if env is None else env).items() if key != ENV}
+def forge_email(root: Path | None) -> str:
+    """``forge@<host of root's origin>``: the forge signs its own commits; ``forge@invalid`` when none is readable."""
+    try:
+        host = forge_from_remote(root).host if root is not None else ''
+    except UnreadableRemote:
+        host = ''
+    return f'forge@{host.partition(":")[0] or "invalid"}'
+
+
+def machine_env(root: Path | None = None, *, env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """*env* (default: this process's) as the FORGE: no session, and the forge's identity, never the account's.
+
+    The ONE source of a forge-made commit's author and committer (user ruling 2026-10-25): on an HPC login
+    node git would otherwise sign with the account's passwd GECOS name. The machine and account stay
+    visible as data in the ``Forge-Host`` trailer (``<cluster>/<account>``), never as the author.
+    """
+    out = {key: value for key, value in (os.environ if env is None else env).items() if key != ENV}
+    email = forge_email(root)
+    for role in ('AUTHOR', 'COMMITTER'):
+        out[f'GIT_{role}_NAME'], out[f'GIT_{role}_EMAIL'] = FORGE_NAME, email
+    return out
 
 
 def sessions(root: Path, base: str, head: str) -> frozenset[str]:
