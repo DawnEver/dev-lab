@@ -9,22 +9,22 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import mergeresolution
-from dev_lab.dev.mergeresolution import BOTH_NEEDED, CLASSES, conflicted, undeclared
+from dev_lab.dev.mergeresolution import CLASSES, conflicted, undeclared
 
 _GIT = shutil.which('git') or 'git'
 
 
-def test_the_classes_are_the_named_set() -> None:
-    assert frozenset({'upstream-structure+lane-content', 'lane-supersedes', 'deleted-as-baggage', 'both-needed'}) == (
-        CLASSES
-    )
+def test_the_classes_are_the_resolution_principles() -> None:
+    assert frozenset({
+        'newer-structure', 'simpler-side', 'one-source', 'deleted-as-baggage', 'renamed-to-reality', 'both-needed'
+    }) == CLASSES
 
 
 def test_every_conflicted_file_declared_once_with_a_class_passes() -> None:
     message = (
         'chore(merge): lane into integrate/main\n\n'
-        'src/a.py: upstream-structure+lane-content -- rows moved into the derived table\n'
-        'src/b.py: lane-supersedes\n'
+        'src/a.py: newer-structure -- rows moved into the derived table\n'
+        'src/b.py: one-source -- the two copies of the table are one\n'
         'Merged-Branch: lane\n'
     )
     assert undeclared(('src/a.py', 'src/b.py'), message) == ()
@@ -32,16 +32,17 @@ def test_every_conflicted_file_declared_once_with_a_class_passes() -> None:
 
 
 def test_each_way_a_declaration_fails_is_refused_by_name() -> None:
-    """PLANTED CONTROLS: missing, twice, unknown class, both-needed without why, and an over-claim."""
+    """PLANTED CONTROLS: missing, twice, unknown class, any class without its why, and an over-claim."""
     missing = undeclared(('src/a.py',), 'merge\n')
     assert len(missing) == 1
     assert missing[0].startswith('src/a.py: not declared')
-    twice = 'src/a.py: lane-supersedes\nsrc/a.py: deleted-as-baggage\n'
+    twice = 'src/a.py: simpler-side -- x\nsrc/a.py: deleted-as-baggage -- y\n'
     assert any('declared 2 times' in line for line in undeclared(('src/a.py',), twice))
-    assert any('not a resolution class' in line for line in undeclared(('src/a.py',), 'src/a.py: mine\n'))
-    assert any('needs its why' in line for line in undeclared(('src/a.py',), f'src/a.py: {BOTH_NEEDED}\n'))
-    assert undeclared(('src/a.py',), f'src/a.py: {BOTH_NEEDED} -- both rows are live\n') == ()
-    over = undeclared((), 'src/z.py: lane-supersedes -- claimed\n')
+    assert any('not a resolution class' in line for line in undeclared(('src/a.py',), 'src/a.py: mine -- y\n'))
+    for cls in sorted(CLASSES):
+        assert any('needs its why' in line for line in undeclared(('src/a.py',), f'src/a.py: {cls}\n')), cls
+        assert undeclared(('src/a.py',), f'src/a.py: {cls} -- the first-principles reason\n') == (), cls
+    over = undeclared((), 'src/z.py: simpler-side -- claimed\n')
     assert over == ('src/z.py: declared, but the parents do not conflict on it -- delete the line',)
 
 
@@ -85,12 +86,12 @@ def test_the_commit_msg_hook_refuses_an_undeclared_conflict_and_passes_a_declare
 ) -> None:
     monkeypatch.chdir(conflicting)
     message = conflicting / 'MSG'
-    message.write_text('merge lane\n\nsrc/c.py: lane-supersedes -- claimed, but c merged clean\n', encoding='utf-8')
+    message.write_text('merge lane\n\nsrc/c.py: simpler-side -- claimed, but c merged clean\n', encoding='utf-8')
     assert mergeresolution.main([str(message)]) == 1
     err = capsys.readouterr().err
     assert 'src/a.py: not declared' in err
     assert 'src/c.py: declared, but the parents do not conflict' in err
-    message.write_text('merge lane\n\nsrc/a.py: lane-supersedes -- main holds the newer X\n', encoding='utf-8')
+    message.write_text('merge lane\n\nsrc/a.py: simpler-side -- main holds the newer X\n', encoding='utf-8')
     assert mergeresolution.main([str(message)]) == 0, capsys.readouterr().err
 
 
@@ -124,7 +125,7 @@ def test_a_strategy_that_picks_a_side_still_declares_the_conflict(
     message = tmp_path / 'MSG'
     message.write_text('merge lane\n', encoding='utf-8')
     assert mergeresolution.main([str(message)]) == 1
-    message.write_text('merge lane\n\nsrc/a.py: lane-supersedes -- the strategy kept one side\n', encoding='utf-8')
+    message.write_text('merge lane\n\nsrc/a.py: simpler-side -- the strategy kept one side\n', encoding='utf-8')
     assert mergeresolution.main([str(message)]) == 0
 
 
