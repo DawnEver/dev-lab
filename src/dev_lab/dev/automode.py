@@ -90,8 +90,8 @@ INTENTS: Final[dict[str, str]] = {
     ),
     'close-landed': 'Closing pull requests whose head is already merged into their base branch.',
     'close-superseded': (
-        'Closing an open pull request whose content was salvaged into another open pull request, with a '
-        'comment naming the replacement, then deleting its branch only if that loses no commit.'
+        'Closing an open pull request whose content was salvaged into another open pull request or a '
+        'commit, with a comment naming the replacement; its branch is never deleted.'
     ),
     'lossless-prune': (
         'Deleting a remote branch only when every commit on it is already on the integration branch or on '
