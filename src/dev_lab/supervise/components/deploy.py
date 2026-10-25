@@ -18,10 +18,12 @@ is somebody working; resetting it would destroy that work to make a number go gr
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from subprocess import CompletedProcess
 from typing import Final
 
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.supervise.component import ActionContext, CheckContext, Component, Handler
 from dev_lab.supervise.deploy import PhaseResult, Plan
 from dev_lab.supervise.deploy import deploy as run_deploy
@@ -278,6 +280,27 @@ def _settle(ctx: ActionContext, plan: Plan, outcome: PhaseResult) -> bool:
     return True
 
 
+def _capped_runner(ctx: CheckContext | ActionContext) -> Callable[..., CompletedProcess[str]]:
+    """Return one retry-door attempt run through the manager's capped runner.
+
+    Args:
+        ctx: the acting or checking context, for the process manager.
+
+    Returns:
+        A runner called as :func:`~dev_lab.dev.bounded.run_bounded` is. The manager owns the
+        environment, so the door's no-prompt keys are not forwarded; the timeout is per attempt.
+
+    """
+
+    def run(
+        argv: list[str], *, cwd: str | None = None, timeout: float | None = None, **_: object
+    ) -> CompletedProcess[str]:
+        ran = ctx.manager.run_capped(argv, memory_max='256M', timeout=int(timeout or 300), cwd=cwd)
+        return CompletedProcess(argv, ran.code, ran.out, ran.err)
+
+    return run
+
+
 def _remote(ctx: CheckContext | ActionContext, plan: Plan) -> Snapshot | None:
     """Return the release the remote now holds, or None when it cannot be read.
 
@@ -295,10 +318,12 @@ def _remote(ctx: CheckContext | ActionContext, plan: Plan) -> Snapshot | None:
         # FETCH FIRST. Reading `origin/main` without one reads whatever the last fetch left, which
         # is how a three-day-old ref came to be reported as the remote's current state twice in one
         # session. A fetch that fails is a `None` here, not a stale answer.
-        fetched = ctx.manager.run_capped(
+        # Through the ONE retry door (NETWORK-RETRY-THEN-REPORT): a forge blip is retried, each
+        # attempt still run under the manager's memory ceiling.
+        fetched = run_network_verb(
             ['git', '-C', plan.repositories[name], 'fetch', 'origin', '--quiet'],
-            memory_max='256M',
             timeout=300,
+            run=_capped_runner(ctx),
         )
         if not fetched.ok:
             return None
