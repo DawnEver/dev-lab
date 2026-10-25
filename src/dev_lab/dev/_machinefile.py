@@ -19,7 +19,7 @@ __all__ = ['diff', 'merged']
 #: A ``[table]`` or ``[[array]]`` header line.
 _HEADER: Final = re.compile(r'^\s*(\[\[?)\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
 
-Value = str | int | float | list[str]
+Value = str | int | float | list[str] | dict[str, 'Value']
 
 
 def _render(value: Value) -> str:
@@ -27,6 +27,8 @@ def _render(value: Value) -> str:
         return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
     if isinstance(value, list):
         return '[' + ', '.join(_render(v) for v in value) + ']'
+    if isinstance(value, dict):
+        return '{ ' + ', '.join(f'{k} = {_render(v)}' for k, v in value.items()) + ' }'
     return repr(value)
 
 
