@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Final
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgework import PullRequest
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.trialmerge import rev, shares_unmerged
+from dev_lab.dev.trialmerge import contains, rev, shares_unmerged
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -43,9 +43,11 @@ def advice(root: Path, *, head: str, tip: str, others: Iterable[PullRequest]) ->
     own = sessions(root, tip, head)
     said = []
     for other in others:
-        if not other.head_sha or other.head_sha == head:
-            continue
-        if shares_unmerged(root, head, other.head_sha, tip):
+        if not other.head_sha or other.head_sha == head or contains(root, tip, other.head_sha):
+            continue  # itself, or already in integration: nothing to tell
+        if contains(root, head, other.head_sha):
+            said.append(f'carries open PR {_label(other)} whole: landing this lands it')
+        elif shares_unmerged(root, head, other.head_sha, tip):
             said.append(
                 f'stacked on open PR {_label(other)} (NO-STACKED-PRS): it holds commits integration does not; '
                 f'it lands only after {_label(other)}'

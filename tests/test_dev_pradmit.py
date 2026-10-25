@@ -84,7 +84,8 @@ def test_heads_whose_commits_carry_no_session_are_not_judged(repo: Path) -> None
 def test_a_head_stacked_on_another_open_head_is_told_so(repo: Path) -> None:
     first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
     stacked = _head(repo, 'pr/stacked', ('feat: b', 'session-two'), start='pr/first')
-    (said,) = pradmit.advice(repo, head=stacked, tip=_TIP, others=[_open(7, 'pr/first', first)])
+    grown = _head(repo, 'pr/first', ('feat: a2', 'session-one'), start=first)  # it moved on after the cut
+    (said,) = pradmit.advice(repo, head=stacked, tip=_TIP, others=[_open(7, 'pr/first', grown)])
     assert 'stacked' in said
     assert '#7' in said
 
@@ -127,3 +128,14 @@ def test_an_open_head_not_fetched_is_named_unjudged_and_never_refuses(repo: Path
     (said,) = pradmit.create_advice(repo, object(), head='pr/second', base='integrate/main')
     assert 'fetch' in said
     assert '#7' in said
+
+
+def test_a_head_carrying_another_open_head_whole_is_told_it_lands_it(repo: Path) -> None:
+    """A milestone that merges an open PR whole carries it; PLANTED CONTROL: a partial share is a stack."""
+    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
+    carrier = _head(repo, 'pr/milestone', ('merge: first', 'session-two'), start='pr/first')
+    (said,) = pradmit.advice(repo, head=carrier, tip=_TIP, others=[_open(7, 'pr/first', first)])
+    assert 'carries open PR #7' in said
+    grown = _head(repo, 'pr/first', ('feat: a2', 'session-one'), start=first)
+    (said,) = pradmit.advice(repo, head=carrier, tip=_TIP, others=[_open(7, 'pr/first', grown)])
+    assert 'stacked' in said
