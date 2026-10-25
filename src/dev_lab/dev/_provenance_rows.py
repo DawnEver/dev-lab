@@ -249,6 +249,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'hostrefresh': ('original',),
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees': ('original',),
+    # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
+    'reclaim': ('original',),
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
     'privatemarkers': ('original',),

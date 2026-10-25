@@ -59,7 +59,7 @@ def test_the_census_touches_nothing(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     lines = prune(work, apply=False) or ()
     assert any(line.startswith('prunable') and 'done' in line for line in lines)
-    assert any(line.startswith('orphan') and 'empty' in line for line in lines)
+    assert any(line.startswith('prunable') and 'empty' in line for line in lines)
     assert (work / '.claude' / 'worktrees' / 'done').is_dir()
     assert (work / '.claude' / 'worktrees' / 'empty').is_dir()
 
