@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 __all__ = [
     'REVIEWER_STATUSES',
@@ -23,7 +26,10 @@ __all__ = [
     'FindingsInvalid',
     'Reviewer',
     'UnknownSchemaVersion',
+    'counted',
+    'merge_outputs',
     'parse_findings',
+    'render',
 ]  # fmt: skip
 
 #: The ``schema_version`` values this reader knows.
@@ -141,3 +147,43 @@ def parse_findings(text: str) -> Findings:
         tuple(_reviewer(row, at) for at, row in enumerate(got['reviewers'])),
         tuple(_finding(row, at) for at, row in enumerate(got['findings'])),
     )  # fmt: skip
+
+
+def merge_outputs(texts: Sequence[str], range_: str) -> str:
+    """ONE findings document of the slice outputs *texts* over *range_*: reviewers in order, findings once by id.
+
+    Each output is read first (:func:`parse_findings`), so a slice printing an unknown version is refused here.
+    """
+    for text in texts:
+        parse_findings(text)
+    docs = [json.loads(text) for text in texts]
+    findings = {row['id']: row for doc in docs for row in doc['findings']}
+    merged = {
+        'schema_version': docs[0]['schema_version'], 'range': range_,
+        'profiles': list(dict.fromkeys(name for doc in docs for name in doc['profiles'])),
+        'reviewers': [row for doc in docs for row in doc['reviewers']], 'findings': list(findings.values()),
+    }  # fmt: skip
+    return json.dumps(merged, ensure_ascii=False)
+
+
+def render(head: str, found: Findings) -> str:
+    """The one PR comment: who reviewed with what status, then each finding, most severe first."""
+    who = ', '.join(f'`{one.name}` ({one.provider or "-"}): {one.status}' for one in found.reviewers) or 'none'
+    rows = sorted(found.findings, key=lambda one: SEVERITIES.index(one.severity))
+    lines = [
+        f'- **{one.severity}** `{one.file}` -- {one.summary} ({one.id}, {one.category}, {one.confidence}; '
+        f'by {", ".join(one.reviewers)})'
+        + (f'\n  - principles: {", ".join(one.principles)}' if one.principles else '')
+        + (f'\n  - suggestion: {one.suggestion}' if one.suggestion else '')
+        for one in rows
+    ]
+    body = '\n'.join(lines) or 'No findings.'
+    return (
+        f'**Advisory review** of `{head[:12]}` over `{found.range}` -- it gates nothing.\n\nReviewers: {who}\n\n{body}'
+    )
+
+
+def counted(found: Findings) -> str:
+    """How many findings *found* holds, and how many are HIGH."""
+    high = sum(one.severity == 'HIGH' for one in found.findings)
+    return f'{len(found.findings)} finding(s), {high} HIGH'

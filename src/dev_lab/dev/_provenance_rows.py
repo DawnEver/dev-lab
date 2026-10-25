@@ -146,6 +146,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgemerge': ('original',),
     'forgereview': ('original',),
     'forgereview_findings': ('original',),
+    # ORIGINAL: the review read the whole diff or nothing; the slice budget and lenses are new here.
+    'forgereview_scope': ('original',),
     'integrate': ('original',),
     'forgepulls': ('original',),
     'forgesync': ('original',),
