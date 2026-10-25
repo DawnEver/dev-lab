@@ -284,6 +284,9 @@ class _Slurm:
         self.withdrawn += run.job_ids
         return list(self.started)
 
+    def strays(self, _held: object) -> list[str]:
+        return []
+
 
 def _claimed(*work: Work) -> TickReport:
     return TickReport(work, work, ('tick: one line',))
@@ -1438,3 +1441,22 @@ def test_jobs_without_a_session_tag_alarm(monkeypatch, tmp_path: Path) -> None:
     # Planted control: every job tagged, nothing is raised.
     _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
     assert [a for a in alarms if a.kind == UNTAGGED] == []
+
+
+class _Strays(_Slurm):
+    """Slurm holding forge jobs no run file names any more."""
+
+    def strays(self, _held: object) -> list[str]:
+        return ['9001', '9002']
+
+
+def test_forge_jobs_whose_run_is_gone_are_cancelled_and_counted(monkeypatch, tmp_path: Path) -> None:
+    """Ada 2026-10-25: 25 % of a day's core-hours were orphans; every tick sweeps them, with no run in flight too."""
+    quiet = TickReport((), (), ('tick',))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Strays, host='base')
+    (raised,) = [a for a in alarms if 'orphaned' in a.subject]
+    assert '2' in raised.subject
+    assert '9001 9002' in raised.body
+    # Planted control: no stray, nothing is raised.
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
+    assert [a for a in alarms if 'orphaned' in a.subject] == []

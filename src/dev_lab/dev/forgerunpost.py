@@ -15,17 +15,17 @@ from lab_commons.hpc.run import NoRoom
 from dev_lab.dev.artefacts import MissingOutput
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import Claim, forge_now
-from dev_lab.dev.forgerunstate import Run, save
+from dev_lab.dev.forgerunstate import Killed, Run, save
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import Client, ForgeCallFailed
 from dev_lab.dev.platformparts import part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from datetime import timedelta
 
-__all__ = ['DESCRIPTION_MAX', 'lost', 'orphaned', 'release', 'release_reason_for', 'report', 'step']
+__all__ = ['DESCRIPTION_MAX', 'killed', 'lost', 'orphaned', 'release', 'release_reason_for', 'report', 'step']
 
 #: A status description is short on every forge.
 DESCRIPTION_MAX: Final = 140
@@ -92,3 +92,27 @@ def orphaned(run: Run, jobs: list[str]) -> Alarm:
         f'jobs {shlex.join(jobs)} run under this account but no run state was recorded, so the tick will not '
         'resubmit. Remedy: scancel them; the next tick submits the run afresh.',
     )
+
+
+def killed(client: Client, run: Run, jobs: Sequence[Killed], say: Callable[[str], None], tag: str) -> None:
+    """Post *jobs* Slurm killed for memory or time as ``slurm/<part>`` ``failure``: counts, the worst used/asked.
+
+    Their own context, so the part's verdict stays the record's; the asks are already learned
+    (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.killed`). Nothing killed posts nothing.
+    """
+    if not jobs:
+        return
+    say(f'{tag}: killed by Slurm: {"; ".join(one.text() for one in jobs)}')
+    words = []
+    for state in sorted({one.state for one in jobs}):
+        some = [one for one in jobs if one.state == state]
+        worst = max(some, key=lambda one: one.used_mb if state == 'OUT_OF_MEMORY' else one.used_s)
+        used = (
+            f'{worst.used_mb}/{worst.asked_mb} MB' if state == 'OUT_OF_MEMORY' else f'{worst.used_s}/{worst.asked_s} s'
+        )
+        words.append(f'{len(some)} {state} (worst {worst.job} used/asked {used})')
+    description = f'{"; ".join(words)}; next ask learned'[:DESCRIPTION_MAX]
+    try:
+        status_post(client, run.sha, context=f'slurm/{run.platform}', state='failure', description=description)
+    except ForgeCallFailed as failed:  # a missed report is not a dead run
+        say(f'{tag}: could not post the killed jobs: {failed}')

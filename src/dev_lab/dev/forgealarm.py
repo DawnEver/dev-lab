@@ -15,7 +15,8 @@ origin's branch hygiene (:mod:`dev_lab.dev.branchprune`), raised by whichever ho
 branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
 (``stale-branch``), which are never deleted; and an account whose storage is still near its quota after
 the retention pass (``storage``), and jobs on a cluster account that carry no session tag
-(``untagged``). And one is a fact about a UNIT, not a host: the same commit and context gave
+(``untagged``), and a served repo's declared tool that no longer runs on its account (``needs``).
+And one is a fact about a UNIT, not a host: the same commit and context gave
 two different results (``nondeterminism``, :func:`dev_lab.dev.forgeoutbox.flush`) -- the first stands.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
@@ -60,6 +61,7 @@ __all__ = [
     'INTEGRATION',
     'ISSUE_KINDS',
     'LEASE',
+    'NEEDS',
     'NONDETERMINISM',
     'PRUNED',
     'RUN',
@@ -99,6 +101,8 @@ NONDETERMINISM: Final = 'nondeterminism'
 STORAGE: Final = 'storage'
 #: Jobs on a cluster account carry no session tag: they hold an unthrottled share (:mod:`lab_commons.hpc.allocation`).
 UNTAGGED: Final = 'untagged'
+#: A served repo's declared need no longer runs on its cluster account (:mod:`dev_lab.dev.hpchost.tick`).
+NEEDS: Final = 'needs'
 
 
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:
