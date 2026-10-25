@@ -1,7 +1,7 @@
 """The findings JSON a declared review command prints: read at a KNOWN ``schema_version`` only, else refused by name.
 
-The format is the sharp-review method's findings output (``method/findings-output.schema.json``, owned by
-sharp-review, not here): one review run's merged result -- the range, the profiles that ran, every planned
+The format is the sharp-review method's findings output (``findings-output.schema.json``, owned by ai-lab's
+packaged method, not here): one review run's merged result -- the range, the profiles that ran, every planned
 reviewer with its status, and the deduplicated findings. This reader checks what the forge relies on (the
 version, the required fields, the closed vocabularies) and builds frozen records; it never guesses at a
 version it does not know (:class:`UnknownSchemaVersion`), because a renamed field or a new status is exactly

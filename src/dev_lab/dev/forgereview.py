@@ -40,9 +40,8 @@ nothing and posts nothing), drafts skipped, generated files never read, ``max_to
     [tool.lab_commons.review]
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light
     # {capabilities.<name>.<key>}: THIS host's machine-file value (the repo says WHAT, the host says WHERE)
-    # the installed `ai-lab` console script; the method path stays a capability while its data lives in cc-market
-    command = ["ai-lab", "review", "--method", "{capabilities.sharp_review.path}",
-               "--range", "{range}", "--lens", "{lens}", "--model", "<id>", "--paths", "{paths}"]
+    # the installed `ai-lab` console script; it reads the sharp-review method it packages
+    command = ["ai-lab", "review", "--range", "{range}", "--lens", "{lens}", "--model", "<id>", "--paths", "{paths}"]
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_diff_bytes = 200000    # one slice: what one reviewer reads
     max_total_bytes = 4000000  # one head: past it, held for a session
