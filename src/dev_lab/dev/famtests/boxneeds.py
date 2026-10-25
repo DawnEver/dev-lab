@@ -27,8 +27,8 @@ TWO KINDS OF NEED, because two different facts are missing on the cluster:
 * A call under ``pytest.raises`` needs nothing: it tests the body REFUSING (no node, no engine), and
   that refusal is exactly what a host without the resource can measure.
 
-WHAT IS DELIBERATELY NOT HERE. ``origin`` checks (``visibility.assert_origin_branch_set``,
-``branchset.assert_origin_branches_declared``) read the repo's remote, which the per-repo cluster
+WHAT IS DELIBERATELY NOT HERE. ``origin`` checks (``visibility.assert_origin_branch_set``) read the repo's remote,
+which the per-repo cluster
 cache carries; marking them would hand a measurable check to a narrower part.
 """
 
@@ -76,7 +76,6 @@ NEEDS: Final[Mapping[str, Need]] = {
     f'{_PKG}.visibility.assert_one_pushable_branch': _LIVE,
     f'{_PKG}.visibility.assert_local_only_branches': _LIVE,
     f'{_PKG}.worktreeplace.assert_every_worktree_stays_inside': _LIVE,
-    f'{_PKG}.branchset.assert_local_branches_declared': _LIVE,
 }
 
 _MARKERS_TABLE: Final = '[tool.lab_commons.tests] resources'
