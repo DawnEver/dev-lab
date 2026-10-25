@@ -27,7 +27,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'DOCS-ONLY-CARRIES',
         (
             'A head whose diff from its nearest tested ancestor reaches no test footprint runs nothing: its parts and '
-            'review are carried from that ancestor (`forgecarry.docs_only`).'
+            'review are carried from that ancestor (`forgecarry.docs_only`); a data-only head (memory, docs) never '
+            'cancels the run in flight, it waits and carries every outcome its diff cannot reach.'
         ),
         (
             'tests/test_dev_forgecarry.py',

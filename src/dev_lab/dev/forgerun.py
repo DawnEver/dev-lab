@@ -86,7 +86,7 @@ from lab_commons.hpc.tree import NotSubmitted
 from dev_lab.dev import forgerunpost, forgeship
 from dev_lab.dev.artefacts import MissingOutput, run_id
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
-from dev_lab.dev.forgecarry import equivalent, publish
+from dev_lab.dev.forgecarry import data_only, equivalent, publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from dev_lab.dev.forgecoalesce import DRAINING, PUBLISHING
 from dev_lab.dev.forgeroute import pyproject_at, route
@@ -221,13 +221,15 @@ def _superseding_tip(root: Path, run: Run) -> str:
 
     A DOCS-ONLY tip never supersedes (DOCS-ONLY-CARRIES, :func:`dev_lab.dev.forgecarry.docs_only`): no test's
     footprint reaches its diff, so its part IS this run's result, posted on it too when it lands (:func:`publish`).
+    A DATA-ONLY tip (a memory or docs head a whole-tree test still reads, P6) never supersedes either: it waits
+    on this run and then carries every outcome its diff cannot reach (:func:`dev_lab.dev.forgecarry.docs_only`).
     :data:`_REF_GONE` when the ref itself is gone and no live head carries the run (:func:`_ref_gone`).
     """
     if _ref_gone(root, run):
         return _REF_GONE
     tip = tip_of(root, run.ref)
     moved = tip and tip != run.sha and coalesced(root, run.ref)
-    return tip if moved and not equivalent(root, run.sha, tip) else ''
+    return tip if moved and not (equivalent(root, run.sha, tip) or data_only(root, run.sha, tip)) else ''
 
 
 def _integration(root: Path) -> str:
