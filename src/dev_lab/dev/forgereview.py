@@ -1,4 +1,4 @@
-"""PR-REVIEW-IS-ADVISORY: the repo's declared review command on every open PR into integration, once per head.
+"""PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on every open PR into integration, per head.
 
 Step 4 of the branch flow (user ruling 2026-10-19). Gitea only: GitHub is ONLY a push mirror, and no GitHub
 pull request is read or reviewed.
@@ -15,12 +15,19 @@ derives the integration queue.
 WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integration`` whose head carries no
 :data:`REVIEW_CONTEXT` status yet:
 
-* the findings as ONE comment keyed by the head sha (``Marker.REVIEW``);
-* a :data:`REVIEW_CONTEXT` status on the head: ``success`` once posted, ``pending`` saying
+* the head's review ROUND as ONE comment keyed by the head sha (``Marker.REVIEW``): its tagged findings carried
+  from the earlier rounds, re-checked, and recorded as a ledger (:mod:`dev_lab.dev.forgereview_rounds`; round 1
+  opens with the change's context summary). Past ``max_rounds`` no command runs: only the blocking findings are
+  re-checked, and the non-blocking ones move to ONE follow-up issue;
+* a :data:`REVIEW_CONTEXT` status on the head: ``failure`` while an open ``HIGH`` or security finding is neither
+  fixed nor disposed (``forge review dispose``, :mod:`dev_lab.dev.forgereview_dispose`), else ``success`` -- the
+  auto-merge waits on a ``failure`` and on a head not yet reviewed (:func:`dev_lab.dev.forgemerge.review_blocks`);
+  ``pending`` saying
   :data:`TAKEOVER_PENDING` when every reviewer was ``exhausted`` or ``auth`` (nothing is commented; the integrator
   session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
-  when the command failed or printed no known findings version. ADVISORY:
-  :func:`dev_lab.dev.platformparts.parts_of` skips that context, so promotion and push admission never wait on it;
+  when the command failed or printed no known findings version (those two stay advisory: no finding exists).
+  It is not a PART (:func:`dev_lab.dev.platformparts.parts_of` skips it): promotion and push admission never wait
+  on it, the merge does;
 * ``pending`` saying :data:`OVER_CAP_TAKEOVER`, with a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT`
   beside it, when a metered program review cannot read the head (its reviewable change is over
   ``max_total_bytes``, one file alone is over ``max_diff_bytes``, or it needs several slices and the command takes
@@ -47,6 +54,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {model}: `model`; {capabilities.<name>.<key>}: THIS host's machine-file value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
+    max_rounds = 3             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, blocking re-checks only
     max_diff_bytes = 200000    # one slice: what one reviewer reads
     max_total_bytes = 4000000  # one head: past it, held for a session
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
@@ -86,16 +94,10 @@ from lab_commons.config import section
 from lab_commons.units import Q_
 
 from dev_lab.dev.forgecarry import RUNNING, docs_only
-from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comment_upsert, pr_list
+from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
-from dev_lab.dev.forgereview_findings import (
-    Findings,
-    FindingsInvalid,
-    UnknownSchemaVersion,
-    counted,
-    parse_findings,
-    render,
-)
+from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
 from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
@@ -121,7 +123,6 @@ __all__ = [
     'Review',
     'command_for',
     'load_review',
-    'render',
     'review_from',
     'review_tick',
     'step',
@@ -201,6 +202,7 @@ class Review:
     command: tuple[str, ...] = FAMILY_COMMAND  # declare only a genuinely different method
     model: str = FAMILY_MODEL  # fills ``{model}``
     synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
+    max_rounds: int = FAMILY_MAX_ROUNDS  # full rounds per PR; past it, the open blocking findings are re-checked only
     max_diff_bytes: int = 200_000  # one slice
     max_total_bytes: int = 4_000_000  # one head
     derived: tuple[str, ...] = ()
@@ -360,8 +362,8 @@ def _unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     return f'#{pull.number} {head[:12]}: {said}'
 
 
-def _settle(client: Client, pull: PullRequest, found: Findings) -> str:
-    """Replace the claim on *pull*'s head with the final status *found* earns (and its comment); the line said."""
+def _settle(root: Path, client: Client, pull: PullRequest, review: Review, *, reviewed: str, found: Findings) -> str:
+    """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
@@ -373,13 +375,20 @@ def _settle(client: Client, pull: PullRequest, found: Findings) -> str:
         why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
-    _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=render(head, found))
-    url = comment.url if comment else ''
-    status_post(
-        client, head, context=REVIEW_CONTEXT, state='success', target_url=url,
-        description=f'advisory review posted: {counted(found)}; it does not gate the merge',
-    )  # fmt: skip
-    return f'#{pull.number} {head[:12]}: reviewed, {counted(found)}'
+    return post_round(root, client, pull, reviewed, found=found, max_rounds=review.max_rounds)
+
+
+def _without_command(root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope) -> str | None:
+    """The line said when *pull*'s head is settled with no command run (past the cap, held, nothing to read)."""
+    head = pull.head_sha
+    if capped(client, pull, review.max_rounds):  # past max_rounds: the blocking findings re-checked only
+        return post_round(root, client, pull, scope.range, found=None, max_rounds=review.max_rounds, by='re-check')
+    if scope.held is None and scope.slices:
+        return None
+    state, why = ('pending', f'{OVER_CAP_TAKEOVER} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
+    status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:_DESCRIPTION])
+    status_post(client, head, context=HOLD_CONTEXT, state=state, description=why[:_DESCRIPTION])
+    return f'#{pull.number} {head[:12]}: {why}'
 
 
 def review_tick(
@@ -411,13 +420,8 @@ def review_tick(
             lines.extend([f'#{pull.number} {head[:12]}: {passed}'] if passed else [])
             continue
         scope = _scope(root, client, review, pull, target)
-        if scope.held is not None or not scope.slices:
-            state, why = (
-                ('pending', f'{OVER_CAP_TAKEOVER} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
-            )
-            status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:_DESCRIPTION])
-            status_post(client, head, context=HOLD_CONTEXT, state=state, description=why[:_DESCRIPTION])
-            lines.append(f'#{pull.number} {head[:12]}: {why}')
+        if (said := _without_command(root, client, review, pull, scope)) is not None:
+            lines.append(said)
             continue
         try:
             argvs = [command_for(review, scope.range, capabilities, paths=s.paths, lens=s.lens) for s in scope.slices]
@@ -445,7 +449,7 @@ def review_tick(
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
             continue
-        lines.append(_settle(client, pull, found))
+        lines.append(_settle(root, client, pull, review, reviewed=scope.range, found=found))
     return tuple(lines)
 
 

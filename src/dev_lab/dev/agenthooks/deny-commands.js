@@ -483,7 +483,7 @@ function logRefusal(name, where) {
   const python = venvPython(sessionRoot);
   if (!python) return;
   try {
-    const argv = ['-m', 'dev_lab.dev.metrics', 'record', 'refusal', '--rule', name, '--reason', 'agent-guard'];
+    const argv = ['-m', 'dev_lab.dev.metrics_report', 'record', 'refusal', '--rule', name, '--reason', 'agent-guard'];
     spawn(python, argv, { cwd: where, detached: true, stdio: 'ignore', windowsHide: true }).unref();
   } catch {
     // a metrics line never blocks the refusal it describes

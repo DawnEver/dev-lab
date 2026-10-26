@@ -337,12 +337,17 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
 * :mod:`dev_lab.dev.forgetry` -- ``forge try <paths>``: named tests on a host with room now, or ``no room`` at once.
 * :mod:`dev_lab.dev.forgewait` -- a part's wait answered, bounded and seen: why a box does not admit it, until when.
-* :mod:`dev_lab.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
+* :mod:`dev_lab.dev.forgereview` -- the review of each open PR head by the declared command; HIGH/security block.
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
+* :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-checked, capped.
+* :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose``: the integrator closes a blocking finding.
+* :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: the integrator reviews a head held over the cap.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: an over-cap head is the integrator's; the door releases
-* :mod:`dev_lab.dev.metrics` -- the toolchain's baseline: refusals and hand actions, one JSONL per kind, and their read.
+* :mod:`dev_lab.dev.metrics` -- the toolchain's baseline: refusals and hand actions, one JSONL per kind (record).
+* :mod:`dev_lab.dev.metrics_compute` -- the plan's figures from the recorded lines, forge pulls and git landings.
+* :mod:`dev_lab.dev.metrics_report` -- the family's metrics over one window, and the metrics CLI.
 * :mod:`dev_lab.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`dev_lab.dev.mergeresolution` -- a conflicted merge names, per conflicted file, how it was resolved and why.
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
