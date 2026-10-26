@@ -10,10 +10,15 @@ a tracked file, since the forge, its repos and the login host are private to the
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
     repos = [{ name = "dev-lab", url = "<https url>", ref = "<branch>" }, { name = "<repo>", ... }, ...]
+    # an entry may add serve = false: checked out and installed, its forge queue not served by this account
+
+    [schedule]
+    tick_minutes = 15              # the cron period (divides 60; default 5) -- also what the host card is judged by
 
 The first run DECLARES it with ``--host <host> --repo <name>=<url>@<ref> ... --partition <p> ...`` (written
 once; a later run with flags that disagree is refused, naming the file); every later run reads it.
-``dev-lab`` (the kit) is always among the repos: every tick RUNS it, so the host serves it.
+``dev-lab`` (the kit) is always among the repos: every tick RUNS it and its own line is the one writer of
+its checkout; whether this account also serves dev-lab's queue is that entry's ``serve``.
 
 STEPS, each one reporting, each one safe to repeat: refuse off the declared host; check the account BEFORE
 anything changes (:mod:`dev_lab.dev.hpchost.account`: git's credential helper and its store, every repo's
@@ -27,9 +32,10 @@ once, the file backed up first); build each ``.venv`` with the repo's own ``[too
 (and its ``native`` build) -- exactly what its committed lock pins, nothing installed over it -- skipped when
 the key of its inputs (the lock's hash among them) is unchanged; warn, naming the recipe, when a repo declares an rclone
 artefact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
-are then not claimed here); replace this tool's marked crontab lines (one per repo, every 5 min, under
-``flock -n``) and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes
-nothing; ``--remove`` deletes the marked lines only. No credential is ever printed.
+are then not claimed here); replace this tool's marked crontab lines (one per served repo and the kit, every
+``[schedule] tick_minutes`` at a minute offset derived per account, under ``flock -n``)
+and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes nothing;
+``--remove`` deletes the marked lines only. No credential is ever printed.
 
 A REFUSAL BELONGS TO THE REPO THAT EARNED IT (incident 2026-10-13: one repo still declaring a retired
 ``[tool.lab_commons.<table>]`` stopped the whole deploy at ``[tools]``, so the host served none of three).
@@ -157,10 +163,10 @@ def _declared(args: argparse.Namespace, path: Path) -> Deployment | str:
 
 
 def _resolve(args: argparse.Namespace, path: Path) -> Deployment | str:
-    """The declared deployment, refused unless it serves the kit (dev-lab) -- the code every tick runs."""
+    """The declared deployment, refused unless it declares the kit (dev-lab) -- the code every tick runs."""
     spec = _declared(args, path)
     if isinstance(spec, Deployment) and KIT not in {repo.name for repo in spec.repos}:
-        return f'every tick runs {KIT}, so the host serves it: add --repo {KIT}=<https url>@<branch>'
+        return f'every tick runs {KIT}, so the host checks it out: add --repo {KIT}=<https url>@<branch>'
     return spec
 
 

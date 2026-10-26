@@ -143,7 +143,7 @@ def test_twice_gives_one_marked_line_per_repo_and_keeps_the_users_own(box: Box) 
     assert {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked} == {'dev-lab', 'alpha', 'beta'}
     assert len(marked) == 3
     alpha = next(line for line in marked if line.endswith('alpha'))
-    assert alpha.startswith('*/5 * * * * ')
+    assert alpha.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
     assert 'flock -n' in alpha
     assert alpha.split(' >> ')[0].endswith('dev_lab.dev.hpchost tick alpha'), 'the host ticks the repo'
     assert f'cd {shlex.quote(str(box.home / "src" / "dev-lab"))} &&' in alpha, (
@@ -426,7 +426,7 @@ def test_the_tick_runs_inside_the_grant_setup_and_its_git_is_proven_there(
     marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
     assert marked
     for line in marked:
-        argv = shlex.split(line.removeprefix('*/5 * * * * ').split(deploy_spec.MARK)[0])
+        argv = shlex.split(line.split(' ', 5)[5].split(deploy_spec.MARK)[0])
         assert argv[:2] == ['bash', '-lc'], line
         assert argv[2].startswith(f'PATH={box.home / ".local/bin"}:'), line
         assert f'; {setup}; cd ' in argv[2], line
@@ -588,3 +588,64 @@ def test_a_tick_whose_declared_need_no_longer_runs_serves_nothing_and_alarms_nam
     assert tick.account() in first.subject
     assert 'cmake' not in first.subject
     assert first.repo == f'{URL}/alpha.git'
+
+
+def _cron_spec(text: str, tmp_path: Path) -> deploy_spec.Deployment:
+    lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
+    base = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', (lab, deploy_spec.Repo('a', URL, 'r'))))
+    spec = deploy_spec.load(_write(tmp_path / 'config.toml', base + text))
+    assert spec is not None
+    return spec
+
+
+def test_the_cron_period_is_the_schedule_tick_minutes_staggered_per_account(tmp_path: Path) -> None:
+    """HPC pressure (2026-10-26): one period, ``[schedule] tick_minutes`` -- the one the host card is judged by.
+
+    Each account's minute offset is derived from its home, so accounts do not tick in lockstep.
+    PLANTED CONTROL: undeclared, the period is the schedule's one default (5).
+    """
+    spec = _cron_spec('\n[schedule]\ntick_minutes = 15\n', tmp_path)
+    assert spec.tick_minutes == 15
+    offsets = set()
+    for user in ('alice', 'bob', 'carol', 'dave', 'erin', 'frank'):
+        lines = deploy_spec.cron_lines(spec, Path('/home') / user)
+        assert len({line.split(' ', 1)[0] for line in lines}) == 1, 'one account ticks its repos together'
+        minute = lines[0].split(' ', 1)[0]
+        offset, _, step = minute.partition('-59/')
+        assert step == '15', minute
+        assert 0 <= int(offset) < 15, minute
+        assert lines == deploy_spec.cron_lines(spec, Path('/home') / user), 'deterministic'
+        offsets.add(offset)
+    assert len(offsets) > 1, 'accounts are staggered'
+    assert _cron_spec('', tmp_path).tick_minutes == 5
+
+
+@pytest.mark.parametrize('minutes', ['7', '0', '2.5', '"15"'])
+def test_a_tick_period_cron_cannot_keep_is_refused(tmp_path: Path, minutes: str) -> None:
+    with pytest.raises(ValueError, match='tick_minutes'):
+        _cron_spec(f'\n[schedule]\ntick_minutes = {minutes}\n', tmp_path)
+
+
+def test_an_unserved_kit_is_kept_fresh_but_its_queue_is_not_served(box: Box, tmp_path: Path) -> None:
+    """The kit is checked out and installed everywhere; serving dev-lab's QUEUE is declared per account.
+
+    ``serve = false`` on the kit: its line stays (its own tick is the one writer of the kit checkout) but the
+    tick only refreshes; on any other repo it means no line at all. PLANTED CONTROL: alpha still serves.
+    """
+    assert box.run(*DECLARE) == 0
+    text = box.machine.read_text(encoding='utf-8')
+    text = text.replace('dev-lab.git", ref = "trunk" }', 'dev-lab.git", ref = "trunk", serve = false }')
+    text = text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = false }')
+    box.machine.write_text(text, encoding='utf-8')
+    spec = deploy_spec.load(box.machine)
+    assert spec is not None
+    assert {r.name: r.serve for r in spec.repos} == {'dev-lab': False, 'alpha': True, 'beta': False}
+    assert deploy_spec.load(_write(tmp_path / 'again.toml', deploy_spec.render(spec))) == spec
+    assert box.run() == 0
+    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
+    assert {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked} == {'dev-lab', 'alpha'}
+    served: list[tuple[list[str], Path, str]] = []
+    assert _tick(box, 'dev-lab', served) == 0
+    assert served == [], 'the unserved kit is refreshed, never served'
+    assert _tick(box, 'alpha', served) == 0
+    assert len(served) == 1
