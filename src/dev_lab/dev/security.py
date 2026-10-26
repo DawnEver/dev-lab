@@ -1,20 +1,19 @@
-"""SECURITY -- the deterministic check every family repo must pass before a merge.
+"""SECURITY -- the three deterministic scans a head must pass before a merge, and the family default.
 
-Three scans, each a pure reading of the checkout, with the FAMILY DEFAULT declared once here; a repo
-passes only its DIFFERENCES as keyword arguments from its own test file (the famtests shape: the repo's
-answer stays visible in its tree, and nothing here is one repo's answer handed to another):
+The scans are pure readings of a tree; :mod:`dev_lab.dev.forgesecurity` runs them once per head as a forge serve
+step and posts ``tests/security``. The FAMILY DEFAULT is declared once here; a repo declares only its differences
+(``[tool.dev_lab.security]``, read by that step), every one with its reason:
 
-* :func:`code_findings` -- ruff's ``S`` (bandit) rules over the repo's tracked Python, run ``--isolated``
-  so a repo's own ``ignore`` or ``per-file-ignores`` cannot switch a rule off. The rules switched off for
-  the whole family are :data:`FAMILY_IGNORE`, each with its reason; the trees never scanned are
-  :data:`FAMILY_EXCLUDE`. A ``# noqa: Sxxx`` stays honoured: it is a per-site, reviewed declaration.
+* :func:`code_findings` -- ruff's ``S`` (bandit) rules over the tracked Python, run ``--isolated`` so a repo's
+  own ``ignore`` or ``per-file-ignores`` cannot switch a rule off. The rules off for the whole family are
+  :data:`FAMILY_IGNORE`, each with its reason; the trees never scanned are :data:`FAMILY_EXCLUDE`. A
+  ``# noqa: Sxxx`` stays honoured: it is a per-site, reviewed declaration.
 * :func:`secret_findings` -- every tracked text file against :data:`SECRET_PATTERNS`, plus any tracked
   ``.env`` file. A hit is reported as ``path:line: kind: sha256:<12 hex>`` and NEVER by value, so the
-  log of the check cannot leak what it found.
+  record of the check cannot leak what it found.
 * :func:`advisories` / :func:`vulnerable` -- every registry package pinned in ``uv.lock`` against the OSV
-  database (``api.osv.dev``). An unreachable or unreadable database raises :class:`AdvisoriesUnreachable`;
-  a consumer reads it in a FIXTURE, so pytest records a setup ``error`` and the part is INCONCLUSIVE --
-  never green on an unanswered question (:func:`lab_commons.hpc.pytest_item.judged`).
+  database (``api.osv.dev``). An unreachable or unreadable database raises :class:`AdvisoriesUnreachable`,
+  which the step posts as ``error`` -- never a pass on an unanswered question.
 
 A failure of the scanner itself (ruff erroring, git absent) raises :class:`ScanFailed` rather than
 returning an empty list: "nothing found" and "nothing read" must never read alike.

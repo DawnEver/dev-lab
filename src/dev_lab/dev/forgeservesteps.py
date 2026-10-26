@@ -25,6 +25,7 @@ from dev_lab.dev.forgereview_dispose import alarms as blocked_reviews
 from dev_lab.dev.forgeroute import reconcile
 from dev_lab.dev.forgescarce import red_alarms as scarce_red
 from dev_lab.dev.forgeschedule import load_schedule, starved_alarms
+from dev_lab.dev.forgesecurity import step as security_step
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgetakeover import alarms as held_reviews
 from dev_lab.dev.forgetidy import load_hygiene
@@ -93,6 +94,7 @@ def prompt(
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
         review_step(root, built, policy=policy, say=say, host=host)  # the review host follows the integrator
+        security_step(root, built, say=say)  # tests/security on each unjudged head: a merge condition
         glass = break_glass(root, policy, repo)
         red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
         raise_once(

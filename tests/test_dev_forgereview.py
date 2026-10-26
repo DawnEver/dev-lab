@@ -529,6 +529,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     (``command = []``) never waits on one.
     """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
+    secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
     for review in ('failure', 'error', 'pending'):
         statuses = (passed, _status(REVIEW_CONTEXT, review, 'review round 1: 3 findings'))
         assert standing(statuses, head='h').result is Conclusion.PASS
@@ -538,7 +539,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     policy = Policy(pr_merges_since='0' * 40)
 
     def ready(*review: tuple[str, str]) -> bool:
-        statuses = (passed, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
+        statuses = (passed, secured, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
         return decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses).ready
 
     assert not ready(('failure', 'review round 1: 1 blocking finding(s) open'))
@@ -567,13 +568,15 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     assert not found.ready
     assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
+    secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
     released = (
         _status(HOLD_CONTEXT, 'success', 'released by box after the integrator review'),
         _status(REVIEW_CONTEXT, 'success', 'integrator takeover: review round 1: no blocking finding open'),
         passed,
+        secured,
     )
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
-    worded = (_status(REVIEW_CONTEXT, 'success', OVER_CAP_TAKEOVER), passed)
+    worded = (_status(REVIEW_CONTEXT, 'success', OVER_CAP_TAKEOVER), passed, secured)
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded).ready
 
 

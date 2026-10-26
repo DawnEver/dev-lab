@@ -98,6 +98,9 @@ work it could serve is pending each raise an alarm.
 Inside that integration step, on whichever host runs it, the ADVISORY PR review
 (:func:`dev_lab.dev.forgereview.step`): the repo's declared review command, once per open PR head, gating
 nothing.
+
+Beside it, the SECURITY step (:func:`dev_lab.dev.forgesecurity.step`): ``tests/security`` once per open PR head
+and per integration head, a condition every forge merge waits on.
 """
 
 from __future__ import annotations
