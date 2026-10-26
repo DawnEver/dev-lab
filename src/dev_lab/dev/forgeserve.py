@@ -72,7 +72,8 @@ is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`dev_lab.dev.forgeschedule`). Before the tick a cluster host
 reads its standing locally -- its supply, the last day's core-hours, partitions -- and a box probes its own
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
-other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained); on the poller,
+other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained -- and a drained
+task is judged by the same stall watch as any other, below); on the poller,
 a part no host admits waiting past its class's bound keeps one ``starved`` forge issue (:func:`raise_once`),
 read across every host card; and this host's CARD is published on the forge
 (:mod:`dev_lab.dev.forgehosts`):
@@ -85,6 +86,10 @@ that creates or changes it pages. No host OWNS integration: whoever holds the le
 tick runs the behind/conflict report on every child branch (:func:`dev_lab.dev.forgeintegration.tick`),
 and a child conflicting with integration or past the lane policy's ``behind_max`` joins those rows as one
 more ``integration`` issue.
+
+RUNNING IS NOT HEALTHY: every tick on a cluster seat cancels this account's forge tasks whose stream stopped
+past their bound, whatever their run (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.stalled`; Ada 2026-10-24..26,
+eight tasks held a core 34-41 h each on one hung test), and one alarm names each task's sha and last test.
 
 NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`dev_lab.dev.forgealarm`): the forge refusing
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
@@ -174,6 +179,15 @@ def _cancel_strays(
         alarm(Alarm(RUN, repo, f'{len(stray)} orphaned forge job(s) cancelled on {seat}', body, about='strays'))
 
 
+def _cancel_stalled(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge tasks past their stall bound, every tick: one alarm naming each sha and test."""
+    if stalled := slurm.stalled():
+        body = '\n'.join(one.text() for one in stalled)
+        alarm(Alarm(RUN, repo, f'{len(stalled)} stalled forge task(s) cancelled on {seat}', body, about='stalled'))
+
+
 def serve(
     root: Path,
     *,
@@ -223,6 +237,7 @@ def serve(
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     if slurm is not None:
         _cancel_strays(slurm, repo, seat, alarm)
+        _cancel_stalled(slurm, repo, seat, alarm)
     if standing is not None and (untagged := standing.facts.get('untagged')):
         body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
         alarm(Alarm(UNTAGGED, repo, f'{untagged} untagged job task(s) on {seat}', body, about=str(seat)))

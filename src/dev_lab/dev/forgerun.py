@@ -56,6 +56,10 @@ its own start, whichever is later (:func:`overdue`). Past it, that task alone is
 for the tip. Once none runs the run is released as superseded naming the tip and dropped -- one alarm. The tip
 waits behind it (:mod:`forgecoalesce`), so its run carries every outcome the drained tasks finished
 (:mod:`dev_lab.dev.forgecarry`). Ada 2026-10-24: five superseded heads of live PRs held one account up to 1 d 16 h.
+DRAINING BUYS THE TIP ITS FINISHED SHARDS and nothing else: a drained task that has STOPPED finishing tests buys
+nothing, so the serve's stall watch cancels it like any other (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.stalled`)
+-- Ada 2026-10-24..26, eight drained tasks each spun 34-41 h on one hung test, their deadline cut from an
+estimate a doubled kill floor had inflated past every partition's wall.
 A run whose REF IS GONE (merged or closed) has no tip to drain for: unless the integration tip carries its
 result (equivalent, P6), every job is cancelled, started ones too (:func:`_ref_gone`).
 Ada 2026-10-22: 44% of a week's forge core-h was
