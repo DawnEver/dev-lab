@@ -209,6 +209,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   generic patterns (home paths, non-reserved e-mails, chat ids, cloud folder names) plus an optional
   machine-local denylist reported by kind only. Each consumer calls ``scan_tree`` over its own
   checkout from one test. Not re-exported below.
+* :mod:`dev_lab.dev.security` -- the security check every repo passes before a merge: ruff ``S`` under
+  the family's declared ignores, a tracked-credential scan reported by digest only, and the ``uv.lock``
+  pins against OSV (unreachable is INCONCLUSIVE). A repo passes only its differences, from one test file.
+  Not re-exported below.
 * :mod:`dev_lab.dev.ephemeralrefs` -- TRACKED-CITES-NO-EPHEMERAL: no tracked file cites what git
   ignores or a machine-local path, judged by git's own ignore rules. Not re-exported below.
 * :mod:`dev_lab.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
