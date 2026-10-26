@@ -68,7 +68,7 @@ __all__ = [
 ]
 
 #: The one bump lane: its existence IS the serialisation.
-LANE: Final = 'lane/components-bump'
+LANE: Final = 'pr/components-bump'
 
 OPENED: Final = 'opened'  #: a bump lane was opened
 RACED: Final = 'raced'  #: another host opened the lane first

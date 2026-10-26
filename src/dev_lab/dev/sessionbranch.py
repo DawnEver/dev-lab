@@ -30,6 +30,12 @@ The invariants refused here by name, with NO network call beyond the push itself
   that adds ANY first-parent commit past origin's tip (and past the declared start) is not one, and is refused.
   It replaces P4 for that branch. The ONE bypass is in the history: a push whose every new first-parent
   commit carries a non-empty ``Break-Glass: <reason>`` trailer is admitted (:mod:`dev_lab.dev.breakglass`).
+* ``ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES`` (P6) -- a push that creates or updates ``refs/heads/X`` lands only
+  when the branch set admits ``X`` (:meth:`BranchSet.admits`: a declared long-lived branch, or one in an
+  ``ephemeral`` namespace, default ``pr/*``). Fan-out ``lane/`` ``feat/`` ``fix/`` branches stay local; a
+  feature is published as its one ``pr/<feature>``. A deletion is P3's business, so origin's existing
+  undeclared branches may still be deleted -- never automatically here -- and take no new push. Tags are not
+  branches and are not judged.
 
 Every ref is judged by the declaration its pushed tip carries, never the working tree's; a deletion carries
 no content, so it is judged by the integration branch's declaration (``origin/<integration>``, else the
@@ -51,7 +57,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import metrics
-from dev_lab.dev.branchset import BranchSetNotDeclared, branchset_at
+from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, branchset_at
 from dev_lab.dev.breakglass import BREAK_GLASS, reason
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
@@ -63,6 +69,7 @@ __all__ = [
     'P3',
     'P4',
     'P5',
+    'P6',
     'main',
     'merged_branch',
     'refusals',
@@ -72,6 +79,7 @@ P2: Final = 'PUBLISH-IS-THE-LOCAL-REF'
 P3: Final = 'SESSION-HISTORY-ONLY-GROWS'
 P4: Final = 'INTEGRATION-IS-MERGES-ONLY'
 P5: Final = 'INTEGRATION-TAKES-ONLY-FORGE-MERGES'
+P6: Final = 'ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES'
 #: The id this guard runs under in ``githooks/base.toml``: its refusals are logged under it, so a bypass is too.
 HOOK_ID: Final = 'session-branch'
 #: The trailer an integration merge names its merged branch under.
@@ -194,6 +202,20 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
     return found
 
 
+def _undeclared(declared: BranchSet, branch: str) -> list[str]:
+    """P6 for a create or update of *branch*: refused unless the branch set admits it."""
+    if declared.admits(branch):
+        return []
+    names = ', '.join(sorted(declared.declared))
+    globs = ', '.join(declared.ephemeral) or 'none'
+    return [
+        (
+            f'{P6}: origin holds only the declared branches ({names}) and the ephemeral namespaces ({globs}), '
+            f'not {branch}; push the feature as its one pr/<feature> branch, or keep {branch} local'
+        )
+    ]
+
+
 def _deletion_rev(root: Path) -> str:
     """The rev a deletion is judged by: ``origin/<integration>``, else ``origin/<trunk>``, else ``HEAD``.
 
@@ -230,6 +252,8 @@ def refusals(root: Path, lines: str) -> list[str]:
         except (BranchSetNotDeclared, ValueError, subprocess.CalledProcessError) as exc:
             found.append(f'{P2}: {label} declares no readable branch set, so {fields[2]} cannot be judged: {exc}')
             continue
+        if not _zero(fields[1]):
+            found += _undeclared(declared, fields[2][len(_HEADS) :])
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
             found += _judge_ref(root, policy, fields)
         elif (named := _local(root, fields[0])).startswith(_HEADS) and named != fields[2]:

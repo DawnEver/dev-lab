@@ -206,6 +206,7 @@ local reads only -- no network call beyond the push itself -- with no escape hat
 | PUBLISH-IS-THE-LOCAL-REF | a push to `refs/heads/X` whose local ref, `HEAD` resolved, is not `refs/heads/X`: `HEAD:X` from another branch, `Y:X`, a bare sha, a detached HEAD |
 | SESSION-HISTORY-ONLY-GROWS | a push whose old remote tip (as git hands it to the hook) is not an ancestor of the new one: a forced non-fast-forward, and a deletion |
 | INTEGRATION-TAKES-ONLY-FORGE-MERGES | a new first-parent commit on the integration branch past `pr_merges_since` that the forge did not merge: replaces INTEGRATION-IS-MERGES-ONLY for that branch |
+| ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES | a push creating or updating `refs/heads/X` where the pushed tip's branch set does not admit `X` (not the trunk, a session, or an `ephemeral` glob): fan-out stays local |
 
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
 integration branch after `merges_only_since` that is not a two-parent merge with a `Merged-Branch:` trailer

@@ -47,7 +47,7 @@ same state.
 
 1. An engine's branch tip is forge-green (every part on it PASS on the engine's own forge) and differs
    from the product's pointer on the integration branch.
-2. The tick opens the one bump lane, `lane/components-bump`: one commit on the integration tip moving
+2. The tick opens the one bump lane, `pr/components-bump`: one commit on the integration tip moving
    that gitlink, `chore(deps): bump <engine> to <sha12>`.
 3. The forge produces the lane's verdict like any other lane's.
 4. Green on every part the component declares: the lane is READY, and the

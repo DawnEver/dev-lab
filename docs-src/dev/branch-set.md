@@ -49,14 +49,20 @@ declares `pr_merges_since`, the `pr/*` ephemeral namespace and its integration b
 reads origin's refs or a host's local branches: such a test judges the environment, not the code under test,
 and reds every unrelated PR (ruling 2026-10-24).
 
-## Judged on the forge, never at push
+## Judged at push, and again on the forge
 
-The branch set is the forge's alone (toolchain plan P3; user ruling 2026-10-24): the forge's
-`branchset` status is the one judgement, and the pruner below alarms or deletes an undeclared origin branch. No pre-push
-row reads the branch set, and none can be declared: the push-time module is retired. Every open PR head into
-integration carries a `branchset` status (`dev_lab.dev.forgeheadgate`): `failure` when its branch is not admitted
-by the set its own commit declares, naming the ephemeral namespaces and `sessions`. Agent lanes are local: only
-the declared branches reach origin.
+ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES: the base pre-push row `session-branch` (`dev_lab.dev.sessionbranch`)
+refuses a push that creates or updates `refs/heads/X` unless `BranchSet.admits(X)` -- the trunk, a `sessions`
+branch, or a branch in an `ephemeral` namespace -- by the set the PUSHED tip declares. The refusal names `X`,
+the declared branches, the ephemeral globs and the remedy: publish the feature as its one `pr/<feature>`, or keep
+the branch local. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
+SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
+push and is deleted by a human. The machine pushers all land: relock (`pr/relock-*`), forge autosync (`pr/*`
+heads only), the component bump (`pr/components-bump`), and the declared trunk and integration branch.
+
+The forge judges the same set after the push: every open PR head into integration carries a `branchset` status
+(`dev_lab.dev.forgeheadgate`), `failure` when its branch is not admitted by the set its own commit declares, and
+the pruner below alarms or deletes an undeclared origin branch.
 
 ## Pruning origin
 
