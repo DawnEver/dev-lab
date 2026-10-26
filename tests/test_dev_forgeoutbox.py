@@ -207,7 +207,10 @@ def test_a_held_status_the_forge_refuses_for_good_is_dropped_once_with_its_recor
     _pushed(repo, sha)
     enqueue(repo, Post(sha, 'tests/linux', 'error', 'released'))
     answer('POST', f'{API}/statuses/{sha}', (422, {'message': 'invalid'}))
-    built = lambda _root: client(FORGE, Loopback(server))  # noqa: E731
+
+    def built(_root: Path) -> Client:
+        return client(FORGE, Loopback(server))
+
     assert flush(repo, client=built) == [
         f'status: dropped tests/linux on {sha[:12]} -- the forge refused it (422), final'
     ]
