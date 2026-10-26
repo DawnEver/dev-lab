@@ -334,6 +334,12 @@ def test_the_newest_stable_is_what_rustup_check_reports() -> None:
     current = 'stable-x86_64-unknown-linux-gnu - Up to date : 1.99.1 (58cf8f9c3 2026-10-13)\n'
     assert newest_stable(check=lambda: _rustup(behind)) == '1.99.1'
     assert newest_stable(check=lambda: _rustup(current)) == '1.99.1'
+    # rustup 1.29 on the Ada login nodes: lower case, no space before the colon (measured 2026-10-26).
+    ada = (
+        'stable-x86_64-unknown-linux-gnu - update available: 1.99.0 (b940084d7 2026-09-28) -> 1.99.1 '
+        '(58cf8f9c3 2026-10-13)\nrustup - update available : 1.29.1 -> 1.29.2\n'
+    )
+    assert newest_stable(check=lambda: _rustup(ada)) == '1.99.1'
     with pytest.raises(OSError, match='rustup check named no stable toolchain'):
         newest_stable(check=lambda: _rustup('nightly-x86_64 - Up to date : 1.100.0-nightly\n'))
 

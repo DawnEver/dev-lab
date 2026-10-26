@@ -77,8 +77,10 @@ _HOLDING: Final = frozenset({'<', '<=', '==', '===', '~='})
 _CHANNEL: Final = re.compile(r'^(?P<lead>\s*channel\s*=\s*)["\'](?P<channel>[^"\'\n]*)["\']', re.MULTILINE)
 _EXACT: Final = re.compile(r'^\d+\.\d+\.\d+$')
 #: ``rustup check``'s stable line: ``Up to date : <v> (...)`` or ``Update available : <old> (...) -> <v> (...)``.
+#: rustup's case and the space before the colon vary by release (1.29 on Linux prints ``update available:``).
 _STABLE: Final = re.compile(
-    r'^stable-\S+ - (?:Up to date : |Update available : .*-> )(?P<version>\d+\.\d+\.\d+)\b', re.MULTILINE
+    r'^stable-\S+ - (?:up to date\s*:\s*|update available\s*:.*->\s*)(?P<version>\d+\.\d+\.\d+)\b',
+    re.MULTILINE | re.IGNORECASE,
 )
 
 
