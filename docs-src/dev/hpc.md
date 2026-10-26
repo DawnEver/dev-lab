@@ -41,8 +41,12 @@ On the login host you chose, store your own forge token once (`git config --glob
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
-- **The crontab line**, per repo, every 5 minutes:
-  `PATH=...; cd ~/src/dev-lab && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m dev_lab.dev.hpchost tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
+- **The crontab line**, per served repo and the kit, every `[schedule] tick_minutes` (a divisor of 60,
+  default 5; the host card is judged stale against the same number) at a minute offset derived from the
+  account's home, so accounts never tick in lockstep. A `repos` entry with `serve = false` is checked out and
+  installed but its queue is not served here: the kit keeps its line (its tick is the one writer of the kit
+  checkout, and only refreshes), any other such repo gets none. The line:
+  `<offset>-59/<minutes> * * * * PATH=...; cd ~/src/dev-lab && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m dev_lab.dev.hpchost tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across

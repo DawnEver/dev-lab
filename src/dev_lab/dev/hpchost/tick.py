@@ -79,10 +79,11 @@ def tick(
     whose old ``forge serve`` exited 2 every tick could never run the code that would update it). *name*
     follows its declared ref and its venv is rebuilt where its inputs (its committed lock among them) moved
     (:func:`dev_lab.dev.hpchost.steps.build`); a repo that cannot is RELEASED this tick with its reason,
-    exit 2, and is not served. One lacking a declared need also sounds a ``needs`` *alarm*; *probed* is the
+    exit 2, and is not served. A repo declared ``serve = false`` is refreshed and not served.
+    One lacking a declared need also sounds a ``needs`` *alarm*; *probed* is the
     tick's probe cache, shared by every repo one tick serves.
 
-    THE SHARED KIT HAS ONE WRITER: dev-lab is always a served repo, so ITS OWN tick (under its own
+    THE SHARED KIT HAS ONE WRITER: dev-lab always has a line, served or not, so ITS OWN tick (under its own
     ``flock``) is the only one that moves the host checkout; every other tick reads it. Measured 2026-10-19
     (Ada): every repo's tick also updated it, each under only its own repo's flock, and concurrent ticks
     collided on ``.git/index.lock``. Serving is the host kit's ``forge serve`` in the repo's
@@ -100,5 +101,7 @@ def tick(
     if why:
         emit(f'[tick] {name} released, not served this tick: {why}', err=True)
         return 2
+    if not repo.serve:
+        return 0  # checked out and fresh; this account does not serve its queue
     checkout = checkout_of(spec, home, repo)
     return run(host_serve_argv(), cwd=checkout, check=False).returncode
