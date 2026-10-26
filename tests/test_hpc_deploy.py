@@ -649,3 +649,19 @@ def test_an_unserved_kit_is_kept_fresh_but_its_queue_is_not_served(box: Box, tmp
     assert served == [], 'the unserved kit is refreshed, never served'
     assert _tick(box, 'alpha', served) == 0
     assert len(served) == 1
+
+
+def test_the_deploy_ticks_now_only_the_repos_its_cron_ticks(box: Box) -> None:
+    """The one tick the deploy runs at its end reads the same set as the crontab: an unserved repo is not ticked.
+
+    PLANTED CONTROL: alpha, still served, is ticked.
+    """
+    assert box.run(*DECLARE) == 0
+    text = box.machine.read_text(encoding='utf-8')
+    box.machine.write_text(
+        text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = false }'), encoding='utf-8'
+    )
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 0
+    assert 'hpchost tick alpha' in box.logged()
+    assert 'hpchost tick beta' not in box.logged()
