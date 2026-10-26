@@ -13,9 +13,11 @@ that refuse or that a human drives append one line here, through ONE writer (:fu
 * ``host_failure`` -- an alarm a serving host raised (:func:`dev_lab.dev.forgealarm.sound`): a failure that
   reached a person by alarm, not as a status on a pull request.
 
-WHERE. Beside the machine file (``<config dir>/metrics/<kind>.jsonl``), like ``forge-runs/`` and the alarm
-state: hooks, guards and serves run from many checkouts and the record is the machine's. Every line names its
-repository, so the read filters by it.
+WHERE. Regenerable program output, so the checkout's dated tree: :func:`log_file` --
+``<checkout>/output/logs/<yy>/<mm>/<dd>/metrics/<kind>.jsonl`` -- the ONE path the writer and the read share.
+The checkout is the repository's MAIN worktree (:func:`checkout`), so every lane of one repository logs into
+one place. It was ``<config dir>/metrics/`` once, and that wrote ``tests/metrics/`` into a tracked tree in any
+repo whose tests point ``LAB_COMMONS_CONFIG`` at a file under ``tests/``; nothing reads that location.
 
 ONE ``O_APPEND`` WRITE PER LINE, fsynced. Not :func:`lab_commons.compute.durable.durable_write`: that publishes
 a whole file by rename, and two hooks appending at once through it would each rewrite the file and lose the
@@ -42,15 +44,29 @@ from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
-from lab_commons.config import config_path
 from lab_commons.log import emit
 
+from dev_lab.dev.datedlog import date_parts
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import client_for
 
 __all__ = [
-    'BYPASS', 'HAND_ACTION', 'HAND_VERBS', 'HOST_FAILURE', 'KINDS', 'PUSH', 'REFUSAL', 'Metrics', 'compute',
-    'directory', 'hand_action', 'main', 'read', 'record', 'repo_of',
+    'BYPASS',
+    'HAND_ACTION',
+    'HAND_VERBS',
+    'HOST_FAILURE',
+    'KINDS',
+    'PUSH',
+    'REFUSAL',
+    'Metrics',
+    'checkout',
+    'compute',
+    'hand_action',
+    'log_file',
+    'main',
+    'read',
+    'record',
+    'repo_of',
 ]  # fmt: skip
 
 REFUSAL: Final = 'refusal'
@@ -71,9 +87,30 @@ _SHA: Final = re.compile(r'^[0-9a-f]{7,40}$')
 _SESSION_ENV: Final = 'LAB_SESSION'
 
 
-def directory() -> Path:
-    """``metrics/`` beside the machine file."""
-    return config_path().parent / 'metrics'
+#: Where under :func:`checkout` the dated tree starts, and the kind directory beneath the date.
+BASE: Final = Path('output', 'logs')
+LOG_KIND: Final = 'metrics'
+
+
+def checkout(root: Path) -> Path:
+    """The main worktree of the repository holding *root*; *root* itself when git names none."""
+    try:
+        done = _door.run(
+            [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+            capture_output=True, text=True, encoding='utf-8', check=False, timeout=30,
+        )  # fmt: skip
+    except OSError:
+        return root
+    common = done.stdout.strip()
+    return Path(common).parent if done.returncode == 0 and common else root
+
+
+def log_file(root: Path, kind: str, day: tuple[str, str, str] | None = None) -> Path:
+    """``<checkout>/output/logs/<yy>/<mm>/<dd>/metrics/<kind>.jsonl`` for *day* (today); ``'*'`` parts glob."""
+    if kind not in KINDS:
+        msg = f'unknown metrics kind {kind!r}; the kinds are {list(KINDS)}'
+        raise ValueError(msg)
+    return checkout(root).joinpath(BASE, *(day or date_parts()), LOG_KIND, f'{kind}.jsonl')
 
 
 def repo_of(root: Path) -> str:
@@ -88,14 +125,12 @@ def repo_of(root: Path) -> str:
     return done.stdout.strip() or str(root)
 
 
-def record(kind: str, *, repo: str, rule: str = '', reason: str = '', **attributes: str) -> Path:
-    """Append one *kind* line naming *repo* (and the *rule* and the class of *reason*, when there is one); its file.
+def record(kind: str, *, root: Path, repo: str, rule: str = '', reason: str = '', **attributes: str) -> Path:
+    """Append one *kind* line naming *repo* (and its *rule* and *reason* class) to *root*'s :func:`log_file`; its file.
 
     *attributes* are OpenTelemetry field names spelled with ``_`` for ``.`` (``vcs_ref_head_revision``).
     """
-    if kind not in KINDS:
-        msg = f'unknown metrics kind {kind!r}; the kinds are {list(KINDS)}'
-        raise ValueError(msg)
+    target = log_file(root, kind)
     line: dict[str, str] = {
         'time': datetime.now(UTC).isoformat(),
         'event.name': f'lab.{kind}',
@@ -107,7 +142,6 @@ def record(kind: str, *, repo: str, rule: str = '', reason: str = '', **attribut
     if reason:
         line['error.type'] = reason
     line |= {name.replace('_', '.'): value for name, value in attributes.items() if value}
-    target = directory() / f'{kind}.jsonl'
     target.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
     try:
@@ -118,15 +152,16 @@ def record(kind: str, *, repo: str, rule: str = '', reason: str = '', **attribut
     return target
 
 
-def read(kind: str) -> list[dict[str, str]]:
-    """Every *kind* line, oldest first; an unreadable line (a torn tail) is skipped."""
-    path = directory() / f'{kind}.jsonl'
+def read(kind: str, *, root: Path) -> list[dict[str, str]]:
+    """Every *kind* line under *root*'s checkout, oldest day first; an unreadable line (a torn tail) is skipped."""
+    base = checkout(root)
     found: list[dict[str, str]] = []
-    for raw in path.read_text(encoding='utf-8').splitlines() if path.is_file() else ():
-        try:
-            found.append(json.loads(raw))
-        except ValueError:
-            continue
+    for path in sorted(base.glob(log_file(base, kind, ('*', '*', '*')).relative_to(base).as_posix())):
+        for raw in path.read_text(encoding='utf-8').splitlines():
+            try:
+                found.append(json.loads(raw))
+            except ValueError:
+                continue
     return found
 
 
@@ -140,7 +175,7 @@ def hand_action(root: Path, argv: Sequence[str]) -> Path | None:
     positional = next((word for word in rest if not word.startswith('-')), '')
     head = rest[rest.index('--head') + 1] if '--head' in rest[:-1] else ''
     return record(
-        HAND_ACTION, repo=repo_of(root), lab_action=action,
+        HAND_ACTION, root=root, repo=repo_of(root), lab_action=action,
         vcs_ref_head_revision=positional if _SHA.match(positional) else '',
         vcs_change_id=positional if positional.isdigit() else '', vcs_ref_head_name=head,
     )  # fmt: skip
@@ -242,6 +277,7 @@ def compute(
 def _cli_record(args: argparse.Namespace) -> int:
     record(
         args.kind,
+        root=Path.cwd(),
         repo=args.repo or repo_of(Path.cwd()),
         rule=args.rule,
         reason=args.reason,
@@ -255,7 +291,7 @@ def _cli_read(args: argparse.Namespace) -> int:
     client = client_for(root)
     pulls = pages(client, f'{client.repo}/pulls', {'state': 'all'})
     since = datetime.now(UTC) - timedelta(days=args.days)
-    found = compute(repo_of(root), {kind: read(kind) for kind in KINDS}, pulls, since=since)
+    found = compute(repo_of(root), {kind: read(kind, root=root) for kind in KINDS}, pulls, since=since)
     if args.json:
         emit(json.dumps(asdict(found), indent=2))
     else:

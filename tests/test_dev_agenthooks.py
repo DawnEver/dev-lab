@@ -486,10 +486,12 @@ def test_a_refusal_is_one_metrics_line_written_without_delaying_the_refusal(tmp_
     hooks.mkdir(parents=True)
     rules = _rows(hooks, _DENY)
     assert agenthooks.decide('rm -rf build', rules, cwd=session) == 'D'
-    assert read(REFUSAL) == []
+    assert read(REFUSAL, root=session) == []
     _link_dir(session / '.venv', Path(sys.executable).parents[1])
     assert agenthooks.decide('rm -rf build', rules, cwd=session) == 'D'
     deadline = time.monotonic() + 60
-    while not read(REFUSAL) and time.monotonic() < deadline:
+    while not read(REFUSAL, root=session) and time.monotonic() < deadline:
         time.sleep(0.2)
-    assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL)] == [('PLANTED-DENY', 'agent-guard')]
+    assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL, root=session)] == [
+        ('PLANTED-DENY', 'agent-guard')
+    ]
