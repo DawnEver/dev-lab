@@ -139,6 +139,8 @@ WHAT IS HERE, one module per shared body:
   :mod:`dev_lab.dev.dep`, which already owned the MECHANISM -- the first row here whose gap was
   found by two audit lanes that did not know of each other, converging on the same two files.
 
+* :mod:`dev_lab.dev.famtests.reviewcommand` -- the PR review command is the family's; a repo's
+  ``[tool.lab_commons.review]`` declares only where it differs, never the same command or a retired capability.
 * :mod:`dev_lab.dev.famtests.sharedsettings` -- a setting :mod:`lab_commons.config` owns in its
   ``[user]`` table is declared nowhere else: no consumer schema field, table key or own default.
 * :mod:`dev_lab.dev.famtests.venvspelling` -- ONE place may spell a venv interpreter, and the
