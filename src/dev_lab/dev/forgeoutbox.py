@@ -21,7 +21,10 @@ already pushed posts at once), ``python -m dev_lab.dev.forge publish`` after a p
 ``forge tick`` (:mod:`dev_lab.dev.forgetick`).
 
 A POST THAT WAS ATTEMPTED AND FAILED RAISES (:class:`PostFailed`, naming its remedy) after every other
-entry was tried; the failed entry stays queued. A post that could not be attempted -- no credential
+entry was tried; the failed entry stays queued -- unless the forge refused it FINALLY
+(:attr:`~dev_lab.dev.forgework.ForgeCallFailed.final`, the one rule for every outbox path): that entry is
+dropped and named once, since a definitive 4xx replayed every tick never lands.
+A post that could not be attempted -- no credential
 or no ``origin`` on this box -- is reported and kept, never raised: the box simply does not publish.
 
 WHERE IT LIVES. ``output/forge/outbox/`` in the MAIN checkout (resolved through git's common
@@ -249,10 +252,16 @@ def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], obj
             )
         )  # fmt: skip
         line = f'status: {post.context} on {post.sha[:12]} held {first.state}; a later {post.state} ALARMED, not posted'
+    _retire(root, post)
+    return line
+
+
+def _retire(root: Path, post: Post) -> None:
+    """Remove *post*'s entry, and its record once no queued entry still names it."""
+    directory = outbox_dir(root)
     (directory / f'{post.key}.json').unlink(missing_ok=True)
     if post.record and all(other.record != post.record for other in queued(root)):
         (directory / post.record).unlink(missing_ok=True)
-    return line
 
 
 def _decided(built: Client, post: Post) -> CommitStatus | None:
@@ -288,6 +297,12 @@ def flush(
         try:
             lines.append(_deliver(root, built, post, alarm))
         except ForgeCallFailed as exc:
+            if exc.final is not None:
+                _retire(root, post)
+                lines.append(
+                    f'status: dropped {post.context} on {post.sha[:12]} -- the forge refused it ({exc.final}), final'
+                )
+                continue
             failures.append(f'{post.context} on {post.sha[:12]} ({exc.report.diagnosis.value}): {exc}')
             continue
         except (OSError, ValueError, KeyError) as exc:
