@@ -287,6 +287,9 @@ class _Slurm:
     def strays(self, _held: object) -> list[str]:
         return []
 
+    def stalled(self) -> list[forgerunstate.Stalled]:
+        return []
+
 
 def _claimed(*work: Work) -> TickReport:
     return TickReport(work, work, ('tick: one line',))
@@ -1462,3 +1465,28 @@ def test_forge_jobs_whose_run_is_gone_are_cancelled_and_counted(monkeypatch, tmp
     # Planted control: no stray, nothing is raised.
     _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
     assert [a for a in alarms if 'orphaned' in a.subject] == []
+
+
+class _Stalls(_Slurm):
+    """Slurm holding a forge task whose stream stopped past its bound (Ada 2026-10-24..26, eight such tasks)."""
+
+    def stalled(self) -> list[forgerunstate.Stalled]:
+        why = 'its stream took no line for 2455 min, past 2 x its longest test wall (120 min)'
+        return [
+            forgerunstate.Stalled('7811859_0', 'run-9be9382e8d6e-base', '9be9382e8d6e' + 'f' * 28, 'tests/w.py::t', why)
+        ]
+
+
+def test_a_stalled_forge_task_is_cancelled_every_tick_and_named_with_its_sha_and_last_test(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """RUNNING is not healthy: a task whose stream stopped is cancelled and alarmed, with no run in flight too."""
+    quiet = TickReport((), (), ('tick',))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Stalls, host='base')
+    (raised,) = [a for a in alarms if 'stalled' in a.subject]
+    assert raised.kind == RUN
+    assert '1 stalled' in raised.subject
+    assert '7811859_0 9be9382e8d6e in tests/w.py::t' in raised.body
+    # Planted control: nothing stalled, nothing is raised.
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
+    assert [a for a in alarms if 'stalled' in a.subject] == []

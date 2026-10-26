@@ -1096,6 +1096,63 @@ def test_a_forge_job_whose_run_is_gone_is_cancelled_and_one_whose_run_lives_is_k
     assert order[:2] == ['squeue', 'held']
 
 
+def test_a_forge_task_whose_stream_stalls_past_its_bound_is_cancelled_and_a_slow_progressing_one_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-10-24..26: eight tasks ran 34-41 h on one hung test each and no tick noticed; RUNNING was healthy.
+
+    The bound is the manifest's own per-test walls (the ones the item runner kills at) times
+    :data:`forgeslurm.STALL_MULTIPLE`: a stream silent past twice its longest wall, or a task past twice the sum
+    of its walls, has a runner that is not enforcing them. PLANTED CONTROLS: a slow task whose stream moves and
+    whose walls cover its run is kept; a task with no walls declared is never judged; a non-forge job is ignored.
+    """
+    now, sha = 100_000, 'c' * 40
+    run_dir = f'/h/ci/trees/{sha}/.lab-hpc/run-{sha[:12]}-base-1-r0'
+    ring = 'tests/w.py::test_ring'
+    manifest = {
+        'items': [
+            {'ids': [ring], 'stream': '.lab-ci/hung.jsonl', 'item': 0, 'walls': {ring: 600}},
+            {'ids': ['a', 'b', 'c'], 'stream': '.lab-ci/slow.jsonl', 'item': 1, 'walls': dict.fromkeys('abc', 600)},
+            {'ids': ['d'], 'stream': '.lab-ci/slow.jsonl', 'item': 2, 'walls': {'d': 600}},
+            {'ids': ['e'], 'stream': '.lab-ci/slow.jsonl', 'item': 3},
+        ],
+        'shards': [[0, 1], [1, 2], [2, 3], [3, 4]],
+    }
+    mtimes = {'hung.jsonl': now - 5000, 'slow.jsonl': now - 60}
+    queue = [
+        f'7_0|run-{sha[:12]}-base|1-17:57:36|{run_dir}',  # silent 83 min > 2 x 10 min: stalled
+        f'7_1|run-{sha[:12]}-base|50:00|{run_dir}',  # 50 min < 2 x 30 min, stream moving: kept
+        f'7_2|run-{sha[:12]}-base|2:00:00|{run_dir}',  # 2 h > 2 x 10 min although a sibling moves the file
+        f'7_3|run-{sha[:12]}-base|9-00:00:00|{run_dir}',  # no walls: never judged
+        '8|interactive|9-00:00:00|/h',
+    ]
+
+    def runner(command: str, _stdin: object) -> str:
+        if command.startswith('date'):
+            return '\n'.join([str(now), *queue]) + '\n'
+        if command.startswith('cat '):
+            return json.dumps(manifest)
+        if command.startswith('stat '):
+            return '\n'.join(str(t) for name, t in mtimes.items() if name in command) + '\n'
+        if command.startswith('grep '):
+            return f'{{"item": 0, "begin": 1}}\n{{"item": 0, "start": "{ring}"}}\n{{"item": 1, "start": "a"}}\n'
+        raise AssertionError(command)
+
+    cancelled: list[str] = []
+    monkeypatch.setattr(forgeslurm, 'scancel', lambda _shell, ids: cancelled.extend(ids))
+    machine: Any = SimpleNamespace(grants=[object()])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: runner)
+    found = cluster.stalled()
+    assert [one.job_id for one in found] == ['7_0', '7_2']
+    assert cancelled == ['7_0', '7_2']
+    hung = found[0]
+    assert (hung.sha, hung.last) == (sha, ring)
+    assert hung.text().startswith(f'7_0 {sha[:12]} in {ring}: ')
+    assert 'stream' in hung.why
+    assert 'sum' in found[1].why
+    assert found[1].last == ''
+
+
 def test_every_run_file_here_holds_its_job_names_whatever_its_repo(home: Path) -> None:
     store = _Store()
     _start(home, store)

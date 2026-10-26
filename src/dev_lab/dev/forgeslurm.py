@@ -21,10 +21,17 @@ here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute
 A FORGE JOB WHOSE RUN IS GONE IS CANCELLED (:meth:`SlurmCluster.strays`; Ada 2026-10-25: 25 % of a day's
 core-hours). A run whose ref is gone cancels its own jobs (:func:`dev_lab.dev.forgerun._cancel_orphan`); a job
 no run file names at all -- its run lost to another owner, or dropped -- had nobody to cancel it.
+
+A RUNNING FORGE TASK THAT STOPPED PROGRESSING IS CANCELLED (:meth:`SlurmCluster.stalled`; Ada 2026-10-24..26:
+eight tasks of long-superseded shas ran 34-41 h at 100 % of a core, each on one hung test, until a human
+cancelled them -- RUNNING read as healthy). The bound is the task's OWN manifest: the per-test walls the item
+runner kills at (:class:`lab_commons.hpc.builds.ItemWall`), times :data:`STALL_MULTIPLE`. Every task, whatever
+its run -- current, draining for a newer tip, or one no run file names -- is judged, every tick.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import re
@@ -58,19 +65,58 @@ from lab_commons.hpc.watch import PENDING, settle
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
 from dev_lab.dev.forgerecords import read_allocation
-from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Standing, Started, Unrecorded
+from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from dev_lab.dev.forgestuck import parse_duration
 
-__all__ = ['KILLED', 'SlurmCluster', 'killed_jobs', 'progress_text', 'slurm_cluster', 'standing_of']
+__all__ = ['KILLED', 'STALL_MULTIPLE', 'SlurmCluster', 'killed_jobs', 'progress_text', 'slurm_cluster', 'standing_of']
 
 #: The ``sacct`` states of a job Slurm killed for its ask: memory, or time.
 KILLED: Final = ('OUT_OF_MEMORY', 'TIMEOUT')
 #: A forge job's name (:func:`lab_commons.hpc.run.job_name`, and the schema-1 ``run-<sha12>``).
 _FORGE_JOB: Final = re.compile(r'run-[0-9a-f]{12}(-.+)?')
 _KILLED_FIELDS: Final = 'JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
+#: How many times its per-test walls a RUNNING task may go before it is STALLED: its round's stream silent past
+#: this times its LONGEST wall, or the task running past this times the SUM of its walls. The item runner
+#: (:mod:`lab_commons.hpc.pytest_item`) writes a line at every test's start and end and kills any test at its
+#: wall, collection included, so a runner that works never comes near ONE times either; the second factor is
+#: headroom for the poll, the kill, a pytest relaunch and two clocks, never a second chance for the test.
+STALL_MULTIPLE: Final = 2.0
+#: Every RUNNING task of the account: its id, name, elapsed time and work dir (the round's run dir), and the clock.
+_RUNNING: Final = "date +%s; squeue -h --me -t RUNNING -o '%i|%j|%M|%Z'"
 _SIZE: Final = re.compile(r'([\d.]+)([KMGT]?)')
 _MB_PER: Final = {'K': 1 / 1024, '': 1 / 1024 / 1024, 'M': 1, 'G': 1024, 'T': 1024 * 1024}
+
+
+def stall_of(items: list[dict[str, Any]], *, idle_s: float, elapsed_s: float) -> str:
+    """Why a task running *items* is stalled -- ``''`` when it is not, or when any of its ids declares no wall.
+
+    *idle_s* is how long its round's stream has taken no line, *elapsed_s* how long it has run.
+    """
+    walls = [item.get('walls', {}).get(node) for item in items for node in item.get('ids', ())]
+    if not walls or None in walls:
+        return ''
+    longest, total = max(walls), sum(walls)
+    if idle_s > STALL_MULTIPLE * longest:
+        return (
+            f'its stream took no line for {idle_s / 60:.0f} min, past {STALL_MULTIPLE:g} x its longest test wall '
+            f'({longest / 60:.0f} min)'
+        )
+    if elapsed_s > STALL_MULTIPLE * total:
+        ran, bound = elapsed_s / 60, total / 60
+        return f"it ran {ran:.0f} min, past {STALL_MULTIPLE:g} x the sum of its tests' walls ({bound:.0f} min)"
+    return ''
+
+
+def _last_started(text: str, items: set[object]) -> str:
+    """The id the last ``start`` line of one of *items* names; ``''`` when none started."""
+    last = ''
+    for raw in text.splitlines():
+        with contextlib.suppress(json.JSONDecodeError):
+            line = json.loads(raw)
+            if isinstance(line, dict) and line.get('item') in items and 'start' in line:
+                last = str(line['start'])
+    return last
 
 
 def _mb(text: str) -> int:
@@ -268,6 +314,38 @@ class SlurmCluster:
         if stray:
             scancel(shell, stray)
         return stray
+
+    def stalled(self) -> list[Stalled]:
+        """Cancel every RUNNING forge task past its stall bound (:func:`stall_of`); those cancelled, in queue order.
+
+        A task's run dir is its Slurm work dir, so its manifest -- its items, their walls and stream -- is read
+        from the task itself, never from a run file that may be gone. A task of a manifest without walls is
+        never judged: nothing says what its tests may take.
+        """
+        shell = self.connect(self.machine.grants[0])
+        lines = shell(_RUNNING, None).splitlines()
+        now, manifests, found = float(lines[0]), {}, []
+        for row in lines[1:]:
+            job_id, name, elapsed, run_dir = row.split('|', 3)
+            index = job_id.partition('_')[2]
+            if not _FORGE_JOB.fullmatch(name) or not index.isdigit():
+                continue
+            if run_dir not in manifests:
+                manifests[run_dir] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
+            start, stop = manifests[run_dir]['shards'][int(index)]
+            items = manifests[run_dir]['items'][start:stop]
+            tree = run_dir.rsplit('/', 2)[0]  # <tree>/.lab-hpc/<run>
+            streams = ' '.join(sorted({shlex.quote(f'{tree}/{item["stream"]}') for item in items}))
+            stamps = [float(w) for w in shell(f'stat -c %Y {streams} 2>/dev/null || true', None).split() if w.isdigit()]
+            elapsed_s = parse_duration(elapsed)
+            idle_s = now - max(stamps) if stamps else elapsed_s
+            if why := stall_of(items, idle_s=idle_s, elapsed_s=elapsed_s):
+                started = shell(f'grep -hF \'"start"\' {streams} 2>/dev/null || true', None)
+                last = _last_started(started, {item.get('item') for item in items})
+                found.append(Stalled(job_id, name, tree.rsplit('/', 1)[-1], last, why))
+        if found:
+            scancel(shell, [one.job_id for one in found])
+        return found
 
     def withdraw(self, run: Run) -> list[str]:
         """Withdraw *run*'s pending tasks, keep its started ones; the ids still started."""

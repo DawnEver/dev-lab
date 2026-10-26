@@ -44,6 +44,7 @@ __all__ = [
     'ForeignSchema',
     'Killed',
     'Run',
+    'Stalled',
     'Standing',
     'Started',
     'Unrecorded',
@@ -119,6 +120,24 @@ class Killed:
         return f'{self.job} {self.state} {self.used_mb}/{self.asked_mb} MB {self.used_s}/{self.asked_s} s'
 
 
+@dataclass(frozen=True)
+class Stalled:
+    """One RUNNING forge task past its stall bound (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.stalled`), cancelled.
+
+    *last* is the test its stream last STARTED (``''`` when none had), *why* the bound it passed.
+    """
+
+    job_id: str
+    name: str
+    sha: str
+    last: str
+    why: str
+
+    def text(self) -> str:
+        """``7811859_0 9be9382e8d6e in tests/w.py::t: <why>`` -- what an alarm names."""
+        return f'{self.job_id} {self.sha[:12]} in {self.last or "no test yet"}: {self.why}'
+
+
 class Cluster(Protocol):
     """What a run needs from Slurm, through this login node's own shell (:class:`dev_lab.dev.forgeserve`)."""
 
@@ -139,6 +158,9 @@ class Cluster(Protocol):
 
     def strays(self, held: Callable[[], set[str]]) -> list[str]:
         """Cancel every forge job (``run-<sha12>...``) whose name *held* does not return; the ids cancelled."""
+
+    def stalled(self) -> list[Stalled]:
+        """Cancel every RUNNING forge task of this account past its stall bound, whatever its run; those cancelled."""
 
     def tree(self, run: Run) -> Path:
         """The run's work tree as this login node sees it -- where its declared outputs are globbed."""
