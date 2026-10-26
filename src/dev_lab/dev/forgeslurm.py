@@ -35,7 +35,6 @@ import contextlib
 import json
 import math
 import re
-import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -68,7 +67,7 @@ from dev_lab.dev.forgecarry import carry_from, read_by
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
-from dev_lab.dev.forgestuck import parse_duration
+from dev_lab.dev.forgestuck import parse_duration, remote_path
 
 __all__ = ['KILLED', 'STALL_MULTIPLE', 'SlurmCluster', 'killed_jobs', 'progress_text', 'slurm_cluster', 'standing_of']
 
@@ -332,11 +331,11 @@ class SlurmCluster:
             if not _FORGE_JOB.fullmatch(name) or not index.isdigit():
                 continue
             if run_dir not in manifests:
-                manifests[run_dir] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
+                manifests[run_dir] = json.loads(shell(f'cat {remote_path(run_dir)}/manifest.json', None))
             start, stop = manifests[run_dir]['shards'][int(index)]
             items = manifests[run_dir]['items'][start:stop]
             tree = run_dir.rsplit('/', 2)[0]  # <tree>/.lab-hpc/<run>
-            streams = ' '.join(sorted({shlex.quote(f'{tree}/{item["stream"]}') for item in items}))
+            streams = ' '.join(sorted({remote_path(f'{tree}/{item["stream"]}') for item in items}))
             stamps = [float(w) for w in shell(f'stat -c %Y {streams} 2>/dev/null || true', None).split() if w.isdigit()]
             elapsed_s = parse_duration(elapsed)
             idle_s = now - max(stamps) if stamps else elapsed_s
@@ -378,7 +377,7 @@ class SlurmCluster:
                 if base in {str(job) for job in one.get('job_ids', ())} and index.isdigit():
                     run_dir = one['run_dir']
                     if run_dir not in manifests:
-                        manifests[run_dir] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
+                        manifests[run_dir] = json.loads(shell(f'cat {remote_path(run_dir)}/manifest.json', None))
                     start, stop = manifests[run_dir]['shards'][int(index)]
                     ids = [list(item.get('ids', ())) for item in manifests[run_dir]['items'][start:stop]]
             seconds = sum(measured.estimate(ids, cost)[0]) if ids else cost.seconds
