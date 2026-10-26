@@ -285,11 +285,20 @@ function hostPath(word) {
   return drive ? `${drive[1]}:${bare.slice(2)}` : bare;
 }
 
-/** The directory one `git ...` / `uv ...` segment names for itself, or `null`: git's `-C X` among its global
- * options (`-c k=v` and the rest are skipped), uv's `--directory X` / `--project X` (or `=X`) anywhere. */
+/** The directory one `git ...` / `uv ...` / dependency-door segment names for itself, or `null`: git's `-C X`
+ * among its global options (`-c k=v` and the rest are skipped), uv's `--directory X` / `--project X` (or `=X`)
+ * anywhere, the dependency door's `--bootstrap X` / `--lock-upgrade X`. */
 function namedDir(words) {
   const program = (words[0] || '').replace(/\.exe$/i, '');
-  if (program === 'git') {
+  const m = words.indexOf('-m');
+  if (/python[\w.]*$/i.test(program) && m > 0 && /^(?:dev_lab|lab_commons)\.dev\.dep$/.test(words[m + 1] || '')) {
+    for (let i = m + 2; i < words.length; i += 1) {
+      const eq = /^--(?:bootstrap|lock-upgrade)=(.+)$/.exec(words[i]);
+      if (eq) return eq[1];
+      const next = words[i + 1];
+      if ((words[i] === '--bootstrap' || words[i] === '--lock-upgrade') && next && !next.startsWith('-')) return next;
+    }
+  } else if (program === 'git') {
     for (let i = 1; i < words.length; i += 1) {
       if (words[i] === '-C') return words[i + 1] || null;
       if (words[i] === '-c') i += 1;
@@ -305,9 +314,13 @@ function namedDir(words) {
   return null;
 }
 
-/** The directory the command acts in: the call's cwd, moved by `cd X` segments, or the dir a git/uv call names. */
-function targetDir(cmd, cwd) {
+/** The directory the command acts in -- the ONE answer to "which tree" every judge reads. A segment acts in the
+ * call's cwd as moved by the `cd X` segments before it, or in the dir its git/uv/dep call names. The answer is
+ * the dir of the first segment `acts` selects (the one a rule fired on), else of the first segment that is not
+ * a `cd`, else the cwd the `cd`s leave. */
+function targetDir(cmd, cwd, acts = () => true) {
   let dir = cwd;
+  let first = null;
   const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
   for (const segment of segments(splitHeredocs(cmd).rest)) {
     const text = segment.replace(ENV_PREFIX, '').trim();
@@ -317,9 +330,22 @@ function targetDir(cmd, cwd) {
       continue;
     }
     const named = namedDir(text.match(new RegExp(word, 'g')) || []);
-    if (named) return path.resolve(dir, hostPath(named));
+    const here = named ? path.resolve(dir, hostPath(named)) : dir;
+    if (acts(text)) return here;
+    if (first === null && text) first = here;
   }
-  return dir;
+  return first === null ? dir : first;
+}
+
+/** The directory the segment `rule` fires on acts in (`targetDir`). */
+function ruleTarget(rule, cmd, cwd) {
+  let at;
+  try {
+    at = new RegExp(rule.matches === 'argument' ? rule.pattern : `^(?:${rule.pattern})`);
+  } catch {
+    return targetDir(cmd, cwd);
+  }
+  return targetDir(cmd, cwd, (text) => at.test(text));
 }
 
 /** The nearest directory at or above `dir` holding a `.git` (a worktree's `.git` is a file). */
@@ -359,7 +385,7 @@ const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toL
 
 /** The reason to show: the session's own, unless the command targets another repo. */
 function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
-  const target = cwd ? repoRoot(targetDir(cmd, cwd)) : null;
+  const target = cwd ? repoRoot(ruleTarget(rule, cmd, cwd)) : null;
   if (!target || !sessionRoot || samePath(target, sessionRoot)) return reason;
   const shown = target.replace(/\\/g, '/');
   const door = doorsOf(target)[rule.name];
@@ -467,13 +493,13 @@ for (const rule of rules) {
     // A PROBE judging which rule owns a shape sets this (run_engine(live_run=False)): its own suite is a
     // run in the checkout it probes. The tool never sends the key, so no agent command can set it.
     if (input.dev_lab_live_run_absent === true) continue;
-    liveReason = liveRunRefusal(input.cwd ? repoRoot(targetDir(cmd, input.cwd)) : null, sessionRoot);
+    liveReason = liveRunRefusal(input.cwd ? repoRoot(ruleTarget(rule, cmd, input.cwd)) : null, sessionRoot);
     hit = liveReason !== '';
   }
   if (hit && rule.severity === 'hint') {
     hints.push(String(rule.reason || rule.name).replaceAll('{root}', root));
   } else if (hit) {
-    logRefusal(rule.name, input.cwd ? repoRoot(targetDir(cmd, input.cwd)) || input.cwd : sessionRoot);
+    logRefusal(rule.name, input.cwd ? repoRoot(ruleTarget(rule, cmd, input.cwd)) || input.cwd : sessionRoot);
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {

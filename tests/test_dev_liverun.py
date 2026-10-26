@@ -366,6 +366,27 @@ def test_a_live_run_probe_that_cannot_answer_refuses_and_names_the_target(tmp_pa
 
 
 @pytest.mark.workstation  # the engine runs under node, workstation kit
+@pytest.mark.parametrize(
+    'spelling',
+    [
+        'git -C {other} status && git -C {tree} merge origin/integrate/main',
+        'cd {tree} && git merge origin/integrate/main && cd {other}',
+        'git -C {other} log -1; cd {tree} && uv sync',
+        'python -m dev_lab.dev.dep --bootstrap {tree}',
+    ],
+)
+def test_the_live_run_target_is_the_tree_the_matching_segment_acts_in(tmp_path: Path, spelling: str) -> None:
+    """INCIDENT: the target was the first dir ANY segment named (or the last `cd`), not the mutating one's."""
+    session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
+    tree, other = _checkout(tmp_path / 'tree'), _checkout(tmp_path / 'other')
+    rules = session / '.claude' / 'hooks' / 'deny-rules.json'
+    said = agenthooks.decide(spelling.format(tree=tree.as_posix(), other=other.as_posix()), rules, cwd=session)
+    assert said is not None
+    assert said.startswith('TREE-HAS-A-LIVE-RUN: could not confirm'), said
+    assert str(tree) in said or tree.as_posix() in said, said
+
+
+@pytest.mark.workstation  # the engine runs under node, workstation kit
 def test_a_session_venv_without_the_kit_is_no_refusal(tmp_path: Path) -> None:
     """A checkout mid-adoption has a real interpreter that cannot import dev_lab: nobody to ask, not a crash."""
     session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
