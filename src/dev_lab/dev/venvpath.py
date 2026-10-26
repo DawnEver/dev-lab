@@ -73,10 +73,10 @@ __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
     'INTERPRETER_ALLOW_ENTRY',
     'INTERPRETER_RULE',
-    'PYTHON_TOKEN',
+    'PYTHON_SLOT',
     'VENV_INTERPRETER_GLOB',
     'VENV_LAYOUTS',
-    'VENV_PYTHON_TOKEN',
+    'VENV_PYTHON_SLOT',
     'UnknownPlatform',
     'checkout_interpreter',
     'current_os_name',
@@ -249,10 +249,10 @@ def checkout_interpreter(root: Path, *, os_name: str) -> Path:
 #: (2026-10-26: a relative ``.venv`` interpreter failed from another cwd, and the agent handed the user the
 #: rewrite instead of running it). A row cannot know the path, so it carries this token and the printer --
 #: the JS engine, or :func:`expand_interpreter` -- substitutes the target checkout's own interpreter.
-PYTHON_TOKEN: Final = '{python}'  # noqa: S105 -- a placeholder, not a secret
+PYTHON_SLOT: Final = '{python}'
 
 #: The metavariable a repo's declared door spells the same thing with; expanded identically.
-VENV_PYTHON_TOKEN: Final = '<venv python>'  # noqa: S105 -- a placeholder, not a secret
+VENV_PYTHON_SLOT: Final = '<venv python>'
 
 _GITDIR: Final = re.compile(r'^gitdir:\s*(.+?)\s*$', re.MULTILINE)
 
@@ -288,11 +288,11 @@ def remedy_interpreter(root: Path, *, os_name: str) -> str:
 
 
 def expand_interpreter(text: str, root: Path, *, os_name: str) -> str:
-    """*text* with :data:`PYTHON_TOKEN` and :data:`VENV_PYTHON_TOKEN` replaced by :func:`remedy_interpreter`."""
-    if PYTHON_TOKEN not in text and VENV_PYTHON_TOKEN not in text:
+    """*text* with :data:`PYTHON_SLOT` and :data:`VENV_PYTHON_SLOT` replaced by :func:`remedy_interpreter`."""
+    if PYTHON_SLOT not in text and VENV_PYTHON_SLOT not in text:
         return text
     interpreter = remedy_interpreter(root, os_name=os_name)
-    return text.replace(PYTHON_TOKEN, interpreter).replace(VENV_PYTHON_TOKEN, interpreter)
+    return text.replace(PYTHON_SLOT, interpreter).replace(VENV_PYTHON_SLOT, interpreter)
 
 
 def running_interpreter() -> str:

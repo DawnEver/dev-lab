@@ -5,7 +5,7 @@ Also the venv-interpreter example subjects every row file shares, derived from t
 
 from __future__ import annotations
 
-from dev_lab.dev.venvpath import PYTHON_TOKEN, VENV_LAYOUTS
+from dev_lab.dev.venvpath import PYTHON_SLOT, VENV_LAYOUTS
 
 __all__ = ['FORGE_WRITE_ROWS', 'VENV_PYTHONS']
 
@@ -20,7 +20,7 @@ VENV_PYTHONS: tuple[str, ...] = tuple('/'.join(parts) for parts in VENV_LAYOUTS.
 #: The hazard and the exit every FORGE-WRITE row shares, spelled once: three rows, one reason.
 _FORGE_HAZARD = 'a forge write through any client but the family door does not record which machine or agent wrote it.'
 _FORGE_REMEDY = (
-    f'Write through the family door: {PYTHON_TOKEN} -m dev_lab.dev.forge issue create|comment|close, '
+    f'Write through the family door: {PYTHON_SLOT} -m dev_lab.dev.forge issue create|comment|close, '
     'pr create; a verb it lacks is the integrator`s.'
 )
 

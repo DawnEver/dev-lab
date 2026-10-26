@@ -22,7 +22,7 @@ from dev_lab.dev.famtests.remedypaths import (
 from dev_lab.dev.floors import FloorUnmet
 from dev_lab.dev.hooks import DENY_RULES
 from dev_lab.dev.venvpath import (
-    PYTHON_TOKEN,
+    PYTHON_SLOT,
     current_os_name,
     expand_interpreter,
     remedy_interpreter,
@@ -61,7 +61,7 @@ def test_no_venv_anywhere_still_spells_an_absolute_path(tmp_path: Path) -> None:
 
 def test_both_tokens_expand_to_the_absolute_interpreter(tmp_path: Path) -> None:
     python = _venv(tmp_path).as_posix()
-    said = expand_interpreter(f'stop it: {PYTHON_TOKEN} -m x; or <venv python> -m y', tmp_path, os_name=_OS)
+    said = expand_interpreter(f'stop it: {PYTHON_SLOT} -m x; or <venv python> -m y', tmp_path, os_name=_OS)
     assert said == f'stop it: {python} -m x; or {python} -m y'
 
 
@@ -79,7 +79,7 @@ def test_a_relative_or_bare_interpreter_is_found(line: str) -> None:
 
 @pytest.mark.parametrize(
     'line',
-    ['C:/r/.venv/Scripts/python.exe -m x', '/home/u/r/.venv/bin/python -m x', f'{PYTHON_TOKEN} -m x', 'git grep -n'],
+    ['C:/r/.venv/Scripts/python.exe -m x', '/home/u/r/.venv/bin/python -m x', f'{PYTHON_SLOT} -m x', 'git grep -n'],
 )
 def test_an_absolute_or_tokenised_interpreter_is_spared(line: str) -> None:
     assert relative_interpreters(line) == ()
@@ -117,7 +117,7 @@ def test_the_engine_prints_the_target_checkouts_interpreter_absolute(tmp_path: P
     (lane / '.git').write_text(f'gitdir: {(main / ".git" / "worktrees" / "lane").as_posix()}\n', encoding='utf-8')
     rules = lane / '.claude' / 'hooks' / 'deny-rules.json'
     rules.parent.mkdir(parents=True)
-    row = {'name': 'X', 'pattern': 'boom', 'reason': f'X: h\nstop it: {PYTHON_TOKEN} -m s; door <venv python> -m d'}
+    row = {'name': 'X', 'pattern': 'boom', 'reason': f'X: h\nstop it: {PYTHON_SLOT} -m s; door <venv python> -m d'}
     rules.write_text(json.dumps([row]), encoding='utf-8')
     said = agenthooks.decide('boom', rules, cwd=lane)
     assert said == f'X: h\nstop it: {python.as_posix()} -m s; door {python.as_posix()} -m d'
