@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -478,20 +479,46 @@ def _link_dir(link: Path, target: Path) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
+def _tool(command: str, rules: Path, cwd: Path) -> str:
+    """What the AGENT TOOL sends: a payload with no probe key -- the one call whose refusal is a metrics line."""
+    payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(cwd)}
+    done = subprocess.run(
+        [agenthooks.node_executable(), str(agenthooks.engine_path('deny-commands')), str(rules)],
+        input=json.dumps(payload), capture_output=True, text=True, encoding='utf-8', check=True, timeout=60,
+    )  # fmt: skip
+    return json.loads(done.stdout)['hookSpecificOutput']['permissionDecisionReason']
+
+
+def _lines(root: Path, count: int) -> list[dict[str, str]]:
+    """*root*'s refusal lines once *count* arrived (the writer is detached), or as many as did in 60 s."""
+    deadline = time.monotonic() + 60
+    while len(read(REFUSAL, root=root)) < count and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return read(REFUSAL, root=root)
+
+
 def test_a_refusal_is_one_metrics_line_written_without_delaying_the_refusal(tmp_path: Path) -> None:
-    """P0 metrics: the engine hands the refusal to the one writer, detached; a session with no venv logs nothing."""
+    """P0 metrics: the engine hands the TOOL's refusal to the one writer, detached; no venv, no line.
+
+    A PROBE (:func:`agenthooks.run_engine`) is a test or a ``--check``, never an agent refused: it logs only to
+    the root it names. The defect: guard suites probing a real checkout's rules wrote bursts of refusals into
+    that checkout's live log, one per suite per row.
+    """
     session = tmp_path / 'session'
     (session / '.git').mkdir(parents=True)
     hooks = session / '.claude' / 'hooks'
     hooks.mkdir(parents=True)
     rules = _rows(hooks, _DENY)
-    assert agenthooks.decide('rm -rf build', rules, cwd=session) == 'D'
+    assert _tool('rm -rf build', rules, session) == 'D'
     assert read(REFUSAL, root=session) == []
     _link_dir(session / '.venv', Path(sys.executable).parents[1])
     assert agenthooks.decide('rm -rf build', rules, cwd=session) == 'D'
-    deadline = time.monotonic() + 60
-    while not read(REFUSAL, root=session) and time.monotonic() < deadline:
-        time.sleep(0.2)
-    assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL, root=session)] == [
+    assert agenthooks.decide('rm -rf build', rules) == 'D'
+    named = tmp_path / 'named'
+    named.mkdir()
+    assert agenthooks.decide('rm -rf build', rules, cwd=session, metrics_root=named) == 'D'
+    assert [line['lab.rule.id'] for line in _lines(named, 1)] == ['PLANTED-DENY']
+    assert _tool('rm -rf build', rules, session) == 'D'
+    assert [(line['lab.rule.id'], line['error.type']) for line in _lines(session, 1)] == [
         ('PLANTED-DENY', 'agent-guard')
-    ]
+    ], 'the two probes logged nothing into the session checkout; the tool call did'

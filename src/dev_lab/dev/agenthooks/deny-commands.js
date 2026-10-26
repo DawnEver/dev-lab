@@ -540,7 +540,10 @@ for (const rule of rules) {
   if (hit && rule.severity === 'hint') {
     hints.push(expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)));
   } else if (hit) {
-    logRefusal(rule.name, input.cwd ? repoRoot(ruleTarget(rule, cmd, input.cwd)) || input.cwd : sessionRoot);
+    // A PROBE (run_engine) names where its refusal is logged, '' for nowhere; the tool never sends the key.
+    const probed = typeof input.dev_lab_metrics_root === 'string';
+    const where = probed ? input.dev_lab_metrics_root : input.cwd ? repoRoot(ruleTarget(rule, cmd, input.cwd)) || input.cwd : sessionRoot;
+    if (where) logRefusal(rule.name, where);
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {

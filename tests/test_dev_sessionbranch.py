@@ -18,7 +18,7 @@ from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.breakglass import notices
 from dev_lab.dev.componentbump import LANE
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.metrics import BYPASS, read
+from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
 from dev_lab.dev.relock import branch_for
 from dev_lab.dev.sessionbranch import P2, P3, P5, P6
 
@@ -495,3 +495,38 @@ def test_every_machine_pusher_targets_a_branch_the_family_default_admits(branch:
     """The forge's own pushers (component bump, relock; autosync pushes only pr/ heads) and the declared pair."""
     declared = branchset_from("[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n", 'p')
     assert declared.admits(branch)
+
+
+def test_every_admitted_break_glass_commit_is_one_hand_action_naming_branch_sha_and_reason(repo: Path) -> None:
+    """P0 metrics: an integrator's Break-Glass merge is a hand action; a refused push records none (planted)."""
+    _forge_merges_declared(repo)
+    _git(repo, 'checkout', '-q', '-b', 'pr/hot', 'int/line')
+    (repo / 'hot.txt').write_text('x\n', encoding='utf-8')
+    _git(repo, 'add', 'hot.txt')
+    _git(repo, 'commit', '-m', 'fix: hot')
+    _git(repo, 'checkout', '-q', 'int/line')
+    _git(
+        repo,
+        'merge',
+        '--no-ff',
+        '-m',
+        'chore(merge): pr/hot\n\nMerged-Branch: pr/hot\nBreak-Glass: forge down',
+        'pr/hot',
+    )
+    glass = _git(repo, 'rev-parse', 'HEAD')
+    (repo / 'bare.txt').write_text('x\n', encoding='utf-8')
+    _git(repo, 'add', 'bare.txt')
+    _git(repo, 'commit', '-m', 'fix: no trailer')
+    assert _push(repo, 'int/line').returncode != 0
+    assert read(HAND_ACTION, root=repo) == [], 'a refused push carried nothing onto the branch'
+    _git(repo, 'checkout', '-q', '-B', 'int/line', glass)  # drop the refused commit
+    (repo / 'two.txt').write_text('x\n', encoding='utf-8')
+    _git(repo, 'add', 'two.txt')
+    _git(repo, 'commit', '-m', 'fix: hot two\n\nBreak-Glass: auto-merge broken')
+    second = _git(repo, 'rev-parse', 'HEAD')
+    done = _push(repo, 'int/line')
+    assert done.returncode == 0, done.stderr
+    assert [
+        (one['lab.action'], one.get('vcs.ref.head.name', ''), one['vcs.ref.head.revision'], one['lab.reason'])
+        for one in read(HAND_ACTION, root=repo)
+    ] == [('break-glass', 'pr/hot', glass, 'forge down'), ('break-glass', '', second, 'auto-merge broken')]

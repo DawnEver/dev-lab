@@ -302,18 +302,30 @@ def run_stage(
         argvs = _argvs(hook, stage, git_args, chosen)
         if _report(stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=env or {})):
             failed.append(hook.id)
-    _log(root, stage, failed)
+    _log(root, stage, failed, push)
     return _verdict(stage, failed)
 
 
-def _log(root: Path, stage: str, failed: Sequence[str]) -> None:
-    """The stage's metrics (:mod:`dev_lab.dev.metrics`): one refusal per failed hook, and every pre-push as a push."""
+def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine] = ()) -> None:
+    """The stage's metrics (:mod:`dev_lab.dev.metrics`): one refusal per failed hook, and every pre-push as a push.
+
+    A push line names the branch and tip it publishes (the first ref it does not delete): a branch's first push
+    is where its edit starts.
+    """
     refused = () if stage in ADVISORY else failed
     if stage != 'pre-push' and not refused:
         return
     repo = metrics.repo_of(root)
     if stage == 'pre-push':
-        metrics.record(metrics.PUSH, root=root, repo=repo)
+        head = next((line for line in push if not line.deleted), None)
+        branch = head.remote_ref.removeprefix('refs/heads/') if head else ''
+        metrics.record(
+            metrics.PUSH,
+            root=root,
+            repo=repo,
+            vcs_ref_head_name=branch,
+            vcs_ref_head_revision=head.local_sha if head else '',
+        )
     for hook_id in refused:
         metrics.record(metrics.REFUSAL, root=root, repo=repo, rule=hook_id, reason=stage)
 
