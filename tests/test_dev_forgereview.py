@@ -41,7 +41,7 @@ from dev_lab.dev.forgereview import (
 )
 from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_scope import OVER_CAP
+from dev_lab.dev.forgereview_scope import OVER_CAP_TAKEOVER
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
@@ -474,7 +474,7 @@ def test_a_diff_over_the_cap_is_not_sent_and_says_so_once(tmp_path: Path) -> Non
     assert command.ran == []
     statuses = status_list(forge, head)
     assert sorted(s.context for s in statuses) == [REVIEW_CONTEXT, HOLD_CONTEXT]
-    assert all(s.state == 'pending' and s.description.startswith(OVER_CAP) for s in statuses)
+    assert all(s.state == 'pending' and s.description.startswith(OVER_CAP_TAKEOVER) for s in statuses)
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
     assert len(forge.statuses[head]) == 2
 
@@ -533,14 +533,14 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     work, head = _work(tmp_path)
     policy = Policy(pr_merges_since='0' * 40)
-    held = (_status(HOLD_CONTEXT, 'pending', f'{OVER_CAP} (9 reviewable bytes > max_total_bytes=5)'), passed)
+    held = (_status(HOLD_CONTEXT, 'pending', f'{OVER_CAP_TAKEOVER} (9 reviewable bytes > max_total_bytes=5)'), passed)
     found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
     assert not found.ready
     assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
-    released = (_status(HOLD_CONTEXT, 'success', 'reviewed by hand'), passed)
+    released = (_status(HOLD_CONTEXT, 'success', 'released by box after the integrator review'), passed)
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
-    worded = (_status(REVIEW_CONTEXT, 'pending', OVER_CAP), passed)
+    worded = (_status(REVIEW_CONTEXT, 'pending', OVER_CAP_TAKEOVER), passed)
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded).ready
 
 

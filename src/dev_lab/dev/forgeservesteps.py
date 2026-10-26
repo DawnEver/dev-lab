@@ -25,6 +25,7 @@ from dev_lab.dev.forgeroute import reconcile
 from dev_lab.dev.forgescarce import red_alarms as scarce_red
 from dev_lab.dev.forgeschedule import load_schedule, starved_alarms
 from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgetakeover import alarms as held_reviews
 from dev_lab.dev.forgetidy import load_hygiene
 from dev_lab.dev.forgetidy import tidy as issue_tidy
 from dev_lab.dev.forgework import Client, ForgeCallFailed
@@ -79,7 +80,7 @@ def prompt(
     alarm: Callable[[Alarm], object],
     host: str,
 ) -> None:
-    """The integrator's prompts, every child's behind/conflict report and a red scarce part, one issue per row.
+    """The integrator's prompts, each child's behind/conflict report, a red scarce part, a held review: an issue each.
 
     A forge or fetch failure is said, not raised -- and then NO row is reconciled, so a partial derivation
     never closes an issue it merely failed to see.
@@ -96,7 +97,13 @@ def prompt(
         raise_once(
             built,
             INTEGRATION,
-            [*found, *sync_alarms(ticked.said, policy, repo, now=forge_now(built)), *glass, *red],
+            [
+                *found,
+                *sync_alarms(ticked.said, policy, repo, now=forge_now(built)),
+                *glass,
+                *red,
+                *held_reviews(built, policy.integration, repo),  # an over-cap head: the integrator's takeover
+            ],
             alarm=alarm,
         )
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:

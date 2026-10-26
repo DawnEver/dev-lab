@@ -37,12 +37,15 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
 __all__ = [
-    'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP', 'Budget', 'Scope', 'Slice', 'gather', 'lens_of',
+    'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'Budget', 'Scope', 'Slice', 'gather', 'lens_of',
     'own_base', 'plan', 'reviewable', 'reviewed_heads',
 ]  # fmt: skip
 
-#: The review description of a held head (its :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` says the same).
-OVER_CAP: Final = 'over the cap: review it by hand, then release tests/review-hold'
+#: The review description of a held head (its :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` says the same): a
+#: TAKEOVER, like a review whose reviewers were all exhausted. The integrator session reviews it through the same
+#: method over every slice -- a session is never metered, so the cap that bounds a program review does not bind it
+#: -- and its door posts the findings and releases the hold (:mod:`dev_lab.dev.forgetakeover`).
+OVER_CAP_TAKEOVER: Final = 'over the cap: integrator takeover -- forge review takeover <sha> reviews it and releases'
 
 #: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
 ONLY_GENERATED: Final = 'nothing to review: every changed file is generated'
@@ -167,19 +170,28 @@ class Budget:
 
 
 def plan(
-    root: Path, target: str, head: str, budget: Budget, reviewed: Sequence[str] = (), *, sliceable: bool = True
+    root: Path,
+    target: str,
+    head: str,
+    budget: Budget,
+    reviewed: Sequence[str] = (),
+    *,
+    sliceable: bool = True,
+    metered: bool = True,
 ) -> Scope:
     """The :class:`Scope` of *head*'s review against *target*, cut by *budget*.
 
     A command that cannot be told a slice's paths (not *sliceable*) reads the whole range: past one slice, held.
+    Not *metered* (a session's takeover), the total cap and the one-file cap do not hold it: a file larger than a
+    slice is a slice of its own, and the session reads every slice.
     """
     reviewed_range = f'{own_base(root, target, head, reviewed)}..{head}'
     sizes = {path: n for path, n in _sizes(root, reviewed_range).items() if reviewable(path, budget.derived)}
     total = sum(sizes.values())
-    if total > budget.total_bytes:
+    if metered and total > budget.total_bytes:
         return Scope(reviewed_range, held=f'{total} reviewable bytes > max_total_bytes={budget.total_bytes}')
-    if huge := sorted(path for path, n in sizes.items() if n > budget.slice_bytes):
-        why = f'{huge[0]} alone is over max_diff_bytes={budget.slice_bytes}: declare it derived or review it by hand'
+    if metered and (huge := sorted(path for path, n in sizes.items() if n > budget.slice_bytes)):
+        why = f'{huge[0]} alone is over max_diff_bytes={budget.slice_bytes}: derive it, or the integrator takes over'
         return Scope(reviewed_range, held=why)
     by_lens: dict[str, dict[str, int]] = {}
     for path, n in sizes.items():

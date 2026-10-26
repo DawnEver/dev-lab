@@ -18,7 +18,9 @@ reader and writer; a tick without a host carries the block through unchanged.
 
 ESCALATION. A notice no session is addressed by, or one whose head is still the PR's head ``notice_escalate``
 (default ``"2 h"``) after it opened, is the integrator's (:func:`escalated`).
-``python -m dev_lab.dev.forge notices [--session ID | --integrator] [--ack ID]`` prints the open ones.
+``python -m dev_lab.dev.forge notices [--session ID | --integrator] [--ack ID]`` prints the open ones; without
+``--session`` it also lists every head whose review is held over the cap, with the door the integrator runs
+(:mod:`dev_lab.dev.forgetakeover`).
 """
 
 from __future__ import annotations
@@ -230,6 +232,8 @@ def main(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     """``forge notices``: print the open notices; exit 0 when none, 1 when some, 2 when the forge fails."""
+    from dev_lab.dev.forgetakeover import held  # noqa: PLC0415
+    from dev_lab.dev.forgetakeover import line as held_line  # noqa: PLC0415
     from dev_lab.dev.forgework import ForgeCallFailed, client_for  # noqa: PLC0415
     from dev_lab.dev.lanepolicy import load_policy  # noqa: PLC0415
 
@@ -241,6 +245,7 @@ def main(
         blocks = _blocks(origin, policy)
         if args.ack:
             return _ack(origin, blocks, args.ack)
+        reviews = held(origin, policy.integration) if not args.session else ()  # over the cap: the integrator's
     except (ForgeCallFailed, OSError, ValueError) as failed:
         emit(f'[notices] {failed}', err=True)
         return 2
@@ -255,7 +260,9 @@ def main(
     ]
     for notice in shown:
         emit(notice.line())
-    return 1 if shown else 0
+    for pull in reviews:
+        emit(held_line(pull))
+    return 1 if shown or reviews else 0
 
 
 def _ack(client: Client, blocks: Sequence[tuple[int, Block, Any]], wanted: str) -> int:

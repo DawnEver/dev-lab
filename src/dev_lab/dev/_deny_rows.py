@@ -58,6 +58,7 @@ from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
+from dev_lab.dev._deny_reviewhold_row import REVIEW_HOLD_VIA_TAKEOVER
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
@@ -357,4 +358,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     BARE_PYTHON,
     RECURSIVE_GREP,
     REPORTS_LIVE_IN_MEMORY,
+    REVIEW_HOLD_VIA_TAKEOVER,
 )

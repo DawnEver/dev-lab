@@ -12,8 +12,9 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 * every ``tests/<part>`` part of its head stands PASS (:func:`dev_lab.dev.platformparts.standing`), except a
   scarce part its diff does not reach -- WAIVED, run on integration after the merge
   (:mod:`dev_lab.dev.forgescarce`, user ruling 2026-10-22);
-* its review is not HELD: a pending ``tests/review-hold`` waits until a session releases it with ``success``
-  (:func:`review_hold`); every other review state stays advisory;
+* its review is not HELD: a pending ``tests/review-hold`` waits until the integrator's takeover review releases it
+  (``forge review takeover <sha>``, :mod:`dev_lab.dev.forgetakeover`; :func:`review_hold`); every other review
+  state stays advisory;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit

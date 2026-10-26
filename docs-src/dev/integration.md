@@ -112,6 +112,9 @@ Each tick, and nothing else:
    that moves `pr_merges_since` past the commit.
 6. A PR left open after its head landed is closed by the forge's tick; to do it now:
    `python -m dev_lab.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
+7. A head whose review is HELD over the cap (`python -m dev_lab.dev.forge review held`) is yours: run
+   `python -m dev_lab.dev.forge review takeover <sha>`, which reviews it, posts the findings and releases the hold
+   ([the PR reviewer](#the-pr-reviewer-is-advisory)). Ask the user only for a decision a finding raises.
 
 An integrator runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
@@ -141,9 +144,16 @@ slice, not whether a head is read at all:
 **It gates nothing but one state**: `tests/review` is never a part, so `integrate promote` and push admission
 never wait on it, and the forge's auto-merge waits only on a head the slices cannot hold -- its reviewable change
 over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices for a command without `{paths}`.
-That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), until a
-session reviews it and releases it: `python -m dev_lab.dev.forge status post <sha> --context tests/review-hold
---state success --description "reviewed by <who>"`. So an unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
+That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), and it is
+a TAKEOVER the INTEGRATOR AGENT owns (user ruling 2026-10-26): the forge lists it among the integrator's prompts
+(an `integration` issue per held head, `forge notices`, `forge review held`) with the door to run,
+`python -m dev_lab.dev.forge review takeover <sha>`. The door runs the same sliced method over EVERY slice -- a
+session is not metered, so the byte cap that bounds a program review does not bind it -- posts the findings comment
+and `tests/review`, and releases the hold, refusing to release without a findings comment for that sha (the
+release is the record that a review happened; a raw `status post` on `tests/review-hold` is refused,
+[REVIEW-HOLD-VIA-TAKEOVER](refusals.md#review-hold-via-takeover)). `forge review plan <sha>` prints the slices. A
+human is asked only for a decision the review surfaces, never for the routine review or the release. So an
+unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
 nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review
 (a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run on host
 <host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
