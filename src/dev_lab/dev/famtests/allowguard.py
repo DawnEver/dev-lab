@@ -63,6 +63,7 @@ from dev_lab.dev.agent_guard import (
     guard_installation,
 )
 from dev_lab.dev.agenthooks import run_engine
+from dev_lab.dev.venvpath import running_interpreter
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -221,7 +222,7 @@ def _assert_there_is_something_to_contradict(root: Path) -> None:
     if not engine.is_file():
         msg = (
             f'{engine} does not exist, so no engine in this checkout judges anything and every allow '
-            f'row is trivially honest. Install one with `python -m dev_lab.dev.agent_guard '
+            f'row is trivially honest. Install one with `{running_interpreter()} -m dev_lab.dev.agent_guard '
             f'--install --repo .`; the wheel ships a copy but running THAT one here would answer '
             f'about the family rather than about this tree.'
         )

@@ -61,6 +61,7 @@ from dev_lab.dev.reports import (
     stale_declarations,
 )
 from dev_lab.dev.runcache import CachedRun, record, runs
+from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verdict import Verdict
 from dev_lab.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from dev_lab.dev.verify import _tee as tee_step
@@ -1402,7 +1403,8 @@ def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, mon
     (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
     monkeypatch.setattr(forgerequest, 'status_paths', lambda _root: ())
     offer = forgerequest.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',))
-    assert f'python -m dev_lab.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py' in offer
+    door = f'{running_interpreter()} -m dev_lab.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py'
+    assert door in offer, offer  # the interpreter by ABSOLUTE path: an agent runs it from any cwd
     monkeypatch.setattr(forgerequest, 'status_paths', lambda _root: ('tests/test_a.py',))
     assert 'cannot be offered' in forgerequest.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',)), 'PLANTED: dirty'
 

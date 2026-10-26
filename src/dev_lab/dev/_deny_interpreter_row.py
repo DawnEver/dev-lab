@@ -19,17 +19,18 @@ interpreter somebody else chose, so BARE-PYTHON says the same exit and lets the 
 
 from __future__ import annotations
 
-from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_LAYOUTS
+from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, PYTHON_TOKEN, VENV_LAYOUTS
 
 __all__ = ['BARE_INTERPRETER', 'BARE_PYTHON', 'INTERPRETER_REMEDY']
 
 _NT = '/'.join(VENV_LAYOUTS['nt'])
 _POSIX = '/'.join(VENV_LAYOUTS['posix'])
 
-#: Each checkout owns its interpreter; bootstrap a missing environment rather than borrowing main.
+#: Each checkout owns its interpreter; bootstrap a missing environment rather than borrowing main. Named by
+#: ABSOLUTE path through the engine's token (2026-10-26: the relative spelling failed from another cwd).
 INTERPRETER_REMEDY = (
-    f"Use {_NT} ({_POSIX} POSIX), each worktree's own (main's is main-only); bootstrap a missing one "
-    f'with <an existing checkout interpreter> -m dev_lab.dev.dep --bootstrap <worktree> (checked doors are '
+    f"Use {PYTHON_TOKEN}, this worktree's own interpreter (main's is main-only); bootstrap a missing one "
+    f'with {PYTHON_TOKEN} -m dev_lab.dev.dep --bootstrap <worktree> (checked doors are '
     f'agent-allowed, not arbitrary installers; allowed: {INTERPRETER_ALLOW_ENTRY}).'
 )
 

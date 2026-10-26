@@ -40,6 +40,7 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.agenthooks import STAMP, engine_source
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'ABSENT',
@@ -88,6 +89,12 @@ ENGINE_REL: Final = '.claude/hooks/deny-commands.js'
 RULES_REL: Final = '.claude/hooks/deny-rules.json'
 SETTINGS_REL: Final = '.claude/settings.json'
 
+#: THE ONE DOOR a hook reaches this checkout's interpreter through: a node launcher that resolves the venv
+#: per platform (and the main checkout's from a linked worktree). A hook spelling ``.venv`` inline drifts
+#: from it -- motronics pins that (``test_no_hook_spells_its_own_interpreter``). A repo's own launcher at
+#: this path is kept: the install writes it only where none is.
+LAUNCHER_REL: Final = '.claude/hooks/py.js'
+
 #: The hook command line, DERIVED from the two paths above rather than spelled twice -- the lesson
 #: :data:`dev_lab.dev.hook_install.INSTALL_COMMAND` records: a restatement of a path is a place
 #: for the real one to move away from. ANCHORED ON ``$CLAUDE_PROJECT_DIR`` (2026-10-20): the tool runs
@@ -100,16 +107,11 @@ SETTINGS_REL: Final = '.claude/settings.json'
 HOOK_COMMAND: Final = (
     f'e="$CLAUDE_PROJECT_DIR/{ENGINE_REL}"; '
     '[ -f "$e" ] || { echo "agent-guard: no engine at $e -- refused (fail closed); '
-    're-install: python -m dev_lab.dev.hook_install --install" >&2; exit 2; }; '
+    f're-install: node $CLAUDE_PROJECT_DIR/{LAUNCHER_REL} -m dev_lab.dev.hook_install --install" >&2; exit 2; }}; '
     f'node "$e" "$CLAUDE_PROJECT_DIR/{RULES_REL}" || '
     '{ echo "agent-guard: the engine exited $? -- refused (fail closed)" >&2; exit 2; }'
 )
 
-#: THE ONE DOOR a hook reaches this checkout's interpreter through: a node launcher that resolves the venv
-#: per platform (and the main checkout's from a linked worktree). A hook spelling ``.venv`` inline drifts
-#: from it -- motronics pins that (``test_no_hook_spells_its_own_interpreter``). A repo's own launcher at
-#: this path is kept: the install writes it only where none is.
-LAUNCHER_REL: Final = '.claude/hooks/py.js'
 _LAUNCHER_SHIPPED: Final = Path(__file__).resolve().with_name('agent_launcher.js')
 
 
@@ -477,7 +479,7 @@ def report_guard(argv: list[str] | None = None) -> int:
         f'installed guard: {", ".join(part.part for part in report.failing)}. An ABSENT or unreadable part '
         f'refuses nothing, and every agent command so far went through it; a FOREIGN one may well refuse '
         f'things, but it is enforcing a file nobody in this family can vouch for.\n'
-        f'  Install with:  python -m dev_lab.dev.agent_guard --install --repo {report.repo}'
+        f'  Install with:  {running_interpreter()} -m dev_lab.dev.agent_guard --install --repo {report.repo}'
     )
     return 1
 

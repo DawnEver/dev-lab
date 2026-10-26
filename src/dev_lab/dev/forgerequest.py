@@ -79,6 +79,7 @@ from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import ProducerExit, release_reason
 from dev_lab.dev.treedirt import status_paths
+from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
 
 if TYPE_CHECKING:
@@ -468,5 +469,5 @@ def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:
         return 'It cannot be offered elsewhere: commit and push the files it selects first.'
     return (
         'Or offer it to a host that admits it: '
-        f'python -m dev_lab.dev.forge request {TESTS} --sha {head} --paths {" ".join(files)}'
+        f'{running_interpreter()} -m dev_lab.dev.forge request {TESTS} --sha {head} --paths {" ".join(files)}'
     )

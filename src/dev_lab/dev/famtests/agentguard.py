@@ -59,6 +59,7 @@ from dev_lab.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_instal
 from dev_lab.dev.agenthooks import node_executable, run_engine
 from dev_lab.dev.hook_adoption import DENY_RULES, assert_shippable, render
 from dev_lab.dev.rules import tracked_files
+from dev_lab.dev.venvpath import running_interpreter
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -165,7 +166,7 @@ def assert_the_guard_is_live(*, root: Path) -> None:
         detail = '\n  '.join(f'{part.part}: {part.status} -- {part.detail}' for part in report.parts)
         _refuse(
             f'the agent guard in {root} is {report.verdict}, not {GUARDED}:\n  {detail}\n'
-            f'Install it with `python -m dev_lab.dev.agent_guard --install --repo .`. A declared '
+            f'Install it with `{running_interpreter()} -m dev_lab.dev.agent_guard --install --repo {root}`. A declared '
             f'guard that is not live refuses nothing while reading as protection.'
         )
 

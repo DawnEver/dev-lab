@@ -65,22 +65,26 @@ from __future__ import annotations
 
 import os
 import re
-from typing import TYPE_CHECKING, Final
-
-if TYPE_CHECKING:
-    from pathlib import Path
+import sys
+from pathlib import Path
+from typing import Final
 
 __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
     'INTERPRETER_ALLOW_ENTRY',
     'INTERPRETER_RULE',
+    'PYTHON_TOKEN',
     'VENV_INTERPRETER_GLOB',
     'VENV_LAYOUTS',
+    'VENV_PYTHON_TOKEN',
     'UnknownPlatform',
     'checkout_interpreter',
     'current_os_name',
+    'expand_interpreter',
     'hardcoded_spellings',
     'portable',
+    'remedy_interpreter',
+    'running_interpreter',
     'unportable_row',
     'venv_interpreter',
 ]
@@ -236,6 +240,65 @@ def checkout_interpreter(root: Path, *, os_name: str) -> Path:
     relative = venv_interpreter(os_name=os_name)
     own = root / relative
     if not own.is_file() or (root / '.venv').resolve() != root.resolve() / '.venv':
-        msg = f'{root} has no own environment; run python -m dev_lab.dev.dep --bootstrap "{root}"'
+        msg = f'{root} has no own environment; run {running_interpreter()} -m dev_lab.dev.dep --bootstrap "{root}"'
         raise FileNotFoundError(msg)
     return own
+
+
+#: THE TOKEN A REMEDY NAMES ITS INTERPRETER BY. A remedy printed to an agent names an ABSOLUTE interpreter
+#: (2026-10-26: a relative ``.venv`` interpreter failed from another cwd, and the agent handed the user the
+#: rewrite instead of running it). A row cannot know the path, so it carries this token and the printer --
+#: the JS engine, or :func:`expand_interpreter` -- substitutes the target checkout's own interpreter.
+PYTHON_TOKEN: Final = '{python}'  # noqa: S105 -- a placeholder, not a secret
+
+#: The metavariable a repo's declared door spells the same thing with; expanded identically.
+VENV_PYTHON_TOKEN: Final = '<venv python>'  # noqa: S105 -- a placeholder, not a secret
+
+_GITDIR: Final = re.compile(r'^gitdir:\s*(.+?)\s*$', re.MULTILINE)
+
+
+def _main_checkout(root: Path) -> Path | None:
+    """The main checkout of a LINKED worktree (its ``.git`` is a file naming ``<main>/.git/worktrees/<n>``)."""
+    marker = root / '.git'
+    if not marker.is_file():
+        return None
+    found = _GITDIR.search(marker.read_text(encoding='utf-8', errors='replace'))
+    if found is None:
+        return None
+    gitdir = Path(found.group(1))
+    gitdir = gitdir if gitdir.is_absolute() else root / gitdir
+    return gitdir.parent.parent.parent if gitdir.parent.name == 'worktrees' else None
+
+
+def remedy_interpreter(root: Path, *, os_name: str) -> str:
+    """The ABSOLUTE interpreter a remedy about *root* names, POSIX-separated.
+
+    The checkout's own venv; else, for a linked worktree with none, the main checkout's (the one that can
+    bootstrap it); else the checkout's own path spelled absolute, so the line runs from any cwd once the
+    environment exists.
+    """
+    relative = venv_interpreter(os_name=os_name)
+    own = Path(root).absolute() / relative
+    if own.is_file():
+        return own.as_posix()
+    main = _main_checkout(Path(root).absolute())
+    if main is not None and (main / relative).is_file():
+        return (main / relative).as_posix()
+    return own.as_posix()
+
+
+def expand_interpreter(text: str, root: Path, *, os_name: str) -> str:
+    """*text* with :data:`PYTHON_TOKEN` and :data:`VENV_PYTHON_TOKEN` replaced by :func:`remedy_interpreter`."""
+    if PYTHON_TOKEN not in text and VENV_PYTHON_TOKEN not in text:
+        return text
+    interpreter = remedy_interpreter(root, os_name=os_name)
+    return text.replace(PYTHON_TOKEN, interpreter).replace(VENV_PYTHON_TOKEN, interpreter)
+
+
+def running_interpreter() -> str:
+    """The running process's interpreter, absolute and POSIX-separated: what a door's printed remedy names.
+
+    Not resolved: a POSIX venv interpreter is a symlink to the base Python, and resolving it would name an
+    interpreter outside the venv.
+    """
+    return Path(sys.executable).absolute().as_posix()

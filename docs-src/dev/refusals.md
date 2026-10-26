@@ -15,7 +15,7 @@ The budget is declared data in `dev_lab.dev.disclosure.BUDGETS`:
 - the exact command to run instead (the door);
 - `details: docs-src/dev/refusals.md#<id> (lab-commons)`, which points at the section below.
 
-When a command targets another repo, the engine adds one header line naming that repo. `dev_lab.dev.famtests.injectedtext` runs the budget in a consumer's suite. `{remedy}` in an exit is the consuming repo's own door.
+When a command targets another repo, the engine adds one header line naming that repo. `dev_lab.dev.famtests.injectedtext` runs the budget in a consumer's suite. `{remedy}` in an exit is the consuming repo's own door. `{python}` in an exit (and `<venv python>` in a door) is printed as the target checkout's own venv interpreter by ABSOLUTE path -- a linked worktree without one gets its main checkout's -- so the line runs from any cwd (2026-10-26: a relative `.venv` interpreter failed from another directory and the agent handed the command to the user). An exit is for the agent to run itself.
 
 ## BARE-TEST-INVOCATION
 
@@ -25,17 +25,17 @@ When a command targets another repo, the engine adds one header line naming that
 ## FORGE-WRITE-VIA-CLI
 
 - **Why it is refused.** a forge write through any client but the family door carries no PROVENANCE. The forge records only the token`s login, and every agent on a box shares one token, so an issue, comment, close or PR written this way cannot say which machine or which agent wrote it. The family door opens every body it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.
-- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the integrator`s to make: report it rather than reaching for another client.
+- **The exit.** Write through the family door: {python} -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the integrator`s to make: report it rather than reaching for another client.
 
 ## FORGE-WRITE-VIA-GH-API
 
 - **Why it is refused.** a forge write through any client but the family door carries no PROVENANCE. The forge records only the token`s login, and every agent on a box shares one token, so an issue, comment, close or PR written this way cannot say which machine or which agent wrote it. The family door opens every body it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.
-- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the integrator`s to make: report it rather than reaching for another client.
+- **The exit.** Write through the family door: {python} -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the integrator`s to make: report it rather than reaching for another client.
 
 ## FORGE-WRITE-VIA-HTTP
 
 - **Why it is refused.** a forge write through any client but the family door carries no PROVENANCE. The forge records only the token`s login, and every agent on a box shares one token, so an issue, comment, close or PR written this way cannot say which machine or which agent wrote it. The family door opens every body it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.
-- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the integrator`s to make: report it rather than reaching for another client.
+- **The exit.** Write through the family door: {python} -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the integrator`s to make: report it rather than reaching for another client.
 
 ## GIT-COMMIT-AMEND
 
@@ -52,7 +52,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 ## TREE-HAS-A-LIVE-RUN
 
 - **Why it is refused.** a run executes its checkout's code and `.venv` for its whole life, so an edit, a merge, a checkout or an environment sync under it makes its result describe a tree that never existed. Measured 2026-10-19 in motronics: during a JMAG `deck run`, an agent edited a test, merged into the checkout and re-synced the venv the run executed from. The run is found WITHOUT its cooperation (`dev_lab.dev.liverun`, read off `lab_commons.census`): a process READS the tree when it is a Python interpreter working in it or an argument names a path in it, and the row binds only while one exists. `output/`, `.claude/` and `.venv/` are not the tree; a process executing from the venv locks the venv (`dep`), not the tree.
-- **The exit.** Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait for the run, or stop it: python -m dev_lab.dev.stoprun --pid <pid>.
+- **The exit.** Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait for the run, or stop it yourself: {python} -m dev_lab.dev.stoprun --pid <pid>.
 
 ## GIT-STASH
 
@@ -77,7 +77,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 ## PUSH-REMOTE-DELETE
 
 - **Why it is refused.** a main session may push without asking (MAIN-SESSION-PUBLISHES), and the allow row that opens the push is a glob -- it admits `--delete`, `-d`, `--prune`, `--mirror` and a `:<ref>` refspec exactly as readily as a plain push. Deleting a ref on origin is the one push nothing on the agent's side can undo: the local branch may already be gone, and another reader's verdict may cite the deleted tip. A raw delete checks nothing first; the 2026-10-21 ruling opened deletion only where it is PROVABLY lossless.
-- **The exit.** LOSSLESS-DELETE: `python -m dev_lab.dev.branchprune delete <branch>...` fetches, deletes only when every commit on the branch is on integration or on another live origin branch / open PR head (naming that container), and otherwise refuses naming the commits that would be lost. Local cleanup stays a door: `python -m dev_lab.dev.branchset --apply` deletes merged LOCAL branches only and lists origin's.
+- **The exit.** LOSSLESS-DELETE: `{python} -m dev_lab.dev.branchprune delete <branch>...` fetches, deletes only when every commit on the branch is on integration or on another live origin branch / open PR head (naming that container), and otherwise refuses naming the commits that would be lost. Local cleanup stays a door: `python -m dev_lab.dev.branchset --apply` deletes merged LOCAL branches only and lists origin's.
 
 ## PUSH-NO-VERIFY
 
@@ -102,7 +102,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 ## BARE-INTERPRETER
 
 - **Why it is refused.** `uv run` or `uvx` runs an interpreter somebody else chose -- uv's managed one -- not this checkout's venv, and `uv run` may also mutate the checkout's environment outside the checked dependency door. Each worktree owns `.venv`; main's environment belongs only to main, never to an unpopulated lane.
-- **The exit.** Run this checkout's own venv interpreter: `.venv/Scripts/python.exe <args>` on Windows or `.venv/bin/python <args>` on POSIX. If it is missing, an existing checkout interpreter may run `-m dev_lab.dev.dep --bootstrap <worktree>` to create the target's own environment. Use the repo-declared dependency-sync door (`scripts/gate/dep_sync.py` where supplied) for dependency changes. Agents may run these specific checked doors; this does not permit arbitrary installers or silent main-environment mutation. A repo-declared CLI stays allowed.
+- **The exit.** Run this checkout's own venv interpreter, printed by absolute path: `{python} <args>`. If it is missing, `{python} -m dev_lab.dev.dep --bootstrap <worktree>` (the main checkout's interpreter, for a linked worktree) to create the target's own environment. Use the repo-declared dependency-sync door (`scripts/gate/dep_sync.py` where supplied) for dependency changes. Agents may run these specific checked doors; this does not permit arbitrary installers or silent main-environment mutation. A repo-declared CLI stays allowed.
 
 ## BARE-PYTHON
 
@@ -112,9 +112,8 @@ HINT: a bare interpreter mutates nothing; the hazard is a wrong interpreter, not
   resolves against packages this checkout never declared and a result cannot be reproduced from the lock. It mutates
   no environment, which is why it hints (toolchain plan P3, 2026-10-23) while BARE-INTERPRETER, whose `uv run` may
   sync one, refuses.
-- **The exit.** The same as BARE-INTERPRETER's: this checkout's own `.venv/Scripts/python.exe <args>` on Windows or
-  `.venv/bin/python <args>` on POSIX. If it is missing, an existing checkout interpreter may run
-  `-m dev_lab.dev.dep --bootstrap <worktree>` to create the target's own environment; main's environment belongs
+- **The exit.** The same as BARE-INTERPRETER's: this checkout's own interpreter by absolute path,
+  `{python} <args>`. If it is missing, `{python} -m dev_lab.dev.dep --bootstrap <worktree>` to create the target's own environment; main's environment belongs
   only to main.
 
 ## RECURSIVE-GREP
