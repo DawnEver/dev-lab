@@ -180,17 +180,24 @@ def integration(tmp_path: Path) -> Path:
     _git(root, 'merge', '--no-ff', '-q', '-m', glass, 'pr/glass', when='2026-10-05T10:00:00+00:00')
     plain = 'chore(merge): pr/forge\n\nMerged-Branch: pr/forge'
     _git(root, 'merge', '--no-ff', '-q', '-m', plain, 'pr/forge', when='2026-10-06T10:00:00+00:00')
+    hot = 'fix: hot\n\nBreak-Glass: auto-merge broken'
+    _git(root, 'commit', '-q', '--allow-empty', '-m', hot, when='2026-10-07T10:00:00+00:00')
+    _git(root, 'commit', '-q', '--allow-empty', '-m', 'chore: bare', when='2026-10-08T10:00:00+00:00')  # PLANTED
     return root
 
 
 def test_landings_are_the_integration_branchs_named_merges_in_the_window(integration: Path) -> None:
-    """The integration branch's first-parent ``Merged-Branch:`` merges, each with its Break-Glass reason or none."""
+    """The integration branch's first-parent merges naming a branch, and its Break-Glass commits, with reasons."""
     found = metrics.landings(integration, 'int', since=SINCE, until=OCT_06)
     assert [(one.branch, one.break_glass, one.time.isoformat()) for one in found] == [
         ('pr/glass', 'forge down', '2026-10-05T10:00:00+00:00')
     ], 'the window has an upper bound: the 10-06 merge is outside it'
     every = metrics.landings(integration, 'int', since=SINCE, until=UNTIL)
-    assert [(one.branch, one.break_glass) for one in every] == [('pr/glass', 'forge down'), ('pr/forge', '')]
+    assert [(one.branch, one.break_glass) for one in every] == [
+        ('pr/glass', 'forge down'),
+        ('pr/forge', ''),
+        ('', 'auto-merge broken'),
+    ], 'a direct Break-Glass commit lands too, naming no branch; a commit with neither trailer is no landing'
     assert all(len(one.sha) == 40 for one in every)
 
 
@@ -285,3 +292,11 @@ def test_a_test_run_never_writes_the_real_log(tmp_path: Path) -> None:
     path = record(PUSH, root=here, repo=marker)
     assert path.is_relative_to(tmp_path), f'a test wrote {path}, outside its own tree'
     assert marker not in (real_file.read_text(encoding='utf-8') if real_file.is_file() else '')
+
+
+def test_a_branch_landed_with_no_pr_is_counted_and_so_is_every_break_glass_commit() -> None:
+    """Measured 2026-10-26: dev-lab's Break-Glass merges landed branches no PR ever named -- invisible per PR."""
+    orphan = metrics.Landing('d' * 40, datetime(2026, 10, 7, tzinfo=UTC), 'integration/local-1007', 'forge down')
+    pulls = [_pull(1, 'pr/glass', created='2026-10-05T04:00:00Z', merged=None)]  # PLANTED: GLASS has its PR
+    found = compute(REPO, {}, pulls, since=SINCE, until=UNTIL, landings=[GLASS, orphan])
+    assert (found.break_glass_commits, found.landed_without_pr) == (2, 1)

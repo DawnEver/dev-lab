@@ -218,7 +218,7 @@ def break_glass(root: Path, *, repo: str, sha: str, branch: str, reason: str) ->
 
 @dataclass(frozen=True)
 class Landing:
-    """One first-parent merge of the integration branch: the *branch* it names, and its Break-Glass reason."""
+    """One first-parent commit of the integration branch: the *branch* it merges (or ``''``), its Break-Glass reason."""
 
     sha: str
     time: datetime
@@ -231,7 +231,7 @@ _GLASS: Final = re.compile(r'^Break-Glass:[ \t]*(\S.*?)\s*$', re.MULTILINE)
 
 
 def landings(root: Path, ref: str, *, since: datetime, until: datetime) -> list[Landing]:
-    """*ref*'s first-parent commits in ``[since, until)`` naming a ``Merged-Branch:``, oldest first."""
+    """*ref*'s first-parent commits in ``[since, until)`` with ``Merged-Branch:`` or ``Break-Glass:``; oldest first."""
     done = _door.run(
         [_GIT, '-C', str(root), 'log', '--first-parent', '--reverse', '--format=%H%x1f%cI%x1f%B%x1e', ref,
          f'--since={since.isoformat()}', f'--until={until.isoformat()}'],
@@ -243,9 +243,9 @@ def landings(root: Path, ref: str, *, since: datetime, until: datetime) -> list[
             continue
         sha, when, body = entry.strip().split('\x1f', 2)
         time = datetime.fromisoformat(when).astimezone(UTC)
-        if (named := _MERGED.findall(body)) and since <= time < until:
-            glass = _GLASS.findall(body)
-            found.append(Landing(sha, time, named[-1], glass[-1] if glass else ''))
+        named, glass = _MERGED.findall(body), _GLASS.findall(body)
+        if (named or glass) and since <= time < until:
+            found.append(Landing(sha, time, named[-1] if named else '', glass[-1] if glass else ''))
     return found
 
 
@@ -267,6 +267,8 @@ class Metrics:
     false_positive_share: float | None
     open_prs: int
     host_failures_without_status: int
+    break_glass_commits: int
+    landed_without_pr: int
 
 
 def _slug(url: str) -> str:
@@ -315,7 +317,8 @@ def compute(
     (a local merge closed by ``pr close-landed``). Edit->merged runs from the first push naming its head
     branch, or the PR's opening when that is earlier. A PR's own ``pr create`` is the session's normal act, not
     a touch; any other hand action naming its number, head commit or head branch is, and so is a Break-Glass
-    landing of its branch -- once per sha, logged or not. A refusal is a candidate false positive when a
+    landing of its branch -- once per sha, logged or not; every Break-Glass commit is counted, and every landed
+    branch no PR ever named (a hand path no per-PR figure can see). A refusal is a candidate false positive when a
     bypass of the same rule in the same repository follows it.
     """
     slug = _slug(repo)
@@ -344,6 +347,7 @@ def compute(
         return min(opened, first) if first else opened
 
     listed = list(pulls)
+    heads = {(p.get('head') or {}).get('ref') for p in listed}
     merged = [(p, end) for p in listed if (end := merged_at(p)) is not None and inside(end)]
     logged = [a for a in mine(HAND_ACTION) if a.get('lab.action') != 'pr create']
     glass = {a.get('vcs.ref.head.revision'): a for a in logged if a.get('lab.action') == BREAK_GLASS_ACTION}
@@ -371,6 +375,10 @@ def compute(
         false_positive_share=_ratio(candidates, len(refusals)),
         open_prs=sum(1 for p in listed if p.get('state') == 'open'),
         host_failures_without_status=len(mine(HOST_FAILURE)),
+        break_glass_commits=len(
+            {a.get('vcs.ref.head.revision') for a in hands if a.get('lab.action') == BREAK_GLASS_ACTION}
+        ),
+        landed_without_pr=len({one.branch for one in landed if one.branch and inside(one.time)} - heads),
     )
 
 
