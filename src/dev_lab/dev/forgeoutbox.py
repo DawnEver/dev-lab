@@ -175,7 +175,8 @@ def replay(journal: Journal, client: Client, *, now: float | None = None) -> lis
 
     A write past its ``until`` is dropped by name (a lease is worth only its first answer); a write whose
     probe finds it already landed is acknowledged without sending; one the forge still refuses or cannot
-    take stays journaled for the next tick.
+    take stays journaled for the next tick -- unless its refusal is FINAL (:attr:`ForgeCallFailed.final`): that
+    write is dropped by name once, since replaying a definitive 4xx on every tick of every host never lands it.
     """
     lines: list[str] = []
     moment = time.time() if now is None else now
@@ -192,7 +193,11 @@ def replay(journal: Journal, client: Client, *, now: float | None = None) -> lis
                 continue
             client.resend(write)
         except ForgeCallFailed as exc:
-            lines.append(f'outbox: kept {what} -- {exc.report.diagnosis.value}')
+            if exc.final is None:
+                lines.append(f'outbox: kept {what} -- {exc.report.diagnosis.value}')
+                continue
+            journal.ack(write.key)
+            lines.append(f'outbox: dropped {what} -- the forge refused it ({exc.final}), final')
             continue
         journal.ack(write.key)
         lines.append(f'outbox: replayed {what}')
