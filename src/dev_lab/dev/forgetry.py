@@ -8,7 +8,7 @@ selection holding a ``jmag`` test.
 ROOM IS READ, NOT WAITED FOR. The hosts' cards (:mod:`dev_lab.dev.forgehosts`) say what each host admitted against
 on its last tick; a try is published only when some fresh card that RUNS requests -- a cluster seat runs none
 (:meth:`dev_lab.dev.forgetake.ClaimPass._not_here`) -- admits its need-set and size now
-(:func:`lab_commons.compute.admission.admit`, the claim pass's own rule). None does: it prints ``no room``,
+(:func:`lab_commons.resources.admits`, the claim pass's own rule). None does: it prints ``no room``,
 publishes nothing and exits 3. A published try carries a ``deadline`` (``--deadline``, default 15 min): a host
 that has not claimed it by then refuses it on ``request/<n>`` as ``no room`` (:data:`dev_lab.dev.forgeschedule.
 NO_ROOM`), so the session keeps working and reads the answer later (``forge status list <sha>``).
@@ -25,9 +25,9 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
-from lab_commons.compute.admission import admit
-from lab_commons.compute.model import Job, Resources, Supply
+from lab_commons.compute.admission import Admission
 from lab_commons.log import emit
+from lab_commons.resources import admits
 
 from dev_lab.dev.forge import _GIT, NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from dev_lab.dev.forgehosts import HostCard, read_cards
@@ -44,14 +44,15 @@ NO_ROOM_EXIT: Final = 3
 _DEFAULT_DEADLINE: Final = '15 min'
 
 
-def _supply(card: HostCard) -> Supply:
-    resources = Resources({k: float(v) for k, v in card.supply.items() if isinstance(v, (int, float)) and v > 0})
-    return Supply(card.host, resources, frozenset(resources) | card.tools_present() | {card.platform})
+def _admits(card: HostCard, declared: Declared, demand: dict[str, float]) -> Admission:
+    """The engine's rule on what *card* says its host admitted against on its last tick."""
+    free = {k: float(v) for k, v in card.supply.items() if isinstance(v, (int, float)) and v > 0}
+    present = frozenset(free) | card.tools_present() | {card.platform}
+    return admits(free, demand, present=present, needs=declared.needs, what=declared.name)
 
 
 def room(cards: Sequence[HostCard], declared: Declared, now: datetime) -> tuple[list[str], list[str]]:
     """``(hosts with room, why each other card has none)`` for *declared* on *cards* as of *now*."""
-    job = Job('', '', declared.name, declared.needs)
     demand = {'cpu': declared.cpu, 'mem_gb': declared.mem_gb}
     fits, why = [], []
     for card in cards:
@@ -59,7 +60,7 @@ def room(cards: Sequence[HostCard], declared: Declared, now: datetime) -> tuple[
             why.append(f'{card.host}: card stale (ticked {card.ticked})')
         elif '/' in card.host:  # card_host spells a cluster seat <cluster>/<account>: it runs no request
             why.append(f'{card.host}: a cluster seat runs no request')
-        elif verdict := admit(job, demand, _supply(card)):
+        elif verdict := _admits(card, declared, demand):
             fits.append(card.host)
         else:
             why.append(f'{card.host}: {verdict.why}')

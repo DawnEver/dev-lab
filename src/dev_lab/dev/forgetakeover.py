@@ -27,15 +27,21 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.box.machine import provided
+from lab_commons.config import section
 from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgeclaim import this_machine
+from dev_lab.dev.forgeintegration import _fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker, pr_list
 from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, load_review
 from dev_lab.dev.forgereview_command import run_command
 from dev_lab.dev.forgereview_findings import counted, parse_findings, render
 from dev_lab.dev.forgereview_scope import Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 
 if TYPE_CHECKING:
@@ -169,14 +175,6 @@ def main(
     fetch: Callable[[Path, int], object] | None = None,
 ) -> int:  # fmt: skip
     """``forge review takeover|plan <sha>`` / ``forge review held``; exit 0 done, 1 held heads listed, 2 refused."""
-    from lab_commons.box.machine import provided  # noqa: PLC0415
-    from lab_commons.config import section  # noqa: PLC0415
-
-    from dev_lab.dev.forgeclaim import this_machine  # noqa: PLC0415
-    from dev_lab.dev.forgeintegration import _fetch_pull  # noqa: PLC0415
-    from dev_lab.dev.forgework import ForgeCallFailed, client_for  # noqa: PLC0415
-    from dev_lab.dev.lanepolicy import load_policy  # noqa: PLC0415
-
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     pull_in = fetch or (lambda where, number: _fetch_pull(where, 'origin', number))

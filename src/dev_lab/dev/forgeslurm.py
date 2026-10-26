@@ -6,7 +6,7 @@ carries), cancelling a run no limit lets start, the outcomes a run CARRIES from 
 finished records and the finished shards of superseded ones (:mod:`dev_lab.dev.forgecarry`) -- and the
 account's STANDING read locally each tick -- its supply
 (cpu, memory, the QOS's remaining submissions over every grant and the machine file's declared tools,
-:func:`lab_commons.compute.probe.account`, and the home's FILE headroom read by
+:class:`lab_commons.hpc.provider.SlurmAccount` and the one seat provider, and the home's FILE headroom read by
 :func:`dev_lab.dev.diskusage.read_usage`), the last day's core-hours per run from ``sacct``,
 and the partitions, quota and storage a host card publishes. An unreadable quota is stated on the card
 (``storage: unread``) and leaves files uncapped; a home at its file limit claims nothing and the card says so.
@@ -41,10 +41,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import declared_seats
+from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
-from lab_commons.compute import probe as supply_probe
-from lab_commons.compute.model import Resources, Supply
+from lab_commons.compute.presence import cached
 from lab_commons.config import config_path
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.allocation import resolve
@@ -55,12 +54,14 @@ from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.plan import grantable_gb
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
+from lab_commons.hpc.provider import SlurmAccount, unmeasured
 from lab_commons.hpc.records import held_cells, run_shas
 from lab_commons.hpc.run import _STARTED as STARTED  # the one spelling of a started task's squeue states
 from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run, withdraw_pending
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
+from lab_commons.resources import Engine
 
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
@@ -398,9 +399,8 @@ class SlurmCluster:
             read.append((snapshot, snapshot.quota.default_qos))
         usage = self.quota()
         left = usage.files_left if usage is not None else None
-        supply = supply_probe.account(
-            self.scope, read, seats=declared_seats(), files=math.inf if left is None else left
-        )
+        account = SlurmAccount(read, files=math.inf if left is None else left)
+        supply = Engine({self.scope: [account, account_seats(cached())]}).available(self.scope)
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {
@@ -446,4 +446,4 @@ def standing_of(build: Callable[[], Cluster]) -> tuple[Cluster | None, Standing 
     try:
         return slurm, slurm.standing(), ''
     except (RuntimeError, OSError, ValueError) as why:  # Slurm did not answer: an empty supply claims nothing
-        return slurm, Standing(Supply('slurm', Resources())), str(why)
+        return slurm, Standing(unmeasured('slurm')), str(why)

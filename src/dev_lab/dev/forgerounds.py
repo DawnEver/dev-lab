@@ -24,9 +24,10 @@ from typing import Any
 
 from lab_commons.box import Capacity, Holding, Refused, take
 from lab_commons.box.ledger import Read
+from lab_commons.box.providers import box_engine
 from lab_commons.box.supply import Reading
-from lab_commons.compute import probe
 from lab_commons.compute.model import Demand, Supply
+from lab_commons.compute.presence import cached
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.needsets import needs_of
 
@@ -139,10 +140,16 @@ def supply_now(
     capacity: Callable[[], Capacity] = Capacity.read,
     read: Read = Reading.now,
 ) -> Supply:
-    """What this round admits against: the cluster standing, else the box's measured room beside its claims *held*."""
+    """What this round admits against: the cluster standing, else what lies outside the box ledger's claims.
+
+    The box's providers read the ledger themselves (:func:`lab_commons.box.providers.box_engine`), so *held* -- the
+    round's own read of it -- is not read twice.
+    """
+    del held
     if standing is not None:
         return dataclasses.replace(standing.supply, scope=name)
-    return probe.box(name, capacity=capacity(), holdings=held, read=read)
+    available = box_engine(capacity=capacity(), read=read, presence=cached()).available('box')
+    return dataclasses.replace(available, scope=name)
 
 
 def box_now(
