@@ -46,12 +46,12 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.platformparts import SECURITY_CONTEXT
 from dev_lab.dev.security import (
     AdvisoriesUnreachable,
     ScanFailed,

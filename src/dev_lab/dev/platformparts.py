@@ -92,6 +92,7 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.forge import forge_from_remote
+from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for
 from dev_lab.dev.producer import ProducerExit
@@ -107,7 +108,6 @@ __all__ = [
     'HOLD_CONTEXT',
     'PART_FIELD',
     'REVIEW_CONTEXT',
-    'SECURITY_CONTEXT',
     'UNCLAIMED',
     'ClusterPart',
     'Composition',
@@ -130,27 +130,6 @@ __all__ = [
     'standing',
     'this_platform',
 ]
-
-#: Every part's status context starts with this; the rest is the part's name (its need-set).
-CONTEXT_PREFIX: Final = 'tests/'
-
-#: The ADVISORY review's context (:mod:`dev_lab.dev.forgereview`): under the prefix so it reads beside the
-#: parts, and never a part -- :func:`parts_of` skips it, so no promotion or push admission waits on it; the one
-#: review state a merge waits on is :func:`dev_lab.dev.forgemerge.review_hold`'s.
-REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
-
-#: The review HOLD's context: posted ``pending`` on a head the review slices cannot hold, released by a
-#: ``success`` a session posts once it reviewed the head. Never a part; the ONE review context a merge waits on
-#: (:func:`dev_lab.dev.forgemerge.review_hold`), so an unreviewable head is never skipped into an auto-merge.
-HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
-
-#: The SECURITY check's context (:mod:`dev_lab.dev.forgesecurity`): one status per head posted by a serve step,
-#: never a part -- :func:`parts_of` skips it; the merge waits on it through
-#: :func:`dev_lab.dev.forgesecurity.security_wait`.
-SECURITY_CONTEXT: Final = f'{CONTEXT_PREFIX}security'
-
-#: The contexts under the prefix that are never a part.
-_NOT_PARTS: Final = frozenset({REVIEW_CONTEXT, HOLD_CONTEXT, SECURITY_CONTEXT})
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
@@ -392,11 +371,7 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
     parts: dict[str, Part] = {}
     problems: list[str] = []
     for status in statuses:
-        if not status.context.startswith(CONTEXT_PREFIX) or status.context in {
-            REVIEW_CONTEXT,
-            HOLD_CONTEXT,
-            SECURITY_CONTEXT,
-        }:
+        if not status.context.startswith(CONTEXT_PREFIX) or status.context in NOT_PARTS:
             continue
         name = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)

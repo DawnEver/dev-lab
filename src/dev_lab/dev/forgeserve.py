@@ -99,8 +99,8 @@ Inside that integration step, on whichever host runs it, the ADVISORY PR review
 (:func:`dev_lab.dev.forgereview.step`): the repo's declared review command, once per open PR head, gating
 nothing.
 
-On the elected poller, the SECURITY step (:func:`dev_lab.dev.forgesecurity.step`): ``tests/security`` once per
-open PR head and per integration head, a condition every forge merge waits on.
+Beside it, the SECURITY step (:func:`dev_lab.dev.forgesecurity.step`): ``tests/security`` once per open PR head
+and per integration head, a condition every forge merge waits on.
 """
 
 from __future__ import annotations
@@ -151,7 +151,6 @@ from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
-from dev_lab.dev.forgesecurity import step as security
 from dev_lab.dev.forgeservesteps import hygiene, prompt, relock, retain_storage, starved, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
@@ -314,7 +313,7 @@ def _repo_wide(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """What the elected poller alone runs (:func:`polls`): close, prune, starve, prompt, relock, secure."""
+    """The repo-wide passes only the elected poller runs (:func:`polls`): close, prune, starve, prompt, relock."""
     serve_close_landed(root, client(root), say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
@@ -322,7 +321,6 @@ def _repo_wide(
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
     relock(root, repo, client(root), say=say, alarm=alarm)
-    security(root, client(root), say=say)
 
 
 #: How many tick periods a poller lease outlives its last renewal (:mod:`dev_lab.dev.forgepoller`).

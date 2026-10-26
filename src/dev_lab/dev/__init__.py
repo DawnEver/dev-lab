@@ -336,6 +336,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
 * :mod:`dev_lab.dev.forgetry` -- ``forge try <paths>``: named tests on a host with room now, or ``no room`` at once.
 * :mod:`dev_lab.dev.forgewait` -- a part's wait answered, bounded and seen: why a box does not admit it, until when.
+* :mod:`dev_lab.dev.forgecontexts` -- the status contexts under ``tests/``: the part prefix, and those never a part.
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
 * :mod:`dev_lab.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.

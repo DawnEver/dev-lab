@@ -237,7 +237,7 @@ def _serve(
     )
     monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_close_landed', close_landed)
-    monkeypatch.setattr(forgeserve, 'security', lambda _root, _client, **_kw: None)  # its own tests
+    monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)

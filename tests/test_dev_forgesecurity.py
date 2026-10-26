@@ -15,9 +15,10 @@ from _branch_repos import commit
 from _forge_fake import run_git
 
 from dev_lab.dev import forgesecurity
+from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
 from dev_lab.dev.forgesecurity import Declaration, DeclarationInvalid, Judgement, declared, judge, security_wait, step
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.platformparts import SECURITY_CONTEXT, parts_of
+from dev_lab.dev.platformparts import parts_of
 from dev_lab.dev.security import AdvisoriesUnreachable
 
 #: Assembled from halves so this file plants no hit in any tree scan.

@@ -6,10 +6,10 @@ nothing reds here. Judging a head and posting its status is :mod:`dev_lab.dev.fo
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
+from _forge_fake import run_git
 
 from dev_lab.dev import security
 from dev_lab.dev.security import (
@@ -34,8 +34,8 @@ def _checkout(root: Path, files: dict[str, str]) -> Path:
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding='utf-8')
-    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)  # noqa: S607 -- git from PATH, as every door
-    subprocess.run(['git', 'add', '-A'], cwd=root, check=True)  # noqa: S607 -- the throwaway tree, all of it
+    run_git(root, 'init', '-q')
+    run_git(root, 'add', '-A')
     return root
 
 
