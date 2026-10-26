@@ -200,9 +200,14 @@ def over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mappin
 
 
 def coalesced(root: Path, ref: str) -> bool:
-    """Whether *ref* is of a ``coalesce`` class in *root*'s schedule: the integration branch, else its child class."""
+    """Whether *ref* is of a ``coalesce`` class in *root*'s schedule, classed as :func:`_part_refs` serves it.
+
+    The integration branch; else a ``classes_by_ref`` child class; else an open PR head -- the serve runs no other
+    ref, so a served ref no pattern names is a PR (``pr/*``). The candidate's kind and this classing must agree, or
+    :func:`dev_lab.dev.forgecoalesce.behind` holds a newer tip behind a run that never stands down for it.
+    """
     schedule, policy = load_schedule(root), load_policy(root)
-    kind = INTEGRATION if ref == policy.integration else schedule.class_of(ref)
+    kind = INTEGRATION if ref == policy.integration else schedule.class_of(ref) or PR
     return kind in schedule.coalesce
 
 
