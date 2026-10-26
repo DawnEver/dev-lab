@@ -122,6 +122,10 @@ def launcher_source() -> str:
 #: checkout with no venv is NOT blocked (decision 7, 2026-10-22): the launcher exits 0 without one.
 STRAY_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.codeplace stray'
 
+#: AGENT-RUNS-ITS-OWN-COMMANDS (:mod:`dev_lab.dev.handback`): a final message handing the user a runnable
+#: command blocks the stop, for the main session and for every subagent.
+HANDBACK_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.handback'
+
 
 @dataclass(frozen=True, slots=True)
 class Wire:
@@ -137,11 +141,14 @@ class Wire:
 
 
 #: THE WIRING, ONE TABLE: what :func:`wire_settings` writes is what :func:`guard_installation` reads.
-#: The engine before every shell call; the STRAY-FILE-REFUSED census after every one, and at stop.
+#: The engine before every shell call; the STRAY-FILE-REFUSED census after every one, and at stop; the
+#: hand-back check at every stop, the main session's and each subagent's.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
     Wire('PostToolUse', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=True),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
+    Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
+    Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
 )
 
 #: The parts, in the order a reader should fix them: an engine with no rules refuses nothing, and

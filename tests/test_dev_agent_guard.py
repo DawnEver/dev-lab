@@ -291,8 +291,9 @@ def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop()
     """STRAY-FILE-REFUSED is live only when wired: PostToolUse on every shell tool, and Stop."""
     after = agent_guard.wire_settings({})
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
     assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
 
 
@@ -310,7 +311,8 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
     assert once['hooks']['PostToolUse'] == [
         {'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}, stray]}
     ]
-    assert once['hooks']['Stop'] == [planted['hooks']['Stop'][0], {'hooks': [stray]}]
+    handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
+    assert once['hooks']['Stop'] == [planted['hooks']['Stop'][0], {'hooks': [stray]}, {'hooks': [handback]}]
     assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
 
 
@@ -320,8 +322,9 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
     after = agent_guard.wire_settings(old)
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
 
 
 def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:
@@ -343,6 +346,18 @@ def test_the_stray_hook_spells_no_interpreter_and_runs_through_the_launcher() ->
     assert '.venv' not in agent_guard.STRAY_COMMAND
     assert agent_guard.STRAY_COMMAND.startswith('node ')
     assert agent_guard.LAUNCHER_REL in agent_guard.STRAY_COMMAND
+
+
+def test_the_hand_back_check_is_wired_at_every_stop_through_the_launcher() -> None:
+    """AGENT-RUNS-ITS-OWN-COMMANDS reaches every Stop and SubagentStop; a wiring missing it is STALE."""
+    handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
+    after = agent_guard.wire_settings({})
+    assert after['hooks']['SubagentStop'] == [{'hooks': [handback]}]
+    assert handback in after['hooks']['Stop'][-1]['hooks']
+    assert agent_guard.HANDBACK_COMMAND.startswith('node ')
+    assert '.venv' not in agent_guard.HANDBACK_COMMAND
+    del after['hooks']['SubagentStop']
+    assert agent_guard._unwired(after) == ['SubagentStop']
 
 
 def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Path) -> None:
