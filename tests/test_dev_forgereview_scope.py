@@ -30,7 +30,7 @@ from dev_lab.dev.forgereview_findings import merge_outputs, parse_findings
 from dev_lab.dev.forgereview_scope import (
     FINDINGS_FIELD,
     ONLY_GENERATED,
-    OVER_CAP,
+    OVER_CAP_TAKEOVER,
     Budget,
     lens_of,
     own_base,
@@ -198,7 +198,7 @@ def test_a_synthesis_reads_the_merged_slices_once(tmp_path: Path) -> None:
 
 
 def test_a_head_the_slices_cannot_hold_is_held_for_a_session(tmp_path: Path) -> None:
-    """Over the total, one file over a slice, or several slices for a command without paths: OVER_CAP.
+    """Over the total, one file over a slice, or several slices for a command without paths: OVER_CAP_TAKEOVER.
 
     PLANTED control: the same head under wide bounds is reviewed (the slices test).
     """
@@ -215,7 +215,7 @@ def test_a_head_the_slices_cannot_hold_is_held_for_a_session(tmp_path: Path) -> 
         assert command.ran == []
         statuses = status_list(forge, head)
         assert sorted(s.context for s in statuses) == [REVIEW_CONTEXT, HOLD_CONTEXT]
-        assert all(s.state == 'pending' and s.description.startswith(OVER_CAP) for s in statuses)
+        assert all(s.state == 'pending' and s.description.startswith(OVER_CAP_TAKEOVER) for s in statuses)
 
 
 def test_the_slice_outputs_merge_once_per_finding_id() -> None:

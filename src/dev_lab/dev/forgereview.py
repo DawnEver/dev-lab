@@ -21,13 +21,15 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integ
   session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
   when the command failed or printed no known findings version. ADVISORY:
   :func:`dev_lab.dev.platformparts.parts_of` skips that context, so promotion and push admission never wait on it;
-* ``pending`` saying :data:`OVER_CAP`, with a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` beside
-  it, when the head cannot be read in slices (its
-  reviewable change is over ``max_total_bytes``, one file alone is over ``max_diff_bytes``, or it needs several
-  slices and the command takes no ``{paths}``): the hold is the ONE review context the auto-merge
-  (:mod:`dev_lab.dev.forgemerge`) waits on, until a session reviews the head and releases it
-  (``forge status post <sha> --context tests/review-hold --state success``) -- an unreviewable head is never
-  advisory-skipped into an unreviewed merge.
+* ``pending`` saying :data:`OVER_CAP_TAKEOVER`, with a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT`
+  beside it, when a metered program review cannot read the head (its reviewable change is over
+  ``max_total_bytes``, one file alone is over ``max_diff_bytes``, or it needs several slices and the command takes
+  no ``{paths}``). That is a TAKEOVER, as :data:`TAKEOVER_PENDING` is: the INTEGRATOR AGENT owns it (user ruling
+  2026-10-26). The forge lists the held head in its integration prompts with the door to run, and the integrator
+  session runs ``python -m dev_lab.dev.forge review takeover <sha>`` (:mod:`dev_lab.dev.forgetakeover`): the SAME
+  method over every slice, unmetered, then the findings comment, :data:`REVIEW_CONTEXT` and the release. The hold
+  is the ONE review context the auto-merge (:mod:`dev_lab.dev.forgemerge`) waits on, and only that door releases
+  it, refusing without a findings comment for the sha. A human is asked only for a decision the review surfaces.
 
 WHAT IS READ is :mod:`dev_lab.dev.forgereview_scope`'s: the branch's own change since its last reviewed head,
 minus generated files, in slices of at most ``max_diff_bytes`` under one lens each. Each slice runs the command
@@ -93,7 +95,7 @@ from dev_lab.dev.forgereview_findings import (
     parse_findings,
     render,
 )
-from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP, Budget, Scope, gather, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -105,7 +107,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'HOST_FIELD',
-    'OVER_CAP',
+    'OVER_CAP_TAKEOVER',
     'RANGE_FIELD',
     'RETIRED_KEYS',
     'REVIEW_CONTEXT',
@@ -373,7 +375,9 @@ def review_tick(
             continue
         scope = _scope(root, client, review, pull, target)
         if scope.held is not None or not scope.slices:
-            state, why = ('pending', f'{OVER_CAP} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
+            state, why = (
+                ('pending', f'{OVER_CAP_TAKEOVER} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
+            )
             status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:_DESCRIPTION])
             status_post(client, head, context=HOLD_CONTEXT, state=state, description=why[:_DESCRIPTION])
             lines.append(f'#{pull.number} {head[:12]}: {why}')

@@ -9,7 +9,8 @@ for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` 
 ``pr close-landed [N...]`` to close landed PRs, ``pr close-superseded N... --by <M|sha>``
 to close salvaged ones (neither deletes a branch),
 ``cancel-stuck <sha>`` for the forge's own stuck tasks, ``watch <sha>`` to follow a verdict read-only,
-``notices`` for a session's PR notices; anything
+``notices`` for a session's PR notices, ``review takeover|plan <sha>`` / ``review held`` for the
+integrator's review of a head held over the cap; anything
 else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
 entry point.
@@ -45,6 +46,7 @@ from dev_lab.dev import (
     forgestatus,
     forgestuck,
     forgesync,
+    forgetakeover,
     forgetick,
     forgetidy,
     forgetry,
@@ -76,6 +78,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'sync': forgesync.main,
     'integration': forgeintegration.main,
     'notices': forgenotice.main,
+    'review': forgetakeover.main,
     'tidy': forgetidy.main,
     'hosts': forgehosts.main,
     'request': forgepublish.main,
