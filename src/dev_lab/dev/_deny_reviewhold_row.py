@@ -16,7 +16,7 @@ REVIEW_HOLD_VIA_TAKEOVER: dict[str, object] = {
     'matches': 'argument',
     'hazard': 'a raw post on tests/review-hold releases an over-cap head with no review behind it.',
     'remedy': 'Run the reviewed door, which posts the findings and only then releases: '
-    'python -m dev_lab.dev.forge review takeover <sha> (list held heads: forge review held).',
+    '{python} -m dev_lab.dev.forge review takeover <sha> (list held heads: {python} -m dev_lab.dev.forge review held).',
     'needs': None,
     'refuses': (
         'python -m dev_lab.dev.forge status post abc123 --context tests/review-hold --state success',

@@ -391,6 +391,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev.lanepolicy import load_policy',
     ): 'the same leaf-at-import reason: the lane policy is read only by the CLI entry point',
+    (
+        'src/dev_lab/dev/forgenotice.py',
+        'PLC0415',
+        'from dev_lab.dev.forgetakeover import held',
+    ): 'the same leaf-at-import reason, and forgetakeover reaches forgenotice through the forge modules: a cycle',
+    (
+        'src/dev_lab/dev/forgenotice.py',
+        'PLC0415',
+        'from dev_lab.dev.forgetakeover import line as held_line',
+    ): 'the same leaf-at-import reason and the same cycle: the held-review line is read only by the CLI entry point',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
