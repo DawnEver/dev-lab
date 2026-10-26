@@ -42,7 +42,8 @@ Each tick it:
 6. ON THE ONE POLLER of the repo ([one poller per repo](#one-poller-per-repo)): closes landed PRs, prunes
    merged branches and old records, tidies the issues, raises starved parts, keeps one forge issue per
    integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms)),
-   runs the advisory review and the relock.
+   runs the advisory review (a head held over its cap is the integrator's takeover,
+   [the review](integration.md#the-pr-reviewer-is-advisory)) and the relock.
 
 ### One poller per repo
 
@@ -466,7 +467,8 @@ output. Every other task of the sha is listed as healthy; no other job is cancel
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
 pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
-BLOCKED red to route), keyed by state, branch and tip, so a new row is delivered at once
+BLOCKED red to route, a head whose review is HELD over the cap -- the integrator's own review, run with
+`python -m dev_lab.dev.forge review takeover <sha>`, a human asked only for a decision it surfaces), keyed by state, branch and tip, so a new row is delivered at once
 ([the integration branch](integration.md#waking-the-integrator)). The same host raises origin's branch hygiene:
 `pruned` (the merged branches it deleted, or a prune that failed) and `stale-branch` (unmerged branches idle
 past the grace, never deleted; see [pruning origin](branch-set.md#pruning-origin)). The machine file's
