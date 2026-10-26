@@ -209,10 +209,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   generic patterns (home paths, non-reserved e-mails, chat ids, cloud folder names) plus an optional
   machine-local denylist reported by kind only. Each consumer calls ``scan_tree`` over its own
   checkout from one test. Not re-exported below.
-* :mod:`dev_lab.dev.security` -- the security check every repo passes before a merge: ruff ``S`` under
-  the family's declared ignores, a tracked-credential scan reported by digest only, and the ``uv.lock``
-  pins against OSV (unreachable is INCONCLUSIVE). A repo passes only its differences, from one test file.
-  Not re-exported below.
+* :mod:`dev_lab.dev.security` -- the three scans a head passes before a merge: ruff ``S`` under the
+  family's declared ignores, a tracked-credential scan reported by digest only, and the ``uv.lock`` pins
+  against OSV. Not re-exported below.
 * :mod:`dev_lab.dev.ephemeralrefs` -- TRACKED-CITES-NO-EPHEMERAL: no tracked file cites what git
   ignores or a machine-local path, judged by git's own ignore rules. Not re-exported below.
 * :mod:`dev_lab.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
@@ -337,6 +336,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
 * :mod:`dev_lab.dev.forgetry` -- ``forge try <paths>``: named tests on a host with room now, or ``no room`` at once.
 * :mod:`dev_lab.dev.forgewait` -- a part's wait answered, bounded and seen: why a box does not admit it, until when.
+* :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
 * :mod:`dev_lab.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.

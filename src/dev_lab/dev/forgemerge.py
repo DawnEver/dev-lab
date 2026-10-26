@@ -15,6 +15,8 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 * its review is not HELD: a pending ``tests/review-hold`` waits until the integrator's takeover review releases it
   (``forge review takeover <sha>``, :mod:`dev_lab.dev.forgetakeover`; :func:`review_hold`); every other review
   state stays advisory;
+* its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
+  findings, ``error`` is a scan that gave no answer, and both wait;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
@@ -38,6 +40,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.outcomes import Conclusion
 
+from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
@@ -110,6 +113,8 @@ def decide(
         missing.append(f'every `tests/<part>` part{but} PASS on {head[:12]} (it stands {stood.reading})')
     if (held := review_hold(statuses)) is not None:
         missing.append(f'its review: {held}')
+    if (unsafe := security_wait(statuses)) is not None:
+        missing.append(f'its security check: {unsafe}')
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)

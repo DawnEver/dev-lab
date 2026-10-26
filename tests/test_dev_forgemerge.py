@@ -28,7 +28,10 @@ _MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrat
 
 
 def _green() -> list[dict[str, object]]:
-    return [{'id': 1, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=3 hands=-'}]
+    return [
+        {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=3 hands=-'},
+        {'id': 2, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
+    ]
 
 
 def _statuses(raw: list[dict[str, object]]) -> tuple[CommitStatus, ...]:

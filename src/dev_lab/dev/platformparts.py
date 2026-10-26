@@ -107,6 +107,7 @@ __all__ = [
     'HOLD_CONTEXT',
     'PART_FIELD',
     'REVIEW_CONTEXT',
+    'SECURITY_CONTEXT',
     'UNCLAIMED',
     'ClusterPart',
     'Composition',
@@ -142,6 +143,14 @@ REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 #: ``success`` a session posts once it reviewed the head. Never a part; the ONE review context a merge waits on
 #: (:func:`dev_lab.dev.forgemerge.review_hold`), so an unreviewable head is never skipped into an auto-merge.
 HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
+
+#: The SECURITY check's context (:mod:`dev_lab.dev.forgesecurity`): one status per head posted by a serve step,
+#: never a part -- :func:`parts_of` skips it; the merge waits on it through
+#: :func:`dev_lab.dev.forgesecurity.security_wait`.
+SECURITY_CONTEXT: Final = f'{CONTEXT_PREFIX}security'
+
+#: The contexts under the prefix that are never a part.
+_NOT_PARTS: Final = frozenset({REVIEW_CONTEXT, HOLD_CONTEXT, SECURITY_CONTEXT})
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
@@ -383,7 +392,11 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
     parts: dict[str, Part] = {}
     problems: list[str] = []
     for status in statuses:
-        if not status.context.startswith(CONTEXT_PREFIX) or status.context in {REVIEW_CONTEXT, HOLD_CONTEXT}:
+        if not status.context.startswith(CONTEXT_PREFIX) or status.context in {
+            REVIEW_CONTEXT,
+            HOLD_CONTEXT,
+            SECURITY_CONTEXT,
+        }:
             continue
         name = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)

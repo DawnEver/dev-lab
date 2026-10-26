@@ -1,9 +1,7 @@
-"""SECURITY: this repo passes the family's security check (:mod:`dev_lab.dev.security`), and the check can red.
+"""SECURITY: the scans of :mod:`dev_lab.dev.security` can red, each on a planted control.
 
 The planted controls run the real scanners over a throwaway git checkout, so a scanner that silently reads
-nothing reds here. The self-check at the bottom is this repo's adoption: it declares NO differences from the
-family default. The advisory database is read in a FIXTURE, so an unreachable database is a setup error and
-the part INCONCLUSIVE, never a pass.
+nothing reds here. Judging a head and posting its status is :mod:`dev_lab.dev.forgesecurity`'s.
 """
 
 from __future__ import annotations
@@ -129,27 +127,3 @@ def test_an_unreachable_database_is_inconclusive_and_never_clean(monkeypatch: py
     monkeypatch.setattr(security, '_OSV_HOST', 'osv.invalid')
     with pytest.raises(AdvisoriesUnreachable, match='INCONCLUSIVE'):
         advisories({'idna': '3.10'})
-
-
-# -- this repo's adoption: no differences declared from the family default ---------------------------------
-
-
-@pytest.fixture(scope='module')
-def locked_advisories() -> dict[str, tuple[str, ...]]:
-    """Read in SETUP: an unreachable database errors the test (INCONCLUSIVE), never fails or passes it."""
-    return advisories(locked_packages(_ROOT / 'uv.lock'))
-
-
-def test_no_bandit_finding_in_this_repo() -> None:
-    found = code_findings(_ROOT, exclude={}, ignore={})
-    assert found == [], '\n'.join(found)
-
-
-def test_no_credential_is_tracked_in_this_repo() -> None:
-    found = secret_findings(_ROOT, allowed={})
-    assert found == [], '\n'.join(found)
-
-
-def test_no_locked_dependency_has_a_known_advisory(locked_advisories: dict[str, tuple[str, ...]]) -> None:
-    found = vulnerable(locked_advisories, accepted={})
-    assert found == [], '\n'.join(found)
