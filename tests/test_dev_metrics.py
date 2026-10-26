@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,7 +40,7 @@ def test_every_worktree_of_one_repository_logs_into_its_main_checkout(tmp_path: 
     ident = ['-c', 'user.name=t', '-c', 'user.email=t@x.invalid']
     for argv in (['init', '-q', '-b', 'main'], [*ident, 'commit', '-q', '--allow-empty', '-m', 'c'],
                  ['worktree', 'add', '-q', str(lane)]):  # fmt: skip
-        subprocess.run(['git', '-C', str(main_tree), *argv], check=True)  # noqa: S607
+        subprocess.run([shutil.which('git') or 'git', '-C', str(main_tree), *argv], check=True)
     record(PUSH, root=lane, repo=REPO)
     assert len(read(PUSH, root=main_tree)) == 1
     assert not (lane / 'output').exists()
