@@ -313,9 +313,9 @@ def _log(root: Path, stage: str, failed: Sequence[str]) -> None:
         return
     repo = metrics.repo_of(root)
     if stage == 'pre-push':
-        metrics.record(metrics.PUSH, repo=repo)
+        metrics.record(metrics.PUSH, root=root, repo=repo)
     for hook_id in refused:
-        metrics.record(metrics.REFUSAL, repo=repo, rule=hook_id, reason=stage)
+        metrics.record(metrics.REFUSAL, root=root, repo=repo, rule=hook_id, reason=stage)
 
 
 def _verdict(stage: str, failed: Sequence[str]) -> int:
