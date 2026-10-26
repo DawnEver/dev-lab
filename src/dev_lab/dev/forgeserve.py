@@ -114,12 +114,13 @@ from pathlib import Path
 from typing import Any
 
 import lab_commons.launch as _door
-from lab_commons.box import Holding, declared_seats, holdings
+from lab_commons.box import Holding, holdings
+from lab_commons.box.machine import provided
+from lab_commons.box.providers import inventory
 from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
 from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
-from lab_commons.compute.probe import inventory
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
 from lab_commons.hpc.account import ClusterAccount
@@ -231,7 +232,7 @@ def serve(
     runs = list(forgerunstate.live(repo, refused=refused)) if seat is not None else []
     refuse_retired_keys('serve', section('serve'))
     refuse_retired_keys('capabilities', section('capabilities'))
-    tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
+    tools = {name: one.row() for name, one in inventory(provided(section('capabilities')), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
     serves = Serves.of(section(SERVE_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')

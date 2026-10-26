@@ -18,7 +18,7 @@ import pytest
 from _box_fake import quiet
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 from lab_commons.box import BOX_ENV, GB, Capacity, Holding, holdings
-from lab_commons.compute import probe as compute_probe
+from lab_commons.box.providers import box_engine
 from lab_commons.compute.model import (
     BRANCH,
     FEATURE,
@@ -30,9 +30,11 @@ from lab_commons.compute.model import (
     Resources,
     Supply,
 )
+from lab_commons.compute.presence import cached
 from lab_commons.compute.priority import Priority
 from lab_commons.compute.serves import SKIPPED_HERE, Serves
 from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.config import Cost
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
@@ -80,6 +82,12 @@ def server() -> Iterator[ThreadingHTTPServer]:
         answer('GET', f'{API}/pulls', (200, []))  # no open PR and no request issue unless a test says so
         answer('GET', f'{API}/issues', (200, []))
         yield httpd
+
+
+def _box(scope: str, capacity: Capacity) -> Supply:
+    """The box's supply as a tick reads it: what lies outside its ledger on a quiet box of *capacity*."""
+    available = box_engine(capacity=capacity, read=quiet(capacity), presence=cached()).available('box')
+    return dataclasses.replace(available, scope=scope)
 
 
 def _pending(claim: Claim, status_id: int, platform: str = BASE) -> CommitStatus:
@@ -204,7 +212,10 @@ def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetic
     forge = Forge('forge.example.org', 'o', 'r')
     if kwargs.get('seat') is None and 'supply' not in kwargs:
         capacity = Capacity.read()
-        kwargs['supply'] = compute_probe.box('G', capacity=capacity, read=quiet(capacity))
+        kwargs['supply'] = _box('G', capacity)
+    elif 'supply' not in kwargs:  # a cluster seat's supply is its measured standing: one default task of it here
+        one = Cost()
+        kwargs['supply'] = Supply('G', Resources(cpu=one.cpus, mem_gb=one.mem_gb, submits=10, files=10**7))
     return tick(
         repo,
         client=lambda _root: client(forge, Loopback(server)),
@@ -322,9 +333,7 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
 
 def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path, capsys, monkeypatch) -> None:
     capacity = Capacity.read()  # the CLI's box supply is measured (D3): read it quiet, as `_tick` does
-    monkeypatch.setattr(
-        forgetick, '_whole', lambda scope, **_kw: compute_probe.box(scope, capacity=capacity, read=quiet(capacity))
-    )
+    monkeypatch.setattr(forgetick, '_whole', lambda scope, **_kw: _box(scope, capacity))
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
     me = Claim(this_machine(), 'alice', NOW + DEFAULT_LEASE)
@@ -706,7 +715,7 @@ def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path
         repo,
         server,
         supply=Supply('slurm:alice', Resources(cpu=8, mem_gb=64, submits=0), SLURM),
-        demand=lambda *_: Demand(cpu=1),
+        demand=lambda *_: Demand(cpu=1, submits=1),  # a cluster demand declares its submission
     )
     assert full.claimed == ()
     assert full.queue[0].blocked == f'{NOT_ADMITTED}: lacking submits (1 asked, 0 free)'
