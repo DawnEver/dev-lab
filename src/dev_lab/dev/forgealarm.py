@@ -160,7 +160,7 @@ def sound(
     due = key not in last or now - datetime.fromisoformat(last[key]) >= repeat_window(table)
     delivered: tuple[str, ...] = ()
     if due and alarm.kind not in PROMPTS:
-        metrics.record(metrics.HOST_FAILURE, repo=alarm.repo, rule=alarm.kind, reason=alarm.kind)
+        metrics.record(metrics.HOST_FAILURE, root=Path.cwd(), repo=alarm.repo, rule=alarm.kind, reason=alarm.kind)
     if due:
         notice = Notice(subject=alarm.subject, body=alarm.body, severity=Severity.CRITICAL)
         results = deliver(notice)

@@ -144,7 +144,12 @@ def _forge_merges_only(root: Path, policy: Policy, old: str, new: str) -> list[s
     if not unglassed:
         if added:
             metrics.record(
-                metrics.BYPASS, repo=metrics.repo_of(root), rule=HOOK_ID, reason=BREAK_GLASS, vcs_ref_head_revision=new
+                metrics.BYPASS,
+                root=root,
+                repo=metrics.repo_of(root),
+                rule=HOOK_ID,
+                reason=BREAK_GLASS,
+                vcs_ref_head_revision=new,
             )
         return []
     return [

@@ -336,7 +336,9 @@ def test_the_producer_runs_in_the_box_at_the_demand_it_was_admitted_at(monkeypat
     assert argv[1:4] == ['-m', 'lab_commons.box', 'run']
     assert argv[argv.index('--cpu') + 1] == '3'
     assert argv[argv.index('--mem-gb') + 1] == '3'
-    assert json.loads(argv[argv.index('--capacity') + 1]) == dataclasses.asdict(BOX), 'the child holds this size'
+    assert json.loads(argv[argv.index('--capacity') + 1]) == json.loads(json.dumps(dataclasses.asdict(BOX))), (
+        'the child holds this size'
+    )
     assert argv[argv.index('--fingerprint') + 1] == SHA
     assert argv[argv.index('--') + 2 :] == ['verify']
     admitted = dataclasses.replace(local, demand={'cpu': 2.0, 'mem_gb': 5.5})

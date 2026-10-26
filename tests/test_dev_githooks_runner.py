@@ -323,5 +323,5 @@ def test_a_refusing_stage_logs_one_refusal_per_hook_and_a_push_is_counted(repo: 
     late = Hook(stage='post-commit', id='notes', run=('n',), always_run=True)
     assert run_stage('post-commit', root=repo, hooks=(late,), runner=fail) == 0
     assert run_stage('pre-push', ['origin', 'u'], root=repo, hooks=(), runner=fail) == 0
-    assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL)] == [('cz', 'commit-msg')]
-    assert len(read(PUSH)) == 1
+    assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL, root=repo)] == [('cz', 'commit-msg')]
+    assert len(read(PUSH, root=repo)) == 1

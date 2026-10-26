@@ -121,7 +121,7 @@ def promote(root: Path, client: Client, sha: str) -> Promotion:
 def _log(root: Path, kind: str, sha: str) -> None:
     """The metrics line of one promotion (:mod:`dev_lab.dev.metrics`): a hand action, or its refusal."""
     named = {'rule': _RULE, 'reason': 'integrate'} if kind == metrics.REFUSAL else {'lab_action': 'integrate promote'}
-    metrics.record(kind, repo=metrics.repo_of(root), vcs_ref_head_revision=sha, **named)
+    metrics.record(kind, root=root, repo=metrics.repo_of(root), vcs_ref_head_revision=sha, **named)
 
 
 def main(

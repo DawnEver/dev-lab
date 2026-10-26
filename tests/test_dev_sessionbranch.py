@@ -383,7 +383,7 @@ def test_break_glass_admits_a_direct_push_only_when_every_new_commit_names_its_r
     done = _push(repo, 'int/line')
     assert (done.returncode == 0) is admitted, done.stderr
     assert _remote(repo, 'int/line') == (_git(repo, 'rev-parse', 'HEAD') if admitted else before)
-    assert [line['lab.rule.id'] for line in read(BYPASS)] == (['session-branch'] if admitted else [])
+    assert [line['lab.rule.id'] for line in read(BYPASS, root=repo)] == (['session-branch'] if admitted else [])
     if not admitted:
         assert P5 in done.stderr
         assert 'Break-Glass: <reason>' in done.stderr
