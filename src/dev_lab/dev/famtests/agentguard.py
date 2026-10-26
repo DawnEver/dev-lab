@@ -51,6 +51,7 @@ reader can switch off without editing it is the silent absence this module exist
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from typing import TYPE_CHECKING
 
@@ -59,7 +60,7 @@ from dev_lab.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_instal
 from dev_lab.dev.agenthooks import node_executable, run_engine
 from dev_lab.dev.hook_adoption import DENY_RULES, assert_shippable, render
 from dev_lab.dev.rules import tracked_files
-from dev_lab.dev.venvpath import running_interpreter
+from dev_lab.dev.venvpath import expand_interpreter, running_interpreter
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -141,7 +142,10 @@ def shipped_rules(*, root: Path) -> frozenset[str]:
 
 
 def reason_for(*, root: Path, rule: str) -> str:
-    """The refusal text the COMMITTED rules file carries for *rule*, read rather than restated.
+    """The refusal text the COMMITTED rules file carries for *rule*, as the engine prints it in *root*.
+
+    The file holds the template (``{python}``); the engine expands it to *root*'s interpreter, so the
+    expected text is expanded by the same :func:`~dev_lab.dev.venvpath.expand_interpreter`.
 
     Raises:
         GuardNotLive: *rule* is not in the shipped set, so no command can be refused by it and an
@@ -151,7 +155,7 @@ def reason_for(*, root: Path, rule: str) -> str:
     rows = {row['name']: row['reason'] for row in json.loads((root / RULES_REL).read_text(encoding='utf-8'))}
     if rule not in rows:
         _refuse(f'{rule} is not in the set {root} ships, so no command can be refused by it')
-    return rows[rule]
+    return expand_interpreter(rows[rule], root, os_name=os.name)
 
 
 def assert_the_guard_is_live(*, root: Path) -> None:

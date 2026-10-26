@@ -72,6 +72,12 @@ _FORCE = DenyRule(
     hazard='rewriting a shared branch destroys the only published copy',
     remedy='push without rewriting history',
 )
+_TEMPLATED = DenyRule(
+    id='TEMPLATED-REMEDY',
+    pattern=r'\bgit\s+gc\b',
+    hazard='a templated remedy names the interpreter by slot',
+    remedy='run {python} -m dev_lab.dev.reclaim instead',
+)
 _STASH = DenyRule(
     id='GIT-STASH',
     pattern=r'\bgit\s+stash(?:\s|$)',
@@ -220,6 +226,18 @@ def test_a_forbidden_shape_is_refused_by_the_rule_that_owns_it(tmp_path: Path) -
     root, _ = _repo(tmp_path, rules=(_STASH, _NETWORK))
     assert_refused_by(root=root, command='git stash', rule='GIT-STASH')
     assert_refused_by(root=root, command='git fetch origin', rule='NETWORK-VERB')
+
+
+@pytest.mark.workstation
+def test_a_templated_remedy_is_judged_as_the_engine_prints_it(tmp_path: Path) -> None:
+    """A ``{python}`` remedy is compared as the engine PRINTS it, so its own rule is recognised.
+
+    The rules file carries the template; the engine prints the absolute interpreter (it read "NOT by").
+    """
+    root, _ = _repo(tmp_path, rules=(_TEMPLATED, _STASH))
+    assert_refused_by(root=root, command='git gc', rule='TEMPLATED-REMEDY')
+    with pytest.raises(GuardNotLive, match='NOT by TEMPLATED-REMEDY'):
+        assert_refused_by(root=root, command='git stash', rule='TEMPLATED-REMEDY')
 
 
 @pytest.mark.workstation
