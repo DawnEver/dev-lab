@@ -90,14 +90,6 @@ integration = "integrate/main"
 merges_only_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-IS-MERGES-ONLY from here on: the split base (lab-commons 8c401f0 rewritten)
 pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha: the split base
 
-# The advisory PR review (dev_lab.dev.forgereview): `python -m ai_lab.review` on this host's declared ai-lab
-# interpreter, which reads the sharp-review method it packages (PLAN-a-short-robust-toolchain P4): no --method.
-[tool.lab_commons.review]
-command = [
-    "{capabilities.ai_lab.python}", "-m", "ai_lab.review",
-    "--range", "{range}", "--model", "claude-sonnet-5-5",
-]
-
 # This repo's layer over the family hook base (dev_lab/dev/githooks/base.toml); run by
 # `python -m dev_lab.dev.githooks run <stage>`, installed by `python -m dev_lab.dev.hook_install --install`.
 [[tool.lab_commons.hooks.pre-commit]]

@@ -130,14 +130,16 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert 'does not gate' in status.description
 
 
-def test_an_undeclared_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
-    """No default command: the model is the command's to name. PLANTED control: declared, it reviews."""
+def test_an_empty_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
+    """A repo opts out with ``command = []`` (undeclared is the family's). PLANTED control: declared, it reviews."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     command = FakeCommand()
     said: list[str] = []
-    assert Review().command == ()
-    (work / 'pyproject.toml').write_text(_MANIFEST.split('[tool.lab_commons.review]', maxsplit=1)[0], encoding='utf-8')
+    opted_out = (
+        _MANIFEST.split('[tool.lab_commons.review]', maxsplit=1)[0] + '[tool.lab_commons.review]\ncommand = []\n'
+    )
+    (work / 'pyproject.toml').write_text(opted_out, encoding='utf-8')
     step(work, forge, policy=Policy(), say=said.append, host='box', run=command, ready=_can)
     assert command.ran == []
     assert forge.comments[number] == []
@@ -442,12 +444,13 @@ def test_a_key_of_the_retired_in_process_reviewer_is_refused_by_name(key: str) -
 
 
 def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
-    """The forge only orchestrates: the review table holds the command and its bounds, never a model or key.
+    """The forge only orchestrates: the review table holds the command, a model NAME and bounds, never a client or key.
 
     That the retired reviewer's names are gone is the retired-spelling scan's (``lab_commons.hpc.retired``).
     """
     assert {field.name for field in dataclasses.fields(Review)} == {
-        'command', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light', 'claim_stale',
+        'command', 'model', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
+        'claim_stale',
     }  # fmt: skip
 
 

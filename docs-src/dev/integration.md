@@ -163,14 +163,15 @@ through the same method (takeover chain: anthropic API, then a ccc session, then
 
 It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
 integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the
-command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
+command reads its own (`ai_lab`, the `pr-review` task key). The command is the FAMILY's
+(`forgereview.FAMILY_COMMAND`: `{capabilities.ai_lab.python} -m ai_lab.review --range {range} --lens {lens}
+--model {model} --paths {paths}`); a repo declares only where it differs, and a redeclared family command or a
+retired capability (`{capabilities.sharp_review.*}`) is refused (`famtests.reviewcommand`). Every key optional:
 
 ```toml
 [tool.lab_commons.review]
-# {range}: <base>..<head>; {paths}: the slice's paths, one argument each; {lens}: strict | standard | light
-# {capabilities.ai_lab.python}: THIS host's ai-lab interpreter; the module reads the method it packages
-command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--range", "{range}", "--lens", "{lens}",
-           "--model", "<id>", "--paths", "{paths}"]
+# command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model}
+model = "<id>"             # the default is forgereview.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 200000    # one slice
 max_total_bytes = 4000000  # one head

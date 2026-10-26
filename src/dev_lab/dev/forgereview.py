@@ -37,14 +37,15 @@ once; their outputs merge into one document, and a declared ``synthesis`` comman
 (``{findings}``) over the whole range for what crosses slices.
 
 THE COST IS BOUNDED: one review per head sha (the status is the record; a second tick on the same head runs
-nothing and posts nothing), drafts skipped, generated files never read, ``max_total_bytes`` per head. Declared::
+nothing and posts nothing), drafts skipped, generated files never read, ``max_total_bytes`` per head.
+
+THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where it differs, every key optional::
 
     [tool.lab_commons.review]
-    # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light
-    # {capabilities.<name>.<key>}: THIS host's machine-file value (the repo says WHAT, the host says WHERE)
-    # the ai-lab review module on THIS host's ai-lab interpreter; it reads the sharp-review method it packages
-    command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--range", "{range}", "--lens", "{lens}",
-               "--model", "<id>", "--paths", "{paths}"]
+    # command: only a genuinely different method; the family's, redeclared, is refused. Placeholders:
+    # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
+    # {model}: `model`; {capabilities.<name>.<key>}: THIS host's machine-file value (repo says WHAT, host WHERE)
+    model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_diff_bytes = 200000    # one slice: what one reviewer reads
     max_total_bytes = 4000000  # one head: past it, held for a session
@@ -106,9 +107,13 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
+    'FAMILY_COMMAND',
+    'FAMILY_MODEL',
     'HOST_FIELD',
+    'MODEL_FIELD',
     'OVER_CAP_TAKEOVER',
     'RANGE_FIELD',
+    'RETIRED_CAPABILITIES',
     'RETIRED_KEYS',
     'REVIEW_CONTEXT',
     'TAKEOVER_KINDS',
@@ -130,6 +135,25 @@ PATHS_FIELD: Final = '{paths}'
 
 #: Replaced by the slice's lens (:data:`dev_lab.dev.forgereview_scope.LENSES`).
 LENS_FIELD: Final = '{lens}'
+
+#: Replaced by the review's ``model`` (:data:`FAMILY_MODEL` unless the repo overrides it).
+MODEL_FIELD: Final = '{model}'
+
+#: The model the family reviews with: ONE declared value; a repo overrides it with ``model = "<id>"``.
+FAMILY_MODEL: Final = 'claude-sonnet-5-5'
+
+#: The family's review command (REVIEW-COMMAND-IS-THE-FAMILY'S): ai-lab's review module on THIS host's ai-lab
+#: interpreter, which packages the method, sliced (``{paths}``) under a lens. A repo declares ``command`` only
+#: when its method genuinely differs; redeclaring this one is refused, so no stale copy can drift from it.
+FAMILY_COMMAND: Final = (
+    '{capabilities.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
+    '--model', MODEL_FIELD, '--paths', PATHS_FIELD,
+)  # fmt: skip
+
+#: Host capabilities the family retired, each refused in a command naming what replaced it.
+RETIRED_CAPABILITIES: Final = {
+    'sharp_review': 'ai-lab packages the method: drop it (the family command needs none)',
+}
 
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
@@ -162,7 +186,6 @@ _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing
 
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
-    'model': 'the review command chooses its model (declare it in `command`: `--model <id>`)',
     'max_tokens': 'the review command bounds its own output',
     'rules': 'the review command reads the rules and profiles of the method it packages',
 }
@@ -175,7 +198,8 @@ _DESCRIPTION: Final = 240  # a commit-status description is short
 class Review:
     """``[tool.lab_commons.review]``: the command that reviews, and what bounds and cuts what it reads."""
 
-    command: tuple[str, ...] = ()  # undeclared: nothing is reviewed (the command names its own model)
+    command: tuple[str, ...] = FAMILY_COMMAND  # declare only a genuinely different method
+    model: str = FAMILY_MODEL  # fills ``{model}``
     synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
     max_diff_bytes: int = 200_000  # one slice
     max_total_bytes: int = 4_000_000  # one head
@@ -209,7 +233,15 @@ def review_from(text: str, origin: str) -> Review:
     if unknown := sorted(set(declared) - known):
         msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
-    return Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+    review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+    if 'command' in declared and review.command == FAMILY_COMMAND:
+        msg = f'[tool.lab_commons.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
+        raise ValueError(msg)
+    for field in (one for arg in (*review.command, *review.synthesis) for one in HOST_FIELD.finditer(arg)):
+        if (why := RETIRED_CAPABILITIES.get(field['name'])) is not None:
+            msg = f'[tool.lab_commons.{_TABLE}] in {origin}: {field[0]} is retired: {why}'
+            raise ValueError(msg)
+    return review
 
 
 def load_review(root: Path) -> Review:
@@ -299,7 +331,12 @@ def command_for(
     def filled(arg: str) -> list[str]:
         if arg == PATHS_FIELD:
             return list(paths)
-        return [HOST_FIELD.sub(host_value, arg).replace(RANGE_FIELD, reviewed).replace(LENS_FIELD, lens)]
+        return [
+            HOST_FIELD.sub(host_value, arg)
+            .replace(RANGE_FIELD, reviewed)
+            .replace(LENS_FIELD, lens)
+            .replace(MODEL_FIELD, review.model)
+        ]
 
     return [one for arg in (review.synthesis if synthesis else review.command) for one in filled(arg)]
 
