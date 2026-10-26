@@ -67,7 +67,7 @@ def test_a_home_at_its_file_limit_refuses_admission_naming_files_and_the_numbers
 
 
 def test_a_supply_that_states_no_files_refuses_a_files_demand() -> None:
-    """``STATED_ONLY`` is deleted: a name is metered where a provider supplies it, and nowhere is it free."""
+    """No name is free of metering: a name is metered where a provider supplies it, and nowhere is it free."""
     demand = learned.cluster_demand(REPO)(frozenset())
     full = _supply(AT_BYTE_LIMIT)
     unstated = {name: amount for name, amount in full.resources.items() if name != 'files'}

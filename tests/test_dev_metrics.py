@@ -17,7 +17,10 @@ from lab_commons.config import config_path
 
 from dev_lab.dev import forgecli, integrate, metrics
 from dev_lab.dev.datedlog import date_parts
-from dev_lab.dev.metrics import BYPASS, HAND_ACTION, HOST_FAILURE, PUSH, REFUSAL, compute, read, record
+from dev_lab.dev.metrics import BYPASS, HAND_ACTION, HOST_FAILURE, PUSH, REFUSAL, read, record
+from dev_lab.dev.metrics_compute import Landing, compute, landings
+from dev_lab.dev.metrics_report import family
+from dev_lab.dev.metrics_report import main as metrics_main
 
 REPO = 'https://forge.example/o/r.git'
 SINCE = datetime(2026, 10, 1, tzinfo=UTC)
@@ -86,7 +89,7 @@ def test_a_hand_verb_is_recorded_and_a_read_verb_is_not(tmp_path: Path) -> None:
 
 def test_the_cli_record_arm_is_what_the_guard_engine_calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    assert metrics.main(['record', REFUSAL, '--repo', REPO, '--rule', 'RECURSIVE-GREP', '--reason', 'agent-guard']) == 0
+    assert metrics_main(['record', REFUSAL, '--repo', REPO, '--rule', 'RECURSIVE-GREP', '--reason', 'agent-guard']) == 0
     assert read(REFUSAL, root=tmp_path)[0]['lab.rule.id'] == 'RECURSIVE-GREP'
 
 
@@ -188,11 +191,11 @@ def integration(tmp_path: Path) -> Path:
 
 def test_landings_are_the_integration_branchs_named_merges_in_the_window(integration: Path) -> None:
     """The integration branch's first-parent merges naming a branch, and its Break-Glass commits, with reasons."""
-    found = metrics.landings(integration, 'int', since=SINCE, until=OCT_06)
+    found = landings(integration, 'int', since=SINCE, until=OCT_06)
     assert [(one.branch, one.break_glass, one.time.isoformat()) for one in found] == [
         ('pr/glass', 'forge down', '2026-10-05T10:00:00+00:00')
     ], 'the window has an upper bound: the 10-06 merge is outside it'
-    every = metrics.landings(integration, 'int', since=SINCE, until=UNTIL)
+    every = landings(integration, 'int', since=SINCE, until=UNTIL)
     assert [(one.branch, one.break_glass) for one in every] == [
         ('pr/glass', 'forge down'),
         ('pr/forge', ''),
@@ -206,12 +209,12 @@ def _pull(number: int, ref: str, *, created: str, merged: str | None) -> dict[st
             'head': {'sha': f'{number:04d}abcd', 'ref': ref}}  # fmt: skip
 
 
-GLASS = metrics.Landing('a' * 40, datetime(2026, 10, 5, 10, tzinfo=UTC), 'pr/glass', 'forge down')
+GLASS = Landing('a' * 40, datetime(2026, 10, 5, 10, tzinfo=UTC), 'pr/glass', 'forge down')
 
 
 def test_a_pr_landed_by_a_local_merge_is_merged_and_its_break_glass_is_a_hand_action() -> None:
     """The defect: a PR closed by ``pr close-landed`` after a local merge counted as neither merged nor touched."""
-    plain = metrics.Landing('b' * 40, datetime(2026, 10, 6, 10, tzinfo=UTC), 'pr/plain', '')
+    plain = Landing('b' * 40, datetime(2026, 10, 6, 10, tzinfo=UTC), 'pr/plain', '')
     pulls = [
         _pull(1, 'pr/glass', created='2026-10-05T04:00:00Z', merged=None),
         _pull(2, 'pr/plain', created='2026-10-06T08:00:00Z', merged=None),
@@ -267,9 +270,9 @@ def test_break_glass_writes_one_hand_action_naming_branch_sha_and_reason(tmp_pat
 def test_the_family_is_the_machine_files_served_repos(tmp_path: Path) -> None:
     """ONE declared source: ``[serve] repos`` under ``root``, the list the serving host itself walks."""
     table = {'repos': ['lab-commons', 'dev-lab'], 'root': str(tmp_path)}
-    assert metrics.family(table) == [tmp_path / 'lab-commons', tmp_path / 'dev-lab']
+    assert family(table) == [tmp_path / 'lab-commons', tmp_path / 'dev-lab']
     with pytest.raises(ValueError, match=r'\[serve\] repos'):
-        metrics.family({})
+        family({})
 
 
 def test_the_retired_config_dir_lines_are_not_read(tmp_path: Path) -> None:
@@ -296,7 +299,7 @@ def test_a_test_run_never_writes_the_real_log(tmp_path: Path) -> None:
 
 def test_a_branch_landed_with_no_pr_is_counted_and_so_is_every_break_glass_commit() -> None:
     """Measured 2026-10-26: dev-lab's Break-Glass merges landed branches no PR ever named -- invisible per PR."""
-    orphan = metrics.Landing('d' * 40, datetime(2026, 10, 7, tzinfo=UTC), 'integration/local-1007', 'forge down')
+    orphan = Landing('d' * 40, datetime(2026, 10, 7, tzinfo=UTC), 'integration/local-1007', 'forge down')
     pulls = [_pull(1, 'pr/glass', created='2026-10-05T04:00:00Z', merged=None)]  # PLANTED: GLASS has its PR
     found = compute(REPO, {}, pulls, since=SINCE, until=UNTIL, landings=[GLASS, orphan])
     assert (found.break_glass_commits, found.landed_without_pr) == (2, 1)
