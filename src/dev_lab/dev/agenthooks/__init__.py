@@ -56,6 +56,7 @@ __all__ = [
     'ENGINES',
     'ENGINE_SUFFIX',
     'LIVE_RUN_ABSENT',
+    'METRICS_ROOT',
     'STAMP',
     'EngineNotReadable',
     'EngineNotShipped',
@@ -83,6 +84,10 @@ _ENGINE_TIMEOUT_S: Final = 60
 
 #: The payload key a PROBE sets to judge every ``when: 'live-run'`` row as if no run were live (:func:`run_engine`).
 LIVE_RUN_ABSENT: Final = 'dev_lab_live_run_absent'
+
+#: The payload key EVERY PROBE sets (:func:`run_engine`): the checkout its refusals are logged in, ``''`` for none.
+#: The tool never sends it, so only an agent's own call is logged where it ran (:mod:`dev_lab.dev.metrics`).
+METRICS_ROOT: Final = 'dev_lab_metrics_root'
 
 _HERE: Final = Path(__file__).resolve().parent
 
@@ -157,6 +162,7 @@ def run_engine(
     agent_id: str | None = None,
     hint: bool = False,
     live_run: bool = True,
+    metrics_root: Path | None = None,
 ) -> str | None:
     """THE ONE RUNNER. Drive the engine AT *engine* over one Bash command; the reason, or ``None``.
 
@@ -188,6 +194,9 @@ def run_engine(
             PROBE of which rule owns a shape passes ``False``: the probing suite is itself a run in the
             checkout it probes, so the state row would answer for every shape it covers (wdg-lab cutover,
             2026-10-25). The payload key carrying it is one the tool never sends, so no agent command can.
+        metrics_root: the checkout a refusal of this probe is logged in; ``None`` logs none. A probe is a
+            test or a ``--check``, never an agent refused: guard suites probing a real checkout's rules
+            once wrote one refusal per row per suite into its live log (P0 baseline, 2026-10-26).
 
     Returns:
         The ``permissionDecisionReason`` when the engine denies (with *hint*, the ``additionalContext`` it
@@ -209,6 +218,7 @@ def run_engine(
         'cwd': str(cwd) if cwd is not None else '',
         **({'agent_id': agent_id} if agent_id is not None else {}),
         **({} if live_run else {LIVE_RUN_ABSENT: True}),
+        METRICS_ROOT: str(metrics_root) if metrics_root is not None else '',
     }
     done = _door.run(
         [node_executable(), str(engine), str(rules)],
@@ -237,6 +247,7 @@ def decide(
     tool: str = 'Bash',
     agent_id: str | None = None,
     hint: bool = False,
+    metrics_root: Path | None = None,
 ) -> str | None:
     """Run THE WHEEL'S OWN copy of a shipped engine over one Bash command; the reason, or ``None``.
 
@@ -254,6 +265,7 @@ def decide(
         agent_id: the payload's subagent id; ``None`` sends none, as the main session does.
         hint: ask for the hint a ``severity: hint`` row speaks instead of a refusal.
         engine: which SHIPPED engine to run, by name.
+        metrics_root: as :func:`run_engine`'s.
 
     Returns:
         What :func:`run_engine` returns for the shipped engine of that name.
@@ -262,7 +274,9 @@ def decide(
         EngineNotShipped: no engine of that name is in this wheel.
 
     """
-    return run_engine(engine_path(engine), command, rules, cwd=cwd, tool=tool, agent_id=agent_id, hint=hint)
+    return run_engine(
+        engine_path(engine), command, rules, cwd=cwd, tool=tool, agent_id=agent_id, hint=hint, metrics_root=metrics_root
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
