@@ -398,15 +398,17 @@ def test_any_host_prompts_the_integrator_and_n_hosts_page_once(monkeypatch, tmp_
     assert forge.open == {}
 
 
-def test_any_host_runs_the_advisory_review_inside_its_integration_step(monkeypatch, tmp_path: Path) -> None:
-    """The review host follows the integrator: no capability, the integration step's own policy.
+def test_every_host_runs_the_review_step_poller_or_not(monkeypatch, tmp_path: Path) -> None:
+    """Where the review runs follows what it needs (the command), never the poller lease (2026-10-26).
 
-    PLANTED CONTROL: a tick whose integration queue cannot be derived reviews nothing.
+    The step itself decides whether this host can run the command. PLANTED CONTROL: a tick whose integration
+    queue cannot be derived still reviews -- the review does not ride on the integrator's derivation.
     """
     reviewed: list = []
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), reviewed=reviewed)
     ((given,),) = [tuple(one['policy'] for one in reviewed)]
     assert given.integration == 'integrate/main'
+    assert reviewed[0]['host'] == 'G'
 
     def unreachable(*_a: object, **_k: object) -> list[Alarm]:
         msg = 'the forge is down'
@@ -414,7 +416,7 @@ def test_any_host_runs_the_advisory_review_inside_its_integration_step(monkeypat
 
     reviewed.clear()
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=unreachable, reviewed=reviewed)
-    assert reviewed == []
+    assert len(reviewed) == 1
 
 
 def test_every_tick_reports_behind_and_conflicts_and_alarms_past_the_bound(monkeypatch, tmp_path: Path) -> None:
@@ -1046,7 +1048,7 @@ def test_a_host_not_holding_the_poller_lease_claims_and_publishes_but_never_poll
         observe=lambda *_a, **_k: ran.append('observe') or [],
     )
     assert ran == []
-    assert reviewed == []
+    assert len(reviewed) == 1, 'the review is not repo-wide: a capable non-poller runs it'
     assert cards, 'its card is still published'
     assert report.published, 'its outbox is still flushed'
     assert '[serve] poller: ada/alice; this host claims and produces only' in said

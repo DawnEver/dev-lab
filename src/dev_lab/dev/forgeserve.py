@@ -95,9 +95,8 @@ NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`dev_lab.dev.forgealarm`): th
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
 work it could serve is pending each raise an alarm.
 
-Inside that integration step, on whichever host runs it, the ADVISORY PR review
-(:func:`dev_lab.dev.forgereview.step`): the repo's declared review command, once per open PR head, gating
-nothing.
+On EVERY serving host, poller or not, the PR review (:func:`dev_lab.dev.forgereview.step`): the repo's
+declared review command, once per open PR head across hosts (its claim), on a host whose capabilities can run it.
 
 Beside it, the SECURITY step (:func:`dev_lab.dev.forgesecurity.step`): ``tests/security`` once per open PR head
 and per integration head, a condition every forge merge waits on.
@@ -151,7 +150,7 @@ from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
-from dev_lab.dev.forgeservesteps import hygiene, prompt, relock, retain_storage, starved, tidy_runs
+from dev_lab.dev.forgeservesteps import hygiene, prompt, relock, retain_storage, review, starved, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
@@ -292,6 +291,7 @@ def serve(
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
         _repo_wide(root, repo, client, name, cards, clock=clock, say=say, alarm=alarm)
+    review(root, client(root), say=say, host=name)  # wherever the command can run, never only on the poller
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced

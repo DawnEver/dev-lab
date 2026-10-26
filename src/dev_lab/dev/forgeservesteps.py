@@ -35,7 +35,7 @@ from dev_lab.dev.integrator import observe
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.relock import carry
 
-__all__ = ['hygiene', 'prompt', 'raise_once', 'relock', 'retain_storage', 'starved', 'tidy_runs']
+__all__ = ['hygiene', 'prompt', 'raise_once', 'relock', 'retain_storage', 'review', 'starved', 'tidy_runs']
 
 
 def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Callable[[Alarm], object]) -> None:
@@ -93,7 +93,6 @@ def prompt(
         ticked = integration_tick(root, built, policy, host=host)  # the host claims each auto-sync
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
-        review_step(root, built, policy=policy, say=say, host=host)  # the review host follows the integrator
         security_step(root, built, say=say)  # tests/security on each unjudged head: a merge condition
         glass = break_glass(root, policy, repo)
         red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
@@ -112,6 +111,16 @@ def prompt(
         )
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
+
+
+def review(root: Path, built: Client, *, say: Callable[[str], None], host: str) -> None:
+    """The PR review on EVERY serving host, poller or not: the step itself skips a host that cannot run it."""
+    try:
+        policy = load_policy(root)
+    except (OSError, ValueError) as failed:
+        say(f'[serve] the PR review did not run: {failed}')
+        return
+    review_step(root, built, policy=policy, say=say, host=host)
 
 
 def tidy_runs(

@@ -203,8 +203,8 @@ def _can(_argv: Sequence[str], _root: Path) -> str | None:
     return None  # every fake command can start
 
 
-def test_a_host_without_the_commands_interpreter_or_module_posts_error_with_its_reason(tmp_path: Path) -> None:
-    """Checked BEFORE the claim: any failure is ``tests/review: error`` naming why, and the command never ran."""
+def test_a_host_without_the_commands_interpreter_or_module_says_why_and_posts_nothing(tmp_path: Path) -> None:
+    """Checked BEFORE the claim: the line names why, nothing is posted on the head, and the command never ran."""
     interpreter = sys.executable
     assert 'not installed' in (can_start([str(tmp_path / 'no-such-python'), '-m', 'ai_lab.review'], tmp_path) or '')
     assert 'cannot import' in (can_start([interpreter, '-m', 'no_such_module_for_review'], tmp_path) or '')
@@ -217,9 +217,8 @@ def test_a_host_without_the_commands_interpreter_or_module_posts_error_with_its_
     lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=can_start, host='box')
     assert 'not installed' in lines[0]
     assert command.ran == []
-    (status,) = status_list(forge, head)
-    assert (status.state, status.context) == ('error', REVIEW_CONTEXT)
-    assert "'reviewer' is not installed" in status.description
+    assert "'reviewer' is not installed" in lines[0]
+    assert status_list(forge, head) == ()
     assert forge.comments[number] == []
 
 
@@ -245,8 +244,8 @@ def test_a_host_value_field_is_replaced_by_the_hosts_declared_capability() -> No
 
 
 @pytest.mark.parametrize('host', [{}, {'ai_lab': {}}], ids=['no capability', 'no key'])
-def test_a_host_value_this_host_does_not_declare_posts_error_naming_it(tmp_path: Path, host) -> None:
-    """Checked BEFORE the claim: ``error`` naming the capability. PLANTED control: a declaring host runs it."""
+def test_a_host_value_this_host_does_not_declare_is_skipped_unposted(tmp_path: Path, host) -> None:
+    """Checked BEFORE the claim: the line names the capability, nothing is posted. PLANTED: a declaring host runs it."""
     declared = Review(command=('{capabilities.ai_lab.python}', '--range', RANGE_FIELD))
     with pytest.raises(ReviewUnsupported, match=r'\[capabilities\.ai_lab\] python'):
         command_for(declared, 'a..b', host)
@@ -257,9 +256,7 @@ def test_a_host_value_this_host_does_not_declare_posts_error_naming_it(tmp_path:
     lines = review_tick(work, forge, declared, capabilities=host, **kw)
     assert '[capabilities.ai_lab] python' in lines[0]
     assert command.ran == []
-    (status,) = status_list(forge, head)
-    assert status.state == 'error'
-    assert '[capabilities.ai_lab] python' in status.description
+    assert status_list(forge, head) == ()
     forge, _ = _forge(head)
     review_tick(work, forge, declared, capabilities={'ai_lab': {'python': 'py'}}, **kw)
     ((argv, _),) = command.ran
@@ -282,7 +279,7 @@ def test_a_command_that_turns_out_unsupported_replaces_its_claim_with_error(tmp_
 
 
 def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp_path: Path) -> None:
-    """A fact about the HOST, not the head: ``error`` names host and reason, once; a capable host still reviews.
+    """A fact about the HOST, not the head: nothing is posted, and a capable host still reviews.
 
     PLANTED control: a command that ran and was refused on the head stays a settled error nobody re-runs.
     """
@@ -292,11 +289,7 @@ def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp
     command = FakeCommand()
     kw = {'base': 'integrate/main', 'run': command}
     review_tick(work, forge, declared, ready=_can, host='A', **kw)
-    review_tick(work, forge, declared, ready=_can, host='A', **kw)  # unfixed: no second identical post
-    (unable,) = forge.statuses[head]
-    assert unable['state'] == 'error'
-    assert unable['description'].startswith(f'{HOST_UNABLE} A: ')
-    assert '[capabilities.ai_lab] python' in unable['description']
+    assert forge.statuses.get(head, []) == []
     review_tick(work, forge, declared, ready=_can, host='B', capabilities={'ai_lab': {'python': 'py'}}, **kw)
     assert len(command.ran) == 1
     assert status_list(forge, head)[0].state == 'success'
@@ -592,6 +585,32 @@ def test_the_declaration_defaults_and_overrides_and_refuses_an_unknown_key() -> 
 
 
 # --- the serve step ----------------------------------------------------------------------------------
+
+
+def test_a_host_that_cannot_run_the_command_skips_the_step_without_reading_the_forge(tmp_path: Path) -> None:
+    """WHERE IT RUNS follows what it needs: an incapable host says why once and lists no PR.
+
+    PLANTED CONTROL: the same step on a host that can start the command reviews the head.
+    """
+    work, head = _work(tmp_path)
+
+    class Unread(StateForge):
+        def call(self, *_a: object, **_k: object) -> object:
+            msg = 'an incapable host read the forge'
+            raise AssertionError(msg)
+
+    said: list[str] = []
+    command = FakeCommand()
+
+    def cannot(_argv: Sequence[str], _root: Path) -> str:
+        return 'unsupported: no ai_lab here'
+
+    step(work, Unread(), policy=Policy(), say=said.append, host='ada/x', run=command, ready=cannot)
+    assert said == ['[serve] review: not run on this host -- unsupported: no ai_lab here']
+    assert command.ran == []
+    forge, _ = _forge(head)
+    step(work, forge, policy=Policy(), say=said.append, host='G', run=command, ready=_can)
+    assert len(command.ran) == 1
 
 
 def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_path: Path) -> None:
