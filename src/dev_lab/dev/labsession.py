@@ -1,9 +1,9 @@
 """ONE-SESSION-ONE-PR's identity: the launcher's ``LAB_SESSION``, stamped as a ``Lab-Session`` trailer at commit-msg.
 
-The id is ISSUED BY THE LAUNCHER, once per session and vendor-neutral (ai-lab's ``ai-lab-session``, which every
-launch path calls), and inherited by every child process -- a subagent, a fabric
-takeover, a codex run. The agent never writes it: this hook stamps it from the environment, replacing any
-trailer already in the message. A commit WITHOUT the id -- a human's, or an agent's on a path no launcher
+The id is ISSUED BY THE LAUNCHER, once per session and vendor-neutral (ai-lab's ``python -m ai_lab.session``,
+which every launch path calls), and inherited by every child process -- a subagent, a fabric takeover, a codex
+run. The agent never writes it: this hook stamps it from the environment, replacing any trailer already in the
+message. A commit WITHOUT the id -- a human's, or an agent's on a path no launcher
 started (the VS Code extension, the codex desktop app, ``codc`` attached to a shared app-server) -- is NEVER
 refused (user ruling 2026-10-21): it carries no trailer and ONE-SESSION-ONE-PR does not judge it. Only a
 session that has an id is judged. ``Claude-Session:`` is plain prose; nothing reads it.
