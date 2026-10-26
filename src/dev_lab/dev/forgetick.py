@@ -23,7 +23,7 @@ still claimed. It runs nothing itself.
 ADMISSION, NOT ONE CLAIM A TICK. Each candidate is a :class:`~lab_commons.compute.model.Job` whose
 demand is what its last run of ``(producer, need-set)`` measured; it is admitted when it fits this host's
 supply less everything already RUNNING -- on a box, the supply IS what the box ledger can still admit
-(:func:`lab_commons.compute.probe.box`), so every claim on it is already subtracted -- and less every part
+(:func:`lab_commons.box.providers.box_engine`), so every claim on it is already subtracted -- and less every part
 this tick claimed before it. A job that
 does not fit is skipped and a smaller lower-ranked one is still claimed; the skipped one waits naming
 the resources it lacks (``not admitted: lacking cpu``). Several parts may therefore run on one host at
@@ -51,6 +51,7 @@ part waiting ``not admitted`` past the schedule's ``request_unadmitted_hours`` i
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shlex
@@ -62,23 +63,21 @@ from pathlib import Path
 from typing import Any
 
 from lab_commons.box import Capacity
-from lab_commons.compute import probe
+from lab_commons.box.providers import box_engine
 from lab_commons.compute.learned import box_demand, cluster_demand, learned, request_demand
 from lab_commons.compute.model import (
     REQUEST,
     Candidate,
     Ranked,
-    Resources,
     Supply,
     expected_cost,
     rank,
-    submitted,
 )
+from lab_commons.compute.presence import cached
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.config import Cost
 from lab_commons.log import emit
 
 from dev_lab.dev.artefacts import remote_problem
@@ -217,7 +216,7 @@ def tick(
     sized = demand or _demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
-        size=lambda wanted, needed: submitted(sized(wanted, needed), room),
+        size=sized,
         taken=list(running), trunks=(policy.integration, policy.trunk),
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
@@ -264,14 +263,22 @@ def tick(
 
 
 def _whole(scope: str, *, cluster: bool) -> Supply:
-    """A tick given no supply: one default task of an account, else this box's whole capacity.
+    """A tick given no supply: this box as its providers measure it now; an account is never guessed.
 
-    The task is :class:`~lab_commons.hpc.config.Cost`'s defaults, the floor every cluster demand asks; the box's
-    is :class:`~lab_commons.box.Capacity`.
+    Raises:
+        ValueError: on a cluster seat -- an account's supply is its measured standing, and an unmeasured one admits
+            nothing rather than a default task.
+
     """
-    one = Cost()
-    task = Resources(cpu=one.cpus, mem_gb=one.mem_gb)
-    return Supply(scope, task) if cluster else probe.box(scope, capacity=Capacity.read())
+    if cluster:
+        msg = f"{scope}: a cluster tick needs the account's measured supply (forgeslurm standing); none was given"
+        raise ValueError(msg)
+    return dataclasses.replace(_box_now(), scope=scope)
+
+
+def _box_now() -> Supply:
+    """What lies outside this box ledger's claims now (:func:`lab_commons.box.providers.box_engine`)."""
+    return box_engine(capacity=Capacity.read(), presence=cached()).available('box')
 
 
 def handed(statuses: Sequence[CommitStatus], part: str) -> int | None:
@@ -297,7 +304,7 @@ def _demand_of(
     if cluster:
         asked = cluster_demand(repo_url)
         return lambda _wanted, needed: asked(needed)
-    free = (room or probe.box('this host', capacity=Capacity.read())).resources
+    free = (room or _box_now()).resources
 
     def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
         if wanted.kind == REQUEST:

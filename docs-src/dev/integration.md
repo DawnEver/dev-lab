@@ -178,7 +178,7 @@ a TAKEOVER the INTEGRATOR AGENT owns (user ruling 2026-10-26): the forge lists i
 session is not metered, so the byte cap that bounds a program review does not bind it -- posts the findings comment
 and `tests/review`, and releases the hold, refusing to release without a findings comment for that sha (the
 release is the record that a review happened; a raw `status post` on `tests/review-hold` is refused,
-[REVIEW-HOLD-VIA-TAKEOVER](refusals.md#review-hold-via-takeover)). `forge review plan <sha>` prints the slices. A
+[REVIEW-STATUS-VIA-DOORS](refusals.md#review-status-via-doors)). `forge review plan <sha>` prints the slices. A
 human is asked only for a decision the review surfaces, never for the routine review or the release. So an
 unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
 nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review

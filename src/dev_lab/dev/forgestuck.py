@@ -41,7 +41,18 @@ from lab_commons.log import emit
 
 from dev_lab.dev.platformparts import origin_url
 
-__all__ = ['BUSY', 'Limit', 'Task', 'cancel_stuck', 'judge', 'limit_of', 'main', 'parse_duration', 'read_tasks']
+__all__ = [
+    'BUSY',
+    'Limit',
+    'Task',
+    'cancel_stuck',
+    'judge',
+    'limit_of',
+    'main',
+    'parse_duration',
+    'read_tasks',
+    'remote_path',
+]
 
 #: The CPU fraction at or above which a task counts as busy rather than waiting.
 BUSY: Final = 0.9
@@ -72,6 +83,17 @@ class Task:
     limit: Limit = Limit(0.0, '')
     refused: str = ''  # a read that cannot tie the task to its round, or measure it
     streams: str = ''  # the quoted stream paths, re-read before a cancel
+
+
+def remote_path(path: str) -> str:
+    """*path* quoted for the remote shell, a leading ``~/`` kept expandable as ``"$HOME"/`` like :data:`ROOT`.
+
+    A run dir is recorded home-relative (``~/ci/...``); quoted whole it reached the shell as ``'~/ci/...'``,
+    which no shell expands, so every read of its manifest failed and a stale claim was never withdrawn.
+    """
+    if path.startswith('~/'):
+        return '"$HOME"/' + shlex.quote(path[2:])
+    return shlex.quote(path)
 
 
 def parse_duration(text: str) -> float:
@@ -159,7 +181,7 @@ def read_tasks(
             why = f'job {base} is not one the current round submitted ({", ".join(sorted(job_ids)) or "none"})'
             tasks.append(Task(job_id, name, parse_duration(elapsed), int(cpus), 0.0, 0.0, refused=why))
             continue
-        manifest: dict[str, Any] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
+        manifest: dict[str, Any] = json.loads(shell(f'cat {remote_path(run_dir)}/manifest.json', None))
         start, stop = manifest['shards'][int(job_id.rpartition('_')[2])]
         items = manifest['items'][start:stop]
         streams = ' '.join(sorted({f'{ROOT}/trees/{sha}/{shlex.quote(item["stream"])}' for item in items}))

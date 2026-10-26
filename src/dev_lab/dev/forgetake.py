@@ -8,7 +8,7 @@ commit's own context once (:func:`dev_lab.dev.forgeclaim.refuse`) and never queu
 does not know is the serving host's defect, so that sha waits. Any other job is blocked by this host's
 kind lacking its producer, its ref's budget, or admission -- and otherwise
 claimed, its demand then counted as running for every later candidate
-(:func:`lab_commons.compute.admission.admit`).
+(:func:`lab_commons.resources.admits`).
 
 ON A BOX THE LEDGER DECIDES LAST, AND ONCE: a local part is claimed only after its box claim is TAKEN
 (*reserve*, :func:`dev_lab.dev.forgerounds.reserve`) at exactly the demand its producer declares; the
@@ -34,12 +34,13 @@ from pathlib import Path
 
 from lab_commons.box import Claim as BoxClaim
 from lab_commons.box import release
-from lab_commons.compute.admission import Admission, admit
+from lab_commons.compute.admission import Admission
 from lab_commons.compute.learned import BOX_WALL_S
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.compute.serves import Serves
 from lab_commons.hpc.declared import OutdatedKit
 from lab_commons.hpc.needsets import declared_at, needs_of
+from lab_commons.resources import admits
 
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import (
@@ -256,7 +257,10 @@ class ClaimPass:
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
         job, demand = self._job(wanted, needed), self.size(wanted, needed)
-        verdict = admit(job, demand, self.supply, running=self.taken)
+        verdict = admits(
+            self.supply.resources, demand, present=self.supply.present, needs=job.needs, running=self.taken,
+            what=job.producer,
+        )  # fmt: skip
         self.admitted[wanted.key] = (job, verdict)
         if verdict:
             return self._behind(wanted, demand)

@@ -325,3 +325,13 @@ def test_a_refusing_stage_logs_one_refusal_per_hook_and_a_push_is_counted(repo: 
     assert run_stage('pre-push', ['origin', 'u'], root=repo, hooks=(), runner=fail) == 0
     assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL, root=repo)] == [('cz', 'commit-msg')]
     assert len(read(PUSH, root=repo)) == 1
+
+
+def test_a_push_names_the_branch_and_tip_it_pushes(repo: Path) -> None:
+    """P0 metrics: a branch's first push is where its edit starts, so every push line names its branch."""
+    sha = 'a' * 40
+    pushed = f'refs/heads/pr/x {sha} refs/heads/pr/x {"0" * 40}\n'
+    deleted = f'(delete) {"0" * 40} refs/heads/pr/old {"b" * 40}\n'  # PLANTED: a deletion names no edit
+    assert run_stage('pre-push', ['origin', 'u'], root=repo, stdin=deleted + pushed, hooks=()) == 0
+    [line] = read(PUSH, root=repo)
+    assert (line['vcs.ref.head.name'], line['vcs.ref.head.revision']) == ('pr/x', sha)

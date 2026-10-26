@@ -128,10 +128,10 @@ HINT: the hazard is minutes, not harm.
 - **Why it is refused.** User ruling 2026-10-11: `output/` holds only what a program can regenerate (run logs, run records, measurements, charts, caches). A report a person or agent writes -- audit, analysis, design, plan, findings, workflow write-up -- cannot be regenerated, so under `output/` it is aged out, swept, and never indexed. Refused: a Write/Edit of a `*.md` under any `output/` segment (`dev_lab.dev.reportplace`, via the `codeplace` write hook) and a shell redirect, `tee`, `Out-File` or `Set-Content` creating one. A program writing its own Markdown is unaffected: it writes through no agent tool.
 - **The exit.** Write it as a dated memory entry: `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` with the MEMORY-SHAPE frontmatter (name, description, created, accessed, tags, metadata).
 
-## REVIEW-HOLD-VIA-TAKEOVER
+## REVIEW-STATUS-VIA-DOORS
 
-- **Why it is refused.** User ruling 2026-10-26: a head held over the review cap (`tests/review-hold` = `pending`) is the integrator agent's to review, and the release is the RECORD that a review happened. A raw `forge status post --context tests/review-hold` releases it with no review behind it, and the auto-merge then lands an unreviewed head.
-- **The exit.** `python -m dev_lab.dev.forge review takeover <sha>`: the same sliced review method over every slice (a session is not metered by the byte cap), then the findings comment, `tests/review`, and the release -- which it refuses without a findings comment for that sha. `forge review held` lists the held heads; `forge review plan <sha>` prints the slices.
+- **Why it is refused.** User ruling 2026-10-26: a head held over the review cap (`tests/review-hold` = `pending`) is the integrator agent's to review, and the release is the RECORD that a review happened. A raw `forge status post --context tests/review-hold` releases it with no review behind it, and the auto-merge then lands an unreviewed head. The same ruling made `tests/review` a merge condition (its `failure` is an open HIGH or security finding); a raw post on it clears that with neither a fix nor a reason, so it is refused too.
+- **The exit.** `python -m dev_lab.dev.forge review takeover <sha>`: the same sliced review method over every slice (a session is not metered by the byte cap), then the findings comment, `tests/review`, and the release -- which it refuses without a findings comment for that sha. `forge review held` lists the held heads; `forge review plan <sha>` prints the slices. For a blocking finding: `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"` (`forge review blocked` lists them).
 
 ## SUBAGENT-NO-PUSH
 

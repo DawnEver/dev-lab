@@ -25,8 +25,8 @@ from typing import TYPE_CHECKING, Any
 
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
+from lab_commons.box.providers import inventory
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
-from lab_commons.compute.probe import tools
 from lab_commons.config import section
 from lab_commons.envkey import env_record
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
@@ -56,8 +56,8 @@ def present_here(root: Path) -> frozenset[str]:
 
     Presence is re-probed where due against *root*'s declared versions (:func:`lab_commons.compute.presence.refresh`).
     """
-    _, found = tools(provided(section('capabilities')), presence=refresh(declared_versions(root)))
-    return frozenset({this_platform(), *found})
+    found = inventory(provided(section('capabilities')), refresh(declared_versions(root)))
+    return frozenset({this_platform(), *(name for name, one in found.items() if one.present)})
 
 
 def owners(root: Path, sha: str, reported: Collection[str], collect: Callable[[str], Sequence[str]]) -> dict[str, str]:

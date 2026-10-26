@@ -14,7 +14,7 @@ A human is asked only for a decision the review surfaces, never for the routine 
   comment and :data:`REVIEW_CONTEXT`, and releases the hold. ``review plan <sha>`` prints the slices only.
 * :func:`release` REFUSES without a findings comment for that sha on its PR: the release is the record that a
   review happened. The raw ``forge status post --context tests/review-hold`` is refused to agents
-  (``REVIEW-HOLD-VIA-TAKEOVER``), so this door is the one release.
+  (``REVIEW-STATUS-VIA-DOORS``), so this door is the one release.
 """
 
 from __future__ import annotations
@@ -27,9 +27,13 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.box.machine import provided
+from lab_commons.config import section
 from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgeclaim import this_machine
+from dev_lab.dev.forgeintegration import _fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_list, marker, pr_list
 from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, load_review
 from dev_lab.dev.forgereview_command import run_command
@@ -40,6 +44,8 @@ from dev_lab.dev.forgereview_findings import parse_findings
 from dev_lab.dev.forgereview_rounds import post_round
 from dev_lab.dev.forgereview_scope import Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 
 if TYPE_CHECKING:
@@ -177,14 +183,6 @@ def main(
 
     Exit 0 done, 1 held or blocked heads listed, 2 refused.
     """
-    from lab_commons.box.machine import provided  # noqa: PLC0415
-    from lab_commons.config import section  # noqa: PLC0415
-
-    from dev_lab.dev.forgeclaim import this_machine  # noqa: PLC0415
-    from dev_lab.dev.forgeintegration import _fetch_pull  # noqa: PLC0415
-    from dev_lab.dev.forgework import ForgeCallFailed, client_for  # noqa: PLC0415
-    from dev_lab.dev.lanepolicy import load_policy  # noqa: PLC0415
-
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     pull_in = fetch or (lambda where, number: _fetch_pull(where, 'origin', number))

@@ -15,8 +15,8 @@ from typing import Any, cast
 
 from lab_commons.compute import learned
 from lab_commons.compute.admission import admit
-from lab_commons.compute.model import Job, Supply
-from lab_commons.compute.probe import account
+from lab_commons.compute.model import Job, Resources, Supply
+from lab_commons.hpc.provider import SlurmAccount
 from lab_commons.hpc.slurm import Node, Quota, Snapshot
 
 from dev_lab.dev import forgeslurm, retention
@@ -54,7 +54,7 @@ def _snapshot() -> Snapshot:
 def _supply(text: str) -> Supply:
     usage = parse_mmlsquota(text)
     assert usage is not None
-    return account('slurm:me', [(_snapshot(), 'normal')], seats={}, files=usage.files_left)
+    return SlurmAccount([(_snapshot(), 'normal')], files=usage.files_left).measure('slurm:me')
 
 
 def test_a_home_at_its_file_limit_refuses_admission_naming_files_and_the_numbers() -> None:
@@ -66,12 +66,13 @@ def test_a_home_at_its_file_limit_refuses_admission_naming_files_and_the_numbers
     assert admit(JOB, demand, _supply(AT_BYTE_LIMIT)), 'PLANTED CONTROL: 1.5 M files of headroom admits'
 
 
-def test_a_supply_that_states_no_files_refuses_nothing_on_files() -> None:
-    """A box, or an account whose quota went unread, lists no ``files``: the prior must not make it unclaimable."""
+def test_a_supply_that_states_no_files_refuses_a_files_demand() -> None:
+    """``STATED_ONLY`` is deleted: a name is metered where a provider supplies it, and nowhere is it free."""
     demand = learned.cluster_demand(REPO)(frozenset())
-    full = _supply(AT_FILE_LIMIT)
-    assert admit(JOB, demand, Supply(full.scope, full.resources, full.present - {'files'}))
-    assert not admit(JOB, demand, full), 'PLANTED CONTROL: stated at 0, it refuses'
+    full = _supply(AT_BYTE_LIMIT)
+    unstated = {name: amount for name, amount in full.resources.items() if name != 'files'}
+    assert not admit(JOB, demand, Supply(full.scope, Resources(unstated)))
+    assert admit(JOB, demand, full), 'PLANTED CONTROL: stated with headroom, it admits'
 
 
 def test_a_measured_file_cost_replaces_the_prior() -> None:

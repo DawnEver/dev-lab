@@ -1,4 +1,4 @@
-"""The agent deny registry, REVIEW-HOLD-VIA-TAKEOVER row -- pure DATA.
+"""The agent deny registry, REVIEW-STATUS-VIA-DOORS row -- pure DATA.
 
 USER RULING 2026-10-26: a head held over the review cap is the INTEGRATOR AGENT's to review, and the release
 of ``tests/review-hold`` is the RECORD that a review happened. A raw ``forge status post`` on that context
@@ -12,16 +12,17 @@ by a later round or a disposition WITH ITS REASON (:mod:`dev_lab.dev.forgereview
 
 from __future__ import annotations
 
-__all__ = ['REVIEW_HOLD_VIA_TAKEOVER']
+__all__ = ['REVIEW_STATUS_VIA_DOORS']
 
-REVIEW_HOLD_VIA_TAKEOVER: dict[str, object] = {
-    'id': 'REVIEW-HOLD-VIA-TAKEOVER',
+REVIEW_STATUS_VIA_DOORS: dict[str, object] = {
+    'id': 'REVIEW-STATUS-VIA-DOORS',
     'pattern': r'\bdev_lab\.dev\.forge\s+status\s+post\b(?=[^\n]*\btests/review(?:-hold)?\b)',
     'matches': 'argument',
     'hazard': 'a raw post on tests/review-hold or tests/review releases a head with no review or reason behind it.',
     'remedy': 'Run the reviewed door, which posts the findings and only then releases: '
-    'python -m dev_lab.dev.forge review takeover <sha> (list held heads: forge review held); for a blocking '
-    'finding, python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>".',
+    '{python} -m dev_lab.dev.forge review takeover <sha> (list held heads: {python} -m dev_lab.dev.forge review '
+    'held); for a blocking '
+    'finding, {python} -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>".',
     'needs': None,
     'refuses': (
         'python -m dev_lab.dev.forge status post abc123 --context tests/review-hold --state success',

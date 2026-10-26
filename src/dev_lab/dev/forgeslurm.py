@@ -6,7 +6,7 @@ carries), cancelling a run no limit lets start, the outcomes a run CARRIES from 
 finished records and the finished shards of superseded ones (:mod:`dev_lab.dev.forgecarry`) -- and the
 account's STANDING read locally each tick -- its supply
 (cpu, memory, the QOS's remaining submissions over every grant and the machine file's declared tools,
-:func:`lab_commons.compute.probe.account`, and the home's FILE headroom read by
+:class:`lab_commons.hpc.provider.SlurmAccount` and the one seat provider, and the home's FILE headroom read by
 :func:`dev_lab.dev.diskusage.read_usage`), the last day's core-hours per run from ``sacct``,
 and the partitions, quota and storage a host card publishes. An unreadable quota is stated on the card
 (``storage: unread``) and leaves files uncapped; a home at its file limit claims nothing and the card says so.
@@ -35,16 +35,14 @@ import contextlib
 import json
 import math
 import re
-import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import declared_seats
+from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
-from lab_commons.compute import probe as supply_probe
-from lab_commons.compute.model import Resources, Supply
+from lab_commons.compute.presence import cached
 from lab_commons.config import config_path
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.allocation import resolve
@@ -55,19 +53,21 @@ from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.plan import grantable_gb
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
+from lab_commons.hpc.provider import SlurmAccount, unmeasured
 from lab_commons.hpc.records import held_cells, run_shas
 from lab_commons.hpc.run import _STARTED as STARTED  # the one spelling of a started task's squeue states
 from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run, withdraw_pending
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
+from lab_commons.resources import Engine
 
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
-from dev_lab.dev.forgestuck import parse_duration
+from dev_lab.dev.forgestuck import parse_duration, remote_path
 
 __all__ = ['KILLED', 'STALL_MULTIPLE', 'SlurmCluster', 'killed_jobs', 'progress_text', 'slurm_cluster', 'standing_of']
 
@@ -331,11 +331,11 @@ class SlurmCluster:
             if not _FORGE_JOB.fullmatch(name) or not index.isdigit():
                 continue
             if run_dir not in manifests:
-                manifests[run_dir] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
+                manifests[run_dir] = json.loads(shell(f'cat {remote_path(run_dir)}/manifest.json', None))
             start, stop = manifests[run_dir]['shards'][int(index)]
             items = manifests[run_dir]['items'][start:stop]
             tree = run_dir.rsplit('/', 2)[0]  # <tree>/.lab-hpc/<run>
-            streams = ' '.join(sorted({shlex.quote(f'{tree}/{item["stream"]}') for item in items}))
+            streams = ' '.join(sorted({remote_path(f'{tree}/{item["stream"]}') for item in items}))
             stamps = [float(w) for w in shell(f'stat -c %Y {streams} 2>/dev/null || true', None).split() if w.isdigit()]
             elapsed_s = parse_duration(elapsed)
             idle_s = now - max(stamps) if stamps else elapsed_s
@@ -377,7 +377,7 @@ class SlurmCluster:
                 if base in {str(job) for job in one.get('job_ids', ())} and index.isdigit():
                     run_dir = one['run_dir']
                     if run_dir not in manifests:
-                        manifests[run_dir] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
+                        manifests[run_dir] = json.loads(shell(f'cat {remote_path(run_dir)}/manifest.json', None))
                     start, stop = manifests[run_dir]['shards'][int(index)]
                     ids = [list(item.get('ids', ())) for item in manifests[run_dir]['items'][start:stop]]
             seconds = sum(measured.estimate(ids, cost)[0]) if ids else cost.seconds
@@ -398,9 +398,8 @@ class SlurmCluster:
             read.append((snapshot, snapshot.quota.default_qos))
         usage = self.quota()
         left = usage.files_left if usage is not None else None
-        supply = supply_probe.account(
-            self.scope, read, seats=declared_seats(), files=math.inf if left is None else left
-        )
+        account = SlurmAccount(read, files=math.inf if left is None else left)
+        supply = Engine({self.scope: [account, account_seats(cached())]}).available(self.scope)
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {
@@ -446,4 +445,4 @@ def standing_of(build: Callable[[], Cluster]) -> tuple[Cluster | None, Standing 
     try:
         return slurm, slurm.standing(), ''
     except (RuntimeError, OSError, ValueError) as why:  # Slurm did not answer: an empty supply claims nothing
-        return slurm, Standing(Supply('slurm', Resources())), str(why)
+        return slurm, Standing(unmeasured('slurm')), str(why)

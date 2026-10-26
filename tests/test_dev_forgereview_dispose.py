@@ -12,7 +12,7 @@ import pytest
 from test_dev_forgereview import FakeCommand, _forge, _tick, _work
 from test_dev_forgereview_rounds import _REVIEW, _doc, _finding, _state
 
-from dev_lab.dev._deny_reviewhold_row import REVIEW_HOLD_VIA_TAKEOVER
+from dev_lab.dev._deny_reviewstatus_row import REVIEW_STATUS_VIA_DOORS
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview_dispose import DisposeRefused, alarms, blocked, dispose
 from dev_lab.dev.forgereview_rounds import disposition_text, trusted_bodies
@@ -73,7 +73,7 @@ def test_the_forge_prompts_the_integrator_for_each_blocked_head_until_it_is_disp
 def test_the_door_is_the_forge_review_verb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """``forge review dispose`` exits 0 and unblocks; without ``--why`` argparse refuses; ``blocked`` lists heads."""
     forge, number, head = _blocked(tmp_path)
-    monkeypatch.setattr('dev_lab.dev.forgeclaim.this_machine', lambda: 'box')
+    monkeypatch.setattr('dev_lab.dev.forgetakeover.this_machine', lambda: 'box')
     root = tmp_path / 'work'
     assert main(['blocked'], cwd=root, client=forge) == 1
     with pytest.raises(SystemExit):
@@ -87,7 +87,7 @@ def test_the_door_is_the_forge_review_verb(tmp_path: Path, monkeypatch: pytest.M
 @pytest.mark.parametrize('context', ['tests/review', 'tests/review-hold'])
 def test_a_raw_status_post_on_either_review_context_is_refused_to_agents(context: str) -> None:
     """PLANTED control: a post on a part context, and the dispose door, are permitted."""
-    pattern = re.compile(REVIEW_HOLD_VIA_TAKEOVER['pattern'])
+    pattern = re.compile(REVIEW_STATUS_VIA_DOORS['pattern'])
     assert pattern.search(f'python -m dev_lab.dev.forge status post abc --context {context} --state success')
     assert not pattern.search('python -m dev_lab.dev.forge status post abc --context tests/fast --state success')
     assert not pattern.search('python -m dev_lab.dev.forge review dispose 7 F-1 --why "upstream guard"')

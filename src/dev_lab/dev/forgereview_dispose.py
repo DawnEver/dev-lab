@@ -3,7 +3,7 @@
 User ruling 2026-10-26. A head whose review holds an open ``HIGH`` or security finding is ``failure`` on
 :data:`~dev_lab.dev.platformparts.REVIEW_CONTEXT`, and the auto-merge waits on it
 (:mod:`dev_lab.dev.forgereview_rounds`). The finding closes when a later round finds its anchor line gone, or when
-the INTEGRATOR disposes of it here -- never by a raw status post (``REVIEW-HOLD-VIA-TAKEOVER`` refuses one).
+the INTEGRATOR disposes of it here -- never by a raw status post (``REVIEW-STATUS-VIA-DOORS`` refuses one).
 
 * :func:`blocked` -- the open PR heads into integration whose review is ``failure``; the forge prompts the
   integrator with each (:func:`alarms`, one ``integration`` issue per head, and ``forge notices --integrator``),

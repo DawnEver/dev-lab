@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
-from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused
+from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused, hold
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
@@ -35,6 +35,7 @@ from dev_lab.dev import (
     forgeserve,
     forgeservesteps,
     forgeship,
+    metrics,
     prlanded,
 )
 from dev_lab.dev.forgealarm import AUTH, IDLE, INTEGRATION, PRUNED, RUN, STARVED, UNTAGGED, Alarm
@@ -174,6 +175,7 @@ def _serve(
     table: dict | None = None,
     retain=lambda _root, **_kw: None,
     observe=None,
+    held=None,
     issues: _Issues | None = None,
     prune=lambda _root, _client, **_kw: (),
     close_landed=lambda *_a, **_k: None,
@@ -226,6 +228,8 @@ def _serve(
         return proc
 
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
+    monkeypatch.setattr(forgeservesteps, 'held_reviews', held or (lambda *_a, **_k: []))  # reads open PRs
+    monkeypatch.setattr(forgeservesteps, 'blocked_reviews', lambda *_a, **_k: [])  # reads open PRs too
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
         forgeservesteps,
@@ -624,7 +628,7 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     assert 'running=[]' in said
     report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
     (line,) = [one for one in said if one.startswith('running=')][-1:]
-    assert line == "running=[Demand({'cpu': 1.0, 'mem_gb': 1.0, 'files': 50000.0})]", (
+    assert line == "running=[Demand({'cpu': 1.0, 'mem_gb': 1.0, 'files': 50000.0, 'submits': 1.0})]", (
         'the next tick reads the run back from disk as running demand'
     )
     assert len(advanced) == 2
@@ -812,7 +816,8 @@ def test_a_box_admits_against_its_capacity_less_every_box_ledger_claim(monkeypat
     assert (supply.scope, supply.resources['cpu'], supply.resources['mem_gb']) == ('G', 3.0, 24.0)
     verify = Holding('verify:r', 1, cpu=2, mem_bytes=4 * GB, seats={}, deadline=0.0)
     cards: list = []
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, holding=(verify,), cards=cards)
+    with hold({'cpu': 2, 'mem_gb': 4}, 60, 'verify:r', 1, key='verify', capacity=BOX, read=quiet(BOX)):
+        _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, holding=(verify,), cards=cards)
     assert (seen['supply'].resources['cpu'], seen['supply'].resources['mem_gb']) == (1.0, 20.0)
     assert seen['running'] == [], 'a ledger claim is in the supply already, never counted twice'
     assert cards[-1].running == ('verify:r (pid 1)',)
@@ -1057,8 +1062,9 @@ def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch,
         records_prune=lambda *_a, **_k: ran.append('records') or (),
         issue_tidy=lambda *_a: ran.append('tidy') or [],
         observe=lambda *_a, **_k: ran.append('observe') or [],
+        held=lambda *_a, **_k: ran.append('held') or [],
     )
-    assert ran == ['close', 'prune', 'records', 'tidy', 'observe']
+    assert ran == ['close', 'prune', 'records', 'tidy', 'observe', 'held']
 
 
 def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:
@@ -1490,3 +1496,27 @@ def test_a_stalled_forge_task_is_cancelled_every_tick_and_named_with_its_sha_and
     # Planted control: nothing stalled, nothing is raised.
     _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
     assert [a for a in alarms if 'stalled' in a.subject] == []
+
+
+@pytest.mark.parametrize('failure', [OSError('the run journal is gone'), RuntimeError('a defect in the tick')])
+def test_a_serve_that_fails_before_any_status_is_a_host_failure(monkeypatch, tmp_path: Path, failure) -> None:
+    """P0 metrics: a serve failing before it posts anything reaches nobody as a PR status, so it is logged."""
+
+    def fails(*_a: object, **_k: object) -> forgeserve.ServeReport:
+        raise failure
+
+    monkeypatch.setattr(forgeserve, 'serve', fails)
+    if isinstance(failure, OSError):
+        assert forgeserve.main([], cwd=tmp_path, seat_of=lambda: None) == 1
+    else:
+        with pytest.raises(RuntimeError):
+            forgeserve.main([], cwd=tmp_path, seat_of=lambda: None)
+    lines = metrics.read(metrics.HOST_FAILURE, root=tmp_path)
+    assert [(one['lab.rule.id'], one['error.type']) for one in lines] == [('serve', type(failure).__name__)]
+
+
+def test_a_serve_that_served_logs_no_host_failure(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL for the one above: the success path writes nothing."""
+    monkeypatch.setattr(forgeserve, 'serve', lambda *_a, **_k: forgeserve.ServeReport((), (), (), (), ()))
+    assert forgeserve.main([], cwd=tmp_path, seat_of=lambda: None) == 0
+    assert metrics.read(metrics.HOST_FAILURE, root=tmp_path) == []

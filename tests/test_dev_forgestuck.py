@@ -7,7 +7,7 @@ import json
 import pytest
 from lab_commons.hpc.grants import Grant
 
-from dev_lab.dev.forgestuck import Limit, Task, cancel_stuck, judge, limit_of, parse_duration
+from dev_lab.dev.forgestuck import Limit, Task, cancel_stuck, judge, limit_of, parse_duration, remote_path
 
 SHA = 'a' * 40
 OTHER = 'b' * 40
@@ -172,3 +172,11 @@ def test_a_short_sha_is_refused_before_any_read() -> None:
         pytest.fail('read')
 
     assert cancel_stuck(SHA[:12], [_GRANT], never, limit=lambda _i: _LIMIT, say=lambda _l: None) == 2
+
+
+def test_a_home_relative_run_dir_keeps_its_home_and_quotes_the_rest() -> None:
+    """A run dir recorded as ``~/ci/...``: quoted whole it reached the shell as ``'~/ci/...'`` (live 2026-10-26)."""
+    assert remote_path('~/ci/trees/abc/.lab-hpc/run-1') == '"$HOME"/ci/trees/abc/.lab-hpc/run-1'
+    assert remote_path("~/ci/it's here") == '"$HOME"/' + "'ci/it'\"'\"'s here'"
+    assert remote_path('/gpfs01/home/u/ci/run 1') == "'/gpfs01/home/u/ci/run 1'"
+    assert remote_path('~user/ci') == "'~user/ci'"

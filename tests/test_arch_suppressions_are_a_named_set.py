@@ -395,52 +395,22 @@ ALLOWED: Final[dict[Site, str]] = {
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
         'from dev_lab.dev.forgereview_dispose import blocked',
-    ): 'the same leaf-at-import reason: the review heads are read only by the CLI entry point',
+    ): 'the same leaf-at-import reason, and forgereview_dispose reaches forgenotice through the forge modules',
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
         'from dev_lab.dev.forgereview_dispose import line as blocked_line',
-    ): 'the same leaf-at-import reason: the review heads are read only by the CLI entry point',
+    ): 'the same leaf-at-import reason, and forgereview_dispose reaches forgenotice through the forge modules',
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
         'from dev_lab.dev.forgetakeover import held',
-    ): 'the same leaf-at-import reason: the review heads are read only by the CLI entry point',
+    ): 'the same leaf-at-import reason, and forgetakeover reaches forgenotice through the forge modules: a cycle',
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
         'from dev_lab.dev.forgetakeover import line as held_line',
-    ): 'the same leaf-at-import reason: the review heads are read only by the CLI entry point',
-    (
-        'src/dev_lab/dev/forgetakeover.py',
-        'PLC0415',
-        'from dev_lab.dev.forgeclaim import this_machine',
-    ): 'the CLI entry point imports: the forge client, machine and policy load only when a verb runs',
-    (
-        'src/dev_lab/dev/forgetakeover.py',
-        'PLC0415',
-        'from dev_lab.dev.forgeintegration import _fetch_pull',
-    ): 'the CLI entry point imports: the forge client, machine and policy load only when a verb runs',
-    (
-        'src/dev_lab/dev/forgetakeover.py',
-        'PLC0415',
-        'from dev_lab.dev.forgework import ForgeCallFailed, client_for',
-    ): 'the CLI entry point imports: the forge client, machine and policy load only when a verb runs',
-    (
-        'src/dev_lab/dev/forgetakeover.py',
-        'PLC0415',
-        'from dev_lab.dev.lanepolicy import load_policy',
-    ): 'the CLI entry point imports: the forge client, machine and policy load only when a verb runs',
-    (
-        'src/dev_lab/dev/forgetakeover.py',
-        'PLC0415',
-        'from lab_commons.box.machine import provided',
-    ): 'the CLI entry point imports: the forge client, machine and policy load only when a verb runs',
-    (
-        'src/dev_lab/dev/forgetakeover.py',
-        'PLC0415',
-        'from lab_commons.config import section',
-    ): 'the CLI entry point imports: the forge client, machine and policy load only when a verb runs',
+    ): 'the same leaf-at-import reason and the same cycle: the held-review line is read only by the CLI entry point',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
