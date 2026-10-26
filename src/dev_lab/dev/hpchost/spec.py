@@ -37,6 +37,7 @@ __all__ = [
     'tick_command',
     'tick_dirs',
     'tick_environment',
+    'ticked',
 ]
 
 #: Every crontab line this tool owns ends with this comment plus the repo's name.
@@ -190,9 +191,13 @@ def cron_lines(spec: Deployment, home: Path, *, slurm: Sequence[str] = (), setup
     minute = f'{zlib.crc32(str(home).encode()) % step}-59/{step}'
     return [
         f'{minute} * * * * {tick_command(spec, home, repo, log=True, slurm=slurm, setup=setup)} {MARK}{repo.name}'
-        for repo in spec.repos
-        if repo.serve or repo.name == KIT
+        for repo in ticked(spec)
     ]
+
+
+def ticked(spec: Deployment) -> tuple[Repo, ...]:
+    """The repos this account TICKS: every served one, and the kit (whose own tick refreshes its checkout)."""
+    return tuple(repo for repo in spec.repos if repo.serve or repo.name == KIT)
 
 
 def merge_crontab(current: str, lines: Sequence[str]) -> str:
