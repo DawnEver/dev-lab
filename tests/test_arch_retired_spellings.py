@@ -21,6 +21,10 @@ from _arch_corpus import assert_floor, docs_pages, rel, rules_pages, source_modu
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
+    'PR-REVIEW-IS-ADVISORY': (
+        'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY',
+        'user ruling 2026-10-26 (review redesign): an open HIGH or security finding blocks the merge',
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

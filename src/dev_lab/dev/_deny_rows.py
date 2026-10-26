@@ -58,7 +58,7 @@ from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
-from dev_lab.dev._deny_reviewhold_row import REVIEW_HOLD_VIA_TAKEOVER
+from dev_lab.dev._deny_reviewstatus_row import REVIEW_STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
@@ -68,7 +68,10 @@ from dev_lab.dev.worktreeplace import WORKTREES_REL
 #: ``[tool.lab_commons.doors]`` still keyed by a retired ID is refused BY NAME with its replacement, never
 #: silently dropped. GIT-NETWORK-VERB became NETWORK-VERB on 2026-10-23, when the row took uv's
 #: network verbs (lock, add, remove) beside git's.
-RETIRED_IDS: dict[str, str] = {'GIT-NETWORK-VERB': 'NETWORK-VERB'}
+RETIRED_IDS: dict[str, str] = {
+    'GIT-NETWORK-VERB': 'NETWORK-VERB',
+    'REVIEW-HOLD-VIA-TAKEOVER': 'REVIEW-STATUS-VIA-DOORS',  # 2026-10-26: it refuses tests/review too
+}
 
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
 _UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb != 'pip')
@@ -358,5 +361,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     BARE_PYTHON,
     RECURSIVE_GREP,
     REPORTS_LIVE_IN_MEMORY,
-    REVIEW_HOLD_VIA_TAKEOVER,
+    REVIEW_STATUS_VIA_DOORS,
 )

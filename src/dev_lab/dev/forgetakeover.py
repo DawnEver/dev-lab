@@ -14,7 +14,7 @@ A human is asked only for a decision the review surfaces, never for the routine 
   comment and :data:`REVIEW_CONTEXT`, and releases the hold. ``review plan <sha>`` prints the slices only.
 * :func:`release` REFUSES without a findings comment for that sha on its PR: the release is the record that a
   review happened. The raw ``forge status post --context tests/review-hold`` is refused to agents
-  (``REVIEW-HOLD-VIA-TAKEOVER``), so this door is the one release.
+  (``REVIEW-STATUS-VIA-DOORS``), so this door is the one release.
 """
 
 from __future__ import annotations
@@ -34,15 +34,19 @@ from lab_commons.log import emit
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeintegration import _fetch_pull
-from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker, pr_list
+from dev_lab.dev.forgepulls import Marker, comment_list, marker, pr_list
 from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, load_review
 from dev_lab.dev.forgereview_command import run_command
-from dev_lab.dev.forgereview_findings import counted, parse_findings, render
+from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
+from dev_lab.dev.forgereview_dispose import blocked as review_blocked
+from dev_lab.dev.forgereview_dispose import line as blocked_line
+from dev_lab.dev.forgereview_findings import parse_findings
+from dev_lab.dev.forgereview_rounds import post_round
 from dev_lab.dev.forgereview_scope import Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -148,14 +152,10 @@ def takeover(
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         msg = f'no reviewer returned findings ({kinds}); nothing is posted and the hold stands'
         raise TakeoverRefused(msg)
-    summary = counted(found)
-    text = render(pull.head_sha, found)
-    _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=pull.head_sha, text=text)
-    url = comment.url if comment else ''
-    status_post(client, pull.head_sha, context=REVIEW_CONTEXT, state='success', target_url=url,
-                description=f'integrator takeover review posted: {summary}')  # fmt: skip
-    said = f'#{pull.number} {pull.head_sha[:12]}: reviewed over {len(scope.slices)} slice(s), {summary}'
-    return said, release(client, pull.head_sha, host=host)
+    said = post_round(
+        root, client, pull, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover'
+    )
+    return f'{said} ({len(scope.slices)} slice(s))', release(client, pull.head_sha, host=host)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -166,6 +166,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     verbs.add_parser('plan', help='print the slices a takeover of a held head reads').add_argument('sha')
     verbs.add_parser('held', help='list the held heads and the door for each')
+    disposal = verbs.add_parser('dispose', help='close a blocking finding with a reason (the integrator only)')
+    disposal.add_argument('pr', type=int)
+    disposal.add_argument('finding')
+    disposal.add_argument('--why', required=True, help='why it is not fixed: refused when empty')
+    verbs.add_parser('blocked', help='list the heads a blocking finding holds, with their ids and the door')
     return parser
 
 
@@ -174,7 +179,10 @@ def main(
     run: Callable[[Sequence[str], Path], str] = run_command,
     fetch: Callable[[Path, int], object] | None = None,
 ) -> int:  # fmt: skip
-    """``forge review takeover|plan <sha>`` / ``forge review held``; exit 0 done, 1 held heads listed, 2 refused."""
+    """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``.
+
+    Exit 0 done, 1 held or blocked heads listed, 2 refused.
+    """
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     pull_in = fetch or (lambda where, number: _fetch_pull(where, 'origin', number))
@@ -185,6 +193,14 @@ def main(
             for pull in pulls:
                 emit(line(pull))
             return 1 if pulls else 0
+        if args.verb == 'blocked':
+            rows = review_blocked(origin, base)
+            for pull, ids in rows:
+                emit(blocked_line(pull, ids))
+            return 1 if rows else 0
+        if args.verb == 'dispose':
+            emit(f'[review] {dispose(origin, args.pr, args.finding, args.why, host=this_machine())}')
+            return 0
         review, pull = load_review(root), _pull_of(origin, args.sha)
         pull_in(root, pull.number)
         if args.verb == 'plan':
@@ -200,7 +216,14 @@ def main(
             root, origin, review, args.sha, base=base, host=this_machine(), run=run, capabilities=here
         ):
             emit(f'[review] {said}')
-    except (TakeoverRefused, ForgeCallFailed, OSError, ValueError, subprocess.SubprocessError) as failed:
+    except (
+        TakeoverRefused,
+        DisposeRefused,
+        ForgeCallFailed,
+        OSError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as failed:
         emit(f'[review] refused: {failed}', err=True)
         return 2
     return 0

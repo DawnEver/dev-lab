@@ -1,4 +1,4 @@
-"""PR-REVIEW-IS-ADVISORY: the repo's declared review command on each open PR, once per head, gating nothing.
+"""PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on each open PR, once per head.
 
 Real git repositories (a bare ``origin`` and a clone), the stateful fake forge, and a fake review command printing
 the findings JSON: the evidence is what the forge was asked to write and what the command was run with. Every
@@ -34,7 +34,6 @@ from dev_lab.dev.forgereview import (
     TAKEOVER_PENDING,
     Review,
     command_for,
-    render,
     review_from,
     review_tick,
     step,
@@ -54,19 +53,21 @@ _MANIFEST = (
 )
 
 
-def _output(*, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), **top: object) -> str:
-    """A findings-output v2 document: one HIGH finding on ``x.txt``, principle-tagged, when any reviewer is ok."""
+def _output(
+    *, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), severity: str = 'MEDIUM', **top: object
+) -> str:
+    """A findings-output v3 document: one tagged finding anchored on ``x.txt``'s line, when any reviewer is ok."""
     rows = [
         {'name': name, 'provider': 'anthropic', 'status': status, 'dropped_findings': 0} for name, status in reviewers
     ]
     ok = [{'name': row['name'], 'provider': 'anthropic'} for row in rows if row['status'] == 'ok']
     finding = {
-        'id': 'SR-20261020-001', 'severity': 'HIGH', 'file': 'x.txt:1', 'summary': 'adds x, which NEVER-DO-X forbids',
-        'category': 'Bug', 'status': 'OPEN', 'suggestion': 'drop x', 'detail': 'x is forbidden', 'confidence': 'single',
-        'reviewers': ok, 'principles': ['never-do-x'],
+        'id': 'F-0123456789ab', 'severity': severity, 'security': False, 'rule': 'NEVER-DO-X', 'file': 'x.txt',
+        'anchor': 'x', 'summary': 'adds x, which NEVER-DO-X forbids', 'category': 'Bug', 'status': 'OPEN',
+        'suggestion': 'drop x', 'detail': 'x is forbidden', 'confidence': 'single', 'reviewers': ok,
     }  # fmt: skip
     document = {
-        'schema_version': 2, 'range': 'a..b', 'profiles': [row['name'] for row in rows], 'reviewers': rows,
+        'schema_version': 3, 'range': 'a..b', 'profiles': [row['name'] for row in rows], 'reviewers': rows,
         'findings': [finding] if ok else [],
     } | top  # fmt: skip
     return json.dumps(document)
@@ -110,9 +111,10 @@ def _tick(work: Path, forge: StateForge, command: FakeCommand, review: Review | 
 
 
 def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_posted(tmp_path: Path) -> None:
+    """An open HIGH finding is round 1's ``failure``. PLANTED control: the same finding at MEDIUM is ``success``."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    command = FakeCommand()
+    command = FakeCommand(_output(severity='HIGH'))
     base = git_out(work, 'merge-base', 'origin/integrate/main', head)
     _tick(work, forge, command, Review(command=('reviewer', '--range', RANGE_FIELD)))
     ((argv, where),) = command.ran
@@ -120,14 +122,18 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert where == work
     (comment,) = forge.comments[number]
     assert marker(Marker.REVIEW, head) in comment['body']
-    assert '**HIGH** `x.txt:1`' in comment['body']
-    assert 'SR-20261020-001' in comment['body']
+    assert '**HIGH** `x.txt`' in comment['body']
+    assert 'F-0123456789ab' in comment['body']
     assert 'correctness@anthropic' in comment['body']
-    assert 'principles: never-do-x' in comment['body']
+    assert 'rule `NEVER-DO-X`' in comment['body']
+    assert '**Review round 1/3**' in comment['body']
+    assert '**What changed**: 1 file(s)' in comment['body'], 'round 1 opens with the context summary'
     (status,) = [s for s in status_list(forge, head) if s.context == REVIEW_CONTEXT]
-    assert status.state == 'success'
-    assert '1 finding(s), 1 HIGH' in status.description
-    assert 'does not gate' in status.description
+    assert status.state == 'failure'
+    assert '1 blocking finding(s) open (F-0123456789ab)' in status.description
+    medium, _ = _forge(head)
+    _tick(work, medium, FakeCommand(), Review(command=('reviewer', '--range', RANGE_FIELD)))
+    assert [s.state for s in status_list(medium, head) if s.context == REVIEW_CONTEXT] == ['success']
 
 
 def test_an_empty_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
@@ -376,9 +382,9 @@ def _die() -> str:
     raise _Died
 
 
-@pytest.mark.parametrize('version', [1, 0, '2'])
+@pytest.mark.parametrize('version', [2, 0, '3'])
 def test_an_unknown_schema_version_is_refused_by_name_and_nothing_is_commented(tmp_path: Path, version: object) -> None:
-    """PLANTED control: the same document at version 2 is posted; v1 has no producer left (the first test)."""
+    """PLANTED control: the same document at version 3 is posted (the first test); v2 is retired, refused."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     _tick(work, forge, FakeCommand(_output(schema_version=version)))
@@ -386,12 +392,12 @@ def test_an_unknown_schema_version_is_refused_by_name_and_nothing_is_commented(t
     assert status.state == 'error'
     assert f'schema_version {version!r}' in status.description
     assert forge.comments[number] == []
-    with pytest.raises(UnknownSchemaVersion, match='schema_version 1'):
-        parse_findings(_output(schema_version=1))
+    with pytest.raises(UnknownSchemaVersion, match='schema_version 2'):
+        parse_findings(_output(schema_version=2))
 
 
 @pytest.mark.parametrize(
-    'out', ['not json', '{"schema_version": 2}', _output(reviewers=(('c', 'bored'),)), _output()[:-1]]
+    'out', ['not json', '{"schema_version": 3}', _output(reviewers=(('c', 'bored'),)), _output()[:-1]]
 )
 def test_output_that_is_not_the_findings_json_posts_an_error_naming_the_failure(tmp_path: Path, out: str) -> None:
     work, head = _work(tmp_path)
@@ -404,10 +410,12 @@ def test_output_that_is_not_the_findings_json_posts_an_error_naming_the_failure(
     assert len(lines) == 1
 
 
-def test_a_clean_run_says_no_findings() -> None:
-    found = parse_findings(_output(reviewers=(('c', 'skipped'),)))
-    assert found.findings == ()
-    assert 'No findings.' in render('h' * 40, found)
+def test_a_clean_run_says_no_findings(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    _tick(work, forge, FakeCommand(_output(reviewers=(('c', 'skipped'),))))
+    assert 'No findings.' in forge.comments[number][0]['body']
+    assert [s.state for s in status_list(forge, head) if s.context == REVIEW_CONTEXT] == ['success']
 
 
 def test_the_command_runner_returns_stdout_and_names_a_non_zero_exit(tmp_path: Path) -> None:
@@ -450,7 +458,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     """
     assert {field.name for field in dataclasses.fields(Review)} == {
         'command', 'model', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
-        'claim_stale',
+        'claim_stale', 'max_rounds',
     }  # fmt: skip
 
 
@@ -507,26 +515,43 @@ def test_a_failed_command_posts_an_error_once(tmp_path: Path) -> None:
     assert forge.comments[number] == []
 
 
-# --- advisory: the review gates nothing ----------------------------------------------------------------
+# --- blocking: the merge waits on a failed or unposted review, never a part ----------------------------
 
 
 def _status(context: str, state: str, description: str) -> CommitStatus:
     return CommitStatus(context, state, description, '', 1)
 
 
-def test_the_review_status_is_not_a_part_so_it_never_gates_auto_merge(tmp_path: Path) -> None:
-    """PLANTED control: a FAIL in a real part context on the same head does gate it."""
+def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_path: Path) -> None:
+    """``failure`` (an open blocking finding), an unposted review and a live claim wait; the rest merge.
+
+    PLANTED controls: a FAIL in a real part context does fail the standing; a repo that declares no review
+    (``command = []``) never waits on one.
+    """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
     for review in ('failure', 'error', 'pending'):
-        statuses = (passed, _status(REVIEW_CONTEXT, review, 'advisory review: 3 findings'))
+        statuses = (passed, _status(REVIEW_CONTEXT, review, 'review round 1: 3 findings'))
         assert standing(statuses, head='h').result is Conclusion.PASS
     failed = (passed, _status('tests/jmag', 'failure', 'scope=full ran=3 hands=-'))
     assert standing(failed, head='h').result is Conclusion.FAIL
     work, head = _work(tmp_path)
-    statuses = (passed, secured, _status(REVIEW_CONTEXT, 'failure', 'advisory review'))
-    found = decide(work, Policy(pr_merges_since='0' * 40), branch='pr/x', number=1, head=head, statuses=statuses)
-    assert found.ready, found.missing
+    policy = Policy(pr_merges_since='0' * 40)
+
+    def ready(*review: tuple[str, str]) -> bool:
+        statuses = (passed, secured, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
+        return decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses).ready
+
+    assert not ready(('failure', 'review round 1: 1 blocking finding(s) open'))
+    assert not ready()
+    assert not ready(('pending', f'{CLAIMED} A at 2026-10-26T09:00:00+00:00, reviewing'))
+    assert ready(('success', 'review round 1: no blocking finding open'))
+    assert ready(('error', 'the review command failed (OSError)'))
+    assert ready(('pending', f'{TAKEOVER_PENDING}: no reviewer could run'))
+    manifest = work / 'pyproject.toml'
+    manifest.write_text(manifest.read_text(encoding='utf-8').replace("command = ['reviewer', '--range', '{range}', "
+                        "'--model', 'm']", 'command = []'), encoding='utf-8')  # fmt: skip
+    assert ready()
 
 
 def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> None:
@@ -537,15 +562,21 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     work, head = _work(tmp_path)
     policy = Policy(pr_merges_since='0' * 40)
-    held = (_status(HOLD_CONTEXT, 'pending', f'{OVER_CAP_TAKEOVER} (9 reviewable bytes > max_total_bytes=5)'), passed)
+    over = f'{OVER_CAP_TAKEOVER} (9 reviewable bytes > max_total_bytes=5)'
+    held = (_status(HOLD_CONTEXT, 'pending', over), _status(REVIEW_CONTEXT, 'success', 'reviewed'), passed)
     found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
     assert not found.ready
     assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
-    released = (_status(HOLD_CONTEXT, 'success', 'released by box after the integrator review'), passed, secured)
+    released = (
+        _status(HOLD_CONTEXT, 'success', 'released by box after the integrator review'),
+        _status(REVIEW_CONTEXT, 'success', 'integrator takeover: review round 1: no blocking finding open'),
+        passed,
+        secured,
+    )
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
-    worded = (_status(REVIEW_CONTEXT, 'pending', OVER_CAP_TAKEOVER), passed, secured)
+    worded = (_status(REVIEW_CONTEXT, 'success', OVER_CAP_TAKEOVER), passed, secured)
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded).ready
 
 
@@ -571,7 +602,7 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
     said: list[str] = []
     step(work, forge, policy=Policy(), say=said.append, host='box', run=command, ready=_can)
     assert len(command.ran) == 1
-    assert any('reviewed, 1 finding(s)' in line for line in said)
+    assert any('review round 1, success' in line for line in said)
 
     class Down(StateForge):
         def call(self, *_a: object, **_k: object) -> object:

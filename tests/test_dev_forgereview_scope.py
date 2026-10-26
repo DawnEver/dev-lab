@@ -47,10 +47,11 @@ _WIDE = Budget(slice_bytes=10**6, total_bytes=10**7)
 def _doc(fid: str = 'SR-1', name: str = 'correctness') -> str:
     reviewer = {'name': name, 'provider': 'anthropic', 'status': 'ok', 'dropped_findings': 0}
     finding = {
-        'id': fid, 'severity': 'LOW', 'file': 'a.txt:1', 'summary': 's', 'category': 'Bug', 'status': 'OPEN',
+        'id': fid, 'severity': 'LOW', 'security': False, 'rule': 'occams-razor', 'file': 'a.txt', 'anchor': 'a',
+        'summary': 's', 'category': 'Bug', 'status': 'OPEN',
         'suggestion': '', 'detail': '', 'confidence': 'single', 'reviewers': [{'name': name, 'provider': 'anthropic'}],
     }  # fmt: skip
-    return json.dumps({'schema_version': 2, 'range': 'a..b', 'profiles': [name], 'reviewers': [reviewer],
+    return json.dumps({'schema_version': 3, 'range': 'a..b', 'profiles': [name], 'reviewers': [reviewer],
                        'findings': [finding]})  # fmt: skip
 
 

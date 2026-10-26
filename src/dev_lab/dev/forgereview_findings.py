@@ -2,7 +2,8 @@
 
 The format is the sharp-review method's findings output (``findings-output.schema.json``, owned by ai-lab's
 packaged method, not here): one review run's merged result -- the range, the profiles that ran, every planned
-reviewer with its status, and the deduplicated findings. This reader checks what the forge relies on (the
+reviewer with its status, and the deduplicated findings, each TAGGED (``severity``, ``security``, ``rule``) under
+an id stable across rounds (a hash of rule, file and anchor line). This reader checks what the forge relies on (the
 version, the required fields, the closed vocabularies) and builds frozen records; it never guesses at a
 version it does not know (:class:`UnknownSchemaVersion`), because a renamed field or a new status is exactly
 what a reader of the old version would misread.
@@ -26,27 +27,26 @@ __all__ = [
     'FindingsInvalid',
     'Reviewer',
     'UnknownSchemaVersion',
-    'counted',
     'merge_outputs',
     'parse_findings',
-    'render',
 ]  # fmt: skip
 
 #: The ``schema_version`` values this reader knows.
-SCHEMA_VERSIONS: Final = frozenset({2})
+SCHEMA_VERSIONS: Final = frozenset({3})
 
 #: A reviewer's status: ``ok`` contributed findings; the rest name why it did not.
 REVIEWER_STATUSES: Final = frozenset(
     {'ok', 'exhausted', 'auth', 'rate_limit', 'timeout', 'unsupported', 'unavailable', 'skipped'}
 )
 
-#: A finding's severity, most severe first.
-SEVERITIES: Final = ('HIGH', 'MEDIUM', 'LOW', 'INFO')
+#: A finding's severity, most severe first: ``HIGH`` blocks the merge, the rest never do.
+SEVERITIES: Final = ('HIGH', 'MEDIUM', 'LOW')
 
 _TOP: Final = ('schema_version', 'range', 'profiles', 'reviewers', 'findings')
 _REVIEWER: Final = ('name', 'provider', 'status', 'dropped_findings')
 _FINDING: Final = (
-    'id', 'severity', 'file', 'summary', 'category', 'status', 'suggestion', 'detail', 'confidence', 'reviewers',
+    'id', 'severity', 'security', 'rule', 'file', 'anchor', 'summary', 'category', 'status', 'suggestion', 'detail',
+    'confidence', 'reviewers',
 )  # fmt: skip
 
 
@@ -70,18 +70,28 @@ class Reviewer:
 
 @dataclass(frozen=True)
 class Finding:
-    """One deduplicated finding, the reviewers (``name@provider``) that reported it, the principle ids tagged."""
+    """One deduplicated, tagged finding and the reviewers (``name@provider``) that reported it.
+
+    *id* is stable across rounds: the same rule, file and anchor line is the same finding.
+    """
 
     id: str
     severity: str
+    security: bool
+    rule: str
     file: str
+    anchor: str
     summary: str
     category: str
-    suggestion: str
-    detail: str
-    confidence: str
-    reviewers: tuple[str, ...]
-    principles: tuple[str, ...]
+    suggestion: str = ''
+    detail: str = ''
+    confidence: str = ''
+    reviewers: tuple[str, ...] = ()
+
+    @property
+    def blocking(self) -> bool:
+        """Whether, while open, it blocks the merge: a ``HIGH`` or a security finding."""
+        return self.severity == 'HIGH' or self.security
 
 
 @dataclass(frozen=True)
@@ -121,10 +131,13 @@ def _reviewer(row: object, at: int) -> Reviewer:
 def _finding(row: object, at: int) -> Finding:
     got = _fields(row, _FINDING, f'findings[{at}]')
     by = tuple(f'{one["name"]}@{one["provider"]}' for one in got['reviewers'])
+    if not isinstance(got['security'], bool):
+        msg = f'findings[{at}].security is {got["security"]!r}, not a boolean'
+        raise FindingsInvalid(msg)
     return Finding(
-        str(got['id']), _one_of(got['severity'], SEVERITIES, f'findings[{at}].severity'), str(got['file']),
-        str(got['summary']), str(got['category']), str(got['suggestion']), str(got['detail']),
-        str(got['confidence']), by, tuple(map(str, got.get('principles', ()))),
+        str(got['id']), _one_of(got['severity'], SEVERITIES, f'findings[{at}].severity'), got['security'],
+        str(got['rule']), str(got['file']), str(got['anchor']), str(got['summary']), str(got['category']),
+        str(got['suggestion']), str(got['detail']), str(got['confidence']), by,
     )  # fmt: skip
 
 
@@ -164,26 +177,3 @@ def merge_outputs(texts: Sequence[str], range_: str) -> str:
         'reviewers': [row for doc in docs for row in doc['reviewers']], 'findings': list(findings.values()),
     }  # fmt: skip
     return json.dumps(merged, ensure_ascii=False)
-
-
-def render(head: str, found: Findings) -> str:
-    """The one PR comment: who reviewed with what status, then each finding, most severe first."""
-    who = ', '.join(f'`{one.name}` ({one.provider or "-"}): {one.status}' for one in found.reviewers) or 'none'
-    rows = sorted(found.findings, key=lambda one: SEVERITIES.index(one.severity))
-    lines = [
-        f'- **{one.severity}** `{one.file}` -- {one.summary} ({one.id}, {one.category}, {one.confidence}; '
-        f'by {", ".join(one.reviewers)})'
-        + (f'\n  - principles: {", ".join(one.principles)}' if one.principles else '')
-        + (f'\n  - suggestion: {one.suggestion}' if one.suggestion else '')
-        for one in rows
-    ]
-    body = '\n'.join(lines) or 'No findings.'
-    return (
-        f'**Advisory review** of `{head[:12]}` over `{found.range}` -- it gates nothing.\n\nReviewers: {who}\n\n{body}'
-    )
-
-
-def counted(found: Findings) -> str:
-    """How many findings *found* holds, and how many are HIGH."""
-    high = sum(one.severity == 'HIGH' for one in found.findings)
-    return f'{len(found.findings)} finding(s), {high} HIGH'

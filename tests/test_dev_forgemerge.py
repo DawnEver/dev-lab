@@ -28,9 +28,11 @@ _MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrat
 
 
 def _green() -> list[dict[str, object]]:
+    """Every part PASS and the review posted with no blocking finding open (the family declares a review)."""
     return [
         {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=3 hands=-'},
-        {'id': 2, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
+        {'id': 2, 'context': 'tests/review', 'status': 'success', 'description': 'review round 1: no blocking'},
+        {'id': 3, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
     ]
 
 

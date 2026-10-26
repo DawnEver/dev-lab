@@ -394,6 +394,16 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
+        'from dev_lab.dev.forgereview_dispose import blocked',
+    ): 'the same leaf-at-import reason, and forgereview_dispose reaches forgenotice through the forge modules',
+    (
+        'src/dev_lab/dev/forgenotice.py',
+        'PLC0415',
+        'from dev_lab.dev.forgereview_dispose import line as blocked_line',
+    ): 'the same leaf-at-import reason, and forgereview_dispose reaches forgenotice through the forge modules',
+    (
+        'src/dev_lab/dev/forgenotice.py',
+        'PLC0415',
         'from dev_lab.dev.forgetakeover import held',
     ): 'the same leaf-at-import reason, and forgetakeover reaches forgenotice through the forge modules: a cycle',
     (

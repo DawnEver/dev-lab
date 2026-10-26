@@ -21,6 +21,7 @@ from dev_lab.dev.forgeintegration import tick as integration_tick
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
 from dev_lab.dev.forgereview import step as review_step
+from dev_lab.dev.forgereview_dispose import alarms as blocked_reviews
 from dev_lab.dev.forgeroute import reconcile
 from dev_lab.dev.forgescarce import red_alarms as scarce_red
 from dev_lab.dev.forgeschedule import load_schedule, starved_alarms
@@ -92,7 +93,7 @@ def prompt(
         ticked = integration_tick(root, built, policy, host=host)  # the host claims each auto-sync
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
-        review_step(root, built, policy=policy, say=say, host=host)  # advisory: the review host follows the integrator
+        review_step(root, built, policy=policy, say=say, host=host)  # the review host follows the integrator
         security_step(root, built, say=say)  # tests/security on each unjudged head: a merge condition
         glass = break_glass(root, policy, repo)
         red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
@@ -105,6 +106,7 @@ def prompt(
                 *glass,
                 *red,
                 *held_reviews(built, policy.integration, repo),  # an over-cap head: the integrator's takeover
+                *blocked_reviews(built, policy.integration, repo),  # a blocking finding: the integrator disposes
             ],
             alarm=alarm,
         )

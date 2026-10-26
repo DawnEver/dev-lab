@@ -229,6 +229,7 @@ def _serve(
 
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeservesteps, 'held_reviews', held or (lambda *_a, **_k: []))  # reads open PRs
+    monkeypatch.setattr(forgeservesteps, 'blocked_reviews', lambda *_a, **_k: [])  # reads open PRs too
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
         forgeservesteps,
