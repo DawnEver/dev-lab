@@ -9,6 +9,7 @@ import argparse
 import shlex
 import sys
 import tomllib
+import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -19,6 +20,7 @@ from lab_commons.hpc.retired import RETIRED
 __all__ = [
     'DEFAULT_PYTHON',
     'DEFAULT_ROOT',
+    'DEFAULT_TICK_MINUTES',
     'KIT',
     'MARK',
     'Deployment',
@@ -43,6 +45,9 @@ MARK: Final = '# lab-commons-deploy:'
 DEFAULT_ROOT: Final = 'src'
 DEFAULT_PYTHON: Final = '3.13'
 
+#: ``[schedule] tick_minutes`` when undeclared -- the same default the host card is judged stale against.
+DEFAULT_TICK_MINUTES: Final = 5
+
 #: The served repo every tick RUNS -- the kit, whose ``forge serve`` serves every other served repo.
 KIT: Final = 'dev-lab'
 
@@ -52,16 +57,25 @@ _VENV_PYTHON: Final = str(PurePosixPath('.venv', 'bin', 'python'))
 
 @dataclass(frozen=True)
 class Repo:
-    """One served repository: its checkout name, HTTPS remote and the branch the checkout follows."""
+    """One declared repository: checkout name, HTTPS remote, followed branch, and whether its queue is served.
+
+    ``serve = false`` checks it out and installs it without serving its queue: on the kit (dev-lab) its own
+    tick still refreshes the kit (the one writer of that checkout) and serves nothing; any other such repo
+    gets no crontab line.
+    """
 
     name: str
     url: str
     ref: str
+    serve: bool = True
 
 
 @dataclass(frozen=True)
 class Deployment:
-    """The ``[deploy]`` table of the machine file; the last two declare this account's grant."""
+    """The ``[deploy]`` table of the machine file, plus the ``[schedule] tick_minutes`` its cron lines run at.
+
+    ``slurm_account`` and ``partitions`` declare this account's grant.
+    """
 
     host: str
     root: str
@@ -69,11 +83,13 @@ class Deployment:
     repos: tuple[Repo, ...]
     slurm_account: str = ''  # needed only when sacctmgr names several
     partitions: tuple[str, ...] = ()
+    tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
 
 
 def load(path: Path) -> Deployment | None:
     """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused."""
-    raw = tomllib.loads(path.read_text(encoding='utf-8')).get('deploy') if path.is_file() else None
+    table = tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    raw = table.get('deploy')
     if not raw:
         return None
     if retired := [
@@ -86,13 +102,27 @@ def load(path: Path) -> Deployment | None:
             host=raw['host'],
             root=raw.get('root', DEFAULT_ROOT),
             python=raw.get('python', DEFAULT_PYTHON),
-            repos=tuple(Repo(r['name'], r['url'], r['ref']) for r in raw['repos']),
+            repos=tuple(Repo(r['name'], r['url'], r['ref'], r.get('serve', True)) for r in raw['repos']),
             slurm_account=raw.get('slurm_account', ''),
             partitions=tuple(raw.get('partitions', ())),
+            tick_minutes=_tick_minutes(path, table.get('schedule', {})),
         )
     except KeyError as missing:
         msg = f'[deploy] in {path} lacks {missing}'
         raise ValueError(msg) from None
+
+
+def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
+    """``[schedule] tick_minutes`` as a cron step: a whole number of minutes dividing the hour, else refused."""
+    minutes = schedule.get('tick_minutes', DEFAULT_TICK_MINUTES)
+    if type(minutes) is not int or minutes < 1 or 60 % minutes:
+        msg = f'[schedule] tick_minutes in {path} is {minutes!r}: cron needs a whole number of minutes dividing 60'
+        raise ValueError(msg)
+    return minutes
+
+
+def _unserved(repo: Repo) -> str:
+    return '' if repo.serve else ', serve = false'
 
 
 def _toml(value: str) -> str:
@@ -102,7 +132,8 @@ def _toml(value: str) -> str:
 def render(spec: Deployment) -> str:
     """*spec* as the ``[deploy]`` TOML table :func:`load` reads back."""
     repos = ''.join(
-        f'  {{ name = {_toml(r.name)}, url = {_toml(r.url)}, ref = {_toml(r.ref)} }},\n' for r in spec.repos
+        f'  {{ name = {_toml(r.name)}, url = {_toml(r.url)}, ref = {_toml(r.ref)}{_unserved(r)} }},\n'
+        for r in spec.repos
     )
     account = f'slurm_account = {_toml(spec.slurm_account)}\n' if spec.slurm_account else ''
     return (
@@ -150,10 +181,17 @@ def parse_repo(text: str) -> Repo:
 
 
 def cron_lines(spec: Deployment, home: Path, *, slurm: Sequence[str] = (), setup: Sequence[str] = ()) -> list[str]:
-    """One marked line per served repo: every 5 min, ``flock -n`` so a host never overlaps itself."""
+    """One marked line per served repo and the kit, every ``tick_minutes``, under ``flock -n``.
+
+    The minute offset is derived from *home* (one per account), so accounts sharing a forge tick staggered
+    rather than in lockstep; an unserved repo other than the kit gets no line (:class:`Repo`).
+    """
+    step = spec.tick_minutes
+    minute = f'{zlib.crc32(str(home).encode()) % step}-59/{step}'
     return [
-        f'*/5 * * * * {tick_command(spec, home, repo, log=True, slurm=slurm, setup=setup)} {MARK}{repo.name}'
+        f'{minute} * * * * {tick_command(spec, home, repo, log=True, slurm=slurm, setup=setup)} {MARK}{repo.name}'
         for repo in spec.repos
+        if repo.serve or repo.name == KIT
     ]
 
 
