@@ -35,6 +35,7 @@ from dev_lab.dev import (
     forgeserve,
     forgeservesteps,
     forgeship,
+    metrics,
     prlanded,
 )
 from dev_lab.dev.forgealarm import AUTH, IDLE, INTEGRATION, PRUNED, RUN, STARVED, UNTAGGED, Alarm
@@ -1490,3 +1491,27 @@ def test_a_stalled_forge_task_is_cancelled_every_tick_and_named_with_its_sha_and
     # Planted control: nothing stalled, nothing is raised.
     _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
     assert [a for a in alarms if 'stalled' in a.subject] == []
+
+
+@pytest.mark.parametrize('failure', [OSError('the run journal is gone'), RuntimeError('a defect in the tick')])
+def test_a_serve_that_fails_before_any_status_is_a_host_failure(monkeypatch, tmp_path: Path, failure) -> None:
+    """P0 metrics: a serve failing before it posts anything reaches nobody as a PR status, so it is logged."""
+
+    def fails(*_a: object, **_k: object) -> forgeserve.ServeReport:
+        raise failure
+
+    monkeypatch.setattr(forgeserve, 'serve', fails)
+    if isinstance(failure, OSError):
+        assert forgeserve.main([], cwd=tmp_path, seat_of=lambda: None) == 1
+    else:
+        with pytest.raises(RuntimeError):
+            forgeserve.main([], cwd=tmp_path, seat_of=lambda: None)
+    lines = metrics.read(metrics.HOST_FAILURE, root=tmp_path)
+    assert [(one['lab.rule.id'], one['error.type']) for one in lines] == [('serve', type(failure).__name__)]
+
+
+def test_a_serve_that_served_logs_no_host_failure(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL for the one above: the success path writes nothing."""
+    monkeypatch.setattr(forgeserve, 'serve', lambda *_a, **_k: forgeserve.ServeReport((), (), (), (), ()))
+    assert forgeserve.main([], cwd=tmp_path, seat_of=lambda: None) == 0
+    assert metrics.read(metrics.HOST_FAILURE, root=tmp_path) == []

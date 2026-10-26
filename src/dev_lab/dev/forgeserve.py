@@ -126,7 +126,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
-from dev_lab.dev import forgerun, forgerunstate, retention
+from dev_lab.dev import forgerun, forgerunstate, metrics, retention
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from dev_lab.dev.forgealarm import (
@@ -400,6 +400,13 @@ def work_root(root: Path) -> Path:
     return work
 
 
+def _host_failure(root: Path, failure: BaseException) -> None:
+    """A serve that failed before it posted anything reached nobody as a PR status: one ``host_failure`` line."""
+    metrics.record(
+        metrics.HOST_FAILURE, root=root, repo=metrics.repo_of(root), rule='serve', reason=type(failure).__name__
+    )
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -437,8 +444,12 @@ def main(
         emit(f'[serve] {missing}', err=True)
         return 1
     except (ForgeCallFailed, PostFailed, forgerunstate.ForeignSchema, OSError) as failed:
+        _host_failure(root, failed)
         emit(f'[serve] {failed}', err=True)
         return 1
+    except Exception as defect:
+        _host_failure(root, defect)
+        raise
     if args.json:
         emit(json.dumps(asdict(report), indent=2))
     else:

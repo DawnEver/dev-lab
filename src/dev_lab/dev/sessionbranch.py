@@ -148,17 +148,10 @@ def _forge_merges_only(root: Path, policy: Policy, old: str, new: str) -> list[s
     if listed.returncode != 0:
         return [f'{P5}: cannot list the new commits of {policy.integration}: {listed.stderr.strip()}']
     added = listed.stdout.split()
-    unglassed = [sha for sha in added if not reason(_git(root, 'log', '-1', '--format=%B', sha).stdout)]
+    messages = {sha: _git(root, 'log', '-1', '--format=%B', sha).stdout for sha in added}
+    unglassed = [sha for sha in added if not reason(messages[sha])]
     if not unglassed:
-        if added:
-            metrics.record(
-                metrics.BYPASS,
-                root=root,
-                repo=metrics.repo_of(root),
-                rule=HOOK_ID,
-                reason=BREAK_GLASS,
-                vcs_ref_head_revision=new,
-            )
+        _record_break_glass(root, new, messages)
         return []
     return [
         (
@@ -169,6 +162,20 @@ def _forge_merges_only(root: Path, policy: Policy, old: str, new: str) -> list[s
             f'{BREAK_GLASS}: <reason> trailer'
         )
     ]
+
+
+def _record_break_glass(root: Path, new: str, messages: dict[str, str]) -> None:
+    """The metrics of an admitted Break-Glass push: one bypass, and one hand action per commit it carries.
+
+    *messages* maps each new first-parent commit to its message, newest first as ``rev-list`` lists them.
+    """
+    if not messages:
+        return
+    repo = metrics.repo_of(root)
+    metrics.record(metrics.BYPASS, root=root, repo=repo, rule=HOOK_ID, reason=BREAK_GLASS, vcs_ref_head_revision=new)
+    for sha, message in reversed(messages.items()):
+        branch = merged_branch(message) or ''
+        metrics.break_glass(root, repo=repo, sha=sha, branch=branch, reason=reason(message))
 
 
 def _local(root: Path, local: str) -> str:
