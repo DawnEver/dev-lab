@@ -2,10 +2,12 @@
 
 The workstation counterpart of a cluster account's crontab lines (:mod:`dev_lab.dev.hpchost.deploy`). ONE
 Task, ``lab-forge-serve``, serves every repo the machine file declares (``[serve] repos``): its action
-runs :mod:`dev_lab.dev.workstation` ``serve`` from the dev-lab checkout, which takes the
+runs :mod:`dev_lab.dev.workstation` ``serve`` from the dev-lab SERVE checkout (:func:`kit`), which takes the
 per-user serve lock once (:mod:`dev_lab.dev.servelock`) and serves each repo in a lane of its own from its
-checkout and venv. One Task and not one per repo, because the lock is per host: per-repo Tasks firing
-on the same minute would either overlap (per-repo locks) or starve all but the first (one lock).
+checkout and venv. Every serve checkout is ``<forge home>/repos/<repo>`` (:func:`checkout`), derived from
+:func:`dev_lab.dev.servelock.forge_home` -- the platform data dir, never a dev checkout (user
+ruling 2026-10-26). One Task and not one per repo, because the lock is per host: per-repo Tasks firing on the
+same minute would either overlap (per-repo locks) or starve all but the first (one lock).
 :mod:`dev_lab.dev.workstation` ``deploy`` writes it; nothing else does.
 
 THE TASK, as one ``schtasks /Create /XML`` definition (:func:`task_xml`):
@@ -13,8 +15,8 @@ THE TASK, as one ``schtasks /Create /XML`` definition (:func:`task_xml`):
 * every 5 minutes; a tick still running when the next fires is skipped (``IgnoreNew``);
 * as THIS user, only while logged on (``InteractiveToken``, no stored password): the forge credential
   and a vendor's scheduler are per user, and JMAG's COM classes need the user's session;
-* the action ``<dev-lab checkout>/.venv/Scripts/pythonw.exe -m dev_lab.dev.workstation serve``,
-  its working directory the checkout, the Task ``Hidden``.
+* the action ``<forge home>/repos/dev-lab/.venv/Scripts/pythonw.exe -m dev_lab.dev.workstation serve``,
+  derived from the forge home alone (:func:`definition_of`), its working directory the checkout, the Task ``Hidden``.
 
 INVISIBLE ON A WORKSTATION, MEASURED 2026-10-13: the earlier action ``cmd /c cd /d <checkout> && python
 ...`` opened a console window every five minutes while the user worked. ``pythonw.exe`` is a
@@ -36,16 +38,21 @@ from __future__ import annotations
 import html
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import IO, Final
 
-from dev_lab.dev.servelock import default_lock
+from lab_commons.config import config_path
+
+from dev_lab.dev.hpchost.spec import KIT
+from dev_lab.dev.servelock import forge_home
 from dev_lab.dev.venvpath import venv_interpreter
 
 __all__ = [
-    'DISABLE', 'LOG_CAP', 'TASK', 'Definition', 'create_argv', 'definition_of', 'home', 'installed', 'log_path',
-    'open_log', 'query_argv', 'task_xml', 'this_user',
+    'DISABLE', 'LOG_CAP', 'RETIRED_FLAGS', 'RETIRED_SERVE_KEYS', 'TASK', 'Definition', 'checkout', 'create_argv',
+    'definition_of', 'installed', 'kit', 'log_path', 'open_log', 'query_argv', 'repos', 'retired_flag', 'serve_refusal',
+    'task_xml', 'this_user',
 ]  # fmt: skip
 
 #: The Scheduled Task's name.
@@ -125,9 +132,52 @@ def this_user() -> str:
     return f'{domain}\\{user}' if domain else user
 
 
-def definition_of(lab: Path) -> Definition:
-    """The Task that serves every declared repo from the dev-lab checkout *lab*, with no window."""
-    arguments = '-m dev_lab.dev.workstation serve'
+def repos(home: Path) -> Path:
+    """Where every serve checkout lives under the forge *home*: ``<home>/repos``, derived and never configured."""
+    return home / 'repos'
+
+
+def checkout(home: Path, repo: str) -> Path:
+    """The serve checkout of *repo* under the forge *home*."""
+    return repos(home) / repo
+
+
+def kit(home: Path) -> Path:
+    """The dev-lab serve checkout under the forge *home*: the one checkout the Task runs from."""
+    return checkout(home, KIT)
+
+
+#: Serve checkouts are derived (user ruling 2026-10-26); where they were once configured is retired.
+_DERIVED: Final = 'serve checkouts are derived as <forge home>/repos/<repo> (dev_lab.dev.servelock.forge_home)'
+#: A retired ``workstation deploy`` flag -> its remedy; refused by name, never silently ignored.
+RETIRED_FLAGS: Final = {'--root': f'{_DERIVED}; drop the flag'}
+#: A retired ``[serve]`` key -> its remedy; ``serve`` refuses it, ``deploy`` removes it.
+RETIRED_SERVE_KEYS: Final = {'root': f'{_DERIVED}; re-run `python -m dev_lab.dev.workstation deploy`'}
+
+
+def retired_flag(word: str) -> str | None:
+    """The refusal of *word* when it is a :data:`RETIRED_FLAGS` flag of ``workstation``, naming its remedy."""
+    return f'`workstation {word}` is retired: {RETIRED_FLAGS[word]}' if word in RETIRED_FLAGS else None
+
+
+def serve_refusal(table: Mapping[str, object], executable: Path, home: Path) -> str | None:
+    """Why ``serve`` must not run with ``[serve]`` *table* from *executable*; ``None`` when it may.
+
+    Only the forge *home*'s dev-lab checkout is the kit: a dev checkout's venv never serves (2026-10-26).
+    """
+    if retired := [key for key in table if key in RETIRED_SERVE_KEYS]:
+        return f'[serve] {retired[0]} is retired: {RETIRED_SERVE_KEYS[retired[0]]}'
+    repos = table.get('repos')
+    if not (isinstance(repos, list) and repos):
+        return f'no [serve] repos in {config_path()}; run `workstation deploy`'
+    if not executable.is_relative_to(lab := kit(home)):
+        return f'{executable} is not the serve kit in {lab} (never a dev checkout); run `workstation deploy`'
+    return None
+
+
+def definition_of(home: Path) -> Definition:
+    """The Task that serves every declared repo from the forge *home*'s dev-lab checkout, with no window."""
+    lab, arguments = kit(home), '-m dev_lab.dev.workstation serve'
     return Definition(command=str(lab / _VENV_PYTHONW), arguments=arguments, working_directory=str(lab))
 
 
@@ -156,14 +206,9 @@ def installed(xml: str) -> Definition | None:
     return Definition(**found) if found['command'] else None
 
 
-def home() -> Path:
-    """The per-user serve directory, the serve lock's: ``%LOCALAPPDATA%/lab-forge``, else ``~/.cache/lab-forge``."""
-    return default_lock().parent
-
-
 def log_path() -> Path:
     """Where a windowless serve, and every child it starts, writes."""
-    return home() / 'serve.log'
+    return forge_home() / 'serve.log'
 
 
 def open_log(path: Path, *, cap: int = LOG_CAP) -> IO[str]:

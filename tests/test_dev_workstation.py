@@ -81,7 +81,7 @@ CHANGES: Final = ('clone', 'merge', 'fetch', 'bootstrap', '--install', '/Create'
 
 @dataclass(frozen=True)
 class Box:
-    """One fake workstation: its root of checkouts, machine file, Task state and the shared call log."""
+    """One fake workstation: its serve checkouts (``<forge home>/repos``), machine file, Task state, call log."""
 
     root: Path
     machine: Path
@@ -93,7 +93,7 @@ class Box:
         return self.log.read_text().splitlines() if self.log.exists() else []
 
     def deploy(self, *extra: str) -> int:
-        return workstation.deploy([*DEPLOY, '--root', str(self.root), *extra], programs=self.programs)
+        return workstation.deploy([*DEPLOY, *extra], programs=self.programs)
 
 
 @pytest.fixture
@@ -117,10 +117,11 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
         com=lambda _progid: Path('designer.exe'),
         windows=True,
         home=tmp_path / 'home',
+        executable=tmp_path / 'home' / 'repos' / 'dev-lab' / VENV,
         computer='BOX',
         release=lambda checkout: [f'released {checkout.name}'],
     )
-    return Box(tmp_path / 'src', machine, task, log, programs)
+    return Box(tmp_path / 'home' / 'repos', machine, task, log, programs)
 
 
 def _registry(tmp_path: Path, machine: Path, roles: list[str] | None, *, computer: str = 'BOX') -> Path:
@@ -153,9 +154,9 @@ def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: B
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     jmag = {'seats': 4, 'in_use': {'process': list(workstation.JMAG_SOLVER_IMAGES)}}
     assert declared['capabilities'] == {'workstation': {}, 'jmag': jmag}, 'a jmag seat is observed by its solvers'
-    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'root': str(box.root)}
+    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta']}, 'the checkouts are derived, not declared'
     assert 'reserve' not in declared, 'deploy reserves nothing: the OS headroom keeps its defaults'
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'dev-lab')
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.programs.home)
 
 
 def test_a_second_run_changes_nothing(box: Box) -> None:
@@ -211,7 +212,7 @@ def test_every_missing_tool_is_refused_at_once_each_with_its_remedy(
     bare = replace(
         box.programs, which=lambda tool: None if tool in {'uv', 'node', 'codex'} else tool, com=lambda _p: None
     )
-    assert workstation.deploy([*DEPLOY, '--root', str(box.root)], programs=bare) == 2
+    assert workstation.deploy([*DEPLOY], programs=bare) == 2
     err = capsys.readouterr().err
     assert 'astral.sh/uv/install.ps1' in err
     assert 'OpenJS.NodeJS.LTS' in err
@@ -223,7 +224,7 @@ def test_every_missing_tool_is_refused_at_once_each_with_its_remedy(
 
 def test_the_workstation_kit_and_jmag_are_probed_only_when_declared(box: Box) -> None:
     bare = replace(box.programs, which=lambda tool: None if tool in {'node', 'codex'} else tool, com=lambda _p: None)
-    argv = ['--repos', REPOS, '--capabilities', 'femm', '--forge', FORGE, '--root', str(box.root)]
+    argv = ['--repos', REPOS, '--capabilities', 'femm', '--forge', FORGE]
     assert workstation.deploy(argv, programs=bare) == 0
 
 
@@ -251,7 +252,7 @@ def test_a_refused_repo_is_skipped_alone_and_the_others_are_still_served(
     """One repo's refusal never stops the others: it leaves [serve] repos, its owner is alarmed, the exit is 2."""
     raised: list[Alarm] = []
     programs = replace(box.programs, alarm=raised.append)
-    argv = [*DEPLOY, '--root', str(box.root)]
+    argv = [*DEPLOY]
     assert workstation.deploy(argv, programs=programs) == 0
     (box.root / 'beta' / '.git' / 'DIRTY').touch()
     (box.root / 'alpha' / '.git' / 'UP_SHA').write_text('b' * 40)
@@ -260,13 +261,13 @@ def test_a_refused_repo_is_skipped_alone_and_the_others_are_still_served(
     assert f'git -C {box.root / "alpha"} merge --ff-only -q @{{u}}' in box.calls(), 'the planted control moves on'
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     assert declared['serve']['repos'] == ['dev-lab', 'alpha'], 'a refused repo is not served'
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'dev-lab')
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.programs.home)
     assert 'beta' in capsys.readouterr().err
     assert [(one.repo, 'local changes' in one.body) for one in raised] == [(f'{FORGE}/beta.git', True)]
 
 
 def test_a_missing_checkout_without_a_forge_is_refused(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
-    argv = ['--repos', REPOS, '--root', str(box.root)]
+    argv = ['--repos', REPOS]
     assert workstation.deploy(argv, programs=box.programs) == 2
     assert 'pass --forge' in capsys.readouterr().err
 
@@ -297,7 +298,7 @@ def test_a_bad_capability_is_refused_by_name() -> None:
 def test_an_older_task_action_is_replaced(box: Box) -> None:
     box.task.write_text('<Command>cmd</Command><Arguments>/c cd /d x &amp;&amp; py -m serve</Arguments>')
     assert box.deploy() == 0
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'dev-lab')
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.programs.home)
 
 
 def test_off_windows_the_deploy_is_refused(box: Box) -> None:
@@ -457,8 +458,7 @@ def test_a_host_the_registry_gives_no_forge_role_claims_nothing_and_releases_its
     serve = tomllib.loads(box.machine.read_text(encoding='utf-8'))['serve']
     _registry(tmp_path, box.machine, roles)
     box.machine.write_text(
-        box.machine.read_text(encoding='utf-8') + f'\n[serve]\nrepos = {json.dumps(serve["repos"])}\n'
-        f'root = {json.dumps(serve["root"])}\n',
+        box.machine.read_text(encoding='utf-8') + f'\n[serve]\nrepos = {json.dumps(serve["repos"])}\n',
         encoding='utf-8',
     )
     seen = len(box.calls())
@@ -507,7 +507,7 @@ def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
 ) -> None:
     monkeypatch.setattr(sys, 'stdout', None)  # pythonw: no console, no streams
     monkeypatch.setattr(sys, 'stderr', None)
-    monkeypatch.setattr(servetask, 'home', lambda: tmp_path)
+    monkeypatch.setattr(servetask, 'forge_home', lambda: tmp_path)
     seen: dict[str, object] = {}
 
     def serve(*, out: object = None) -> int:
@@ -590,3 +590,69 @@ def test_a_new_committed_lock_rebootstraps_a_served_venv_and_no_remote_is_asked(
     (checkout / 'uv.lock').write_text('rev = "2"\n', encoding='utf-8')
     assert hostrefresh.sync_venv(_Step(), ('boot',), checkout) == 0
     assert len(ran) == 2, 'a new lock re-bootstraps it'
+
+
+def test_the_retired_root_flag_is_refused_by_name(capsys: pytest.CaptureFixture[str]) -> None:
+    """Serve checkouts are DERIVED from the forge home; ``--root`` is retired, never silently ignored."""
+    assert workstation.main(['deploy', *DEPLOY, '--root=C:/anywhere']) == 2
+    err = capsys.readouterr().err
+    assert '`workstation --root` is retired' in err
+    assert 'repos' in err
+
+
+def test_a_machine_file_still_declaring_serve_root_is_refused_by_name_and_deploy_drops_it(
+    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _serving(box)
+    box.machine.write_text(
+        box.machine.read_text(encoding='utf-8').replace('[serve]\n', '[serve]\nroot = "C:/Users/x/src"\n'),
+        encoding='utf-8',
+    )
+    capsys.readouterr()
+    worst, ran = _serve(box, tmp_path)
+    assert (worst, ran) == (2, [])
+    err = capsys.readouterr().err
+    assert '[serve] root is retired' in err
+    assert 'workstation deploy' in err, 'the remedy is named'
+    assert box.deploy() == 0
+    assert 'root' not in tomllib.loads(box.machine.read_text(encoding='utf-8'))['serve'], 'deploy removes the key'
+    assert _serve(box, tmp_path)[0] == 0
+
+
+def test_serve_refuses_to_run_from_any_interpreter_but_the_serve_kits(
+    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Serve never again runs from a dev checkout (incident 2026-10-26: a lab-commons dev venv was the kit)."""
+    _serving(box)
+    dev = replace(box.programs, executable=tmp_path / 'src' / 'lab-commons' / VENV)
+    seen = len(box.calls())
+    capsys.readouterr()
+    assert workstation.serve(run=lambda *_a, **_k: _Done(0), lock=tmp_path / 'serve.lock', programs=dev) == 2
+    err = capsys.readouterr().err
+    assert str(box.root / 'dev-lab') in err
+    assert 'workstation deploy' in err
+    assert box.calls()[seen:] == [], 'nothing is refreshed either'
+    assert _serve(box, tmp_path)[0] == 0, 'PLANTED CONTROL: the kit interpreter serves'
+
+
+def test_the_kits_own_venv_is_resynced_when_its_lock_moves_before_any_other_repo_serves(
+    box: Box, tmp_path: Path
+) -> None:
+    """GAP A4: the Task runs from the dev-lab serve checkout, so a moved lock resyncs THE KIT'S venv first."""
+    _serving(box)
+    kit = box.root / 'dev-lab'
+    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
+    (kit / 'uv.lock').write_text('moved')
+    seen = len(box.calls())
+    served: dict[str, int] = {}
+
+    def run(_argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
+        served.setdefault(cwd.name, len(box.calls()))
+        return _Done(0)
+
+    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
+    synced = box.calls().index(f'bootstrap {kit}', seen)
+    assert synced < min(served.values()), 'the kit venv is synced before any lane serves'
+    again = len(box.calls())
+    assert _serve(box, tmp_path)[0] == 0
+    assert f'bootstrap {kit}' not in box.calls()[again:], 'PLANTED CONTROL: an unmoved lock syncs nothing'
