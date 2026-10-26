@@ -232,6 +232,8 @@ def main(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     """``forge notices``: print the open notices; exit 0 when none, 1 when some, 2 when the forge fails."""
+    from dev_lab.dev.forgereview_dispose import blocked  # noqa: PLC0415
+    from dev_lab.dev.forgereview_dispose import line as blocked_line  # noqa: PLC0415
     from dev_lab.dev.forgetakeover import held  # noqa: PLC0415
     from dev_lab.dev.forgetakeover import line as held_line  # noqa: PLC0415
     from dev_lab.dev.forgework import ForgeCallFailed, client_for  # noqa: PLC0415
@@ -246,6 +248,7 @@ def main(
         if args.ack:
             return _ack(origin, blocks, args.ack)
         reviews = held(origin, policy.integration) if not args.session else ()  # over the cap: the integrator's
+        blocking = blocked(origin, policy.integration) if not args.session else ()  # a blocking finding: likewise
     except (ForgeCallFailed, OSError, ValueError) as failed:
         emit(f'[notices] {failed}', err=True)
         return 2
@@ -262,7 +265,9 @@ def main(
         emit(notice.line())
     for pull in reviews:
         emit(held_line(pull))
-    return 1 if shown or reviews else 0
+    for pull, ids in blocking:
+        emit(blocked_line(pull, ids))
+    return 1 if shown or reviews or blocking else 0
 
 
 def _ack(client: Client, blocks: Sequence[tuple[int, Block, Any]], wanted: str) -> int:

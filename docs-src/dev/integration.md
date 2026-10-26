@@ -114,16 +114,43 @@ Each tick, and nothing else:
    `python -m dev_lab.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
 7. A head whose review is HELD over the cap (`python -m dev_lab.dev.forge review held`) is yours: run
    `python -m dev_lab.dev.forge review takeover <sha>`, which reviews it, posts the findings and releases the hold
-   ([the PR reviewer](#the-pr-reviewer-is-advisory)). Ask the user only for a decision a finding raises.
+   ([the PR reviewer](#the-pr-reviewer-blocks-on-high-or-security)). Ask the user only for a decision a finding
+   raises.
+8. A head a blocking finding holds (`python -m dev_lab.dev.forge review blocked`) is yours to judge: the author
+   fixes it (the next round confirms), or you dispose of it, with its reason:
+   `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"`. Ask the user only when you
+   and the author disagree.
 
 An integrator runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
-## The PR reviewer is advisory
+## The PR reviewer blocks on HIGH or security
 
-`PR-REVIEW-IS-ADVISORY` (`dev_lab.dev.forgereview`). The forge only orchestrates: each open, non-draft PR
-into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares; its stdout is
-the sharp-review findings JSON (`schema_version` 2, read by `dev_lab.dev.forgereview_findings`; an unknown
-version is refused by name). The forge posts one PR comment of the findings and a `tests/review` commit status.
+`PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY` (`dev_lab.dev.forgereview`, user ruling 2026-10-26). The forge only
+orchestrates: each open, non-draft PR into `integrate/main` on gitea is reviewed ONCE per head sha by the command
+the repo declares; its stdout is the sharp-review findings JSON (`schema_version` 3, read by
+`dev_lab.dev.forgereview_findings`; any other version is refused by name). The forge posts one PR comment per
+head -- a review ROUND -- and a `tests/review` commit status.
+
+**Tagged findings.** Every finding carries `severity` (`HIGH`/`MEDIUM`/`LOW`), `security` (bool) and `rule` --
+the one principle id (ai-lab's `principles.json`) or registry rule id (`dev_lab.dev.rules`) it violates; ai-lab's
+method reads the registry at load and keeps no list of its own. Its id is `F-<12 hex>` of (rule, file, anchor
+line): the same finding in every round, never a line number.
+
+**Blocking.** `tests/review` is `failure` while any open finding is `HIGH` or `security` and not disposed, else
+`success`. The auto-merge waits on that `failure`, and on a head not yet reviewed (`forgemerge.review_blocks`);
+an `error` or `takeover pending` (no finding exists) stays advisory. A finding CLOSES when a later round finds its
+anchor line gone from its file, or when the integrator disposes of it through the door
+`python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"` (refused without a reason, or for
+an id not open; recorded as one keyed comment). The forge prompts the integrator for every blocked head (an
+`integration` issue each, `forge notices`, `forge review blocked`); a human is asked only when the integrator and
+the author disagree. A raw `status post` on `tests/review` is refused like the hold's.
+
+**Rounds** (`dev_lab.dev.forgereview_rounds`). Round 1 reads the whole branch change and opens its comment with a
+summary -- what changed, why (the commit subjects), which layers. Round k > 1 reads only what the branch added
+since its last reviewed head and re-checks every open finding; a new finding below `HIGH` on a line the round did
+not add is dropped (no moving goalposts). Past `max_rounds` (family default 3, `forgereview_rounds.FAMILY_MAX_ROUNDS`)
+no command runs: the open blocking findings are re-checked alone and the non-blocking ones move to ONE follow-up
+issue. Each round's comment records its ledger (a hidden `review-ledger` line), which the next round starts from.
 
 **What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
 slice, not whether a head is read at all:
@@ -141,8 +168,8 @@ slice, not whether a head is read at all:
   Markdown), `standard` for the rest. The outputs merge into one document (a finding once per id); a declared
   `synthesis` command then reads it (`{findings}`) over the whole range for what crosses slices.
 
-**It gates nothing but one state**: `tests/review` is never a part, so `integrate promote` and push admission
-never wait on it, and the forge's auto-merge waits only on a head the slices cannot hold -- its reviewable change
+**It is not a part**: `integrate promote` and push admission never wait on `tests/review`. Beside the blocking
+above, the forge's auto-merge waits on a head the slices cannot hold -- its reviewable change
 over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices for a command without `{paths}`.
 That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), and it is
 a TAKEOVER the INTEGRATOR AGENT owns (user ruling 2026-10-26): the forge lists it among the integrator's prompts

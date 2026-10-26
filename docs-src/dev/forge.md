@@ -42,8 +42,8 @@ Each tick it:
 6. ON THE ONE POLLER of the repo ([one poller per repo](#one-poller-per-repo)): closes landed PRs, prunes
    merged branches and old records, tidies the issues, raises starved parts, keeps one forge issue per
    integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms)),
-   runs the advisory review (a head held over its cap is the integrator's takeover,
-   [the review](integration.md#the-pr-reviewer-is-advisory)) and the relock.
+   runs the review (a head held over its cap is the integrator's takeover,
+   [the review](integration.md#the-pr-reviewer-blocks-on-high-or-security)) and the relock.
 
 ### One poller per repo
 
