@@ -105,6 +105,7 @@ _ENFORCED = {
     'SESSION-HISTORY-ONLY-GROWS': (guard('tests/test_dev_sessionbranch.py'),),
     'INTEGRATION-IS-MERGES-ONLY': (guard('tests/test_dev_sessionbranch.py'), guard('tests/test_dev_integrate.py')),
     'PUBLISH-IS-THE-LOCAL-REF': (guard('tests/test_dev_sessionbranch.py'),),
+    'ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES': (guard('tests/test_dev_sessionbranch.py'),),
     'INTEGRATION-TAKES-ONLY-FORGE-MERGES': (
         guard('tests/test_dev_sessionbranch.py'),
         guard('tests/test_dev_forgemerge.py'),

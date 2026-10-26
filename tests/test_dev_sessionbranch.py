@@ -14,10 +14,13 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.breakglass import notices
+from dev_lab.dev.componentbump import LANE
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.metrics import BYPASS, read
-from dev_lab.dev.sessionbranch import P2, P3, P5
+from dev_lab.dev.relock import branch_for
+from dev_lab.dev.sessionbranch import P2, P3, P5, P6
 
 _GIT = shutil.which('git') or 'git'
 _DECL = (
@@ -416,10 +419,79 @@ def test_any_branch_published_under_another_name_is_refused(repo: Path, spec: st
 
 
 def test_a_branch_lands_under_its_own_name_and_a_detached_tip_under_any(repo: Path) -> None:
-    """PLANTED CONTROL: the same lane pushed as itself lands; a detached machine push (relock) is not a branch."""
+    """PLANTED CONTROL: a pr/ branch pushed as itself lands; a detached machine push (relock) is not a branch."""
+    _git(repo, 'checkout', '-b', 'pr/x', 'lane/x')
+    _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
+    assert _push(repo, 'pr/x').returncode == 0
+    _git(repo, 'checkout', '--detach')
+    done = _push(repo, 'HEAD:refs/heads/pr/relock-x')
+    assert done.returncode == 0, done.stderr
+
+
+# --- P6 ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES ---------------------------------------------------------
+
+
+def test_a_fan_out_branch_pushed_as_itself_is_refused_naming_the_declaration_and_the_remedy(repo: Path) -> None:
     _git(repo, 'checkout', 'lane/x')
     _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
-    assert _push(repo, 'lane/x').returncode == 0
+    done = _push(repo, 'lane/x')
+    assert done.returncode != 0, done.stderr
+    assert P6 in done.stderr
+    for named in ('lane/x', 'feat/s', 'int/line', 'stable', 'pr/*', 'pr/<feature>', 'keep lane/x local'):
+        assert named in done.stderr
+    assert _remote(repo, 'lane/x') == ''
+
+
+def test_a_detached_machine_push_outside_the_namespaces_is_refused(repo: Path) -> None:
     _git(repo, 'checkout', '--detach')
     done = _push(repo, 'HEAD:refs/heads/relock/x')
+    assert P6 in done.stderr
+    assert _remote(repo, 'relock/x') == ''
+
+
+def test_an_existing_undeclared_origin_branch_takes_no_new_push_but_may_be_deleted(repo: Path) -> None:
+    """Origin's existing junk is untouched by the rule: an update is refused, a deletion is P3's business."""
+    _git(repo.parent / 'origin.git', 'fetch', str(repo), 'lane/x:refs/heads/lane/x')
+    _git(repo, 'checkout', 'lane/x')
+    _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
+    assert P6 in _push(repo, 'lane/x').stderr
+    assert _remote(repo, 'lane/x') != _git(repo, 'rev-parse', 'HEAD')
+    done = _push(repo, '--delete', 'lane/x')
     assert done.returncode == 0, done.stderr
+    assert _remote(repo, 'lane/x') == ''
+
+
+def test_a_tag_push_is_not_judged(repo: Path) -> None:
+    _git(repo, 'tag', 'v0.1.0')
+    done = _push(repo, 'refs/tags/v0.1.0')
+    assert done.returncode == 0, done.stderr
+
+
+def test_the_namespace_is_the_declaration_the_pushed_tip_carries(repo: Path) -> None:
+    """A tip declaring ``ephemeral = ['bot/*']`` admits bot/x and no longer pr/x."""
+    _git(repo, 'checkout', '-b', 'bot/x', 'lane/x')
+    (repo / 'pyproject.toml').write_text(
+        _DECL.replace("'feat/s']\n", "'feat/s']\nephemeral = ['bot/*']\n"), encoding='utf-8'
+    )
+    _git(repo, 'commit', '-am', 'chore: bot namespace')
+    done = _push(repo, 'bot/x')
+    assert done.returncode == 0, done.stderr
+    _git(repo, 'checkout', '-b', 'pr/y')
+    assert P6 in _push(repo, 'pr/y').stderr
+
+
+def test_the_declared_branches_land(repo: Path) -> None:
+    """PLANTED CONTROL: the trunk and every session branch are origin's by declaration."""
+    _git(repo, 'checkout', 'feat/s')
+    _git(repo, 'commit', '--allow-empty', '-m', 'feat: s')
+    _git(repo, 'checkout', 'stable')
+    _git(repo, 'merge', '--ff-only', 'feat/s')
+    done = _push(repo, 'feat/s', 'stable')
+    assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize('branch', [LANE, branch_for('lab-commons', 'a' * 40), 'integrate/main', 'main'])
+def test_every_machine_pusher_targets_a_branch_the_family_default_admits(branch: str) -> None:
+    """The forge's own pushers (component bump, relock; autosync pushes only pr/ heads) and the declared pair."""
+    declared = branchset_from("[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n", 'p')
+    assert declared.admits(branch)
