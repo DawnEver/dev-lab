@@ -15,6 +15,8 @@ import pytest
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 
+from dev_lab.dev import metrics
+
 
 @pytest.fixture(autouse=True)
 def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,3 +47,21 @@ def _git_never_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(name, value)
     for name in ASKPASS:
         monkeypatch.delenv(name, raising=False)
+
+
+#: The checkout this repository's live metrics log lives in, resolved once per session.
+_LIVE_CHECKOUT: list[Path] = []
+
+
+@pytest.fixture(autouse=True)
+def _a_metrics_log_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test never appends to the LIVE metrics log: a root resolving to this repository's checkout is its own.
+
+    The writers take their root explicitly and most tests hand them a tmp tree; this catches the rest (a
+    ``Path.cwd()`` at a CLI entry, a hook run against this checkout). Planted control: test_dev_metrics.
+    """
+    resolve = metrics.checkout
+    if not _LIVE_CHECKOUT:
+        _LIVE_CHECKOUT.append(resolve(Path(__file__).resolve().parent))
+    own = tmp_path / 'metrics-checkout'
+    monkeypatch.setattr(metrics, 'checkout', lambda root: own if (at := resolve(root)) == _LIVE_CHECKOUT[0] else at)
