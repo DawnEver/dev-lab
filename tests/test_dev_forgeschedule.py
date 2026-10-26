@@ -12,7 +12,7 @@ from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev.forgehosts import host_id
 from dev_lab.dev.forgeorigin import vouched
-from dev_lab.dev.forgeschedule import host_weights, load_schedule, parse_usage
+from dev_lab.dev.forgeschedule import coalesced, host_weights, load_schedule, parse_usage
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 FAMILY = Schedule()
@@ -190,3 +190,16 @@ def test_a_pr_head_is_coalesced_so_one_pr_session_holds_at_most_one_run_per_part
     """
     assert 'pr' in FAMILY.coalesce
     assert 'branch' not in FAMILY.coalesce
+
+
+def test_a_served_ref_no_class_names_is_a_pr_head_so_its_moved_tip_supersedes_its_run(tmp_path: Path) -> None:
+    """``coalesced`` classes a ref as the serve does: a served ref no ``classes_by_ref`` pattern names is an open PR.
+
+    Ada 2026-10-26: ``pr/post-milestone-followups`` matched no pattern, so ``coalesced`` said False and its old
+    head's run never stood down, while ``behind`` (the candidate's kind ``pr``) kept every newer tip waiting on it.
+    PLANTED CONTROL: a ``lane/*`` branch is still classed ``branch`` -- not coalesced.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
+    assert coalesced(tmp_path, 'pr/post-milestone-followups')
+    assert coalesced(tmp_path, 'integrate/main')
+    assert not coalesced(tmp_path, 'lane/a-lane')
