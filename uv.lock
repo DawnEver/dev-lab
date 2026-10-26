@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [[package]]
@@ -273,8 +273,8 @@ wheels = [
 
 [[package]]
 name = "lab-commons"
-version = "0.3.1.dev1101+g3dc0d60e7"
-source = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git#3dc0d60e724ecef2ae72c14f96e2f9c5a247331b" }
+version = "0.3.1.dev1106+g2cb4fca17"
+source = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git#2cb4fca171bedb3c51d91f4cb5d0081ba179d2d8" }
 
 [package.optional-dependencies]
 io = [

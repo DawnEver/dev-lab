@@ -130,6 +130,18 @@ class ForgeCallFailed(OSError):
         """Whether the forge refused the stored CREDENTIAL -- measured by ``GET /user``, never read off one status."""
         return _credential_refused(self.report)
 
+    @property
+    def final(self) -> int | None:
+        """The HTTP status when the forge refused THIS CALL for good, else ``None`` (a later attempt may land).
+
+        Final is an answered refusal (:attr:`~dev_lab.dev.netverb.Diagnosis.FORGE_REFUSED`, e.g. a 405 on
+        merging a merged PR) that is not a refused CREDENTIAL: that one is the box's fault, not the call's.
+        """
+        last = self.report.attempts[-1] if self.report.attempts else None
+        if last is None or last.diagnosis is not Diagnosis.FORGE_REFUSED or self.credential_refused:
+            return None
+        return last.returncode
+
 
 def _credential_refused(report: Report) -> bool:
     """The last attempt was a 401/403 that :meth:`Client._diagnosis` diagnosed refused after asking ``GET /user``."""

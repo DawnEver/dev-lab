@@ -165,3 +165,29 @@ def test_the_door_every_verb_builds_journals_into_the_repositorys_outbox(tmp_pat
     built = client_for(repo, env=credential_env(tmp_path))
     assert built.journal == journal_for(repo)
     assert built.journal.directory.is_relative_to(outbox_dir(repo))
+
+
+def test_a_write_the_forge_refuses_for_good_is_dropped_once_never_kept(server, tmp_path: Path) -> None:
+    """A 405 on merging a closed PR is the forge's final answer: replayed every tick it never lands (2026-10-26)."""
+    journal = Journal(tmp_path / 'writes')
+    path = f'{API}/pulls/6/merge'
+    journal.record(Write('k', 'POST', path, 'application/json', b'{"Do": "merge"}'))
+    answer('POST', path, (405, {'message': 'The PR is already merged'}))
+    assert replay(journal, _door(server, journal)) == [
+        f'outbox: dropped POST {path} -- the forge refused it (405), final'
+    ]
+    assert journal.pending() == ()
+    assert replay(journal, _door(server, journal)) == [], 'recorded once, never again'
+
+
+def test_a_refused_credential_is_not_a_final_refusal_of_the_write(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: a 401 the credential check confirms is this BOX's fault -- the write stays kept."""
+    journal = Journal(tmp_path / 'writes')
+    path = f'{API}/pulls/6/merge'
+    journal.record(Write('k', 'POST', path, 'application/json', b'{"Do": "merge"}'))
+    answer('POST', path, (401, {'message': 'unauthorized'}))
+    door = _door(server, journal)
+    answer('GET', '/api/v1/user', (401, {'message': 'unauthorized'}))
+    [line] = replay(journal, door)
+    assert line.startswith(f'outbox: kept POST {path} -- forge-refused')
+    assert len(journal.pending()) == 1

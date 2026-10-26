@@ -199,3 +199,29 @@ def test_a_differing_later_result_alarms_and_the_first_stands(server, tmp_path: 
     [alarm] = alarms
     assert alarm.kind == NONDETERMINISM
     assert 'gave success and then failure' in alarm.subject
+
+
+def test_a_held_status_the_forge_refuses_for_good_is_dropped_once_with_its_record(server, tmp_path: Path) -> None:
+    """A 422 is the forge's final answer: kept, it raised PostFailed on every tick of every host."""
+    repo, sha = _committed(tmp_path)
+    _pushed(repo, sha)
+    enqueue(repo, Post(sha, 'tests/linux', 'error', 'released'))
+    answer('POST', f'{API}/statuses/{sha}', (422, {'message': 'invalid'}))
+    built = lambda _root: client(FORGE, Loopback(server))  # noqa: E731
+    assert flush(repo, client=built) == [
+        f'status: dropped tests/linux on {sha[:12]} -- the forge refused it (422), final'
+    ]
+    assert list(outbox_dir(repo).iterdir()) == [], 'the entry left the outbox'
+    assert flush(repo, client=built) == [], 'recorded once, never again'
+
+
+def test_a_held_status_whose_credential_is_refused_stays_queued(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: a 401 the credential check confirms is the box's fault, not the post's."""
+    repo, sha = _committed(tmp_path)
+    _pushed(repo, sha)
+    enqueue(repo, Post(sha, 'tests/linux', 'error', 'released'))
+    answer('POST', f'{API}/statuses/{sha}', (401, {'message': 'unauthorized'}))
+    answer('GET', '/api/v1/user', (401, {'message': 'unauthorized'}))
+    with pytest.raises(PostFailed, match='forge-refused'):
+        flush(repo, client=lambda _root: client(FORGE, Loopback(server)))
+    assert len(queued(repo)) == 1
