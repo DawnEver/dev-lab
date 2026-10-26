@@ -7,6 +7,7 @@ arm has its planted control.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,8 @@ from _branch_repos import commit
 from _forge_fake import run_git
 
 from dev_lab.dev import forgesecurity
+from dev_lab.dev._deny_reviewstatus_row import REVIEW_STATUS_VIA_DOORS
+from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
 from dev_lab.dev.forgesecurity import Declaration, DeclarationInvalid, Judgement, declared, judge, security_wait, step
 from dev_lab.dev.forgestatus import CommitStatus
@@ -163,3 +166,110 @@ def test_a_head_is_judged_from_its_own_tracked_tree(tmp_path: Path) -> None:
     assert found.state == 'failure'
     assert 'a.py:3 S602' in found.description
     assert 'scratch.py' not in found.description
+
+
+_BASE_TOML = b'[project]\nname = "x"\n'
+_HEAD_TOML = b'[tool.dev_lab.security]\nignore = { S311 = "seeded study samples" }\n'
+
+
+def _fake_forge(monkeypatch: pytest.MonkeyPatch, head_toml: bytes) -> tuple[dict, list]:
+    """One open PR #7 at head ``h``*40 into integration; the head's pyproject is *head_toml*."""
+    head = 'h' * 40
+    git = {
+        ('show', 'origin/integrate/main:pyproject.toml'): _BASE_TOML,
+        ('show', f'{head}:pyproject.toml'): head_toml,
+        ('rev-parse', 'origin/integrate/main'): b'i' * 40 + b'\n',
+    }
+    pull = SimpleNamespace(number=7, base='integrate/main', draft=False, head_sha=head)
+    posted: dict[str, list[CommitStatus]] = {}
+    comments: list = []
+    monkeypatch.setattr(forgesecurity, 'load_policy', lambda _root: SimpleNamespace(integration='integrate/main'))
+    monkeypatch.setattr(forgesecurity, '_git', lambda _root, *argv: git[argv])
+    monkeypatch.setattr(forgesecurity, 'pr_list', lambda _client: (pull,))
+    monkeypatch.setattr(forgesecurity, 'status_list', lambda _client, sha: tuple(reversed(posted.get(sha, ()))))
+
+    def post(_client: object, sha: str, *, context: str, state: str, description: str, **_url: str) -> None:
+        posted.setdefault(sha, []).append(_status(context, state, description))
+
+    def upsert(_client: object, number: int, *, kind: object, key: str, text: str) -> tuple[str, object]:
+        comments.append((number, kind, key, text))
+        return 'created', SimpleNamespace(url='c/1', body=text)
+
+    monkeypatch.setattr(forgesecurity, 'status_post', post)
+    monkeypatch.setattr(forgesecurity, 'comment_upsert', upsert)
+    return posted, comments
+
+
+def _s311_only(_root: Path, _head: str, declaration: Declaration) -> Judgement:
+    """A head whose one finding is an S311 the head's own table ignores."""
+    if 'S311' in declaration.ignore:
+        return Judgement('success', 'nothing found')
+    return Judgement('failure', '1 ruff S: src/a.py:3 S311')
+
+
+def test_a_head_whose_own_new_exemptions_cover_its_findings_fails_naming_the_release_door(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PLANTED control: the same findings with the table unchanged fail without naming the door."""
+    posted, _ = _fake_forge(monkeypatch, _HEAD_TOML)
+    step(Path(), object(), say=lambda _line: None, judged=_s311_only)
+    (status,) = posted['h' * 40]
+    assert status.state == 'failure'
+    assert 'covered by the head' in status.description
+    assert 'forge security release 7' in status.description
+    assert 'S311' in status.description
+    posted, _ = _fake_forge(monkeypatch, _BASE_TOML)
+    step(Path(), object(), say=lambda _line: None, judged=_s311_only)
+    (status,) = posted['h' * 40]
+    assert status.state == 'failure'
+    assert 'release' not in status.description
+
+
+def test_the_release_door_posts_success_with_its_reason_and_the_delta(monkeypatch: pytest.MonkeyPatch) -> None:
+    posted, comments = _fake_forge(monkeypatch, _HEAD_TOML)
+    said = forgesecurity.release(Path(), object(), 7, 'the integrator accepts seeded samples', host='box',
+                                 judged=_s311_only)  # fmt: skip
+    (status,) = posted['h' * 40]
+    assert (status.context, status.state) == (SECURITY_CONTEXT, 'success')
+    assert 'released by box' in status.description
+    ((number, _, key, text),) = comments
+    assert (number, key) == (7, 'h' * 40)
+    assert 'the integrator accepts seeded samples' in text
+    assert '+ignore.S311' in text
+    assert said.endswith('tests/security success')
+
+
+@pytest.mark.parametrize(
+    ('head_toml', 'why', 'judged', 'refusal'),
+    [
+        (_HEAD_TOML, 'meh', _s311_only, 'reason'),
+        (_BASE_TOML, 'a reason long enough', _s311_only, 'does not change'),
+        (_HEAD_TOML, 'a reason long enough', lambda *_: Judgement('failure', '1 ruff S: b.py:1 S602'), 'S602'),
+    ],
+)
+def test_the_release_door_refuses_without_a_reason_an_unchanged_table_or_findings_left(
+    monkeypatch: pytest.MonkeyPatch, head_toml: bytes, why: str, judged: object, refusal: str
+) -> None:
+    """PLANTED control: the release test above passes the same door."""
+    posted, comments = _fake_forge(monkeypatch, head_toml)
+    with pytest.raises(forgesecurity.ReleaseRefused, match=refusal):
+        forgesecurity.release(Path(), object(), 7, why, host='box', judged=judged)
+    assert (posted, comments) == ({}, [])
+
+
+def test_the_release_is_the_forge_security_verb(monkeypatch: pytest.MonkeyPatch) -> None:
+
+    assert NOUNS['security'] is forgesecurity.main
+    posted, _ = _fake_forge(monkeypatch, _HEAD_TOML)
+    monkeypatch.setattr(forgesecurity, '_judge_head', _s311_only)
+    monkeypatch.setattr(forgesecurity, 'this_machine', lambda: 'box')
+    assert forgesecurity.main(['release', '7', '--why', 'short'], cwd=Path(), client=object()) == 2
+    assert forgesecurity.main(['release', '7', '--why', 'seeded samples only'], cwd=Path(), client=object()) == 0
+    assert posted['h' * 40][-1].state == 'success'
+
+
+def test_a_raw_status_post_on_tests_security_is_refused_to_agents() -> None:
+    """PLANTED control: the release door is permitted."""
+    pattern = re.compile(REVIEW_STATUS_VIA_DOORS['pattern'])
+    assert pattern.search('python -m dev_lab.dev.forge status post abc --context tests/security --state success')
+    assert not pattern.search('python -m dev_lab.dev.forge security release 7 --why "seeded samples only"')

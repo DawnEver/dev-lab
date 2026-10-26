@@ -120,6 +120,13 @@ Each tick, and nothing else:
    fixes it (the next round confirms), or you dispose of it, with its reason:
    `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"`. Ask the user only when you
    and the author disagree.
+9. A head whose `tests/security` failure says its findings are "all covered by the head's new exemptions" changes
+   `[tool.dev_lab.security]`; the table that judges a head is integration's, never its own, so it is yours to
+   release: `python -m dev_lab.dev.forge security release <pr> --why "<reason>"` re-judges the head under ITS
+   table and, only when that finds nothing, records the reason and the exemption delta as one keyed PR comment and
+   posts `tests/security` success. Refused without a reason, for a head that leaves the table unchanged, and while
+   the head's own table still leaves findings; a raw `status post` on `tests/security` is refused
+   ([REVIEW-STATUS-VIA-DOORS](refusals.md#review-status-via-doors)).
 
 An integrator runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
