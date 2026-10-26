@@ -44,6 +44,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 from dev_lab.dev.reclaim import reclaim
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'ARCHIVE_PREFIX',
@@ -197,7 +198,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         msg = (
             f'your kit is older than this checkout: {_TABLE} in {manifest} has key(s) {unknown} this '
             f'installed lab-commons does not know (it knows {sorted(_KEYS)}); rebuild the venv '
-            f'(python -m dev_lab.dev.dep --bootstrap <checkout>)'
+            f'({running_interpreter()} -m dev_lab.dev.dep --bootstrap <checkout>)'
         )
         raise KitOlderThanCheckout(msg)
     ephemeral = table.get('ephemeral', list(FAMILY_EPHEMERAL))

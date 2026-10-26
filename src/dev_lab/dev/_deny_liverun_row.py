@@ -10,7 +10,7 @@ The Edit/Write half renders its refusal from this same row (:mod:`dev_lab.dev.li
 
 from __future__ import annotations
 
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvpath import PYTHON_SLOT, venv_interpreter
 
 _NT, _POSIX = venv_interpreter(os_name='nt'), venv_interpreter(os_name='posix')
 
@@ -35,7 +35,7 @@ LIVE_RUN: dict[str, object] = {
     'hazard': 'a run in progress executes this checkout and its .venv; changing either mid-run makes its '
     'result describe a tree that never existed.',
     'remedy': 'Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait for '
-    'the run, or stop it: python -m dev_lab.dev.stoprun --pid <pid>.',
+    f'the run, or stop it yourself: {PYTHON_SLOT} -m dev_lab.dev.stoprun --pid <pid>.',
     'needs': None,
     'refuses': (
         'git merge origin/integrate/main',

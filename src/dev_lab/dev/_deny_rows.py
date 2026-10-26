@@ -233,7 +233,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'pattern': r'\bpush\b[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
         'matches': 'argument',
         'hazard': 'a raw remote delete can lose commits held nowhere else.',
-        'remedy': '`python -m dev_lab.dev.branchprune delete <branch>` (LOSSLESS-DELETE).',
+        'remedy': '`{python} -m dev_lab.dev.branchprune delete <branch>` (LOSSLESS-DELETE).',
         'needs': None,
         'refuses': (
             'git push origin --delete lane/x',

@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.credentials import _credential, credential_for
 
+from dev_lab.dev.venvpath import running_interpreter
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
@@ -52,13 +54,13 @@ AUTH_REMEDY: Final = (
 #: The remedy when the refresh left the store EMPTY (no refresh token, e.g. a plain stored token): store one.
 AUTH_GONE: Final = (
     'the forge refused the stored credential and the store holds none after refreshing it as git does -- store '
-    f'one: python -m dev_lab.dev.forge auth login ({AUTH_DOC})'
+    f'one: {running_interpreter()} -m dev_lab.dev.forge auth login ({AUTH_DOC})'
 )
 
 #: The remedy when the refused credential sits in a store that cannot refresh it, so it was KEPT, not rejected.
 AUTH_KEPT: Final = (
     'the forge refused the stored credential and this store cannot refresh it, so it was kept, not erased -- if '
-    f'it keeps being refused, store a new one: python -m dev_lab.dev.forge auth login ({AUTH_DOC})'
+    f'it keeps being refused, store a new one: {running_interpreter()} -m dev_lab.dev.forge auth login ({AUTH_DOC})'
 )
 
 #: What a 401/403 says when ``GET /user`` still authenticated the same credential: re-storing cannot help.

@@ -41,6 +41,7 @@ from dev_lab.dev.forge import (
     store_credential,
 )
 from dev_lab.dev.forgework import Client, ForgeCallFailed, stored_client
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = ['TICK_SCOPES', 'login', 'main', 'status', 'tick_refusal']
 
@@ -168,7 +169,7 @@ def _check(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: T
     where = f'{forge.host}/{forge.owner}/{forge.repo}'
     if why := tick_refusal(forge, cwd=root, env=env, transport=transport):
         emit(f'[forge] {where}: {why}. A tick needs a token with the scopes {TICK_SCOPES}: '
-             'python -m dev_lab.dev.forge auth login', err=True)  # fmt: skip
+             f'{running_interpreter()} -m dev_lab.dev.forge auth login', err=True)  # fmt: skip
         return 1
     emit(f'[forge] {where}: the stored token can do everything a tick does')
     return 0
@@ -178,7 +179,7 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
     try:
         who = status(forge, cwd=root, env=env, transport=transport)
     except NoCredential:
-        emit(f'[forge] {forge.host}: no token. Run: python -m dev_lab.dev.forge auth login', err=True)
+        emit(f'[forge] {forge.host}: no token. Run: {running_interpreter()} -m dev_lab.dev.forge auth login', err=True)
         return 1
     except ForgeCallFailed as failed:
         emit(f'[forge] {forge.host}: the token did not authenticate. {failed}', err=True)

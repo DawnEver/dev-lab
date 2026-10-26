@@ -68,6 +68,7 @@ from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from dev_lab.dev.forgerecords import attach
 from dev_lab.dev.forgestatus import STATES, CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'OUTBOX_REL',
@@ -91,8 +92,8 @@ RESULTS: Final = frozenset({'success', 'failure'})
 SHA_LENGTH: Final = 40
 
 _REMEDY: Final = (
-    'it stays queued; re-run `python -m dev_lab.dev.forge publish` once the forge answers '
-    '(`python -m dev_lab.dev.forge status list <sha>` shows what it holds)'
+    f'it stays queued; re-run `{running_interpreter()} -m dev_lab.dev.forge publish` once the forge answers '
+    f'(`{running_interpreter()} -m dev_lab.dev.forge status list <sha>` shows what it holds)'
 )
 
 

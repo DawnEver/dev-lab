@@ -58,6 +58,8 @@ WHAT IS HERE, one module per shared body:
   declaration the family flow needs, and every missing piece is named at once.
 * :mod:`dev_lab.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
   ``<toplevel>/.claude/worktrees/``.
+* :mod:`dev_lab.dev.famtests.remedypaths` -- a printed remedy names an ABSOLUTE interpreter, never a
+  relative ``.venv`` one or a bare ``python -m``.
 * :mod:`dev_lab.dev.famtests.rulespages` -- the always-loaded pages, pinned per page AND
   in total, because a named set and a budget are each blind to what the other sees.
 * :mod:`dev_lab.dev.famtests.sizesplits` -- no module is a sibling's size overflow (``rows_b.py``),

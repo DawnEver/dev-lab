@@ -54,6 +54,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
+from dev_lab.dev.venvpath import current_os_name, expand_interpreter, running_interpreter
 
 __all__ = [
     'NOT_THE_TREE',
@@ -229,15 +230,17 @@ def describe(runs: Iterable[Process]) -> str:
 def refusal(root: Path | str, runs: Sequence[Process]) -> str:
     """The deny text: the row's own hazard and remedy, then the runs it saw."""
     rule = rules_by_id(DENY_RULES)[RULE_ID]
-    return f'{rule.reason()}\n  tree: {Path(root).as_posix()}\n{describe(runs)}'
+    reason = expand_interpreter(rule.reason(), Path(root), os_name=current_os_name())
+    return f'{reason}\n  tree: {Path(root).as_posix()}\n{describe(runs)}'
 
 
 def env_in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
     """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run."""
     return (
         f'{name}: {prefix} is the environment of a live process that holds no seat (2026-10-19: a `deck run` '
-        f'held none and was re-synced under):\n{describe(users)}\nWait for it, stop it '
-        f'(python -m dev_lab.dev.stoprun --pid <pid>), or change the environment of another worktree.'
+        f'held none and was re-synced under):\n{describe(users)}\nWait for it, stop it yourself '
+        f'({running_interpreter()} -m dev_lab.dev.stoprun --pid <pid>), or change the environment of another '
+        'worktree.'
     )
 
 

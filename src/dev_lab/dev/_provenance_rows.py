@@ -245,6 +245,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'injectedtext': ('original',),
     # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun': ('original',),
+    # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
+    'handback': ('original',),
     'servelanes': ('original',),
     'servelock': ('original',),
     'servetask': ('original',),
@@ -320,6 +322,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     #    has not adopted the body yet imports nothing from the kit at all.
     'agentguard': ('supersedes', 'tests/architecture/test_the_agent_guard_is_live.py'),
     'allowguard': ('supersedes', 'tests/architecture/test_no_allow_entry_names_a_denied_shape.py'),
+    'remedypaths': ('original',),
     # THREE consumer files under THREE names, and the third is this repo's own -- a kit guard is a
     # consumer of the kit like any other. They do not agree on the BAR: `test_arch_every_approx...`
     # requires `abs=` unconditionally, the other two only under a stated `rel=`, and the two convict

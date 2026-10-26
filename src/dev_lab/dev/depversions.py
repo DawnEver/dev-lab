@@ -65,6 +65,8 @@ from datetime import UTC, date, datetime
 from importlib import metadata
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev.venvpath import running_interpreter
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
@@ -380,7 +382,7 @@ def staleness(observed_on: date, today: date, *, ceiling_days: int = STALE_AFTER
         return (
             f'the shared baseline was observed {age} days ago, past the {ceiling_days}-day ceiling. '
             f'It is what two boxes compare against and what a reader falls back to when a fetch '
-            f'fails, so refresh it with `python -m dev_lab.dev.dep_observe` and commit the result '
+            f'fails, so refresh it with `{running_interpreter()} -m dev_lab.dev.dep_observe` and commit the result '
             f'in the same edit -- raising the ceiling is how the arm is kept while the guarantee '
             f'is given up.'
         )

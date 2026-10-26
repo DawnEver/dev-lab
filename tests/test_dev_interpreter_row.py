@@ -18,13 +18,24 @@ from dev_lab.dev._deny_interpreter_row import INTERPRETER_REMEDY
 from dev_lab.dev.allow_adoption import AllowAdoption, derived_entries, self_refused
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy, rules_by_id
-from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_INTERPRETER_GLOB, VENV_LAYOUTS
+from dev_lab.dev.venvpath import (
+    INTERPRETER_ALLOW_ENTRY,
+    INTERPRETER_RULE,
+    VENV_INTERPRETER_GLOB,
+    current_os_name,
+    remedy_interpreter,
+)
 
 
 def test_a_missing_worktree_environment_is_bootstrapped_not_borrowed() -> None:
     assert '--bootstrap' in INTERPRETER_REMEDY
     assert '<main>/' not in INTERPRETER_REMEDY
     assert 'shared environment' not in INTERPRETER_REMEDY
+
+
+def _absolute_interpreter(root: Path) -> str:
+    """The exit as the engine prints it: the checkout's interpreter by ABSOLUTE path, never the bare token."""
+    return remedy_interpreter(root, os_name=current_os_name())
 
 
 #: A consumer's own opening: its user-facing CLI runs through `uv run`, by user directive.
@@ -53,10 +64,10 @@ def _rules(tmp_path: Path, remedies: dict[str, Remedy]) -> Path:
 @pytest.mark.workstation
 def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path, command: str) -> None:
     """REFUSAL-NAMES-THE-REMEDY: both concrete layouts and the allow row, read off the owner."""
-    reason = agenthooks.decide(command, _rules(tmp_path, {}))
+    (tmp_path / '.git').mkdir()
+    reason = agenthooks.decide(command, _rules(tmp_path, {}), cwd=tmp_path)
     assert reason is not None, f'allowed: {command!r}'
-    for layout in VENV_LAYOUTS.values():
-        assert '/'.join(layout) in reason, reason
+    assert _absolute_interpreter(tmp_path) in reason, reason
     assert INTERPRETER_ALLOW_ENTRY in reason
 
 
@@ -65,12 +76,12 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
 def test_a_bare_python_is_hinted_with_the_owner_spelled_exit_and_still_runs(tmp_path: Path, command: str) -> None:
     """A hint refuses nothing, and it names the same exit the refusal does."""
     rules = _rules(tmp_path, {})
-    assert agenthooks.decide(command, rules) is None, f'refused: {command!r}'
-    reason = agenthooks.decide(command, rules, hint=True)
+    (tmp_path / '.git').mkdir()
+    assert agenthooks.decide(command, rules, cwd=tmp_path) is None, f'refused: {command!r}'
+    reason = agenthooks.decide(command, rules, cwd=tmp_path, hint=True)
     assert reason is not None, f'not hinted: {command!r}'
     assert 'BARE-PYTHON' in reason
-    for layout in VENV_LAYOUTS.values():
-        assert '/'.join(layout) in reason, reason
+    assert _absolute_interpreter(tmp_path) in reason, reason
 
 
 @pytest.mark.parametrize(

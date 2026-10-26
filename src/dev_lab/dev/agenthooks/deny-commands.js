@@ -12,7 +12,8 @@
  * when the payload carries a non-empty `agent_id`. `severity: 'hint'` never denies: the call runs and the
  * reason reaches the agent as `additionalContext` -- unless a refusing rule also fires, which wins. `pattern` (JS regex source) denies a
  * command it matches, unless `allow` (regex source) also matches -- the sanctioned spelling.
- * `reason` is the rewrite hint shown to the agent; `{root}` in it expands to the tool call's cwd.
+ * `reason` is the rewrite hint shown to the agent; `{root}` in it expands to the tool call's cwd, and `{python}`
+ * (or a door's `<venv python>`) to the target checkout's interpreter by ABSOLUTE path.
  *
  * ================================ WHAT IS MATCHED, AND WHY ================================
  *
@@ -383,12 +384,52 @@ function doorsOf(root) {
 
 const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 
+/* ================================ A REMEDY NAMES AN ABSOLUTE INTERPRETER ================================
+ *
+ * 2026-10-26: a remedy spelled `.venv/Scripts/python.exe` relative, the agent's cwd was another directory, the
+ * command failed, and the agent handed the user the absolute rewrite instead of running it. So a reason carries
+ * `{python}` (or a repo door's `<venv python>`) and the engine writes the TARGET checkout's interpreter by
+ * absolute path -- the same answer as dev_lab.dev.venvpath.remedy_interpreter.
+ */
+const VENV_TAIL = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
+const posix = (p) => p.replace(/\\/g, '/');
+
+/** `root`'s own venv interpreter; else its main checkout's (a linked worktree); else its own, spelled absolute. */
+function remedyPython(root) {
+  const own = path.join(path.resolve(root), '.venv', ...VENV_TAIL);
+  if (fs.existsSync(own)) return posix(own);
+  try {
+    const named = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(path.join(root, '.git'), 'utf8'));
+    const gitdir = named ? path.resolve(root, named[1]) : '';
+    if (gitdir && path.basename(path.dirname(gitdir)) === 'worktrees') {
+      const main = path.join(path.dirname(path.dirname(path.dirname(gitdir))), '.venv', ...VENV_TAIL);
+      if (fs.existsSync(main)) return posix(main);
+    }
+  } catch {
+    // a `.git` directory, or none: the checkout's own spelling below
+  }
+  return posix(own);
+}
+
+/** `text` with `{root}` as the cwd and the interpreter tokens as `checkout`'s absolute interpreter. */
+function expand(text, checkout) {
+  const out = String(text).replaceAll('{root}', root);
+  if (!checkout || !/\{python\}|<venv python>/.test(out)) return out;
+  const python = remedyPython(checkout);
+  return out.replaceAll('{python}', python).replaceAll('<venv python>', python);
+}
+
+/** The checkout a rule's remedy is about: the one the matching segment acts in, else the session's. */
+function remedyCheckout(rule, cmd, cwd) {
+  return (cwd && repoRoot(ruleTarget(rule, cmd, cwd))) || sessionRoot || (cwd && repoRoot(cwd)) || null;
+}
+
 /** The reason to show: the session's own, unless the command targets another repo. */
 function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   const target = cwd ? repoRoot(ruleTarget(rule, cmd, cwd)) : null;
   if (!target || !sessionRoot || samePath(target, sessionRoot)) return reason;
   const shown = target.replace(/\\/g, '/');
-  const door = doorsOf(target)[rule.name];
+  const door = doorsOf(target)[rule.name] && expand(doorsOf(target)[rule.name], target);
   // One header line; the full wording is docs-src/dev/refusals.md#cross-repo-refusals (lab-commons).
   const details = reason.split('\n').filter((line) => line.startsWith('details: '));
   if (door) {
@@ -433,7 +474,7 @@ function liveRunRefusal(target, sessionRoot) {
   // A Python that cannot start, or that imports the module and crashes, is not an answer.
   const why = done.error ? done.error.message : `exit ${done.status}${said ? '' : ', no answer'}`;
   return `TREE-HAS-A-LIVE-RUN: could not confirm that no run executes from ${target} (${why}); re-run when ` +
-    `python -m dev_lab.dev.liverun --tree ${target} answers.`;
+    `${remedyPython(sessionRoot)} -m dev_lab.dev.liverun --tree ${target} answers.`;
 }
 
 /* A refusal is a line of the toolchain's metrics (P0, dev_lab.dev.metrics): appended by the ONE writer, in a
@@ -497,7 +538,7 @@ for (const rule of rules) {
     hit = liveReason !== '';
   }
   if (hit && rule.severity === 'hint') {
-    hints.push(String(rule.reason || rule.name).replaceAll('{root}', root));
+    hints.push(expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)));
   } else if (hit) {
     logRefusal(rule.name, input.cwd ? repoRoot(ruleTarget(rule, cmd, input.cwd)) || input.cwd : sessionRoot);
     process.stdout.write(
@@ -507,7 +548,7 @@ for (const rule of rules) {
           permissionDecision: 'deny',
           permissionDecisionReason:
             liveReason ||
-            reasonFor(rule, String(rule.reason || rule.name).replaceAll('{root}', root), cmd, input.cwd || '', sessionRoot),
+            reasonFor(rule, expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)), cmd, input.cwd || '', sessionRoot),
         },
       })
     );
