@@ -2,8 +2,10 @@
 
 ``when: 'live-run'``: the engine matches the pattern as for any row, and only then asks
 ``python -m dev_lab.dev.liverun --tree <target>`` whether a run executes from the checkout the command
-targets (its cwd, ``cd X &&``, ``git -C X``). No live run, no refusal: the same command is free in an idle
-tree. The Edit/Write half renders its refusal from this same row (:mod:`dev_lab.dev.liverun`).
+targets -- the segment the pattern fired on, in its ``cd X &&`` dir or the one it names (``git -C X``,
+``uv --directory X``, ``dep --bootstrap X``), the cwd only when it names none. No live run, no refusal: the same
+command is free in an idle tree.
+The Edit/Write half renders its refusal from this same row (:mod:`dev_lab.dev.liverun`).
 """
 
 from __future__ import annotations
