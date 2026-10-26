@@ -94,6 +94,7 @@ from dev_lab.dev.hpchost.spec import (
     tick_command,
     tick_dirs,
     tick_environment,
+    ticked,
 )
 from dev_lab.dev.hpchost.steps import Step, Tools, build, declared, update
 
@@ -296,6 +297,9 @@ def _cron(
 def _tick(
     step: Step, spec: Deployment, home: Path, repo: Repo, *, slurm: Sequence[str] = (), setup: Sequence[str] = ()
 ) -> int:
+    if repo not in ticked(spec):
+        emit(f'  {repo.name}: not served by this account, not ticked')
+        return 0
     command = tick_command(spec, home, repo, log=False, slurm=slurm, setup=setup)
     rc = step.change(f'tick {repo.name}: {command}', [*step.tools.sh, command])
     if not step.dry:
