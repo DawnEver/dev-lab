@@ -256,6 +256,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'worktrees': ('original',),
     # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
     'reclaim': ('original',),
+    'reclaimrun': ('original',),
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
     'privatemarkers': ('original',),
