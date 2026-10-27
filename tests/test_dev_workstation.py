@@ -24,7 +24,6 @@ from lab_commons.config import CONFIG_ENV
 from dev_lab.dev import hostrefresh, servetask, workstation
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.hpchost.spec import host_serve_argv
-from dev_lab.dev.lockcheck import UV_VERSION
 from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpath import venv_interpreter
 
@@ -215,7 +214,7 @@ def test_every_missing_tool_is_refused_at_once_each_with_its_remedy(
     )
     assert workstation.deploy([*DEPLOY], programs=bare) == 2
     err = capsys.readouterr().err
-    assert f'astral.sh/uv/{UV_VERSION}/install.ps1' in err
+    assert 'astral.sh/uv/install.ps1' in err
     assert 'OpenJS.NodeJS.LTS' in err
     assert '@openai/codex' in err
     assert 'designer.Application, scheduler.JobApplication not registered' in err

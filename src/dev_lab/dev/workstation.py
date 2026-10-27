@@ -78,7 +78,6 @@ from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv, venv_python
 from dev_lab.dev.hpchost.spec import KIT
 from dev_lab.dev.hpchost.steps import Step, Tools
-from dev_lab.dev.lockcheck import UV_VERSION
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
@@ -119,7 +118,7 @@ JMAG_PROGIDS: Final = ('designer.Application', 'scheduler.JobApplication')
 JMAG_SOLVER_IMAGES: Final = ('jam.exe', 'jam_c.exe', 'jam_intel_mpi_b.exe', 'jam_intel_mpi_c.exe')
 
 _REMEDIES: Final = {
-    'uv': f'install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/{UV_VERSION}/install.ps1|iex"',
+    'uv': 'install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"',
     'git': 'install Git for Windows: winget install --id Git.Git -e',
     'node': 'install Node.js LTS: winget install --id OpenJS.NodeJS.LTS -e',
     'codex': 'install the Codex CLI: npm install -g @openai/codex',

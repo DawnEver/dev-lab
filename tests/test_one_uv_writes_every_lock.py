@@ -17,7 +17,6 @@ import pytest
 from dev_lab.dev import _dep_project, dep
 from dev_lab.dev.hpchost.checks import INSTALLERS
 from dev_lab.dev.lockcheck import UV_VERSION
-from dev_lab.dev.workstation import _REMEDIES
 
 _OTHER = '0.0.1'
 
@@ -81,6 +80,6 @@ def test_the_version_is_read_from_uv_itself() -> None:
     assert _dep_project.parse_uv_version('') == ''
 
 
-def test_every_installer_installs_the_declared_uv() -> None:
+def test_the_cluster_installer_installs_the_declared_uv() -> None:
+    """A workstation's missing-uv hint stays unversioned: the dependency door names the exact update when it refuses."""
     assert f'astral.sh/uv/{UV_VERSION}/install.sh' in INSTALLERS['uv']
-    assert f'astral.sh/uv/{UV_VERSION}/install.ps1' in _REMEDIES['uv']
