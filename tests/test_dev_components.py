@@ -1,4 +1,4 @@
-"""COMPONENTS: a product mounts each engine once, declared in ``[tool.lab_commons.components]``.
+"""COMPONENTS: a product mounts each engine once, declared in ``[tool.dev_lab.components]``.
 
 C1 is the table's schema and loader: every key is known, every required key is present, and a
 refusal names the row and the key. C2 is the derive-and-check over ``.gitmodules``,
@@ -15,7 +15,6 @@ from typing import Any
 
 import pytest
 from _forge_fake import run_git
-from lab_commons.hpc.declared import KNOWN_TABLES
 
 from dev_lab.dev.components import (
     Component,
@@ -29,7 +28,7 @@ from dev_lab.dev.components import (
 )
 
 _ROW = """
-[tool.lab_commons.components.numerics-lab]
+[tool.dev_lab.components.numerics-lab]
 url = "https://forge.example/lab/numerics-lab.git"
 branch = "main"
 parts = ["base", "linux"]
@@ -51,14 +50,13 @@ def test_a_declared_row_loads_with_its_path_derived_from_its_name() -> None:
     assert row.path == 'components/numerics-lab'
 
 
-def test_no_table_is_no_components_and_the_table_is_one_the_kit_knows() -> None:
+def test_no_table_is_no_components() -> None:
     assert components_of('[project]\nname = "x"\n') == ()
-    assert 'components' in KNOWN_TABLES, 'an unknown table is refused by kit_tables before this reader runs'
 
 
 def test_the_optional_keys_default_to_nothing() -> None:
     (row,) = components_of(
-        '[tool.lab_commons.components.geo-lab]\nurl = "https://f/o/geo-lab.git"\nbranch = "main"\nparts = ["base"]\n'
+        '[tool.dev_lab.components.geo-lab]\nurl = "https://f/o/geo-lab.git"\nbranch = "main"\nparts = ["base"]\n'
     )
     assert (row.package, dict(row.crates)) == ('', {})
 
@@ -75,7 +73,7 @@ def test_the_optional_keys_default_to_nothing() -> None:
         (_ROW.replace('crates = { numerics = "crates/numerics" }', 'crates = { numerics = "../x" }'), r'inside'),
         (_ROW.replace('numerics-lab]', 'numerics]'), r"'numerics'.*<x>-lab"),
         (_ROW.replace('numerics-lab]', 'lab-commons]'), r'lab-commons.*floating git dependency'),
-        ('[tool.lab_commons]\ncomponents = ["numerics-lab"]\n', r'one table per engine'),
+        ('[tool.dev_lab]\ncomponents = ["numerics-lab"]\n', r'one table per engine'),
     ],
 )
 def test_a_row_the_schema_does_not_admit_is_refused_naming_the_row_and_the_key(text: str, refusal: str) -> None:

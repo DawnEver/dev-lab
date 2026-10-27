@@ -160,7 +160,7 @@ def _pack(lens: str, sizes: dict[str, int], budget: int) -> list[Slice]:
 
 @dataclass(frozen=True)
 class Budget:
-    """The declared bounds and globs a scope is cut by (``[tool.lab_commons.review]``)."""
+    """The declared bounds and globs a scope is cut by (``[tool.dev_lab.review]``)."""
 
     slice_bytes: int
     total_bytes: int

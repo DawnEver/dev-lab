@@ -23,7 +23,7 @@ from dev_lab.dev.platformparts import standing
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
 _PYPROJECT = (
     '[tool.lab_commons.tests]\nresources = ["jmag", "windows"]\nscarce = ["jmag"]\n'
-    '[tool.lab_commons.parts]\nrefs = { jmag.full = ["integrate/main"] }\n'
+    '[tool.dev_lab.parts]\nrefs = { jmag.full = ["integrate/main"] }\n'
 )
 _RECORD = {'handed': {'tests/test_j.py::test_j': 'jmag'}}
 

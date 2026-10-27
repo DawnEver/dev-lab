@@ -53,7 +53,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
   worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, else `compute.learned.fit_width` of
   `SELECTION_CPU`, the files selected and the box's free room unless the caller names a width -- the memory its files measured, `verifybox.selection_mem_gb`, and `SELECTION_WALL_S`) beside whatever else fits; a producer runs
   at the demand serve admitted it at ([box resources](box-resources.md)).
-- A heavy part is offered only for the refs its `[tool.lab_commons.parts.refs.<part>] <scope>` admits
+- A heavy part is offered only for the refs its `[tool.dev_lab.parts.refs.<part>] <scope>` admits
   (`platformparts.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).
 
 ## The verdict itself

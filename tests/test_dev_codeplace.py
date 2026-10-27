@@ -85,7 +85,7 @@ def test_an_empty_allow_list_is_REFUSED_rather_than_refusing_everything(tmp_path
 
 def _declare(root, body: str) -> None:
     (root / '.git').mkdir(exist_ok=True)
-    (root / 'pyproject.toml').write_text(f'[tool.lab_commons.placement]\n{body}', encoding='utf-8')
+    (root / 'pyproject.toml').write_text(f'[tool.dev_lab.placement]\n{body}', encoding='utf-8')
 
 
 def test_the_family_code_roots_are_read_off_the_one_placement_map() -> None:
@@ -202,7 +202,7 @@ def test_noreflection_excludes_the_same_archive_codeplace_writes() -> None:
 def _repo(root, *, stray_roots: str = '[]') -> None:
     launch.run(['git', 'init', '-q', str(root)], check=True)
     (root / 'pyproject.toml').write_text(
-        f"[tool.lab_commons.placement]\npruned_paths = ['lanes']\nstray_roots = {stray_roots}\n", encoding='utf-8'
+        f"[tool.dev_lab.placement]\npruned_paths = ['lanes']\nstray_roots = {stray_roots}\n", encoding='utf-8'
     )
     (root / '.gitignore').write_text('output/\n', encoding='utf-8')
     launch.run(['git', '-C', str(root), 'add', 'pyproject.toml', '.gitignore'], check=True)

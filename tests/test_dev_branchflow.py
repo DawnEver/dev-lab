@@ -204,6 +204,6 @@ def test_github_run_records_are_assets_of_one_release(server, tmp_path: Path) ->
 
 def test_the_policy_declares_integration_and_trunk(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.integrator]\nintegration = "stage"\ntrunk = "stable"\n', encoding='utf-8'
+        '[tool.dev_lab.integrator]\nintegration = "stage"\ntrunk = "stable"\n', encoding='utf-8'
     )
     assert load_policy(tmp_path) == Policy(integration='stage', trunk='stable')

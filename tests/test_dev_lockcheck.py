@@ -292,7 +292,7 @@ def test_a_stale_lock_head_gets_a_red_forge_status_naming_the_relock(
 
 
 BRANCHSET = """
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 trunk = 'main'
 sessions = ['integrate/main']
 ephemeral = ['pr/*']

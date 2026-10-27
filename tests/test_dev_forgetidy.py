@@ -132,8 +132,8 @@ def test_planted_control_a_rule_that_is_off_removes_nothing_of_its_kind() -> Non
 
 def test_the_declaration_is_read_from_pyproject_and_an_unknown_key_refused(tmp_path: Path) -> None:
     manifest = tmp_path / 'pyproject.toml'
-    manifest.write_text('[tool.lab_commons.forge.issue_hygiene]\nwork_max_idle_days = 7\n', encoding='utf-8')
+    manifest.write_text('[tool.dev_lab.forge.issue_hygiene]\nwork_max_idle_days = 7\n', encoding='utf-8')
     assert load_hygiene(tmp_path) == Hygiene(work_max_idle_days=7)
-    manifest.write_text('[tool.lab_commons.forge.issue_hygiene]\ndelete = true\n', encoding='utf-8')
+    manifest.write_text('[tool.dev_lab.forge.issue_hygiene]\ndelete = true\n', encoding='utf-8')
     with pytest.raises(ValueError, match='unknown key'):
         load_hygiene(tmp_path)

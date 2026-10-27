@@ -65,7 +65,7 @@ from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
 #: RETIRED ROW IDs -> the ID that replaced each (RETIRED-NAMES-REGISTERED). A consumer's adoption or
-#: ``[tool.lab_commons.doors]`` still keyed by a retired ID is refused BY NAME with its replacement, never
+#: ``[tool.dev_lab.doors]`` still keyed by a retired ID is refused BY NAME with its replacement, never
 #: silently dropped. GIT-NETWORK-VERB became NETWORK-VERB on 2026-10-23, when the row took uv's
 #: network verbs (lock, add, remove) beside git's.
 RETIRED_IDS: dict[str, str] = {

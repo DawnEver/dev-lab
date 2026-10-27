@@ -36,11 +36,11 @@ _MANIFEST = """[project]
 name = "planted"
 version = "0"
 
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 trunk = "main"
 sessions = ["integrate/main", "feat/session"]
 {extra}
-[tool.lab_commons.integrator]
+[tool.dev_lab.integrator]
 """
 
 

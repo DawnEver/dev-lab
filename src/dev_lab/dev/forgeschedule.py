@@ -436,7 +436,7 @@ def _scarce(root: Path, sha: str) -> frozenset[str]:
 
 
 def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bool:
-    """Whether *wanted*'s part declares its ref (``[tool.lab_commons.parts.refs]``); an exclusion is SAID.
+    """Whether *wanted*'s part declares its ref (``[tool.dev_lab.parts.refs]``); an exclusion is SAID.
 
     A request is no part: it is asked for by name at its sha, so no part's ref filter applies to it.
     """
@@ -447,7 +447,7 @@ def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bo
         return True
     say(
         f'[serve] {wanted.ref} is not served tests/{wanted.platform} at {wanted.scope}: '
-        f'[tool.lab_commons.parts.refs.{wanted.platform}] {wanted.scope} admits {list(admits)}'
+        f'[tool.dev_lab.parts.refs.{wanted.platform}] {wanted.scope} admits {list(admits)}'
     )
     return False
 

@@ -13,7 +13,7 @@ of them is quoted with what it was measured over, because a base is a claim abou
 and a claim about somebody else's tree ages fastest.
 
 GIT HOOKS ARE NOT HERE: they are TOML data (`dev_lab/dev/githooks/base.toml` plus each repo`s
-`[tool.lab_commons.hooks]`), run by `dev_lab.dev.githooks` and never rendered to a file.
+`[tool.dev_lab.hooks]`), run by `dev_lab.dev.githooks` and never rendered to a file.
 
 THE ARTEFACTS ARE NOT THE SAME KIND OF THING, AND THAT IS THE FINDING THIS FILE EXISTS TO
 RECORD. Reading the census rows one would expect three tables of shared lines. Measured, only two of

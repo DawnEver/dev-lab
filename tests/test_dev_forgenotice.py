@@ -146,7 +146,7 @@ def test_a_conflict_is_its_own_kind() -> None:
 
 
 def test_the_notice_durations_are_declared_with_a_unit() -> None:
-    policy = policy_from("[tool.lab_commons.integrator]\nnotice_escalate = '30 min'\n", 'p')
+    policy = policy_from("[tool.dev_lab.integrator]\nnotice_escalate = '30 min'\n", 'p')
     assert forgenotice.duration('notice_escalate', policy.notice_escalate) == timedelta(minutes=30)
     with pytest.raises(ValueError, match='needs a unit'):
         forgenotice.duration('notice_escalate', '2')

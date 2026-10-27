@@ -1,4 +1,4 @@
-"""The names a repo declares for its branches, in ``[tool.lab_commons.integrator]`` -- names only, never a rule.
+"""The names a repo declares for its branches, in ``[tool.dev_lab.integrator]`` -- names only, never a rule.
 
 A LEAF: the integrator's queue, push admission, the forge tick and the record attacher all read the
 same declaration, and none of them may import another just to learn a branch name. Which origin
@@ -17,6 +17,8 @@ from typing import Final
 from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev.family import declared_table
+
 __all__ = ['Policy', 'load_policy', 'policy_at', 'policy_from']
 
 _TABLE: Final = 'integrator'
@@ -24,7 +26,7 @@ _TABLE: Final = 'integrator'
 
 @dataclass(frozen=True)
 class Policy:
-    """What a consumer declares in ``[tool.lab_commons.integrator]``: names only, never a rule."""
+    """What a consumer declares in ``[tool.dev_lab.integrator]``: names only, never a rule."""
 
     #: The coordination branch: only the integrator merges into it, and every PR targets it.
     integration: str = 'integrate/main'
@@ -53,27 +55,27 @@ class Policy:
 
 
 def load_policy(root: Path) -> Policy:
-    """*root*'s working-tree ``[tool.lab_commons.integrator]``; defaults when it has no manifest."""
+    """*root*'s working-tree ``[tool.dev_lab.integrator]``; defaults when it has no manifest."""
     manifest = root / 'pyproject.toml'
     return policy_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Policy()
 
 
 def policy_at(root: Path, rev: str) -> Policy:
-    """The ``[tool.lab_commons.integrator]`` commit or tree *rev* of *root* carries -- never the working tree's."""
+    """The ``[tool.dev_lab.integrator]`` commit or tree *rev* of *root* carries -- never the working tree's."""
     return policy_from(pyproject_at(root, rev), f'{rev}:pyproject.toml')
 
 
 def policy_from(text: str, origin: str) -> Policy:
     """The policy *text* declares, defaults for what it omits; a retired or unknown key is refused naming *origin*."""
-    declared = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get(_TABLE, {})
+    declared = declared_table(tomllib.loads(text), _TABLE, {})
     spelled = {key: f'{_TABLE}.{key}' if f'{_TABLE}.{key}' in RETIRED else key for key in declared}
     if retired := [f'{key} is retired: {RETIRED[name]}' for key, name in spelled.items() if name in RETIRED]:
-        msg = f'[tool.lab_commons.{_TABLE}] in {origin}: ' + '; '.join(retired)
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: ' + '; '.join(retired)
         raise ValueError(msg)
     known = {field.name for field in dataclasses.fields(Policy)}
     unknown = sorted(set(declared) - known)
     if unknown:
-        msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     declared = declared | {key: tuple(declared[key]) for key in ('test_roots',) if key in declared}
     return Policy(**declared)

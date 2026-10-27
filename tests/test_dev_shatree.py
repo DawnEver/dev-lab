@@ -84,7 +84,7 @@ def test_closing_keeps_the_run_record_and_the_log_in_the_serving_checkout(tmp_pa
     a local producer must too, BEFORE the tree is removed.
     """
     repo, claimed, _later = _two_commits(tmp_path)
-    (repo / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "output/logs"\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "output/logs"\n', encoding='utf-8')
     run_git(repo, 'add', 'pyproject.toml')
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'declare')
     claimed = git_out(repo, 'rev-parse', 'HEAD')
@@ -110,12 +110,12 @@ def test_a_tree_declaring_no_record_home_is_still_removed_and_says_so(tmp_path: 
     said = close_tree(repo, claimed, 'tests/base', log='x\n')
     assert not tree.path.exists()
     assert 'record NOT kept' in said
-    assert 'tool.lab_commons.parts' in said
+    assert 'tool.dev_lab.parts' in said
 
 
 def test_a_record_manifest_names_where_it_is_kept_and_each_files_sha256(tmp_path: Path) -> None:
     repo, claimed, _later = _two_commits(tmp_path)
-    (repo / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "output/logs"\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "output/logs"\n', encoding='utf-8')
     run_git(repo, 'add', 'pyproject.toml')
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'declare')
     claimed = git_out(repo, 'rev-parse', 'HEAD')

@@ -4,7 +4,7 @@ Step 4 of the branch flow (user ruling 2026-10-19). Gitea only: GitHub is ONLY a
 pull request is read or reviewed.
 
 THE FORGE ONLY ORCHESTRATES. The review itself -- profiles, prompts, providers, models, keys, merging -- is
-the method's, run by the command the repo declares (``[tool.lab_commons.review] command``); this module runs
+the method's, run by the command the repo declares (``[tool.dev_lab.review] command``); this module runs
 it on ``<merge base>..<head>`` and reads its stdout as the findings JSON
 (:mod:`dev_lab.dev.forgereview_findings`). It holds no model client, no prompt and no key.
 
@@ -13,7 +13,7 @@ runs :func:`step` (via :func:`dev_lab.dev.forgeservesteps.review`), poller or no
 cannot fill or start the command (:func:`command_for`, :func:`can_start`) says so once and reads no PR. Among the
 capable hosts the claim below makes each head reviewed once.
 
-WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integration`` whose head carries no
+WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integration`` whose head carries no
 :data:`REVIEW_CONTEXT` status yet:
 
 * the head's review ROUND as ONE comment keyed by the head sha (``Marker.REVIEW``): its tagged findings carried
@@ -49,7 +49,7 @@ nothing and posts nothing), drafts skipped, generated files never read, ``max_to
 
 THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where it differs, every key optional::
 
-    [tool.lab_commons.review]
+    [tool.dev_lab.review]
     # command: only a genuinely different method; the family's, redeclared, is refused. Placeholders:
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
@@ -96,6 +96,7 @@ from lab_commons.box.machine import provided
 from lab_commons.config import section
 from lab_commons.units import Q_
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
@@ -206,7 +207,7 @@ _DESCRIPTION: Final = 240  # a commit-status description is short
 
 @dataclass(frozen=True)
 class Review:
-    """``[tool.lab_commons.review]``: the command that reviews, and what bounds and cuts what it reads."""
+    """``[tool.dev_lab.review]``: the command that reviews, and what bounds and cuts what it reads."""
 
     command: tuple[str, ...] = FAMILY_COMMAND  # declare only a genuinely different method
     model: str = FAMILY_MODEL  # fills ``{model}``
@@ -236,27 +237,27 @@ class Review:
 
 def review_from(text: str, origin: str) -> Review:
     """The :class:`Review` *text* declares, defaults for what it omits; a retired or unknown key is refused."""
-    declared = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get(_TABLE, {})
+    declared = declared_table(tomllib.loads(text), _TABLE, {})
     if retired := [f'{key} is retired: {RETIRED_KEYS[key]}' for key in declared if key in RETIRED_KEYS]:
-        msg = f'[tool.lab_commons.{_TABLE}] in {origin}: ' + '; '.join(retired)
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: ' + '; '.join(retired)
         raise ValueError(msg)
     known = {field.name for field in dataclasses.fields(Review)}
     if unknown := sorted(set(declared) - known):
-        msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
     if 'command' in declared and review.command == FAMILY_COMMAND:
-        msg = f'[tool.lab_commons.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
     for field in (one for arg in (*review.command, *review.synthesis) for one in HOST_FIELD.finditer(arg)):
         if (why := RETIRED_CAPABILITIES.get(field['name'])) is not None:
-            msg = f'[tool.lab_commons.{_TABLE}] in {origin}: {field[0]} is retired: {why}'
+            msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {field[0]} is retired: {why}'
             raise ValueError(msg)
     return review
 
 
 def load_review(root: Path) -> Review:
-    """*root*'s working-tree ``[tool.lab_commons.review]``; defaults when it has no manifest."""
+    """*root*'s working-tree ``[tool.dev_lab.review]``; defaults when it has no manifest."""
     manifest = root / 'pyproject.toml'
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
 
@@ -481,7 +482,7 @@ def step(
     try:
         review = load_review(root)
         if not review.command:
-            say(f'[serve] review: not run -- [tool.lab_commons.{_TABLE}] command is not declared')
+            say(f'[serve] review: not run -- [tool.dev_lab.{_TABLE}] command is not declared')
             return
         here = provided(section('capabilities'))
         try:  # any range, any slice: can this host run the command at all

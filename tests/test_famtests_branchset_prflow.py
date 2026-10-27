@@ -12,7 +12,7 @@ import pytest
 
 from dev_lab.dev.famtests.branchset import BranchSetViolation, assert_the_pr_flow_is_declared
 
-_BRANCHSET = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+_BRANCHSET = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
 
 
 def _manifest(root: Path, text: str) -> Path:
@@ -28,7 +28,7 @@ def test_a_repo_with_no_branch_set_is_told_the_two_lines_to_add(tmp_path: Path) 
 
 def test_each_missing_declaration_is_named(tmp_path: Path) -> None:
     """An omitted ``ephemeral`` is the family ``pr/*`` default; only ``ephemeral = []`` turns the flow off."""
-    off = _BRANCHSET + 'ephemeral = []\n' + "[tool.lab_commons.integrator]\nintegration = 'integrate/main'\n"
+    off = _BRANCHSET + 'ephemeral = []\n' + "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
     _manifest(tmp_path, off)
     with pytest.raises(BranchSetViolation) as refused:
         assert_the_pr_flow_is_declared(root=tmp_path)
@@ -39,10 +39,7 @@ def test_each_missing_declaration_is_named(tmp_path: Path) -> None:
 def test_the_same_manifest_with_both_declarations_passes_and_hands_the_sha_back(tmp_path: Path) -> None:
     """PLANTED control: the manifest above, with the two lines it was told to add."""
     _declared = (
-        "ephemeral = ['pr/*']\n"
-        '[tool.lab_commons.integrator]\n'
-        "integration = 'integrate/main'\n"
-        "pr_merges_since = 'abc123'\n"
+        "ephemeral = ['pr/*']\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\npr_merges_since = 'abc123'\n"
     )
     _manifest(tmp_path, _BRANCHSET + _declared)
     assert assert_the_pr_flow_is_declared(root=tmp_path) == 'abc123'

@@ -353,7 +353,7 @@ def run_verify(
     ``Distillate.annotate`` is the only thing in this function that can add a reason to the report.
 
     Raises:
-        MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
+        MalformedAllowance: ``[tool.dev_lab.verify] allowed_skips`` is present and unreadable.
         Refused: the box had no room for the selection within *wait_s*. Nothing was measured either
             way, so there is no verdict to return; :func:`main` renders both as INCONCLUSIVE.
         UnverifiableLog: the log came out empty or unreadable, so no verdict may rest on it.

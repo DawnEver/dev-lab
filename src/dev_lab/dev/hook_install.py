@@ -207,7 +207,7 @@ def shim(stage: str, fallback: str | None = None) -> str:
     return (
         '#!/bin/sh\n'
         f'{SHIM_MARKER} -- installed by `{INSTALL_COMMAND}`; the hooks are declared in TOML\n'
-        '# (dev_lab/dev/githooks/base.toml + [tool.lab_commons.hooks] in pyproject.toml).\n'
+        '# (dev_lab/dev/githooks/base.toml + [tool.dev_lab.hooks] in pyproject.toml).\n'
         'top=$(git rev-parse --show-toplevel) || exit 1\n'
         f'for rel in {candidates}; do\n'
         '  if [ -x "$top/$rel" ]; then\n'
@@ -274,7 +274,7 @@ def install(repo: Path) -> InstallReport:
         paths = ', '.join(f'{stage.stage} ({stage.path})' for stage in foreign)
         msg = (
             f'refusing to install over a hook lab_commons did not write: {paths}. Move it aside (or declare '
-            f'what it does as a row of [tool.lab_commons.hooks]), then re-run `{INSTALL_COMMAND}`.'
+            f'what it does as a row of [tool.dev_lab.hooks]), then re-run `{INSTALL_COMMAND}`.'
         )
         raise HookInstallError(msg)
     before.hooks_dir.mkdir(parents=True, exist_ok=True)

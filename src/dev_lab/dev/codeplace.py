@@ -25,10 +25,10 @@ THREE RULES OVER ONE MAP; the second's mechanism is its own module:
 
 THE PLACEMENT MAP IS THE FAMILY'S, THE EXTRA ROOTS ARE THE REPO'S (user ruling 2026-10-02). Every
 file kind has ONE home, :data:`FAMILY_HOMES`; the homes that hold code are :data:`FAMILY_CODE_ROOTS`.
-A repo declares ONLY what it adds, in ONE place -- ``[tool.lab_commons.placement]`` of its
+A repo declares ONLY what it adds, in ONE place -- ``[tool.dev_lab.placement]`` of its
 ``pyproject.toml``, read by :func:`declared_placement`::
 
-    [tool.lab_commons.placement]
+    [tool.dev_lab.placement]
     code_roots = ['rust/', 'attic/']        # the repo's own roots, beyond the family's
     pruned_paths = ['.claude/worktrees']    # other checkouts inside this one, judged by their own run
     stray_roots = []                        # where an untracked file may sit, beyond scratch
@@ -59,6 +59,7 @@ from typing import TextIO
 from lab_commons import launch
 from lab_commons.log import emit
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
 
 __all__ = [
@@ -137,9 +138,9 @@ ARCHIVE_DIRECTORY = 'attachments'
 #: skips; :func:`is_archived` is the one reading, so no scan keeps its own copy of the set.
 ARCHIVED_SEGMENTS = frozenset({'attic', 'archived'})
 _SECONDS_PER_DAY = 86400.0
-#: Where a repo declares its delta: ``[tool.lab_commons.placement]`` in this file.
+#: Where a repo declares its delta: ``[tool.dev_lab.placement]`` in this file.
 _MANIFEST = 'pyproject.toml'
-_TABLE = '[tool.lab_commons.placement]'
+_TABLE = '[tool.dev_lab.placement]'
 
 
 def admits(rel: str, code_roots: tuple[str, ...]) -> bool:
@@ -178,7 +179,7 @@ def misplaced_code(root: Path, *, code_roots: Iterable[str], pruned_paths: Itera
 
 
 class PlacementNotDeclared(LookupError):
-    """A repo's ``[tool.lab_commons.placement]`` is absent or not the declared shape."""
+    """A repo's ``[tool.dev_lab.placement]`` is absent or not the declared shape."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -214,7 +215,7 @@ def declared_placement(root: Path) -> Placement:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         msg = f'{manifest} is not a readable TOML manifest: {exc}'
         raise PlacementNotDeclared(msg) from exc
-    table = data.get('tool', {}).get('lab_commons', {}).get('placement')
+    table = declared_table(data, 'placement')
     if not isinstance(table, dict):
         msg = f'{manifest} declares no {_TABLE}; add it, even empty, to adopt the family placement map'
         raise PlacementNotDeclared(msg)

@@ -276,7 +276,7 @@ function commandPositions(segment) {
  * 2026-10-04: an agent working inside one repo was refused and told to run the session repo's
  * verdict runner and dated-path script, neither of which exists where it was. So the PATTERN stays
  * the session's, and the EXIT is resolved from the repo the command targets: each repo declares its
- * doors once, keyed by rule ID, in `[tool.lab_commons.doors]` of its pyproject.
+ * doors once, keyed by rule ID, in `[tool.dev_lab.doors]` of its pyproject.
  */
 
 /** A Git Bash `/c/x` path as the host spells it; quotes dropped. */
@@ -360,7 +360,7 @@ function repoRoot(dir) {
   }
 }
 
-/** `[tool.lab_commons.doors]` of `root`'s pyproject: rule ID -> the command that repo offers. */
+/** `[tool.dev_lab.doors]` of `root`'s pyproject: rule ID -> the command that repo offers. */
 function doorsOf(root) {
   const doors = {};
   let text;
@@ -373,7 +373,7 @@ function doorsOf(root) {
   for (const line of text.split(/\r?\n/)) {
     const header = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(line);
     if (header) {
-      inside = header[1].trim() === 'tool.lab_commons.doors';
+      inside = header[1].trim() === 'tool.dev_lab.doors';
       continue;
     }
     const row = inside && /^\s*["']?([A-Za-z0-9_-]+)["']?\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')/.exec(line);

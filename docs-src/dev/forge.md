@@ -321,7 +321,7 @@ serve (`lab_commons.hpc`) does not read the registry.
   imports (candidates, so an added shadow counts), `pyproject.toml`/`uv.lock`, the declared `everywhere`
   globs -- and EVERYTHING when a module in it reads the repo by path (`__file__`, a repo-path literal,
   `subprocess`, `import_module`, ...) without a declared `reads` entry:
-  `[tool.lab_commons.carry] everywhere = ["rust/**"]`, `[tool.lab_commons.carry.reads] "tests/x.py" = ["docs/**"]`.
+  `[tool.dev_lab.carry] everywhere = ["rust/**"]`, `[tool.dev_lab.carry.reads] "tests/x.py" = ["docs/**"]`.
   A test's outcome at A stands at a descendant B when no path in `git diff --no-renames A B` is in its footprint.
   - PER OUTCOME on a cluster run: B's run takes every such outcome its 3 nearest ancestor runs OF THE SAME PART AND ENV
     hold -- records, folded rounds, and the streams a superseded run's last round left -- and submits only the
@@ -352,7 +352,7 @@ newest commit lacks, or a request issue.
   (`classes_by_ref`, ordered, first match: `feat/*` and `fix/*` are `feature`, `lane/*` is `branch` by
   default; a branch no pattern matches is not served), and every open issue labelled `forge:request`
   (`request`: a body naming `producer = "<name>"` and `sha = "<40-hex>"`; the producer is declared at that
-  sha under `[tool.lab_commons.requests.<name>]` with `argv`, its need-set `needs` and its size `cpu`,
+  sha under `[tool.dev_lab.requests.<name>]` with `argv`, its need-set `needs` and its size `cpu`,
   `mem_gb`, `wall_h` (an unsized row is refused), admitted like a part and claimed on context `request/<n>`
   -- `dev_lab.dev.forgerequest`). Publish one with `forge request <producer> --sha <sha>`, which refuses
   a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
@@ -492,7 +492,7 @@ once per `[alerts] repeat_hours` (absent: 6) -- the receiver's decision, so it l
   tip and the newest N trunk commits.
 - `python -m dev_lab.dev.platformparts post <run-record>` turns a record into its part.
 - `python -m dev_lab.dev.forge route <record>` files the record's reds as `area:<name>` issues
-  ([issues](issues.md#reds-are-area-issues)). `[tool.lab_commons.forge.owners]` maps an area name or a
+  ([issues](issues.md#reds-are-area-issues)). `[tool.dev_lab.forge.owners]` maps an area name or a
   branch glob to gitea usernames (`jmag = ["alice"]`, `"lane/*" = ["bob"]`); each matching owner is
   @-mentioned in a `cc` line closing the issue body. No table, no mentions; a malformed name is refused.
 - A run's declared outputs travel separately, through [the artefact store](artefacts.md).

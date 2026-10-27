@@ -2,10 +2,10 @@
 
 User directive 2026-10-04: each working session keeps exactly ONE long-lived branch, work is merged
 into it, and every other branch is merged and deleted rather than left behind. The set a repo may
-carry is therefore DATA, declared once in ``[tool.lab_commons.branchset]`` of its ``pyproject.toml``
+carry is therefore DATA, declared once in ``[tool.dev_lab.branchset]`` of its ``pyproject.toml``
 and read by :func:`declared_branchset`::
 
-    [tool.lab_commons.branchset]
+    [tool.dev_lab.branchset]
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
     ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
@@ -43,6 +43,7 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.reclaim import reclaim
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -66,16 +67,14 @@ __all__ = [
     'merge_candidates',
 ]
 
-_TABLE = '[tool.lab_commons.branchset]'
+_TABLE = '[tool.dev_lab.branchset]'
 _KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours'})
 
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
 FAMILY_EPHEMERAL: Final[tuple[str, ...]] = ('pr/*',)
 #: What a manifest that turned the namespace off is told, by every assertion that reads it.
-EPHEMERAL_OFF: Final = (
-    '[tool.lab_commons.branchset] ephemeral = [] turns off the family pr/* namespace -- delete the line'
-)
+EPHEMERAL_OFF: Final = '[tool.dev_lab.branchset] ephemeral = [] turns off the family pr/* namespace -- delete the line'
 
 #: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
 #: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
@@ -179,7 +178,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     except tomllib.TOMLDecodeError as exc:
         msg = f'{manifest} is not a readable TOML manifest: {exc}'
         raise BranchSetNotDeclared(msg) from exc
-    table = data.get('tool', {}).get('lab_commons', {}).get('branchset')
+    table = declared_table(data, 'branchset')
     trunk = table.get('trunk') if isinstance(table, dict) else None
     sessions = table.get('sessions', []) if isinstance(table, dict) else None
     if not isinstance(trunk, str) or not trunk:

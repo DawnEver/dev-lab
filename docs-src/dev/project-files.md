@@ -24,7 +24,7 @@ re-render; never hand-edit a rendered file.
 ## Git hooks and CI workflows are TOML
 
 - **Hooks are declared, not rendered.** The family base is `dev_lab/dev/githooks/base.toml`; a repo adds or
-  narrows rows under `[[tool.lab_commons.hooks.<stage>]]` in `pyproject.toml` (the same `id` merges key by key,
+  narrows rows under `[[tool.dev_lab.hooks.<stage>]]` in `pyproject.toml` (the same `id` merges key by key,
   a new `id` appends). Keys: `id`, `run` (argv; a leading `python` is the repo venv's interpreter),
   `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, and `refs` (pre-push only).
   Stages: `pre-commit`, `commit-msg`, `pre-push`. `uv`/`uvx` as `run[0]` is refused.
@@ -36,7 +36,7 @@ re-render; never hand-edit a rendered file.
   `core.hooksPath` at its own directory with `git config --worktree`. The `hooks-installed` verify step reports a
   missing, stale or foreign shim.
 - **CI workflows**: the base is `dev_lab/dev/ci_base.toml`; a repo opts in with
-  `[tool.lab_commons.ci."<file>.yml"]` (deep-merged over the base) or declares its own.
+  `[tool.dev_lab.ci."<file>.yml"]` (deep-merged over the base) or declares its own.
   `python -m dev_lab.dev.ciworkflows render` writes `.github/workflows/*.yml` as stamped JSON (JSON is YAML);
   `check` refuses a hand edit or an undeclared workflow, naming the render command.
 
@@ -47,8 +47,8 @@ re-render; never hand-edit a rendered file.
 | `.gitignore` | `famconfig` RENDERED: the family core plus mandated lines, plus the repo's delta |
 | `.gitattributes` | `famconfig` RENDERED |
 | `Makefile` | `famconfig` REQUIRED: the shared target headers and the `verify` recipe; other recipes are the repo's |
-| git hooks | `[tool.lab_commons.hooks]` over `githooks/base.toml`, run by `dev_lab.dev.githooks` |
-| `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.lab_commons.ci]` over `ci_base.toml` |
+| git hooks | `[tool.dev_lab.hooks]` over `githooks/base.toml`, run by `dev_lab.dev.githooks` |
+| `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.dev_lab.ci]` over `ci_base.toml` |
 | `ruff.toml` / `[tool.ruff*]` | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
 | `pyproject.toml` | section bases for `[project]` and `[tool.pytest.ini_options]`; the rest declined in `PYPROJECT_DECLINED` |
 | `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption` |

@@ -22,12 +22,12 @@ _MANIFEST = """[project]
 name = "planted"
 version = "0"
 
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 trunk = "main"
 sessions = ["integrate/main"]
 ephemeral = ["pr/*"]
 
-[tool.lab_commons.integrator]
+[tool.dev_lab.integrator]
 """
 
 

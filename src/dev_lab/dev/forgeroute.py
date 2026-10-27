@@ -1,10 +1,10 @@
 """FAILURE ROUTING: a run record's reds, grouped by AREA, each area kept in ONE open forge issue.
 
 An area is a source region with one long-lived issue. The repo declares its areas ONCE, as data, in
-``[tool.lab_commons.areas]`` of its pyproject -- read AT THE COMMIT the record ran, like the need
+``[tool.dev_lab.areas]`` of its pyproject -- read AT THE COMMIT the record ran, like the need
 vocabulary (:mod:`lab_commons.hpc.needsets`)::
 
-    [tool.lab_commons.areas]
+    [tool.dev_lab.areas]
     default = "triage"                       # where a red no glob claims goes; absent -> "unowned"
     jmag = ["src/pkg/adapters/jmag/**", "tests/**/jmag/**"]
 
@@ -37,7 +37,7 @@ and naming the first few -- the latest record says nothing about them, and that 
 record covering no id is no evidence at all and routes nothing. Unowned reds land in the default area, so
 a red is never dropped.
 
-OWNERS are data too, in ``[tool.lab_commons.forge.owners]``: a key is an area name or a branch glob
+OWNERS are data too, in ``[tool.dev_lab.forge.owners]``: a key is an area name or a branch glob
 (matched against the record's ``branch``), its value a list of gitea usernames. Every owner whose key
 matches the area or the branch is @-mentioned in a ``cc`` line closing the body; no table, no mentions.
 """
@@ -59,6 +59,7 @@ from lab_commons.hpc.records import cells_of, read_record
 from lab_commons.hpc.testcells import conclude
 from lab_commons.log import emit
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from dev_lab.dev.forgepulls import issues
 from dev_lab.dev.forgework import Client, ForgeCallFailed, Issue, client_for
@@ -110,17 +111,17 @@ def _glob(pattern: str) -> re.Pattern[str]:
 
 def read_areas(text: str) -> tuple[tuple[tuple[str, tuple[re.Pattern[str], ...]], ...], str]:
     """``(((area, globs), ...), default)`` from pyproject *text*; a malformed entry is refused."""
-    raw = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get('areas', {})
+    raw = declared_table(tomllib.loads(text), 'areas', {})
     default = raw.get('default', DEFAULT_AREA)
     if not isinstance(default, str) or not default:
-        msg = f'[tool.lab_commons.areas] default = {default!r}: the default area is a non-empty name'
+        msg = f'[tool.dev_lab.areas] default = {default!r}: the default area is a non-empty name'
         raise ValueError(msg)
     areas = []
     for name, globs in raw.items():
         if name == 'default':
             continue
         if not isinstance(globs, list) or not globs or not all(isinstance(g, str) and g for g in globs):
-            msg = f'[tool.lab_commons.areas] {name} = {globs!r}: an area is a non-empty list of path globs'
+            msg = f'[tool.dev_lab.areas] {name} = {globs!r}: an area is a non-empty list of path globs'
             raise ValueError(msg)
         areas.append((name, tuple(_glob(g) for g in globs)))
     return tuple(areas), default
@@ -128,12 +129,12 @@ def read_areas(text: str) -> tuple[tuple[tuple[str, tuple[re.Pattern[str], ...]]
 
 def read_owners(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
     """``((area or branch glob, usernames), ...)`` from pyproject *text*; a malformed name is refused."""
-    raw = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get('forge', {}).get('owners', {})
+    raw = declared_table(tomllib.loads(text), 'forge', {}).get('owners', {})
     owners = []
     for key, names in raw.items():
         if not isinstance(names, list) or not all(isinstance(n, str) and _USER.match(n) for n in names):
             msg = (
-                f'[tool.lab_commons.forge.owners] {key} = {names!r}: owners are a list of gitea usernames'
+                f'[tool.dev_lab.forge.owners] {key} = {names!r}: owners are a list of gitea usernames'
                 ' (letters, digits, "._-", no leading "@") -- write e.g. ["alice", "bob.k"]'
             )
             raise ValueError(msg)

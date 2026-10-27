@@ -133,7 +133,7 @@ def keep_record(root: Path, sha: str, context: str, *, log: str) -> str:
     except UndeclaredPart as why:
         return f'record NOT kept: {why}'
     except FileNotFoundError:
-        return 'record NOT kept: the tree has no pyproject.toml to declare [tool.lab_commons.parts] output'
+        return 'record NOT kept: the tree has no pyproject.toml to declare [tool.dev_lab.parts] output'
     kept = root / judged.relative_to(tree)
     kept.mkdir(parents=True, exist_ok=True)
     base = judged.parents[4]  # <output>, above <yy>/<mm>/<dd>/parts/<sha>

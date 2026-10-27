@@ -1,7 +1,7 @@
 # THE FAMILY'S GIT HOOKS -- the base every repo runs, as data. Read by dev_lab.dev.githooks.table.
 #
-# A repo OPTS IN by declaring [tool.lab_commons.hooks] in its pyproject.toml (an empty table takes
-# this base as is) and layers its own rows on top under [[tool.lab_commons.hooks.<stage>]]:
+# A repo OPTS IN by declaring [tool.dev_lab.hooks] in its pyproject.toml (an empty table takes
+# this base as is) and layers its own rows on top under [[tool.dev_lab.hooks.<stage>]]:
 # a row whose `id` is new is APPENDED to the stage; a row whose `id` names a base row is MERGED over
 # it key by key (e.g. one `exclude`). Keys, all optional except `id` and `run`:
 #
@@ -136,7 +136,7 @@ refs = '^refs/heads/pr/'
 # post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
 
 # STRAY-FILE-REFUSED as a HINT: an untracked, non-ignored file outside the declared stray roots
-# ([tool.lab_commons.placement] stray_roots, plus scratch/) is named with its remedy after the commit
+# ([tool.dev_lab.placement] stray_roots, plus scratch/) is named with its remedy after the commit
 # (dev_lab.dev.codeplace). Untracked files are invisible to the forge, so this is the one place it is said.
 [[post-commit]]
 id = "stray-files"

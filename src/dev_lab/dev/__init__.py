@@ -103,7 +103,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.filechecks` -- the base pre-commit rows' per-file checks (stdlib, report and
   never rewrite).
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
-  ``[tool.lab_commons.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
+  ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m
   dev_lab.dev.githooks run <stage>``), and the hook SCRIPTS shipped as a package payload and
   reached by NAME (``... githooks script bump-version``). They are not all hooks: ``with-venv`` is a
@@ -162,7 +162,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.forgeheadgate` -- ``lock/fresh`` and ``branchset`` statuses on every open PR head,
   each naming its fix.
 * :mod:`dev_lab.dev.lanepolicy` -- the branch names a repo declares in
-  ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
+  ``[tool.dev_lab.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`dev_lab.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
   (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
 * :mod:`dev_lab.dev.producer` -- the producer exit contract: what a part producer's exit code
@@ -321,7 +321,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
 * :mod:`dev_lab.dev.pushgate` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`dev_lab.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
-* :mod:`dev_lab.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
+* :mod:`dev_lab.dev.forgeroute` -- a run record's reds grouped by ``[tool.dev_lab.areas]``, one issue per area.
 * :mod:`dev_lab.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<part> parts.
 * :mod:`dev_lab.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
 * :mod:`dev_lab.dev.forgepulls` -- PR list/retarget, ONE marker-found comment per subject, the incremental issue
@@ -364,7 +364,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   RE-EXPORTED -- ``scan`` and ``kinds`` say nothing once flattened.
 * :mod:`dev_lab.dev.disclosure` -- INJECTED-TEXT-IS-PROGRESSIVE: the injected-text budgets and the details pointer.
 * :mod:`dev_lab.dev.family` -- who is in the family: a checkout whose own ``pyproject.toml`` declares
-  ``[tool.lab_commons]``.
+  ``[tool.dev_lab]`` or ``[tool.lab_commons]``; :func:`~dev_lab.dev.family.declared_table` reads dev-lab's own tables.
 * :mod:`dev_lab.dev.breakglass` -- the one emergency bypass of INTEGRATION-TAKES-ONLY-FORGE-MERGES: a
   ``Break-Glass: <reason>`` trailer on every new commit, kept visible as an ``integration`` issue.
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.

@@ -1,6 +1,6 @@
 """The one emergency bypass of ``INTEGRATION-TAKES-ONLY-FORGE-MERGES``, kept in the history it bypassed.
 
-User ruling 2026-10-19: with ``[tool.lab_commons.integrator] pr_merges_since`` declared, the integration
+User ruling 2026-10-19: with ``[tool.dev_lab.integrator] pr_merges_since`` declared, the integration
 branch moves only by the forge merging a pull request -- so a broken forge could never be fixed. A direct
 push is admitted (:mod:`dev_lab.dev.sessionbranch`) only when EVERY new first-parent commit carries a
 ``Break-Glass: <reason>`` trailer with a non-empty reason. Nothing else opens it -- no env var, no config
@@ -72,7 +72,7 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
             body = (
                 f'{sha} was pushed directly to {policy.integration} by {author}, past the forge merge flow: {why}. '
                 f'Follow up with a pull request for anything beyond the emergency fix, then move '
-                f'[tool.lab_commons.integrator] pr_merges_since past it to close this notice.'
+                f'[tool.dev_lab.integrator] pr_merges_since past it to close this notice.'
             )
             found.append(Alarm(INTEGRATION, repo, subject, body, about=f'break-glass {sha[:12]}'))
     return found

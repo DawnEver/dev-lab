@@ -21,7 +21,7 @@ from dev_lab.dev.integrate import promote
 
 GITEA = Forge('forge.example.org', 'o', 'r')
 GAPI = '/api/v1/repos/o/r'
-_RETIRED = '[tool.lab_commons.integrator]\nhost = "G"\n'
+_RETIRED = '[tool.dev_lab.integrator]\nhost = "G"\n'
 
 
 @pytest.fixture

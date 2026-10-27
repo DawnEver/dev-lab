@@ -38,7 +38,7 @@ from dev_lab.dev.hook_install import (
 )
 
 _GIT = shutil.which('git') or 'git'
-_LAYER = '[[tool.lab_commons.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
+_LAYER = '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
 
 
 @pytest.fixture
@@ -213,7 +213,7 @@ def _install_with(repo: Path, fallback: str) -> None:
         (directory / stage).write_text(shim(stage, fallback), encoding='utf-8', newline='\n')
 
 
-_REPO_ROW = '[[tool.lab_commons.hooks.commit-msg]]\nid = "repo-only"\nrun = ["python", "-m", "no_such_repo_module"]\n'
+_REPO_ROW = '[[tool.dev_lab.hooks.commit-msg]]\nid = "repo-only"\nrun = ["python", "-m", "no_such_repo_module"]\n'
 
 
 def test_no_venv_commits_through_the_recorded_interpreter_and_skips_repo_rows(repo: Path) -> None:

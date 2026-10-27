@@ -28,7 +28,7 @@ from dev_lab.dev.shatree import Tree
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
 ME = Claim('G', 'alice', NOW + timedelta(hours=6))
 REF = 'integrate/main'
-PYPROJECT = '[tool.lab_commons.parts]\noutput = "output/logs"\n'
+PYPROJECT = '[tool.dev_lab.parts]\noutput = "output/logs"\n'
 TEST = 'from a import x\nimport b\n\n\ndef test_x():\n    assert x == 1\n'
 
 
@@ -266,7 +266,7 @@ def test_a_data_only_head_a_whole_tree_scan_reaches_waits_for_the_running_head_i
     a = _commit(
         tmp_path,
         {
-            'pyproject.toml': PYPROJECT + '[tool.lab_commons.carry.reads]\n"tests/test_scan.py" = ["*"]\n',
+            'pyproject.toml': PYPROJECT + '[tool.dev_lab.carry.reads]\n"tests/test_scan.py" = ["*"]\n',
             'src/a.py': 'x = 1\n',
             'tests/test_a.py': TEST,
             'tests/test_scan.py': scan,

@@ -15,7 +15,7 @@ machine file's ``[[hpc.grant]]``; a committed copy would be a second source and 
 So the family ``.gitignore`` ignores it in every consumer, and it is rendered on each machine from:
 
 * what the REPO declares, committed and host-free: :data:`INTENTS` (one per kit door or rule),
-  :data:`OPTIONAL_INTENTS` named in ``[tool.lab_commons.automode] declares``, and its ``origin`` and branch set;
+  :data:`OPTIONAL_INTENTS` named in ``[tool.dev_lab.automode] declares``, and its ``origin`` and branch set;
 * what the MACHINE holds (:func:`read_fleet`): every workstation of the synced workstation registry
   (``hosts.json``, named by the machine file's ``[workstation] registry``) and every ``[[hpc.grant]]`` account
   with its login hosts, by NAME so the classifier recognises them.
@@ -43,6 +43,7 @@ from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.workstation import FORGE_ROLE, REGISTRY_TABLE
 
@@ -109,7 +110,7 @@ INTENTS: Final[dict[str, str]] = {
     'monitor': 'Read-only monitoring of the forge: commit statuses, the queue, host cards and run progress.',
 }
 
-#: Categories a repo must DECLARE before they render (``[tool.lab_commons.automode] declares``).
+#: Categories a repo must DECLARE before they render (``[tool.dev_lab.automode] declares``).
 OPTIONAL_INTENTS: Final[dict[str, str]] = {
     'jmag-material-card': (
         'Installing a missing JMAG material card into the local JMAG material library, the one write outside '
@@ -159,9 +160,9 @@ def spelled_commands(entries: Sequence[str]) -> tuple[str, ...]:
 def _declared(root: Path) -> tuple[str, ...]:
     manifest = root / 'pyproject.toml'
     data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
-    names = tuple(data.get('tool', {}).get('lab_commons', {}).get('automode', {}).get('declares', ()))
+    names = tuple(declared_table(data, 'automode', {}).get('declares', ()))
     if unknown := sorted(set(names) - set(OPTIONAL_INTENTS)):
-        msg = f'{manifest}: [tool.lab_commons.automode] declares {unknown}; known: {sorted(OPTIONAL_INTENTS)}'
+        msg = f'{manifest}: [tool.dev_lab.automode] declares {unknown}; known: {sorted(OPTIONAL_INTENTS)}'
         raise ValueError(msg)
     return names
 

@@ -1,6 +1,6 @@
 # THE FAMILY'S GITHUB ACTIONS WORKFLOWS -- the base, as data. Rendered by dev_lab.dev.ciworkflows.
 #
-# A repo OPTS IN to a workflow by declaring its table, `[tool.lab_commons.ci."<file>.yml"]`, in its own
+# A repo OPTS IN to a workflow by declaring its table, `[tool.dev_lab.ci."<file>.yml"]`, in its own
 # pyproject.toml (an empty table takes the base as is); the repo's table is deep-merged over the base
 # (tables merge key by key, any other value replaces). A repo may also declare a workflow the base
 # does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
