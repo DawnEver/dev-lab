@@ -32,7 +32,7 @@ from dev_lab.dev.rules import RULES
 #: ratchet. It may only go DOWN, and a new page is paid for out of it rather than added beside it.
 #: The pins below are what says which page spent it; this says nobody may spend more in total.
 #: Raised 60 -> 70 on 2026-10-27 for the rendered principles page, by user ruling (family policy reaches every agent).
-RULES_LINE_CEILING = 70
+RULES_LINE_CEILING = 70  # user ruling 2026-10-27 (option A): 60 -> 70 for the 18-line principles page; may only go down
 
 #: This repo's pages, MEASURED 2026-09-17, to the line count each may not exceed. TWO-SIDED in all
 #: four directions -- grew, shrank, arrived unpinned, pinned and gone -- and the reason the total
