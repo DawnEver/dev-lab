@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.hpc.declared import kit_tables
+from lab_commons.hpc.declared import RetiredTable, kit_tables
 
 __all__ = ['NAMESPACE', 'declared_in', 'declared_table', 'is_member']
 
@@ -26,8 +26,20 @@ NAMESPACE: Final = 'dev_lab'
 
 
 def declared_table(data: Mapping[str, Any], name: str, default: Any = None) -> Any:  # noqa: ANN401 -- TOML is untyped
-    """``[tool.dev_lab.<name>]`` of parsed pyproject *data*, else *default*; the old namespace is never read."""
-    return data.get('tool', {}).get(NAMESPACE, {}).get(name, default)
+    """``[tool.dev_lab.<name>]`` of parsed pyproject *data*, else *default*.
+
+    The old spelling is REFUSED, never read as absent: an unmigrated ``[tool.lab_commons.<name>]`` read as
+    *default* would silently switch off what it declares (a hook row, an allowed skip, a door).
+
+    Raises:
+        RetiredTable: *data* still declares ``[tool.lab_commons.<name>]``; the message names the replacement.
+
+    """
+    tool = data.get('tool', {})
+    if name in tool.get('lab_commons', {}):
+        msg = f'[tool.lab_commons.{name}] is retired: declare it as [tool.{NAMESPACE}.{name}]'
+        raise RetiredTable(msg)
+    return tool.get(NAMESPACE, {}).get(name, default)
 
 
 def declared_in(text: str, name: str) -> dict[str, Any]:

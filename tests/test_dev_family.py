@@ -3,6 +3,9 @@
 import tomllib
 from pathlib import Path
 
+import pytest
+from lab_commons.hpc.declared import RetiredTable
+
 from dev_lab.dev.family import declared_table, is_member
 
 
@@ -41,3 +44,12 @@ def test_a_dev_lab_table_is_read_from_its_own_namespace_and_never_from_the_old_o
     assert declared_table(new, 'hooks') == {'pre-commit': ['x']}
     assert declared_table(old, 'hooks') is None
     assert declared_table(old, 'hooks', {}) == {}
+
+
+def test_an_unmigrated_dev_lab_table_is_refused_never_read_as_absent() -> None:
+    """PLANTED (review F-76063aaece3e): ``[tool.lab_commons.hooks]`` read as ``{}`` switched its rows off."""
+    data = {'tool': {'lab_commons': {'hooks': {'pre-push': ['x']}}}}
+    with pytest.raises(RetiredTable, match=r'\[tool\.dev_lab\.hooks\]'):
+        declared_table(data, 'hooks', {})
+    assert declared_table({'tool': {'dev_lab': {'hooks': {'a': 1}}}}, 'hooks', {}) == {'a': 1}
+    assert declared_table({'tool': {'lab_commons': {'tests': {}}}}, 'hooks', {}) == {}
