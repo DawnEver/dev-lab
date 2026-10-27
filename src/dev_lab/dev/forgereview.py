@@ -51,7 +51,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     [tool.lab_commons.review]
     # command: only a genuinely different method; the family's, redeclared, is refused. Placeholders:
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
-    # {model}: `model`; {capabilities.<name>.<key>}: THIS host's machine-file value (repo says WHAT, host WHERE)
+    # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
+    # {capabilities.<name>.<key>}: THIS host's machine-file value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_rounds = 3             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, blocking re-checks only
@@ -102,6 +103,7 @@ from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Bud
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -118,6 +120,7 @@ __all__ = [
     'RETIRED_CAPABILITIES',
     'RETIRED_KEYS',
     'REVIEW_CONTEXT',
+    'RULES_FIELD',
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
     'Review',
@@ -137,6 +140,10 @@ PATHS_FIELD: Final = '{paths}'
 #: Replaced by the slice's lens (:data:`dev_lab.dev.forgereview_scope.LENSES`).
 LENS_FIELD: Final = '{lens}'
 
+#: Replaced by the family registry's rule ids, comma-separated: ai-lab (the method) is GIVEN them and imports no
+#: registry of its runner's.
+RULES_FIELD: Final = '{rules}'
+
 #: Replaced by the review's ``model`` (:data:`FAMILY_MODEL` unless the repo overrides it).
 MODEL_FIELD: Final = '{model}'
 
@@ -148,7 +155,7 @@ FAMILY_MODEL: Final = 'claude-sonnet-5-5'
 #: when its method genuinely differs; redeclaring this one is refused, so no stale copy can drift from it.
 FAMILY_COMMAND: Final = (
     '{capabilities.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
-    '--model', MODEL_FIELD, '--paths', PATHS_FIELD,
+    '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
 )  # fmt: skip
 
 #: Host capabilities the family retired, each refused in a command naming what replaced it.
@@ -338,6 +345,7 @@ def command_for(
             .replace(RANGE_FIELD, reviewed)
             .replace(LENS_FIELD, lens)
             .replace(MODEL_FIELD, review.model)
+            .replace(RULES_FIELD, ','.join(rule.id for rule in RULES))
         ]
 
     return [one for arg in (review.synthesis if synthesis else review.command) for one in filled(arg)]
