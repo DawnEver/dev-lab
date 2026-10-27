@@ -538,4 +538,15 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'monthsummary': ('original',),
     'prsuperseded': ('original',),
     'worktree_archive': ('original',),
+    # ORIGINAL: the forge's review/security gate, new here; and the in-kit splits of `metrics` and
+    # `forge` (a split of a kit module supersedes no CONSUMER file, so it inherits the parent's kind).
+    'forgecontexts': ('original',),
+    'forgereview_dispose': ('original',),
+    'forgereview_rounds': ('original',),
+    'forgesecurity': ('original',),
+    'forgetakeover': ('original',),
+    'metrics_compute': ('original',),
+    'metrics_report': ('original',),
+    'reviewcommand': ('original',),
+    'security': ('original',),
 }

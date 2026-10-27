@@ -340,6 +340,10 @@ def test_the_newest_stable_is_what_rustup_check_reports() -> None:
         '(58cf8f9c3 2026-10-13)\nrustup - update available : 1.29.1 -> 1.29.2\n'
     )
     assert newest_stable(check=lambda: _rustup(ada)) == '1.99.1'
+    # rustup exits 100 when an update is available (measured on Ada 2026-10-26): the answer is in the output.
+    updates = _rustup(ada)
+    updates.ok = False
+    assert newest_stable(check=lambda: updates) == '1.99.1'
     with pytest.raises(OSError, match='rustup check named no stable toolchain'):
         newest_stable(check=lambda: _rustup('nightly-x86_64 - Up to date : 1.100.0-nightly\n'))
 
