@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -163,6 +164,31 @@ def test_a_tree_holding_a_path_past_max_path_is_removed(tmp_path: Path) -> None:
     assert ': removed; ' in said, said
     assert not Path(extended(tree.path)).exists()
     assert str(tree.path.resolve()) not in git_out(repo, 'worktree', 'list')
+
+
+def test_a_commit_whose_paths_pass_max_path_inside_the_tree_is_checked_out(tmp_path: Path) -> None:
+    """PLANTED (2026-10-27, wdg-lab #392): prefix 107 + a 153-char tracked path = 260 > MAX_PATH.
+
+    ``git worktree add`` exited 128 (``Could not reset index file``) on every head while a shorter tree name
+    checked the same commit out, so the tree, not the commit, must carry the long-path switch.
+    """
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
+    prefix = len(str(tree_path(repo, '0' * 40, 'tests/connection'))) + 1
+    deep = '/'.join(['d' * 40] * ((280 - prefix) // 41 + 1)) + '/f.txt'
+    blob = subprocess.run(
+        [shutil.which('git') or 'git', '-C', str(repo), 'hash-object', '-w', '--stdin'],
+        input='deep',
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    run_git(repo, 'update-index', '--add', '--cacheinfo', f'100644,{blob},{deep}')
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'deep')
+    sha = git_out(repo, 'rev-parse', 'HEAD')
+    assert prefix + len(deep) > 260, 'PLANTED: the path must pass MAX_PATH inside the tree'
+    tree = open_tree(repo, sha, 'tests/connection', run=_bootstrap_fakes)
+    assert Path(extended(tree.path / deep)).read_text(encoding='utf-8') == 'deep'
+    close_tree(repo, sha, 'tests/connection')
 
 
 def test_stale_debris_of_an_earlier_run_does_not_block_a_new_tree(tmp_path: Path) -> None:
