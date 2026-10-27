@@ -128,6 +128,10 @@ STRAY_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.de
 #: command blocks the stop, for the main session and for every subagent.
 HANDBACK_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.handback'
 
+#: RECLAIM RUNS IN THE WORKFLOW (:mod:`dev_lab.dev.reclaimrun`, ruling 2026-10-27): every session start in a
+#: MAIN checkout detaches a bounded, locked reclaim of landed worktrees and their branches, and returns at once.
+RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.reclaimrun --session-start'
+
 
 @dataclass(frozen=True, slots=True)
 class Wire:
@@ -144,13 +148,14 @@ class Wire:
 
 #: THE WIRING, ONE TABLE: what :func:`wire_settings` writes is what :func:`guard_installation` reads.
 #: The engine before every shell call; the STRAY-FILE-REFUSED census after every one, and at stop; the
-#: hand-back check at every stop, the main session's and each subagent's.
+#: hand-back check at every stop, the main session's and each subagent's; the background reclaim at session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
     Wire('PostToolUse', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=True),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
+    Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
 )
 
 #: The parts, in the order a reader should fix them: an engine with no rules refuses nothing, and
