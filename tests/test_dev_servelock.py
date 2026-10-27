@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from dev_lab.dev import forgecli
-from dev_lab.dev.servelock import default_lock, held, note_stopped, was_stopped
+from dev_lab.dev.servelock import default_lock, forge_home, held, note_stopped, was_stopped
 
 _HOLD = (
     'import sys, time\n'
@@ -46,10 +49,19 @@ def _free_within(lock: Path, *, seconds: float) -> bool:
     return False
 
 
-def test_the_default_lock_lives_in_the_per_user_cache() -> None:
-    path = default_lock()
-    assert path.parts[-2:] == ('lab-forge', 'serve.lock')
-    assert path.is_absolute()
+def test_the_forge_home_is_the_platform_data_dir_and_the_lock_derives_from_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ONE function names the forge's machine home; never a user-visible dir beside the dev repos."""
+    if os.name == 'nt':
+        monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+        assert forge_home() == tmp_path / 'local' / 'lab-forge'
+    else:
+        monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'data'))
+        assert forge_home() == tmp_path / 'data' / 'lab-forge'
+        monkeypatch.delenv('XDG_DATA_HOME')
+        assert forge_home() == Path.home() / '.local' / 'share' / 'lab-forge'
+    assert default_lock() == forge_home() / 'serve.lock'
 
 
 def test_a_stop_note_is_read_once(tmp_path: Path) -> None:

@@ -79,7 +79,7 @@ DEBT: dict[str, int] = {
     # Over the band AT the split base (lab-commons 8c401f0) and unpinned there: pinned at the split with
     # their measurement, each a refactor that has not happened.
     'src/dev_lab/dev/platformparts.py': 301,  # 2026-10-26: the status contexts moved to forgecontexts.py (was 303)
-    'src/dev_lab/dev/workstation.py': 335,
+    'src/dev_lab/dev/workstation.py': 336,  # 2026-10-27: +1, the uv installer reads the one UV_VERSION (was 335)
 }
 
 #: The ceiling on the escape hatch: total pinned debt in CODE lines. It went UP exactly once, on

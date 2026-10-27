@@ -46,3 +46,12 @@ def test_a_merge_that_would_break_the_file_is_refused() -> None:
 def test_an_empty_file_gets_the_tables() -> None:
     assert tomllib.loads(merged('', {'serve': {'tick_minutes': 2.5}})) == {'serve': {'tick_minutes': 2.5}}
     assert diff('a\n', 'a\n', 'c') == ''
+
+
+def test_a_none_value_removes_its_key_and_only_its_line() -> None:
+    """A retired key is DROPPED by the merge (``None``); an absent one is a no-op, every other line kept."""
+    out = merged(HAND, {'serve': {'tick_minutes': None}})
+    assert diff(HAND, out, 'c').count('\n-') == 1
+    assert tomllib.loads(out)['serve'] == {}
+    assert merged(out, {'serve': {'tick_minutes': None}}) == out
+    assert tomllib.loads(merged('', {'serve': {'root': None, 'repos': ['a']}})) == {'serve': {'repos': ['a']}}
