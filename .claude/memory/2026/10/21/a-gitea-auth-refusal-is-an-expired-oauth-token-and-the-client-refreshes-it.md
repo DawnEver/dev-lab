@@ -6,10 +6,10 @@ created: 2026-10-21
 
 # A gitea auth refusal is an expired OAuth token, and the client refreshes it
 
-- Measured 2026-10-21 10:50 (a motronics-studio box): `git credential fill` for the gitea host answered
+- Measured 2026-10-21 10:50 (a consumer-c box): `git credential fill` for the gitea host answered
   username `OAUTH_USER` -- GCM's OAuth store. Its access token expires. `forge auth status` said
   `forge-refused ... re-store it: auth login`; one `git ls-remote origin` (attempt 1 refused, attempt 2 OK)
-  and the same `auth status` said "authenticated as MingyangBao". Git had rejected the expired token on the
+  and the same `auth status` said "authenticated as <user>". Git had rejected the expired token on the
   401 and its next fill refreshed it. That is also the long-known "attempt-1 transient" on every git verb.
 - The 2026-10-18 fix (`a-401-is-measured-before-it-names-the-credential`) asked `GET /user` with the SAME
   stale token, so it confirmed the expiry and still told the user to re-login -- the cause was one layer down.

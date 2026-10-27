@@ -57,7 +57,7 @@ def assert_a_planted_relative_remedy_is_convicted() -> None:
     """PLANTED CONTROL: the shapes that shipped are convicted; absolute and tokenised spellings are spared."""
     nt, posix = venv_interpreter(os_name='nt'), venv_interpreter(os_name='posix')
     convicted = (f'Use {nt} -m x', f'./{posix} x.py', 'stop it: python -m dev_lab.dev.stoprun --pid 1')
-    spared = (f'C:/r/{nt} -m x', f'/home/u/r/{posix} -m x', f'{PYTHON_SLOT} -m x')
+    spared = (f'C:/r/{nt} -m x', f'/srv/r/{posix} -m x', f'{PYTHON_SLOT} -m x')
     missed = [line for line in convicted if not relative_interpreters(line)]
     wrong = [line for line in spared if relative_interpreters(line)]
     if missed or wrong:

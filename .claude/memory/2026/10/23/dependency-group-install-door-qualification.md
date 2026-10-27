@@ -10,7 +10,7 @@ metadata:
 
 ## Published authority
 
-PR15: https://gitea.mingyangbao.site/Tianjie-Zou-Team/dev-lab/pulls/15
+PR15: https://<forge-host>/<org>/dev-lab/pulls/15
 Branch: `pr/dependency-groups-and-frozen-install`; target: `integrate/main`.
 Published graph before the compute guard: `5fcf31b77e638735218dcfc8ca4e568217fd6d38`.
 Normal hooks were used for all commits and pushes. No manual merge was performed.
