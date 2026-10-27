@@ -17,12 +17,15 @@ from dev_lab.dev.forgereview import (
     LENS_FIELD,
     PATHS_FIELD,
     RANGE_FIELD,
+    RULES_FIELD,
     Review,
     command_for,
     review_from,
 )
+from dev_lab.dev.rules import RULES
 
 _ROOT = Path(__file__).resolve().parents[1]
+_DECLARED = "[tool.lab_commons.review]\ncommand = ['r', '{rules}']\n"
 _HOST = {'ai_lab': {'python': 'C:/rt/python.exe'}}
 
 
@@ -38,8 +41,16 @@ def test_the_family_command_slices_and_names_one_model() -> None:
     argv = command_for(review, 'a..b', _HOST, paths=('x.py', 'y.py'), lens='strict')
     assert argv == [
         'C:/rt/python.exe', '-m', 'ai_lab.review', '--range', 'a..b', '--lens', 'strict',
-        '--model', FAMILY_MODEL, '--paths', 'x.py', 'y.py',
+        '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES), '--paths', 'x.py', 'y.py',
     ]  # fmt: skip
+
+
+def test_the_rule_ids_are_given_to_the_method_from_the_registry() -> None:
+    """ai-lab imports no registry: ``{rules}`` hands it every id. PLANTED CONTROL: a declared command's too."""
+    assert RULES_FIELD in FAMILY_COMMAND
+    given = command_for(review_from(_DECLARED, 'p'), 'a..b', _HOST)
+    assert given[1].split(',') == [rule.id for rule in RULES]
+    assert all(',' not in rule.id for rule in RULES), 'an id with a comma would split in two'
 
 
 def test_a_repo_overrides_only_the_model_and_still_slices() -> None:
