@@ -14,10 +14,7 @@ dev_lab.dev.branchset --apply``, which reclaims first so the freed branch is del
 from __future__ import annotations
 
 import fnmatch
-import shutil
-import stat
 import subprocess
-import sys
 import time
 import tomllib
 from collections.abc import Callable
@@ -38,6 +35,7 @@ from dev_lab.dev.checkout import (
     unmerged_changes,
     worktrees,
 )
+from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.liverun import occupants
 from dev_lab.dev.worktree_archive import home_outputs
 
@@ -56,7 +54,6 @@ __all__ = [
 _SHOWN: Final = 5
 #: A tree whose index moved this recently is a LIVE SESSION (it staged, committed or checked out): never reclaimed.
 QUIET_S: Final = 3600.0
-_LONG: Final = '\\\\?\\'
 
 
 def declared_generated(main: Path) -> tuple[str, ...]:
@@ -98,23 +95,6 @@ def _index_age_s(tree: Path) -> float | None:
         return time.time() - Path(index).stat().st_mtime if index else None
     except OSError:
         return None
-
-
-def _writable(func: Callable[[str], object], path: str, _: BaseException) -> None:
-    Path(path).chmod(stat.S_IWRITE)  # a read-only file (a git object) refuses deletion on Windows
-    func(path)
-
-
-def remove_tree(path: Path) -> None:
-    r"""Delete directory *path* recursively, FAST and long-path safe: no git, no 260-character limit.
-
-    ``git worktree remove`` measured minutes per tree on Windows (deep ``.venv`` paths); a recursive delete
-    through the ``\\?\`` namespace measured seconds. Links and junctions are unlinked, never followed.
-    """
-    target = str(path.resolve())
-    if sys.platform == 'win32' and not target.startswith(_LONG):
-        target = _LONG + target
-    shutil.rmtree(target, onexc=_writable)
 
 
 def repository_at(root: Path, path: Path) -> str:
