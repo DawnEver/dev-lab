@@ -2,7 +2,8 @@
 
 The machine file (:mod:`lab_commons.config`) is hand-written and commented, so a deploy never re-renders
 it: :func:`merged` sets each owned ``key = value`` inside its ``[table]`` -- replacing the line only
-when its value differs, appending the key or the table when absent -- and refuses a result that does
+when its value differs, appending the key or the table when absent, deleting it when the value is
+``None`` (a retired key) -- and refuses a result that does
 not parse or does not read back the values asked for.
 """
 
@@ -39,19 +40,25 @@ def _same(line: str, key: str, value: Value) -> bool:
         return False
 
 
-def _set(lines: list[str], table: str, values: Mapping[str, Value]) -> None:
+def _set(lines: list[str], table: str, values: Mapping[str, Value | None]) -> None:
     starts = [i for i, line in enumerate(lines) if (m := _HEADER.match(line)) and m[1] == '[' and m[2] == table]
     if not starts:
         if lines and lines[-1].strip():
             lines.append('')
-        lines.extend([f'[{table}]', *(f'{key} = {_render(value)}' for key, value in values.items())])
+        rows = (f'{key} = {_render(value)}' for key, value in values.items() if value is not None)
+        lines.extend([f'[{table}]', *rows])
         return
     start = starts[0]
     end = next((j for j in range(start + 1, len(lines)) if _HEADER.match(lines[j])), len(lines))
     for key, value in values.items():
-        row = f'{key} = {_render(value)}'
         pattern = re.compile(rf'^\s*{re.escape(key)}\s*=')
         hit = next((j for j in range(start + 1, end) if pattern.match(lines[j])), None)
+        if value is None:
+            if hit is not None:
+                del lines[hit]
+                end -= 1
+            continue
+        row = f'{key} = {_render(value)}'
         if hit is None:
             last = max((j for j in range(start, end) if lines[j].strip()), default=start)
             lines.insert(last + 1, row)
@@ -66,8 +73,8 @@ def _read(data: Mapping[str, object], table: str) -> object:
     return data
 
 
-def merged(text: str, tables: Mapping[str, Mapping[str, Value]]) -> str:
-    """*text* with every ``tables[name][key] = value`` set; a result that does not read them back is refused."""
+def merged(text: str, tables: Mapping[str, Mapping[str, Value | None]]) -> str:
+    """*text* with every ``tables[name][key] = value`` set, ``None`` deleting the key; refused unless it reads back."""
     lines = text.splitlines()
     for table, values in tables.items():
         _set(lines, table, values)
