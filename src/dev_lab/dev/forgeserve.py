@@ -274,8 +274,7 @@ def serve(
     )  # fmt: skip
     rounds, produced = host_rounds.serve(beat_s)
     demote_unreachable(produced)
-    runs, card = host_rounds.runs, host_rounds.card
-    ticked = rounds[-1]
+    runs, card, ticked = host_rounds.runs, host_rounds.card, rounds[-1]
     claimed = [item for one in rounds for item in one.claimed]
     runs_from = clock()  # the runs get a period of their own: rounds that ran long never starve them to one
     left = _advance(
