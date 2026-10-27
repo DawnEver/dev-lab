@@ -1,7 +1,7 @@
 """The git hooks a repo runs, declared ONCE in TOML: the family base plus the repo's own layer.
 
 ONE SOURCE PER LAYER. The base is data shipped in this package (``base.toml`` beside this module);
-a repo's layer is ``[[tool.lab_commons.hooks.<stage>]]`` in its own ``pyproject.toml``. Nothing is
+a repo's layer is ``[[tool.dev_lab.hooks.<stage>]]`` in its own ``pyproject.toml``. Nothing is
 rendered and nothing is parsed back: :func:`hook_table` merges the two layers in memory, and the
 runner (:mod:`dev_lab.dev.githooks.runner`) and the installer (:mod:`dev_lab.dev.hook_install`)
 both read that one answer.
@@ -21,6 +21,8 @@ import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Final
+
+from dev_lab.dev.family import declared_table
 
 __all__ = [
     'ADVISORY',
@@ -143,12 +145,12 @@ def base_rows() -> dict[str, tuple[dict[str, Any], ...]]:
 
 
 def repo_rows(root: Path) -> dict[str, tuple[dict[str, Any], ...]] | None:
-    """A repo's own layer, raw, by stage; ``None`` when it does not opt in (no ``[tool.lab_commons.hooks]``)."""
+    """A repo's own layer, raw, by stage; ``None`` when it does not opt in (no ``[tool.dev_lab.hooks]``)."""
     pyproject = root / 'pyproject.toml'
     if not pyproject.is_file():
         return None
     data = tomllib.loads(pyproject.read_text(encoding='utf-8'))
-    hooks = data.get('tool', {}).get('lab_commons', {}).get('hooks')
+    hooks = declared_table(data, 'hooks')
     return None if hooks is None else _rows(hooks, str(pyproject))
 
 
@@ -180,7 +182,7 @@ def merge(
 def hook_table(root: Path) -> dict[str, tuple[Hook, ...]]:
     """Every hook *root* runs, by stage: the family base with the repo's layer merged over it.
 
-    A repo OPTS IN by declaring ``[tool.lab_commons.hooks]`` (an empty table takes the base as is); one
+    A repo OPTS IN by declaring ``[tool.dev_lab.hooks]`` (an empty table takes the base as is); one
     that does not runs no hook and declares no stage, so a checkout that is not a family project is
     never reported unprotected.
     """
@@ -190,5 +192,5 @@ def hook_table(root: Path) -> dict[str, tuple[Hook, ...]]:
 
 def hook_table_from(text: str, origin: str) -> dict[str, tuple[Hook, ...]]:
     """:func:`hook_table` for manifest *text* read anywhere (a commit or tree, not the working tree)."""
-    hooks = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get('hooks')
+    hooks = declared_table(tomllib.loads(text), 'hooks')
     return {} if hooks is None else merge(base_rows(), _rows(hooks, origin), origin=origin)

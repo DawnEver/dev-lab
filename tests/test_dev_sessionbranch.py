@@ -24,8 +24,8 @@ from dev_lab.dev.sessionbranch import P2, P3, P5, P6
 
 _GIT = shutil.which('git') or 'git'
 _DECL = (
-    "[tool.lab_commons.branchset]\ntrunk = 'stable'\nsessions = ['int/line', 'feat/s']\n\n"
-    "[tool.lab_commons.integrator]\nintegration = 'int/line'\ntrunk = 'stable'\n"
+    "[tool.dev_lab.branchset]\ntrunk = 'stable'\nsessions = ['int/line', 'feat/s']\n\n"
+    "[tool.dev_lab.integrator]\nintegration = 'int/line'\ntrunk = 'stable'\n"
 )
 _TEST = 'def test_a():\n    assert True\n\n\ndef test_b():\n    assert 1\n'
 
@@ -271,9 +271,7 @@ def test_creating_the_integration_branch_judges_only_commits_after_the_declared_
 
 def test_a_push_is_judged_by_its_pushed_tip_never_the_working_tree(repo: Path) -> None:
     """PLANTED: a working tree holding garbage and a retired key changes no verdict either way."""
-    (repo / 'pyproject.toml').write_text(
-        'this is [not toml\n[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8'
-    )
+    (repo / 'pyproject.toml').write_text('this is [not toml\n[tool.dev_lab.integrator]\nhost = "G"\n', encoding='utf-8')
     _git(repo, 'branch', '-f', 'feat/s', _git(repo, 'commit-tree', 'stable^{tree}', '-p', 'feat/s', '-m', 'feat: s'))
     done = _push(repo, 'feat/s')
     assert done.returncode == 0, done.stderr
@@ -493,7 +491,7 @@ def test_the_declared_branches_land(repo: Path) -> None:
 @pytest.mark.parametrize('branch', [LANE, branch_for('lab-commons', 'a' * 40), 'integrate/main', 'main'])
 def test_every_machine_pusher_targets_a_branch_the_family_default_admits(branch: str) -> None:
     """The forge's own pushers (component bump, relock; autosync pushes only pr/ heads) and the declared pair."""
-    declared = branchset_from("[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n", 'p')
+    declared = branchset_from("[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n", 'p')
     assert declared.admits(branch)
 
 

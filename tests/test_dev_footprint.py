@@ -13,7 +13,7 @@ from _forge_fake import git_out, run_git
 
 from dev_lab.dev import footprint, forgecarry
 
-PYPROJECT = '[tool.lab_commons.parts]\noutput = "output/logs"\n'
+PYPROJECT = '[tool.dev_lab.parts]\noutput = "output/logs"\n'
 BASE = {
     'pyproject.toml': PYPROJECT,
     'src/pkg/__init__.py': '',
@@ -73,7 +73,7 @@ def test_a_change_outside_every_footprint_carries_and_inside_one_does_not(tmp_pa
 def test_a_test_reading_by_path_depends_on_everything_unless_its_reads_are_declared(tmp_path: Path) -> None:
     a = _repo(tmp_path)
     assert footprint.Footprints.at(tmp_path, a).of('tests/test_reads.py').reaches('docs/guide.md')
-    declared = PYPROJECT + '[tool.lab_commons.carry.reads]\n"tests/test_reads.py" = ["tests/**"]\n'
+    declared = PYPROJECT + '[tool.dev_lab.carry.reads]\n"tests/test_reads.py" = ["tests/**"]\n'
     b = _commit(tmp_path, {'pyproject.toml': declared})
     c = _commit(tmp_path, {'docs/guide.md': 'h\n'})
     assert _carried(tmp_path, b, c) == {'tests/test_core.py', 'tests/test_other.py', 'tests/test_reads.py'}
@@ -95,7 +95,7 @@ def test_a_repo_path_literal_or_a_dynamic_import_is_a_read_by_path(tmp_path: Pat
 
 
 def test_everywhere_globs_and_the_lock_reach_every_test(tmp_path: Path) -> None:
-    a = _repo(tmp_path, **{'pyproject.toml': PYPROJECT + '[tool.lab_commons.carry]\neverywhere = ["rust/**"]\n'})
+    a = _repo(tmp_path, **{'pyproject.toml': PYPROJECT + '[tool.dev_lab.carry]\neverywhere = ["rust/**"]\n'})
     b = _commit(tmp_path, {'rust/lib.rs': 'fn f() {}\n'})
     assert _carried(tmp_path, a, b) == set()
     c = _commit(tmp_path, {'uv.lock': 'x\n'})
@@ -109,7 +109,7 @@ def test_no_ancestry_or_an_unreadable_declaration_carries_nothing(tmp_path: Path
     run_git(tmp_path, 'checkout', '-q', '-')
     main = _commit(tmp_path, {'docs/guide.md': 'm\n'})
     assert not forgecarry.carried(tmp_path, side, main, NODES)
-    bad = _commit(tmp_path, {'pyproject.toml': PYPROJECT + '[tool.lab_commons.carry]\neverywhere = "rust"\n'})
+    bad = _commit(tmp_path, {'pyproject.toml': PYPROJECT + '[tool.dev_lab.carry]\neverywhere = "rust"\n'})
     later = _commit(tmp_path, {'docs/guide.md': 'n\n'})
     assert not forgecarry.carried(tmp_path, bad, later, NODES)
 

@@ -400,7 +400,7 @@ def test_a_lapsed_lease_by_the_forges_clock_lets_another_claim_whatever_the_host
 def test_a_cluster_seat_claims_a_cluster_part_and_no_argv(server, tmp_path: Path) -> None:
     repo, tips = _origin(tmp_path)
     sha = _declare(
-        repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
+        repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
     )
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -643,7 +643,7 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
     (``jmag``) keeps every ref.
     """
     repo, tips = _origin(tmp_path)
-    refs = '[tool.lab_commons.parts.refs.windows]\nfull = ["integrate/main", "main"]\n'
+    refs = '[tool.dev_lab.parts.refs.windows]\nfull = ["integrate/main", "main"]\n'
     (repo / 'pyproject.toml').write_text(PRODUCE + refs + _RULE, 'utf-8')
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'])]))
     body = f'producer = "femm_goldens"\nsha = "{tips["integrate/main"]}"\n'
@@ -664,7 +664,7 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
         ('issue/9', ''),
     }
     assert sorted(note for note in notes if 'tests/windows' in note) == sorted(
-        f'[serve] {ref} is not served tests/windows at full: [tool.lab_commons.parts.refs.windows] full '
+        f'[serve] {ref} is not served tests/windows at full: [tool.dev_lab.parts.refs.windows] full '
         f"admits ['integrate/main', 'main']"
         for ref in ('topic/a', 'wip/b', 'other')
     )
@@ -819,7 +819,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     sha = _declare(
         repo,
         tips,
-        f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{outputs}[tool.lab_commons.parts]\noutput = "output/logs"\n',
+        f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{outputs}[tool.dev_lab.parts]\noutput = "output/logs"\n',
     )
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -837,7 +837,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
 NEEDS = (
     '[tool.lab_commons.tests]\nresources = ["workstation", "jmag", "linux"]\n'
     'produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
-    '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
+    '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
 )
 
 
@@ -1064,7 +1064,7 @@ def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claime
     assert report.queue == (), 'refused on its own commit, never left waiting'
 
 
-CLUSTER_ONLY = '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
+CLUSTER_ONLY = '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
 
 
 @pytest.mark.parametrize(

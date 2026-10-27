@@ -209,6 +209,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
     'hook_adoption': ('supersedes', 'scripts/repo/write_deny_rules.py'),
     'hook_install': ('supersedes', 'scripts/repo/_hooks.py'),
+    # ORIGINAL: the principles lived only as ai-lab reviewer data and one private CLAUDE.md; no repo rendered them.
+    'principles': ('original',),
+    'principlespage': ('original',),
     # `scripts/hooks/with-retry.sh` is a REMEDY that resolves in one checkout on earth, which is why
     # `hooks` holds the statements and `hook_adoption` holds the pointer. Neither replaced it.
     'hooks': ('original',),

@@ -1,6 +1,6 @@
 r"""lab-commons' own DELTAS against the family config bases -- data, computed by nothing.
 
-GIT HOOKS ARE NOT A DELTA HERE: they are TOML (`[tool.lab_commons.hooks]` in pyproject.toml over
+GIT HOOKS ARE NOT A DELTA HERE: they are TOML (`[tool.dev_lab.hooks]` in pyproject.toml over
 `dev_lab/dev/githooks/base.toml`) and nothing is rendered for them.
 
 `.gitignore` IS ADOPTED AS OF 2026-10-03, on the user's ruling that every project-level file has ONE

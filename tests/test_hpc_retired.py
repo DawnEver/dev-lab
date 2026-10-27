@@ -103,8 +103,8 @@ def test_the_retired_pr_review_capability_is_refused_by_name() -> None:
 def test_the_github_pr_mirror_key_is_refused_by_name() -> None:
     """GitHub is ONLY a push mirror (user ruling 2026-10-19). PLANTED CONTROL: the table without the key loads."""
     with pytest.raises(ValueError, match=r'mirror is retired: .*push mirror'):
-        policy_from('[tool.lab_commons.integrator]\nmirror = "https://github.com/o/r"\n', 'p')
-    assert policy_from('[tool.lab_commons.integrator]\ntrunk = "main"\n', 'p').trunk == 'main'
+        policy_from('[tool.dev_lab.integrator]\nmirror = "https://github.com/o/r"\n', 'p')
+    assert policy_from('[tool.dev_lab.integrator]\ntrunk = "main"\n', 'p').trunk == 'main'
 
 
 @pytest.mark.parametrize('argv', [['serve', '--mode', 'integrate'], ['tick', '--mode', 'develop', '--json']])

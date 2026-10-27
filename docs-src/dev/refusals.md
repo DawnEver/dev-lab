@@ -140,4 +140,4 @@ HINT: the hazard is minutes, not harm.
 
 ## Cross-repo refusals
 
-When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `dev_lab.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.lab_commons.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none, the header says so, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.
+When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `dev_lab.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.dev_lab.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none, the header says so, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.

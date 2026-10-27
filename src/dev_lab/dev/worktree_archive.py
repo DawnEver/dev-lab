@@ -13,7 +13,7 @@ THE INCIDENTS IT ENCODES (a consumer, 2026-10-04, 10-12, 10-18, 10-21):
 * a removal raced another session's live tree. So a tree with any OCCUPANT (:func:`dev_lab.dev.liverun.
   occupants`: a process working in it, executing from it, or reading it) is refused before anything is written.
 
-WHAT MOVES, as data: ``[tool.lab_commons.worktrees] archive-outputs`` of the main checkout's ``pyproject.toml``
+WHAT MOVES, as data: ``[tool.dev_lab.worktrees] archive-outputs`` of the main checkout's ``pyproject.toml``
 (default :data:`OUTPUTS`), each a directory relative to a checkout whose files land at the SAME relative path in
 the main checkout -- a dated ``output/logs/<yy>/<mm>/<dd>/`` stays dated. An identical file already there is
 skipped (both copies stay; the main one is never touched); a differing one lands beside it as
@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.census import processes
 
 from dev_lab.dev.checkout import git_bytes, git_out, worktrees
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.liverun import describe, occupants
 
 if TYPE_CHECKING:
@@ -107,10 +108,10 @@ def _declared(main: Path) -> tuple[tuple[str, ...], str]:
     table: dict[str, object] = {}
     if manifest.is_file():
         with manifest.open('rb') as handle:
-            table = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('worktrees', {})
+            table = declared_table(tomllib.load(handle), 'worktrees', {})
     outputs, target = table.get('archive-outputs', list(OUTPUTS)), table.get('archive-to', ARCHIVE_TO)
     if not isinstance(outputs, list) or not all(isinstance(one, str) for one in outputs) or not isinstance(target, str):
-        msg = f'[tool.lab_commons.worktrees] archive-outputs (list of str) / archive-to (str) in {manifest}'
+        msg = f'[tool.dev_lab.worktrees] archive-outputs (list of str) / archive-to (str) in {manifest}'
         raise ValueError(msg)
     return tuple(outputs), target
 

@@ -44,7 +44,7 @@ ME = Claim('G', 'alice', LATER)
 ARGV = ('-m', 'solver', 'golden', 'regenerate', '--reference', 'femm')
 GOLDENS = (
     PRODUCE
-    + '[tool.lab_commons.requests.femm_goldens]\n'
+    + '[tool.dev_lab.requests.femm_goldens]\n'
     + 'argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]\n'
     + 'needs = ["femm", "windows"]\n'
     + 'cpu = 2\n'
@@ -145,7 +145,7 @@ def test_an_undeclared_producer_name_is_refused_not_run(server, tmp_path: Path) 
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
     assert (posted['body']['state'], posted['body']['context']) == ('error', request_context(9))
     assert posted['body']['description'].startswith(REFUSED_AT_COMMIT)
-    assert '[tool.lab_commons.requests.rm_rf]' in posted['body']['description']
+    assert '[tool.dev_lab.requests.rm_rf]' in posted['body']['description']
 
 
 def test_a_request_is_admitted_at_the_size_its_row_declares_never_the_whole_host(server, tmp_path: Path) -> None:
@@ -184,7 +184,7 @@ def test_a_declaration_is_read_at_the_sha_and_refuses_a_malformed_row(tmp_path: 
     sha = _declare(repo, tips, GOLDENS)
     found = declared_request(repo, sha, 'femm_goldens')
     assert (found.argv, found.needs, found.part) == (ARGV, frozenset({'femm', 'windows'}), 'femm+windows')
-    bad = _declare(repo, tips, '[tool.lab_commons.requests.x]\nargv = "rm -rf /"\n')
+    bad = _declare(repo, tips, '[tool.dev_lab.requests.x]\nargv = "rm -rf /"\n')
     with pytest.raises(UndeclaredRequest, match=r'argv'):
         declared_request(repo, bad, 'x')
     with pytest.raises(UndeclaredRequest, match=r'declares no'):

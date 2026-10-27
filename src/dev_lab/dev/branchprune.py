@@ -12,13 +12,13 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``grac
 * MERGED (:data:`MERGED`): its tip is an ancestor of origin's integration branch or trunk, and no open pull
   request has it as head. Deleted (:data:`DELETE`) when the repo declares ``prune_merged = true``, else
   listed as :data:`DELETABLE` -- what ``forge integration`` and ``forge queue`` print.
-* EPHEMERAL (:data:`EPHEMERAL`): it lies in a declared ephemeral namespace (``[tool.lab_commons.branchset]
+* EPHEMERAL (:data:`EPHEMERAL`): it lies in a declared ephemeral namespace (``[tool.dev_lab.branchset]
   ephemeral``, e.g. ``pr/*``) and no open pull request has it as head: its PR merged or closed. Always
   DELETED -- declaring the namespace IS the opt-in, and a PR head outlives its PR by nothing but the grace.
 * UNMERGED (:data:`UNMERGED`): anything else. ALARMED with its age (:data:`STALE`), NEVER deleted: its
   commits exist nowhere else.
 
-THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.lab_commons.branchset]``.
+THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.dev_lab.branchset]``.
 AN AGENT'S DELETION IS LOSSLESS-DELETE (user ruling 2026-10-21): never a raw push (``PUSH-REMOTE-DELETE``), only
 :data:`DOOR`, which after a fresh fetch deletes a branch only when every commit on it is on integration or on
 another live origin branch or open PR head (:func:`judge` names that container), and otherwise refuses naming the

@@ -1,6 +1,6 @@
 """A SESSION BRANCH IS PROTECTED AT PUSH: three local invariants, judged on git's own pre-push lines.
 
-User ruling 2026-10-13: every session has ONE branch it leads (``[tool.lab_commons.branchset] sessions``,
+User ruling 2026-10-13: every session has ONE branch it leads (``[tool.dev_lab.branchset] sessions``,
 the integration branch among them), and that branch is protected for what it IS, never for where it is
 checked out or which box pushes it -- both move.
 
@@ -23,8 +23,8 @@ The invariants refused here by name, with NO network call beyond the push itself
 * ``INTEGRATION-IS-MERGES-ONLY`` (P4) -- every new first-parent commit of the integration branch is a
   two-parent merge naming its branch in a ``Merged-Branch:`` trailer, and the merge audit
   (:func:`dev_lab.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
-  Judged from ``[tool.lab_commons.integrator] merges_only_since`` forward: no retroactive check.
-* ``INTEGRATION-TAKES-ONLY-FORGE-MERGES`` (P5) -- once ``[tool.lab_commons.integrator] pr_merges_since`` is
+  Judged from ``[tool.dev_lab.integrator] merges_only_since`` forward: no retroactive check.
+* ``INTEGRATION-TAKES-ONLY-FORGE-MERGES`` (P5) -- once ``[tool.dev_lab.integrator] pr_merges_since`` is
   declared, the integration branch moves ONLY by the forge's server-side merge of a green pull request
   (:mod:`dev_lab.dev.forgemerge`). Such a merge is on origin before any client holds it, so a client push
   that adds ANY first-parent commit past origin's tip (and past the declared start) is not one, and is refused.
@@ -115,7 +115,7 @@ def _merges_only(root: Path, policy: Policy, old: str, new: str) -> list[str]:
         return [
             (
                 f'{P4}: this push CREATES {policy.integration}, so its whole history would be judged; declare '
-                f'[tool.lab_commons.integrator] merges_only_since = "<sha>" to start the rule there'
+                f'[tool.dev_lab.integrator] merges_only_since = "<sha>" to start the rule there'
             )
         ]
     excluded = [f'^{sha}' for sha in (old, since) if sha and not _zero(sha)]
@@ -226,7 +226,7 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
 def _deletion_rev(root: Path) -> str:
     """The rev a deletion is judged by: ``origin/<integration>``, else ``origin/<trunk>``, else ``HEAD``.
 
-    The names come from ``HEAD``'s ``[tool.lab_commons.integrator]``, defaults when it cannot be read: a stale
+    The names come from ``HEAD``'s ``[tool.dev_lab.integrator]``, defaults when it cannot be read: a stale
     checkout must not decide what deleting a ref means, and a deletion carries nothing of its own to read.
     """
     try:

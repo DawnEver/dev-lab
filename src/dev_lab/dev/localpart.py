@@ -12,7 +12,7 @@ test that ran on a host without FEMM proved nothing about FEMM, so its part is n
 Measured 2026-10-11: a windows full verify of lab-commons covered nothing under the old per-OS
 assignment; under need-sets every unmarked test is ``base`` and a bare verify posts it.
 
-The record is written where ``[tool.lab_commons.parts] output`` declares
+The record is written where ``[tool.dev_lab.parts] output`` declares
 (:func:`dev_lab.dev.platformparts.record_directory`). A CITED verdict posts from the cited run's own
 outcomes, kept beside its log: the cache already holds the evidence, so nothing re-runs.
 """

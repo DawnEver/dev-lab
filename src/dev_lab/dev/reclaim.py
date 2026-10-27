@@ -36,6 +36,7 @@ from dev_lab.dev.checkout import (
     worktrees,
 )
 from dev_lab.dev.diskusage import remove_tree
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.liverun import occupants
 from dev_lab.dev.worktree_archive import home_outputs
 
@@ -59,7 +60,7 @@ QUIET_S: Final = 3600.0
 
 
 def declared_generated(main: Path) -> tuple[str, ...]:
-    """The globs ``[tool.lab_commons.worktrees] generated`` of *main* declares: TRACKED files a tool regenerates.
+    """The globs ``[tool.dev_lab.worktrees] generated`` of *main* declares: TRACKED files a tool regenerates.
 
     A change to one is not work (a re-rendered lock or settings file), so it never keeps a tree. Default none.
     """
@@ -67,10 +68,10 @@ def declared_generated(main: Path) -> tuple[str, ...]:
     if not manifest.is_file():
         return ()
     with manifest.open('rb') as handle:
-        table = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('worktrees', {})
+        table = declared_table(tomllib.load(handle), 'worktrees', {})
     globs = table.get('generated', [])
     if not isinstance(globs, list) or not all(isinstance(one, str) and one for one in globs):
-        msg = f'[tool.lab_commons.worktrees] generated in {manifest} must be a list of path globs'
+        msg = f'[tool.dev_lab.worktrees] generated in {manifest} must be a list of path globs'
         raise ValueError(msg)
     return tuple(globs)
 

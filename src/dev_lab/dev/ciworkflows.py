@@ -1,7 +1,7 @@
 """GitHub Actions workflows, declared in TOML and RENDERED -- YAML only because GitHub forces it.
 
 ONE SOURCE PER LAYER: the family base is ``ci_base.toml`` beside this module; a repo's layer is
-``[tool.lab_commons.ci."<file>.yml"]`` in its ``pyproject.toml``. A repo opts in to a base workflow by
+``[tool.dev_lab.ci."<file>.yml"]`` in its ``pyproject.toml``. A repo opts in to a base workflow by
 declaring its table (empty takes the base as is) and may declare workflows of its own. The layers are
 deep-merged (tables key by key; anything else replaces) and each workflow is written to
 ``.github/workflows/<file>.yml`` as JSON -- JSON is YAML, so the stdlib renders it and no YAML library
@@ -21,6 +21,8 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev.family import declared_table
+
 __all__ = ['BASE_PATH', 'RENDER_COMMAND', 'STAMP', 'WORKFLOW_DIR', 'drift', 'merge', 'render', 'workflows', 'write']
 
 BASE_PATH: Final = Path(__file__).resolve().parent / 'ci_base.toml'
@@ -30,7 +32,7 @@ RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 #: The first line of every rendered workflow -- a YAML comment, so the JSON body below stays valid YAML.
 STAMP: Final = (
     f'# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + '
-    f'[tool.lab_commons.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `{RENDER_COMMAND}`.'
+    f'[tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `{RENDER_COMMAND}`.'
 )
 
 
@@ -47,7 +49,7 @@ def workflows(root: Path) -> dict[str, dict[str, Any]]:
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     pyproject = root / 'pyproject.toml'
     data = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
-    declared = data.get('tool', {}).get('lab_commons', {}).get('ci', {})
+    declared = declared_table(data, 'ci', {})
     return {name: merge(base.get(name, {}), layer) for name, layer in sorted(declared.items())}
 
 
@@ -69,7 +71,7 @@ def drift(root: Path) -> list[str]:
             out.append(f'{path}: differs from its TOML (hand-edited, or the TOML moved without a render)')
     if directory.is_dir():
         out += [
-            f'{path}: a workflow no [tool.lab_commons.ci] table declares -- hand-written; declare it in TOML'
+            f'{path}: a workflow no [tool.dev_lab.ci] table declares -- hand-written; declare it in TOML'
             for path in sorted(directory.iterdir())
             if path.suffix in {'.yml', '.yaml'} and path.name not in declared
         ]

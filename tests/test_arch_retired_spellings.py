@@ -18,6 +18,13 @@ from typing import Final
 
 from _arch_corpus import assert_floor, docs_pages, rel, rules_pages, source_modules, suite_modules
 
+#: dev-lab's own tables, moved from ``[tool.lab_commons]`` to ``[tool.dev_lab]`` (plan A3); ``schedule``,
+#: ``tools``, ``hpc``, ``tests`` and ``artefacts`` stay, because lab-commons code reads them.
+MOVED_TABLES: Final = (
+    'areas', 'automode', 'branchset', 'carry', 'ci', 'components', 'dep', 'doors', 'ephemeral_refs', 'forge',
+    'hooks', 'integrator', 'parts', 'placement', 'requests', 'review', 'stoprun', 'verify', 'worktrees',
+)  # fmt: skip
+
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
@@ -25,6 +32,13 @@ RETIRED_SPELLINGS: Final = {
         'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY',
         'user ruling 2026-10-26 (review redesign): an open HIGH or security finding blocks the merge',
     ),
+    **{
+        f'tool.lab_commons.{table}': (
+            f'tool.dev_lab.{table}',
+            'plan A3 2026-10-27: a table only dev-lab reads lives under [tool.dev_lab]; no fallback reads the old one',
+        )
+        for table in MOVED_TABLES
+    },
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

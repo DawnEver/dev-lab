@@ -74,7 +74,7 @@ def test_the_real_table_and_kill_stop_a_planted_run_and_spare_a_bystander() -> N
 
 
 def _declare(root: Path, value: str) -> Path:
-    (root / 'pyproject.toml').write_text(f'[tool.lab_commons.stoprun]\nsignatures = {value}\n', encoding='utf-8')
+    (root / 'pyproject.toml').write_text(f'[tool.dev_lab.stoprun]\nsignatures = {value}\n', encoding='utf-8')
     return root
 
 
@@ -292,11 +292,11 @@ def test_an_orphan_is_refused_naming_why_when_any_one_condition_fails() -> None:
 
 def test_declared_orphans_are_read_from_the_same_table_as_the_signatures(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.stoprun]\nsignatures = ["jcwrap"]\norphans = ["designer"]\n', encoding='utf-8'
+        '[tool.dev_lab.stoprun]\nsignatures = ["jcwrap"]\norphans = ["designer"]\n', encoding='utf-8'
     )
     assert declared_signatures(tmp_path) == ('jcwrap',)
     assert declared_orphans(tmp_path) == ('designer',)
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.stoprun]\norphans = "designer"\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.stoprun]\norphans = "designer"\n', encoding='utf-8')
     with pytest.raises(SignaturesNotDeclared):
         declared_orphans(tmp_path)
 

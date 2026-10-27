@@ -132,9 +132,7 @@ def test_uncommitted_work_is_saved_as_a_patch_and_the_untracked_files(work: Path
 
 
 def test_the_outputs_are_declared_data(work: Path) -> None:
-    (work / 'pyproject.toml').write_text(
-        "[tool.lab_commons.worktrees]\narchive-outputs = ['results']\n", encoding='utf-8'
-    )
+    (work / 'pyproject.toml').write_text("[tool.dev_lab.worktrees]\narchive-outputs = ['results']\n", encoding='utf-8')
     _plant(_lane(work) / 'results' / 'r.csv', '1')
     _plant(_lane(work) / _LOG / 'a.txt', 'not declared any more')
     done = archive(work, 'lane', census=_idle, today=_DAY)

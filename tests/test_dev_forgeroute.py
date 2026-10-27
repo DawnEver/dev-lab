@@ -30,7 +30,7 @@ from dev_lab.dev.forgeroute import (
 _FORGE = Forge('forge.example.org', 'o', 'r')
 _ROOT = '/api/v1/repos/o/r'
 _AREAS = """
-[tool.lab_commons.areas]
+[tool.dev_lab.areas]
 default = "triage"
 jmag = ["src/pkg/hamilton/adapters/jmag/**", "tests/**/jmag/**"]
 coupling = ["tests/unit/hamilton/coupling/*.py"]
@@ -74,9 +74,9 @@ def test_globs_claim_by_file_in_declaration_order_and_the_rest_is_the_default() 
     assert read_areas('')[1] == DEFAULT_AREA
 
 
-@pytest.mark.parametrize('bad', ['[tool.lab_commons.areas]\nx = "a/**"', '[tool.lab_commons.areas]\ndefault = ""'])
+@pytest.mark.parametrize('bad', ['[tool.dev_lab.areas]\nx = "a/**"', '[tool.dev_lab.areas]\ndefault = ""'])
 def test_a_malformed_area_is_refused(bad: str) -> None:
-    with pytest.raises(ValueError, match=r'tool\.lab_commons\.areas'):
+    with pytest.raises(ValueError, match=r'tool.dev_lab.areas'):
         read_areas(bad)
 
 
@@ -267,7 +267,7 @@ def test_the_open_issue_is_found_on_page_two_among_pulls_without_the_search_inde
 
 
 _OWNERS = """
-[tool.lab_commons.forge.owners]
+[tool.dev_lab.forge.owners]
 jmag = ["alice", "bob.k"]
 "lane/*" = ["carol"]
 """
@@ -284,7 +284,7 @@ def test_owners_match_an_area_or_a_branch_glob_and_an_absent_table_names_nobody(
 @pytest.mark.parametrize('bad', ['["@alice"]', '["a b"]', '"alice"', '["-x"]'])
 def test_a_malformed_owner_is_refused_with_the_fix(bad: str) -> None:
     with pytest.raises(ValueError, match=r'gitea username'):
-        read_owners(f'[tool.lab_commons.forge.owners]\njmag = {bad}\n')
+        read_owners(f'[tool.dev_lab.forge.owners]\njmag = {bad}\n')
 
 
 def test_a_created_area_issue_mentions_its_owners(server) -> None:

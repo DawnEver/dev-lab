@@ -1,4 +1,4 @@
-"""A PRODUCT MOUNTS EACH ENGINE ONCE -- ``[tool.lab_commons.components]``, one table per engine.
+"""A PRODUCT MOUNTS EACH ENGINE ONCE -- ``[tool.dev_lab.components]``, one table per engine.
 
 LIBRARIES FLOAT, PRODUCTS COMPOSE. An engine (``<x>-lab``) depends on its peers by floating git
 dependencies, so a library's sha does not fix its peers' source. A PRODUCT's sha must: one verdict per
@@ -9,7 +9,7 @@ everything, the product included.
 
 THE ROW, declared once in the product's ``pyproject.toml``::
 
-    [tool.lab_commons.components.numerics-lab]
+    [tool.dev_lab.components.numerics-lab]
     url = "https://<forge>/<owner>/numerics-lab.git"   # the engine's repository
     branch = "main"                                     # the branch a bump follows
     parts = ["base", "linux"]                           # the product's forge parts that verify a bump
@@ -42,8 +42,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 import lab_commons.launch as _door
-from lab_commons.hpc.declared import kit_tables
 from lab_commons.log import emit
+
+from dev_lab.dev.family import declared_in
 
 __all__ = [
     'MOUNT',
@@ -70,7 +71,7 @@ _OPTIONAL: Final = frozenset({'package', 'crates'})
 
 
 class ComponentRefused(ValueError):
-    """A ``[tool.lab_commons.components]`` row the schema does not admit; the message names the row and key."""
+    """A ``[tool.dev_lab.components]`` row the schema does not admit; the message names the row and key."""
 
 
 @dataclass(frozen=True)
@@ -97,9 +98,9 @@ def components_of(pyproject: str) -> tuple[Component, ...]:
         ComponentRefused: a row is malformed; the message names the row and the key.
 
     """
-    table = kit_tables(pyproject).get('components', {})
+    table = declared_in(pyproject, 'components')
     if not isinstance(table, dict):
-        msg = '[tool.lab_commons.components] is one table per engine: [tool.lab_commons.components.<name>]'
+        msg = '[tool.dev_lab.components] is one table per engine: [tool.dev_lab.components.<name>]'
         raise ComponentRefused(msg)
     return tuple(_row(name, raw) for name, raw in table.items())
 

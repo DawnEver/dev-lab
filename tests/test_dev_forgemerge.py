@@ -24,7 +24,7 @@ from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 
 POLICY = Policy(pr_merges_since='0' * 40)
-_MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 
 
 def _green() -> list[dict[str, object]]:

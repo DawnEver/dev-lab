@@ -43,6 +43,7 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.allowguard` -- an agent-hook allow entry may not name a shape the
   deny registry refuses.
 * :mod:`dev_lab.dev.famtests.hookinstall` -- the hooks a repo DECLARES are the hooks git has.
+* :mod:`dev_lab.dev.famtests.principlespage` -- the committed principles page IS the render.
 * :mod:`dev_lab.dev.famtests.visibility` -- what exists only on this box exists for nobody.
 * :mod:`dev_lab.dev.famtests.agentguard` -- the guard is live, and the rule that fires is the
   rule that was meant to.
@@ -142,7 +143,7 @@ WHAT IS HERE, one module per shared body:
   found by two audit lanes that did not know of each other, converging on the same two files.
 
 * :mod:`dev_lab.dev.famtests.reviewcommand` -- the PR review command is the family's; a repo's
-  ``[tool.lab_commons.review]`` declares only where it differs, never the same command or a retired capability.
+  ``[tool.dev_lab.review]`` declares only where it differs, never the same command or a retired capability.
 * :mod:`dev_lab.dev.famtests.sharedsettings` -- a setting :mod:`lab_commons.config` owns in its
   ``[user]`` table is declared nowhere else: no consumer schema field, table key or own default.
 * :mod:`dev_lab.dev.famtests.venvspelling` -- ONE place may spell a venv interpreter, and the

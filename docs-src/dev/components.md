@@ -10,7 +10,7 @@ means one thing. lab-commons is never a component; it stays a floating git depen
 Declared once in the product's `pyproject.toml`, one table per engine (`<x>-lab`):
 
 ```toml
-[tool.lab_commons.components.numerics-lab]
+[tool.dev_lab.components.numerics-lab]
 url = "https://<forge>/<owner>/numerics-lab.git"   # the engine's repository
 branch = "main"                                     # the branch a bump follows
 parts = ["base", "linux"]                           # the product's forge parts that verify a bump

@@ -1,7 +1,7 @@
 """AUTO-SYNC: the forge merges integration INTO a behind ``pr/*`` head, so no PR waits for a hand ``forge sync``.
 
 User ruling 2026-10-21: integration is an automatic mechanism; an integrator cannot hand-merge every PR whose base
-moved. On wherever the forge merges PRs (``[tool.lab_commons.integrator] pr_merges_since``; no switch of its own),
+moved. On wherever the forge merges PRs (``[tool.dev_lab.integrator] pr_merges_since``; no switch of its own),
 the integration step of ``forge serve`` (:func:`dev_lab.dev.forgeintegration.tick`, given its host) asks
 :func:`plan` of each open PR into integration that the forge did not merge this tick, and :func:`sync` carries
 out a ``sync`` plan:
@@ -24,7 +24,7 @@ It REFUSES, naming why once in the head's :data:`CONTEXT` status and the PR's in
   once that one merges (its commits then are integration's);
 * :data:`QUIET` -- a head committed inside the declared ``auto_sync_quiet`` (default ``"10 min"``): a live
   author is not raced;
-* :data:`NOT_EPHEMERAL` -- a head outside ``[tool.lab_commons.branchset] ephemeral`` is the author's branch;
+* :data:`NOT_EPHEMERAL` -- a head outside ``[tool.dev_lab.branchset] ephemeral`` is the author's branch;
 * :data:`AUDIT`, :data:`RELOCK`, :data:`LOCAL_BRANCH`, :data:`PUSH` -- the merge, relock or push could not finish.
 
 ONCE PER INTEGRATION TIP. Every outcome is a status on the head naming the tip it was judged against, and a head
@@ -75,7 +75,7 @@ CONTEXT: Final = 'integration/sync'
 CONFLICTED: Final = 'conflicts with {integration} in {paths}: the machine resolves no conflict -- merge it by hand'
 STACKED: Final = 'waits behind #{number} ({branch}), whose commits it holds: synced once that one merges'
 QUIET: Final = 'its head was committed inside auto_sync_quiet {quiet}: a live author is not raced'
-NOT_EPHEMERAL: Final = '{branch} is not an ephemeral head ([tool.lab_commons.branchset] ephemeral): never synced'
+NOT_EPHEMERAL: Final = '{branch} is not an ephemeral head ([tool.dev_lab.branchset] ephemeral): never synced'
 AUDIT: Final = 'the merge audit refuses the machine merge: {problems}'
 RELOCK: Final = 'the lock could not be relocked: {why}'
 LOCAL_BRANCH: Final = 'a local branch {branch} exists on this host: its owner pushes it'

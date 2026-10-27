@@ -36,7 +36,7 @@ def _repo(tmp_path: Path, doc: str, pyproject: str = '') -> Path:
     return tmp_path
 
 
-_ESCAPE = '[tool.lab_commons.ephemeral_refs]\nceiling = {n}\nescapes = [{rows}]\n'
+_ESCAPE = '[tool.dev_lab.ephemeral_refs]\nceiling = {n}\nescapes = [{rows}]\n'
 _ROW = '{{ file = "doc.md", token = "{path}", reason = "{why}" }}'
 
 

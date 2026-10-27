@@ -1,4 +1,4 @@
-"""REVIEW-COMMAND-IS-THE-FAMILY'S: a repo's ``[tool.lab_commons.review]`` declares only where it differs.
+"""REVIEW-COMMAND-IS-THE-FAMILY'S: a repo's ``[tool.dev_lab.review]`` declares only where it differs.
 
 The command is :data:`dev_lab.dev.forgereview.FAMILY_COMMAND`, owned here in dev-lab; a repo overrides the model,
 bounds or globs. A redeclared family command, or a retired capability (``{capabilities.sharp_review.*}``), is

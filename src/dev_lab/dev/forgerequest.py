@@ -17,7 +17,7 @@ The repo is the issue's, the requester its author. The body NEVER carries a comm
 NAME the repository declares at that sha, ONCE, beside its tests' producer, so a request cannot run
 anything its repository did not commit (an undeclared name is refused, never run)::
 
-    [tool.lab_commons.requests.femm_goldens]
+    [tool.dev_lab.requests.femm_goldens]
     argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]   # after the tree's python
     needs = ["femm", "windows"]   # its NEED-SET: resource names, an OS among them, like a part's
     cpu = 2                       # its SIZE: what the box admits it at until a run of it is measured
@@ -73,6 +73,7 @@ from dev_lab.dev._forgesource import (
     unserved,
 )
 from dev_lab.dev._testfacts_readers import mark_names
+from dev_lab.dev.family import declared_in
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgelabels import add_label
 from dev_lab.dev.forgework import ForgeCallFailed
@@ -309,7 +310,7 @@ _BUILT_IN: Final = {TESTS: _tests_request, UNIT: _unit_request}
 
 
 def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ()) -> Declared:
-    """The producer *name* as commit *sha* declares it under ``[tool.lab_commons.requests.<name>]``.
+    """The producer *name* as commit *sha* declares it under ``[tool.dev_lab.requests.<name>]``.
 
     :data:`TESTS` is the repository's test producer over *paths* (validated; the module docstring).
 
@@ -318,7 +319,7 @@ def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ())
         OutdatedKit: the sha declares a table this kit does not know.
 
     """
-    table = f'[tool.lab_commons.requests.{name}]'
+    table = f'[tool.dev_lab.requests.{name}]'
     if sha and name in _BUILT_IN:
         return _BUILT_IN[name](root, sha, paths)
     if paths:
@@ -328,7 +329,7 @@ def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ())
         msg = f'a request body names `producer = "<declared name>"` and `sha = "<40-hex>"`; got {name!r} at {sha!r}'
         raise UndeclaredRequest(msg)
     try:
-        row = kit_tables(pyproject_at(root, sha)).get('requests', {}).get(name)
+        row = declared_in(pyproject_at(root, sha), 'requests').get(name)
     except OutdatedKit:  # the READER is older than the sha: this host's defect, never the commit's
         raise
     except (ValueError, OSError) as why:  # an unknown sha, an unreadable or retired declaration

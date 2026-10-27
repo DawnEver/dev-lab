@@ -8,7 +8,7 @@ what to merge and what to delete, and `--apply` to delete the merged local ones.
 ## The declaration
 
 ```toml
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 trunk = 'main'                 # required
 sessions = ['integrate/main']  # one per session or lane owner; [] when there are none
 ephemeral = ['pr/*']           # default []: glob namespaces of short-lived PR heads, pushable with no row

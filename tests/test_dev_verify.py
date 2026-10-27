@@ -395,7 +395,7 @@ class TestTheVanishedSubjectArm:
 
 
 class TestTheDeclaration:
-    """Reading ``[tool.lab_commons.verify] allowed_skips`` out of a project's own pyproject."""
+    """Reading ``[tool.dev_lab.verify] allowed_skips`` out of a project's own pyproject."""
 
     def _write(self, root: Path, body: str) -> Path:
         (root / 'pyproject.toml').write_text(body, encoding='utf-8')
@@ -413,16 +413,16 @@ class TestTheDeclaration:
     def test_a_declared_list_is_read_sorted_and_deduplicated(self, tmp_path: Path) -> None:
         root = self._write(
             tmp_path,
-            '[tool.lab_commons.verify]\nallowed_skips = ["tests/b.py", "tests/a.py", "tests/b.py"]\n',
+            '[tool.dev_lab.verify]\nallowed_skips = ["tests/b.py", "tests/a.py", "tests/b.py"]\n',
         )
         assert declared_skips(root) == ('tests/a.py', 'tests/b.py')
 
     @pytest.mark.parametrize(
         'body',
         [
-            '[tool.lab_commons.verify]\nallowed_skips = "tests/a.py"\n',
-            '[tool.lab_commons.verify]\nallowed_skips = [1, 2]\n',
-            '[tool.lab_commons.verify]\nallowed_skips = ["tests/a.py", ""]\n',
+            '[tool.dev_lab.verify]\nallowed_skips = "tests/a.py"\n',
+            '[tool.dev_lab.verify]\nallowed_skips = [1, 2]\n',
+            '[tool.dev_lab.verify]\nallowed_skips = ["tests/a.py", ""]\n',
         ],
         ids=['a bare string', 'a list of integers', 'a list holding an empty entry'],
     )
@@ -625,7 +625,7 @@ class TestThePlantedControl:
             timeout=60,
         )
         (tmp_path / 'pyproject.toml').write_text(
-            '[tool.lab_commons.verify]\nallowed_skips = ["tests/test_other.py"]\n', encoding='utf-8'
+            '[tool.dev_lab.verify]\nallowed_skips = ["tests/test_other.py"]\n', encoding='utf-8'
         )
         # THE DECLARED SUBJECT IS PLANTED, because `stale_declarations` refuses one whose file is gone
         # before any step launches -- and this control is about the SCOPE of the runtime ratchet, not
@@ -674,7 +674,7 @@ class TestThePlantedControl:
             timeout=60,
         )
         (tmp_path / 'pyproject.toml').write_text(
-            '[tool.lab_commons.verify]\nallowed_skips = ["tests/test_gone.py::test_vanished"]\n', encoding='utf-8'
+            '[tool.dev_lab.verify]\nallowed_skips = ["tests/test_gone.py::test_vanished"]\n', encoding='utf-8'
         )
         launched: list[tuple[str, ...]] = []
 
@@ -914,7 +914,7 @@ def _patched_main(
 ) -> list:
     """Drive ``main`` with the run and the git readings replaced, recording what reaches the status queue."""
     posted: list = []
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out"\n', encoding='utf-8')
     monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
     monkeypatch.setattr(verify, 'box_directory', lambda: tmp_path / 'inflight')
     monkeypatch.setattr(verify, 'cache_path', lambda _root: tmp_path / 'runs.jsonl')
@@ -1033,7 +1033,7 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
 
 def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str, str]) -> list[Path]:
     """Route posting at a planted repo whose judged log has *judged* (id -> status) beside it; the records posted."""
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out"\n', encoding='utf-8')
     record = Record(tmp_path / 'judged.outcomes' / 'cells.jsonl')
     for node, status in judged.items():
         record.outcome(node, Cell(Status(status)))
@@ -1045,7 +1045,7 @@ def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str,
 
 def _posted_part(posted: list[Path]) -> tuple[Conclusion, int]:
     (path,) = posted
-    assert 'out' in path.parts, 'the record is written under [tool.lab_commons.parts] output'
+    assert 'out' in path.parts, 'the record is written under [tool.dev_lab.parts] output'
     part = part_of(read_record(path))
     return part.result, part.ran
 
@@ -1215,7 +1215,7 @@ _HOLD_SEAT: Final = (
 def test_a_producer_told_its_part_runs_exactly_its_need_set_and_posts_it_alone(monkeypatch, tmp_path: Path) -> None:
     """``verify --part femm`` is the declared producer's form: one -m selecting the need-set, one part posted."""
     _cached(monkeypatch, tmp_path)
-    declared = '[tool.lab_commons.parts]\noutput = "out"\n[tool.lab_commons.tests]\nresources = ["femm", "jmag"]\n'
+    declared = '[tool.dev_lab.parts]\noutput = "out"\n[tool.lab_commons.tests]\nresources = ["femm", "jmag"]\n'
     (tmp_path / 'pyproject.toml').write_text(declared, encoding='utf-8')
     for name, value in producing(part_context('femm'), 'a' * 40).items():
         monkeypatch.setenv(name, value)

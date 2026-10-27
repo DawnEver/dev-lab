@@ -155,7 +155,7 @@ install = "uv sync --extra dev"
 needs = ["cargo", "cc"]
 collect = "tests"
 
-[tool.lab_commons.parts]
+[tool.dev_lab.parts]
 output = "output/logs"
 
 [tool.lab_commons.tests]
@@ -223,7 +223,7 @@ def test_a_producer_never_told_its_part_is_refused(tmp_path: Path, produce: str,
     ('drop', 'named'),
     [
         ('install = "uv sync --extra dev"\n', r'\[tool\.lab_commons\.hpc\] install'),
-        ('output = "output/logs"\n', r'\[tool\.lab_commons\.parts\] output'),
+        ('output = "output/logs"\n', r'\[tool\.dev_lab\.parts\] output'),
     ],
 )
 def test_a_missing_cluster_declaration_is_refused_naming_its_key(tmp_path: Path, drop: str, named: str) -> None:

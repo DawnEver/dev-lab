@@ -20,7 +20,7 @@ A ``forge serve`` IS STOPPED SO ITS CLAIM IS RELEASED: its producers are noted a
 A repo adds its own signatures as DATA, in ONE place -- its ``pyproject.toml`` (the repo of the cwd,
 or ``--repo``)::
 
-    [tool.lab_commons.stoprun]
+    [tool.dev_lab.stoprun]
     signatures = ["jcwrap"]   # regexes searched in the pid's own command line, like the built-ins
 
 A declaration that is not a list of valid regex strings raises :class:`SignaturesNotDeclared`.
@@ -36,7 +36,7 @@ signature, RAW-PROCESS-KILL forbade ``taskkill``, and the memory they held kept 
 * its command line is a DECLARED vendor tool, a ``scratch/`` script or a multiprocessing spawn/forkserver
   worker (:data:`BUILTIN_ORPHANS`)::
 
-      [tool.lab_commons.stoprun]
+      [tool.dev_lab.stoprun]
       orphans = ["designer.exe.* --process-link", "JobSystem.exe -s "]
 
 A refusal names the condition that failed -- a live parent is named, so the run it belongs to is stopped instead.
@@ -71,6 +71,7 @@ from lab_commons.log import emit
 from lab_commons.proc import pid_alive
 
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.liverun import SPAWN_WORKER
 from dev_lab.dev.servelock import note_stopped
 
@@ -93,7 +94,7 @@ __all__ = [
     'subtree',
 ]
 
-_TABLE = '[tool.lab_commons.stoprun]'
+_TABLE = '[tool.dev_lab.stoprun]'
 
 #: A ``forge serve``: stopped producers first, then given a grace to release its claim.
 SERVE: Final = re.compile(r'-m\s+dev_lab.dev\.forge\s+serve\b')
@@ -135,7 +136,7 @@ def process_table() -> dict[int, Proc]:
 
 
 class SignaturesNotDeclared(ValueError):
-    """``[tool.lab_commons.stoprun] signatures`` is not a list of valid regex strings."""
+    """``[tool.dev_lab.stoprun] signatures`` is not a list of valid regex strings."""
 
 
 def declared_signatures(root: Path) -> tuple[str, ...]:
@@ -167,7 +168,7 @@ def _declared(root: Path, key: str) -> tuple[str, ...]:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         msg = f'{manifest} is not a readable TOML manifest: {exc}'
         raise SignaturesNotDeclared(msg) from exc
-    table = data.get('tool', {}).get('lab_commons', {}).get('stoprun')
+    table = declared_table(data, 'stoprun')
     if table is None:
         return ()
     value = table.get(key, []) if isinstance(table, dict) else table

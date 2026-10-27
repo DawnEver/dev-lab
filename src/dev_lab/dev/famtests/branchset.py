@@ -32,8 +32,8 @@ class BranchSetViolation(AssertionError):
 
 #: The declarations that ARE the flow, on the lines a repo adds to adopt it (``ephemeral`` is the family default).
 _PR_FLOW: Final = (
-    "[tool.lab_commons.branchset]  trunk = 'main'  sessions = ['integrate/main']\n"
-    '[tool.lab_commons.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"'
+    "[tool.dev_lab.branchset]  trunk = 'main'  sessions = ['integrate/main']\n"
+    '[tool.dev_lab.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"'
 )
 
 
@@ -59,10 +59,10 @@ def assert_the_pr_flow_is_declared(*, root: Path) -> str:
         msg = f'{root} declares no branch set ({undeclared}); add:\n{_PR_FLOW}'
         raise BranchSetViolation(msg) from undeclared
     missing = [
-        *(['[tool.lab_commons.integrator] pr_merges_since = "<sha>"'] if not policy.pr_merges_since else []),
+        *(['[tool.dev_lab.integrator] pr_merges_since = "<sha>"'] if not policy.pr_merges_since else []),
         *([EPHEMERAL_OFF] if not declared.is_ephemeral('pr/x') else []),
         *(
-            [f'[tool.lab_commons.branchset] sessions names {policy.integration!r}']
+            [f'[tool.dev_lab.branchset] sessions names {policy.integration!r}']
             if policy.integration not in declared.sessions
             else []
         ),

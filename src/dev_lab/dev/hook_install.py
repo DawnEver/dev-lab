@@ -25,6 +25,9 @@ THE INSTALL ALSO SETS HOW A BRANCH IS PUBLISHED (:data:`BRANCH_DEFAULTS`, the re
 aims there; with it off no creation path -- ``worktree add -b``, ``switch -c``, a human's -- tracks another
 branch, and ``push.default=current`` + ``push.autoSetupRemote`` publish each branch under its own name and
 record that as its upstream. ``PUBLISH-IS-THE-LOCAL-REF`` refuses at pre-push whatever is still mis-tracked.
+
+AND IT WRITES THE FAMILY PRINCIPLES PAGE (:func:`dev_lab.dev.principles.write_page`), so every repo's agents
+read them up front from the one source; ``famtests.principlespage`` reds a committed page that drifted.
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.githooks.runner import FOREIGN_INTERPRETER_ENV
 from dev_lab.dev.githooks.table import hook_table
+from dev_lab.dev.principles import write_page
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 
@@ -207,7 +211,7 @@ def shim(stage: str, fallback: str | None = None) -> str:
     return (
         '#!/bin/sh\n'
         f'{SHIM_MARKER} -- installed by `{INSTALL_COMMAND}`; the hooks are declared in TOML\n'
-        '# (dev_lab/dev/githooks/base.toml + [tool.lab_commons.hooks] in pyproject.toml).\n'
+        '# (dev_lab/dev/githooks/base.toml + [tool.dev_lab.hooks] in pyproject.toml).\n'
         'top=$(git rev-parse --show-toplevel) || exit 1\n'
         f'for rel in {candidates}; do\n'
         '  if [ -x "$top/$rel" ]; then\n'
@@ -266,6 +270,7 @@ def install(repo: Path) -> InstallReport:
     """
     _scope_linked_worktree(repo)
     _publish_under_own_name(repo)
+    write_page(repo)  # the family principles reach every agent here, on the same one act
     before = hook_installation(repo)
     if before.verdict != UNPROTECTED:
         return before
@@ -274,7 +279,7 @@ def install(repo: Path) -> InstallReport:
         paths = ', '.join(f'{stage.stage} ({stage.path})' for stage in foreign)
         msg = (
             f'refusing to install over a hook lab_commons did not write: {paths}. Move it aside (or declare '
-            f'what it does as a row of [tool.lab_commons.hooks]), then re-run `{INSTALL_COMMAND}`.'
+            f'what it does as a row of [tool.dev_lab.hooks]), then re-run `{INSTALL_COMMAND}`.'
         )
         raise HookInstallError(msg)
     before.hooks_dir.mkdir(parents=True, exist_ok=True)

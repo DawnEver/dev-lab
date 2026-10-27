@@ -116,9 +116,9 @@ def test_the_integration_tip_not_on_main_is_judged_by_its_full_parts(
 
 
 def test_the_consumer_declares_its_branches_and_a_retired_host_is_refused_by_name(tmp_path: Path) -> None:
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nintegration = "stage"\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nintegration = "stage"\n', encoding='utf-8')
     assert load_policy(tmp_path) == Policy(integration='stage')
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nhost = "G"\n', encoding='utf-8')
     with pytest.raises(ValueError, match=r'host is retired: .*no host owns integration'):
         load_policy(tmp_path)
     assert load_policy(tmp_path / 'absent') == Policy()
@@ -126,13 +126,13 @@ def test_the_consumer_declares_its_branches_and_a_retired_host_is_refused_by_nam
 
 def test_the_retired_prefix_list_is_refused_by_name_with_the_rule_that_replaced_it(tmp_path: Path) -> None:
     retired = 'lane' + '_prefixes'
-    (tmp_path / 'pyproject.toml').write_text(f'[tool.lab_commons.integrator]\n{retired} = ["x/"]\n', 'utf-8')
+    (tmp_path / 'pyproject.toml').write_text(f'[tool.dev_lab.integrator]\n{retired} = ["x/"]\n', 'utf-8')
     with pytest.raises(ValueError, match='classes_by_ref'):
         load_policy(tmp_path)
 
 
 def test_a_malformed_declaration_is_refused_by_name(tmp_path: Path) -> None:
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nlane_prefix = "x/"\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nlane_prefix = "x/"\n', encoding='utf-8')
     with pytest.raises(ValueError, match='lane_prefix'):
         load_policy(tmp_path)
 

@@ -1,4 +1,4 @@
-"""Which ``[tool.lab_commons.components]`` packages an environment holds at a tree that has since MOVED.
+"""Which ``[tool.dev_lab.components]`` packages an environment holds at a tree that has since MOVED.
 
 INCIDENT (motronics, 2026-10-19): ``components/numerics-lab`` moved to a commit adding
 ``TrialNotEvaluable``; its lock source is ``{ directory = "components/numerics-lab" }``, installed

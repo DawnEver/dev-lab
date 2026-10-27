@@ -139,7 +139,7 @@ def takeover(
         msg = f'#{pull.number} {pull.head_sha[:12]} carries no pending {HOLD_CONTEXT}: nothing to take over'
         raise TakeoverRefused(msg)
     if not review.command:
-        msg = '[tool.lab_commons.review] command is not declared: there is no method to review with'
+        msg = '[tool.dev_lab.review] command is not declared: there is no method to review with'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, pull, base)
     if scope.held is not None:

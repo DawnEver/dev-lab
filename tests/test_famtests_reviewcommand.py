@@ -6,6 +6,8 @@ command, or names a retired capability (``{capabilities.sharp_review.*}``), is r
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -22,10 +24,12 @@ from dev_lab.dev.forgereview import (
     command_for,
     review_from,
 )
+from dev_lab.dev.forgereview_scope import PRINCIPLES_FIELD, gather
+from dev_lab.dev.principles import payload
 from dev_lab.dev.rules import RULES
 
 _ROOT = Path(__file__).resolve().parents[1]
-_DECLARED = "[tool.lab_commons.review]\ncommand = ['r', '{rules}']\n"
+_DECLARED = "[tool.dev_lab.review]\ncommand = ['r', '{rules}']\n"
 _HOST = {'ai_lab': {'python': 'C:/rt/python.exe'}}
 
 
@@ -41,7 +45,8 @@ def test_the_family_command_slices_and_names_one_model() -> None:
     argv = command_for(review, 'a..b', _HOST, paths=('x.py', 'y.py'), lens='strict')
     assert argv == [
         'C:/rt/python.exe', '-m', 'ai_lab.review', '--range', 'a..b', '--lens', 'strict',
-        '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES), '--paths', 'x.py', 'y.py',
+        '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES),
+        '--principles', PRINCIPLES_FIELD, '--paths', 'x.py', 'y.py',
     ]  # fmt: skip
 
 
@@ -55,37 +60,55 @@ def test_the_rule_ids_are_given_to_the_method_from_the_registry() -> None:
 
 def test_a_repo_overrides_only_the_model_and_still_slices() -> None:
     """A multi-slice head is SLICED, not held: the default carries ``{paths}`` whatever the repo overrides."""
-    review = review_from("[tool.lab_commons.review]\nmodel = 'other'\nmax_diff_bytes = 5\n", 'p')
+    review = review_from("[tool.dev_lab.review]\nmodel = 'other'\nmax_diff_bytes = 5\n", 'p')
     assert PATHS_FIELD in review.command
     assert review.budget.slice_bytes == 5
     assert command_for(review, 'a..b', _HOST, paths=('x.py',))[7:9] == ['--model', 'other']
+
+
+def test_the_principles_reach_the_method_as_a_file(tmp_path: Path) -> None:
+    """``{principles}`` is filled at run time with a JSON file of the family payload, for slices and synthesis."""
+    seen: list[object] = []
+
+    def run(argv: Sequence[str], _root: Path) -> str:
+        given = Path(argv[list(argv).index('--principles') + 1])
+        seen.append(json.loads(given.read_text(encoding='utf-8')))
+        raise _Ran
+
+    with pytest.raises(_Ran):
+        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path)
+    assert seen == [payload()]
+
+
+class _Ran(Exception):
+    """The run stub stops ``gather`` once it has read the file it was handed."""
 
 
 def test_the_identical_command_redeclared_is_refused() -> None:
     """PLANTED: the family command copied into a repo is the stale copy this rule retires."""
     copied = ', '.join(f'"{arg}"' for arg in FAMILY_COMMAND)
     with pytest.raises(ValueError, match='redeclares the family'):
-        review_from(f'[tool.lab_commons.review]\ncommand = [{copied}]\n', 'p')
+        review_from(f'[tool.dev_lab.review]\ncommand = [{copied}]\n', 'p')
 
 
 def test_a_retired_capability_is_refused_naming_its_replacement() -> None:
     """PLANTED: ``{capabilities.sharp_review.path}`` is retired; ai-lab packages the method."""
     stale = "command = ['{capabilities.ai_lab.python}', '--method', '{capabilities.sharp_review.path}', '{range}']"
     with pytest.raises(ValueError, match=r'sharp_review.*retired'):
-        review_from(f'[tool.lab_commons.review]\n{stale}\n', 'p')
+        review_from(f'[tool.dev_lab.review]\n{stale}\n', 'p')
 
 
 def test_a_genuinely_different_command_is_kept() -> None:
     """Control: a repo whose method differs may declare it."""
-    assert review_from("[tool.lab_commons.review]\ncommand = ['r', '{range}']\n", 'p').command == ('r', '{range}')
+    assert review_from("[tool.dev_lab.review]\ncommand = ['r', '{range}']\n", 'p').command == ('r', '{range}')
 
 
 def test_the_planted_manifest_is_convicted_by_the_famtest(tmp_path: Path) -> None:
     """The famtest itself goes RED on a planted stale copy, GREEN on a model-only override."""
-    (tmp_path / 'pyproject.toml').write_text("[tool.lab_commons.review]\nmodel = 'm'\n", encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text("[tool.dev_lab.review]\nmodel = 'm'\n", encoding='utf-8')
     assert_the_review_declares_only_its_difference(tmp_path)
     assert Review().command == FAMILY_COMMAND
-    bad = "[tool.lab_commons.review]\ncommand = ['x', '--method', '{capabilities.sharp_review.path}']\n"
+    bad = "[tool.dev_lab.review]\ncommand = ['x', '--method', '{capabilities.sharp_review.path}']\n"
     (tmp_path / 'pyproject.toml').write_text(bad, encoding='utf-8')
     with pytest.raises(AssertionError, match='sharp_review'):
         assert_the_review_declares_only_its_difference(tmp_path)

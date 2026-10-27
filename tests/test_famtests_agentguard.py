@@ -319,7 +319,7 @@ def test_every_repo_shaped_argument_is_required() -> None:
 
 def test_a_door_keyed_by_a_retired_rule_is_named_with_its_replacement(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.doors]\nGIT-NETWORK-VERB = "sh with-retry.sh push"\n', encoding='utf-8'
+        '[tool.dev_lab.doors]\nGIT-NETWORK-VERB = "sh with-retry.sh push"\n', encoding='utf-8'
     )
     with pytest.raises(GuardNotLive, match='GIT-NETWORK-VERB is retired, rename it NETWORK-VERB'):
         assert_doors_name_live_rules(root=tmp_path)
@@ -328,7 +328,7 @@ def test_a_door_keyed_by_a_retired_rule_is_named_with_its_replacement(tmp_path: 
 def test_a_door_keyed_by_a_live_rule_passes(tmp_path: Path) -> None:
     """PLANTED CONTROL for the test above: the same door under its live ID."""
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.doors]\nNETWORK-VERB = "sh with-retry.sh push"\n', encoding='utf-8'
+        '[tool.dev_lab.doors]\nNETWORK-VERB = "sh with-retry.sh push"\n', encoding='utf-8'
     )
     assert_doors_name_live_rules(root=tmp_path)
 

@@ -11,7 +11,7 @@ pushes.
 |---|---|
 | `python -m dev_lab.dev.branchset --apply` | Reclaims every reclaimable worktree FIRST (`dev_lab.dev.reclaim.reclaim`, next row), then deletes every merged LOCAL branch: never a declared branch, never one with commits origin lacks, never one still checked out in a worktree. Re-runs `merge-base --is-ancestor` right before each delete and pins it to that sha. Origin candidates are listed with `git push origin --delete <b>` for a human. |
 | `python -m dev_lab.dev.worktrees [--prune]` | Lists every linked worktree and orphan directory with its verdict. `--prune` reclaims a linked tree only when ALL hold: not `git worktree lock`-ed; no change to a TRACKED file, staged or not (`git status --porcelain --untracked-files=no` empty; untracked and ignored files never block); its content landed on the trunk or a declared session (`git cherry` empty, or its origin ref gone after a squash merge); no process works in, executes from or reads it (LIVE-RUN `occupants`). Its outputs (`archive-outputs`) are moved home and verified first (`worktree_archive.home_outputs`); only on a verified archive, `git worktree remove --force`, then its branch via `branchset --apply` where a branch set is declared. An unverified archive keeps the tree, with the reason. An orphan directory goes the same way: outputs home, verified, then deleted. Every kept tree is listed with its reason. The session debris hook runs it. |
-| `python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]` | Stops one identified run and its subtree, children first, never an ancestor or a sibling. A run is identified by its command line: the built-in signatures (verify, a gate runner, pytest) plus regexes in `[tool.lab_commons.stoprun] signatures`. Any other pid is refused (exit 3). |
+| `python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]` | Stops one identified run and its subtree, children first, never an ancestor or a sibling. A run is identified by its command line: the built-in signatures (verify, a gate runner, pytest) plus regexes in `[tool.dev_lab.stoprun] signatures`. Any other pid is refused (exit 3). |
 
 | `python -m dev_lab.dev.forge pr close-landed [N...]` | Closes an open PR whose head is already on its base, with an evidence comment. Never deletes its branch: the forge's prune of merged branches (`prune_merged`) is the one deleter. |
 | `python -m dev_lab.dev.forge pr close-superseded N... --by <M\|sha\|ref> [--why <line>]` | Closes each open PR salvaged into open, unmerged PR `M` or into a commit, and comments `superseded by #M: <line>` (or `superseded by <sha12>: <line>`). Never deletes its branch. Refuses a closed target, a closed or merged `M`, a commit that does not resolve, or `M` itself. |
@@ -48,7 +48,7 @@ them in git history (user ruling 2026-10-23). `dev_lab.dev.automode` renders
 
 1. **The repo's declaration** (committed, host-free): `INTENTS`, one prose category per kit door or rule
    (Break-Glass, close-landed, close-superseded, lossless prune, hook install, fleet deploy, cancel-stuck,
-   read-only monitoring), each `OPTIONAL_INTENTS` entry named in `[tool.lab_commons.automode] declares`
+   read-only monitoring), each `OPTIONAL_INTENTS` entry named in `[tool.dev_lab.automode] declares`
    (e.g. `"jmag-material-card"`), and the repo's `origin` and branch set.
 2. **The machine's fleet sources**: the synced workstation registry `hosts.json` (its path in the machine file's
    `[workstation] registry`), each workstation with its computer, address and roles; and the machine file's

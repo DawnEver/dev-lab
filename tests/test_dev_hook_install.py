@@ -36,9 +36,10 @@ from dev_lab.dev.hook_install import (
     report_installation,
     shim,
 )
+from dev_lab.dev.principles import PAGE_REL, render
 
 _GIT = shutil.which('git') or 'git'
-_LAYER = '[[tool.lab_commons.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
+_LAYER = '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
 
 
 @pytest.fixture
@@ -160,7 +161,9 @@ def test_a_linked_worktree_installs_into_its_own_git_dir(repo: Path, tmp_path: P
     own = Path(_git_out(lane, 'rev-parse', '--absolute-git-dir')) / 'hooks'
     assert done.hooks_dir.resolve() == own.resolve()
     assert _git_out(lane, 'config', '--worktree', 'core.hooksPath') == own.as_posix()
-    assert sorted(path.name for path in lane.iterdir()) == ['.git', 'pyproject.toml']  # nothing in the tree
+    # the hooks live outside the tree; the one tree write is the family principles page
+    assert sorted(path.name for path in lane.iterdir()) == ['.claude', '.git', 'pyproject.toml']
+    assert (lane / PAGE_REL).read_text(encoding='utf-8') == render()
     shared = subprocess.run(
         [_GIT, '-C', str(repo), 'config', '--local', 'core.hooksPath'], check=False, capture_output=True
     )
@@ -213,7 +216,7 @@ def _install_with(repo: Path, fallback: str) -> None:
         (directory / stage).write_text(shim(stage, fallback), encoding='utf-8', newline='\n')
 
 
-_REPO_ROW = '[[tool.lab_commons.hooks.commit-msg]]\nid = "repo-only"\nrun = ["python", "-m", "no_such_repo_module"]\n'
+_REPO_ROW = '[[tool.dev_lab.hooks.commit-msg]]\nid = "repo-only"\nrun = ["python", "-m", "no_such_repo_module"]\n'
 
 
 def test_no_venv_commits_through_the_recorded_interpreter_and_skips_repo_rows(repo: Path) -> None:

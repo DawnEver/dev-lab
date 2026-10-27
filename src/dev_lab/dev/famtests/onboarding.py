@@ -15,9 +15,10 @@ other consumer carries.
 from __future__ import annotations
 
 import tomllib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dev_lab.dev.branchset import EPHEMERAL_OFF, BranchSetNotDeclared, declared_branchset
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
@@ -54,19 +55,19 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
         declared = declared_branchset(root)
     except BranchSetNotDeclared as undeclared:
         declared = None
-        missing.append(f'[tool.lab_commons.branchset] trunk/sessions/ephemeral -- absent ({undeclared})')
+        missing.append(f'[tool.dev_lab.branchset] trunk/sessions/ephemeral -- absent ({undeclared})')
     if declared is not None:
         missing += [
             *([EPHEMERAL_OFF] if not declared.is_ephemeral('pr/x') else []),
             *(
-                [f'[tool.lab_commons.branchset] sessions names {policy.integration!r}']
+                [f'[tool.dev_lab.branchset] sessions names {policy.integration!r}']
                 if policy.integration not in declared.sessions
                 else []
             ),
         ]
     missing += [
         *(
-            ['[tool.lab_commons.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"']
+            ['[tool.dev_lab.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"']
             if not policy.pr_merges_since
             else []
         ),
@@ -75,7 +76,7 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
             if not _produces(root)
             else []
         ),
-        *([] if _hooks_declared(root) else ['[tool.lab_commons.hooks] -- an empty table, so the base rows run']),
+        *([] if _hooks_declared(root) else ['[tool.dev_lab.hooks] -- an empty table, so the base rows run']),
     ]
     missing += [f'{name} -- {why}' for name, why in _FILES if not (root / name).is_file()]
     if missing:
@@ -84,19 +85,17 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
     return ()
 
 
-def _table(root: Path) -> dict[str, object]:
+def _manifest(root: Path) -> dict[str, Any]:
     manifest = root / 'pyproject.toml'
-    if not manifest.is_file():
-        return {}
-    return tomllib.loads(manifest.read_text(encoding='utf-8')).get('tool', {}).get('lab_commons', {})
+    return tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
 
 
 def _produces(root: Path) -> bool:
-    return bool((_table(root).get('tests') or {}).get('produce'))
+    return bool((_manifest(root).get('tool', {}).get('lab_commons', {}).get('tests') or {}).get('produce'))
 
 
 def _hooks_declared(root: Path) -> bool:
-    return 'hooks' in _table(root)
+    return declared_table(_manifest(root), 'hooks') is not None
 
 
 def assert_the_forge_takes_pull_requests(client: Client) -> None:

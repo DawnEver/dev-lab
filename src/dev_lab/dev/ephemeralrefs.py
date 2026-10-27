@@ -24,7 +24,7 @@ ignores is a citation.
 
 ESCAPES ARE ONE DECLARED SET, in the consumer's ``pyproject.toml``::
 
-    [tool.lab_commons.ephemeral_refs]
+    [tool.dev_lab.ephemeral_refs]
     ceiling = 1
     escapes = [{file = "docs-src/x.md", token = "output/forge/outbox/", reason = "defines it"}]
 
@@ -48,6 +48,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import venvpath
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.rules import tracked_files
 
 if TYPE_CHECKING:
@@ -69,9 +70,7 @@ __all__ = [
 
 RULE: Final = 'TRACKED-CITES-NO-EPHEMERAL'
 #: The one remedy every refusal prints.
-REMEDY: Final = (
-    'cite a durable source or a <placeholder> shape, or declare an escape in [tool.lab_commons.ephemeral_refs]'
-)
+REMEDY: Final = 'cite a durable source or a <placeholder> shape, or declare an escape in [tool.dev_lab.ephemeral_refs]'
 
 #: Paths no ignore file can judge because they are not in the repo: a drive letter, a home or
 #: cluster root, a temp dir, the agent job tree. Matched at the START of a token.
@@ -127,10 +126,10 @@ class Escapes:
 
 
 def load_escapes(root: Path) -> Escapes:
-    """Read ``[tool.lab_commons.ephemeral_refs]`` from *root*'s ``pyproject.toml``; absent is empty."""
+    """Read ``[tool.dev_lab.ephemeral_refs]`` from *root*'s ``pyproject.toml``; absent is empty."""
     project = root / 'pyproject.toml'
     data = tomllib.loads(project.read_text(encoding='utf-8')) if project.is_file() else {}
-    table = data.get('tool', {}).get('lab_commons', {}).get('ephemeral_refs', {})
+    table = declared_table(data, 'ephemeral_refs', {})
     entries = {(row['file'], row['token']): row.get('reason', '') for row in table.get('escapes', [])}
     return Escapes(entries=entries, ceiling=int(table.get('ceiling', 0)))
 

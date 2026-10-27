@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING
 from dev_lab.dev._deny_rows import RETIRED_IDS
 from dev_lab.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_installation
 from dev_lab.dev.agenthooks import node_executable, run_engine
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.hook_adoption import DENY_RULES, assert_shippable, render
 from dev_lab.dev.rules import tracked_files
 from dev_lab.dev.venvpath import expand_interpreter, running_interpreter
@@ -200,7 +201,7 @@ def assert_committed_rules_are_rendered(
 
 
 def assert_doors_name_live_rules(*, root: Path, rules: Sequence[DenyRule] = DENY_RULES) -> None:
-    """Every key of ``[tool.lab_commons.doors]`` is a live rule ID; a retired one is named with its replacement.
+    """Every key of ``[tool.dev_lab.doors]`` is a live rule ID; a retired one is named with its replacement.
 
     The engine reads that table by rule ID and uses a key that names no rule for nothing, so a door keyed by a
     renamed rule silently stops being offered (RETIRED-NAMES-REGISTERED).
@@ -211,7 +212,7 @@ def assert_doors_name_live_rules(*, root: Path, rules: Sequence[DenyRule] = DENY
     """
     manifest = root / 'pyproject.toml'
     with manifest.open('rb') as handle:
-        doors = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('doors', {})
+        doors = declared_table(tomllib.load(handle), 'doors', {})
     known = {rule.id for rule in rules}
     stale = sorted(set(doors) - known)
     if stale:
@@ -219,7 +220,7 @@ def assert_doors_name_live_rules(*, root: Path, rules: Sequence[DenyRule] = DENY
             f'{key} is retired, rename it {RETIRED_IDS[key]}' if key in RETIRED_IDS else f'{key} is no rule'
             for key in stale
         )
-        _refuse(f'[tool.lab_commons.doors] in {manifest}: {named}. A door under a key no rule reads is never offered.')
+        _refuse(f'[tool.dev_lab.doors] in {manifest}: {named}. A door under a key no rule reads is never offered.')
 
 
 def assert_every_rule_is_accounted_for(

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Check commit messages over the PUSH INCREMENT, not over the whole branch history. A HOOK, declared
-# as a `pre-push` row of [tool.lab_commons.hooks] (dev_lab.dev.githooks.table):
+# as a `pre-push` row of [tool.dev_lab.hooks] (dev_lab.dev.githooks.table):
 #
 #   run = ["python", "-m", "dev_lab.dev.githooks", "script", "cz-push-range"]
 #   env = { LAB_CZ_BASE_REF = "origin/main" }

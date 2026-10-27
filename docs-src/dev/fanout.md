@@ -22,7 +22,7 @@ forge's job, not yours.
   and explicit `--extra` flags narrow it. `--dry-run` checks without mutating.
 
   ```toml
-  [tool.lab_commons.dep]
+  [tool.dev_lab.dep]
   extras = ["all", "dev"]
   ```
 

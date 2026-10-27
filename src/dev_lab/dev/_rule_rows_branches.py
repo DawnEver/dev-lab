@@ -123,7 +123,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'INTEGRATION-TAKES-ONLY-FORGE-MERGES',
         (
-            'Where `[tool.lab_commons.integrator] pr_merges_since` is declared, the integration branch moves only '
+            'Where `[tool.dev_lab.integrator] pr_merges_since` is declared, the integration branch moves only '
             'by the forge merging a pull request server-side once every `tests/<part>` part of its head stands '
             'PASS, the head merges cleanly and the merge audit passes (a PR still missing one stays open, its one '
             'integration comment naming what is missing), a client push adding any commit to it is refused at '

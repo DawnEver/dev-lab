@@ -78,7 +78,7 @@ def branchset_verdict(root: Path, sha: str, branch: str) -> Verdict:
         return 'success', f'{branch} is declared'
     return 'failure', (
         f'{branch} is undeclared: push it as an ephemeral head ({", ".join(declared.ephemeral) or "none declared"}) '
-        'or add it to [tool.lab_commons.branchset] sessions'
+        'or add it to [tool.dev_lab.branchset] sessions'
     )
 
 

@@ -123,7 +123,7 @@ PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
     ),
     ('tool', 'lab_commons'): (
         'ONE REPO, AND THE KIT ALREADY OWNS IT IN CODE. Only consumer-b declares '
-        '`[tool.lab_commons.verify]`, and its schema is defined by `dev_lab.dev.verify` in this '
+        '`[tool.dev_lab.verify]`, and its schema is defined by `dev_lab.dev.verify` in this '
         'package. A section base restating that schema would be a SECOND source for it, and the one '
         'key it holds (`allowed_skips`) is a list of pytest node IDs into one lab`s test tree.'
     ),

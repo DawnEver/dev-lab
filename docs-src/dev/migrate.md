@@ -74,7 +74,7 @@ commit's parts. Details: [the forge](forge.md#the-queue).
 |---|---|---|
 | `priority:user` | a PR or issue | adds the declared boost to its value in the queue |
 | `priority:<n>` | a PR or issue | adds `n` |
-| `forge:request` | an issue | makes the issue a queued request (`producer` and `sha` in the body; the producer declared under `[tool.lab_commons.requests.<name>]`) |
+| `forge:request` | an issue | makes the issue a queued request (`producer` and `sha` in the body; the producer declared under `[tool.dev_lab.requests.<name>]`) |
 | `keep` | a PR or issue | pins its sha's artefacts past retention |
 | `area:<name>` | an issue, written by `forge route` | one open list of reds per area; fix them on your branch |
 
@@ -110,7 +110,7 @@ is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
 - **A host that should take no foreign work**: do not run `forge serve` on it; to have it take its own
   work first, name it in the machine file's `[priority]` (ordering only -- nothing is reserved).
 - **A consumer's `pyproject.toml`**: replace the opted-in branch list under `[tool.lab_commons.schedule]` and
-  the prefix list under `[tool.lab_commons.integrator]` with ONE ordered rule, `[tool.lab_commons.schedule]
+  the prefix list under `[tool.dev_lab.integrator]` with ONE ordered rule, `[tool.lab_commons.schedule]
   classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}` (the family default;
   declare it only to differ, and a declaration replaces it whole). A branch no pattern matches is neither
   served nor a child. Starvation bounds take a `feature` row (default 18 h).
@@ -126,8 +126,8 @@ per-OS and per-engine tables under `[tool.lab_commons]` and the per-part produce
 replacement. Migrate in ONE commit, in the same window as the lab-commons that reads it:
 
 1. **Delete** the OS table and the capability table under `[tool.lab_commons]` (the `marker -> [OSes]` rows and
-   the engine / `on = [...]` rows), and every per-part producer key under `[tool.lab_commons.parts]`. Keep
-   `[tool.lab_commons.parts] output` (and `inert`).
+   the engine / `on = [...]` rows), and every per-part producer key under `[tool.dev_lab.parts]`. Keep
+   `[tool.dev_lab.parts] output` (and `inert`).
 2. **Add one table**: every marker that names a resource, and the ONE local producer, told its part by
    `{part}`:
 
@@ -180,31 +180,31 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
 ### consumer-b (no part tables yet)
 
 - Declares no part tables today, so step 1 is empty. To have a box produce its parts (not only the cluster's
-  `base` from `[tool.lab_commons.hpc]`), add `[tool.lab_commons.parts] output` and
+  `base` from `[tool.lab_commons.hpc]`), add `[tool.dev_lab.parts] output` and
   `[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]`; add `resources`
   only for markers naming something a host may lack.
 
 ## Branch hygiene: lanes stay local, origin is pruned
 
 Upgrading lab-commons brings two changes to every repo that opts into the base hook table
-(`[tool.lab_commons.hooks]`):
+(`[tool.dev_lab.hooks]`):
 
 1. **The pre-push hook refuses an undeclared branch.** The base table was missing its push-time branch-set row, so
    from the TOML hook migration (2026-10-11) until 2026-10-13 this check never ran. A push of any branch that
-   `[tool.lab_commons.branchset]` does not name is now refused. Before you upgrade, declare every session branch
+   `[tool.dev_lab.branchset]` does not name is now refused. Before you upgrade, declare every session branch
    that really lives on origin, or its next push is refused. Agent lanes stay local. Superseded 2026-10-23
    (toolchain plan P3): the base table no longer carries the row, and the forge's branch-set test judges origin. Retired 2026-10-24: the
    module is gone, so no repo can declare the row either.
 2. **Merged branches are pruned from origin.** Opt in (every serving host prunes, idempotently):
 
 ```toml
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 trunk = 'main'
 sessions = ['integrate/main']  # every long-lived branch: exactly what the pre-push hook allows
 prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= grace_hours
 grace_hours = 24
 
-[tool.lab_commons.integrator]
+[tool.dev_lab.integrator]
 merges_only_since = '<the integration tip sha when you adopt>'
 ```
 
@@ -216,9 +216,9 @@ section: every `deletable` row there is deleted on the next serve tick of any ho
 
 - `sessions` declares `integrate/main` and six `feat/*` session branches. Keep a `feat/*` there while its
   session lives. Once it is merged and done, remove it from `sessions`, and the prune deletes it from origin.
-- Set `prune_merged = true`, `[tool.lab_commons.integrator] merges_only_since`, and nothing else. No push mirror is configured.
+- Set `prune_merged = true`, `[tool.dev_lab.integrator] merges_only_since`, and nothing else. No push mirror is configured.
 
 ### consumer-b
 
 - `sessions = ['deploy', 'integrate/main', 'wdg-3d']`. A declared session is never pruned.
-- Set `prune_merged = true`, `[tool.lab_commons.integrator] merges_only_since`, and nothing else. No push mirror is configured.
+- Set `prune_merged = true`, `[tool.dev_lab.integrator] merges_only_since`, and nothing else. No push mirror is configured.
