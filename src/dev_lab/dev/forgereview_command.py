@@ -22,6 +22,7 @@ REFUSED_EXIT: Final = 2
 
 _PROBE: Final = 'import importlib.util, sys; sys.exit(importlib.util.find_spec(sys.argv[1]) is None)'
 _MISSING_MODULE: Final = 'No module named'  # what `python -m <absent>` says
+_USAGE_ERROR: Final = 'error: unrecognized arguments'  # argparse's exit 2: the command does not speak this interface
 _COMMAND_TIMEOUT_S: Final = 1800
 
 
@@ -65,6 +66,9 @@ def run_command(argv: Sequence[str], root: Path) -> str:
     why = done.stderr.strip()[-300:]
     if done.returncode != 0 and _MISSING_MODULE in done.stderr:
         msg = f'unsupported: the review command cannot import its module on this host ({why})'
+        raise ReviewUnsupported(msg)
+    if done.returncode == REFUSED_EXIT and _USAGE_ERROR in done.stderr:  # an older command on THIS host, not the head
+        msg = f'unsupported: the review command on this host does not take these arguments ({why})'
         raise ReviewUnsupported(msg)
     if done.returncode == REFUSED_EXIT:
         msg = f'the review command refused: {why}'

@@ -20,6 +20,7 @@ from dev_lab.dev import forgeautosync
 from dev_lab.dev.forgeautosync import CONTEXT, sync
 from dev_lab.dev.forgeintegration import tick
 from dev_lab.dev.lanepolicy import Policy, policy_from
+from dev_lab.dev.mergeresolution import judge as resolution_judge
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 
 POLICY = Policy(pr_merges_since='0' * 40)
@@ -203,6 +204,9 @@ def test_a_conflict_in_the_lock_alone_is_relocked_inside_the_merge(tmp_path: Pat
     new = _origin(work, 'pr/l')
     assert new != head
     assert git_out(work, 'show', f'{new}:uv.lock') == 'relocked'
+    parents = git_out(work, 'rev-parse', f'{new}^1', f'{new}^2').split()
+    message = git_out(work, 'log', '-1', '--format=%B', new)
+    assert resolution_judge(work, parents, message) == ()  # MERGE-RESOLUTION-DECLARED: the forge's own merge lands
 
 
 def test_a_stale_lock_after_a_clean_merge_is_relocked_and_an_unrunnable_resolution_refuses(tmp_path: Path) -> None:

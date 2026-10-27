@@ -118,11 +118,16 @@ def quiet_after(policy: Policy) -> timedelta:
     return duration('auto_sync_quiet', policy.auto_sync_quiet)
 
 
-def merge_message(policy: Policy, branch: str, tip: str) -> str:
-    """The machine merge's message: a conventional subject, then ``Merged-Branch: <integration>``."""
+#: How the machine resolves the one conflict it may (MERGE-RESOLUTION-DECLARED): integration's lock, relocked.
+LOCK_RESOLUTION: Final = f"{LOCK}: newer-structure -- integration's lock, relocked through the dependency door"
+
+
+def merge_message(policy: Policy, branch: str, tip: str, *, lock_conflicted: bool = False) -> str:
+    """The machine merge's message: a subject, the lock's declared resolution if it conflicted, ``Merged-Branch``."""
+    declared = f'{LOCK_RESOLUTION}\n\n' if lock_conflicted else ''
     return (
         f'chore(merge): {policy.integration} at {tip[:_SHORT]} into {branch}\n\n'
-        f'Synced by the forge (dev_lab.dev.forgeautosync).\n\n{MERGED_BRANCH}: {policy.integration}\n'
+        f'Synced by the forge (dev_lab.dev.forgeautosync).\n\n{declared}{MERGED_BRANCH}: {policy.integration}\n'
     )
 
 
@@ -265,10 +270,10 @@ def sync(
     """
     base = f'refs/remotes/origin/{policy.integration}'
     tip = _must(root, 'rev-parse', '--verify', f'{base}^{{commit}}')
-    message = merge_message(policy, branch, tip)
     with _worktree(root, branch, head) as tree:
         _git(tree, 'merge', '--no-ff', '--no-commit', tip)
         unmerged = _must(tree, 'diff', '--name-only', '--diff-filter=U').split()
+        message = merge_message(policy, branch, tip, lock_conflicted=LOCK in unmerged)
         if [path for path in unmerged if path != LOCK]:
             _git(tree, 'merge', '--abort')
             paths = ', '.join(f'`{path}`' for path in unmerged)
