@@ -58,7 +58,7 @@ from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
-from dev_lab.dev._deny_reviewstatus_row import REVIEW_STATUS_VIA_DOORS
+from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
@@ -70,7 +70,8 @@ from dev_lab.dev.worktreeplace import WORKTREES_REL
 #: network verbs (lock, add, remove) beside git's.
 RETIRED_IDS: dict[str, str] = {
     'GIT-NETWORK-VERB': 'NETWORK-VERB',
-    'REVIEW-HOLD-VIA-TAKEOVER': 'REVIEW-STATUS-VIA-DOORS',  # 2026-10-26: it refuses tests/review too
+    'REVIEW-HOLD-VIA-TAKEOVER': 'STATUS-VIA-DOORS',  # 2026-10-26: it refuses tests/review too
+    'REVIEW-STATUS-VIA-DOORS': 'STATUS-VIA-DOORS',  # 2026-10-27: it refuses tests/security too
 }
 
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
@@ -361,5 +362,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     BARE_PYTHON,
     RECURSIVE_GREP,
     REPORTS_LIVE_IN_MEMORY,
-    REVIEW_STATUS_VIA_DOORS,
+    STATUS_VIA_DOORS,
 )
