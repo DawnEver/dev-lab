@@ -176,15 +176,25 @@ def _dry_run(tree: Path) -> Report:
 
 
 def _rustup_check() -> Report:
+    """``rustup check``; an attempt that printed the stable line is the answer, so it is never retried.
+
+    rustup exits 100 when an update is available (rustup 1.29 on Ada, measured 2026-10-26), which the
+    network door reads as a failure; the exit code says nothing the stable line does not.
+    """
     rustup = shutil.which('rustup') or 'rustup'
-    return run_network_verb([rustup, 'check'], timeout=RESOLVE_TIMEOUT_S)
+    return run_network_verb(
+        [rustup, 'check'], timeout=RESOLVE_TIMEOUT_S, before_retry=lambda attempt: not _STABLE.search(attempt.output)
+    )
 
 
 def newest_stable(*, check: Callable[[], Report] = _rustup_check) -> str:
-    """The newest stable Rust version (``1.99.1``) as *check*, ``rustup check``, reports it; RAISES on none."""
+    """The newest stable Rust version (``1.99.1``) as *check*, ``rustup check``, reports it; RAISES on none.
+
+    The OUTPUT is the answer, whatever the exit code (:func:`_rustup_check`).
+    """
     report = check()
     output = report.attempts[-1].output if report.attempts else ''
-    if not report.ok or not (found := _STABLE.search(output)):
+    if not (found := _STABLE.search(output)):
         msg = f'rustup check named no stable toolchain ({report.remedy}): {output.strip()[-200:]}'
         raise OSError(msg)
     return found['version']

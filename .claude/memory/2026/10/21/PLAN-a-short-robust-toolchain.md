@@ -9,7 +9,7 @@ accessed: 2026-10-21
 
 # PLAN: a short, robust toolchain (user-approved 2026-10-21)
 
-Scope: lab-commons, dev-lab (new), ai-lab, cc-market, cc-config, and every consumer (motronics-studio,
+Scope: lab-commons, dev-lab (new), ai-lab, cc-market, cc-config, and every consumer (consumer-c,
 consumer-a, numerics-lab, consumer-b). Principles: first principles, no historical baggage, Occam, single
 source of truth, layered decoupling, names match, no backward compatibility, progressive disclosure.
 
@@ -30,10 +30,10 @@ merges it; every failure is a status on the PR.
 |---|---|---|
 | R1 | the toolchain is a locked dependency of every repo; the serving fleet runs another version than the code under test | a hand relock commit on nearly every push; #244's new table froze the fleet (no host could claim it) |
 | R2 | local gates duplicate the forge | 2-3 refusals per plain push; a 310-test pre-commit |
-| R3 | heterogeneous fleet; failures only in host logs | Ada QOS discarded a 6 h run; WS2 MAX_PATH trees; diagnosis by ssh |
+| R3 | heterogeneous fleet; failures only in host logs | Ada QOS discarded a 6 h run; host-C MAX_PATH trees; diagnosis by ssh |
 | R4 | the review spans four repos, machine paths and two merge implementations | `merge.mjs` (cc-market) and `rules.py` (ai-lab) both merge findings; an empty context gave a silent HTTP 400 |
 | R5 | configuration in many sources | pyproject tables, machine config, rendered files, cc-config settings, hook TOML |
-| R6 | PRs fragment and stack | 28 open motronics PRs; one stalled base blocked a dozen |
+| R6 | PRs fragment and stack | 28 open consumer-c PRs; one stalled base blocked a dozen |
 | R7 | rule and module sprawl | 62 rules, 231 dev modules, 47 forge modules (~10k lines), size-only splits |
 | R8 | agents cannot verify locally | `measure` refused for memory in nearly every agent run |
 | R9 | concurrency decided per call site | G memory-starved by parallel runs that each sized themselves |
@@ -52,7 +52,7 @@ without a PR status.
 The forge and the hooks log every refusal and every hand action (one JSONL per kind).
 
 ### P1 stop the bleeding (in flight)
-- Land the 2026-10-21 PRs: lab-commons #236 #237 #242 #243 #244 #246; motronics #4684 #4685 #4660 #4681 then
+- Land the 2026-10-21 PRs: lab-commons #236 #237 #242 #243 #244 #246; consumer-c #4684 #4685 #4660 #4681 then
   the rest; numerics-lab #18; ai-lab #29 #31.
 - ONE SESSION, ONE PR per repo. The launcher issues a session id (`LAB_SESSION`) for Claude, codex and ccds;
   the commit-msg hook writes `Lab-Session:`; `forge pr create` and the pre-push of a new `pr/*` refuse a
@@ -71,7 +71,7 @@ The forge and the hooks log every refusal and every hand action (one JSONL per k
 - Tables that belong to dev-lab are renamed `[tool.dev_lab.*]` in the same merge as the imports; no
   read-time upgrade.
 - Cut-over day: forge hosts install dev-lab and switch serving; consumers switch in one merge each
-  (numerics-lab, ai-lab, consumer-b, consumer-a, motronics); lab-commons releases without the moved modules.
+  (numerics-lab, ai-lab, consumer-b, consumer-a, consumer-c); lab-commons releases without the moved modules.
   Superseded heads are not tested with the old tool.
 - Versions: the machine tool self-updates each forge tick; a consumer venv carries dev-lab in uv.lock,
   relocked by auto-sync. `dev-lab>=X` rises only in the PR that first uses a new API; a push checks only

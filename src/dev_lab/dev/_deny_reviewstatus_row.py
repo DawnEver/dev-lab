@@ -12,6 +12,8 @@ by a later round or a disposition WITH ITS REASON (:mod:`dev_lab.dev.forgereview
 
 from __future__ import annotations
 
+from dev_lab.dev._deny_forge_rows import VENV_PYTHONS
+
 __all__ = ['REVIEW_STATUS_VIA_DOORS']
 
 REVIEW_STATUS_VIA_DOORS: dict[str, object] = {
@@ -19,14 +21,12 @@ REVIEW_STATUS_VIA_DOORS: dict[str, object] = {
     'pattern': r'\bdev_lab\.dev\.forge\s+status\s+post\b(?=[^\n]*\btests/review(?:-hold)?\b)',
     'matches': 'argument',
     'hazard': 'a raw post on tests/review-hold or tests/review releases a head with no review or reason behind it.',
-    'remedy': 'Run the reviewed door, which posts the findings and only then releases: '
-    '{python} -m dev_lab.dev.forge review takeover <sha> (list held heads: {python} -m dev_lab.dev.forge review '
-    'held); for a blocking '
-    'finding, {python} -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>".',
+    'remedy': 'Release through the reviewed door: {python} -m dev_lab.dev.forge review takeover <sha> '
+    '(held heads: `review held`); clear a blocking finding with `review dispose <pr> <finding-id> --why "<reason>"`.',
     'needs': None,
     'refuses': (
         'python -m dev_lab.dev.forge status post abc123 --context tests/review-hold --state success',
-        '.venv/Scripts/python.exe -m dev_lab.dev.forge status post abc123 --state success --context tests/review-hold',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge status post abc123 --state success --context tests/review-hold',
         'python -m dev_lab.dev.forge status post abc123 --context tests/review --state success',
     ),
     'permits': (
