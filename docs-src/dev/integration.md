@@ -199,12 +199,12 @@ It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`):
 integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the
 command reads its own (`ai_lab`, the `pr-review` task key). The command is the FAMILY's
 (`forgereview.FAMILY_COMMAND`: `{capabilities.ai_lab.python} -m ai_lab.review --range {range} --lens {lens}
---model {model} --paths {paths}`); a repo declares only where it differs, and a redeclared family command or a
+--model {model} --rules {rules} --paths {paths}`; `{rules}` is the registry's ids, so ai-lab imports none); a repo declares only where it differs, and a redeclared family command or a
 retired capability (`{capabilities.sharp_review.*}`) is refused (`famtests.reviewcommand`). Every key optional:
 
 ```toml
 [tool.lab_commons.review]
-# command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model}
+# command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model} {rules}
 model = "<id>"             # the default is forgereview.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 200000    # one slice
