@@ -28,15 +28,17 @@ only what differs, every entry with its reason::
     accepted = { "GHSA-xxxx-xxxx-xxxx" = "the vulnerable path is unused" }  # advisories accepted
 
 The table that JUDGES a head is read from ``origin/<integration>``, never from the head: a branch cannot widen
-the exemptions that judge it. A PR that CHANGES the table is released once, explicitly, by the integrator:
+the exemptions that judge it. A PR that CHANGES the table is released once, explicitly, and on the record:
 
 * the step judges such a head twice -- with the integration table (the posted findings) and with the head's own.
   When the head's table leaves nothing, the ``failure`` says so and names the door, :data:`RELEASE_DOOR`;
-* ``python -m dev_lab.dev.forge security release <pr> --why "<reason>"`` (:func:`release`, the integrator only)
+* ``python -m dev_lab.dev.forge security release <pr> --why "<reason>"`` (:func:`release`)
   re-judges the head with ITS table and, only when that finds nothing, records the reason and the exemption
   delta as ONE keyed PR comment (``Marker.SECURITY_RELEASE``) and posts ``success`` citing it. Refused without a
   reason, when the head leaves the table unchanged, and when the head's own table still leaves findings. A raw
-  ``status post`` on this context is refused to agents (``REVIEW-STATUS-VIA-DOORS``).
+  ``status post`` on this context is refused to agents (``STATUS-VIA-DOORS``). Nothing checks WHO runs the
+  door: what makes a release safe is that it is RECORDED -- the comment names the host, the delta and the reason --
+  so it is auditable, and that the reason must be substantive (:data:`_MIN_WHY` characters at least).
 
 It is ``tool.dev_lab`` and not
 ``tool.lab_commons`` because it is read by this step alone, never by a reader of the commit's kit tables.
@@ -106,7 +108,7 @@ _NAMED: Final = 3
 #: A settled security status: judged, not judged again on that head.
 _SETTLED: Final = frozenset({'success', 'failure'})
 
-#: The door the integrator runs on a head whose own new exemptions cover its findings; ``{pr}`` is its number.
+#: The door run on a head whose own new exemptions cover its findings; ``{pr}`` is its number.
 RELEASE_DOOR: Final = 'python -m dev_lab.dev.forge security release {pr} --why "<reason>"'
 
 _MIN_WHY: Final = 10  # characters: a reason, not a shrug
@@ -249,12 +251,19 @@ def _covered(
     root: Path, number: int, head: str, base: Declaration, found: Judgement, *,
     judged: Callable[[Path, str, Declaration], Judgement],
 ) -> Judgement:  # fmt: skip
-    """*found*, saying so and naming the door when the head's OWN changed table leaves no finding."""
+    """*found*, saying so and naming the door when the head's OWN changed table leaves no finding.
+
+    Best effort: a head whose own table cannot be read or judged keeps *found* -- an invalid table named in it --
+    and never stops the step from judging the heads after it.
+    """
     try:
         own = _declared_at(root, head)
-    except (ValueError, OSError):
-        return found
-    if not delta(base, own) or judged(root, head, own).state != 'success':
+        if not delta(base, own) or judged(root, head, own).state != 'success':
+            return found
+    except DeclarationInvalid as invalid:
+        said = f"{found.description} | the head's own table is DeclarationInvalid: {invalid}"
+        return Judgement('failure', said[:DESCRIPTION_LIMIT])
+    except (ValueError, OSError, subprocess.CalledProcessError):
         return found
     said = f"all covered by the head's new exemptions: {RELEASE_DOOR.format(pr=number)} | {found.description}"
     return Judgement('failure', said[:DESCRIPTION_LIMIT])
@@ -296,7 +305,7 @@ def step(
 
 def release(
     root: Path, client: Client, number: int, why: str, *, host: str,
-    judged: Callable[[Path, str, Declaration], Judgement] = _judge_head,
+    judged: Callable[[Path, str, Declaration], Judgement] | None = None,
 ) -> str:  # fmt: skip
     """Release PR *number*'s head, judged clean under its OWN changed table, with *why*; the line said.
 
@@ -316,7 +325,7 @@ def release(
     if not (changed := delta(_declared_at(root, f'origin/{integration}'), own)):
         msg = f'#{number} {head[:12]} does not change [tool.dev_lab.security]: there is nothing to release; fix it'
         raise ReleaseRefused(msg)
-    found = judged(root, head, own)
+    found = (judged or _judge_head)(root, head, own)
     if found.state != 'success':
         msg = f'#{number} {head[:12]} under its own table is {found.state}: {found.description}'
         raise ReleaseRefused(msg)
@@ -335,13 +344,15 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
     """``forge security release <pr> --why "<reason>"``. Exit 0 released, 2 refused."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge security', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
-    door = verbs.add_parser('release', help='release a head clean under its own new exemptions (the integrator only)')
+    door = verbs.add_parser(
+        'release', help='release a head clean under its own new exemptions; records host, delta, reason'
+    )
     door.add_argument('pr', type=int)
     door.add_argument('--why', required=True, help='why the new exemptions are right: refused when short')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     try:
-        said = release(root, client or client_for(root), args.pr, args.why, host=this_machine(), judged=_judge_head)
+        said = release(root, client or client_for(root), args.pr, args.why, host=this_machine())
     except (ReleaseRefused, ForgeCallFailed, OSError, ValueError, subprocess.CalledProcessError) as failed:
         emit(f'[security] refused: {failed}', err=True)
         return 2

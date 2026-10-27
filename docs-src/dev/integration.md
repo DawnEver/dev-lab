@@ -121,12 +121,12 @@ Each tick, and nothing else:
    `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"`. Ask the user only when you
    and the author disagree.
 9. A head whose `tests/security` failure says its findings are "all covered by the head's new exemptions" changes
-   `[tool.dev_lab.security]`; the table that judges a head is integration's, never its own, so it is yours to
-   release: `python -m dev_lab.dev.forge security release <pr> --why "<reason>"` re-judges the head under ITS
+   `[tool.dev_lab.security]`; the table that judges a head is integration's, never its own, so the release is
+   explicit and recorded (nothing checks who runs it; the record is what makes it auditable): `python -m dev_lab.dev.forge security release <pr> --why "<reason>"` re-judges the head under ITS
    table and, only when that finds nothing, records the reason and the exemption delta as one keyed PR comment and
    posts `tests/security` success. Refused without a reason, for a head that leaves the table unchanged, and while
    the head's own table still leaves findings; a raw `status post` on `tests/security` is refused
-   ([REVIEW-STATUS-VIA-DOORS](refusals.md#review-status-via-doors)).
+   ([STATUS-VIA-DOORS](refusals.md#status-via-doors)).
 
 An integrator runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
@@ -185,7 +185,7 @@ a TAKEOVER the INTEGRATOR AGENT owns (user ruling 2026-10-26): the forge lists i
 session is not metered, so the byte cap that bounds a program review does not bind it -- posts the findings comment
 and `tests/review`, and releases the hold, refusing to release without a findings comment for that sha (the
 release is the record that a review happened; a raw `status post` on `tests/review-hold` is refused,
-[REVIEW-STATUS-VIA-DOORS](refusals.md#review-status-via-doors)). `forge review plan <sha>` prints the slices. A
+[STATUS-VIA-DOORS](refusals.md#status-via-doors)). `forge review plan <sha>` prints the slices. A
 human is asked only for a decision the review surfaces, never for the routine review or the release. So an
 unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
 nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review

@@ -8,6 +8,7 @@ arm has its planted control.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,7 +17,7 @@ from _branch_repos import commit
 from _forge_fake import run_git
 
 from dev_lab.dev import forgesecurity
-from dev_lab.dev._deny_reviewstatus_row import REVIEW_STATUS_VIA_DOORS
+from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
 from dev_lab.dev.forgesecurity import Declaration, DeclarationInvalid, Judgement, declared, judge, security_wait, step
@@ -225,6 +226,55 @@ def test_a_head_whose_own_new_exemptions_cover_its_findings_fails_naming_the_rel
     assert 'release' not in status.description
 
 
+def _unreadable_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The head's pyproject cannot be read, nor fetched."""
+    real = forgesecurity._git
+
+    def git(root: Path, *argv: str) -> bytes:
+        if argv == ('show', f'{"h" * 40}:pyproject.toml'):
+            raise subprocess.CalledProcessError(128, 'git show')
+        return real(root, *argv)
+
+    def fetch(argv: list[str], **_kw: object) -> None:
+        raise subprocess.CalledProcessError(1, argv)
+
+    monkeypatch.setattr(forgesecurity, '_git', git)
+    monkeypatch.setattr(forgesecurity, 'run_network_verb', fetch)
+
+
+def _second_call_raises() -> object:
+    calls: list[str] = []
+
+    def judged(root: Path, head: str, declaration: Declaration) -> Judgement:
+        calls.append(head)
+        if calls.count(head) == 2:
+            raise subprocess.CalledProcessError(1, 'git archive')
+        return _s311_only(root, head, declaration)
+
+    return judged
+
+
+@pytest.mark.parametrize('broken', ['fetch', 'judge', 'declaration'])
+def test_a_head_whose_own_table_cannot_be_judged_keeps_its_failure_and_later_heads_are_judged(
+    monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    """The second look is best effort: it never loses the posted failure nor the heads after it."""
+    head_toml = b'[tool.dev_lab.security]\nbogus = { x = "y" }\n' if broken == 'declaration' else _HEAD_TOML
+    posted, _ = _fake_forge(monkeypatch, head_toml)
+    if broken == 'fetch':
+        _unreadable_head(monkeypatch)
+    judged = _second_call_raises() if broken == 'judge' else _s311_only
+    step(Path(), object(), say=lambda _line: None, judged=judged)
+    (status,) = posted['h' * 40]
+    assert status.state == 'failure'
+    assert '1 ruff S: src/a.py:3 S311' in status.description
+    assert 'forge security release' not in status.description
+    if broken == 'declaration':
+        assert 'DeclarationInvalid' in status.description
+        assert 'bogus' in status.description
+    assert [one.state for one in posted['i' * 40]] == ['failure'], 'the integration head after it is judged'
+
+
 def test_the_release_door_posts_success_with_its_reason_and_the_delta(monkeypatch: pytest.MonkeyPatch) -> None:
     posted, comments = _fake_forge(monkeypatch, _HEAD_TOML)
     said = forgesecurity.release(Path(), object(), 7, 'the integrator accepts seeded samples', host='box',
@@ -270,6 +320,6 @@ def test_the_release_is_the_forge_security_verb(monkeypatch: pytest.MonkeyPatch)
 
 def test_a_raw_status_post_on_tests_security_is_refused_to_agents() -> None:
     """PLANTED control: the release door is permitted."""
-    pattern = re.compile(REVIEW_STATUS_VIA_DOORS['pattern'])
+    pattern = re.compile(STATUS_VIA_DOORS['pattern'])
     assert pattern.search('python -m dev_lab.dev.forge status post abc --context tests/security --state success')
     assert not pattern.search('python -m dev_lab.dev.forge security release 7 --why "seeded samples only"')
