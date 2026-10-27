@@ -79,7 +79,7 @@ def test_a_relative_or_bare_interpreter_is_found(line: str) -> None:
 
 @pytest.mark.parametrize(
     'line',
-    ['C:/r/.venv/Scripts/python.exe -m x', '/home/u/r/.venv/bin/python -m x', f'{PYTHON_SLOT} -m x', 'git grep -n'],
+    ['C:/r/.venv/Scripts/python.exe -m x', '/srv/r/.venv/bin/python -m x', f'{PYTHON_SLOT} -m x', 'git grep -n'],
 )
 def test_an_absolute_or_tokenised_interpreter_is_spared(line: str) -> None:
     assert relative_interpreters(line) == ()
