@@ -41,9 +41,12 @@ Each tick it:
 5. posts the part with its record attached, and edits its host card;
 6. ON THE ONE POLLER of the repo ([one poller per repo](#one-poller-per-repo)): closes landed PRs, prunes
    merged branches and old records, tidies the issues, raises starved parts, keeps one forge issue per
-   integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms)),
-   runs the review (a head held over its cap is the integrator's takeover,
-   [the review](integration.md#the-pr-reviewer-blocks-on-high-or-security)) and the relock.
+   integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms))
+   and relocks;
+7. ON EVERY HOST, poller or not, runs the PR review where its declared command can run (a host whose
+   `[capabilities]` cannot fill or start it says so once and reads no PR; the head's claim keeps one review
+   per head across hosts; a head held over its cap is the integrator's takeover,
+   [the review](integration.md#the-pr-reviewer-blocks-on-high-or-security)).
 
 ### One poller per repo
 
@@ -54,8 +57,8 @@ tick re-derived the same repo-wide answers. So the repo-wide poll (step 6) runs 
 - **The lease is a comment on the hosts issue** (`forgepoller`, marker `poller`): `holder: <card host>` and
   `until: <forge time>`, judged on the FORGE's clock. Accounts on a cluster share no writable file, so the
   forge is the one place every host can read.
-- A live lease held by another host: this host claims, produces, advances its runs and publishes its card,
-  and polls nothing. Its own live lease: renewed, no read-back. None or expired: written, read back, and the
+- A live lease held by another host: this host claims, produces, advances its runs, reviews (step 7) and
+  publishes its card, and polls nothing. Its own live lease: renewed, no read-back. None or expired: written, read back, and the
   host polls only if the read-back names it; racing creators keep the OLDEST lease comment and each deletes
   its own younger one. A lease lives three tick periods (`POLL_LEASE_TICKS`), so a dead holder is replaced
   within fifteen minutes at the default `tick_minutes = 5`.

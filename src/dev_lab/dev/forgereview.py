@@ -8,9 +8,10 @@ the method's, run by the command the repo declares (``[tool.lab_commons.review] 
 it on ``<merge base>..<head>`` and reads its stdout as the findings JSON
 (:mod:`dev_lab.dev.forgereview_findings`). It holds no model client, no prompt and no key.
 
-WHERE IT RUNS. Inside the integration step of ``forge serve`` (:func:`step`, called by
-:func:`dev_lab.dev.forgeservesteps.prompt`): the review host follows the integrator, on whichever host
-derives the integration queue.
+WHERE IT RUNS follows what it needs -- the declared command -- never the poller lease. Every ``forge serve`` tick
+runs :func:`step` (via :func:`dev_lab.dev.forgeservesteps.review`), poller or not; a host whose ``[capabilities]``
+cannot fill or start the command (:func:`command_for`, :func:`can_start`) says so once and reads no PR. Among the
+capable hosts the claim below makes each head reviewed once.
 
 WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integration`` whose head carries no
 :data:`REVIEW_CONTEXT` status yet:
@@ -63,10 +64,11 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
 
 ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
-but this host's ``[capabilities]`` does not declare, a command it cannot start (:func:`can_start`: a missing
-executable or module, checked BEFORE the claim), or one that turns out unable to run (:class:`ReviewUnsupported`)
--- posts :data:`HOST_UNABLE` naming the host and why, once: a fact about the host, so the head stays claimable by a
-capable host, or by this one once fixed. A command that ran and refused or printed no known findings is the head's
+but this host's ``[capabilities]`` does not declare, or a command it cannot start (:func:`can_start`: a missing
+executable or module) -- is checked BEFORE the claim and posts NOTHING: a fact about the host is not the head's
+status. One that started and turned out unable (:class:`ReviewUnsupported`) replaces its own claim with
+:data:`HOST_UNABLE` naming the host and why, and that head stays claimable by a capable host, or by this one
+once fixed. A command that ran and refused or printed no known findings is the head's
 own ``error``, and that head is not retried. Otherwise the host CLAIMS the head:
 a ``pending`` status ``claimed by <host> at <time>, reviewing``. Every other host skips a head whose review status is
 anything but a released (``released by``) or stale claim (:func:`claimable`), so N serving hosts review a head once.
@@ -414,8 +416,8 @@ def review_tick(
     """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
 
     The declared command reviews ``<merge base>..<head>`` and prints the findings JSON; one comment and one
-    :data:`REVIEW_CONTEXT` status per head are posted from it. A host that cannot run it posts
-    :data:`HOST_UNABLE` and leaves the head claimable; a command that fails or prints anything but a known findings
+    :data:`REVIEW_CONTEXT` status per head are posted from it. A host that cannot start it posts nothing;
+    a command that fails or prints anything but a known findings
     version posts ``error`` naming why, and is not retried on that head.
     """
     lines: list[str] = []
@@ -436,8 +438,8 @@ def review_tick(
             cannot = ready(argvs[0], root)
         except ReviewUnsupported as unsupported:
             cannot = str(unsupported)
-        if cannot is not None:  # checked before the claim: the HOST cannot, the head stays claimable
-            lines.append(_unable(client, pull, host, cannot))
+        if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
+            lines.append(f'#{pull.number} {head[:12]}: not reviewed on this host -- {cannot}')
             continue
         claim = f'{CLAIMED} {host} at {clock().isoformat(timespec="seconds")}, reviewing'
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
@@ -471,9 +473,10 @@ def step(
     run: Callable[[Sequence[str], Path], str] = run_command,
     ready: Callable[[Sequence[str], Path], str | None] = can_start,
 ) -> None:
-    """The review inside the integration step, on whichever host runs it; a failure is said, never raised.
+    """The review on this serving host, when it can run the command; a failure is said, never raised.
 
     *host* is the serving host's card name (:func:`dev_lab.dev.forgehosts.card_host`): the name its claim posts.
+    A host that cannot fill or start the command says so once and reads no PR.
     """
     try:
         review = load_review(root)
@@ -481,6 +484,13 @@ def step(
             say(f'[serve] review: not run -- [tool.lab_commons.{_TABLE}] command is not declared')
             return
         here = provided(section('capabilities'))
+        try:  # any range, any slice: can this host run the command at all
+            cannot = ready(command_for(review, '', here), root)
+        except ReviewUnsupported as unsupported:
+            cannot = str(unsupported)
+        if cannot is not None:
+            say(f'[serve] review: not run on this host -- {cannot}')
+            return
         lines = review_tick(
             root, built, review, base=policy.integration, run=run, ready=ready, host=host, capabilities=here
         )
