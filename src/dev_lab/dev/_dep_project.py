@@ -13,7 +13,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.installdoor import floating_requirements
-from dev_lab.dev.lockcheck import TOOLCHAIN, newest_stable, pin_stable, unreasoned_holds
+from dev_lab.dev.lockcheck import TOOLCHAIN, UV_VERSION, newest_stable, pin_stable, unreasoned_holds
 from dev_lab.dev.venvpath import venv_interpreter
 
 
@@ -46,6 +46,35 @@ def target_root(root: Path | None, cwd: Path) -> Path:
         msg = f'a worktree may not mutate main at {target}; bootstrap its own environment'
         raise ValueError(msg)
     return target
+
+
+class OtherUvRefused(RuntimeError):
+    """The uv on PATH is not :data:`~dev_lab.dev.lockcheck.UV_VERSION`, and this command would write a lock."""
+
+
+def parse_uv_version(said: str) -> str:
+    """The version word of ``uv --version`` (``uv 0.13.5 (...)``); empty when uv said nothing parseable."""
+    words = said.split()
+    return words[1] if len(words) > 1 and words[0] == 'uv' else ''
+
+
+def installed_uv_version(uv: str) -> str:
+    """What the *uv* binary says it is."""
+    done = _door.run([uv, '--version'], capture_output=True, text=True, encoding='utf-8', check=False, timeout=60)
+    return parse_uv_version(done.stdout) if done.returncode == 0 else ''
+
+
+def lock_writer(uv: str) -> str:
+    """*uv*, if it is the one uv that writes every lock in the family; else refused by name with the remedy."""
+    found = installed_uv_version(uv)
+    if found != UV_VERSION:
+        msg = (
+            f'{uv} is uv {found or "(unreadable)"}, but every lock is written by uv {UV_VERSION} '
+            f'(dev_lab.dev.lockcheck.UV_VERSION): a lock written by another uv churns its revision line. '
+            f'Run `uv self update {UV_VERSION}` (WinGet: `winget install --id astral-sh.uv -e --version {UV_VERSION}`)'
+        )
+        raise OtherUvRefused(msg)
+    return uv
 
 
 def uv_command(
@@ -84,6 +113,7 @@ def uv_command(
             command.extend(('--reinstall-package', package))
     if frozen:
         return [*command, '--frozen']
+    command[0] = lock_writer(uv)  # an unfrozen sync or lock may rewrite uv.lock
     upgrades = set(upgrade_packages)
     if syncing:
         upgrades.update(floating_requirements(root / 'pyproject.toml'))
@@ -99,6 +129,7 @@ def lock_upgrade_command(root: Path, python: str) -> list[str]:
         msg = 'a lock upgrade requires uv on PATH'
         raise FileNotFoundError(msg)
     interpreter = python if Path(python).is_file() else sys.executable
+    uv = lock_writer(uv)
     return [uv, 'lock', '--upgrade', '--project', str(root), '--python', interpreter]
 
 
@@ -158,7 +189,11 @@ def lock_upgrade(
     if holds:
         emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
         return 1
-    command = lock_upgrade_command(root, python)
+    try:
+        command = lock_upgrade_command(root, python)
+    except OtherUvRefused as exc:
+        emit(f'REFUSED: {exc}')
+        return 1
     if dry_run:
         emit('would run: ' + ' '.join(command))
         return 0
