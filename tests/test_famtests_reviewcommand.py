@@ -6,6 +6,8 @@ command, or names a retired capability (``{capabilities.sharp_review.*}``), is r
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,8 @@ from dev_lab.dev.forgereview import (
     command_for,
     review_from,
 )
+from dev_lab.dev.forgereview_scope import PRINCIPLES_FIELD, gather
+from dev_lab.dev.principles import payload
 from dev_lab.dev.rules import RULES
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +45,8 @@ def test_the_family_command_slices_and_names_one_model() -> None:
     argv = command_for(review, 'a..b', _HOST, paths=('x.py', 'y.py'), lens='strict')
     assert argv == [
         'C:/rt/python.exe', '-m', 'ai_lab.review', '--range', 'a..b', '--lens', 'strict',
-        '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES), '--paths', 'x.py', 'y.py',
+        '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES),
+        '--principles', PRINCIPLES_FIELD, '--paths', 'x.py', 'y.py',
     ]  # fmt: skip
 
 
@@ -59,6 +64,24 @@ def test_a_repo_overrides_only_the_model_and_still_slices() -> None:
     assert PATHS_FIELD in review.command
     assert review.budget.slice_bytes == 5
     assert command_for(review, 'a..b', _HOST, paths=('x.py',))[7:9] == ['--model', 'other']
+
+
+def test_the_principles_reach_the_method_as_a_file(tmp_path: Path) -> None:
+    """``{principles}`` is filled at run time with a JSON file of the family payload, for slices and synthesis."""
+    seen: list[object] = []
+
+    def run(argv: Sequence[str], _root: Path) -> str:
+        given = Path(argv[list(argv).index('--principles') + 1])
+        seen.append(json.loads(given.read_text(encoding='utf-8')))
+        raise _Ran
+
+    with pytest.raises(_Ran):
+        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path)
+    assert seen == [payload()]
+
+
+class _Ran(Exception):
+    """The run stub stops ``gather`` once it has read the file it was handed."""
 
 
 def test_the_identical_command_redeclared_is_refused() -> None:

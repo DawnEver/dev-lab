@@ -70,6 +70,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   code. The injected-document corpus (``AGENTS.md``/``CLAUDE.md`` by basename, ``.claude/rules/**``,
   ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
   named-set declaration as :mod:`dev_lab.dev.cjk`.
+* :mod:`dev_lab.dev.principles` — the family's engineering PRINCIPLES, one tuple (user ruling 2026-10-27):
+  rendered to ``.claude/rules/principles.md`` by ``hook_install --install`` in every repo (pinned by
+  :mod:`dev_lab.dev.famtests.principlespage`), and handed to the review method as ``--principles <json>``.
 * :mod:`dev_lab.dev.hook_install` — HOOKS-ARE-WIRED, and the half a hook table cannot answer
   for itself: the TOML DECLARES hooks, installing their shims is a separate act on a separate
   machine, and nothing links the two. Measured 2026-09-16: ``consumer-b`` and

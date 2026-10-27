@@ -53,6 +53,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # command: only a genuinely different method; the family's, redeclared, is refused. Placeholders:
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
+    # {principles}: a JSON file of dev_lab.dev.principles (written per run; ai-lab holds no copy);
     # {capabilities.<name>.<key>}: THIS host's machine-file value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
@@ -102,7 +103,16 @@ from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
-from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import (
+    ONLY_GENERATED,
+    OVER_CAP_TAKEOVER,
+    PRINCIPLES_FIELD,
+    Budget,
+    Scope,
+    gather,
+    plan,
+    reviewed_heads,
+)  # fmt: skip
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -119,6 +129,7 @@ __all__ = [
     'HOST_FIELD',
     'MODEL_FIELD',
     'OVER_CAP_TAKEOVER',
+    'PRINCIPLES_FIELD',
     'RANGE_FIELD',
     'RETIRED_CAPABILITIES',
     'RETIRED_KEYS',
@@ -158,7 +169,7 @@ FAMILY_MODEL: Final = 'claude-sonnet-5-5'
 #: when its method genuinely differs; redeclaring this one is refused, so no stale copy can drift from it.
 FAMILY_COMMAND: Final = (
     '{capabilities.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
-    '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
+    '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--principles', PRINCIPLES_FIELD, '--paths', PATHS_FIELD,
 )  # fmt: skip
 
 #: Host capabilities the family retired, each refused in a command naming what replaced it.

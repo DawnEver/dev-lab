@@ -93,6 +93,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
+        _g('.claude/rules/principles.md', 'principles.render via hook_install --install: the family principles'),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
         _g('.github/workflows/python-verify.yml', 'ciworkflows RENDERED from TOML: THE family CI definition'),
         _g('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.dev_lab.ci]'),

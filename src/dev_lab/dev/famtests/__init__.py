@@ -43,6 +43,7 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.allowguard` -- an agent-hook allow entry may not name a shape the
   deny registry refuses.
 * :mod:`dev_lab.dev.famtests.hookinstall` -- the hooks a repo DECLARES are the hooks git has.
+* :mod:`dev_lab.dev.famtests.principlespage` -- the committed principles page IS the render.
 * :mod:`dev_lab.dev.famtests.visibility` -- what exists only on this box exists for nobody.
 * :mod:`dev_lab.dev.famtests.agentguard` -- the guard is live, and the rule that fires is the
   rule that was meant to.
