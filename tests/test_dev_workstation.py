@@ -605,7 +605,7 @@ def test_a_machine_file_still_declaring_serve_root_is_refused_by_name_and_deploy
 ) -> None:
     _serving(box)
     box.machine.write_text(
-        box.machine.read_text(encoding='utf-8').replace('[serve]\n', '[serve]\nroot = "C:/Users/x/src"\n'),
+        box.machine.read_text(encoding='utf-8').replace('[serve]\n', '[serve]\nroot = "D:/srv/src"\n'),
         encoding='utf-8',
     )
     capsys.readouterr()
