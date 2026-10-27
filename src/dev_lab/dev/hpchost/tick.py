@@ -28,6 +28,7 @@ from lab_commons.hpc.declared import REFUSALS
 from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
+from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.hpchost.checks import runs
 from dev_lab.dev.hpchost.spec import Deployment, Repo, checkout_of, host_serve_argv, load
 from dev_lab.dev.hpchost.steps import Step, Tools, build, declared, update
@@ -101,6 +102,7 @@ def tick(
     if why:
         emit(f'[tick] {name} released, not served this tick: {why}', err=True)
         return 2
+    serve_off({one.name: one.serve for one in spec.repos}, account(), alarm=alarm, repo=repo.url)
     if not repo.serve:
         return 0  # checked out and fresh; this account does not serve its queue
     checkout = checkout_of(spec, home, repo)
