@@ -28,8 +28,8 @@ PUSH-REMOTE-DELETE and PUSH-FORCE firing on Python heredoc text that only MENTIO
 | GIT-NETWORK-VERB | 246 |
 | BARE-INTERPRETER | 137 |
 | RAW-PROCESS-KILL | 32 |
-| OUTPUT-REDIRECT-IS-DATED (motronics row) | 22 |
-| ENV-MUTATION-THROUGH-THE-DOOR (motronics row) | 21 |
+| OUTPUT-REDIRECT-IS-DATED (consumer-c row) | 22 |
+| ENV-MUTATION-THROUGH-THE-DOOR (consumer-c row) | 21 |
 | WORKTREES-STAY-INSIDE | 20 |
 | CODE-IN-CODE-ROOTS (codeplace write hook) | 16 |
 | GIT-STASH | 12 |
@@ -37,7 +37,7 @@ PUSH-REMOTE-DELETE and PUSH-FORCE firing on Python heredoc text that only MENTIO
 | PUSH-REMOTE-DELETE / PUSH-NO-VERIFY / REPORTS-LIVE-IN-MEMORY / GIT-COMMIT-AMEND | 5 / 4 / 3 / 3 |
 | git hook: commit-msg merge-audit | 100 |
 | git hook: pre-commit ruff + ruff-format (repo layers) | 159 |
-| git hook: pre-commit architecture-fast (motronics layer) | 68 |
+| git hook: pre-commit architecture-fast (consumer-c layer) | 68 |
 | git hook: pre-push session-branch | 30 |
 | git hook: pre-commit ephemeral-refs | 22 |
 | git hook: pre-push branchset-push | 22 |

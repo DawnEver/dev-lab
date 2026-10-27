@@ -1,12 +1,12 @@
 ---
 name: a-learned-table-is-written-whole
-description: compute.learned wrote its table in place, so a concurrent reader saw an empty file and a JSONDecodeError killed a motronics sweep; the table is now written via durable_write (per-thread temp, Windows rename retry) and an unreadable table reads as the prior after a short retry
+description: compute.learned wrote its table in place, so a concurrent reader saw an empty file and a JSONDecodeError killed a consumer-c sweep; the table is now written via durable_write (per-thread temp, Windows rename retry) and an unreadable table reads as the prior after a short retry
 created: 2026-10-22
 ---
 
 # A learned table is written whole
 
-Measured 2026-10-22 07:02 (motronics long run): `learned()` read `compute-learned/<hash>.json` while another
+Measured 2026-10-22 07:02 (consumer-c long run): `learned()` read `compute-learned/<hash>.json` while another
 process's `_write` truncated and rewrote it in place; the reader got `''` -> `JSONDecodeError` raised through
 `run_of` -> `box_demand` -> a JMAG read, and the sweep died. The file was valid seconds later.
 
