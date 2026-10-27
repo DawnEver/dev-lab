@@ -99,7 +99,10 @@ def open_tree(
     if not (tree / '.git').exists():  # debris of an earlier run (half removed, still registered) blocks the add
         remove_tree(tree)
         _step(run, [_GIT, '-C', str(root), 'worktree', 'prune'], 'git worktree prune')
-        _step(run, [_GIT, '-C', str(root), 'worktree', 'add', '--detach', str(tree), sha], 'git worktree add')
+        # a tree nested under the serving checkout adds its own prefix to every tracked path: past MAX_PATH the add
+        # exits 128 though the commit is fine (wdg-lab #392), so the tree, not the repo's config, takes long paths
+        add = [_GIT, '-C', str(root), '-c', 'core.longpaths=true', 'worktree', 'add', '--detach', str(tree), sha]
+        _step(run, add, 'git worktree add')
     # A commit's tree INCLUDES its submodules at their pinned commits: `dep --bootstrap` initialises them first,
     # through the network door and with a local-path submodule's transport opened (_dep_network.init_submodules).
     _step(run, [python, '-m', 'dev_lab.dev.dep', '--bootstrap', str(tree)], 'dep --bootstrap')
