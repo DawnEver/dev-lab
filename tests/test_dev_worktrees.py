@@ -7,8 +7,10 @@ one with an ignored ``output/logs`` (moved home first), an unregistered director
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
@@ -49,7 +51,15 @@ def _planted(tmp_path: Path) -> Path:
     (home / 'leftover').mkdir()
     (home / 'leftover' / 'note.txt').write_text('agent output', encoding='utf-8')
     (home / 'empty' / 'nested').mkdir(parents=True)
+    _settled(work)
     return work
+
+
+def _settled(work: Path) -> None:
+    """Age every linked tree's index past the live-session window (``dev_lab.dev.reclaim.QUIET_S``)."""
+    old = time.time() - 2 * 3600
+    for index in (work / '.git' / 'worktrees').glob('*/index'):
+        os.utime(index, (old, old))
 
 
 def test_the_census_touches_nothing(tmp_path: Path) -> None:

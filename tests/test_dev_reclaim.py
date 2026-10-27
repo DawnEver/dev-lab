@@ -10,8 +10,10 @@ every tree whole (user ruling 2026-10-25: what git does not track is not the wor
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from dev_lab.dev.branchset import BranchSet, apply_local
@@ -78,7 +80,15 @@ def _planted(tmp_path: Path) -> Path:
     (home / 'cache' / '__pycache__' / 'm.pyc').write_text('', encoding='utf-8')
     _plant(home / 'notes' / 'note.txt', 'agent output')
     _plant(home / 'notes' / _LOG / 'n.txt', 'orphan result')
+    _settled(work)
     return work
+
+
+def _settled(work: Path) -> None:
+    """Age every linked tree's index past the live-session window (``dev_lab.dev.reclaim.QUIET_S``)."""
+    old = time.time() - 2 * 3600
+    for index in (work / '.git' / 'worktrees').glob('*/index'):
+        os.utime(index, (old, old))
 
 
 def _plant(path: Path, text: str) -> None:

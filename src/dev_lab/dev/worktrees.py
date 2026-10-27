@@ -15,10 +15,10 @@ let the removal delete five worktrees' ignored ``output/``. So:
   :func:`dev_lab.dev.reclaim.reclaimable`: a linked tree goes only when it is unlocked, no TRACKED file is
   changed (staged or not), its content is LANDED on the trunk or a declared session (``git cherry``, or a
   squash merge whose origin ref is gone) and no process occupies it. Its outputs are moved home and VERIFIED,
-  and only then -- chained, never after a ``;`` -- ``git worktree remove --force``; its branch then goes
+  and only then -- chained, never after a ``;`` -- the tree is deleted and pruned; its branch then goes
   through ``branchset --apply``.
 * a directory under ``.claude/worktrees/`` that git does not register: outputs home, verified, then deleted.
-* run it from the SessionStart/Stop debris hook: it prints what it removed and every kept tree with its reason.
+* every main-checkout session start runs it in the background (:mod:`dev_lab.dev.reclaimrun`), logged.
 """
 
 from __future__ import annotations

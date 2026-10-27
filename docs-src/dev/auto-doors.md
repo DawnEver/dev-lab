@@ -56,7 +56,7 @@ them in git history (user ruling 2026-10-23). `dev_lab.dev.automode` renders
 
 It is rendered by the dependency door's bootstrap and sync, and by
 `python -m dev_lab.dev.automode {write [--repo R] | session-start}`; the kit renders no `SessionStart` hook of
-its own, so a repo that wants a refresh per session wires `session-start` there (it reads the payload's `cwd`).
+its own for automode (its one `SessionStart` row is the background reclaim, `dev_lab.dev.reclaimrun`), so a repo that wants a refresh per session wires `session-start` there (it reads the payload's `cwd`).
 When either source is unreadable (a cluster login node holds no registry) nothing is written and the reason is
 printed by name; it always exits 0.
 

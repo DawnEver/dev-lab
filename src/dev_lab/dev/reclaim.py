@@ -13,8 +13,13 @@ dev_lab.dev.branchset --apply``, which reclaims first so the freed branch is del
 
 from __future__ import annotations
 
+import fnmatch
 import shutil
+import stat
 import subprocess
+import sys
+import time
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,22 +41,71 @@ from dev_lab.dev.checkout import (
 from dev_lab.dev.liverun import occupants
 from dev_lab.dev.worktree_archive import home_outputs
 
-__all__ = ['Lease', 'blockers', 'reclaim', 'reclaimable']
+__all__ = ['QUIET_S', 'Lease', 'blockers', 'declared_generated', 'reclaim', 'reclaimable', 'remove_tree']
 
 #: How many paths a kept line names before it counts the rest.
 _SHOWN: Final = 5
+#: A tree whose index moved this recently is a LIVE SESSION (it staged, committed or checked out): never reclaimed.
+QUIET_S: Final = 3600.0
+_LONG: Final = '\\\\?\\'
 
 
-def blockers(tree: Path) -> tuple[str, ...] | None:
-    """Every TRACKED path changed in *tree*, staged or not. Untracked and ignored files are not the work.
+def declared_generated(main: Path) -> tuple[str, ...]:
+    """The globs ``[tool.lab_commons.worktrees] generated`` of *main* declares: TRACKED files a tool regenerates.
+
+    A change to one is not work (a re-rendered lock or settings file), so it never keeps a tree. Default none.
+    """
+    manifest = main / 'pyproject.toml'
+    if not manifest.is_file():
+        return ()
+    with manifest.open('rb') as handle:
+        table = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('worktrees', {})
+    globs = table.get('generated', [])
+    if not isinstance(globs, list) or not all(isinstance(one, str) and one for one in globs):
+        msg = f'[tool.lab_commons.worktrees] generated in {manifest} must be a list of path globs'
+        raise ValueError(msg)
+    return tuple(globs)
+
+
+def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | None:
+    """Every TRACKED path really changed in *tree* against HEAD, staged or not; untracked and ignored are not work.
 
     User ruling 2026-10-25: the work is committed; what git does not track (scratch, untracked, ignored:
     ``.venv``, caches, builds) goes with the tree, except run outputs, which :func:`reclaim` moves home first.
+    Ruling 2026-10-27: a change that is only CR/LF at line ends (``--ignore-cr-at-eol``: line-ending churn of a
+    checkout) or only to a path matching a *generated* glob is not work either.
     """
-    out = git_out(tree, 'status', '--porcelain', '--untracked-files=no')
+    out = git_out(tree, 'diff', 'HEAD', '--ignore-cr-at-eol', '--no-renames', '--numstat', '-z')
     if out is None:
         return None
-    return tuple(f'{line[:2].strip()} {line[3:].strip()}' for line in out.splitlines() if line.strip())
+    paths = (row.split('\t', 2)[-1] for row in out.split('\0') if row.strip())
+    return tuple(p for p in paths if not any(fnmatch.fnmatchcase(p, glob) for glob in generated))
+
+
+def _index_age_s(tree: Path) -> float | None:
+    """Seconds since *tree*'s index last changed; ``None`` when it has none to read."""
+    index = (git_out(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index') or '').strip()
+    try:
+        return time.time() - Path(index).stat().st_mtime if index else None
+    except OSError:
+        return None
+
+
+def _writable(func: Callable[[str], object], path: str, _: BaseException) -> None:
+    Path(path).chmod(stat.S_IWRITE)  # a read-only file (a git object) refuses deletion on Windows
+    func(path)
+
+
+def remove_tree(path: Path) -> None:
+    r"""Delete directory *path* recursively, FAST and long-path safe: no git, no 260-character limit.
+
+    ``git worktree remove`` measured minutes per tree on Windows (deep ``.venv`` paths); a recursive delete
+    through the ``\\?\`` namespace measured seconds. Links and junctions are unlinked, never followed.
+    """
+    target = str(path.resolve())
+    if sys.platform == 'win32' and not target.startswith(_LONG):
+        target = _LONG + target
+    shutil.rmtree(target, onexc=_writable)
 
 
 def _shown(paths: tuple[str, ...] | list[str]) -> str:
@@ -135,14 +189,25 @@ def _occupancy() -> Callable[[Path], bool]:
 _LIVE: Final = 'live -- a process works in, executes from or reads it'
 
 
-def _tree_reason(tree: Path, branch: str, holders: tuple[str, ...], *, locked: bool) -> str:
+@dataclass(frozen=True)
+class _Judge:
+    holders: tuple[str, ...]
+    generated: tuple[str, ...]
+    quiet_s: float
+
+
+def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str:
+    holders = judge.holders
     if locked:
         return 'locked (git worktree unlock first)'
-    blocking = blockers(tree) if tree.is_dir() else None
+    blocking = blockers(tree, judge.generated) if tree.is_dir() else None
     if blocking is None:
         return 'unreadable'
     if blocking:
         return f'tracked changes -- commit or revert first: {_shown(blocking)}'
+    age = _index_age_s(tree)
+    if age is not None and age < judge.quiet_s:
+        return f'index changed {age / 60:.0f} min ago -- a live session'
     if not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
     return ''
@@ -154,13 +219,16 @@ def reclaimable(
     *,
     home: Path = DEFAULT_WORKTREE_HOME,
     occupied: Callable[[Path], bool] | None = None,
+    quiet_s: float = QUIET_S,
 ) -> tuple[Lease, ...] | None:
     """Every LINKED worktree and orphan directory of *root*, judged; ``None`` when git could not answer.
 
     A linked worktree (never the main one) is reclaimable iff ALL hold, checked in this order:
 
     * not ``git worktree lock``-ed;
-    * no TRACKED change, staged or not (:func:`blockers`) -- untracked and ignored files never block;
+    * no TRACKED change, staged or not (:func:`blockers`) -- untracked and ignored files, CR/LF-only changes
+      and declared generated paths never block;
+    * QUIET: its index unchanged for *quiet_s* seconds (a session that stages, commits or checks out is live);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
     * UNOCCUPIED: no process works in, executes from or reads it (LIVE-RUN's :func:`occupants` by default).
@@ -174,10 +242,11 @@ def reclaimable(
     if trees is None or locked is None or orphans is None:
         return None
     is_occupied = occupied or _occupancy()
+    judge = _Judge(holders, declared_generated(root), quiet_s)
     leases: list[Lease] = []
     for path, branch in trees[1:]:
         tree = path.resolve()
-        reason = _tree_reason(tree, branch, holders, locked=tree in locked)
+        reason = _tree_reason(tree, branch, judge, locked=tree in locked)
         leases.append(Lease(tree, branch, reason or (_LIVE if is_occupied(tree) else '')))
     leases += [Lease(orphan, '', _LIVE if is_occupied(orphan) else '') for orphan in orphans]
     return tuple(leases)
@@ -190,36 +259,39 @@ def reclaim(
     home: Path = DEFAULT_WORKTREE_HOME,
     occupied: Callable[[Path], bool] | None = None,
     apply: bool = True,
+    limit: int | None = None,
+    quiet_s: float = QUIET_S,
 ) -> tuple[str, ...] | None:
     """Remove every reclaimable lease; one line per lease, a kept one with its reason. ``None``: unreadable.
 
     Every lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_archive.home_outputs`) and
-    the copy verified; only then does a worktree go by ``git worktree remove --force`` (its untracked and
-    ignored content is declared disposable) or an orphan by ``shutil.rmtree``. An unverified archive keeps
-    the lease, with the reason. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``,
-    which deletes it pinned to its sha. Without *apply* nothing is touched.
+    the copy verified; only then is the tree deleted by :func:`remove_tree` (its untracked and ignored content
+    is declared disposable) and git's registration pruned. An unverified archive keeps the lease, with the
+    reason. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``, which deletes it pinned
+    to its sha. Without *apply* nothing is touched; past *limit* removals the rest are ``deferred`` to a later run.
     """
-    leases = reclaimable(root, holders, home=home, occupied=occupied)
+    leases = reclaimable(root, holders, home=home, occupied=occupied, quiet_s=quiet_s)
     if leases is None:
         return None
     out: list[str] = []
+    removed = 0
     for lease in leases:
         label = f'{lease.path}  [{lease.branch}]' if lease.branch else f'{lease.path}  (unregistered)'
         if not lease.reclaimable:
             out.append(f'kept     {label}  ({lease.reason})')
         elif not apply:
             out.append(f'prunable {label}')
+        elif limit is not None and removed >= limit:
+            out.append(f'deferred {label}  (batch of {limit} reached)')
         elif unarchived := home_outputs(root, lease.path):
             out.append(f'kept     {label}  ({unarchived}; nothing was deleted)')
-        elif lease.branch:
-            done = git_out(root, 'worktree', 'remove', '--force', str(lease.path)) is not None
-            out.append(f'{"removed " if done else "FAILED  "} {label}')
         else:
             try:
-                shutil.rmtree(lease.path)
+                remove_tree(lease.path)
             except OSError as error:
                 out.append(f'FAILED   {label}  ({error})')
             else:
+                removed += 1
                 out.append(f'removed  {label}')
     if apply:
         git_out(root, 'worktree', 'prune')
