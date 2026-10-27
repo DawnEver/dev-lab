@@ -15,7 +15,8 @@ import pytest
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev import metrics
+from dev_lab.dev import _dep_project, metrics
+from dev_lab.dev.lockcheck import UV_VERSION
 
 
 @pytest.fixture(autouse=True)
@@ -65,3 +66,12 @@ def _a_metrics_log_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         _LIVE_CHECKOUT.append(resolve(Path(__file__).resolve().parent))
     own = tmp_path / 'metrics-checkout'
     monkeypatch.setattr(metrics, 'checkout', lambda root: own if (at := resolve(root)) == _LIVE_CHECKOUT[0] else at)
+
+
+@pytest.fixture(autouse=True)
+def _the_declared_uv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The host's uv is never what a test measures: every lock-writing door sees the declared one.
+
+    A test that means another uv says so itself. Planted control: test_one_uv_writes_every_lock.
+    """
+    monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: UV_VERSION)

@@ -39,6 +39,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.hpchost.spec import Deployment, tick_dirs
+from dev_lab.dev.lockcheck import UV_VERSION
 
 __all__ = [
     'INSTALLERS',
@@ -61,7 +62,7 @@ _PROBE_TIMEOUT_S: Final = 60
 
 #: The official, user-space installer of each tool the deploy may install itself, in install order.
 INSTALLERS: Final = {
-    'uv': 'curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh',
+    'uv': f'curl -LsSf https://astral.sh/uv/{UV_VERSION}/install.sh | env UV_NO_MODIFY_PATH=1 sh',
     'cargo': "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
     'rustc': "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
     'cmake': 'uv tool install cmake',
