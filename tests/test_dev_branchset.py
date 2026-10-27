@@ -37,7 +37,7 @@ def _manifest(root: Path, body: str) -> Path:
 
 
 def test_the_declaration_is_read_from_the_manifest(tmp_path: Path) -> None:
-    root = _manifest(tmp_path, "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['feat/a']\n")
+    root = _manifest(tmp_path, "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['feat/a']\n")
     assert declared_branchset(root) == BranchSet('main', frozenset({'feat/a'}), ephemeral=('pr/*',))
     assert declared_branchset(root).declared == frozenset({'main', 'feat/a'})
 
@@ -46,8 +46,8 @@ def test_the_declaration_is_read_from_the_manifest(tmp_path: Path) -> None:
     'body',
     [
         '',
-        '[tool.lab_commons.branchset]\nsessions = []\n',
-        "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = 'x'\n",
+        '[tool.dev_lab.branchset]\nsessions = []\n',
+        "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = 'x'\n",
     ],
 )
 def test_an_undeclared_or_malformed_set_is_refused(tmp_path: Path, body: str) -> None:
@@ -97,7 +97,7 @@ def test_a_candidate_is_deletable_only_when_the_trunk_or_a_session_branch_holds_
 
 def test_the_cli_lists_the_candidates_from_the_declaration(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     work = plant_checkout(tmp_path, trunk='main').work
-    _manifest(work, "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = []\n")
+    _manifest(work, "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n")
     _run(work, 'branch', 'landed')
     assert main(['--root', str(work)]) == 0
     assert 'delete  local   landed' in capsys.readouterr().out
@@ -122,7 +122,7 @@ def test_two_open_ephemeral_heads_are_declared_and_an_undeclared_branch_is_debt(
 
 def test_an_omitted_ephemeral_is_the_family_pr_namespace_and_an_empty_list_opts_out() -> None:
     """``pr/*`` is the family's PR-head namespace, ruled once here rather than repeated in every manifest."""
-    head = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+    head = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
     assert branchset_from(head, 'p').ephemeral == ('pr/*',)
     assert branchset_from(head + 'ephemeral = []\n', 'p').ephemeral == ()
 
@@ -132,7 +132,7 @@ def test_an_ephemeral_glob_is_declared_and_a_malformed_one_refused(tmp_path: Pat
 
     PLANTED control: the same origin branch is debt to a set declaring no namespace.
     """
-    head = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+    head = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
     found = branchset_from(head + "ephemeral = ['pr/*']\n", 'p')
     assert found.ephemeral == ('pr/*',)
     assert found.admits('pr/fix-3')

@@ -331,7 +331,7 @@ def two_repos(tmp_path: Path) -> tuple[Path, Path, Path]:
     rules = hooks / 'deny-rules.json'
     rules.write_text(render(adoption), encoding='utf-8')
     (target / 'pyproject.toml').write_text(
-        '[project]\nname = "t"\n\n[tool.lab_commons.doors]\n'
+        '[project]\nname = "t"\n\n[tool.dev_lab.doors]\n'
         f'BARE-TEST-INVOCATION = "{TARGET_DOOR}"\n'
         f"PUSH-NO-VERIFY = '{TARGET_DOOR}'\n\n[tool.other]\nx = 1\n",
         encoding='utf-8',
@@ -366,7 +366,7 @@ def test_a_refusal_in_the_session_repo_keeps_its_own_door(two_repos: tuple[Path,
 def test_a_target_declaring_no_door_is_told_the_named_exit_is_not_its_own(
     two_repos: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
-    """A repo with no `[tool.lab_commons.doors]` row is not handed another repo's exit as if it were its own."""
+    """A repo with no `[tool.dev_lab.doors]` row is not handed another repo's exit as if it were its own."""
     _session, _target, rules = two_repos
     bare = tmp_path / 'bare'
     (bare / '.git').mkdir(parents=True)

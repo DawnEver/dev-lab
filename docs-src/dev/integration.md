@@ -21,7 +21,7 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    files (the carry's footprint rule; the files are read off the `handed` map of the record the head's
    `tests/base` links). An unreached scarce part is WAIVED: never produced for the PR, never read for its
    merge, and named in its integration comment. A reached one is required and is produced for the PR whatever
-   `[tool.lab_commons.parts.refs]` says. Any doubt (no record, no merge-base) waives nothing. The full scarce
+   `[tool.dev_lab.parts.refs]` says. Any doubt (no record, no merge-base) waives nothing. The full scarce
    parts run on `integrate/main` after the merge; a red one there keeps ONE `integration` issue naming every
    merge since its last green and the sessions (`Lab-Session`/`Claude-Session` trailers) that merge brought.
 3. `integrate/main` takes nothing else: with `pr_merges_since` declared, a client push adding a commit to it is
@@ -46,10 +46,10 @@ auto-merge is gitea-only. GitHub (`DawnEver/*`) is ONLY a push mirror (`branch-s
 writes its pull requests.
 
 ```toml
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 ephemeral = ['pr/*']
 
-[tool.lab_commons.integrator]
+[tool.dev_lab.integrator]
 pr_merges_since = "<the integrate/main sha the rule starts after>"
 ```
 
@@ -72,7 +72,7 @@ the dependency door. The new head gets its parts by the normal path, then merges
   (no host) only reports.
 
 ```toml
-[tool.lab_commons.integrator]
+[tool.dev_lab.integrator]
 pr_merges_since = "<sha>"   # auto-merge on; auto-sync rides it, no switch of its own
 auto_sync_quiet = "10 min"  # the default
 ```
@@ -94,8 +94,8 @@ reads the forge and writes nothing else.
 
 | rule | mechanism |
 |---|---|
-| INTEGRATION-TAKES-ONLY-FORGE-MERGES | pre-push `session-branch`, from `[tool.lab_commons.integrator] pr_merges_since` |
-| a `pr/*` head pushes with no row | `[tool.lab_commons.branchset] ephemeral = ['pr/*']`, judged by the forge's branch-set test |
+| INTEGRATION-TAKES-ONLY-FORGE-MERGES | pre-push `session-branch`, from `[tool.dev_lab.integrator] pr_merges_since` |
+| a `pr/*` head pushes with no row | `[tool.dev_lab.branchset] ephemeral = ['pr/*']`, judged by the forge's branch-set test |
 | PRS-TARGET-INTEGRATION | the integration tick retargets a PR opened against the trunk, with a comment |
 | no long-lived child | `branchset.sessions` names only the integration branch; anything else is merged and deleted |
 | every repo declares the flow | `famtests.branchset.assert_the_pr_flow_is_declared` |
@@ -203,7 +203,7 @@ command reads its own (`ai_lab`, the `pr-review` task key). The command is the F
 retired capability (`{capabilities.sharp_review.*}`) is refused (`famtests.reviewcommand`). Every key optional:
 
 ```toml
-[tool.lab_commons.review]
+[tool.dev_lab.review]
 # command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model} {rules}
 model = "<id>"             # the default is forgereview.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
@@ -230,7 +230,7 @@ and refused by name (`lab_commons.hpc.retired`).
 
 ## Session branches: one writer, by git
 
-Every repo declares its long-lived branches in `[tool.lab_commons.branchset] sessions` -- the integration
+Every repo declares its long-lived branches in `[tool.dev_lab.branchset] sessions` -- the integration
 branch is one of them. One host's one repo may carry SEVERAL sessions at once, each on its own branch in its own
 worktree (the main checkout is just one more worktree). So a branch is protected for what it IS, never for
 where it is checked out or which box pushes it: both move.
@@ -273,7 +273,7 @@ python -m dev_lab.dev.forge sync --watch origin/<ref>  # opt in to one more upst
   conflict, and merges (never rebases) only when every merge is clean: integration first, then each watched ref.
 - On a conflict it merges nothing and names the files; resolve with a plain `git merge`.
 - It never pushes. The owner measures what they touched and pushes.
-- A child more than `[tool.lab_commons.integrator] behind_max` commits behind integration is the forge's to say:
+- A child more than `[tool.dev_lab.integrator] behind_max` commits behind integration is the forge's to say:
   `forge serve` runs the behind/conflict report every tick and raises an `integration` alarm, naming this command,
   for each child past the bound or conflicting. No push is refused for it (toolchain plan P3).
 - The watched set is the checkout's git config `branch.<child>.labSyncFrom`, never a committed file.

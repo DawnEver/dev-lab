@@ -15,7 +15,7 @@ correct and unusable across four repos, because a tool that answers INCONCLUSIVE
 forever stops being read, and a refusal nobody reads gets routed around instead of fixed. So a
 project may DECLARE the skips it is living with, in its own ``pyproject.toml``::
 
-    [tool.lab_commons.verify]
+    [tool.dev_lab.verify]
     allowed_skips = ['tests/test_vendor.py']
 
 and both directions refuse:
@@ -72,6 +72,7 @@ from typing import Final
 
 from lab_commons.file_io import read_toml
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.pytestout import collected_count, markers_in, summary_counts
 
 __all__ = [
@@ -129,7 +130,7 @@ _COLLECTION_ERRORS = re.compile(r'(\d+)\s+errors?\s+during\s+collection')
 
 
 class MalformedAllowance(ValueError):
-    """``[tool.lab_commons.verify] allowed_skips`` is present but is not a list of strings.
+    """``[tool.dev_lab.verify] allowed_skips`` is present but is not a list of strings.
 
     ITS OWN CLASS, and a REFUSAL rather than a fallback to the empty list. A declaration the reader
     could not parse is the dominant defect in this family: the project believes it declared its
@@ -165,7 +166,7 @@ def declared_skips(root: Path) -> tuple[str, ...]:
     Read through :func:`lab_commons.file_io.read_toml`, which is this package's one TOML reader --
     a second reader is a second set of edge cases, and the family already decided which one it has.
 
-    An ABSENT file, an absent ``[tool.lab_commons.verify]`` table and an absent ``allowed_skips``
+    An ABSENT file, an absent ``[tool.dev_lab.verify]`` table and an absent ``allowed_skips``
     key all mean the same thing and all answer ``()``: nothing is declared, so every skip truncates,
     which is the behaviour every repo in the family has today. A PRESENT key of the wrong shape does
     NOT answer ``()`` -- see :class:`MalformedAllowance`.
@@ -177,13 +178,13 @@ def declared_skips(root: Path) -> tuple[str, ...]:
     manifest = root / 'pyproject.toml'
     if not manifest.is_file():
         return ()
-    table = read_toml(manifest).get('tool', {}).get('lab_commons', {}).get('verify', {})
+    table = declared_table(read_toml(manifest), 'verify', {})
     if 'allowed_skips' not in table:
         return ()
     declared = table['allowed_skips']
     if not isinstance(declared, list) or not all(isinstance(entry, str) and entry.strip() for entry in declared):
         msg = (
-            f'[tool.lab_commons.verify] allowed_skips in {manifest} is {declared!r}, which is not a '
+            f'[tool.dev_lab.verify] allowed_skips in {manifest} is {declared!r}, which is not a '
             f'list of non-empty strings. It is read as PREFIXES of the pytest NODE ID a skip is '
             f'reported at -- e.g. ["tests/test_vendor.py", "tests/test_vendor.py::test_a"]. Refused '
             f'rather than defaulted to empty: a declaration nobody could parse would exempt nothing '
@@ -247,7 +248,7 @@ def _skip_shortfall(
     undeclared = sorted(site for site in observed if not any(site.startswith(prefix) for prefix in allowed))
     if undeclared:
         reasons.append(
-            f'skipped and not declared in [tool.lab_commons.verify] allowed_skips: {", ".join(undeclared)}. '
+            f'skipped and not declared in [tool.dev_lab.verify] allowed_skips: {", ".join(undeclared)}. '
             f'A skip is a selected test that reported nothing; a known failure is an xfail with its residual.'
         )
     stale = (
@@ -330,7 +331,7 @@ def vanished_shortfall(stale: tuple[str, ...]) -> tuple[str, ...]:
     if not stale:
         return ()
     reason = (
-        f'declared in [tool.lab_commons.verify] allowed_skips and naming nothing in this checkout: '
+        f'declared in [tool.dev_lab.verify] allowed_skips and naming nothing in this checkout: '
         f'{", ".join(stale)}. An entry is read as a pytest NODE ID -- a module path, optionally '
         f'followed by ::test_name -- so one that resolves to no file names no test at all. Delete it '
         f'in the same edit that removed its subject, or point it at the name that replaced it.'

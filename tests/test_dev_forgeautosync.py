@@ -24,7 +24,7 @@ from dev_lab.dev.mergeresolution import judge as resolution_judge
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 
 POLICY = Policy(pr_merges_since='0' * 40)
-_MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 _LATER = datetime.now(UTC) + timedelta(hours=1)
 
 
@@ -247,9 +247,9 @@ def test_a_local_branch_of_the_heads_name_is_an_authors_and_is_refused(tmp_path:
 
 def test_auto_sync_has_no_switch_of_its_own_and_its_quiet_period_is_a_duration() -> None:
     """Auto-sync rides auto-merge's declaration (``pr_merges_since``); an ``auto_sync`` key is refused."""
-    declared = policy_from('[tool.lab_commons.integrator]\nauto_sync_quiet = "5 min"\n', 't')
+    declared = policy_from('[tool.dev_lab.integrator]\nauto_sync_quiet = "5 min"\n', 't')
     assert forgeautosync.quiet_after(declared) == timedelta(minutes=5)
     with pytest.raises(ValueError, match='unknown key'):
-        policy_from('[tool.lab_commons.integrator]\nauto_sync = true\n', 't')
+        policy_from('[tool.dev_lab.integrator]\nauto_sync = true\n', 't')
     with pytest.raises(ValueError, match='needs a unit'):
         forgeautosync.quiet_after(Policy(auto_sync_quiet='10'))

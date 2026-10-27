@@ -21,6 +21,7 @@ reviewer's, so it bounds a SLICE (``max_diff_bytes``); the head is held for a se
 
 from __future__ import annotations
 
+import json
 import re
 import tempfile
 from dataclasses import dataclass
@@ -32,13 +33,14 @@ import lab_commons.launch as _door
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview_findings import merge_outputs
+from dev_lab.dev.principles import payload
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
 __all__ = [
-    'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'Budget', 'Scope', 'Slice', 'gather', 'lens_of',
-    'own_base', 'plan', 'reviewable', 'reviewed_heads',
+    'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'PRINCIPLES_FIELD', 'Budget', 'Scope', 'Slice',
+    'gather', 'lens_of', 'own_base', 'plan', 'reviewable', 'reviewed_heads',
 ]  # fmt: skip
 
 #: The review description of a held head (its :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` says the same): a
@@ -52,6 +54,10 @@ ONLY_GENERATED: Final = 'nothing to review: every changed file is generated'
 
 #: In the ``synthesis`` command: replaced by the merged slice findings' path.
 FINDINGS_FIELD: Final = '{findings}'
+
+#: Replaced by the path of a JSON file holding :func:`dev_lab.dev.principles.payload`, written under the run's
+#: scratch: the method judges against the family's principles and owns no copy of them.
+PRINCIPLES_FIELD: Final = '{principles}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.
 LENSES: Final = ('strict', 'standard', 'light')
@@ -160,7 +166,7 @@ def _pack(lens: str, sizes: dict[str, int], budget: int) -> list[Slice]:
 
 @dataclass(frozen=True)
 class Budget:
-    """The declared bounds and globs a scope is cut by (``[tool.lab_commons.review]``)."""
+    """The declared bounds and globs a scope is cut by (``[tool.dev_lab.review]``)."""
 
     slice_bytes: int
     total_bytes: int
@@ -215,13 +221,20 @@ def gather(
 ) -> str:
     """The slices' outputs merged over *reviewed*; with several, the *synthesis* command's reading of them merged in.
 
-    *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`.
+    *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
+    the principles file as :data:`PRINCIPLES_FIELD`.
     """
-    merged = merge_outputs([run(argv, root) for argv in argvs], reviewed)
-    if not synthesis or len(argvs) == 1:
-        return merged
     with tempfile.TemporaryDirectory() as scratch:
+        given = Path(scratch) / 'principles.json'
+        given.write_text(json.dumps(payload()), encoding='utf-8')
+
+        def filled(argv: Sequence[str]) -> list[str]:
+            return [arg.replace(PRINCIPLES_FIELD, str(given)) for arg in argv]
+
+        merged = merge_outputs([run(filled(argv), root) for argv in argvs], reviewed)
+        if not synthesis or len(argvs) == 1:
+            return merged
         path = Path(scratch) / 'findings.json'
         path.write_text(merged, encoding='utf-8')
-        argv = [arg.replace(FINDINGS_FIELD, str(path)) for arg in synthesis]
+        argv = [arg.replace(FINDINGS_FIELD, str(path)) for arg in filled(synthesis)]
         return merge_outputs([merged, run(argv, root)], reviewed)

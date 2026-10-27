@@ -36,7 +36,7 @@ def repo(tmp_path: Path) -> Path:
     _git(root, 'config', 'user.email', 't@example.invalid')
     _git(root, 'config', 'user.name', 't')
     _git(root, 'config', 'core.autocrlf', 'false')
-    (root / 'pyproject.toml').write_text('[tool.lab_commons.hooks]\n', encoding='utf-8')
+    (root / 'pyproject.toml').write_text('[tool.dev_lab.hooks]\n', encoding='utf-8')
     return root
 
 
@@ -113,7 +113,7 @@ def test_a_declaration_the_runner_cannot_honour_raises(stage: str, row: dict, ne
 
 def test_a_stage_git_runs_and_the_family_does_not_raises(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[[tool.lab_commons.hooks.post-merge]]\nid = "x"\nrun = ["a"]\n', encoding='utf-8'
+        '[[tool.dev_lab.hooks.post-merge]]\nid = "x"\nrun = ["a"]\n', encoding='utf-8'
     )
     with pytest.raises(HookTableError, match='unknown hook stage'):
         hook_table(tmp_path)
@@ -121,7 +121,7 @@ def test_a_stage_git_runs_and_the_family_does_not_raises(tmp_path: Path) -> None
 
 def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[[tool.lab_commons.hooks.pre-push]]\nid = "pushgate"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
+        '[[tool.dev_lab.hooks.pre-push]]\nid = "pushgate"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
         encoding='utf-8',
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]

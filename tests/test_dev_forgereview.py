@@ -48,8 +48,8 @@ from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
-    "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
-    "[tool.lab_commons.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
+    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+    "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
 )
 
 
@@ -142,9 +142,7 @@ def test_an_empty_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
     forge, number = _forge(head)
     command = FakeCommand()
     said: list[str] = []
-    opted_out = (
-        _MANIFEST.split('[tool.lab_commons.review]', maxsplit=1)[0] + '[tool.lab_commons.review]\ncommand = []\n'
-    )
+    opted_out = _MANIFEST.split('[tool.dev_lab.review]', maxsplit=1)[0] + '[tool.dev_lab.review]\ncommand = []\n'
     (work / 'pyproject.toml').write_text(opted_out, encoding='utf-8')
     step(work, forge, policy=Policy(), say=said.append, host='box', run=command, ready=_can)
     assert command.ran == []
@@ -460,8 +458,8 @@ def test_a_second_tick_on_the_same_head_posts_nothing_and_runs_nothing(tmp_path:
 def test_a_key_of_the_retired_in_process_reviewer_is_refused_by_name(key: str) -> None:
     """PLANTED control: the same table without the retired key loads (the declaration test)."""
     with pytest.raises(ValueError, match=f'{key} is retired: the review'):
-        review_from(f"[tool.lab_commons.review]\n{key} = 'x'\nmax_diff_bytes = 5\n", 'p')
-    assert review_from('[tool.lab_commons.review]\nmax_diff_bytes = 5\n', 'p').max_diff_bytes == 5
+        review_from(f"[tool.dev_lab.review]\n{key} = 'x'\nmax_diff_bytes = 5\n", 'p')
+    assert review_from('[tool.dev_lab.review]\nmax_diff_bytes = 5\n', 'p').max_diff_bytes == 5
 
 
 def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
@@ -598,10 +596,10 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
 
 def test_the_declaration_defaults_and_overrides_and_refuses_an_unknown_key() -> None:
     assert review_from('', 'p') == Review()
-    declared = "[tool.lab_commons.review]\ncommand = ['r', '{range}']\nmax_diff_bytes = 5\n"
+    declared = "[tool.dev_lab.review]\ncommand = ['r', '{range}']\nmax_diff_bytes = 5\n"
     assert review_from(declared, 'p') == Review(command=('r', '{range}'), max_diff_bytes=5)
     with pytest.raises(ValueError, match='unknown key'):
-        review_from("[tool.lab_commons.review]\ncomand = ['x']\n", 'p')
+        review_from("[tool.dev_lab.review]\ncomand = ['x']\n", 'p')
 
 
 # --- the serve step ----------------------------------------------------------------------------------

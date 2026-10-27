@@ -52,14 +52,14 @@ a CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluste
     needs = ["cargo", "cc"]                # optional: login-node commands beyond git and uv
     collect = "tests"                      # optional: pytest arguments selecting the tests
 
-    [tool.lab_commons.parts]
+    [tool.dev_lab.parts]
     output = "output/logs"                 # base of the dated run-record directory (datedlog)
 
     [tool.lab_commons.tests]
     resources = ["femm", "jmag"]           # the markers naming a resource (lab_commons.hpc.needsets)
     produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]   # a local part: argv after the interpreter
 
-    [tool.lab_commons.parts.refs.windows]      # optional: the refs (fnmatch) this part is produced for
+    [tool.dev_lab.parts.refs.windows]      # optional: the refs (fnmatch) this part is produced for
     full = ["integrate/main", "main"]          # absent = every ref the serving mode serves
 
 A ref filter is what keeps HEAVY work off development branches (user ruling 2026-10-13): the scheduler
@@ -91,6 +91,7 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.datedlog import dated_log
+from dev_lab.dev.family import declared_in
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
@@ -196,7 +197,7 @@ def _strings(value: object, name: str, key: str, example: str, *, required: bool
 
 
 def record_directory(root: Path, head: str) -> Path:
-    """The dated directory *head*'s run records go to, under ``[tool.lab_commons.parts] output``.
+    """The dated directory *head*'s run records go to, under ``[tool.dev_lab.parts] output``.
 
     Every part writes there: the cluster's (:func:`cluster_part`) and a local verify's
     (:func:`dev_lab.dev.localpart.post_part`, a fresh or a cited run alike). *root* is the tree that was
@@ -206,11 +207,11 @@ def record_directory(root: Path, head: str) -> Path:
         UndeclaredPart: the output is not declared; the message names the key.
 
     """
-    return _records(root, head, _declared(root))
+    return _records(root, head, _declared(root, name='parts'))
 
 
-def _records(root: Path, head: str, declared: Mapping[str, Any]) -> Path:
-    output = _text(declared.get('parts', {}), 'tool.lab_commons.parts', 'output', '"output/logs"', required=True)
+def _records(root: Path, head: str, parts: Mapping[str, Any]) -> Path:
+    output = _text(parts, 'tool.dev_lab.parts', 'output', '"output/logs"', required=True)
     return dated_log(root, head, base=output, kind=_RECORD_KIND)
 
 
@@ -240,16 +241,16 @@ def part_refs(root: Path, platform: str, scope: str) -> tuple[str, ...] | None:
         UndeclaredPart: the declaration is present and not a list of strings.
 
     """
-    declared = _declared(root).get('parts', {}).get('refs', {}).get(platform, {}).get(scope)
-    if declared is None:
+    if (declared := _declared(root, name='parts').get('refs', {}).get(platform, {}).get(scope)) is None:
         return None
-    table = f'tool.lab_commons.parts.refs.{platform}'
+    table = f'tool.dev_lab.parts.refs.{platform}'
     return tuple(_strings(declared, table, scope, '["integrate/main", "main"]', required=True))
 
 
-def _declared(root: Path, sha: str | None = None) -> dict[str, Any]:
-    """The kit's tables as commit *sha* declares them, or *root*'s working tree when no sha is named."""
-    return kit_tables(pyproject_at(root, sha) if sha else (root / 'pyproject.toml').read_text(encoding='utf-8'))
+def _declared(root: Path, sha: str | None = None, name: str = '') -> dict[str, Any]:
+    """The kit's tables at commit *sha* (else *root*'s working tree); ``[tool.dev_lab.<name>]`` when named."""
+    text = pyproject_at(root, sha) if sha else (root / 'pyproject.toml').read_text(encoding='utf-8')
+    return declared_in(text, name) if name else kit_tables(text)
 
 
 def origin_url(root: Path) -> str:
@@ -277,15 +278,14 @@ def cluster_part(root: Path, head: str) -> ClusterPart:
         UndeclaredPart: a declaration it needs is absent or malformed; the message names the key.
 
     """
-    declared = _declared(root, head)
-    hpc, name = declared.get('hpc', {}), 'tool.lab_commons.hpc'
+    hpc, name = _declared(root, head).get('hpc', {}), 'tool.lab_commons.hpc'
     _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
     outputs = _strings(hpc.get('outputs'), name, 'outputs', '["output/fields/*.h5"]', required=False)
     return ClusterPart(
         repo_url=origin_url(root),
         collect=collect,
-        output=_records(root, head, declared),
+        output=_records(root, head, _declared(root, head, 'parts')),
         outputs=tuple(outputs),
     )
 

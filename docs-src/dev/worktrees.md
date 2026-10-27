@@ -64,7 +64,7 @@ a deliberate removal. It removes nothing; it reports `safe to remove` or why not
   `pyvenv.cfg` never travels.
 
 ```toml
-[tool.lab_commons.worktrees]            # the main checkout's pyproject.toml; both keys optional
+[tool.dev_lab.worktrees]            # the main checkout's pyproject.toml; both keys optional
 archive-outputs = ["<dir>"]             # default: worktree_archive.OUTPUTS
 archive-to = "<dir>"                    # default: worktree_archive.ARCHIVE_TO
 ```

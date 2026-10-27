@@ -57,7 +57,7 @@ DOORS: tuple[DoorRow, ...] = (
             'pin that the file still holds exactly those four commands. 4 since 2026-10-10: a '
             '`uv run --no-sync ... hook_install --install` step, a door added, not a delivery changed. '
             'MOVED 2026-10-11 from `.github/workflows/python-verify.yml` to this TOML: the workflow is '
-            'rendered from `[tool.lab_commons.ci]` here (dev_lab.dev.ciworkflows), so the commands are '
+            'rendered from `[tool.dev_lab.ci]` here (dev_lab.dev.ciworkflows), so the commands are '
             'read at their source; the thin caller `ci.yml` holds no command and has no row.'
         ),
     ),

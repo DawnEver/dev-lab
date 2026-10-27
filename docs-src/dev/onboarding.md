@@ -20,11 +20,11 @@ The first reads the tree and names every missing declaration at once; the second
 
 | piece | the line | why |
 |---|---|---|
-| the trunk and its sessions | `[tool.lab_commons.branchset] trunk = 'main'`, `sessions = ['integrate/main']` | ONE-BRANCH-PER-SESSION: anything else is debt |
+| the trunk and its sessions | `[tool.dev_lab.branchset] trunk = 'main'`, `sessions = ['integrate/main']` | ONE-BRANCH-PER-SESSION: anything else is debt |
 | the PR namespace | `ephemeral = ['pr/*']` | a PR head pushes with no declared session row |
-| the flow's start | `[tool.lab_commons.integrator] pr_merges_since = "<sha>"` | INTEGRATION-TAKES-ONLY-FORGE-MERGES from that commit |
+| the flow's start | `[tool.dev_lab.integrator] pr_merges_since = "<sha>"` | INTEGRATION-TAKES-ONLY-FORGE-MERGES from that commit |
 | the one producer | `[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]` | a part nobody can produce is a sha nobody can merge |
-| the hook rows | `[tool.lab_commons.hooks]` (an empty table is the whole declaration) | the family base rows run |
+| the hook rows | `[tool.dev_lab.hooks]` (an empty table is the whole declaration) | the family base rows run |
 | the entry point for an agent | `AGENTS.md` (+ `CLAUDE.md` = `@AGENTS.md`) | it names [the integration branch](integration.md) by link and restates nothing |
 | a committed lock | `uv.lock` | PIN + FRESHNESS: a verdict pins an environment to it |
 | Pull Requests ON | the forge's repository settings | with the unit off, every `/pulls` call answers 404 and no PR can be opened |
@@ -38,10 +38,10 @@ The relock belongs in the same PR as the declaration.
 ## Then the two lines every consumer carries
 
 ```toml
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 ephemeral = ['pr/*']
 
-[tool.lab_commons.integrator]
+[tool.dev_lab.integrator]
 pr_merges_since = "<the integrate/main sha the flow starts after>"
 ```
 

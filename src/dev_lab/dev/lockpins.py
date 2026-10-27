@@ -21,6 +21,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev.family import declared_table
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
@@ -35,7 +37,7 @@ __all__ = [
     'sync_door',
 ]
 
-#: The sync door when a repo declares none in ``[tool.lab_commons.doors]``.
+#: The sync door when a repo declares none in ``[tool.dev_lab.doors]``.
 DEFAULT_DOOR: Final = '<venv python> -m dev_lab.dev.dep --bootstrap'
 
 _DOOR_KEY: Final = 'ENV-MUTATION-THROUGH-THE-DOOR'
@@ -88,11 +90,11 @@ def mismatches(installed: Iterable[Installed], pins: Mapping[str, str]) -> tuple
 
 
 def sync_door(root: Path) -> str:
-    """The command *root* offers for a dependency change, from ``[tool.lab_commons.doors]``, else the shared one."""
+    """The command *root* offers for a dependency change, from ``[tool.dev_lab.doors]``, else the shared one."""
     manifest = root / 'pyproject.toml'
     if manifest.is_file():
-        doors = tomllib.loads(manifest.read_text(encoding='utf-8')).get('tool', {}).get('lab_commons', {})
-        door = doors.get('doors', {}).get(_DOOR_KEY)
+        doors = declared_table(tomllib.loads(manifest.read_text(encoding='utf-8')), 'doors', {})
+        door = doors.get(_DOOR_KEY)
         if isinstance(door, str) and door:
             return door
     return DEFAULT_DOOR

@@ -16,18 +16,18 @@ from dev_lab.dev.famtests.onboarding import (
     assert_the_forge_takes_pull_requests,
 )
 
-_COMPLETE = """[tool.lab_commons.branchset]
+_COMPLETE = """[tool.dev_lab.branchset]
 trunk = 'main'
 sessions = ['integrate/main']
 
-[tool.lab_commons.integrator]
+[tool.dev_lab.integrator]
 integration = 'integrate/main'
 pr_merges_since = 'abc123'
 
 [tool.lab_commons.tests]
 produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
-[tool.lab_commons.hooks]
+[tool.dev_lab.hooks]
 """
 
 

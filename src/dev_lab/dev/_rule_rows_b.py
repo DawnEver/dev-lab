@@ -185,7 +185,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY',
         (
-            'The PR review is the repo-declared command (`[tool.lab_commons.review] command`), run by the forge -- '
+            'The PR review is the repo-declared command (`[tool.dev_lab.review] command`), run by the forge -- '
             'which holds no model client, prompt or key -- inside its integration step on each open, non-draft PR '
             'into integration once per head sha, its stdout read as the versioned findings JSON (an unknown '
             '`schema_version` refused by name) whose every finding is tagged severity, security and rule under an '

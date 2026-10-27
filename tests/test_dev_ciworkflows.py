@@ -19,7 +19,7 @@ def test_this_repo_s_workflows_are_exactly_their_render() -> None:
 
 def test_a_repo_opts_in_and_its_layer_merges_over_the_base(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.ci."ci.yml".jobs.verify.with]\nextras = "dev"\n', encoding='utf-8'
+        '[tool.dev_lab.ci."ci.yml".jobs.verify.with]\nextras = "dev"\n', encoding='utf-8'
     )
     ci = workflows(tmp_path)['ci.yml']
     assert ci['jobs']['verify']['with'] == {'python-versions': '["3.12", "3.13"]', 'extras': 'dev'}
@@ -34,7 +34,7 @@ def test_a_repo_that_declares_nothing_renders_nothing(tmp_path: Path) -> None:
 
 def test_a_hand_edit_and_a_hand_written_workflow_are_refused_naming_the_render(tmp_path: Path, capsys) -> None:
     """PLANTED CONTROL: render, then edit one byte and add an undeclared file -- both must be named."""
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.ci."ci.yml"]\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
     write(tmp_path)
     assert main(['check', '--root', str(tmp_path)]) == 0
     path = tmp_path / '.github' / 'workflows' / 'ci.yml'

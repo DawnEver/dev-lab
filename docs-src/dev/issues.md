@@ -44,7 +44,7 @@ issues only through `python -m dev_lab.dev.forge issue ...` ([the forge](forge.m
   open issue titled `area:<name>`. The repo declares its areas once, in `pyproject.toml`:
 
   ```toml
-  [tool.lab_commons.areas]
+  [tool.dev_lab.areas]
   default = "triage"                       # where a red no glob claims goes
   jmag = ["src/pkg/adapters/jmag/**", "tests/**/jmag/**"]
   ```
@@ -63,10 +63,10 @@ issues only through `python -m dev_lab.dev.forge issue ...` ([the forge](forge.m
 
 `forge serve` runs `forge tidy` on every host, every tick, for every repo it serves (user ruling 2026-10-15;
 `python -m dev_lab.dev.forge tidy --dry-run` shows the plan). Every rule is ON; a repo only tunes it in
-`[tool.lab_commons.forge.issue_hygiene]` -- these are the defaults:
+`[tool.dev_lab.forge.issue_hygiene]` -- these are the defaults:
 
 ```toml
-[tool.lab_commons.forge.issue_hygiene]
+[tool.dev_lab.forge.issue_hygiene]
 host_duplicates = true       # DELETE every machine-made `forge hosts` issue but the oldest (the one home)
 green_areas = true           # close an `area:*` issue with no `- [ ]` row
 request_max_age_days = 14    # close a `forge:request` issue older than this

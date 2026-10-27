@@ -2,7 +2,7 @@
 
 User ruling 2026-10-19: every change is a short-lived branch returning by a PR to the integration branch,
 which takes ONLY server-side merges of PRs whose every forge part passed. Opted into by declaring
-``[tool.lab_commons.integrator] pr_merges_since = "<sha>"``; from then on the integration tick
+``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration tick
 (:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and,
 when nothing is missing, asks the forge to merge it (:func:`merge`). A client push adding a commit to the
 branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).

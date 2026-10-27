@@ -3,7 +3,7 @@
 EVERY RULE IS ON, in every repo the forge serves (user ruling 2026-10-15: issues must never rot); a repo
 only TUNES them, once, as data in its pyproject -- absent, the defaults below apply::
 
-    [tool.lab_commons.forge.issue_hygiene]
+    [tool.dev_lab.forge.issue_hygiene]
     host_duplicates = true         # DELETE every machine-made `forge hosts` issue but the OLDEST (the one home)
     green_areas = true             # close an open `area:<name>` issue with no `- [ ]` red row left
     request_max_age_days = 14      # close an open request issue (`forge:request`) older than this
@@ -43,6 +43,7 @@ from typing import Any, Final
 from lab_commons.compute.model import Schedule
 from lab_commons.log import emit
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgealarm import ISSUE_KINDS
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
@@ -88,17 +89,17 @@ class Closing:
 
 
 def load_hygiene(root: Path) -> Hygiene:
-    """*root*'s ``[tool.lab_commons.forge.issue_hygiene]`` over the defaults; an unknown key is refused by name."""
+    """*root*'s ``[tool.dev_lab.forge.issue_hygiene]`` over the defaults; an unknown key is refused by name."""
     manifest = root / 'pyproject.toml'
     if not manifest.is_file():
         return Hygiene()
     with manifest.open('rb') as handle:
-        table = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('forge', {})
+        table = declared_table(tomllib.load(handle), 'forge', {})
     declared = table.get('issue_hygiene', {})
     known = {field.name for field in dataclasses.fields(Hygiene)}
     unknown = sorted(set(declared) - known)
     if unknown:
-        where = f'[tool.lab_commons.forge.issue_hygiene] in {manifest}'
+        where = f'[tool.dev_lab.forge.issue_hygiene] in {manifest}'
         msg = f'{where} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     return Hygiene(**declared)

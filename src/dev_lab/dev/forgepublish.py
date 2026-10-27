@@ -80,7 +80,7 @@ def main(
 ) -> int:
     """``request <producer> --sha <sha>``; exit 2 refused (nothing published), 1 the forge failed."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge request', description=__doc__.splitlines()[0])
-    parser.add_argument('producer', help='a name the sha declares under [tool.lab_commons.requests]')
+    parser.add_argument('producer', help='a name the sha declares under [tool.dev_lab.requests]')
     parser.add_argument('--sha', required=True, help='the 40-hex commit to run it at')
     parser.add_argument('--paths', nargs='+', default=(), help='producer `tests` only: the test files to run')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))

@@ -1,7 +1,7 @@
 """lab-commons holds itself to ``CODE-IN-CODE-ROOTS``, ``SCRATCH-IS-NEVER-COMMITTED`` and ``STRAY-FILE-REFUSED``.
 
 The authoring repo of a rule may not be its worst adopter: this tree declares its placement in
-``[tool.lab_commons.placement]`` exactly as every adopter does -- no extra roots, so the family map
+``[tool.dev_lab.placement]`` exactly as every adopter does -- no extra roots, so the family map
 alone -- and its scratch holds exactly what every adopter's may: one tracked README.
 """
 

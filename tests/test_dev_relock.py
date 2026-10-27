@@ -191,7 +191,7 @@ def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure
     monkeypatch.setattr(forgeservesteps, 'pr_list', lambda _client: ())
     forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)
     assert (said, raised) == ([], []), 'CONTROL: no pr_merges_since, no relock'
-    manifest = '[project]\nname = "x"\nversion = "0"\n[tool.lab_commons.integrator]\npr_merges_since = "abc"\n'
+    manifest = '[project]\nname = "x"\nversion = "0"\n[tool.dev_lab.integrator]\npr_merges_since = "abc"\n'
     (tmp_path / 'pyproject.toml').write_text(manifest, encoding='utf-8')
     forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)
     (alarm,) = raised

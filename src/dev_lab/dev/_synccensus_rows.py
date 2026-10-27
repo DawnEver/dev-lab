@@ -48,7 +48,7 @@ ROWS: tuple[ScopeRow, ...] = (
             'pytest-mock, ruff and commitizen are its BASE install (what lab-commons shipped as its `dev` '
             'extra until the 2026-10-22 split), and this manifest names no pytest plugin in `addopts`, so '
             'the verdict set is pytest and ruff and both arrive with the base sync. Read where it is made: '
-            'the workflow is rendered from `[tool.lab_commons.ci."ci.yml"]` in pyproject.toml. The row '
+            'the workflow is rendered from `[tool.dev_lab.ci."ci.yml"]` in pyproject.toml. The row '
             'carries no line number: the position is derived from the text.'
         ),
     ),
@@ -67,7 +67,7 @@ SITES: dict[tuple[str, str, str], str] = {
         'caller. Every other lock-consuming door here takes `--no-sync`, which is what '
         'makes this set a singleton rather than a sample. '
         'Keyed by the command TEXT, not its line: four hand repoints each re-typed a position no '
-        'edit had given a meaning, and a fifth went unmade. Lives in `[tool.lab_commons.ci."python-verify.yml"]`, '
+        'edit had given a meaning, and a fifth went unmade. Lives in `[tool.dev_lab.ci."python-verify.yml"]`, '
         'the TOML the workflow is rendered from.'
     ),
 }

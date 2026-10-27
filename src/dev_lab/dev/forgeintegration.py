@@ -3,7 +3,7 @@
 A child branch is an ``origin`` branch the schedule's one rule classes (``classes_by_ref``) or the head
 of an open pull request on ``origin`` (fetched as ``pull/N/head``). PRs are opened on the forge only; GitHub is
 a push mirror and is never read. The tick never writes a child;
-it REPORTS on it -- and, where ``[tool.lab_commons.integrator] pr_merges_since`` is declared, asks the forge to
+it REPORTS on it -- and, where ``[tool.dev_lab.integrator] pr_merges_since`` is declared, asks the forge to
 MERGE a PR that is green, clean and audit-passing (:mod:`dev_lab.dev.forgemerge`), saying in its comment
 what is missing otherwise. Per child branch, against ``origin/<integration>`` and with no
 checkout (:mod:`dev_lab.dev.trialmerge`):

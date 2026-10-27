@@ -17,10 +17,10 @@ what the test can read, so it is built to be WIDE, never hopeful:
   ``import_module``, ``subprocess``, a cwd, a pytest path attribute, a string literal starting with a
   tracked top-level name) makes the footprint EVERYTHING -- unless the repo declares what it reads::
 
-    [tool.lab_commons.carry]
+    [tool.dev_lab.carry]
     everywhere = ["rust/**"]                        # paths that reach every test (beyond ALWAYS)
 
-    [tool.lab_commons.carry.reads]                  # module glob -> the path globs it reads
+    [tool.dev_lab.carry.reads]                  # module glob -> the path globs it reads
     "tests/test_docs.py" = ["docs-src/**"]
 
 Globs are :func:`fnmatch.fnmatchcase` over repo-relative POSIX paths, so ``*`` crosses ``/``. A
@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT
 
 if TYPE_CHECKING:
@@ -88,19 +89,19 @@ def _git(root: Path, *args: str, stdin: str | None = None) -> str:
 
 
 def declared(pyproject: str) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
-    """``(everywhere globs, reads by module glob)`` of ``[tool.lab_commons.carry]`` in *pyproject*.
+    """``(everywhere globs, reads by module glob)`` of ``[tool.dev_lab.carry]`` in *pyproject*.
 
     Raises:
         ValueError: a key is not the shape the module docstring shows; the message names it.
 
     """
-    table = tomllib.loads(pyproject).get('tool', {}).get('lab_commons', {}).get('carry', {})
+    table = declared_table(tomllib.loads(pyproject), 'carry', {})
     everywhere = table.get('everywhere', [])
     reads = table.get('reads', {})
     ok = _globs(everywhere) and isinstance(reads, dict) and all(_globs(value) for value in reads.values())
     if not ok:
         msg = (
-            '[tool.lab_commons.carry] must declare everywhere as an array of path globs and reads as a table '
+            '[tool.dev_lab.carry] must declare everywhere as an array of path globs and reads as a table '
             f'of module glob -> array of path globs, e.g. everywhere = ["rust/**"] -- not {table!r}'
         )
         raise ValueError(msg)

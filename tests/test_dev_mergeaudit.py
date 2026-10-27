@@ -259,7 +259,7 @@ def test_the_check_reads_its_declaration_from_the_tree_being_committed_never_the
     (repo / 'pyproject.toml').unlink()
     _pending_merge_dropping_b(repo)
     message.write_text(f'merge lane\n\n{mergeaudit.TRAILER}: LOST test_b -- moved upstream\n', encoding='utf-8')
-    (repo / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nhost = "G"\n', encoding='utf-8')
     assert mergeaudit.main([str(message)]) == 0, 'the unstaged working-tree manifest was read'
     _git(repo, 'add', 'pyproject.toml')
     assert mergeaudit.main([str(message)]) == 1

@@ -55,7 +55,7 @@ def test_a_nested_worktree_is_judged_against_its_own_root(checkout: Path) -> Non
 
 
 def test_the_write_hook_denies_a_report_under_output_even_without_a_placement(checkout: Path, capsys) -> None:
-    """The report half needs no `[tool.lab_commons.placement]`: the ruling is family-wide."""
+    """The report half needs no `[tool.dev_lab.placement]`: the ruling is family-wide."""
     bad = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': str(checkout / 'output' / 'audit.md')}})
     assert main(stdin=io.StringIO(bad)) == 0
     decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']

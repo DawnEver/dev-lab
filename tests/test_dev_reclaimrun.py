@@ -27,8 +27,8 @@ from dev_lab.dev.reclaimrun import LOCK_NAME, held, main, main_checkout, run
 
 _GIT = shutil.which('git') or 'git'
 _LOG = Path('output/logs/26/10/27/run/result.txt')
-_BRANCHSET = "\n[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = []\n"
-_GENERATED = "\n[tool.lab_commons.worktrees]\ngenerated = ['uv.lock']\n"
+_BRANCHSET = "\n[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n"
+_GENERATED = "\n[tool.dev_lab.worktrees]\ngenerated = ['uv.lock']\n"
 
 
 def _git(cwd: Path, *args: str) -> str:

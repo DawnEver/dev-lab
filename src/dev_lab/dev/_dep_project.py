@@ -12,6 +12,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.installdoor import floating_requirements
 from dev_lab.dev.lockcheck import TOOLCHAIN, UV_VERSION, newest_stable, pin_stable, unreasoned_holds
 from dev_lab.dev.venvpath import venv_interpreter
@@ -136,7 +137,7 @@ def lock_upgrade_command(root: Path, python: str) -> list[str]:
 def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
     """Resolve only project-owned anchors, including symlink and drive-path refusals."""
     if not isinstance(anchors, (list, tuple)) or any(not isinstance(path, str) for path in anchors):
-        msg = 'tool.lab_commons.dep.anchors must be an array of project-relative paths'
+        msg = 'tool.dev_lab.dep.anchors must be an array of project-relative paths'
         raise ValueError(msg)
     paths = tuple((root / path).resolve() for path in anchors)
     if any(
@@ -151,11 +152,11 @@ def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
 def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tuple[str, ...], tuple[Path, ...]]:
     """Validate target-owned environment, extras and anchors before mutation."""
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    declaration = manifest.get('tool', {}).get('lab_commons', {}).get('dep', {})
+    declaration = declared_table(manifest, 'dep', {})
     available = manifest.get('project', {}).get('optional-dependencies', {})
     selected = requested if requested is not None else declaration.get('extras', tuple(available))
     if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
-        msg = 'tool.lab_commons.dep.extras must be an array of declared extra names'
+        msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
         raise ValueError(msg)
     unknown = set(selected) - set(available)
     if unknown:

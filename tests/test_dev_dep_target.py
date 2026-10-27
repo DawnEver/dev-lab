@@ -97,7 +97,7 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
     (root / 'pyproject.toml').write_text(
         '[project]\nname="example"\nversion="0"\n'
         '[project.optional-dependencies]\ndev=[]\nimg-to-cad=[]\ntooldrivers=[]\n'
-        '[tool.lab_commons.dep]\nextras=["dev","img-to-cad","tooldrivers"]\n',
+        '[tool.dev_lab.dep]\nextras=["dev","img-to-cad","tooldrivers"]\n',
         encoding='utf-8',
     )
     calls = []
@@ -164,7 +164,7 @@ def test_real_bootstrap_B_runs_while_A_has_a_verdict_then_B_refuses_its_own_sync
 @pytest.mark.parametrize('anchor', ['../another-lane/verdict', 'C:/another-lane/verdict', '/another-lane/verdict'])
 def test_sync_refuses_anchors_outside_its_project_before_mutating(tmp_path, anchor) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        f'[project]\nname="empty"\nversion="0"\n[tool.lab_commons.dep]\nanchors=["{anchor}"]\n',
+        f'[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nanchors=["{anchor}"]\n',
         encoding='utf-8',
     )
     with pytest.raises(ValueError, match='inside the target project'):
@@ -173,7 +173,7 @@ def test_sync_refuses_anchors_outside_its_project_before_mutating(tmp_path, anch
 
 def test_sync_failure_is_nonzero_and_retires_only_changed_target_anchors(tmp_path, monkeypatch) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[project]\nname="empty"\nversion="0"\n[tool.lab_commons.dep]\nanchors=["verdict"]\n',
+        '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nanchors=["verdict"]\n',
         encoding='utf-8',
     )
     anchor = tmp_path / 'verdict'

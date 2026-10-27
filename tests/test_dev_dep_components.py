@@ -3,7 +3,7 @@
 INCIDENT (motronics, 2026-10-19): ``components/numerics-lab`` moved to a commit adding a symbol, its
 ``uv.lock`` source is ``{ directory = ... }`` installed non-editable at an unchanged version string, and
 ``dep --sync``, ``--upgrade-package`` and ``--bootstrap`` all exited 0 leaving the OLD module installed. The
-door now stamps each ``[tool.lab_commons.components]`` package's tree (git HEAD, plus its diff when dirty)
+door now stamps each ``[tool.dev_lab.components]`` package's tree (git HEAD, plus its diff when dirty)
 into the venv after a sync, and passes ``--reinstall-package`` for exactly those whose stamp moved.
 """
 
@@ -20,7 +20,7 @@ from dev_lab.dev._dep_components import changed, record
 _GIT = shutil.which('git') or 'git'
 _PYPROJECT = (
     '[project]\nname="product"\nversion="0"\n'
-    '[tool.lab_commons.components.numerics-lab]\n'
+    '[tool.dev_lab.components.numerics-lab]\n'
     'url = "https://forge.invalid/o/numerics-lab.git"\nbranch = "main"\nparts = ["base"]\npackage = "numerics-lab"\n'
 )
 

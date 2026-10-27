@@ -37,12 +37,12 @@ def _plant(root, rel: str, *, age_days: float = 0.0) -> None:
 
 def _declare(root, body: str) -> None:
     (root / '.git').mkdir(exist_ok=True)
-    (root / 'pyproject.toml').write_text(f'[tool.lab_commons.placement]\n{body}', encoding='utf-8')
+    (root / 'pyproject.toml').write_text(f'[tool.dev_lab.placement]\n{body}', encoding='utf-8')
 
 
 def _repo(root) -> None:
     launch.run(['git', 'init', '-q', str(root)], check=True)
-    (root / 'pyproject.toml').write_text('[tool.lab_commons.placement]\n', encoding='utf-8')
+    (root / 'pyproject.toml').write_text('[tool.dev_lab.placement]\n', encoding='utf-8')
     launch.run(['git', '-C', str(root), 'add', 'pyproject.toml'], check=True)
 
 

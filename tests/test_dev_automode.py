@@ -53,7 +53,7 @@ _MANIFEST = """[project]
 name = "planted"
 version = "0"
 
-[tool.lab_commons.branchset]
+[tool.dev_lab.branchset]
 trunk = "main"
 sessions = ["integrate/main"]
 {extra}"""
@@ -110,12 +110,12 @@ def test_the_render_equals_its_sources(tmp_path: Path) -> None:
 
 def test_an_optional_intent_renders_only_where_declared_and_an_unknown_one_is_refused(tmp_path: Path) -> None:
     plain = automode(_repo(tmp_path / 'a'), _FLEET)['autoMode']['allow']
-    jmag = '\n[tool.lab_commons.automode]\ndeclares = ["jmag-material-card"]\n'
+    jmag = '\n[tool.dev_lab.automode]\ndeclares = ["jmag-material-card"]\n'
     declared = automode(_repo(tmp_path / 'b', jmag), _FLEET)['autoMode']['allow']
     assert OPTIONAL_INTENTS['jmag-material-card'] not in plain
     assert OPTIONAL_INTENTS['jmag-material-card'] in declared
     with pytest.raises(ValueError, match='anything-goes'):
-        automode(_repo(tmp_path / 'c', '\n[tool.lab_commons.automode]\ndeclares = ["anything-goes"]\n'), _FLEET)
+        automode(_repo(tmp_path / 'c', '\n[tool.dev_lab.automode]\ndeclares = ["anything-goes"]\n'), _FLEET)
 
 
 def _committed() -> list[str]:
