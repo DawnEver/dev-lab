@@ -84,6 +84,7 @@ _IDS = frozenset(
         'DOCS-ONLY-CARRIES',
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',
+        'RECURSIVE-DELETE',
         'MERGE-DEVIATIONS-NAMED',
         'MERGE-RESOLUTION-DECLARED',
         'AUTO-MODE-RUNS-THE-DOORS',
