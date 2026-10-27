@@ -19,8 +19,10 @@ SOURCE_FLOOR = 100
 
 
 def test_the_task_runs_the_windowless_interpreter_from_its_checkout_every_five_minutes(tmp_path: Path) -> None:
-    lab = tmp_path / 'lab-commons'
-    want = servetask.definition_of(lab)
+    """The action is DERIVED from the forge home: the serve checkout of dev-lab, never a dev checkout."""
+    lab = tmp_path / 'repos' / 'dev-lab'
+    assert servetask.kit(tmp_path) == lab
+    want = servetask.definition_of(tmp_path)
     assert want.command == str(lab / '.venv' / 'Scripts' / 'pythonw.exe'), 'pythonw: no console window'
     assert want.arguments == '-m dev_lab.dev.workstation serve'
     assert want.working_directory == str(lab), 'the checkout is the working directory, not a `cmd /c cd`'

@@ -7,8 +7,11 @@ yields ``False`` when another process holds it. ``forge serve --lock [PATH]`` is
 serve's own entry: a second serve on a held lock exits 0 having done nothing, and says so. The OS drops
 the lock when its holder dies, however it dies, so a killed serve never leaves a stale lock behind.
 
-THE DEFAULT PATH is per user, because the forge credential and a vendor's scheduler are:
-``%LOCALAPPDATA%/lab-forge/serve.lock`` on Windows, ``~/.cache/lab-forge/serve.lock`` elsewhere.
+THE FORGE HOME is per user, because the forge credential and a vendor's scheduler are, and it is the
+platform data dir -- never a user-visible directory beside the dev repos (user ruling 2026-10-26):
+``%LOCALAPPDATA%/lab-forge`` on Windows, ``${XDG_DATA_HOME:-~/.local/share}/lab-forge`` elsewhere.
+:func:`forge_home` is the ONE place it is named; the lock, the log, the stop notes and the serve
+checkouts (``<forge home>/repos/<repo>``) all derive from it.
 
 A STOP NOTE says a producer was stopped on purpose (:mod:`dev_lab.dev.stoprun`), so the serve that
 spawned it releases the claim as ``error: stopped`` rather than as a crash; :func:`was_stopped` reads
@@ -25,14 +28,19 @@ from pathlib import Path
 
 from lab_commons.log import emit
 
-__all__ = ['default_lock', 'held', 'locked', 'note_stopped', 'was_stopped']
+__all__ = ['default_lock', 'forge_home', 'held', 'locked', 'note_stopped', 'was_stopped']
+
+
+def forge_home() -> Path:
+    """The forge's machine home: ``%LOCALAPPDATA%/lab-forge``, else ``${XDG_DATA_HOME:-~/.local/share}/lab-forge``."""
+    nt = os.name == 'nt'
+    data = os.environ.get('LOCALAPPDATA' if nt else 'XDG_DATA_HOME')
+    return (Path(data) if data else Path.home() / ('AppData/Local' if nt else '.local/share')) / 'lab-forge'
 
 
 def default_lock() -> Path:
-    """The per-user serve lock: ``%LOCALAPPDATA%/lab-forge/serve.lock``, else ``~/.cache/lab-forge/serve.lock``."""
-    local = os.environ.get('LOCALAPPDATA') if os.name == 'nt' else None
-    base = Path(local) if local else Path.home() / '.cache'
-    return base / 'lab-forge' / 'serve.lock'
+    """The per-user serve lock, in the :func:`forge_home`."""
+    return forge_home() / 'serve.lock'
 
 
 def _try_lock(fd: int) -> bool:
@@ -79,7 +87,7 @@ def locked(argv: Sequence[str], run: Callable[[list[str]], int]) -> int:
 
 
 def _notes(root: Path | None) -> Path:
-    return (default_lock().parent if root is None else root) / 'stopped'
+    return (forge_home() if root is None else root) / 'stopped'
 
 
 def note_stopped(pid: int, *, root: Path | None = None) -> None:
