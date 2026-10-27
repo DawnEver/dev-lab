@@ -56,12 +56,13 @@ def test_a_malformed_vocabulary_is_refused_naming_the_table(value: str) -> None:
         read_vocabulary(f'[tool.lab_commons.tests]\nresources = {value}\n')
 
 
-#: The retired tables, read off the registry: their spellings live there and nowhere else.
-_RETIRED_TABLES = sorted(key for key in RETIRED if key.startswith('[tool.lab_commons.'))
+#: The two part tables the need vocabulary replaced: the OS axis and the capability axis. NAMED, not
+#: read off the registry by prefix -- the registry also holds the tables that moved to dev-lab (A3).
+_RETIRED_TABLES = ('[tool.lab_commons.capabilities]', '[tool.lab_commons.platforms]')
 
 
 def test_the_old_part_tables_are_registered_retired() -> None:
-    assert len(_RETIRED_TABLES) == 2, 'the OS axis and the capability axis'
+    assert set(_RETIRED_TABLES) <= set(RETIRED)
 
 
 @pytest.mark.parametrize('table', _RETIRED_TABLES)
