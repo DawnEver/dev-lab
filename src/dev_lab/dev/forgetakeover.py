@@ -14,7 +14,7 @@ A human is asked only for a decision the review surfaces, never for the routine 
   comment and :data:`REVIEW_CONTEXT`, and releases the hold. ``review plan <sha>`` prints the slices only.
 * :func:`release` REFUSES without a findings comment for that sha on its PR: the release is the record that a
   review happened. The raw ``forge status post --context tests/review-hold`` is refused to agents
-  (``REVIEW-STATUS-VIA-DOORS``), so this door is the one release.
+  (``STATUS-VIA-DOORS``), so this door is the one release.
 """
 
 from __future__ import annotations

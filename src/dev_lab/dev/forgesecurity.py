@@ -27,15 +27,29 @@ only what differs, every entry with its reason::
     allowed = { "sha256:1175475b7402" = "a fake test credential" }       # credential digests allowed
     accepted = { "GHSA-xxxx-xxxx-xxxx" = "the vulnerable path is unused" }  # advisories accepted
 
-The table is read from ``origin/<integration>``, never from the head being judged: a branch cannot widen the
-exemptions that judge it, so a new exemption lands on its own PR first. It is ``tool.dev_lab`` and not
+The table that JUDGES a head is read from ``origin/<integration>``, never from the head: a branch cannot widen
+the exemptions that judge it. A PR that CHANGES the table is released once, explicitly, and on the record:
+
+* the step judges such a head twice -- with the integration table (the posted findings) and with the head's own.
+  When the head's table leaves nothing, the ``failure`` says so and names the door, :data:`RELEASE_DOOR`;
+* ``python -m dev_lab.dev.forge security release <pr> --why "<reason>"`` (:func:`release`)
+  re-judges the head with ITS table and, only when that finds nothing, records the reason and the exemption
+  delta as ONE keyed PR comment (``Marker.SECURITY_RELEASE``) and posts ``success`` citing it. Refused without a
+  reason, when the head leaves the table unchanged, and when the head's own table still leaves findings. A raw
+  ``status post`` on this context is refused to agents (``STATUS-VIA-DOORS``). Nothing checks WHO runs the
+  door: what makes a release safe is that it is RECORDED -- the comment names the host, the delta and the reason --
+  so it is auditable, and that the reason must be substantive (:data:`_MIN_WHY` characters at least).
+
+It is ``tool.dev_lab`` and not
 ``tool.lab_commons`` because it is read by this step alone, never by a reader of the commit's kit tables.
 """
 
 from __future__ import annotations
 
+import argparse
 import io
 import subprocess
+import sys
 import tarfile
 import tempfile
 import tomllib
@@ -45,11 +59,13 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
 
+from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
-from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
+from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
-from dev_lab.dev.forgework import ForgeCallFailed
+from dev_lab.dev.forgework import ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.security import (
@@ -68,7 +84,20 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
 
-__all__ = ['KEYS', 'Declaration', 'Judgement', 'declared', 'judge', 'security_wait', 'step']
+__all__ = [
+    'KEYS',
+    'RELEASE_DOOR',
+    'Declaration',
+    'Judgement',
+    'ReleaseRefused',
+    'declared',
+    'delta',
+    'judge',
+    'main',
+    'release',
+    'security_wait',
+    'step',
+]
 
 #: The keys ``[tool.dev_lab.security]`` may declare; any other key is refused by name.
 KEYS: Final = ('exclude', 'ignore', 'allowed', 'accepted')
@@ -79,9 +108,18 @@ _NAMED: Final = 3
 #: A settled security status: judged, not judged again on that head.
 _SETTLED: Final = frozenset({'success', 'failure'})
 
+#: The door run on a head whose own new exemptions cover its findings; ``{pr}`` is its number.
+RELEASE_DOOR: Final = 'python -m dev_lab.dev.forge security release {pr} --why "<reason>"'
+
+_MIN_WHY: Final = 10  # characters: a reason, not a shrug
+
 
 class DeclarationInvalid(ValueError):
     """``[tool.dev_lab.security]`` is malformed; the message names the key."""
+
+
+class ReleaseRefused(ValueError):
+    """The release door will not release this head, and says why."""
 
 
 @dataclass(frozen=True)
@@ -92,6 +130,10 @@ class Declaration:
     ignore: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     allowed: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     accepted: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+
+    def tables(self) -> dict[str, Mapping[str, str]]:
+        """Each declared table by its key (:data:`KEYS`)."""
+        return {'exclude': self.exclude, 'ignore': self.ignore, 'allowed': self.allowed, 'accepted': self.accepted}
 
 
 @dataclass(frozen=True)
@@ -118,6 +160,17 @@ def declared(pyproject: str) -> Declaration:
             msg = f'[tool.dev_lab.security] {key} must be a table of {{name = "reason"}}, every reason non-empty'
             raise DeclarationInvalid(msg)
     return Declaration(**{key: MappingProxyType(dict(value)) for key, value in table.items()})
+
+
+def delta(old: Declaration, new: Declaration) -> tuple[str, ...]:
+    """Each entry *new* adds (``+key.name``), changes (``~``) or drops (``-``) against *old*; empty is unchanged."""
+    out: list[str] = []
+    for key in KEYS:
+        was, now = old.tables()[key], new.tables()[key]
+        out += [f'+{key}.{name}' for name in sorted(set(now) - set(was))]
+        out += [f'~{key}.{name}' for name in sorted(set(now) & set(was)) if now[name] != was[name]]
+        out += [f'-{key}.{name}' for name in sorted(set(was) - set(now))]
+    return tuple(out)
 
 
 def _site(finding: str) -> str:
@@ -185,6 +238,41 @@ def _judge_head(root: Path, head: str, declaration: Declaration) -> Judgement:
         return judge(Path(scratch), tracked, declaration)
 
 
+def _declared_at(root: Path, rev: str) -> Declaration:
+    """The declaration in *rev*'s ``pyproject.toml`` (fetched when absent here); no pyproject declares none."""
+    try:
+        text = _git(root, 'show', f'{rev}:pyproject.toml')
+    except subprocess.CalledProcessError:
+        run_network_verb(['git', 'fetch', 'origin', rev], cwd=root)
+        try:
+            text = _git(root, 'show', f'{rev}:pyproject.toml')
+        except subprocess.CalledProcessError:
+            return Declaration()
+    return declared(text.decode('utf-8'))
+
+
+def _covered(
+    root: Path, number: int, head: str, base: Declaration, found: Judgement, *,
+    judged: Callable[[Path, str, Declaration], Judgement],
+) -> Judgement:  # fmt: skip
+    """*found*, saying so and naming the door when the head's OWN changed table leaves no finding.
+
+    Best effort: a head whose own table cannot be read or judged keeps *found* -- an invalid table named in it --
+    and never stops the step from judging the heads after it.
+    """
+    try:
+        own = _declared_at(root, head)
+        if not delta(base, own) or judged(root, head, own).state != 'success':
+            return found
+    except DeclarationInvalid as invalid:
+        said = f"{found.description} | the head's own table is DeclarationInvalid: {invalid}"
+        return Judgement('failure', said[:DESCRIPTION_LIMIT])
+    except (ValueError, OSError, subprocess.CalledProcessError):
+        return found
+    said = f"all covered by the head's new exemptions: {RELEASE_DOOR.format(pr=number)} | {found.description}"
+    return Judgement('failure', said[:DESCRIPTION_LIMIT])
+
+
 def step(
     root: Path,
     client: Client,
@@ -200,19 +288,77 @@ def step(
         policy = load_policy(root)
         base = f'origin/{policy.integration}'
         declaration = declared(_git(root, 'show', f'{base}:pyproject.toml').decode('utf-8'))
-        heads = [
-            (f'#{pull.number}', pull.head_sha)
+        heads: list[tuple[int | None, str]] = [
+            (pull.number, pull.head_sha)
             for pull in pr_list(client)
-            if pull.base == policy.integration and not pull.draft
+            if pull.base == policy.integration and not pull.draft and pull.head_sha
         ]
-        heads = [(name, sha) for name, sha in heads if sha] + [
-            (policy.integration, _git(root, 'rev-parse', base).decode().strip())
-        ]
-        for name, head in heads:
+        heads.append((None, _git(root, 'rev-parse', base).decode().strip()))
+        for number, head in heads:
             if any(one.context == SECURITY_CONTEXT and one.state in _SETTLED for one in status_list(client, head)):
                 continue
             found = judged(root, head, declaration)
+            if number is not None and found.state == 'failure':
+                found = _covered(root, number, head, declaration, found, judged=judged)
+            name = policy.integration if number is None else f'#{number}'
             status_post(client, head, context=SECURITY_CONTEXT, state=found.state, description=found.description)
             say(f'[serve] security: {name} {head[:12]} {found.state}: {found.description}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.CalledProcessError) as failed:
         say(f'[serve] security: not judged this tick: {failed}')
+
+
+def release(
+    root: Path, client: Client, number: int, why: str, *, host: str,
+    judged: Callable[[Path, str, Declaration], Judgement] | None = None,
+) -> str:  # fmt: skip
+    """Release PR *number*'s head, judged clean under its OWN changed table, with *why*; the line said.
+
+    Raises:
+        ReleaseRefused: no reason, no such open PR, an unchanged table, or findings the head's own table leaves.
+
+    """
+    if len(why.strip()) < _MIN_WHY:
+        msg = f'a release needs its reason: --why "<at least {_MIN_WHY} characters>"'
+        raise ReleaseRefused(msg)
+    integration = load_policy(root).integration
+    pull = next((one for one in pr_list(client) if one.number == number and one.base == integration), None)
+    if pull is None or not pull.head_sha:
+        msg = f'#{number} is not an open PR into {integration}'
+        raise ReleaseRefused(msg)
+    head, own = pull.head_sha, _declared_at(root, pull.head_sha)
+    if not (changed := delta(_declared_at(root, f'origin/{integration}'), own)):
+        msg = f'#{number} {head[:12]} does not change [tool.dev_lab.security]: there is nothing to release; fix it'
+        raise ReleaseRefused(msg)
+    found = (judged or _judge_head)(root, head, own)
+    if found.state != 'success':
+        msg = f'#{number} {head[:12]} under its own table is {found.state}: {found.description}'
+        raise ReleaseRefused(msg)
+    text = (
+        f'{SECURITY_CONTEXT} released for {head} by {host}: {why.strip()}\n\n'
+        f'exemption delta against {integration}: {", ".join(changed)}'
+    )
+    _, comment = comment_upsert(client, number, kind=Marker.SECURITY_RELEASE, key=head, text=text)
+    said = f'released by {host} under its own new exemptions ({", ".join(changed)}): {why.strip()}'
+    status_post(client, head, context=SECURITY_CONTEXT, state='success', description=said[:DESCRIPTION_LIMIT],
+                target_url=comment.url if comment else '')  # fmt: skip
+    return f'#{number} {head[:12]}: {SECURITY_CONTEXT} success'
+
+
+def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
+    """``forge security release <pr> --why "<reason>"``. Exit 0 released, 2 refused."""
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.forge security', description=__doc__.splitlines()[0])
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    door = verbs.add_parser(
+        'release', help='release a head clean under its own new exemptions; records host, delta, reason'
+    )
+    door.add_argument('pr', type=int)
+    door.add_argument('--why', required=True, help='why the new exemptions are right: refused when short')
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    root = Path.cwd() if cwd is None else cwd
+    try:
+        said = release(root, client or client_for(root), args.pr, args.why, host=this_machine())
+    except (ReleaseRefused, ForgeCallFailed, OSError, ValueError, subprocess.CalledProcessError) as failed:
+        emit(f'[security] refused: {failed}', err=True)
+        return 2
+    emit(f'[security] {said}')
+    return 0
