@@ -22,7 +22,7 @@ import pytest
 from dev_lab.dev import reclaimrun
 from dev_lab.dev.agent_guard import RECLAIM_COMMAND, WIRING
 from dev_lab.dev.famtests.visibility import plant_checkout
-from dev_lab.dev.reclaim import blockers, repository_at
+from dev_lab.dev.reclaim import blockers, orphan_reason, repository_at
 from dev_lab.dev.reclaimrun import LOCK_NAME, held, main, main_checkout, run
 
 _GIT = shutil.which('git') or 'git'
@@ -161,3 +161,15 @@ def test_a_main_checkout_or_any_repository_is_never_a_lease_to_delete(tmp_path: 
     assert 'main checkout' in repository_at(main, tmp_path)
     assert 'is a repository' in repository_at(main, nested)
     assert repository_at(main, linked) == '', 'CONTROL: an ordinary linked worktree may be reclaimed'
+
+
+def test_a_severed_worktree_is_kept_and_an_ordinary_orphan_goes(tmp_path: Path) -> None:
+    """PLANTED (incident 2026-10-27): a former worktree whose repository record is gone keeps its files."""
+    severed = tmp_path / 'severed'
+    severed.mkdir()
+    (severed / '.git').write_text('gitdir: C:/gone/.git/worktrees/severed', encoding='utf-8')
+    (severed / 'edit.py').write_text('only copy', encoding='utf-8')
+    plain = tmp_path / 'plain'
+    plain.mkdir()
+    assert 'severed' in orphan_reason(severed, lambda _p: False)
+    assert orphan_reason(plain, lambda _p: False) == '', 'CONTROL: an ordinary orphan directory may go'

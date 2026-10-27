@@ -44,10 +44,12 @@ __all__ = [
     'Lease',
     'blockers',
     'declared_generated',
+    'orphan_reason',
     'reclaim',
     'reclaimable',
     'remove_tree',
     'repository_at',
+    'untracked',
 ]
 
 #: How many paths a kept line names before it counts the rest.
@@ -86,6 +88,16 @@ def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | N
         return None
     paths = (row.split('\t', 2)[-1] for row in out.split('\0') if row.strip())
     return tuple(p for p in paths if not any(fnmatch.fnmatchcase(p, glob) for glob in generated))
+
+
+def untracked(tree: Path) -> tuple[str, ...]:
+    """The untracked, NOT ignored files in *tree*: a file never added is work only this tree holds.
+
+    User ruling 2026-10-27 (superseding 10-25 for the automatic path): an automatic delete keeps such a tree;
+    ignored content (``.venv``, caches, builds) is still disposable, and run outputs are moved home first.
+    """
+    out = git_out(tree, 'ls-files', '--others', '--exclude-standard', '-z')
+    return tuple(p for p in (out or '').split('\0') if p)
 
 
 def _index_age_s(tree: Path) -> float | None:
@@ -201,21 +213,44 @@ class _Judge:
     quiet_s: float
 
 
-def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str:
-    holders = judge.holders
-    if locked:
-        return 'locked (git worktree unlock first)'
-    blocking = blockers(tree, judge.generated) if tree.is_dir() else None
+def _unsaved(tree: Path, generated: tuple[str, ...]) -> str:
+    """Why *tree* holds work that exists nowhere else -- a tracked change or an untracked file; ``''`` when none."""
+    blocking = blockers(tree, generated) if tree.is_dir() else None
     if blocking is None:
         return 'unreadable'
     if blocking:
         return f'tracked changes -- commit or revert first: {_shown(blocking)}'
+    loose = untracked(tree)
+    return f'untracked files -- add, move or delete them first: {_shown(loose)}' if loose else ''
+
+
+def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str:
+    holders = judge.holders
+    if locked:
+        return 'locked (git worktree unlock first)'
+    if unsaved := _unsaved(tree, judge.generated):
+        return unsaved
     age = _index_age_s(tree)
     if age is not None and age < judge.quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
     if not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
     return ''
+
+
+#: Why an orphan that was a worktree is kept: its repository is gone, so its files may be the only copy.
+_SEVERED: Final = 'a severed worktree (its .git points nowhere) -- its files may be the only copy; salvage them first'
+
+
+def orphan_reason(orphan: Path, is_occupied: Callable[[Path], bool]) -> str:
+    """Why *orphan* stays: occupied, or SEVERED -- it still has a ``.git`` file (incident 2026-10-27).
+
+    A directory git no longer lists that holds a ``.git`` FILE was a linked worktree whose repository record is
+    gone (a deleted main checkout, a re-clone): nothing else holds what was never pushed.
+    """
+    if is_occupied(orphan):
+        return _LIVE
+    return _SEVERED if (orphan / '.git').is_file() else ''
 
 
 def reclaimable(
@@ -231,14 +266,16 @@ def reclaimable(
     A linked worktree (never the main one) is reclaimable iff ALL hold, checked in this order:
 
     * not ``git worktree lock``-ed;
-    * no TRACKED change, staged or not (:func:`blockers`) -- untracked and ignored files, CR/LF-only changes
-      and declared generated paths never block;
+    * no TRACKED change, staged or not (:func:`blockers`) -- ignored files, CR/LF-only changes and declared
+      generated paths never block;
+    * no UNTRACKED, not-ignored file (:func:`untracked`): a file never added exists nowhere else;
     * QUIET: its index unchanged for *quiet_s* seconds (a session that stages, commits or checks out is live);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
     * UNOCCUPIED: no process works in, executes from or reads it (LIVE-RUN's :func:`occupants` by default).
 
-    An orphan directory under *home* is reclaimable iff nothing occupies it. *holders* are the refs whose content counts
+    An orphan directory under *home* is reclaimable iff nothing occupies it and it is not SEVERED (a ``.git``
+    file). *holders* are the refs whose content counts
     as landed: the trunk's authority and every declared session (``dev_lab.dev.branchset.holders``).
     """
     trees = worktrees(root)
@@ -253,7 +290,7 @@ def reclaimable(
         tree = path.resolve()
         reason = _tree_reason(tree, branch, judge, locked=tree in locked)
         leases.append(Lease(tree, branch, reason or (_LIVE if is_occupied(tree) else '')))
-    leases += [Lease(orphan, '', _LIVE if is_occupied(orphan) else '') for orphan in orphans]
+    leases += [Lease(orphan, '', orphan_reason(orphan, is_occupied)) for orphan in orphans]
     return tuple(leases)
 
 

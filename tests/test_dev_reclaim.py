@@ -1,11 +1,11 @@
 """A worktree is a LEASE on a branch for one task: reclaimed once its content is landed and it holds nothing else.
 
 Planted on a real repository, every criterion on both sides: a landed tree, a squash-landed one whose origin
-ref is gone, and a landed one holding scratch, untracked and ignored files (``.venv``, ``output/logs``) go (their
-branch with them through ``branchset --apply``), the outputs moved HOME first; a tree with a modified TRACKED
-file, an unlanded one, a pushed-but-unmerged one, a locked one, an occupied one and the main checkout stay, each
-with its reason. An orphan directory goes the same way, outputs home first. A planted archive failure keeps
-every tree whole (user ruling 2026-10-25: what git does not track is not the work).
+ref is gone, go (their branch with them through ``branchset --apply``); a tree with a modified TRACKED file, one
+holding an untracked not-ignored file (user ruling 2026-10-27: a file never added exists nowhere else), an
+unlanded one, a pushed-but-unmerged one, a locked one, an occupied one and the main checkout stay, each with its
+reason, and a kept tree is not touched. An orphan directory goes, its outputs moved HOME first. A planted archive
+failure keeps every tree whole.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from dev_lab.dev.reclaim import reclaim, reclaimable
 _GIT = shutil.which('git') or 'git'
 _HOLDERS = ('origin/main',)
 _LOG = Path('output/logs/26/10/25/run')
-_GONE = {'landed', 'squashed', 'untracked', 'cache', 'notes'}
-_KEPT = ('dirty', 'locked', 'occupied', 'open', 'pushed')
+_GONE = {'landed', 'squashed', 'cache', 'notes'}
+_KEPT = ('dirty', 'locked', 'occupied', 'open', 'pushed', 'untracked')
 
 
 def _run(cwd: Path, *args: str) -> str:
@@ -122,7 +122,9 @@ def test_reclaim_removes_only_the_reclaimable_and_lists_the_rest(tmp_path: Path)
     for kept in _KEPT:
         assert (home / kept).is_dir(), kept
         assert any(line.startswith('kept') and kept in line for line in lines)
-    assert (work / _LOG / 'r.txt').read_text(encoding='utf-8') == 'result', 'a worktree output went home first'
+    assert (home / 'untracked' / 'loose.txt').is_file(), 'an untracked file keeps its tree whole'
+    assert (home / 'untracked' / _LOG / 'r.txt').is_file(), 'a kept tree keeps its outputs in place'
+    assert any('untracked files' in line and 'untracked' in line for line in lines), lines
     assert (work / _LOG / 'n.txt').read_text(encoding='utf-8') == 'orphan result', 'an orphan output went home'
     assert (home / 'dirty' / '.gitignore').read_text(encoding='utf-8') == 'changed\n'
 
@@ -133,9 +135,8 @@ def test_an_archive_that_cannot_be_verified_keeps_the_tree_and_deletes_nothing(t
     home = work / '.claude' / 'worktrees'
     (work / 'output').write_text('in the way', encoding='utf-8')
     lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
-    for name, held in (('untracked', _LOG / 'r.txt'), ('notes', _LOG / 'n.txt')):
-        assert (home / name / held).is_file(), f'{name} lost its output'
-        assert any(line.startswith('kept') and name in line and 'not archived' in line for line in lines), lines
+    assert (home / 'notes' / _LOG / 'n.txt').is_file(), 'notes lost its output'
+    assert any(line.startswith('kept') and 'notes' in line and 'not archived' in line for line in lines), lines
     assert (home / 'untracked' / 'scratch' / 'probe.py').is_file(), 'nothing of a kept tree is deleted'
     assert not (home / 'landed').exists(), 'a tree with no outputs still goes: the failure is per tree'
 
