@@ -401,19 +401,6 @@ def _without_command(root: Path, client: Client, review: Review, pull: PullReque
     return f'#{pull.number} {head[:12]}: {why}'
 
 
-def _unable_here(
-    review: Review,
-    capabilities: Mapping[str, Mapping[str, Any]],
-    root: Path,
-    ready: Callable[[Sequence[str], Path], str | None],
-) -> str | None:
-    """Why this host cannot run *review*'s command at all (any range, any slice); ``None`` when it can."""
-    try:
-        return ready(command_for(review, '', capabilities), root)
-    except ReviewUnsupported as unsupported:
-        return str(unsupported)
-
-
 def review_tick(
     root: Path,
     client: Client,
@@ -497,7 +484,11 @@ def step(
             say(f'[serve] review: not run -- [tool.lab_commons.{_TABLE}] command is not declared')
             return
         here = provided(section('capabilities'))
-        if (cannot := _unable_here(review, here, root, ready)) is not None:
+        try:  # any range, any slice: can this host run the command at all
+            cannot = ready(command_for(review, '', here), root)
+        except ReviewUnsupported as unsupported:
+            cannot = str(unsupported)
+        if cannot is not None:
             say(f'[serve] review: not run on this host -- {cannot}')
             return
         lines = review_tick(
