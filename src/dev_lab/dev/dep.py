@@ -445,15 +445,19 @@ def main(
         code = _dep_project.lock_upgrade(root, python, run=run, dry_run=args.dry_run, environment=environment)
         if code:
             return code
-    command = _dep_project.uv_command(
-        root,
-        python,
-        selected,
-        syncing=syncing,
-        upgrade_packages=args.upgrade_package,
-        frozen=args.bootstrap is not None or locking,
-        reinstall_packages=changed(root, prefix) if syncing else (),
-    )
+    try:
+        command = _dep_project.uv_command(
+            root,
+            python,
+            selected,
+            syncing=syncing,
+            upgrade_packages=args.upgrade_package,
+            frozen=args.bootstrap is not None or locking,
+            reinstall_packages=changed(root, prefix) if syncing else (),
+        )
+    except _dep_project.OtherUvRefused as exc:
+        emit(f'REFUSED: {exc}')
+        return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
         result = _change(

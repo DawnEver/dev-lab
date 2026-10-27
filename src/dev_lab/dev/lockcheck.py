@@ -52,6 +52,13 @@ __all__ = [
 LOCK: Final = 'uv.lock'
 #: The Rust toolchain pin every repository committing Rust carries at its root.
 TOOLCHAIN: Final = 'rust-toolchain.toml'
+
+#: THE uv that writes every lock in the family, and the one every installer here installs. ``uv.lock``'s
+#: ``revision`` line is the WRITER'S format, so two uv releases relocking the same pins churn it and conflict
+#: (measured 2026-10-27: 0.12.5 on the Windows box, 0.12.23 .. 0.13.5 across six Ada accounts). One constant,
+#: not a ``[tool.uv] required-version`` per pyproject: the door that writes locks and the deploys that install
+#: uv all live here, so this line moves the whole family. Raise it together with each host's ``uv self update``.
+UV_VERSION: Final = '0.13.5'
 #: The pinned inputs the forge keeps at the newest; a :func:`stale` sentence naming one is :func:`refreshable`.
 FRESHENED: Final = (LOCK, TOOLCHAIN)
 #: How every :func:`stale` sentence for a resolution that could not run begins -- a refusal, never an admission.
