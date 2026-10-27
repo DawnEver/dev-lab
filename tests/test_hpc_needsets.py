@@ -56,13 +56,13 @@ def test_a_malformed_vocabulary_is_refused_naming_the_table(value: str) -> None:
         read_vocabulary(f'[tool.lab_commons.tests]\nresources = {value}\n')
 
 
-#: The two part tables the need vocabulary replaced: the OS axis and the capability axis. NAMED, not
-#: read off the registry by prefix -- the registry also holds the tables that moved to dev-lab (A3).
-_RETIRED_TABLES = ('[tool.lab_commons.capabilities]', '[tool.lab_commons.platforms]')
+#: The part tables the need vocabulary replaced, read off the registry by their REPLACEMENT (their spellings
+#: live there and nowhere else); the registry also holds the tables that moved to dev-lab (A3).
+_RETIRED_TABLES = sorted(key for key, why in RETIRED.items() if '[tool.lab_commons.tests] resources' in why)
 
 
 def test_the_old_part_tables_are_registered_retired() -> None:
-    assert set(_RETIRED_TABLES) <= set(RETIRED)
+    assert len(_RETIRED_TABLES) == 2, 'the OS axis and the capability axis'
 
 
 @pytest.mark.parametrize('table', _RETIRED_TABLES)
