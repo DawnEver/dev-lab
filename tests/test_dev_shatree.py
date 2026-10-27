@@ -180,6 +180,7 @@ def test_a_commit_whose_paths_pass_max_path_inside_the_tree_is_checked_out(tmp_p
         input='deep',
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=True,
     ).stdout.strip()
     run_git(repo, 'update-index', '--add', '--cacheinfo', f'100644,{blob},{deep}')
