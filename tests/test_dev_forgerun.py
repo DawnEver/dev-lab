@@ -7,6 +7,7 @@ clock; Slurm is a fake that counts submissions. A "crash" is a new tick reading 
 from __future__ import annotations
 
 import dataclasses
+import gzip
 import hashlib
 import io
 import json
@@ -119,7 +120,7 @@ class _Slurm:
     def gather(self, _run: forgerunstate.Run) -> Path | None:
         return self.record if self.done else None
 
-    def killed(self, _run: forgerunstate.Run) -> tuple[forgerunstate.Killed, ...]:
+    def killed(self, _run: forgerunstate.Run, _record: Path | None = None) -> tuple[forgerunstate.Killed, ...]:
         return ()
 
     def progress(self, _run: forgerunstate.Run) -> str:
@@ -1023,29 +1024,35 @@ def test_a_job_slurm_killed_for_memory_or_time_is_read_with_its_ask_and_use_and_
     completed task is not reported.
     """
     asked: list[str] = []
+    manifest = {'shards': [[0, 1], [1, 2]], 'items': [{'ids': ['tests/a.py::t']}, {'ids': ['tests/b.py::t']}]}
 
     def runner(command: str, _stdin: object) -> str:
         asked.append(command)
-        return _SACCT_KILLED
+        return json.dumps(manifest) if command.startswith('cat ') else _SACCT_KILLED
 
-    state = {'rounds': [{'job_ids': ['7']}, {'job_ids': ['8']}]}
+    state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/r0'}, {'job_ids': ['8'], 'run_dir': '/r1'}]}
     monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
     monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
     monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 6.0)
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
     cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
     run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
-    oom, timeout = cluster.killed(run)
-    assert asked[-1] == 'sacct -n -P -j 7,8 -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
+    record = home / 'run.json.gz'
+    record.write_bytes(gzip.compress(json.dumps({'peaks_mb': {'tests/a.py': 700.0}}).encode()))
+    oom, timeout = cluster.killed(run, record)
+    assert asked[0] == 'sacct -n -P -j 7,8 -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
     assert (oom.job, oom.state, oom.asked_mb, oom.used_mb) == ('7_0', 'OUT_OF_MEMORY', 4096, 4199)
     assert (timeout.job, timeout.state, timeout.asked_s, timeout.used_s) == ('8_0', 'TIMEOUT', 3600, 3602)
     assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(6.0, rel=1e-12, abs=0.0)
+    # the OOM task's file is floored at its ask, locally and in the record every host folds; the TIMEOUT's is not
+    assert learned.learned('https://f/o/r.git')['peaks_mb'] == {'tests/a.py': 4096.0}
+    assert json.loads(gzip.decompress(record.read_bytes()))['peaks_mb'] == {'tests/a.py': 4096.0}
 
 
 class _Killed(_Slurm):
     """Its record is written; one of its jobs died OUT_OF_MEMORY on the way."""
 
-    def killed(self, _run: forgerunstate.Run) -> tuple[forgerunstate.Killed, ...]:
+    def killed(self, _run: forgerunstate.Run, _record: Path | None = None) -> tuple[forgerunstate.Killed, ...]:
         return (forgerunstate.Killed('7_0', 'OUT_OF_MEMORY', 4096, 4199, 3600, 190),)
 
 

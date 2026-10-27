@@ -64,6 +64,7 @@ from lab_commons.resources import Engine
 
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
+from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_items
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
@@ -270,12 +271,13 @@ class SlurmCluster:
             raise Unrecorded(msg)
         return records[-1]
 
-    def killed(self, run: Run) -> tuple[Killed, ...]:
+    def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
         """*run*'s jobs Slurm killed for memory or time (:func:`killed_jobs`); an OOM's ask is learned grown.
 
         Grown by :data:`~lab_commons.compute.learned.OOM_GROWTH`, held to the most any grant gives, never
         lowering a known ask (:func:`~lab_commons.compute.learned.record_ask`): one learned store, read by the next
-        run's admission and plan.
+        run's admission and plan. Each file an OOM task ran is floored at its ask (:mod:`dev_lab.dev.forgeoom`),
+        in the learned table and in *record*, the run record every host folds.
         """
         state, shell = load_state(run.sha, run.platform, self.machine, self._runners())
         ids = [str(job) for one in state['rounds'] for job in one['job_ids']]
@@ -291,6 +293,7 @@ class SlurmCluster:
             learned.record_ask(
                 run.repo_url, learned.SLURM, needs_of(run.platform), ask_gb, safety=self.config.policy.safety
             )
+            learn_floors(run.repo_url, oom_floors(found, task_items(state, shell, [one.job for one in found])), record)
         return found
 
     def progress(self, run: Run) -> str:
