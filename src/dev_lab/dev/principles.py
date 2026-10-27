@@ -7,7 +7,7 @@ every reviewer judges a change against them. ONE source, two derivations:
   ``hook_install --install`` (:func:`write_page`) and pinned committed-equals-rendered by
   :mod:`dev_lab.dev.famtests.principlespage`;
 * ``python -m dev_lab.dev.principles --json`` -> the payload the review command hands ai-lab
-  (``--principles``, :data:`dev_lab.dev.forgereview.PRINCIPLES_FIELD`).
+  (``--principles``, :data:`dev_lab.dev.forgereview_scope.PRINCIPLES_FIELD`).
 
 An id, once published, is never renamed: reviewer findings cite it. Extend by adding a row.
 """

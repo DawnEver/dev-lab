@@ -97,22 +97,14 @@ from lab_commons.box.machine import provided
 from lab_commons.config import section
 from lab_commons.units import Q_
 
+from dev_lab.dev import forgereview_scope
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
-from dev_lab.dev.forgereview_scope import (
-    ONLY_GENERATED,
-    OVER_CAP_TAKEOVER,
-    PRINCIPLES_FIELD,
-    Budget,
-    Scope,
-    gather,
-    plan,
-    reviewed_heads,
-)  # fmt: skip
+from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -129,7 +121,6 @@ __all__ = [
     'HOST_FIELD',
     'MODEL_FIELD',
     'OVER_CAP_TAKEOVER',
-    'PRINCIPLES_FIELD',
     'RANGE_FIELD',
     'RETIRED_CAPABILITIES',
     'RETIRED_KEYS',
@@ -169,7 +160,8 @@ FAMILY_MODEL: Final = 'claude-sonnet-5-5'
 #: when its method genuinely differs; redeclaring this one is refused, so no stale copy can drift from it.
 FAMILY_COMMAND: Final = (
     '{capabilities.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
-    '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--principles', PRINCIPLES_FIELD, '--paths', PATHS_FIELD,
+    '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
+    '--principles', forgereview_scope.PRINCIPLES_FIELD,
 )  # fmt: skip
 
 #: Host capabilities the family retired, each refused in a command naming what replaced it.
