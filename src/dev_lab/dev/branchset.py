@@ -43,7 +43,7 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
-from dev_lab.dev.reclaim import reclaim
+from dev_lab.dev.reclaim import QUIET_S, reclaim
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -292,7 +292,12 @@ def _checked_out(root: Path) -> frozenset[str]:
 
 
 def apply_local(
-    root: Path, branchset: BranchSet, *, occupied: Callable[[Path], bool] | None = None
+    root: Path,
+    branchset: BranchSet,
+    *,
+    occupied: Callable[[Path], bool] | None = None,
+    limit: int | None = None,
+    quiet_s: float = QUIET_S,
 ) -> tuple[str, ...] | None:
     """THE LOCAL CLEANUP DOOR: delete every deletable LOCAL candidate; one line per branch. ``None``: unread.
 
@@ -303,10 +308,11 @@ def apply_local(
     commits origin lacks, and a branch checked out in ANY worktree (clean or not -- ruling 2026-10-04:
     a tree is committed or cleared first) are never touched -- so every RECLAIMABLE worktree goes FIRST
     (:func:`dev_lab.dev.reclaim.reclaim`: clean, landed on a holder, unlocked, unoccupied), which is what
-    frees its branch for the delete below; every kept tree is listed with its reason.
+    frees its branch for the delete below; every kept tree is listed with its reason. *limit* bounds the trees
+    removed per run and *quiet_s* how long a tree's index must be still (:func:`dev_lab.dev.reclaim.reclaim`).
     """
     held_by = holders(root, branchset)
-    trees = reclaim(root, held_by, occupied=occupied)
+    trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s)
     rows = merge_candidates(root, branchset)
     if rows is None or trees is None:
         return None

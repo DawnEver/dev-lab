@@ -1,22 +1,25 @@
-"""The LOCAL worktree door on a real repository: a landed tree goes with all git does not track (ruling 2026-10-25).
+"""The LOCAL worktree door on a real repository: a landed tree goes with what git IGNORES (ruling 2026-10-27).
 
-Planted refusals: a modified tracked file, a staged file, and a HEAD on no remote branch. Planted removals: a
-tree with ignored artefacts (a cache, ``.venv``, a build-written ``__version__.py``), one with an untracked file,
-one with an ignored ``output/logs`` (moved home first), an unregistered directory holding files, and an EMPTY one.
+Planted refusals: a modified tracked file, a staged file, a HEAD on no remote branch, and an untracked
+not-ignored file (it exists nowhere else). Planted removals: a tree with ignored artefacts (a cache, ``.venv``,
+a build-written ``__version__.py``), one with an ignored ``output/logs`` (moved home first), an unregistered
+directory holding files, and an EMPTY one.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 from dev_lab.dev.worktrees import main, prune
 
 _GIT = shutil.which('git') or 'git'
-_BLOCKED = ('modified', 'staged', 'wip')
-_GONE = ('done', 'untracked', 'ignored', 'leftover', 'empty')
+_BLOCKED = ('modified', 'staged', 'wip', 'untracked')
+_GONE = ('done', 'ignored', 'leftover', 'empty')
 
 
 def _run(cwd: Path, *args: str) -> None:
@@ -49,7 +52,15 @@ def _planted(tmp_path: Path) -> Path:
     (home / 'leftover').mkdir()
     (home / 'leftover' / 'note.txt').write_text('agent output', encoding='utf-8')
     (home / 'empty' / 'nested').mkdir(parents=True)
+    _settled(work)
     return work
+
+
+def _settled(work: Path) -> None:
+    """Age every linked tree's index past the live-session window (``dev_lab.dev.reclaim.QUIET_S``)."""
+    old = time.time() - 2 * 3600
+    for index in (work / '.git' / 'worktrees').glob('*/index'):
+        os.utime(index, (old, old))
 
 
 def test_the_census_touches_nothing(tmp_path: Path) -> None:
@@ -61,7 +72,7 @@ def test_the_census_touches_nothing(tmp_path: Path) -> None:
     assert (work / '.claude' / 'worktrees' / 'empty').is_dir()
 
 
-def test_a_landed_tree_goes_with_everything_git_does_not_track(tmp_path: Path) -> None:
+def test_a_landed_tree_goes_with_what_git_ignores_and_an_untracked_file_keeps_it(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     home = work / '.claude' / 'worktrees'
     lines = prune(work, apply=True) or ()
