@@ -3,7 +3,7 @@
 The counterpart of a cluster account's ``python -m dev_lab.dev.hpchost deploy``, and it reuses that
 deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 
-``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>] [--root DIR]
+``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>]
 [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. Nothing is reserved for the person at the
 box (user ruling 2026-10-25): they DECLARE their use as a ledger claim (``python -m lab_commons.box claim``).
 
@@ -11,17 +11,20 @@ box (user ruling 2026-10-25): they DECLARE their use as a ledger claim (``python
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
 2. CREDENTIAL: ``git ls-remote`` of every repo with prompting off, so only a STORED git credential
    answers; none is ever read or printed. A refusal names the one manual step.
-3. CHECKOUTS under ``--root`` (default ``~/src``): clone ``<forge>/<repo>.git`` at ``--ref``,
-   or fast-forward an existing CLEAN checkout to its upstream; a dirty one is refused.
+3. CHECKOUTS at ``<forge home>/repos/<repo>`` (:func:`dev_lab.dev.servetask.checkout`), derived from the
+   platform data dir and never configured (user ruling 2026-10-26: serve checkouts are neither user-visible
+   nor shared with dev checkouts): clone ``<forge>/<repo>.git`` at ``--ref``, or fast-forward an existing
+   CLEAN checkout to its upstream; a dirty one is refused.
 4. VENVS: ``-m dev_lab.dev.dep --bootstrap <checkout>`` when the venv is missing or its ``pyproject.toml``
    or ``uv.lock`` changed since its last sync (a stamp in the venv, written only after a sync succeeds).
 5. HOOKS: ``-m dev_lab.dev.hook_install --install`` in each checkout whose hooks are not live.
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
    row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken) and
-   ``[serve] repos, root`` merged in place; every other table, key and comment is kept, and
-   ``--dry-run`` prints the diff.
-7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`dev_lab.dev.servetask`), registered from
-   its XML definition and rewritten only when the installed one reads back different.
+   ``[serve] repos`` merged in place (a retired ``[serve] root`` is removed); every other table, key and
+   comment is kept, and ``--dry-run`` prints the diff.
+7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`dev_lab.dev.servetask`), its action derived from
+   the forge home alone (the dev-lab serve checkout's ``pythonw``), registered from its XML definition and
+   rewritten only when the installed one reads back different.
 
 ``--dry-run`` reads but changes nothing. A second run changes nothing.
 
@@ -30,7 +33,10 @@ reported with its reason, skipped by the later steps and left out of ``[serve] r
 serves it; the deploy finishes for the others, raises one forge ``run`` alarm per refused repo
 (:mod:`dev_lab.dev.forgealarm`), and exits 2 naming each.
 
-``serve`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`dev_lab.dev.servelock`),
+``serve`` IS THE TASK'S ACTION, and refuses (exit 2) to run from any interpreter outside the dev-lab serve
+checkout: a dev checkout's venv is never the kit (incident 2026-10-26). So the KIT'S OWN venv is resynced by
+the dev-lab refresh that runs first whenever its ``pyproject.toml``/``uv.lock`` moved, before any lane serves.
+Under the per-user serve lock (:mod:`dev_lab.dev.servelock`),
 dev-lab and then each ``[serve] repos`` entry is REFRESHED BY THE HOST -- fast-forwarded to its
 upstream and its venv synced when step 4 says so -- and only then THE HOST KIT runs ``forge serve`` in its
 checkout (:func:`~dev_lab.dev.hpchost.spec.host_serve_argv`); the repo's venv only runs its producers.
@@ -74,7 +80,7 @@ from dev_lab.dev.hpchost.spec import KIT
 from dev_lab.dev.hpchost.steps import Step, Tools
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.servelanes import serve_lanes, serving
-from dev_lab.dev.servelock import default_lock, held
+from dev_lab.dev.servelock import default_lock, forge_home, held
 
 if sys.platform == 'win32':
     import winreg
@@ -209,7 +215,8 @@ class Programs:
     which: Callable[[str], str | None] = shutil.which
     com: Callable[[str], Path | None] = com_server
     windows: bool = os.name == 'nt'
-    home: Path = field(default_factory=servetask.home)
+    home: Path = field(default_factory=forge_home)  # the forge's machine home; serve checkouts in <home>/repos
+    executable: Path = Path(sys.executable)  # the interpreter serving; it must be the dev-lab serve checkout's
     alarm: Callable[[Alarm], object] = sound
     computer: str = field(default_factory=_computer)
     release: Callable[[Path], list[str]] = _release
@@ -246,7 +253,6 @@ def _parser() -> argparse.ArgumentParser:
     dep.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {KIT}')
     dep.add_argument('--capabilities', type=_capabilities, default={}, help='comma-separated name or name:seats')
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
-    dep.add_argument('--root', type=Path, default=Path.home() / 'src', help='checkouts live in <root>/<repo>')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
@@ -320,9 +326,9 @@ def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
     return 0
 
 
-def _task(step: Step, programs: Programs, lab: Path) -> int:
+def _task(step: Step, programs: Programs) -> int:
     emit(f'[task] {servetask.TASK}')
-    want = servetask.definition_of(lab)
+    want = servetask.definition_of(programs.home)
     query = read([*programs.schtasks, *servetask.query_argv()[1:]])
     if query.returncode == 0 and servetask.installed(query.stdout) == want:
         emit(f'  in place: {want.command} {want.arguments}')
@@ -350,7 +356,7 @@ def _preflight(args: argparse.Namespace, tools: Programs, checkouts: Mapping[str
         return f'{len(missing)} missing; install each as named, then re-run'
     urls = {name: _url(tools, co, name, args.forge) for name, co in checkouts.items()}
     if unknown := [name for name, url in urls.items() if not url]:
-        return f'no checkout of {", ".join(unknown)} under {args.root}; pass --forge <https base> to clone'
+        return f'no checkout of {", ".join(unknown)} in {servetask.repos(tools.home)}; pass --forge <https base>'
     if denied := _credentials(tools, urls):
         return f'no stored git credential reads {", ".join(denied)}; {_CREDENTIAL_REMEDY}'
     return urls
@@ -382,8 +388,7 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy)."""
     args = _parser().parse_args(['deploy', *argv])
     tools = programs or Programs()
-    args.root = args.root.expanduser().absolute()
-    checkouts = {name: args.root / name for name in args.repos}
+    checkouts = {name: servetask.checkout(tools.home, name) for name in args.repos}
     try:
         urls = _preflight(args, tools, checkouts)
     except ValueError as bad:
@@ -394,8 +399,9 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     step = Step(Tools(git=tools.git), dry=args.dry_run)
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
     tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
-    tables['serve'] = {'repos': [name for name in args.repos if name not in refused], 'root': str(args.root)}
-    rc = _machine_file(step, tables) or _task(step, tools, checkouts[KIT])
+    served = [name for name in args.repos if name not in refused]  # a retired key merged as None is removed
+    tables['serve'] = {'repos': served, **dict.fromkeys(servetask.RETIRED_SERVE_KEYS)}
+    rc = _machine_file(step, tables) or _task(step, tools)
     for name, why in refused.items():
         tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))
         emit(f'deploy refused {name} (left out of [serve] repos): {why}', err=True)
@@ -432,12 +438,11 @@ def serve(
     one box ledger. dev-lab is never refreshed again inside one call: the other lanes run its code.
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
-    table = section('serve')
-    repos, root = table.get('repos'), table.get('root')
-    if not (isinstance(repos, list) and repos and isinstance(root, str)):
-        emit(f'[serve] refused: no [serve] repos and root in {config_path()}; run `workstation deploy`', err=True)
+    table, tools = section('serve'), programs or Programs()
+    if refused := servetask.serve_refusal(table, tools.executable, tools.home):
+        emit(f'[serve] refused: {refused}', err=True)
         return 2
-    tools = programs or Programs()
+    repos, root = table['repos'], servetask.repos(tools.home)
     try:
         why = forge_refusal(tools.computer)
     except NoRegistry as undeclared:
@@ -446,7 +451,7 @@ def serve(
     step = Step(Tools(git=tools.git), dry=False)
 
     def refreshed(name: str) -> int:
-        checkout = Path(root) / name
+        checkout = servetask.checkout(tools.home, name)
         emit(f'[serve] {name}', flush=True)
         if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
             emit(f'[serve] {name} released, not served this tick: {why}', err=True)
@@ -461,14 +466,15 @@ def serve(
             emit('[serve] another forge serve holds the lock; this one does nothing', err=True)
             return 0
         if why:
-            return _stand_down(tools, Path(root), repos, why)
-        return serve_lanes(repos, refreshed, serving(Path(root), run, out), period_s=period_s)
+            return _stand_down(tools, root, repos, why)
+        return serve_lanes(repos, refreshed, serving(root, run, out), period_s=period_s)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``deploy ...`` or ``serve``; a retired spelling is refused by name with its remedy."""
     args = list(sys.argv[1:] if argv is None else argv)
-    if refused := next(filter(None, (refusal('workstation', word.split('=', 1)[0]) for word in args)), None):
+    words = (word.split('=', 1)[0] for word in args)
+    if refused := next(filter(None, (refusal('workstation', w) or servetask.retired_flag(w) for w in words)), None):
         emit(refused, err=True)
         return 2
     if args[:1] == ['deploy']:

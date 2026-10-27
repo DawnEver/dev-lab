@@ -74,10 +74,13 @@ What every host still reads, kept small:
 
 - `forge tick` is the same claim step without producing (`--dry-run` to preview).
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
-  `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `<home>/.cache/lab-forge/serve.lock` elsewhere.
+  `--lock` is `<forge home>/serve.lock`. The FORGE HOME (`dev_lab.dev.servelock.forge_home`, the one place it is
+  named) is `%LOCALAPPDATA%/lab-forge` on Windows, `${XDG_DATA_HOME:-~/.local/share}/lab-forge` elsewhere.
 - **A Windows workstation serves from ONE Scheduled Task**, `lab-forge-serve` (every 5 min, IgnoreNew, as
   you, only while logged on, hidden), written by [the workstation deploy](#deploy-a-windows-workstation). Its
-  action is the checkout's `pythonw.exe -m dev_lab.dev.workstation serve`, so NO console window opens:
+  action is derived from the forge home alone -- `<forge home>/repos/dev-lab/.venv/Scripts/pythonw.exe -m
+  dev_lab.dev.workstation serve` -- and `serve` refuses (exit 2) to run from any other interpreter, so a dev
+  checkout's venv is never the kit (user ruling 2026-10-26). NO console window opens:
   each child starts with `CREATE_NO_WINDOW` and every descendant inherits that windowless console. Output
   goes to `%LOCALAPPDATA%/lab-forge/serve.log` (rotated to `serve.log.1` at 4 MiB). Under the one serve
   lock it runs `forge serve` in each `[serve] repos` checkout in turn. **To stop it**, disable the Task --
@@ -173,18 +176,20 @@ person's heavy JMAG work FIRST: the person declares it (step 8), and the forge t
   `workstation` declared also `node` and `codex`; with `jmag`, JMAG-Designer installed (its installer registers
   `designer.Application` and `scheduler.JobApplication`). The deploy probes each and refuses everything missing
   together, each with its remedy.
-- Disk: the deploy checks none. Each repo is a checkout plus its own `.venv` under `--root` (default `~\src`);
-  the serve lock and log live in `%LOCALAPPDATA%\lab-forge`. Check the drive first (`Get-PSDrive C`, or the
-  drive holding `--root`), leaving room for JMAG's own scratch.
+- Disk: the deploy checks none. Each repo is a SERVE checkout plus its own `.venv` at
+  `%LOCALAPPDATA%\lab-forge\repos\<repo>`, beside the serve lock and log; it is derived, never configured, and
+  never one of your dev checkouts (user ruling 2026-10-26). Check the drive first (`Get-PSDrive C`), leaving
+  room for JMAG's own scratch.
 - The registry role: this machine's entry in the synced `hosts.json` carries role `"forge"`, and
   `~/.config/lab-commons/config.toml` names it (`[workstation] registry = "<path>"`); see the rule below.
 
-**2. dev-lab checkout and bootstrap.**
+**2. dev-lab serve checkout and bootstrap**, cloned straight to where the deploy keeps it:
 
 ```
-git clone -b integrate/main <forge>/dev-lab.git $HOME\src\dev-lab   # sign in once; Git Credential Manager stores it
-cd $HOME\src\dev-lab
-uv sync --frozen                                                   # the venv from the commit's lock
+$D = "$env:LOCALAPPDATA\lab-forge\repos\dev-lab"
+git clone -b integrate/main <forge>/dev-lab.git $D   # sign in once; Git Credential Manager stores it
+cd $D
+uv sync --frozen                                     # the venv from the commit's lock
 ```
 
 **3. The forge credential**, from that checkout (its `origin` is on the forge):
@@ -203,12 +208,13 @@ Read every action and the machine-file diff, then run it again without `--dry-ru
 nothing. In order, it:
 
 1. probes the prerequisites above;
-2. clones each repo into `--root` at `--ref` (default `integrate/main`, the branch a serving kit follows), or
+2. clones each repo into `<forge home>/repos/<repo>` at `--ref` (default `integrate/main`, the branch a serving kit follows), or
    fast-forwards an existing clean checkout. A dirty checkout is refused;
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
 4. merges into `~/.config/lab-commons/config.toml`: `[capabilities.<name>]` (`jmag:4` is `seats = 4`; a `jmag`
-   row also gets `in_use = { process = [...] }`, step 7) and `[serve] repos, root`. It writes no `[reserve]`:
+   row also gets `in_use = { process = [...] }`, step 7) and `[serve] repos` (a retired `[serve] root`, which
+   `serve` refuses by name, is removed). It writes no `[reserve]`:
    nothing is reserved for the person at the box (step 8). Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.
@@ -235,7 +241,6 @@ in_use = { process = ["jam.exe", "jam_c.exe", "jam_intel_mpi_b.exe", "jam_intel_
 
 [serve]
 repos = ["dev-lab", "<repo>"]
-root = "C:\\Users\\<user>\\src"
 ```
 
 **7. A seat is measured like a core** ([box resources](box-resources.md), rule 2). `in_use` names the JMAG
