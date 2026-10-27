@@ -152,6 +152,26 @@ def test_an_empty_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
     assert any('command is not declared' in line for line in said)
 
 
+def test_a_usage_error_is_the_hosts_command_not_speaking_this_interface(tmp_path: Path) -> None:
+    """A usage error is the host's older command, never the head's refusal.
+
+    argparse also exits 2: a command that does not know a flag is an older tool on THIS host, so the head stays
+    claimable (:class:`ReviewUnsupported`). PLANTED control: a named refusal is still the head's.
+    """
+    usage = 'usage: review [-h] --base BASE' + chr(10) + 'review: error: unrecognized arguments: --rules A,B'
+    older = [sys.executable, '-c', f'import sys; sys.stderr.write({usage!r}); sys.exit({REFUSED_EXIT})']
+    with pytest.raises(ReviewUnsupported, match='unrecognized arguments: --rules') as mismatch:
+        run_command(older, tmp_path)
+    assert not isinstance(mismatch.value, ReviewRefused)
+    named = [
+        sys.executable,
+        '-c',
+        f'import sys; sys.stderr.write("unknown method version 9"); sys.exit({REFUSED_EXIT})',
+    ]
+    with pytest.raises(ReviewRefused):
+        run_command(named, tmp_path)
+
+
 def test_exit_2_is_the_commands_named_refusal_and_its_reason_is_the_status(tmp_path: Path) -> None:
     """PLANTED control: another non-zero exit is a plain failure, not a refusal."""
     interpreter = sys.executable
