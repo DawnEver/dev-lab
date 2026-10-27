@@ -22,7 +22,7 @@ import pytest
 from dev_lab.dev import reclaimrun
 from dev_lab.dev.agent_guard import RECLAIM_COMMAND, WIRING
 from dev_lab.dev.famtests.visibility import plant_checkout
-from dev_lab.dev.reclaim import blockers
+from dev_lab.dev.reclaim import blockers, repository_at
 from dev_lab.dev.reclaimrun import LOCK_NAME, held, main, main_checkout, run
 
 _GIT = shutil.which('git') or 'git'
@@ -146,3 +146,18 @@ def test_session_start_detaches_from_a_main_checkout_only(planted: Path, monkeyp
 def test_the_kit_wires_the_reclaim_at_session_start() -> None:
     assert any(w.event == 'SessionStart' and w.command == RECLAIM_COMMAND for w in WIRING)
     assert '--session-start' in RECLAIM_COMMAND
+
+
+def test_a_main_checkout_or_any_repository_is_never_a_lease_to_delete(tmp_path: Path) -> None:
+    """PLANTED (incident 2026-10-27): the main checkout, a directory holding it, and a nested repository are refused."""
+    main = tmp_path / 'repo'
+    (main / '.git').mkdir(parents=True)
+    nested = main / '.claude' / 'worktrees' / 'clone'
+    (nested / '.git').mkdir(parents=True)
+    linked = main / '.claude' / 'worktrees' / 'lane'
+    linked.mkdir(parents=True)
+    (linked / '.git').write_text('gitdir: ../../../.git/worktrees/lane\n', encoding='utf-8')
+    assert 'main checkout' in repository_at(main, main)
+    assert 'main checkout' in repository_at(main, tmp_path)
+    assert 'is a repository' in repository_at(main, nested)
+    assert repository_at(main, linked) == '', 'CONTROL: an ordinary linked worktree may be reclaimed'

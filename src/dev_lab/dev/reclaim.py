@@ -41,7 +41,16 @@ from dev_lab.dev.checkout import (
 from dev_lab.dev.liverun import occupants
 from dev_lab.dev.worktree_archive import home_outputs
 
-__all__ = ['QUIET_S', 'Lease', 'blockers', 'declared_generated', 'reclaim', 'reclaimable', 'remove_tree']
+__all__ = [
+    'QUIET_S',
+    'Lease',
+    'blockers',
+    'declared_generated',
+    'reclaim',
+    'reclaimable',
+    'remove_tree',
+    'repository_at',
+]
 
 #: How many paths a kept line names before it counts the rest.
 _SHOWN: Final = 5
@@ -106,6 +115,22 @@ def remove_tree(path: Path) -> None:
     if sys.platform == 'win32' and not target.startswith(_LONG):
         target = _LONG + target
     shutil.rmtree(target, onexc=_writable)
+
+
+def repository_at(root: Path, path: Path) -> str:
+    """Why *path* must never be deleted as a lease: it is, or holds, *root*'s main checkout, or any repository.
+
+    Incident 2026-10-27: a cleanup that took its leases from ``git worktree list`` and matched branches deleted
+    a main checkout whose branch had landed -- ``.git``, unpushed work and ``output/`` with it. A linked
+    worktree's ``.git`` is a FILE; a directory there is a repository of its own. Checked at the delete, not
+    trusted to the listing. ``''`` when *path* is an ordinary linked tree.
+    """
+    tree, main = path.resolve(), root.resolve()
+    if tree == main or main.is_relative_to(tree):
+        return f'refused: {tree} is or holds the main checkout {main}'
+    if (tree / '.git').is_dir():
+        return f'refused: {tree} is a repository (its .git is a directory), never a linked worktree'
+    return ''
 
 
 def _shown(paths: tuple[str, ...] | list[str]) -> str:
@@ -283,7 +308,7 @@ def reclaim(
             out.append(f'prunable {label}')
         elif limit is not None and removed >= limit:
             out.append(f'deferred {label}  (batch of {limit} reached)')
-        elif unarchived := home_outputs(root, lease.path):
+        elif unarchived := repository_at(root, lease.path) or home_outputs(root, lease.path):
             out.append(f'kept     {label}  ({unarchived}; nothing was deleted)')
         else:
             try:
