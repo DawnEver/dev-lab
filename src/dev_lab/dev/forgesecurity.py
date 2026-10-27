@@ -131,6 +131,10 @@ class Declaration:
     allowed: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     accepted: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
 
+    def tables(self) -> dict[str, Mapping[str, str]]:
+        """Each declared table by its key (:data:`KEYS`)."""
+        return {'exclude': self.exclude, 'ignore': self.ignore, 'allowed': self.allowed, 'accepted': self.accepted}
+
 
 @dataclass(frozen=True)
 class Judgement:
@@ -162,7 +166,7 @@ def delta(old: Declaration, new: Declaration) -> tuple[str, ...]:
     """Each entry *new* adds (``+key.name``), changes (``~``) or drops (``-``) against *old*; empty is unchanged."""
     out: list[str] = []
     for key in KEYS:
-        was, now = getattr(old, key), getattr(new, key)
+        was, now = old.tables()[key], new.tables()[key]
         out += [f'+{key}.{name}' for name in sorted(set(now) - set(was))]
         out += [f'~{key}.{name}' for name in sorted(set(now) & set(was)) if now[name] != was[name]]
         out += [f'-{key}.{name}' for name in sorted(set(was) - set(now))]
