@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,7 +20,9 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.config import CONFIG_ENV
+from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev import hostrefresh, servetask, workstation
 from dev_lab.dev.forgealarm import Alarm
@@ -656,3 +659,64 @@ def test_the_kits_own_venv_is_resynced_when_its_lock_moves_before_any_other_repo
     again = len(box.calls())
     assert _serve(box, tmp_path)[0] == 0
     assert f'bootstrap {kit}' not in box.calls()[again:], 'PLANTED CONTROL: an unmoved lock syncs nothing'
+
+
+LIGHT: Final = ('--repos', REPOS, '--role', 'light', '--forge', FORGE)
+
+
+def test_the_light_role_declares_its_profile_and_withholds_every_heavy_tool(box: Box) -> None:
+    """WS1/WS2 serve forge parts, never heavy compute (user ruling 2026-10-28): every probed tool is withheld."""
+    assert workstation.deploy(list(LIGHT), programs=box.programs) == 0
+    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
+    assert declared['capabilities'] == {'workstation': {}}
+    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'parts': 'every', 'withhold': sorted(CHECKS)}
+    assert {'femm', 'jmag', 'matlab'} <= set(workstation.HEAVY), 'a JMAG the probe finds is still never forge work'
+
+
+@pytest.mark.parametrize('heavy', ['jmag:4', 'femm', 'matlab'])
+def test_the_light_role_refuses_a_heavy_capability(box: Box, heavy: str, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        workstation.deploy([*LIGHT, '--capabilities', f'workstation,{heavy}'], programs=box.programs)
+    assert heavy.split(':', maxsplit=1)[0] in capsys.readouterr().err
+    assert not box.machine.exists() or 'withhold' not in box.machine.read_text(encoding='utf-8')
+    assert workstation.deploy([*LIGHT, '--capabilities', 'workstation'], programs=box.programs) == 0, 'PLANTED CONTROL'
+
+
+def test_deploy_drops_every_retired_capability_table_and_moves_a_runtime_path(
+    box: Box, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No alias survives a deploy: a retired ``[capabilities.<name>]`` is removed, a runtime path carried over.
+
+    The registry rows are PLANTED, so the rule is tested whatever the locked lab-commons has retired so far.
+    """
+    monkeypatch.setitem(RETIRED, 'capabilities.gone', '[capabilities.workstation]')
+    monkeypatch.setitem(RETIRED, 'capabilities.olden', '[runtimes.olden] python')
+    tables = '[capabilities.gone]\n\n[capabilities.olden]  # moved\npython = "C:/rt/python.exe"\n'
+    box.machine.write_text(box.machine.read_text(encoding='utf-8') + tables, encoding='utf-8')
+    assert box.deploy() == 0
+    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
+    assert set(declared['capabilities']) == {'workstation', 'jmag'}, 'PLANTED CONTROL: a live table is kept'
+    assert declared['runtimes'] == {'olden': {'python': 'C:/rt/python.exe'}}
+
+
+def test_the_template_is_the_role_as_deploy_writes_it(capsys: pytest.CaptureFixture[str]) -> None:
+    assert workstation.main(['template', '--role', 'light', '--repos', 'dev-lab,alpha']) == 0
+    printed = tomllib.loads(capsys.readouterr().out)
+    assert printed == {
+        'capabilities': {'workstation': {}},
+        'serve': {'repos': ['dev-lab', 'alpha'], 'parts': 'every', 'withhold': sorted(CHECKS)},
+    }
+
+
+DOC: Final = Path(__file__).resolve().parents[1] / 'docs-src' / 'dev' / 'adding-a-workstation.md'
+TEMPLATE_BLOCK: Final = re.compile(
+    r'<!-- template: (?P<role>\w+) (?P<repos>\S+) -->\n```toml\n(?P<body>.*?)```', re.DOTALL
+)
+
+
+def test_the_docs_template_is_the_profile_rendered_never_a_hand_copy() -> None:
+    """SINGLE SOURCE: the page's block is what ``template`` prints for the role and repos its marker names."""
+    blocks = list(TEMPLATE_BLOCK.finditer(DOC.read_text(encoding='utf-8')))
+    assert [b['role'] for b in blocks] == ['light'], 'the page carries the one light template'
+    for block in blocks:
+        assert block['body'] == workstation.template(block['role'], block['repos'].split(','))
