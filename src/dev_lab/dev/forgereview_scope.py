@@ -36,7 +36,7 @@ from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
 __all__ = [
     'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'PRINCIPLES_FIELD', 'Budget', 'Scope', 'Slice',
@@ -141,17 +141,29 @@ def _group(path: str) -> str:
     return '/'.join(PurePosixPath(path).parts[:-1][:2]) or '.'
 
 
-def _pack(lens: str, sizes: dict[str, int], budget: int) -> list[Slice]:
-    """*sizes*' paths in slices of at most *budget* bytes, a directory kept whole when it fits."""
-    groups: dict[str, list[str]] = {}
-    for path in sorted(sizes):
-        groups.setdefault(_group(path), []).append(path)
+def _moves(root: Path, reviewed: str) -> dict[str, str]:
+    """``{old: new}`` for every rename git detects over *reviewed*."""
+    fields = _git(root, 'diff', '-M', '-z', '--name-status', '--diff-filter=R', reviewed)[1].split('\0')
+    return {fields[i + 1]: fields[i + 2] for i in range(0, len(fields) - 2, 3) if fields[i].startswith('R')}
+
+
+def _pack(lens: str, sizes: dict[str, int], budget: int, moves: Mapping[str, str]) -> list[Slice]:
+    """*sizes*' paths in slices of at most *budget* bytes, a directory kept whole when it fits.
+
+    A move's two paths (*moves*, ``{old: new}``) are one unit filed under the new path's directory: a slice
+    holding only the old path reads a deletion the range never made.
+    """
+    paired = {old: new for old, new in moves.items() if old in sizes and new in sizes}
+    groups: dict[str, list[tuple[str, ...]]] = {}
+    for path in sorted(set(sizes) - set(paired)):
+        unit = (path, *sorted(old for old, new in paired.items() if new == path))
+        groups.setdefault(_group(path), []).append(unit)
     out: list[Slice] = []
     paths: list[str] = []
     size = 0
     for members in groups.values():
-        cost = sum(sizes[path] for path in members)
-        pieces = [members] if cost <= budget else [[path] for path in members]
+        cost = sum(sizes[path] for unit in members for path in unit)
+        pieces = [[path for unit in members for path in unit]] if cost <= budget else [list(unit) for unit in members]
         for piece in pieces:
             piece_size = sum(sizes[path] for path in piece)
             if paths and size + piece_size > budget:
@@ -202,7 +214,10 @@ def plan(
     by_lens: dict[str, dict[str, int]] = {}
     for path, n in sizes.items():
         by_lens.setdefault(lens_of(path, budget.strict, budget.light), {})[path] = n
-    slices = [one for lens in LENSES if lens in by_lens for one in _pack(lens, by_lens[lens], budget.slice_bytes)]
+    moves = _moves(root, reviewed_range)
+    slices = [
+        one for lens in LENSES if lens in by_lens for one in _pack(lens, by_lens[lens], budget.slice_bytes, moves)
+    ]
     if len(slices) > 1 and not sliceable:
         return Scope(reviewed_range, held=f'{len(slices)} slices, and the command takes no paths')
     return Scope(reviewed_range, tuple(slices))
