@@ -51,6 +51,7 @@ def statuses(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Statuses:
             return None
 
     monkeypatch.setattr(forgeheadgate, 'detached_worktree', lambda _root, _sha: _Tree())
+    monkeypatch.setattr(forgeheadgate, 'merge_base', lambda _root, head, _integration: head)
     return store
 
 
@@ -63,9 +64,16 @@ def _reads(*answers: tuple[str, ...]) -> Callable[[Path], tuple[str, ...]]:
 def test_an_error_is_re_judged_and_a_verdict_latches(tmp_path: Path) -> None:
     """SR-20261024-001: only success/failure are terminal; an error (or pending) is judged again on the same sha."""
     read = _reads((f'{UNRESOLVED}: timeout',), (), ())
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read) == ['branchset: success', 'lock/fresh: error']
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read) == ['lock/fresh: success']
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read) == [], 'CONTROL: a verdict latches'
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read) == [
+        'branchset: success',
+        'lock/fresh: error',
+    ]
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read) == [
+        'lock/fresh: success'
+    ]
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read) == [], (
+        'CONTROL: a verdict latches'
+    )
 
 
 @pytest.mark.usefixtures('statuses')
@@ -75,19 +83,26 @@ def test_a_checkout_that_fails_is_an_error_and_is_retried(tmp_path: Path, monkey
         raise OSError(msg)
 
     monkeypatch.setattr(forgeheadgate, 'detached_worktree', broken)
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=_reads()) == [
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=_reads()) == [
         'branchset: success',
         'lock/fresh: error',
     ]
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=_reads()) == ['lock/fresh: error'], 'retried'
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=_reads()) == [
+        'lock/fresh: error'
+    ], 'retried'
 
 
 @pytest.mark.usefixtures('statuses')
 def test_a_branchset_error_is_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(forgeheadgate, 'branchset_verdict', lambda *_a: ('error', 'no readable branch set'))
     read = _reads((), ())
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read)[0] == 'branchset: error'
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', read=read) == ['branchset: error']
+    assert (
+        forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read)[0]
+        == 'branchset: error'
+    )
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read) == [
+        'branchset: error'
+    ]
 
 
 def _head(work: Path, branch: str) -> str:
@@ -116,7 +131,8 @@ def test_a_gate_that_raises_for_one_head_leaves_the_tick_and_the_next_head(tmp_p
     first, second = sorted(heads)
     judged: list[str] = []
 
-    def gate(_root: Path, _client: object, head: str, _branch: str) -> list[str]:
+    def gate(_root: Path, _client: object, head: str, _branch: str, *, integration: str) -> list[str]:
+        assert integration == 'integrate/main'
         if head == heads[first]:
             msg = 'boom'
             raise RuntimeError(msg)
@@ -136,7 +152,8 @@ def test_the_gate_runs_after_the_tick_work_within_a_budget_oldest_first(tmp_path
     clock = iter([0.0, 0.0, forgeheadgate.TICK_BUDGET_S])
     order: list[str] = []
 
-    def gate(_root: Path, _client: object, head: str, _branch: str) -> list[str]:
+    def gate(_root: Path, _client: object, head: str, _branch: str, *, integration: str) -> list[str]:
+        assert integration == 'integrate/main'
         order.append(head)
         return ['lock/fresh: success']
 
