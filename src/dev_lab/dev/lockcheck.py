@@ -21,7 +21,8 @@ All read git objects only and never touch the network.
 PIN AND FRESHNESS ARE THE FORGE'S ALONE (user rulings 2026-10-22 and 2026-10-24): a local hook keeps only
 irreversible-harm and second-scale format checks, so no pre-push row reads the lock. The forge judges the PIN in
 the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``HEAD``), and a PR head's
-freshness as a status (:mod:`dev_lab.dev.forgeheadgate`). The serve tick keeps integration at the newest
+freshness against its base as a status (:mod:`dev_lab.dev.forgeheadgate`;
+a PR never chases the lock). The serve tick keeps integration at the newest
 resolution itself through a relock pull request (:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one
 staleness reading, of the lock and of the toolchain against :func:`newest_stable` --
 and a lane takes it with ``forge sync``.

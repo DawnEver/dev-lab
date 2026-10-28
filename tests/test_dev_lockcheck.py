@@ -20,6 +20,7 @@ import pytest
 
 from dev_lab.dev import forgeheadgate
 from dev_lab.dev.famtests.lockpin import LockNotPinned, assert_the_lock_is_pinned
+from dev_lab.dev.forgeheadgate import lock_verdict
 from dev_lab.dev.githooks.table import base_rows
 from dev_lab.dev.lockcheck import (
     DOOR,
@@ -261,7 +262,8 @@ def test_a_stale_lock_head_gets_a_red_forge_status_naming_the_relock(
 ) -> None:
     """User ruling 2026-10-24: the forge says a stale lock on the PR head, ``failure`` with the one remedy.
 
-    PLANTED CONTROL: the same head at the newest resolution is ``success``; a head already judged is not re-resolved.
+    PLANTED CONTROL: the head at the newest resolution, and one lagging only what its base lags, are ``success``;
+    a head already judged is not re-resolved.
     """
     posted: dict[str, list[tuple[str, str, str]]] = {}
 
@@ -275,20 +277,62 @@ def test_a_stale_lock_head_gets_a_red_forge_status_naming_the_relock(
     monkeypatch.setattr(forgeheadgate, 'status_list', listed)
     root, kit, index = world
     fresh = _locked(root, _manifest(kit, index, '"dep",') + BRANCHSET)
-    forgeheadgate.judge(root, None, fresh, 'pr/x')
+    _git(root, 'update-ref', 'refs/remotes/origin/integrate/main', fresh)
+    forgeheadgate.judge(root, None, fresh, 'pr/x', integration='integrate/main')
     assert posted[fresh] == [
         ('branchset', 'success', 'pr/x is declared'),
         ('lock/fresh', 'success', 'uv.lock is the newest resolution'),
     ]
     _commit(kit, {'README': 'moved'})
-    stale_head = _commit(root, {'x.txt': 'x'})
-    assert forgeheadgate.judge(root, None, stale_head, 'lane/x') == ['branchset: failure', 'lock/fresh: failure']
+    _git(root, 'checkout', '-q', '-b', 'lane')
+    lagging = _commit(root, {'x.txt': 'x'})
+    assert forgeheadgate.judge(root, None, lagging, 'pr/x', integration='integrate/main') == [
+        'branchset: success',
+        'lock/fresh: success',
+    ]
+    stale_head = _commit(root, {'pyproject.toml': _manifest(kit, index, '') + BRANCHSET})  # dep dropped, no relock
+    lane = forgeheadgate.judge(root, None, stale_head, 'lane/x', integration='integrate/main')
+    assert lane == ['branchset: failure', 'lock/fresh: failure']
     (_, state, text) = posted[stale_head][1]
     assert state == 'failure'
-    assert text.startswith(f'stale uv.lock: {forgeheadgate.LOCK_REMEDY} (Update kit'), text
+    assert text.startswith(f'stale uv.lock: {forgeheadgate.LOCK_REMEDY} (Remove dep'), text
+    assert 'kit' not in text, 'the kit move its base lags too is not the head defect'
     assert f'run `{DOOR}`, then commit uv.lock' == forgeheadgate.LOCK_REMEDY
     assert 'lane/x is undeclared' in posted[stale_head][0][2]
-    assert forgeheadgate.judge(root, None, stale_head, 'lane/x') == [], 'judged once per head sha'
+    assert forgeheadgate.judge(root, None, stale_head, 'lane/x', integration='integrate/main') == [], 'judged once'
+
+
+def _tree(root: Path, name: str) -> Path:
+    """A copy of *root*'s manifest and lock as a tree of its own."""
+    tree = root.parent / name
+    tree.mkdir()
+    for one in ('pyproject.toml', 'uv.lock'):
+        shutil.copy(root / one, tree / one)
+    return tree
+
+
+def test_a_pr_never_chases_a_lock_its_base_lags_too(world: tuple[Path, Path, Path]) -> None:
+    """User ruling 2026-10-28: a sibling that moved after the PR branched is integration's, never the head's.
+
+    PLANTED CONTROLS: (a) head == base while the kit moved on -> success; (b) head older than its base -> failure;
+    (c) a requirement dropped from the head's pyproject without a relock -> failure.
+    """
+    root, kit, index = world
+    _locked(root, _manifest(kit, index, '"dep",'))
+    older = _tree(root, 'older')
+    _commit(kit, {'README': 'moved'})
+    _locked(root, _manifest(kit, index, '"dep",'), upgrade=True)
+    base, head = _tree(root, 'base'), _tree(root, 'head')
+    _commit(kit, {'README': 'moved again'})
+    assert stale(head), 'CONTROL: the head really is behind the kit'
+    state, text = lock_verdict(head, base)
+    assert (state, text) == ('success', 'uv.lock lags only what its base lags; the forge relock carries it')
+    state, text = lock_verdict(older, base)
+    assert state == 'failure', text
+    assert 'Update kit' in text, text
+    (head / 'pyproject.toml').write_text(_manifest(kit, index, ''), encoding='utf-8')  # dep dropped, no relock
+    state, text = lock_verdict(head, base)
+    assert state == 'failure', text
 
 
 BRANCHSET = """
