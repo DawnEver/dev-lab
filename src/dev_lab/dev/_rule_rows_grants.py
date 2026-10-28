@@ -14,7 +14,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'machine-local `.claude/automode.json`), never written into the user`s global Claude settings: the '
             'agent guard '
             'renders `permissions.deny` for Edit/Write of `~/.claude*/settings.json` and `claude_settings.json` '
-            'and refuses any shell line naming them that is not one plain read (user ruling 2026-10-28).'
+            'and refuses any shell line whose text can reach them -- anchored, globbed, substituted, or relative '
+            'after a directory change or home assignment -- that is not one plain read (user ruling 2026-10-28).'
         ),
         ('tests/test_dev_usersettings.py', 'tests/test_dev_autodoors.py'),
     ),

@@ -31,12 +31,19 @@ def test_reading_them_or_writing_a_repo_settings_file_is_allowed(command: str) -
 
 @pytest.mark.parametrize(
     'path',
-    ['~/.claude/settings.json', 'C:/Users/me/.claude-work/settings.json', '/home/me/.claude/settings.local.json'],
+    ['~/.claude/settings.json', 'D:/profiles/me/.claude-work/settings.json', '/srv/me/.claude/settings.local.json'],
 )
-def test_the_path_shape_reaches_every_user_spelling_and_not_a_repo_file(path: str) -> None:
-    """The one path regex both renderings derive from."""
+def test_the_path_shape_reaches_every_user_spelling(path: str) -> None:
+    """The one path regex reaches each anchored spelling; a relative one is a hit the row's allow reopens."""
     assert re.search(USER_SETTINGS_PATH, path)
-    assert not re.fullmatch(USER_SETTINGS_PATH, '.claude/settings.json')
+
+
+@pytest.mark.parametrize('opening', ['cd ~ && ', 'HOME=/tmp/h ', 'Set-Location $HOME; '])
+def test_a_relative_settings_path_is_refused_once_the_line_can_move_home(opening: str) -> None:
+    """PLANTED: the same repo-relative write passes alone and is refused after a directory change or home set."""
+    write = 'cp a.json .claude/settings.json'
+    assert denies(DENY_RULES, write, {}) != _ID
+    assert denies(DENY_RULES, opening + write, {}) == _ID
 
 
 def test_the_rendered_settings_deny_every_user_path_and_keep_foreign_deny_rows() -> None:
