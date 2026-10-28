@@ -26,7 +26,6 @@ from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import (
     CLAIMED,
     DEFAULT_CLAIM_STALE,
-    HOST_FIELD,
     HOST_UNABLE,
     RANGE_FIELD,
     RETIRED_KEYS,
@@ -40,6 +39,7 @@ from dev_lab.dev.forgereview import (
 )
 from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
+from dev_lab.dev.forgereview_runtimes import HOST_FIELD
 from dev_lab.dev.forgereview_scope import OVER_CAP_TAKEOVER
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy

@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.hpc.needsets import read_vocabulary
 
-from dev_lab.dev.workstation import WORKSTATION
+from dev_lab.dev.workstationfile import WORKSTATION
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping

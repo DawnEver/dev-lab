@@ -251,7 +251,7 @@ repos = ["dev-lab", "<repo>"]
 ```
 
 **7. A seat is measured like a core** ([box resources](box-resources.md), rule 2). `in_use` names the JMAG
-solver images (`workstation.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
+solver images (`workstationfile.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
 `jam.exe`, nor `scheduler.exe` or `designer.exe`), so a solve a person starts from Designer or the Scheduler is
 a seat taken though no ledger claim holds it. Free JMAG seats are
 `seats - max(held by ledger claims, jam processes running)`: with the file above the forge runs up to four JMAG

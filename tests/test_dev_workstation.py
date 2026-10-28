@@ -24,7 +24,7 @@ from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import hostrefresh, servetask, workstation
+from dev_lab.dev import hostrefresh, servetask, workstation, workstationfile
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.hpchost.spec import host_serve_argv
 from dev_lab.dev.servelock import held
@@ -155,7 +155,7 @@ def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: B
         assert f'bootstrap {box.root / name}' in calls
         assert (box.root / name / '.git' / 'HOOKED').exists()
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
-    jmag = {'seats': 4, 'in_use': {'process': list(workstation.JMAG_SOLVER_IMAGES)}}
+    jmag = {'seats': 4, 'in_use': {'process': list(workstationfile.JMAG_SOLVER_IMAGES)}}
     assert declared['capabilities'] == {'workstation': {}, 'jmag': jmag}, 'a jmag seat is observed by its solvers'
     assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta']}, 'the checkouts are derived, not declared'
     assert 'reserve' not in declared, 'deploy reserves nothing: the OS headroom keeps its defaults'
@@ -276,7 +276,7 @@ def test_a_missing_checkout_without_a_forge_is_refused(box: Box, capsys: pytest.
 
 
 def test_a_jmag_solver_image_is_the_solver_and_never_its_launcher_or_service() -> None:
-    images = set(workstation.JMAG_SOLVER_IMAGES)
+    images = set(workstationfile.JMAG_SOLVER_IMAGES)
     assert 'jam.exe' in images
     assert images.isdisjoint({'execsolver.exe', 'scheduler.exe', 'designer.exe'}), 'one solve counts once'
 
@@ -670,7 +670,7 @@ def test_the_light_role_declares_its_profile_and_withholds_every_heavy_tool(box:
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     assert declared['capabilities'] == {'workstation': {}}
     assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'parts': 'every', 'withhold': sorted(CHECKS)}
-    assert {'femm', 'jmag', 'matlab'} <= set(workstation.HEAVY), 'a JMAG the probe finds is still never forge work'
+    assert {'femm', 'jmag', 'matlab'} <= set(workstationfile.HEAVY), 'a JMAG the probe finds is still never forge work'
 
 
 @pytest.mark.parametrize('heavy', ['jmag:4', 'femm', 'matlab'])
@@ -719,4 +719,4 @@ def test_the_docs_template_is_the_profile_rendered_never_a_hand_copy() -> None:
     blocks = list(TEMPLATE_BLOCK.finditer(DOC.read_text(encoding='utf-8')))
     assert [b['role'] for b in blocks] == ['light'], 'the page carries the one light template'
     for block in blocks:
-        assert block['body'] == workstation.template(block['role'], block['repos'].split(','))
+        assert block['body'] == workstationfile.template(block['role'], block['repos'].split(','))

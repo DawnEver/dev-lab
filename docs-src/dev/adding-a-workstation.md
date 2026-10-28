@@ -7,7 +7,7 @@ same deploy with `--capabilities workstation,jmag:<N>` instead of a role ([the f
 
 ## What the light role writes
 
-The role is declared ONCE, `dev_lab.dev.workstation.ROLES`, and the deploy renders it into the machine file
+The role is declared ONCE, `dev_lab.dev.workstationfile.ROLES`, and the deploy renders it into the machine file
 (`~/.config/lab-commons/config.toml`). Print it for your repos with
 
 ```
@@ -28,7 +28,7 @@ withhold = ["femm", "jmag", "matlab", "simba"]
 
 - `[capabilities.workstation]`: the live-checkout-and-agent-kit resource (`node` and `codex` on `PATH`); the
   `workstation` parts need it.
-- `withhold` is every tool the presence probe knows (`workstation.HEAVY`, derived from
+- `withhold` is every tool the presence probe knows (`workstationfile.HEAVY`, derived from
   `lab_commons.compute.toolchecks.CHECKS`). A probe finds an installed JMAG whether or not it is declared, so
   withholding is what keeps it off the forge: the host claims no part and no request needing one. A heavy
   capability given to `--capabilities` with `--role light` is refused.

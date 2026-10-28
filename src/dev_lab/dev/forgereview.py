@@ -93,7 +93,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.config import section
 from lab_commons.units import Q_
 
 from dev_lab.dev import forgereview_scope
@@ -103,6 +102,7 @@ from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
+from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, host_runtimes, retired_field
 from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
@@ -117,21 +117,16 @@ if TYPE_CHECKING:
 __all__ = [
     'FAMILY_COMMAND',
     'FAMILY_MODEL',
-    'HOST_FIELD',
     'MODEL_FIELD',
     'OVER_CAP_TAKEOVER',
     'RANGE_FIELD',
-    'RETIRED_FIELD',
     'RETIRED_KEYS',
-    'RETIRED_RUNTIMES',
     'REVIEW_CONTEXT',
     'RULES_FIELD',
-    'RUNTIMES_TABLE',
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
     'Review',
     'command_for',
-    'host_runtimes',
     'load_review',
     'review_from',
     'review_tick',
@@ -166,25 +161,9 @@ FAMILY_COMMAND: Final = (
     '--principles', forgereview_scope.PRINCIPLES_FIELD,
 )  # fmt: skip
 
-#: The machine-file table a host declares WHERE its runtimes live in: ``[runtimes.<name>] <key> = "<path>"``.
-#: Not ``[capabilities]``: a capability is a resource a part needs and admission counts; a runtime is only a path
-#: (user ruling 2026-10-28).
-RUNTIMES_TABLE: Final = 'runtimes'
-
-#: The retired spelling of a host value, refused naming its ``{runtimes.<name>.<key>}`` replacement.
-RETIRED_FIELD: Final = re.compile(r'\{capabilities\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
-
-#: Host values the family retired, each refused in a command naming what replaced it.
-RETIRED_RUNTIMES: Final = {
-    'sharp_review': 'ai-lab packages the method: drop it (the family command needs none)',
-}
-
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
 LIGHT: Final = ('docs-src/**', '**/.claude/memory/**', '**/*.md')
-
-#: A placeholder for a value THIS host declares: ``{runtimes.<name>.<key>}`` (``~`` expanded).
-HOST_FIELD: Final = re.compile(r'\{runtimes\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
 
 #: A reviewer status meaning its provider cannot serve this run at all: the review needs a takeover.
 TAKEOVER_KINDS: Final = frozenset({'exhausted', 'auth'})
@@ -262,25 +241,10 @@ def review_from(text: str, origin: str) -> Review:
     if 'command' in declared and review.command == FAMILY_COMMAND:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
-    for arg in (*review.command, *review.synthesis):
-        for field in (*RETIRED_FIELD.finditer(arg), *HOST_FIELD.finditer(arg)):
-            name, key = field['name'], field['key']
-            why = RETIRED_RUNTIMES.get(name)
-            if why is None and RETIRED_FIELD.fullmatch(field[0]):
-                why = f'{{{RUNTIMES_TABLE}.{name}.{key}}} ([{RUNTIMES_TABLE}.{name}] {key} in the machine file)'
-            if why is not None:
-                msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {field[0]} is retired: {why}'
-                raise ValueError(msg)
-    return review
-
-
-def host_runtimes() -> dict[str, dict[str, Any]]:
-    """The machine file's ``[runtimes]``: ``{name: {key: value}}``; a row that is not a table is refused."""
-    table = section(RUNTIMES_TABLE)
-    if bad := sorted(name for name, row in table.items() if not isinstance(row, dict)):
-        msg = f'the machine file: [{RUNTIMES_TABLE}] {", ".join(bad)} must each be a table ([{RUNTIMES_TABLE}.<name>])'
+    if why := retired_field((*review.command, *review.synthesis)):
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {why}'
         raise ValueError(msg)
-    return {name: dict(row) for name, row in table.items()}
+    return review
 
 
 def load_review(root: Path) -> Review:
