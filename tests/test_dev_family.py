@@ -37,17 +37,16 @@ def test_this_checkout_is_a_member() -> None:
     assert is_member(Path(__file__).resolve().parents[1])
 
 
-def test_a_dev_lab_table_is_read_from_its_own_namespace_and_never_from_the_old_one() -> None:
-    """PLANTED CONTROL: the same table under ``[tool.lab_commons]`` is invisible -- no fallback, no alias."""
+def test_a_dev_lab_table_is_read_from_its_own_namespace() -> None:
+    """The table is ``[tool.dev_lab.<name>]``; an absent one is *default*."""
     new = tomllib.loads("[tool.dev_lab.hooks]\npre-commit = ['x']\n")
-    old = {'tool': {'lab_commons': {'hooks': {'pre-commit': ['x']}}}}
     assert declared_table(new, 'hooks') == {'pre-commit': ['x']}
-    assert declared_table(old, 'hooks') is None
-    assert declared_table(old, 'hooks', {}) == {}
+    assert declared_table({}, 'hooks') is None
+    assert declared_table({}, 'hooks', {}) == {}
 
 
 def test_an_unmigrated_dev_lab_table_is_refused_never_read_as_absent() -> None:
-    """PLANTED (review F-76063aaece3e): ``[tool.lab_commons.hooks]`` read as ``{}`` switched its rows off."""
+    """PLANTED (review F-76063aaece3e): the old namespace read as ``{}`` switched its rows off."""
     data = {'tool': {'lab_commons': {'hooks': {'pre-push': ['x']}}}}
     with pytest.raises(RetiredTable, match=r'\[tool\.dev_lab\.hooks\]'):
         declared_table(data, 'hooks', {})
