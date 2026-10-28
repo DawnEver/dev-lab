@@ -21,8 +21,10 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``grac
 THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.dev_lab.branchset]``.
 AN AGENT'S DELETION IS LOSSLESS-DELETE (user ruling 2026-10-21): never a raw push (``PUSH-REMOTE-DELETE``), only
 :data:`DOOR`, which after a fresh fetch deletes a branch only when every commit on it is on integration or on
-another live origin branch or open PR head (:func:`judge` names that container), and otherwise refuses naming the
-commits that would be lost. The delete is a lease on the judged sha through the network door, recorded as one
+another live origin branch or open PR head (:func:`judge` names that container) or, by CONTENT, when no file its
+own commits wrote adds a line integration lacks outside a generated file -- a branch of forge sync merges holds no
+work -- and otherwise refuses naming the commits and the files carrying unlanded content.
+The delete is a lease on the judged sha through the network door, recorded as one
 :data:`DELETED_EVENT` line and a ``pruned`` alarm naming the ``Lab-Session`` and the container.
 
 EACH DELETION IS PINNED to the sha the survey judged: the live tip is read from the forge first, and a
@@ -49,6 +51,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forge import _GIT, fetch_origin
 from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm, sound
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
@@ -252,7 +255,7 @@ DELETED_EVENT: Final = 'lab_commons.forge.branch-delete'
 #: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it).
 DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>...'
 #: Its refusals, each said once, here.
-LOSSY: Final = '{branch}: refused -- {count} commit(s) exist on it alone: {commits}'
+LOSSY: Final = '{branch}: refused -- {count} commit(s) exist on it alone ({commits}), with unlanded content in: {files}'
 PROTECTED: Final = '{branch}: refused -- it is {why}, never deleted'
 _FIRST: Final = 5
 
@@ -271,7 +274,9 @@ class Verdict:
 def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]) -> Verdict:
     """Whether deleting origin's *branch* loses nothing; read from the fetched remote-tracking refs alone.
 
-    Lossless when every commit on it is on integration, or on another live origin branch or open PR head.
+    Lossless when every commit on it is on integration, or on another live origin branch or open PR head; else,
+    by content, when no file its own commits wrote adds a line integration lacks (:func:`_unlanded`) -- a branch
+    of sync merges whose tip tree is integration's, or differs only in a generated file, holds nothing to lose.
     """
     if branch in {policy.integration, policy.trunk}:
         return Verdict(branch, refused=PROTECTED.format(branch=branch, why='the integration branch or the trunk'))
@@ -289,10 +294,34 @@ def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]
             label = f'open PR #{open_heads[name]} ({name})' if name in open_heads else name
             return Verdict(branch, sha, container=label)
     lost = (git_out(root, 'rev-list', sha, '--not', *(f'{_ORIGIN}{name}' for name in others)) or '').split()
-    if not lost:
-        return Verdict(branch, sha, container='the union of the other origin branches')
+    unlanded = _unlanded(root, sha, others, policy.integration) if lost else ()
+    if not unlanded:
+        by_content = f'{policy.integration} (by content: no content {policy.integration} lacks)'
+        return Verdict(branch, sha, container=by_content if lost else 'the union of the other origin branches')
     shown = ', '.join(one[:12] for one in lost[:_FIRST]) + (' ...' if len(lost) > _FIRST else '')
-    return Verdict(branch, sha, lost=tuple(lost), refused=LOSSY.format(branch=branch, count=len(lost), commits=shown))
+    files = ', '.join(unlanded)
+    refused = LOSSY.format(branch=branch, count=len(lost), commits=shown, files=files)
+    return Verdict(branch, sha, lost=tuple(lost), refused=refused)
+
+
+def _unlanded(root: Path, sha: str, others: Sequence[str], integration: str) -> tuple[str, ...]:
+    """The files whose content at *sha* adds a line *integration* lacks, among those its own commits wrote.
+
+    The commits on *sha* alone name the files they wrote: a plain commit every file it changes, a merge only the
+    files it resolved (``--cc``: differing from every parent), so a sync merge of integration names none. Of those,
+    a file the family generates (:data:`~dev_lab.dev.famfiles.GENERATED`) is regenerated, never lost; any other
+    whose tip version adds a line over integration's carries unlanded content. A file the branch deleted adds none.
+    """
+    tip_only = [sha, '--not', *(f'{_ORIGIN}{name}' for name in others)]
+    written = (git_out(root, 'log', '--format=', '--name-only', '--cc', *tip_only) or '').splitlines()
+    candidates = sorted({path for path in written if path and path not in GENERATED})
+    if not candidates:
+        return ()
+    stat = git_out(root, 'diff', '--numstat', '--no-renames', f'{_ORIGIN}{integration}', sha, '--', *candidates)
+    if stat is None:
+        return tuple(candidates)
+    rows = (line.split('	', 2) for line in stat.splitlines() if line)
+    return tuple(path for added, _, path in rows if added != '0')
 
 
 def _push_delete(root: Path, branch: str, sha: str) -> str:
@@ -332,7 +361,7 @@ def delete(
         say(json.dumps(record | {'session': session or None}))
         body = f'{branch} at {found.sha[:12]}, held by {found.container}; by session {session or "none"}'
         alarm(Alarm(PRUNED, client.forge.repo, f'{branch} deleted (lossless)', body))
-        say(f'{branch}: deleted at {found.sha[:12]} -- every commit is on {found.container}')
+        say(f'{branch}: deleted at {found.sha[:12]} -- held by {found.container}')
     return 1 if failed else 0
 
 
