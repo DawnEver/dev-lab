@@ -140,7 +140,10 @@ What every host still reads, kept small:
   stay below latest. Every commit is judged on its pin alone (user ruling 2026-10-22): freshness is ONE party's job, the forge's --
   each serve tick relocks `origin/<integration>` itself through one `pr/relock-<dist>-<sha>` pull request
   (`dev_lab.dev.relock`), which merges like any other, and a lane takes it with `forge sync`. Every open PR head into integration
-  carries a `lock/fresh` status (`dev_lab.dev.forgeheadgate`, once per head sha): `failure` reads
+  carries a `lock/fresh` status (`dev_lab.dev.forgeheadgate`, once per head sha). A PR never chases the lock
+  (user ruling 2026-10-28): a move its merge-base with integration lags too -- a sibling or dist published after it
+  branched -- is the relock pull request's to carry, so only the head's OWN moves (a lock older than its base's, a
+  `pyproject.toml` change not relocked) are refused. `failure` reads
   ``stale uv.lock: run `<venv python> -m dev_lab.dev.dep --lock-upgrade [ROOT]`, then commit uv.lock (<moves>)``. By hand, one
   upgrades through the door `<venv python> -m dev_lab.dev.dep --lock-upgrade
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
