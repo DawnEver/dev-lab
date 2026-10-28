@@ -1,10 +1,14 @@
-"""A DARK FLEET IS AN ALARM, ONCE PER EPISODE -- every host of a platform stale, or a tick that serves nothing.
+"""A DARK FLEET IS AN ALARM, ONCE PER EPISODE -- a platform or a resource with no live host, or a tick serving nothing.
 
 Ada 2026-10-25..27: every host's tick ran with ``serve = false`` in each account's machine file, so nothing was
 claimed and no card published; ``forge queue`` printed STALE per host, and no alarm reached anyone for two days
 (HPC use fell from 67% to 1%). A per-host STALE line is read only by whoever runs the queue; a platform with NO
 live host is a fact any serving host can see on the forge and must sound (:func:`watch`), and a tick that serves
 nothing because every repo of its ``[deploy]`` is ``serve = false`` says so itself (:func:`serve_off`).
+
+A RESOURCE GOES DARK THE SAME WAY (:func:`dark_resources`, user ruling 2026-10-28): two workstations stale for days
+still read ``jmag = 1`` in the queue while the platform itself stayed lit by another host. A stale card supplies
+nothing (:func:`dev_lab.dev.forgeprovides.supplied`), so a tool whose every provider is stale has no supply at all.
 
 ONE ALARM PER EPISODE: an episode starts when the condition first holds and ends when it no longer does (a host of
 the platform ticks again; the tick serves a repo). The open episodes live in ``forge-fleet.json`` beside the
@@ -24,8 +28,9 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import FLEET, Alarm
 from dev_lab.dev.forgehosts import HostCard
+from dev_lab.dev.forgeprovides import supplied
 
-__all__ = ['dark_platforms', 'serve_off', 'watch']
+__all__ = ['dark_platforms', 'dark_resources', 'serve_off', 'watch']
 
 
 def _state() -> Path:
@@ -59,6 +64,20 @@ def dark_platforms(cards: Iterable[HostCard], now: datetime) -> dict[str, tuple[
     }
 
 
+def dark_resources(cards: Iterable[HostCard], now: datetime) -> dict[str, tuple[str, ...]]:
+    """Each tool some card's probe found whose every such card is stale, with those hosts: declared, never supplied."""
+    cards = tuple(cards)
+    holders: dict[str, list[HostCard]] = {}
+    for card in cards:
+        for name in card.tools_present():
+            holders.setdefault(name, []).append(card)
+    return {
+        name: tuple(sorted(card.host for card in group))
+        for name, group in sorted(holders.items())
+        if not any(name in supplied(card, now) for card in group)
+    }
+
+
 def watch(cards: Iterable[HostCard], now: datetime, *, alarm: Callable[[Alarm], object], repo: str) -> None:
     """Alarm once per platform going dark; close its episode when a host of it ticks again."""
     cards = tuple(cards)
@@ -69,6 +88,16 @@ def watch(cards: Iterable[HostCard], now: datetime, *, alarm: Callable[[Alarm], 
         body = f'{", ".join(hosts)}: no tick published -- check `serve` in each ~/.config/lab-commons/config.toml'
         _episode(f'dark:{platform}', on=bool(hosts), raise_=lambda s=subject, b=body, p=platform: alarm(
             Alarm(FLEET, repo, s, b, about=p)
+        ))  # fmt: skip
+    dark_tools = dark_resources(cards, now)
+    for name in sorted({tool for card in cards for tool in card.tools_present()}):
+        hosts = dark_tools.get(name, ())
+        subject = f'no host supplies {name}: every host providing it is stale'
+        body = (
+            f'{", ".join(hosts)}: no tick published, so their {name} is no supply -- restart serve there or retire them'
+        )
+        _episode(f'dark-resource:{name}', on=bool(hosts), raise_=lambda s=subject, b=body, n=name: alarm(
+            Alarm(FLEET, repo, s, b, about=n)
         ))  # fmt: skip
 
 

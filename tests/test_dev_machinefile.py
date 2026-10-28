@@ -15,10 +15,10 @@ HAND: str = (
 
 
 def test_an_absent_table_is_appended_and_every_other_line_kept() -> None:
-    out = merged(HAND, {'capabilities.node': {}, 'serve': {'repos': ['a', 'b']}})
+    out = merged(HAND, {'capabilities.femm': {}, 'serve': {'repos': ['a', 'b']}})
     assert out.startswith(HAND.rstrip('\n'))
     parsed = tomllib.loads(out)
-    assert parsed['capabilities'] == {'jmag': {'seats': 4}, 'node': {}}
+    assert parsed['capabilities'] == {'jmag': {'seats': 4}, 'femm': {}}
     assert parsed['serve'] == {'tick_minutes': 2, 'repos': ['a', 'b']}
     assert parsed['hpc']['grant'] == [{'user': 'me', 'slurm_account': 'a'}]
 
@@ -55,3 +55,11 @@ def test_a_none_value_removes_its_key_and_only_its_line() -> None:
     assert tomllib.loads(out)['serve'] == {}
     assert merged(out, {'serve': {'tick_minutes': None}}) == out
     assert tomllib.loads(merged('', {'serve': {'root': None, 'repos': ['a']}})) == {'serve': {'repos': ['a']}}
+
+
+def test_a_none_table_removes_the_whole_table_and_only_it() -> None:
+    """A retired TABLE is dropped with its header comment and rows; an absent one is a no-op (planted control)."""
+    text = HAND.replace('[serve]', '[capabilities.old]  # replaced long ago\nkept = 1\n\n[serve]')
+    out = merged(text, {'capabilities.old': None})
+    assert out == HAND
+    assert merged(out, {'capabilities.old': None}) == out

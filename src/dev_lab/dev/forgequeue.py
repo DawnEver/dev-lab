@@ -42,7 +42,7 @@ from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from dev_lab.dev.forgecoalesce import behind
 from dev_lab.dev.forgehosts import HostCard, read_cards
-from dev_lab.dev.forgeprovides import present, unserved
+from dev_lab.dev.forgeprovides import supplied, unserved
 from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, request_context
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import (
@@ -203,11 +203,10 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
         needed = needs_of(candidate.platform)
     except ValueError as why:
         return str(why)
-    live = [card for card in cards if not card.stale(now)]
-    unclaimable = unserved(needed, [present(card.platform, card.tools_present()) for card in live])
+    unclaimable = unserved(needed, [supplied(card, now) for card in cards])
     if unclaimable:
         return unclaimable
-    serving = [card for card in live if needed <= present(card.platform, card.tools_present())]
+    serving = [card for card in cards if (has := supplied(card, now)) and needed <= has]  # a stale card has nothing
     skipping = [(card.host, Serves(card.serves, frozenset(card.withholds)).skips(needed)) for card in serving]
     if serving and all(why for _, why in skipping):
         return f'{NO_HOST} claims it -- ' + '; '.join(f'{host} {why}' for host, why in skipping)
@@ -224,6 +223,12 @@ def _amounts(resources: Mapping[str, float] | str) -> str:
     if isinstance(resources, str):  # a whole-scope lease: 'all'
         return resources
     return ','.join(f'{name}={amount:g}' for name, amount in sorted(resources.items()))
+
+
+def _holds(host: Mapping[str, Any]) -> str:
+    """What a card holds; a STALE card's claims are unrenewed, so each is retaken once its lease lapses."""
+    held = ', '.join(host['holds']) or 'nothing'
+    return f'{held} (unrenewed: retaken once its lease lapses)' if host['stale'] and host['holds'] else held
 
 
 def render(view_: Mapping[str, Any]) -> list[str]:
@@ -248,7 +253,7 @@ def render(view_: Mapping[str, Any]) -> list[str]:
         for line in (
             (
                 f'  {h["host"]:<20} {h["platform"]:<8} ticked {h["ticked"]}{_STALE if h["stale"] else ""}  '
-                f'supply {_amounts(h["supply"])}  holds {", ".join(h["holds"]) or "nothing"}'
+                f'supply {"none (stale)" if h["stale"] else _amounts(h["supply"])}  holds {_holds(h)}'
             ),
             *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),
             *([f'    priority {Priority.of(h["priority"]).text()}'] if any(h.get('priority', {}).values()) else []),

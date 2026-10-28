@@ -3,11 +3,14 @@
 The counterpart of a cluster account's ``python -m dev_lab.dev.hpchost deploy``, and it reuses that
 deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 
-``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>]
-[--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. Nothing is reserved for the person at the
-box (user ruling 2026-10-25): they DECLARE their use as a ledger claim (``python -m lab_commons.box claim``).
+``deploy --repos dev-lab,<repo>,... (--capabilities workstation,jmag:4 | --role light) [--forge <https base>]
+[--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. A ``--role`` is a declared profile
+(:data:`ROLES`: its capabilities and ``[serve]`` rule); ``template --role <role> --repos ...`` prints the tables
+it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses one in ``--capabilities``.
+Nothing is reserved for the person at the box (user ruling 2026-10-25): they DECLARE their use as a ledger
+claim (``python -m lab_commons.box claim``).
 
-1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
+1. PROBE: ``uv`` and ``git`` on PATH; ``node`` and ``codex`` when ``workstation`` is declared; JMAG Designer and
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
 2. CREDENTIAL: ``git ls-remote`` of every repo with prompting off, so only a STORED git credential
    answers; none is ever read or printed. A refusal names the one manual step.
@@ -20,8 +23,9 @@ box (user ruling 2026-10-25): they DECLARE their use as a ledger claim (``python
 5. HOOKS: ``-m dev_lab.dev.hook_install --install`` in each checkout whose hooks are not live.
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
    row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken) and
-   ``[serve] repos`` merged in place (a retired ``[serve] root`` is removed); every other table, key and
-   comment is kept, and ``--dry-run`` prints the diff.
+   ``[serve] repos`` (with a role, also ``parts`` and ``withhold``) merged in place. A retired ``[serve] root``
+   and every RETIRED ``[capabilities.<name>]`` table are removed -- one retired into ``[runtimes.<name>]`` has
+   its keys carried there; every other table, key and comment is kept, and ``--dry-run`` prints the diff.
 7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`dev_lab.dev.servetask`), its action derived from
    the forge home alone (the dev-lab serve checkout's ``pythonw``), registered from its XML definition and
    rewritten only when the installed one reads back different.
@@ -63,14 +67,12 @@ from pathlib import Path
 from typing import IO, Any, Final
 
 import lab_commons.launch as _door
-from lab_commons.box.machine import provided
-from lab_commons.compute.durable import durable_text
+from lab_commons.compute.serves import SERVE_TABLE
 from lab_commons.config import config_path, section
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 from dev_lab.dev import servetask
-from dev_lab.dev._machinefile import diff, merged
 from dev_lab.dev.forgealarm import RUN, Alarm, sound
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
@@ -81,6 +83,15 @@ from dev_lab.dev.hpchost.steps import Step, Tools
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
+from dev_lab.dev.workstationfile import (
+    ROLES,
+    WORKSTATION,
+    capabilities,
+    machine_file,
+    role_refusal,
+    role_tables,
+    template,
+)
 
 if sys.platform == 'win32':
     import winreg
@@ -88,9 +99,7 @@ if sys.platform == 'win32':
 __all__ = [
     'FORGE_ROLE',
     'JMAG_PROGIDS',
-    'JMAG_SOLVER_IMAGES',
     'REGISTRY_TABLE',
-    'WORKSTATION',
     'NoRegistry',
     'Programs',
     'com_server',
@@ -100,22 +109,12 @@ __all__ = [
     'serve',
 ]
 
-#: The resource a developer workstation provides: the live checkout and the agent tooling its guards run on.
-#: ONE resource, not three: every host carrying the checkout, ``node`` or ``codex`` carries all of them, and the
-#: cluster none, so a split would only queue one host's work as several parts (user directive 2026-10-19).
-WORKSTATION: Final = 'workstation'
 #: What a ``workstation`` declaration promises on ``PATH`` -- probed at deploy, so the declaration cannot lie.
 _WORKSTATION_KIT: Final = ('node', 'codex')
 
 #: The COM classes a ``jmag`` host drives: the Designer and its Scheduler.
 JMAG_PROGIDS: Final = ('designer.Application', 'scheduler.JobApplication')
 
-#: The images whose running count is the JMAG seats in use: ONE per solve. The solver kernel family as the
-#: installation ships it (motronics ``hamilton/adapters/jmag/processes.py``, checked 2026-09-19 against
-#: JMAG-Designer25.1). Not ``execsolver.exe`` -- it launches ``jam.exe``, so counting both counts one solve
-#: twice -- and not ``scheduler.exe`` or ``designer.exe``: a seat is a SOLVE, never an open Designer (user
-#: correction 2026-10-16).
-JMAG_SOLVER_IMAGES: Final = ('jam.exe', 'jam_c.exe', 'jam_intel_mpi_b.exe', 'jam_intel_mpi_c.exe')
 
 _REMEDIES: Final = {
     'uv': 'install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"',
@@ -222,22 +221,6 @@ class Programs:
     release: Callable[[Path], list[str]] = _release
 
 
-def _capabilities(text: str) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    for item in filter(None, (part.strip() for part in text.split(','))):
-        name, _, seats = item.partition(':')
-        if seats and not seats.isdigit():
-            msg = f'--capabilities {item!r}: expected <name> or <name>:<seats>'
-            raise argparse.ArgumentTypeError(msg)
-        out[name] = {'seats': int(seats)} if seats else {}
-        if name == 'jmag':
-            out[name]['in_use'] = {'process': list(JMAG_SOLVER_IMAGES)}
-    try:
-        return provided(out)
-    except ValueError as bad:
-        raise argparse.ArgumentTypeError(str(bad)) from None
-
-
 def _repos(text: str) -> tuple[str, ...]:
     repos = tuple(dict.fromkeys(part.strip() for part in text.split(',') if part.strip()))
     if KIT not in repos:
@@ -251,11 +234,17 @@ def _parser() -> argparse.ArgumentParser:
     verbs = parser.add_subparsers(dest='verb', required=True)
     dep = verbs.add_parser('deploy', help='make this workstation a forge serve host')
     dep.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {KIT}')
-    dep.add_argument('--capabilities', type=_capabilities, default={}, help='comma-separated name or name:seats')
+    dep.add_argument('--capabilities', type=capabilities, default=None, help='comma-separated name or name:seats')
+    dep.add_argument(
+        '--role', choices=sorted(ROLES), help='a declared profile (ROLES): its capabilities and [serve] rule'
+    )
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
+    tpl = verbs.add_parser('template', help='print the machine-file tables a --role deploy writes')
+    tpl.add_argument('--role', choices=sorted(ROLES), required=True)
+    tpl.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {KIT}')
     return parser
 
 
@@ -303,27 +292,6 @@ def _hooks(step: Step, programs: Programs, checkout: Path, name: str) -> int:
         emit(f'  {name}: ' + ('hooks live' if rc == 0 else 'declares no hook'))
         return 0
     return step.change(f'{name}: hook_install --install', [*hook, '--install'], cwd=checkout)
-
-
-def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
-    path = config_path()
-    emit(f'[machine file] {path}')
-    before = path.read_text(encoding='utf-8') if path.is_file() else ''
-    try:
-        after = merged(before, tables)
-    except ValueError as broken:
-        emit(f'deploy refused: {path}: {broken}', err=True)
-        return 2
-    if after == before:
-        emit('  already declares every table')
-        return 0
-    for line in diff(before, after, str(path)).splitlines():
-        emit(f'  {line}')
-    if step.dry:
-        emit('  [dry-run] the diff above is not written')
-        return 0
-    durable_text(path, after)
-    return 0
 
 
 def _task(step: Step, programs: Programs) -> int:
@@ -386,7 +354,12 @@ def _checkouts(
 
 def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy)."""
-    args = _parser().parse_args(['deploy', *argv])
+    parser = _parser()
+    args = parser.parse_args(['deploy', *argv])
+    if args.capabilities is None:
+        args.capabilities = capabilities(','.join(ROLES[args.role].capabilities)) if args.role else {}
+    if args.role and (why := role_refusal(args.role, args.capabilities)):
+        parser.error(why)
     tools = programs or Programs()
     checkouts = {name: servetask.checkout(tools.home, name) for name in args.repos}
     try:
@@ -398,10 +371,14 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
         return 2
     step = Step(Tools(git=tools.git), dry=args.dry_run)
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
-    tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
-    served = [name for name in args.repos if name not in refused]  # a retired key merged as None is removed
-    tables['serve'] = {'repos': served, **dict.fromkeys(servetask.RETIRED_SERVE_KEYS)}
-    rc = _machine_file(step, tables) or _task(step, tools)
+    served = [name for name in args.repos if name not in refused]
+    if args.role:
+        tables = role_tables(ROLES[args.role], args.capabilities, served)
+    else:
+        tables = {f'capabilities.{name}': dict(facts) for name, facts in args.capabilities.items()}
+        tables[SERVE_TABLE] = {'repos': served}
+    tables[SERVE_TABLE].update(dict.fromkeys(servetask.RETIRED_SERVE_KEYS))  # a retired key merged as None is removed
+    rc = machine_file(step, tables) or _task(step, tools)
     for name, why in refused.items():
         tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))
         emit(f'deploy refused {name} (left out of [serve] repos): {why}', err=True)
@@ -479,7 +456,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args[:1] == ['deploy']:
         return deploy(args[1:])
-    _parser().parse_args(args)
+    parsed = _parser().parse_args(args)
+    if parsed.verb == 'template':
+        emit(template(parsed.role, parsed.repos).rstrip())
+        return 0
     if sys.stdout is not None:
         return serve()
     with servetask.open_log(servetask.log_path()) as log:  # pythonw: no console, so no streams

@@ -44,7 +44,7 @@ Each tick it:
    integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms))
    and relocks;
 7. ON EVERY HOST, poller or not, runs the PR review where its declared command can run (a host whose
-   `[capabilities]` cannot fill or start it says so once and reads no PR; the head's claim keeps one review
+   `[runtimes]` cannot fill or start it says so once and reads no PR; the head's claim keeps one review
    per head across hosts; a head held over its cap is the integrator's takeover,
    [the review](integration.md#the-pr-reviewer-blocks-on-high-or-security)).
 
@@ -170,7 +170,8 @@ What every host still reads, kept small:
 ### Deploy a Windows workstation
 
 The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, and the complete runbook for a JMAG
-workstation (WS1, WS2): run once per box, in PowerShell, as the user who serves. A JMAG workstation does a
+workstation: run once per box, in PowerShell, as the user who serves. A workstation that serves parts but never
+heavy compute (WS1, WS2) deploys the `light` role instead: [adding a forge workstation](adding-a-workstation.md). A JMAG workstation does a
 person's heavy JMAG work FIRST: the person declares it (step 8), and the forge takes only what lies outside it.
 
 **1. Prerequisites.**
@@ -250,7 +251,7 @@ repos = ["dev-lab", "<repo>"]
 ```
 
 **7. A seat is measured like a core** ([box resources](box-resources.md), rule 2). `in_use` names the JMAG
-solver images (`workstation.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
+solver images (`workstationfile.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
 `jam.exe`, nor `scheduler.exe` or `designer.exe`), so a solve a person starts from Designer or the Scheduler is
 a seat taken though no ledger claim holds it. Free JMAG seats are
 `seats - max(held by ledger claims, jam processes running)`: with the file above the forge runs up to four JMAG

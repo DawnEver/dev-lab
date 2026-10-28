@@ -81,6 +81,20 @@ def test_a_card_older_than_three_of_its_ticks_is_stale(server) -> None:
     assert [(card.host, card.stale(NOW)) for card in cards] == [('box-g', False), ('ada/bob', True)]
 
 
+def test_a_stale_hosts_supply_reads_as_none_and_its_holds_as_lapsing() -> None:
+    """WS1/WS2 2026-10-28: stale for days and still listed with jmag=1 and claims held. PLANTED CONTROL: a fresh one."""
+    stale = _card('WS2', 'windows', NOW - timedelta(days=1), supply={'jmag': 1}, holds=('abc tests/jmag',))
+    fresh = _card('G', 'windows', NOW, supply={'jmag': 1}, holds=('def tests/jmag',))
+    hosts = [{**asdict(c), 'holds': list(c.holds), 'alarms': [], 'stale': c.stale(NOW)} for c in (stale, fresh)]
+    lines = forgequeue.render({'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': hosts, 'starved': []})
+    ws2, g = (next(line for line in lines if line.startswith(f'  {h}')) for h in ('WS2', 'G'))
+    assert 'jmag' not in ws2.split('supply ', 1)[1].split('  holds', 1)[0]
+    assert 'supply none (stale)' in ws2
+    assert 'holds abc tests/jmag (unrenewed: retaken once its lease lapses)' in ws2
+    assert 'supply jmag=1' in g
+    assert g.endswith('holds def tests/jmag')
+
+
 def test_a_cards_alarms_and_a_stale_cards_silence_are_shown_by_the_queue(server) -> None:
     """PLANTED CONTROL: a fresh card with no alarm shows no ALARM line and no STALE remedy."""
     built = client(FORGE, Loopback(server))

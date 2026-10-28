@@ -149,6 +149,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL: the review read the whole diff or nothing; the slice budget and lenses are new here.
     'forgereview_command': ('original',),
     'forgereview_scope': ('original',),
+    'forgereview_runtimes': ('original',),
     'integrate': ('original',),
     'forgepulls': ('original',),
     'forgesync': ('original',),
@@ -256,6 +257,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'servelock': ('original',),
     'servetask': ('original',),
     'workstation': ('original',),
+    'workstationfile': ('original',),
     'hostrefresh': ('original',),
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees': ('original',),

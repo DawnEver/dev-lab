@@ -1,7 +1,7 @@
 """REVIEW-COMMAND-IS-THE-FAMILY'S: a repo's ``[tool.dev_lab.review]`` declares only where it differs.
 
 The command is :data:`dev_lab.dev.forgereview.FAMILY_COMMAND`, owned here in dev-lab; a repo overrides the model,
-bounds or globs. A redeclared family command, or a retired capability (``{capabilities.sharp_review.*}``), is
+bounds or globs. A redeclared family command, or a retired host field (any ``{capabilities.*}``), is
 refused by :func:`dev_lab.dev.forgereview.review_from`; this body runs that refusal over the repo's own manifest at
 test time, so a stale copy is red in its own repo before the forge ever loads it.
 """
@@ -16,7 +16,7 @@ __all__ = ['assert_the_review_declares_only_its_difference']
 
 
 def assert_the_review_declares_only_its_difference(root: Path) -> None:
-    """*root*'s review table loads: no redeclared family command, no retired capability, no unknown key."""
+    """*root*'s review table loads: no redeclared family command, no retired host field, no unknown key."""
     try:
         load_review(root)
     except ValueError as refused:
