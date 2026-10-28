@@ -83,3 +83,18 @@ def test_the_body_carries_the_paths_and_reads_them_back() -> None:
     assert parse_body(body) == (TESTS, 'a' * 40)
     assert parse_paths(body) == ('tests/test_a.py', 'tests/u/test_b.py')
     assert parse_paths(request_body('femm', 'a' * 40)) == (), 'a producer row request names no paths'
+
+
+def test_a_request_at_a_sha_whose_manifest_the_kit_retires_is_refused_by_name(repo: tuple[Path, str]) -> None:
+    """PLANTED (live 2026-10-28, Ada): a request pinned to a pre-A3 sha spells a moved table.
+
+    The kit's RetiredTable escaped the serve on every tick, so no motronics part was claimed; it is refused
+    per request instead.
+    """
+    root, _sha = repo
+    (root / 'pyproject.toml').write_text(_PYPROJECT + '\n[tool.lab_commons.hooks]\n', encoding='utf-8')
+    run_git(root, 'add', 'pyproject.toml')
+    run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'old spelling')
+    old = git_out(root, 'rev-parse', 'HEAD')
+    with pytest.raises(UndeclaredRequest, match=r'retired'):
+        declared_request(root, old, TESTS, ('tests/test_a.py',))
