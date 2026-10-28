@@ -16,7 +16,7 @@ A JOB SLURM KILLED IS READ, NAMED AND LEARNED (:meth:`SlurmCluster.killed`; Ada 
 (``ReqMem``/``MaxRSS``, ``Timelimit``/``Elapsed``); an OOM's ask is recorded grown by
 :data:`~lab_commons.compute.learned.OOM_GROWTH` and held to the most any grant gives
 (:func:`~lab_commons.hpc.plan.grantable_gb`), so the part's next run asks for more. A TIMEOUT needs nothing
-here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.learned.Measured.killed`).
+here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.measured.Measured.killed`).
 
 A FORGE JOB WHOSE RUN IS GONE IS CANCELLED (:meth:`SlurmCluster.strays`; Ada 2026-10-25: 25 % of a day's
 core-hours). A run whose ref is gone cancels its own jobs (:func:`dev_lab.dev.forgerun._cancel_orphan`); a job
@@ -42,6 +42,7 @@ from typing import Any, Final
 
 from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
+from lab_commons.compute.measured import Measured
 from lab_commons.compute.presence import cached
 from lab_commons.config import config_path
 from lab_commons.hpc.account import ClusterAccount
@@ -359,7 +360,7 @@ class SlurmCluster:
     def started_tasks(self, run: Run) -> Draining:
         """*run*'s started tasks, each priced as the packer priced it: its items' estimate times ``policy.safety``.
 
-        The estimate is :meth:`lab_commons.compute.learned.Measured.estimate` over the learned table -- durations,
+        The estimate is :meth:`lab_commons.compute.measured.Measured.estimate` over the learned table -- durations,
         floors, overheads, an unmeasured file at ``cost.seconds`` -- and ``policy.safety`` is the margin the plan
         turns it into a ``--time`` with (:func:`lab_commons.hpc.plan.plan`): one source, no new constant. A task
         of no round's manifest is priced at the prior alone. Start and now are both the cluster's clock.
@@ -368,7 +369,7 @@ class SlurmCluster:
         names = ','.join((job_name(run.sha, run.platform), *run.job_aliases))
         lines = shell(f"date +%s; squeue -h --me -n {names} -t {STARTED} -o '%i|%M'", None).split()
         now = float(lines[0])
-        measured = learned.Measured.of(learned.learned(run.repo_url))
+        measured = Measured.of(learned.learned(run.repo_url))
         cost, safety = self.config.cost, self.config.policy.safety
         manifests: dict[str, dict[str, Any]] = {}
         tasks = []

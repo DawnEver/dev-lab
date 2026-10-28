@@ -5,14 +5,14 @@ shape every run -- 1-2 GB tasks of multi-file items whose files' learned peaks w
 pytest process over its files, so its memory is its combination's, not its heaviest file's; the run's retry
 grows and bisects it, then the files re-measure alone or in smaller items, the growth is dropped
 (:func:`lab_commons.hpc.gather.grown_after`) and a multi-file kill teaches no peak
-(:meth:`lab_commons.compute.learned.Measured.learn`) -- so the NEXT run packs them together at the old ask and
+(:meth:`lab_commons.compute.measured.Measured.learn`) -- so the NEXT run packs them together at the old ask and
 dies the same way.
 
 Here the kill is kept: each file of an OOM task's items is floored at the task's ask (ungrown -- the plan's
-``policy.safety`` multiplies it once, :func:`lab_commons.compute.learned.task_gb`), never lowering a known peak.
+``policy.safety`` multiplies it once, :func:`lab_commons.compute.measured.task_gb`), never lowering a known peak.
 It goes into the run RECORD, because the learned table is a cache of the forge's records, each folded whole
 (:func:`lab_commons.compute.learned.learn_record`): a floor kept only locally is lowered by that fold. A file
-that later finishes un-killed re-measures and replaces it (:meth:`~lab_commons.compute.learned.Measured.learn`).
+that later finishes un-killed re-measures and replaces it (:meth:`~lab_commons.compute.measured.Measured.learn`).
 """
 
 from __future__ import annotations
