@@ -3,9 +3,15 @@
 User ruling 2026-10-24 (toolchain plan P3): neither is read at a local push any more, so the forge says each one
 where the author reads it -- a status on the PR head, ``failure`` naming the exact command that fixes it:
 
-* :data:`LOCK_CONTEXT` -- the head's ``uv.lock`` is not the newest resolution (:func:`dev_lab.dev.lockcheck.stale`,
-  resolved in a detached worktree of the head); the remedy is the one dependency door, :data:`LOCK_REMEDY`.
-  A resolution that cannot run is ``error`` with its diagnosis, never a pass.
+* :data:`LOCK_CONTEXT` -- the head's ``uv.lock`` moves a resolution its BASE does not
+  (:func:`dev_lab.dev.lockcheck.stale` on the head, then on its merge-base with ``origin/<integration>``, each in a
+  detached worktree); the remedy is the one dependency door, :data:`LOCK_REMEDY`. A resolution that cannot run is
+  ``error`` with its diagnosis, never a pass.
+
+  A PR NEVER CHASES THE LOCK (user ruling 2026-10-28): a move the base lags too -- a sibling or a dist that
+  published after the PR branched -- is integration's, carried by the forge's relock pull request
+  (:mod:`dev_lab.dev.relock`) and taken by ``forge sync``; it is never the head's defect. What stays refused is the
+  head's own: a lock older than its base's, or one its own ``pyproject.toml`` moves (a requirement not relocked).
 * :data:`BRANCHSET_CONTEXT` -- the head's branch is not admitted by the branch set its own commit declares
   (:func:`dev_lab.dev.branchset.branchset_at`); an unreadable declaration is ``error``.
 
@@ -21,7 +27,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
+
 from dev_lab.dev.branchset import BranchSetNotDeclared, branchset_at
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, UNRESOLVED, stale
 from dev_lab.dev.relock import detached_worktree
@@ -43,6 +52,7 @@ __all__ = [
     'judge',
     'judge_heads',
     'lock_verdict',
+    'merge_base',
 ]
 
 LOCK_CONTEXT: Final = 'lock/fresh'
@@ -57,14 +67,23 @@ TICK_BUDGET_S: Final = RESOLVE_TIMEOUT_S
 Verdict = tuple[str, str]
 
 
-def lock_verdict(tree: Path, *, read: Callable[[Path], tuple[str, ...]] = stale) -> Verdict:
-    """``(state, description)`` for the lock in *tree*: success at the newest, else failure naming the remedy."""
+def lock_verdict(tree: Path, base: Path, *, read: Callable[[Path], tuple[str, ...]] = stale) -> Verdict:
+    """``(state, description)`` for the lock in *tree* against its *base* tree: failure on a move *base* lacks.
+
+    *base* is resolved only when *tree* is not at the newest: the moves both share are integration's to carry.
+    """
     why = read(tree)
     if not why:
         return 'success', f'{LOCK} is the newest resolution'
     if why[0].startswith(UNRESOLVED):
         return 'error', why[0]
-    moved = '; '.join(one.split(': ', 1)[-1] for one in why)
+    inherited = read(base)
+    if inherited and inherited[0].startswith(UNRESOLVED):
+        return 'error', f'the base: {inherited[0]}'
+    own = [one for one in why if one not in inherited]
+    if not own:
+        return 'success', f'{LOCK} lags only what its base lags; the forge relock carries it'
+    moved = '; '.join(one.split(': ', 1)[-1] for one in own)
     return 'failure', f'stale {LOCK}: {LOCK_REMEDY} ({moved})'
 
 
@@ -82,8 +101,26 @@ def branchset_verdict(root: Path, sha: str, branch: str) -> Verdict:
     )
 
 
+def merge_base(root: Path, head: str, integration: str) -> str:
+    """The merge-base of *head* with ``origin/<integration>`` in *root*; RAISES :class:`OSError` on none."""
+    done = _door.run(
+        [_GIT, '-C', str(root), 'merge-base', head, f'refs/remotes/origin/{integration}'],
+        capture_output=True, text=True, encoding='utf-8', errors='replace', check=False, timeout=_GIT_TIMEOUT_S,
+    )  # fmt: skip
+    if done.returncode != 0:
+        msg = f'no merge-base of {head[:12]} with origin/{integration}: {done.stderr.strip()}'
+        raise OSError(msg)
+    return done.stdout.strip()
+
+
 def judge(
-    root: Path, client: Client, head: str, branch: str, *, read: Callable[[Path], tuple[str, ...]] = stale
+    root: Path,
+    client: Client,
+    head: str,
+    branch: str,
+    *,
+    integration: str,
+    read: Callable[[Path], tuple[str, ...]] = stale,
 ) -> list[str]:
     """Post each context *head* does not yet carry; one line per post."""
     have = {status.context for status in status_list(client, head) if status.state in TERMINAL}
@@ -94,8 +131,9 @@ def judge(
         lines.append(f'{BRANCHSET_CONTEXT}: {state}')
     if LOCK_CONTEXT not in have:
         try:
-            with detached_worktree(root, head) as tree:
-                state, text = lock_verdict(tree, read=read)
+            base = merge_base(root, head, integration)
+            with detached_worktree(root, head) as tree, detached_worktree(root, base) as based:
+                state, text = lock_verdict(tree, based, read=read)
         except OSError as why:
             state, text = 'error', f'the head could not be checked out to resolve: {why}'
         status_post(client, head, context=LOCK_CONTEXT, state=state, description=text)
@@ -109,6 +147,8 @@ def judge_heads(
     children: Sequence[Child],
     gate: Callable[..., list[str]],
     monotonic: Callable[[], float],
+    *,
+    integration: str,
 ) -> list[str]:
     """*gate* on each child's head, oldest PR first, starting none once :data:`TICK_BUDGET_S` is spent.
 
@@ -122,7 +162,9 @@ def judge_heads(
             lines.append(f'{where}: gate waits for the next tick (budget {TICK_BUDGET_S:.0f} s spent)')
             continue
         try:
-            lines += [f'{where}: {line}' for line in gate(root, origin, child.head, child.branch)]
+            lines += [
+                f'{where}: {line}' for line in gate(root, origin, child.head, child.branch, integration=integration)
+            ]
         except Exception as why:  # noqa: BLE001 -- one head's defect must not end the tick for the others
             lines.append(f'{where}: gate raised {type(why).__name__}: {why}')
     return lines
