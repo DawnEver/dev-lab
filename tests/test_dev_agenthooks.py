@@ -47,11 +47,10 @@ if os.name == 'nt':
 from dev_lab.dev import agenthooks
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy
+from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.metrics import REFUSAL, read
 
-# THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
-# whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
-pytestmark = pytest.mark.workstation
+# THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
 
 #: An adoption that remedies EVERY rule needing a repo artefact, so the rendered file carries the
 #: whole registry. The commands are this repo's own real ones where they exist; what matters to the
@@ -483,7 +482,7 @@ def _tool(command: str, rules: Path, cwd: Path) -> str:
     """What the AGENT TOOL sends: a payload with no probe key -- the one call whose refusal is a metrics line."""
     payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(cwd)}
     done = subprocess.run(
-        [agenthooks.node_executable(), str(agenthooks.engine_path('deny-commands')), str(rules)],
+        [str(node_path()), str(agenthooks.engine_path('deny-commands')), str(rules)],
         input=json.dumps(payload), capture_output=True, text=True, encoding='utf-8', check=True, timeout=60,
     )  # fmt: skip
     return json.loads(done.stdout)['hookSpecificOutput']['permissionDecisionReason']

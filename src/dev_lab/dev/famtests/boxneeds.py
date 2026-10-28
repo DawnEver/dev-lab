@@ -4,7 +4,7 @@ WHAT EARNED IT, MEASURED 2026-10-19 on a consumer's first Linux part. The cluste
 ``~/ci/trees/<sha>``: a detached worktree of a bare cache with no hooks installed, no session branches,
 no trunk checked out, and no ``node``. Every consumer test that ran a famtests body against ITS OWN
 checkout went red there -- hooks not installed, ``NotVisibleOnOrigin``, a worktree "outside", every
-agent-guard arm ``NoNode`` -- and none of those reds was about the commit. They were about the host.
+agent-guard arm for want of a host ``node`` -- and none of those reds was about the commit. They were about the host.
 A part may only judge what its host can measure (NOT COVERED IS NOT PASSED): such a test belongs to the
 part whose need-set names the resource (:mod:`lab_commons.hpc.needsets`), and the host that lacks it
 hands it to that part (the run record's ``handed``) rather than failing or passing it.
@@ -17,7 +17,9 @@ test would land in ``base`` and on the cluster again).
 
 TWO KINDS OF NEED, because two different facts are missing on the cluster:
 
-* ``always`` -- the body needs the resource whatever it is pointed at: ``node`` runs the guard engine.
+* ``always`` -- the body needs the resource whatever it is pointed at: the box's own ``node``, which the
+  live hook runs on. DRIVING an engine needs no host resource since 2026-10-28: it runs on the locked
+  Node (:mod:`dev_lab.dev.jsrun`), so the guard and allow-guard bodies carry no row.
 * ``live`` -- the body needs it only when pointed at THE LIVE CHECKOUT (``workstation``). The same
   body pointed at a tree the test plants judges that tree, which any host has. The reading is
   syntactic and says which: an argument built from the test function's own parameters or locals
@@ -59,17 +61,11 @@ class Need:
 
 _PKG: Final = 'dev_lab.dev.famtests'
 _LIVE: Final = Need(live=frozenset({WORKSTATION}))
-_ENGINE: Final = Need(always=frozenset({WORKSTATION}))
+_HOST_NODE: Final = Need(always=frozenset({WORKSTATION}))
 
 #: ``qualified body name -> its need``; the ONE place a famtests body's host need is stated.
 NEEDS: Final[Mapping[str, Need]] = {
-    f'{_PKG}.agentguard.assert_node_is_available': _ENGINE,
-    f'{_PKG}.agentguard.decision_for': _ENGINE,
-    f'{_PKG}.agentguard.assert_refused_by': _ENGINE,
-    f'{_PKG}.agentguard.assert_sanctioned': _ENGINE,
-    f'{_PKG}.allowguard.assert_no_allow_contradicts': _ENGINE,
-    f'{_PKG}.allowguard.assert_the_scan_can_still_see': _ENGINE,
-    f'{_PKG}.allowguard.contradictions': _ENGINE,
+    f'{_PKG}.agentguard.assert_node_is_available': _HOST_NODE,
     f'{_PKG}.hookinstall.assert_declared_hooks_are_installed': _LIVE,
     f'{_PKG}.hookinstall.assert_hooks_dir_is_the_one_git_consults': _LIVE,
     f'{_PKG}.visibility.assert_readable': _LIVE,

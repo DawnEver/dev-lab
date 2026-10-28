@@ -474,7 +474,8 @@ def test_a_roster_that_imports_no_kit_module_is_not_a_mismatch(tmp_path: Path) -
 #: sub-package: a corpus of top-level modules would pass every arm here while blind.
 # RE-MEASURED 2026-09-19 at 22 sub-package modules, 2 past the old ceiling of 8 + 12.
 # RE-MEASURED 2026-10-04 at 31 after the three-lane merge and `famtests.branchset`; re-taken the same way.
-NESTED_FLOOR = 26
+# RE-MEASURED 2026-10-28 at 53 when `famtests.hostnode` tipped the 26 floor past binding; 53 - 12 headroom.
+NESTED_FLOOR = 41
 NESTED_HEADROOM = 12
 
 #: The declared spellings. A floor rather than a pin, because the remedy for a spelling nobody

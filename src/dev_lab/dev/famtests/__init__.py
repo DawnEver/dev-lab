@@ -55,6 +55,8 @@ WHAT IS HERE, one module per shared body:
   lacking it hands the test to the part that has it instead of reding on the host.
 * :mod:`dev_lab.dev.famtests.platformskips` -- no test skips on the platform: an OS is a resource
   every host supplies by itself, so the OS marker is the one spelling and a platform skip runs on no host.
+* :mod:`dev_lab.dev.famtests.hostnode` -- no test launches the host's ``node``: JS runs on the locked
+  engine through :mod:`dev_lab.dev.jsrun`, so the lock declares it and every host has it.
 * :mod:`dev_lab.dev.famtests.onboarding` -- a repo is onboarded when its manifest carries every
   declaration the family flow needs, and every missing piece is named at once.
 * :mod:`dev_lab.dev.famtests.worktreeplace` -- no checkout of the repo lives outside

@@ -6,9 +6,8 @@ by eye is exactly the reasoning this shared body replaces with a measurement, so
 renders a real ``deny-rules.json`` from the real registry, installs the real engine with
 :func:`dev_lab.dev.agent_guard.install_guard`, and lets ``node`` decide.
 
-NODE IS A REQUIREMENT OF THE HOST, NEVER A SKIP: the ``workstation`` marker assigns this file to the part
-whose boxes carry ``node``, and where it runs without one :class:`dev_lab.dev.agenthooks.NoNode` reds --
-the hook entry starts with ``node``, so such a box runs NO guard in every repo on it.
+THE ENGINE RUNS ON THE LOCKED NODE (:mod:`dev_lab.dev.jsrun`), not the host's, so this file needs no
+host resource and runs on every part, the cluster included.
 
 BOTH DIRECTIONS ARE PLANTED EVERYWHERE, because every assertion here can be satisfied by an
 instrument that stopped working: a contradiction that must be SEEN sits beside a harmless row that
@@ -50,9 +49,7 @@ from dev_lab.dev.famtests.allowguard import (
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
 
-# THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
-# whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
-pytestmark = pytest.mark.workstation
+# THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
 
 #: An adoption remedying every rule that needs a repo artefact, so the rendered file carries the whole
 #: registry and a probe drawn from it is judged against all of it rather than against a subset.
