@@ -18,7 +18,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,7 @@ from lab_commons.hpc.needsets import needs_of
 from dev_lab.dev import forgerun, forgerunstate
 from dev_lab.dev.forgealarm import AUTH, Alarm
 from dev_lab.dev.forgeclaim import Work
+from dev_lab.dev.forgefleet import watch as fleet_watch
 from dev_lab.dev.forgehosts import HostCard, card_host, publish_card
 from dev_lab.dev.forgeproduce import Produced, box_claim
 from dev_lab.dev.forgetick import TickReport, tick
@@ -88,8 +89,10 @@ class Rounds:
     def serve(self, beat_s: float) -> tuple[list[TickReport], list[Produced]]:
         """A round, then one per *beat_s* or per producer that ended, until none lives or one was stopped.
 
-        Every producer is joined before this returns or raises.
+        Every producer is joined before this returns or raises. A platform none of *cards* serves alarms first
+        (:func:`dev_lab.dev.forgefleet.watch`).
         """
+        fleet_watch(self.cards, datetime.now(UTC), alarm=self.alarm, repo=self.repo)  # a platform with no live host
         rounds: list[TickReport] = []
         try:
             rounds.append(self.one())
