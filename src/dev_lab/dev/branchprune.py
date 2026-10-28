@@ -22,7 +22,7 @@ THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's `
 AN AGENT'S DELETION IS LOSSLESS-DELETE (user ruling 2026-10-21): never a raw push (``PUSH-REMOTE-DELETE``), only
 :data:`DOOR`, which after a fresh fetch deletes a branch only when every commit on it is on integration or on
 another live origin branch or open PR head (:func:`judge` names that container) or, by CONTENT, when no file its
-own commits wrote adds a line integration lacks outside a generated file -- a branch of forge sync merges holds no
+own commits wrote is identical on integration, generated files aside -- a branch of forge sync merges holds no
 work -- and otherwise refuses naming the commits and the files carrying unlanded content.
 The delete is a lease on the judged sha through the network door, recorded as one
 :data:`DELETED_EVENT` line and a ``pruned`` alarm naming the ``Lab-Session`` and the container.
@@ -275,7 +275,7 @@ def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]
     """Whether deleting origin's *branch* loses nothing; read from the fetched remote-tracking refs alone.
 
     Lossless when every commit on it is on integration, or on another live origin branch or open PR head; else,
-    by content, when no file its own commits wrote adds a line integration lacks (:func:`_unlanded`) -- a branch
+    by content, when no file its own commits wrote differs from integration (:func:`_unlanded`) -- a branch
     of sync merges whose tip tree is integration's, or differs only in a generated file, holds nothing to lose.
     """
     if branch in {policy.integration, policy.trunk}:
@@ -305,23 +305,40 @@ def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]
 
 
 def _unlanded(root: Path, sha: str, others: Sequence[str], integration: str) -> tuple[str, ...]:
-    """The files whose content at *sha* adds a line *integration* lacks, among those its own commits wrote.
+    """The files its own commits wrote whose tree entry at *sha* is not *integration*'s; FAILS CLOSED.
 
     The commits on *sha* alone name the files they wrote: a plain commit every file it changes, a merge only the
     files it resolved (``--cc``: differing from every parent), so a sync merge of integration names none. Of those,
-    a file the family generates (:data:`~dev_lab.dev.famfiles.GENERATED`) is regenerated, never lost; any other
-    whose tip version adds a line over integration's carries unlanded content. A file the branch deleted adds none.
+    a file the family generates (:data:`~dev_lab.dev.famfiles.GENERATED`) is regenerated, never lost. Any other
+    whose ``(mode, blob)`` at the tip differs from integration's -- added (even empty), changed, re-moded or deleted
+    -- is unlanded. A file integration changed after the branch landed it is refused too: a branch-side edit and
+    integration moving ahead are not told apart, because a false refusal is safe and a false delete is not. Paths
+    travel NUL-separated (``-z``), never quoted, and git failing to answer refuses every candidate.
     """
     tip_only = [sha, '--not', *(f'{_ORIGIN}{name}' for name in others)]
-    written = (git_out(root, 'log', '--format=', '--name-only', '--cc', *tip_only) or '').splitlines()
-    candidates = sorted({path for path in written if path and path not in GENERATED})
+    written = git_out(root, 'log', '-z', '--format=', '--name-only', '--cc', *tip_only)
+    if written is None:
+        return ("(git could not list the branch's files)",)
+    candidates = sorted({path.strip('\n') for path in written.split('\0')} - {''} - GENERATED)
     if not candidates:
         return ()
-    stat = git_out(root, 'diff', '--numstat', '--no-renames', f'{_ORIGIN}{integration}', sha, '--', *candidates)
-    if stat is None:
+    entries = [_entries(root, rev, candidates) for rev in (f'{_ORIGIN}{integration}', sha)]
+    if entries[0] is None or entries[1] is None:
         return tuple(candidates)
-    rows = (line.split('	', 2) for line in stat.splitlines() if line)
-    return tuple(path for added, _, path in rows if added != '0')
+    return tuple(path for path in candidates if entries[0].get(path) != entries[1].get(path))
+
+
+def _entries(root: Path, rev: str, paths: Sequence[str]) -> dict[str, str] | None:
+    """``{path: 'mode blob'}`` for *paths* in *rev*'s tree (absent ones omitted); ``None`` when git could not answer."""
+    listed = git_out(root, 'ls-tree', '-z', '--full-tree', rev, '--', *paths)
+    if listed is None:
+        return None
+    found: dict[str, str] = {}
+    for record in filter(None, listed.split('\0')):
+        meta, path = record.split('\t', 1)
+        mode, _, blob = meta.split()
+        found[path] = f'{mode} {blob}'
+    return found
 
 
 def _push_delete(root: Path, branch: str, sha: str) -> str:

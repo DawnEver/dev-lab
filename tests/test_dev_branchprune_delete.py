@@ -7,6 +7,7 @@ a commit of its own is refused and survives, beside the contained ones that go.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from _branch_repos import advance, clone_pair
@@ -152,3 +153,58 @@ def test_a_branch_with_one_unlanded_line_is_refused_naming_its_file(tmp_path: Pa
     assert code == 1
     assert _on_origin(work, 'pr/relock')
     assert any('unlanded content in: src.py' in line for line in said), said
+
+
+def _own_commit(work: Path, branch: str, change: Callable[[Path], None]) -> None:
+    """One commit of *branch*'s own applying *change* to the clone's tree; pushed."""
+    start = f'origin/{branch}' if git_out(work, 'branch', '-r', '--list', f'origin/{branch}') else 'origin/main'
+    run_git(work, 'checkout', '-q', '-B', 'tmp-own', start)
+    change(work)
+    run_git(work, 'add', '-A', '--', '.')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '-m', 'own')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'HEAD:refs/heads/{branch}')
+    run_git(work, 'fetch', '-q', 'origin')
+
+
+def _refused_naming(work: Path, branch: str, path: str) -> None:
+    code, said, _ = _delete(work, StateForge(), branch)
+    assert code == 1, said
+    assert _on_origin(work, branch)
+    assert any(f'unlanded content in: {path}' in line for line in said), said
+
+
+def test_a_non_ascii_path_is_refused_naming_it(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'pr/x', 'base2.txt', 'b\n')
+    _landed(work, 'pr/x')
+    (work / 'docs').mkdir(exist_ok=True)
+    _own_commit(work, 'pr/x', lambda w: (w / 'docs' / 'café.md').write_text('c\n', encoding='utf-8'))
+    _refused_naming(work, 'pr/x', 'docs/café.md')
+
+
+def test_an_empty_new_file_is_refused(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    _own_commit(work, 'pr/x', lambda w: (w / 'empty.txt').write_text('', encoding='utf-8'))
+    _refused_naming(work, 'pr/x', 'empty.txt')
+
+
+def test_a_mode_only_change_is_refused(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    run_git(work, 'config', 'core.filemode', 'false')
+    run_git(work, 'checkout', '-q', '-B', 'tmp-own', 'origin/main')
+    run_git(work, 'update-index', '--chmod=+x', 'base.txt')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '-m', 'chmod')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
+    run_git(work, 'fetch', '-q', 'origin')
+    _refused_naming(work, 'pr/x', 'base.txt')
+
+
+def test_a_line_deletion_is_refused(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'integrate/main', 'two.txt', 'one\ntwo\n')
+    run_git(work, 'checkout', '-q', '-B', 'tmp-own', 'origin/integrate/main')
+    (work / 'two.txt').write_text('one\n', encoding='utf-8')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '-am', 'drop')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
+    run_git(work, 'fetch', '-q', 'origin')
+    _refused_naming(work, 'pr/x', 'two.txt')
