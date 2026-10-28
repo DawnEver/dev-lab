@@ -9,7 +9,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'TRACKED-CITES-NO-EPHEMERAL',
         (
-            'No tracked file lives under, or cites, a git-ignored or machine-local path (code may still WRITE '
+            'No tracked file lives under, or cites, untracked content in a place git never keeps -- a git-ignored '
+            'path or a declared stray root such as `scratch/` -- nor a machine-local path (code may still WRITE '
             'one); a `<placeholder>` shape passes, and escapes are a declared set under a falling ceiling.'
         ),
         ('tests/test_famtests_ephemeralrefs.py',),
