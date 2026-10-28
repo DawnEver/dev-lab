@@ -23,7 +23,7 @@ def test_the_planted_control_reds_when_the_machine_local_reader_goes_blind(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(ephemeralrefs, 'MACHINE_LOCAL', ephemeralrefs.re.compile(r'(?!)'))
-    with pytest.raises(AssertionError, match='must read 5'):
+    with pytest.raises(AssertionError, match='must read 6'):
         assert_the_scanner_still_convicts(tmp_path)
 
 
