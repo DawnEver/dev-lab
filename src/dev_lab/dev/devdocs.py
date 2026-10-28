@@ -115,6 +115,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'forge', 'The forge', 'Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict'
     ),
     Page(
+        'adding-a-workstation',
+        'Adding a forge workstation',
+        "The light role's template, the deploy step by step, verifying and retiring a host",
+    ),
+    Page(
         'integration',
         'The integration branch',
         'The path of one change, the roles, the integration tick, `forge sync`, `integrate promote`, the merge audit',

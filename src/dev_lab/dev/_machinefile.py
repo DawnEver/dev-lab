@@ -3,8 +3,8 @@
 The machine file (:mod:`lab_commons.config`) is hand-written and commented, so a deploy never re-renders
 it: :func:`merged` sets each owned ``key = value`` inside its ``[table]`` -- replacing the line only
 when its value differs, appending the key or the table when absent, deleting it when the value is
-``None`` (a retired key) -- and refuses a result that does
-not parse or does not read back the values asked for.
+``None`` (a retired key) and the whole table when the table is ``None`` (a retired table) -- and refuses
+a result that does not parse or does not read back the values asked for.
 """
 
 from __future__ import annotations
@@ -40,16 +40,30 @@ def _same(line: str, key: str, value: Value) -> bool:
         return False
 
 
+def _span(lines: list[str], table: str) -> tuple[int, int] | None:
+    """Where ``[table]`` runs in *lines*: its header up to the next header; ``None`` when it is absent."""
+    start = next(
+        (i for i, line in enumerate(lines) if (m := _HEADER.match(line)) and m[1] == '[' and m[2] == table), None
+    )
+    if start is None:
+        return None
+    return start, next((j for j in range(start + 1, len(lines)) if _HEADER.match(lines[j])), len(lines))
+
+
+def _drop(lines: list[str], table: str) -> None:
+    if (span := _span(lines, table)) is not None:
+        del lines[span[0] : span[1]]
+
+
 def _set(lines: list[str], table: str, values: Mapping[str, Value | None]) -> None:
-    starts = [i for i, line in enumerate(lines) if (m := _HEADER.match(line)) and m[1] == '[' and m[2] == table]
-    if not starts:
+    span = _span(lines, table)
+    if span is None:
         if lines and lines[-1].strip():
             lines.append('')
         rows = (f'{key} = {_render(value)}' for key, value in values.items() if value is not None)
         lines.extend([f'[{table}]', *rows])
         return
-    start = starts[0]
-    end = next((j for j in range(start + 1, len(lines)) if _HEADER.match(lines[j])), len(lines))
+    start, end = span
     for key, value in values.items():
         pattern = re.compile(rf'^\s*{re.escape(key)}\s*=')
         hit = next((j for j in range(start + 1, end) if pattern.match(lines[j])), None)
@@ -73,11 +87,17 @@ def _read(data: Mapping[str, object], table: str) -> object:
     return data
 
 
-def merged(text: str, tables: Mapping[str, Mapping[str, Value | None]]) -> str:
-    """*text* with every ``tables[name][key] = value`` set, ``None`` deleting the key; refused unless it reads back."""
+def merged(text: str, tables: Mapping[str, Mapping[str, Value | None] | None]) -> str:
+    """*text* with every ``tables[name][key] = value`` set, ``None`` deleting the key or the whole table.
+
+    Refused unless it reads back.
+    """
     lines = text.splitlines()
     for table, values in tables.items():
-        _set(lines, table, values)
+        if values is None:
+            _drop(lines, table)
+        else:
+            _set(lines, table, values)
     out = '\n'.join(lines) + '\n' if lines else ''
     try:
         parsed = tomllib.loads(out)
@@ -86,6 +106,11 @@ def merged(text: str, tables: Mapping[str, Mapping[str, Value | None]]) -> str:
         raise ValueError(msg) from None
     for table, values in tables.items():
         found = _read(parsed, table)
+        if values is None:
+            if found != {}:
+                msg = f'[{table}] is still declared after the merge; edit it by hand'
+                raise ValueError(msg)
+            continue
         if not isinstance(found, Mapping) or any(found.get(k) != v for k, v in values.items()):
             msg = f'[{table}] does not read back as {dict(values)} after the merge; edit it by hand'
             raise ValueError(msg)

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -37,7 +37,7 @@ from lab_commons.box import release
 from lab_commons.compute.admission import Admission
 from lab_commons.compute.learned import BOX_WALL_S
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
-from lab_commons.compute.serves import Serves
+from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.hpc.declared import OutdatedKit
 from lab_commons.hpc.needsets import declared_at, needs_of
 from lab_commons.resources import admits
@@ -72,7 +72,17 @@ from dev_lab.dev.forgewait import Box, Outlook
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
 
-__all__ = ['ClaimPass']
+__all__ = ['ClaimPass', 'skips']
+
+
+def skips(serves: Serves, kind: str, needs: Collection[str]) -> str:
+    """Why this host claims no *kind* candidate needing *needs*; ``''`` when it may.
+
+    A part answers to the whole ``[serve]`` rule. A request is no part, so ``parts`` never skips it -- but a WITHHELD
+    resource is never this host's forge work at all: a light workstation's JMAG serves no request either (user
+    ruling 2026-10-28).
+    """
+    return serves.skips(needs) if kind != REQUEST else Serves(EVERY, serves.withholds).skips(needs)
 
 
 @dataclass
@@ -149,7 +159,7 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
-            skipped = wanted.kind != REQUEST and self.serves.skips(needs_of(wanted.platform))
+            skipped = wanted.kind != REQUEST and skips(self.serves, wanted.kind, needs_of(wanted.platform))
             if not held(blocked) and not skipped and wanted.key not in self.unservable and self._servable(wanted):
                 self.pending.append(one)
 
@@ -248,7 +258,7 @@ class ClaimPass:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
         why = (
-            (self.serves.skips(needed) if wanted.kind != REQUEST else '')
+            skips(self.serves, wanted.kind, needed)
             or behind(self.root, wanted, self.schedule, self.history, self.now)
             or over_budget(self.root, wanted, self.schedule, self.usage)
             or self._admission(wanted, needed)
