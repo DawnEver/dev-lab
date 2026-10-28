@@ -87,7 +87,7 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
         'git worktree move ../lab-commons-wt-cf .claude/worktrees/lab-commons-wt-cf',
         'sh scripts/hooks/with-retry.sh clone https://forge.example/o/r.git .claude/worktrees/r-copy',
         'git worktree list --porcelain',
-        'git worktree remove .claude/worktrees/probe',
+        'git worktree lock .claude/worktrees/probe',
         'git commit -m "refuse git worktree add ../x"',
     ),
 }
