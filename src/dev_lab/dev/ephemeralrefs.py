@@ -13,7 +13,7 @@ NOT EPHEMERAL: an untracked path under a tracked root (``src/gone.py``) is a bro
 link, not cited content that lives outside version control; measured 2026-10-28 that reading
 refused ~10k such lines in motronics alone, almost all dated memory, so it is a different defect.
 
-THREE PROPERTIES, over every tracked file:
+THREE PROPERTIES, over every tracked file (2 and 3 skip archived code, ``attic/``):
 
 1. NO TRACKED FILE LIVES UNDER AN IGNORED ROOT (a ``git add -f`` into ``output/``):
    ``git ls-files -ci --exclude-standard``.
@@ -56,7 +56,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import venvpath
-from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS, PlacementNotDeclared, declared_placement
+from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS, PlacementNotDeclared, declared_placement, is_archived
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.rules import tracked_files
 
@@ -303,10 +303,16 @@ def _ignored(root: Path, probes: Sequence[str]) -> set[str]:
 
 
 def citations_in(root: Path, names: Iterable[str]) -> tuple[list[Citation], int]:
-    """Every refused citation across *names* (repo-relative), and how many files were READ."""
+    """Every refused citation across *names* (repo-relative), and how many files were READ.
+
+    Archived code (:func:`dev_lab.dev.codeplace.is_archived`) is read-only history and is skipped, as by
+    every family scan; property 1 still covers it, because it judges WHERE a file lives, not what it says.
+    """
     pending: list[tuple[str, int, str, bool]] = []
     read = 0
     for name in names:
+        if is_archived(name):
+            continue
         file = root / name
         try:
             text = file.read_text(encoding='utf-8')

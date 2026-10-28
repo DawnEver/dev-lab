@@ -43,8 +43,8 @@ _WINDOWS_HOME = 'C:/' + 'Users/someone/' + 'x.txt'
 _POSIX_HOME = '/' + 'home/someone/x'
 _INTERPRETER = venvpath.venv_interpreter(os_name='nt')
 
-#: The five planted text files the scan must read (the force-added one among them).
-_PLANTED_FILES = 5
+#: The six planted text files the scan must read (the force-added one among them; the archived one is not read).
+_PLANTED_FILES = 6
 
 #: What the planted tree must yield, exactly -- each convicted for the reason named.
 _CONVICT = (
@@ -55,6 +55,7 @@ _CONVICT = (
     "doc.md:2: cites ignored path 'output/forge/outbox/'",
     f"doc.md:3: cites machine-local path '{_WINDOWS_HOME}'",
     f"doc.md:4: cites machine-local path '{_POSIX_HOME}'",
+    "docs/x.md:1: cites ignored path 'output/x.json'",
     'output/forced.md: tracked under an ignored root (git add -f)',
 )
 _DOC = (
@@ -84,7 +85,7 @@ def assert_the_scanner_still_convicts(plant_root: Path) -> None:
     a force-added file; clears a placeholder shape, the bare roots, a URL, the interpreter door, a bare
     temp root, a tracked path (also with a line or test suffix), a tracked directory, a glob, a token
     naming no repo place, a broken link under a tracked root (stale, not ephemeral), a WRITE to output
-    and a literal joined onto a base.
+    a literal joined onto a base, and a citation in archived code (``attic/``).
 
     Raises:
         AssertionError: the scan named anything other than exactly the planted offenders.
@@ -100,9 +101,12 @@ def assert_the_scanner_still_convicts(plant_root: Path) -> None:
     (plant_root / 'code.py').write_text(_CODE, encoding='utf-8')
     (plant_root / 'src/pkg').mkdir(parents=True)
     (plant_root / 'src/pkg/a.py').write_text('', encoding='utf-8')
+    for home in ('attic', 'docs'):  # archived code is never judged; the same line outside it is
+        (plant_root / home).mkdir()
+        (plant_root / home / 'x.md').write_text('see `output/x.json`\n', encoding='utf-8')
     (plant_root / 'output').mkdir()
     (plant_root / 'output/forced.md').write_text('', encoding='utf-8')
-    git('add', '.gitignore', 'doc.md', 'code.py', 'src/pkg/a.py')
+    git('add', '.gitignore', 'doc.md', 'code.py', 'src/pkg/a.py', 'attic/x.md', 'docs/x.md')
     git('add', '-f', 'output/forced.md')
     problems, read = ephemeralrefs.scan(plant_root)
     if tuple(problems) != _CONVICT or read != _PLANTED_FILES:
