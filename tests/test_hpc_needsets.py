@@ -56,8 +56,9 @@ def test_a_malformed_vocabulary_is_refused_naming_the_table(value: str) -> None:
         read_vocabulary(f'[tool.lab_commons.tests]\nresources = {value}\n')
 
 
-#: The retired tables, read off the registry: their spellings live there and nowhere else.
-_RETIRED_TABLES = sorted(key for key in RETIRED if key.startswith('[tool.lab_commons.'))
+#: The part tables the need vocabulary replaced, read off the registry by their REPLACEMENT (their spellings
+#: live there and nowhere else); the registry also holds the tables that moved to dev-lab (A3).
+_RETIRED_TABLES = sorted(key for key, why in RETIRED.items() if '[tool.lab_commons.tests] resources' in why)
 
 
 def test_the_old_part_tables_are_registered_retired() -> None:
