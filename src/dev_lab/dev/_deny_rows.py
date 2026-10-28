@@ -53,6 +53,7 @@ sharper pattern with the near-miss added to ``permits`` -- never a narrower clai
 
 from __future__ import annotations
 
+from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
@@ -355,13 +356,14 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git worktree add -b fix/x .claude/worktrees/x main',
             'git worktree add --detach .claude/worktrees/p 4a4e8b13f && git -C .claude/worktrees/p switch -c fix/p',
             'git worktree list',
-            'git worktree remove .claude/worktrees/probe',
+            'git worktree lock .claude/worktrees/probe',
         ),
     },
     WORKTREES_STAY_INSIDE,
     BARE_INTERPRETER,
     BARE_PYTHON,
     RECURSIVE_GREP,
+    RECURSIVE_DELETE,
     REPORTS_LIVE_IN_MEMORY,
     STATUS_VIA_DOORS,
     USER_SETTINGS_WRITE,
