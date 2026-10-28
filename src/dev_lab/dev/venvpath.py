@@ -2,7 +2,7 @@
 
 THE SIBLING THAT WAS MISSING. This package already resolves the two executables it does not own:
 :func:`dev_lab.dev.githooks.bash_executable` and
-:func:`dev_lab.dev.agenthooks.node_executable`. Both exist because ``bash`` and ``node`` are
+:func:`dev_lab.dev.jsrun.node_path`. Both exist because ``bash`` and ``node`` are
 somebody else's programs and somebody therefore thought about where they live. Python is *ours*, so
 nobody did, and the path got written out by hand wherever it was needed.
 

@@ -37,7 +37,7 @@ from lab_commons.proc import kill_process_tree
 
 from dev_lab.dev import liverun
 from dev_lab.dev.agent_guard import ENGINE_REL, RULES_REL, install_guard
-from dev_lab.dev.agenthooks import NoNode, node_executable, run_engine
+from dev_lab.dev.agenthooks import run_engine
 from dev_lab.dev.famtests.agentguard import (
     GuardNotLive,
     assert_committed_rules_are_rendered,
@@ -56,7 +56,6 @@ from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, DenyRule
 
 _GIT = shutil.which('git') or 'git'
-_NODE = shutil.which('node')
 
 #: Two rules whose patterns BOTH match `git push --force`, in the order that makes the first shadow
 #: the second. This is the live shape measured in one lab, reduced to its two rows.
@@ -111,20 +110,14 @@ def _track_everything(root: Path) -> None:
 
 @pytest.mark.workstation
 def test_node_is_available_here_and_the_refusal_is_not_a_skip() -> None:
-    """If node is absent this arm REDS rather than going quiet, which is the whole design."""
-    if _NODE is None:
-        with pytest.raises(GuardNotLive, match='unguarded'):
-            assert_node_is_available()
-        return
+    """The workstation's live hook runs the HOST node: absent, this REDS rather than going quiet."""
     assert_node_is_available()
 
 
 def test_a_box_planted_without_node_is_refused_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED: the cluster compute node's PATH, which carries no ``node`` -- named, never quiet."""
     monkeypatch.setenv('PATH', str(tmp_path))
-    with pytest.raises(NoNode, match='no `node` on PATH'):
-        node_executable()
-    with pytest.raises(GuardNotLive, match='unguarded'):
+    with pytest.raises(GuardNotLive, match=r'no `node` on PATH.*unguarded'):
         assert_node_is_available()
 
 
@@ -204,7 +197,6 @@ def test_the_shipped_set_is_pinned_by_name_in_both_directions(tmp_path: Path) ->
         assert_the_shipped_set_is_pinned(root=root, declared=frozenset({'NETWORK-VERB', 'GIT-STASH', 'PUSH-FORCE'}))
 
 
-@pytest.mark.workstation
 def test_an_empty_rules_file_refuses_nothing_and_the_pin_is_what_says_so(tmp_path: Path) -> None:
     """THE VACUOUS GREEN, PLANTED. Every sanctioned arm passes over a guard that refuses nothing."""
     root, adoption = _repo(tmp_path, rules=())
@@ -220,7 +212,6 @@ def test_an_empty_rules_file_refuses_nothing_and_the_pin_is_what_says_so(tmp_pat
 # does it actually refuse, and by which rule
 
 
-@pytest.mark.workstation
 def test_a_forbidden_shape_is_refused_by_the_rule_that_owns_it(tmp_path: Path) -> None:
     """Driven through the REAL engine on the REAL installed files, not a Python restatement."""
     root, _ = _repo(tmp_path, rules=(_STASH, _NETWORK))
@@ -228,7 +219,6 @@ def test_a_forbidden_shape_is_refused_by_the_rule_that_owns_it(tmp_path: Path) -
     assert_refused_by(root=root, command='git fetch origin', rule='NETWORK-VERB')
 
 
-@pytest.mark.workstation
 def test_a_templated_remedy_is_judged_as_the_engine_prints_it(tmp_path: Path) -> None:
     """A ``{python}`` remedy is compared as the engine PRINTS it, so its own rule is recognised.
 
@@ -240,7 +230,6 @@ def test_a_templated_remedy_is_judged_as_the_engine_prints_it(tmp_path: Path) ->
         assert_refused_by(root=root, command='git stash', rule='TEMPLATED-REMEDY')
 
 
-@pytest.mark.workstation
 def test_a_sanctioned_shape_is_allowed(tmp_path: Path) -> None:
     """The other side of the ratchet: a guard refusing everything would pass every arm above."""
     root, _ = _repo(tmp_path, rules=(_STASH, _NETWORK))
@@ -250,7 +239,6 @@ def test_a_sanctioned_shape_is_allowed(tmp_path: Path) -> None:
         assert_sanctioned(root=root, command='git stash')
 
 
-@pytest.mark.workstation
 def test_a_shadowed_rule_passes_the_weak_arm_and_is_caught_by_the_named_one(tmp_path: Path) -> None:
     """THE MEASURED DEFECT, PLANTED BOTH WAYS.
 
@@ -367,13 +355,11 @@ def live_repo(tmp_path: Path) -> Iterator[Path]:
         sleeper.wait(timeout=30)
 
 
-@pytest.mark.workstation
 def test_a_probe_names_the_shape_rule_while_a_run_is_live_in_the_tree(live_repo: Path) -> None:
     """INCIDENT (wdg-lab cutover): the probing suite IS a live run, so TREE-HAS-A-LIVE-RUN answered first."""
     assert_refused_by(root=live_repo, command='git stash', rule='GIT-STASH')
 
 
-@pytest.mark.workstation
 def test_the_installed_guard_still_refuses_a_live_tree_by_its_live_run(live_repo: Path) -> None:
     """PLANTED CONTROL: production judges the box; only the probe takes the live-run state as absent."""
     reason = run_engine(live_repo / ENGINE_REL, 'git stash', live_repo / RULES_REL, cwd=live_repo)

@@ -1,26 +1,34 @@
-"""TRACKED-CITES-NO-EPHEMERAL -- a tracked file never references what git ignores, nor a machine-local path.
+"""TRACKED-CITES-NO-EPHEMERAL -- a tracked file never references content git does not keep, nor a machine path.
 
-THE CRITERION IS DERIVED, NOT LISTED. What is ephemeral in a repo is exactly what its own ignore
-rules say: ``git check-ignore --no-index --stdin`` judges every candidate path, so a repo that ignores
-a new cache directory is covered the moment it says so, and no family list can fall behind it. What
-git cannot judge -- a path on another machine -- is the one declared list, :data:`MACHINE_LOCAL`.
+EPHEMERAL MEANS UNTRACKED CONTENT IN A PLACE GIT NEVER KEEPS (user ruling 2026-10-28). Two places,
+both derived, neither listed here: what the repo's own ignore rules ignore (``git check-ignore
+--no-index --stdin``, so a repo that ignores a new cache directory is covered the moment it says so),
+and the declared stray roots (``[tool.dev_lab.placement]``, the family's ``scratch/``), which are
+NEVER ignored -- a one-off there must show in ``git status`` -- and never committed beyond their
+README, so ``git check-ignore`` alone let every ``scratch/`` probe through. A path in either place
+passes only when it is TRACKED (a re-included lock file, the scratch README). What git cannot judge
+-- a path on another machine -- is the one declared list, :data:`MACHINE_LOCAL`.
 
-THREE PROPERTIES, over every tracked file:
+NOT EPHEMERAL: an untracked path under a tracked root (``src/gone.py``) is a broken or cross-repo
+link, not cited content that lives outside version control; measured 2026-10-28 that reading
+refused ~10k such lines in motronics alone, almost all dated memory, so it is a different defect.
+
+THREE PROPERTIES, over every tracked file (2 and 3 skip archived code, ``attic/``):
 
 1. NO TRACKED FILE LIVES UNDER AN IGNORED ROOT (a ``git add -f`` into ``output/``):
    ``git ls-files -ci --exclude-standard``.
 2. PROSE TIER -- ``.md``/``.rst``/``.txt`` text, and the COMMENTS of code and config (``#`` in
    Python, TOML, YAML, shell; ``//`` in Rust, JS, TS) -- cites no ignored in-repo path and no
-   machine-local path.
-3. CODE TIER -- Python only -- does not READ an ignored or machine-local path as an input: a string
+   machine-local path, and no untracked path under a stray root.
+3. CODE TIER -- Python only -- does not READ an ephemeral or machine-local path as an input: a string
    literal inside a call to a read verb (:data:`READ_VERBS`). WRITING to ``output/`` is what output
    is for, so a literal in any other position is not judged. This is an approximation by syntax and
    says so: a path built in one statement and read in another passes.
 
 SHAPE IS ALLOWED, CONTENT IS NOT. A path with a ``<...>`` placeholder segment describes structure
 (``output/logs/<yy>/<mm>/<dd>/<kind>/``) and is never judged; nor is a bare top-level directory name
-with its slash (``scratch/``), which names a place and cites nothing in it. Everything else that git
-ignores is a citation.
+with its slash (``scratch/``), which names a place and cites nothing in it. A locator suffix
+(``:12``, ``#anchor``, ``::test``) is dropped before judging. Every other ephemeral path is a citation.
 
 ESCAPES ARE ONE DECLARED SET, in the consumer's ``pyproject.toml``::
 
@@ -48,6 +56,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import venvpath
+from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS, PlacementNotDeclared, declared_placement, is_archived
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.rules import tracked_files
 
@@ -70,7 +79,7 @@ __all__ = [
 
 RULE: Final = 'TRACKED-CITES-NO-EPHEMERAL'
 #: The one remedy every refusal prints.
-REMEDY: Final = 'cite a durable source or a <placeholder> shape, or declare an escape in [tool.dev_lab.ephemeral_refs]'
+REMEDY: Final = 'cite a tracked source or a <placeholder> shape, or declare an escape in [tool.dev_lab.ephemeral_refs]'
 
 #: Paths no ignore file can judge because they are not in the repo: a drive letter, a home or
 #: cluster root, a temp dir, the agent job tree. Matched at the START of a token.
@@ -100,6 +109,8 @@ _TOKEN = re.compile(r'[^\s`\'"()\[\]|,;=]+')
 _PLACEHOLDER = re.compile(r'<[^>]*>')
 _TRAILING = '.:!?*'
 _PROBE: Final = 'ephemeralrefs-probe'
+#: A locator suffix that is not part of the path: ``::test``, ``#anchor``, ``:line[:col]`` or ``:a-b``.
+_SUFFIX = re.compile(r'(?:::.*|#.*|(?::\d+)+(?:-\d+)?)$')
 _RELATIVE = re.compile(r'^[\w.+@-]+(?:/[\w.+@-]*)+$')
 
 
@@ -203,15 +214,19 @@ def _is_shape(norm: str) -> bool:
 def judge(root: Path, tokens: Collection[str]) -> dict[str, str]:
     """``token -> why`` for every token in *tokens* that is refused; one ``check-ignore`` call.
 
-    A directory token (trailing slash) whose PARENT holds tracked files is the ignored root itself
-    (``.claude/worktrees/``, ``output/``): it names a place and cites nothing in it, so it passes.
-    ``output/forge/outbox/`` -- whose parent holds nothing tracked -- is content and does not. A
-    bare machine-local root (``$TMPDIR``) passes the same way.
+    A relative token is judged only when it is not TRACKED (as a file, or as a directory holding
+    tracked files), after a ``:line``, ``#anchor`` or ``::test`` suffix is dropped; a glob is a shape.
+    It is refused when git ignores it, or when it lies under a declared stray root (``scratch/``).
+
+    A directory token (trailing slash) outside a stray root whose PARENT holds tracked files is an
+    ignored root itself (``.claude/worktrees/``): it names a place and cites nothing in it, so it
+    passes. ``output/forge/outbox/`` -- whose parent holds nothing tracked -- is content and does not.
+    A bare machine-local root (``$TMPDIR``) passes the same way.
     """
     refused: dict[str, str] = {}
-    probes: dict[str, str] = {}
+    local: dict[str, str] = {}
     for token in tokens:
-        norm = _normal(token)
+        norm = _SUFFIX.sub('', _normal(token))
         if '://' in norm or norm in PORTABLE or _is_shape(norm):
             continue
         head = MACHINE_LOCAL.match(norm)
@@ -219,21 +234,41 @@ def judge(root: Path, tokens: Collection[str]) -> dict[str, str]:
             if norm[head.end() :].strip('/'):
                 refused[token] = 'machine-local path'
         elif _RELATIVE.match(norm) and not norm.startswith('../'):
-            # A trailing slash is probed as a FILE inside it: `check-ignore --no-index` answers a bare
-            # `dir/` wrongly (measured: every `x/` matched a blank line of the ignore file).
-            probes[f'{norm}{_PROBE}' if norm.endswith('/') else norm] = token
-    ignored = _ignored(root, list(probes))
-    tracked = tracked_files(root) if ignored else frozenset()
-    lived = _tracked_dirs(tracked)
-    for probe in ignored:
-        token = probes[probe]
-        path = _normal(token).rstrip('/')
-        # A path git TRACKS is durable whatever an ignore line says (a re-included lock file).
-        if path in tracked or path in lived:
-            continue
-        if not (token.endswith('/') and path.rpartition('/')[0] in lived):
-            refused[token] = 'ignored path'
+            local[token] = norm
+    if local:
+        refused.update(_judge_local(root, local))
     return refused
+
+
+def _judge_local(root: Path, local: Mapping[str, str]) -> dict[str, str]:
+    """``token -> why`` for the in-repo candidates (``token -> normalised path``) that are ephemeral."""
+    tracked = tracked_files(root)
+    lived = _tracked_dirs(tracked)
+    strays = _stray_roots(root)
+    probes: dict[str, list[str]] = {}
+    for token, norm in local.items():
+        path = norm.rstrip('/')
+        stray = path.split('/', 1)[0] in strays
+        if path in tracked or path in lived or (not stray and norm.endswith('/') and path.rpartition('/')[0] in lived):
+            continue
+        # A trailing slash is probed as a FILE inside it: `check-ignore --no-index` answers a bare
+        # `dir/` wrongly (measured: every `x/` matched a blank line of the ignore file).
+        probes.setdefault(f'{norm}{_PROBE}' if norm.endswith('/') else norm, []).append(token)
+    ignored = _ignored(root, list(probes))
+    refused: dict[str, str] = {}
+    for probe, owners in probes.items():
+        why = 'ignored path' if probe in ignored else 'untracked path' if probe.split('/', 1)[0] in strays else ''
+        refused.update(dict.fromkeys(owners, why) if why else {})
+    return refused
+
+
+def _stray_roots(root: Path) -> set[str]:
+    """The first segment of every declared stray root (``scratch``): untracked by rule, never ignored."""
+    try:
+        strays = declared_placement(root).stray_roots
+    except PlacementNotDeclared:
+        strays = FAMILY_STRAY_ROOTS
+    return {stray.strip('/').split('/', 1)[0] for stray in strays}
 
 
 def _tracked_dirs(tracked: Collection[str]) -> set[str]:
@@ -268,10 +303,16 @@ def _ignored(root: Path, probes: Sequence[str]) -> set[str]:
 
 
 def citations_in(root: Path, names: Iterable[str]) -> tuple[list[Citation], int]:
-    """Every refused citation across *names* (repo-relative), and how many files were READ."""
+    """Every refused citation across *names* (repo-relative), and how many files were READ.
+
+    Archived code (:func:`dev_lab.dev.codeplace.is_archived`) is read-only history and is skipped, as by
+    every family scan; property 1 still covers it, because it judges WHERE a file lives, not what it says.
+    """
     pending: list[tuple[str, int, str, bool]] = []
     read = 0
     for name in names:
+        if is_archived(name):
+            continue
         file = root / name
         try:
             text = file.read_text(encoding='utf-8')

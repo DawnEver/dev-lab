@@ -69,7 +69,6 @@ def test_a_repo_row_without_details_renders_two_lines() -> None:
     assert rule.reason() == 'PLANTED: it is planted\ndo this'
 
 
-@pytest.mark.workstation
 def test_the_cross_repo_refusal_fits_its_budget(tmp_path: Path) -> None:
     """The engine's header line for another repo keeps the refusal inside the cross-repo budget."""
     session, bare = tmp_path / 'session', tmp_path / 'bare'

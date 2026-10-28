@@ -38,7 +38,6 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'egrep -r "a|b" src',
     ],
 )
-@pytest.mark.workstation
 def test_a_recursive_grep_is_hinted_with_the_git_grep_door_and_still_runs(rules: Path, command: str) -> None:
     """REFUSAL-NAMES-THE-REMEDY, as a hint: it names `git grep -n` and the built-in Grep tool, and refuses nothing."""
     assert agenthooks.decide(command, rules) is None, f'refused: {command!r}'
@@ -62,7 +61,6 @@ def test_a_recursive_grep_is_hinted_with_the_git_grep_door_and_still_runs(rules:
         'grep --regexp=x a.py',
     ],
 )
-@pytest.mark.workstation
 def test_a_grep_on_a_file_a_pipe_or_the_index_is_permitted(rules: Path, command: str) -> None:
     """The door itself and every non-walking grep must pass unhinted, or the hint cries wolf on the road it names."""
     assert agenthooks.decide(command, rules) is None, command
