@@ -109,9 +109,11 @@ def test_every_row_is_narrow_and_one_per_door() -> None:
 
 def test_codex_and_claude_render_the_same_doors() -> None:
     text = codex_rules(_SCRIPTS)
-    assert text.count('prefix_rule(') == len(doors(_SCRIPTS))
+    launched = [door for door in doors(_SCRIPTS) if door[:2] == ('python', '-m')]
+    assert text.count('prefix_rule(') == len(doors(_SCRIPTS)) + len(launched)
     for module in DOOR_MODULES:
         assert f'"-m", "{module}"' in text
+        assert f'["node", ".claude/hooks/py.js", "-m", "{module}"]' in text
     assert '"sh", "scripts/hooks/with-retry.sh"' in text
 
 

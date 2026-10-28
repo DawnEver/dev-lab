@@ -386,6 +386,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   closes salvaged PRs with an evidence comment; it never deletes a branch.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a PR waits on a scarce part only where its diff reaches it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
+* :mod:`dev_lab.dev.usersettings` -- FAMILY-GRANTS-ARE-RENDERED: no agent writes the user's Claude settings.
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.

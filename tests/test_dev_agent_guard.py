@@ -24,6 +24,7 @@ from dev_lab.dev import agent_guard, agenthooks
 from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
+from dev_lab.dev.usersettings import PERMISSION_DENY
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
 # whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
@@ -134,7 +135,7 @@ def test_unrelated_settings_survive_the_install(repo: Path) -> None:
     agent_guard.install_guard(repo)
     after = json.loads(settings.read_text(encoding='utf-8'))
 
-    assert after['permissions'] == planted['permissions'], 'an unrelated settings key was lost'
+    assert after['permissions'] == {**planted['permissions'], 'deny': list(PERMISSION_DENY)}, 'a key was lost'
     assert after['hooks']['Stop'][0] == planted['hooks']['Stop'][0], 'an unrelated event was lost'
     pre = after['hooks']['PreToolUse']
     assert pre[0] == planted['hooks']['PreToolUse'][0], 'an unrelated matcher was rewritten'

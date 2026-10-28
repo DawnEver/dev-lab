@@ -40,6 +40,7 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.agenthooks import STAMP, engine_source
+from dev_lab.dev.usersettings import PERMISSION_DENY
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -324,9 +325,10 @@ def _inspect_wiring(path: Path) -> tuple[str, str]:
         return _no_engine_hook(settings)
     if HOOK_COMMAND not in ours:
         return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
-    unwired = _unwired(settings)
+    unwired = [f'the stray census is not wired on {event}' for event in _unwired(settings)]
+    unwired += [f'permissions.deny lacks {row} (FAMILY-GRANTS-ARE-RENDERED)' for row in _undenied(settings)]
     if unwired:
-        return STALE, f'the stray census is not wired on {", ".join(unwired)} -- re-install to upgrade'
+        return STALE, f'{unwired[0]} -- re-install to upgrade'
     return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
 
 
@@ -346,6 +348,9 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
     Pure over its argument -- the input is not mutated -- so the suite drives THIS function over a
     planted foreign settings file rather than re-deriving what "did not clobber" means.
 
+    It also ADDS every missing :data:`~dev_lab.dev.usersettings.PERMISSION_DENY` row to ``permissions.deny``
+    (FAMILY-GRANTS-ARE-RENDERED); deny rows somebody else wrote are kept, in place.
+
     Our hook lives on a matcher naming EVERY shell tool. A copy of it on a matcher missing one (the
     pre-2026-10-08 ``Bash`` wiring) is MOVED rather than widened in place: widening that matcher
     would also hand every OTHER hook on it a tool its author never meant it to see. Other hooks on a
@@ -354,7 +359,16 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
     out = json.loads(json.dumps(settings))  # a deep copy through the same encoder that writes it
     for wire in WIRING:
         _wire(out.setdefault('hooks', {}).setdefault(wire.event, []), wire)
+    if missing := _undenied(out):
+        permissions = out.setdefault('permissions', {})
+        permissions['deny'] = [*(permissions.get('deny') or []), *missing]
     return out
+
+
+def _undenied(settings: dict[str, Any]) -> list[str]:
+    """The :data:`~dev_lab.dev.usersettings.PERMISSION_DENY` rows *settings* does not yet deny."""
+    held = set((settings.get('permissions') or {}).get('deny') or [])
+    return [row for row in PERMISSION_DENY if row not in held]
 
 
 def _mine(hook: object, wire: Wire) -> bool:

@@ -50,6 +50,7 @@ from dev_lab.dev.workstation import FORGE_ROLE, REGISTRY_TABLE
 __all__ = [
     'AUTOMODE_REL',
     'DEFAULTS',
+    'ENVIRONMENT',
     'INTENTS',
     'OPTIONAL_INTENTS',
     'Fleet',
@@ -71,7 +72,7 @@ AUTOMODE_REL: Final = '.claude/automode.json'
 DEFAULTS: Final = '$defaults'
 
 #: The toolchain facts true of every consuming repo; the remote and the hosts are added by :func:`automode`.
-_ENVIRONMENT: Final = (
+ENVIRONMENT: Final = (
     (
         "The family development kit (dev-lab) is installed in each checkout's own virtual environment; its checked "
         'doors are the sanctioned way to run privileged development operations, and each re-checks its safety '
@@ -106,6 +107,10 @@ INTENTS: Final[dict[str, str]] = {
     'cancel-stuck': (
         "Cancelling the forge's own test jobs of one commit that are confirmed stuck: busy at full CPU with no "
         'new test result for longer than a multiple of their measured duration. Never any other job.'
+    ),
+    'prune-worktrees': "Removing this repository's own agent worktrees that are clean and whose work is pushed.",
+    'review-dispose': (
+        'The integrator closing one blocking review finding with a stated reason naming the commit that fixed it.'
     ),
     'monitor': 'Read-only monitoring of the forge: commit statuses, the queue, host cards and run progress.',
 }
@@ -212,7 +217,7 @@ def automode(root: Path, fleet: Fleet | None = None) -> dict[str, Any]:
     """The ``autoMode`` settings object for the checkout at *root* (*fleet*: :func:`read_fleet` when omitted)."""
     allow = [*INTENTS.values(), *(OPTIONAL_INTENTS[name] for name in _declared(root))]
     hosts = _fleet_lines(read_fleet() if fleet is None else fleet)
-    environment = [_source_control(root), *hosts, *_ENVIRONMENT]
+    environment = [_source_control(root), *hosts, *ENVIRONMENT]
     return {'autoMode': {'environment': [DEFAULTS, *environment], 'allow': [DEFAULTS, *allow]}}
 
 

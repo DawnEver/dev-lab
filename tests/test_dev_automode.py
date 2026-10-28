@@ -19,8 +19,8 @@ from lab_commons.hpc.grants import Grant
 from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
 from dev_lab.dev.autodoors import claude_rows, codex_rules, doors
 from dev_lab.dev.automode import (
-    _ENVIRONMENT,
     AUTOMODE_REL,
+    ENVIRONMENT,
     INTENTS,
     OPTIONAL_INTENTS,
     Fleet,
@@ -123,7 +123,7 @@ def _committed() -> list[str]:
     return [
         *INTENTS.values(),
         *OPTIONAL_INTENTS.values(),
-        *_ENVIRONMENT,
+        *ENVIRONMENT,
         *doors().values(),
         *claude_rows(),
         codex_rules(),

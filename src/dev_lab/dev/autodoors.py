@@ -61,6 +61,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.agent_guard import LAUNCHER_REL
 from dev_lab.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
@@ -93,6 +94,8 @@ DOOR_MODULES: Final[dict[str, str]] = {
     'dev_lab.dev.netverb': 'the bounded-retry network verb',
     'dev_lab.dev.famfiles': 'renders the family project files',
     'dev_lab.dev.autodoors': 'renders these door rules',
+    'dev_lab.dev.hook_install': "installs or reports this checkout's kit git hooks and rendered rule pages",
+    'dev_lab.dev.agent_guard': "installs or reports this checkout's agent guard and its settings wiring",
 }
 
 #: MAIN-SESSION-PUBLISHES: the local trunk verbs a main session runs unattended. The push is not here:
@@ -112,6 +115,12 @@ VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
         "scancels only this sha's run-<sha12>-<part> tasks busy at full CPU with no result past their bound"
     ),
     ('python', '-m', 'dev_lab.dev.forge', 'watch'): 'read-only: prints a commit verdict until settled or a deadline',
+    ('python', '-m', 'dev_lab.dev.forge', 'queue'): 'read-only: the forge queue and its host cards',
+    ('python', '-m', 'dev_lab.dev.forge', 'status', 'list'): "read-only: one commit's statuses",
+    ('python', '-m', 'dev_lab.dev.forge', 'status', 'show'): "read-only: one commit's statuses",
+    ('python', '-m', 'dev_lab.dev.forge', 'review', 'dispose'): (
+        'closes ONE blocking review finding with a stated reason; the door refuses anyone but the integrator'
+    ),
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
         'closes open PRs salvaged into another OPEN, unmerged PR or a commit; never deletes a branch'
@@ -120,6 +129,10 @@ VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
         'LOSSLESS-DELETE: a remote branch only when every commit on it is held elsewhere'
     ),
 }
+
+#: THE DOOR WRAPPER (:data:`dev_lab.dev.agent_guard.LAUNCHER_REL`): the spelling every hook and refusal hands an
+#: agent -- it resolves this checkout's interpreter per platform -- so each ``-m`` door is rendered for it too.
+_LAUNCHER_HEAD: Final = f'node {LAUNCHER_REL} -m'
 
 #: Bootstrap is a checked dependency door, not permission to invoke arbitrary installers.
 _DEPENDENCY_BOOTSTRAP: Final = ('python', '-m', 'dev_lab.dev.dep', '--bootstrap')
@@ -195,6 +208,8 @@ def claude_rows(scripts: tuple[str, ...] = ()) -> dict[str, str]:
             heads = [*_interpreters(), *_worktree_interpreters()]
         for head in heads:
             out[f'Bash({head} {" ".join(argv)} *)'] = why
+        if runner == 'python' and argv[0] == '-m':
+            out[f'Bash({_LAUNCHER_HEAD} {" ".join(argv[1:])} *)'] = why
         if runner == 'git':
             # Another checkout's trunk, spelled the one way a main session reaches a sibling repo.
             out[f'Bash(git -C * {" ".join(argv)} *)'] = why
@@ -237,11 +252,14 @@ def codex_rules(scripts: tuple[str, ...] = ()) -> str:
     ]
     for (runner, *argv), why in doors(scripts).items():
         head = json.dumps(_interpreters()) if runner == 'python' else json.dumps(runner)
-        pattern = ', '.join([head, *(json.dumps(token) for token in argv)])
-        blocks.append(
-            f'prefix_rule(\n    pattern = [{pattern}],\n    decision = "allow",\n'
+        patterns = [[head, *(json.dumps(token) for token in argv)]]
+        if runner == 'python' and argv[0] == '-m':
+            patterns.append([json.dumps(token) for token in (*_LAUNCHER_HEAD.split(), *argv[1:])])
+        blocks += [
+            f'prefix_rule(\n    pattern = [{", ".join(pattern)}],\n    decision = "allow",\n'
             f'    justification = {json.dumps(why)},\n)'
-        )
+            for pattern in patterns
+        ]
     return '\n\n'.join(blocks) + '\n'
 
 

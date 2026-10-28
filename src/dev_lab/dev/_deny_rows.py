@@ -62,6 +62,7 @@ from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
+from dev_lab.dev.usersettings import USER_SETTINGS_WRITE
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
 #: RETIRED ROW IDs -> the ID that replaced each (RETIRED-NAMES-REGISTERED). A consumer's adoption or
@@ -363,4 +364,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     RECURSIVE_GREP,
     REPORTS_LIVE_IN_MEMORY,
     STATUS_VIA_DOORS,
+    USER_SETTINGS_WRITE,
 )
