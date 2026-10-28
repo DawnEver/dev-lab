@@ -93,7 +93,7 @@ def test_a_recursive_delete_is_refused_with_its_doors(rules: Path, command: str)
         'rm -rf $TMPDIR/probe-1',
         'rmdir /s /q %TEMP%\\probe',
         'Remove-Item -Recurse -Force $env:TEMP\\probe',
-        'Remove-Item -LiteralPath "C:\\Users\\me\\AppData\\Local\\Temp\\probe" -Recurse -Force',
+        'Remove-Item -LiteralPath "D:\\profiles\\me\\AppData\\Local\\Temp\\probe" -Recurse -Force',
         'rm -rf output/logs/26/10/27',
         'Remove-Item -Recurse output\\cache',
         'rm -rf C:/work/repo/output/logs/26',
