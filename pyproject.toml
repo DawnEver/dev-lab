@@ -22,6 +22,14 @@ dependencies = [
     "rtoml",
 ]
 
+[project.optional-dependencies]
+# THE FAMILY'S ONE JS TEST RUNTIME (dev.jsrun): a pinned Node binary installed from the lock, so a test
+# running client JS or the agent-guard engine needs no host Node. Node rather than an embedded engine:
+# the code under test uses require/fs/process, DecompressionStream, TextDecoder, atob and timers, which a
+# bare QuickJS or V8 isolate does not provide. TEST/DEV ONLY (user ruling 2026-10-28): a consumer takes
+# it as `dev-lab[test]` in its dev extra, never in a runtime dependency (famtests.hostnode refuses that).
+test = ["nodejs-wheel-binaries"]
+
 # The allocation record's reader, loaded by lab_commons.hpc.allocation.recorded: every submitter reads it.
 [project.entry-points."lab_commons.hpc.allocation"]
 forge = "dev_lab.dev.forgerecords:read_allocation"
@@ -129,7 +137,7 @@ NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clo
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "workstation: needs a developer workstation -- the live checkout (hooks, branches, worktree placement) or the agent tooling its guards run on (`node`, the `codex` CLI); the cluster's per-sha tree has none of it",
+    "workstation: needs a developer workstation -- the live checkout (installed hooks, worktree placement), the host `node` the live agent hook runs on, or the `codex` CLI; the cluster's per-sha tree has none of it. Driving a hook engine or any JS needs NO mark: it runs on the locked Node (dev.jsrun, the `test` extra)",
     "not_applicable: a skip of this test is NOT_APPLICABLE (lab_commons.hpc.pytest_item.judged); any other skip is refused",
 ]
 

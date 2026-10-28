@@ -106,7 +106,6 @@ def test_every_remedy_this_kit_prints_names_an_absolute_interpreter(tmp_path: Pa
     assert_remedies_name_absolute_interpreters(texts, floor=len(DENY_RULES))
 
 
-@pytest.mark.workstation  # the engine runs under node, workstation kit
 def test_the_engine_prints_the_target_checkouts_interpreter_absolute(tmp_path: Path) -> None:
     """The JS printer agrees with the Python resolver: a linked worktree with no venv names main's, absolute."""
     main = tmp_path / 'main'
