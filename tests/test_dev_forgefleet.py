@@ -13,7 +13,7 @@ import pytest
 from lab_commons.config import CONFIG_ENV
 
 from dev_lab.dev.forgealarm import FLEET, Alarm
-from dev_lab.dev.forgefleet import dark_platforms, serve_off, watch
+from dev_lab.dev.forgefleet import dark_platforms, dark_resources, serve_off, watch
 from dev_lab.dev.forgehosts import HostCard
 
 NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
@@ -25,8 +25,26 @@ def _home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'config.toml'))
 
 
-def _card(host: str, platform: str, *, age_min: float) -> HostCard:
-    return HostCard(host=host, login='x', platform=platform, ticked=(NOW - timedelta(minutes=age_min)).isoformat())
+def _card(host: str, platform: str, *, age_min: float, tools: tuple[str, ...] = ()) -> HostCard:
+    ticked = (NOW - timedelta(minutes=age_min)).isoformat()
+    return HostCard(host, 'x', platform, ticked, tools={name: {'present': True} for name in tools})
+
+
+def test_a_resource_is_dark_when_every_host_providing_it_is_stale() -> None:
+    """WS1/WS2 2026-10-28 read jmag=1 while stale: that is NO jmag supply. PLANTED CONTROL: one fresh provider."""
+    cards = [_card('WS1', 'windows', age_min=60, tools=('jmag',)), _card('box', 'windows', age_min=1)]
+    assert dark_resources(cards, NOW) == {'jmag': ('WS1',)}
+    assert dark_platforms(cards, NOW) == {}, 'the platform is lit; the resource is still dark'
+    assert dark_resources([*cards, _card('G', 'windows', age_min=1, tools=('jmag',))], NOW) == {}
+
+
+def test_a_dark_resource_alarms_once_per_episode() -> None:
+    raised: list[Alarm] = []
+    cards = [_card('WS1', 'windows', age_min=60, tools=('jmag',)), _card('box', 'windows', age_min=1)]
+    watch(cards, NOW, alarm=raised.append, repo=REPO)
+    watch(cards, NOW, alarm=raised.append, repo=REPO)
+    assert [(a.kind, a.about) for a in raised] == [(FLEET, 'jmag')]
+    assert 'no host supplies jmag' in raised[0].subject
 
 
 def test_a_platform_is_dark_only_when_every_host_of_it_is_stale() -> None:

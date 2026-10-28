@@ -25,6 +25,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [Killed runs and orphans](./orphans.md) | What survives a stopped run, why a lock judges liveness, and how to reap |
 | [Box resources](./box-resources.md) | What one workstation rations, and the broker every run declares its cost to |
 | [The forge](./forge.md) | Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict |
+| [Adding a forge workstation](./adding-a-workstation.md) | The light role's template, the deploy step by step, verifying and retiring a host |
 | [The integration branch](./integration.md) | The path of one change, the roles, the integration tick, `forge sync`, `integrate promote`, the merge audit |
 | [Components](./components.md) | A product mounts its engines as submodules: the table, the derived-file check, the bump loop |
 | [Issues](./issues.md) | An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments |
