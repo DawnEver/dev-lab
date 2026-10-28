@@ -53,7 +53,7 @@ _GIT = r'git(?:\.exe)?(?:\s+-[Cc]\s+' + _WORD + r')*\s+'
 #: `git clean` removing directories or ignored files; a dry run is exempt only within ITS OWN argument list.
 _ARGS = r'[^\n;&|]*'
 _GIT_CLEAN = (
-    _GIT + r'clean\b(?=' + _ARGS + r'\s(?:-[a-zA-Z]*[xXd]|--directory)\b)'
+    _GIT + r'clean\b(?=' + _ARGS + r'\s(?:-[a-zA-Z]*[xXd][a-zA-Z]*|--directory)(?=\s|$|[;&|]))'
     r'(?!' + _ARGS + r'\s(?:-[a-zA-Z]*n[a-zA-Z]*|--dry-run)(?=\s|$|[;&|]))'
 )
 #: Interpreter code: statements with no quote before the call, so prose QUOTING it never matches;
@@ -88,6 +88,8 @@ RECURSIVE_DELETE: dict[str, object] = {
         'Remove-Item -Recurse -Force',
         'rm -rf "/tmp/a b/../../repo"',
         'git clean -fX',
+        'git clean -df',
+        'git clean -xf',
         'python -c \'import shutil; shutil.rmtree(r"C:/work/repo")\'',
     ),
     'permits': (

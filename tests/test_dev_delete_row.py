@@ -69,6 +69,10 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'git clean -f --directory',
         'git clean -fd; git log -n 1',
         'git clean -fd && echo --dry-run',
+        'git clean -df',
+        'git clean -xf',
+        'git clean -fdq',
+        'git clean -Xf',
     ],
 )
 @pytest.mark.workstation
