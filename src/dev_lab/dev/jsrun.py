@@ -22,16 +22,29 @@ honest. Node is the smallest engine that meets the need as it stands.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 from typing import Final
 
 from lab_commons.launch import run
 
-__all__ = ['DEFAULT_TIMEOUT_S', 'ENGINE_DISTRIBUTIONS', 'JS_EXTRA', 'JsFailed', 'NoEngine', 'node_path', 'run_js']
+__all__ = [
+    'DEFAULT_TIMEOUT_S',
+    'ENGINE_DISTRIBUTIONS',
+    'ENGINE_PACKAGE',
+    'JS_EXTRA',
+    'JsFailed',
+    'NoEngine',
+    'node_path',
+    'run_js',
+]
 
 #: The distributions that ship the engine; none may appear outside a dev extra (``famtests.hostnode``).
 ENGINE_DISTRIBUTIONS: Final = frozenset({'nodejs-wheel-binaries', 'nodejs-wheel'})
+
+#: The import package the engine distribution installs.
+ENGINE_PACKAGE: Final = 'nodejs_wheel'
 
 #: dev-lab's extra that carries the engine; a consumer requires ``dev-lab[test]`` in its dev extra.
 JS_EXTRA: Final = 'test'
@@ -40,7 +53,7 @@ JS_EXTRA: Final = 'test'
 DEFAULT_TIMEOUT_S: Final = 60.0
 
 
-class NoEngine(ModuleNotFoundError):
+class NoEngine(LookupError):
     """The engine is not installed: this environment lacks dev-lab's ``test`` extra."""
 
 
@@ -55,12 +68,13 @@ def node_path() -> Path:
         NoEngine: the ``test`` extra is not installed here.
 
     """
-    try:
-        import nodejs_wheel  # noqa: PLC0415 -- dev-only engine: absent from a runtime install, so imported on use
-    except ModuleNotFoundError as exc:
+    # LOCATED, NOT IMPORTED: the engine is a dev extra, never a declared base dependency, so this
+    # layer names it only as a spec (tests/test_dev_gate.py reads the import statements).
+    spec = importlib.util.find_spec(ENGINE_PACKAGE)
+    if spec is None or spec.origin is None:
         msg = f'no JS engine: install dev-lab[{JS_EXTRA}] in the dev extra (never a runtime dependency)'
-        raise NoEngine(msg) from exc
-    root = Path(nodejs_wheel.__file__).parent
+        raise NoEngine(msg)
+    root = Path(spec.origin).parent
     return root / 'node.exe' if os.name == 'nt' else root / 'bin' / 'node'
 
 

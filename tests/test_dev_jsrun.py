@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
-import nodejs_wheel
 import pytest
 
-from dev_lab.dev.jsrun import JsFailed, node_path, run_js
+from dev_lab.dev.jsrun import ENGINE_PACKAGE, JsFailed, node_path, run_js
 
 
 def test_the_engine_is_the_locked_one_inside_this_venv() -> None:
     """The binary lives in the installed wheel, not wherever the host PATH points."""
     assert node_path().is_file()
-    assert Path(nodejs_wheel.__file__).parent in node_path().parents
+    spec = importlib.util.find_spec(ENGINE_PACKAGE)
+    assert spec is not None
+    assert spec.origin is not None
+    assert Path(spec.origin).parent in node_path().parents
 
 
 def test_a_program_on_stdin_returns_its_stdout() -> None:

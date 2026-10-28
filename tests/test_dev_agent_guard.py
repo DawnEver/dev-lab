@@ -373,7 +373,9 @@ def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Pa
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
     agent_guard.install_guard(tmp_path)
-    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
+    # The wired line calls a bare `node`, as the tool's shell would; the locked one stands in for the host's.
+    node = node_path().parent.as_posix()
+    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path), 'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}'}
     done = subprocess.run(
         [_SHELL, '-c', agent_guard.STRAY_COMMAND],
         input='{}',

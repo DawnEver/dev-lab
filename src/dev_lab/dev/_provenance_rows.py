@@ -515,6 +515,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
     # not a forked file.
     'venvpath': ('original',),
+    # ORIGINAL: no consumer file ran JS on a declared engine; every JS test called `shutil.which('node')` until the
+    # Node-free cluster verdict host (2026-10-28) made that host dependency red.
+    'jsrun': ('original',),
     'worktreeplace': ('original',),
     'ephemeralrefs': ('original',),
     'famfiles': ('original',),
