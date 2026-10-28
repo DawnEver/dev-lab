@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, run_git
+from lab_commons.hpc.retired import MOVED_TABLES
 
 from dev_lab.dev.forgerequest import (
     TESTS,
@@ -92,7 +93,7 @@ def test_a_request_at_a_sha_whose_manifest_the_kit_retires_is_refused_by_name(re
     per request instead.
     """
     root, _sha = repo
-    (root / 'pyproject.toml').write_text(_PYPROJECT + '\n[tool.lab_commons.hooks]\n', encoding='utf-8')
+    (root / 'pyproject.toml').write_text(f'{_PYPROJECT}\n[tool.lab_commons.{MOVED_TABLES[0]}]\n', encoding='utf-8')
     run_git(root, 'add', 'pyproject.toml')
     run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'old spelling')
     old = git_out(root, 'rev-parse', 'HEAD')

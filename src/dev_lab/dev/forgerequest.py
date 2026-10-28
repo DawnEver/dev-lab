@@ -62,7 +62,7 @@ import lab_commons.launch as _door
 from lab_commons.box.machine import RESOURCE_NAME
 from lab_commons.compute.model import REQUEST
 from lab_commons.config import section
-from lab_commons.hpc.declared import OutdatedKit, RetiredTable, kit_tables, pyproject_at
+from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name, read_vocabulary
 
 from dev_lab.dev._forgesource import (
@@ -272,20 +272,17 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
         raise UndeclaredRequest(msg)
     try:
         text = pyproject_at(root, sha)
-    except (ValueError, OSError) as why:
-        msg = f'pyproject.toml unreadable at {sha[:12]}: {why}'
-        raise UndeclaredRequest(msg) from why
-    try:
         produce = kit_tables(text).get('tests', {}).get('produce')
-    except RetiredTable as why:  # a request pinned to a sha older than a table move: refused, never the serve's crash
-        msg = f'{sha[:12]} declares a retired table: {why}'
+    except OutdatedKit:  # the READER is older than the sha: this host's defect, never the commit's
+        raise
+    except (ValueError, OSError) as why:  # unreadable, or a retired table at a sha older than its move
+        msg = f'pyproject.toml unreadable at {sha[:12]}: {why}'
         raise UndeclaredRequest(msg) from why
     roots = _test_roots(text)
     if not isinstance(produce, list) or '--part' not in produce or not roots:
         msg = f'{sha[:12]} declares no [tool.lab_commons.tests] produce door with --part, or no pytest testpaths'
         raise UndeclaredRequest(msg)
-    refused = [why for path in paths if (why := _path_refusal(root, sha, path, roots))]
-    if refused:
+    if refused := [why for path in paths if (why := _path_refusal(root, sha, path, roots))]:
         msg = f'producer {TESTS!r} refused: ' + '; '.join(refused)
         raise UndeclaredRequest(msg)
     door = [str(one) for one in produce[: produce.index('--part')]]
