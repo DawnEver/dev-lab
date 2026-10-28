@@ -153,8 +153,8 @@ class Cluster(Protocol):
     def gather(self, run: Run) -> Path | None:
         """One short gather: the record written into ``run.output``, or ``None`` while Slurm still runs it."""
 
-    def killed(self, run: Run) -> tuple[Killed, ...]:
-        """*run*'s jobs Slurm killed for memory or time, each with its ask and use; their asks learned."""
+    def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
+        """*run*'s jobs Slurm killed for memory or time with ask and use; their asks learned, also into *record*."""
 
     def strays(self, held: Callable[[], set[str]]) -> list[str]:
         """Cancel every forge job (``run-<sha12>...``) whose name *held* does not return; the ids cancelled."""

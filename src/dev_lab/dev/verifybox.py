@@ -135,7 +135,7 @@ def selection_mem_gb(repo: str, files: Sequence[str], workers: int) -> float:
     """The memory a selection's tree declares: each worker at the worst file's peak times the box headroom.
 
     The peaks are the forge's (:mod:`dev_lab.dev.forgedemand`); an unmeasured file is priced at its
-    siblings' median (:meth:`~lab_commons.compute.learned.Measured.prior_mb`), and a repository nothing was
+    siblings' median (:meth:`~lab_commons.compute.measured.Measured.prior_mb`), and a repository nothing was
     ever measured for at :class:`~lab_commons.hpc.config.Cost`'s per-task floor. A per-file peak is what one
     SMALL item reached, and one process running many files holds more: a selection that ran before is also
     priced at its own whole-tree peak (:func:`learn_ended`) times the headroom -- one the box killed for

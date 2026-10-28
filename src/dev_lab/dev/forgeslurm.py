@@ -16,7 +16,7 @@ A JOB SLURM KILLED IS READ, NAMED AND LEARNED (:meth:`SlurmCluster.killed`; Ada 
 (``ReqMem``/``MaxRSS``, ``Timelimit``/``Elapsed``); an OOM's ask is recorded grown by
 :data:`~lab_commons.compute.learned.OOM_GROWTH` and held to the most any grant gives
 (:func:`~lab_commons.hpc.plan.grantable_gb`), so the part's next run asks for more. A TIMEOUT needs nothing
-here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.learned.Measured.killed`).
+here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.measured.Measured.killed`).
 
 A FORGE JOB WHOSE RUN IS GONE IS CANCELLED (:meth:`SlurmCluster.strays`; Ada 2026-10-25: 25 % of a day's
 core-hours). A run whose ref is gone cancels its own jobs (:func:`dev_lab.dev.forgerun._cancel_orphan`); a job
@@ -42,6 +42,7 @@ from typing import Any, Final
 
 from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
+from lab_commons.compute.measured import Measured
 from lab_commons.compute.presence import cached
 from lab_commons.config import config_path
 from lab_commons.hpc.account import ClusterAccount
@@ -64,6 +65,7 @@ from lab_commons.resources import Engine
 
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
+from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_items
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
@@ -270,12 +272,13 @@ class SlurmCluster:
             raise Unrecorded(msg)
         return records[-1]
 
-    def killed(self, run: Run) -> tuple[Killed, ...]:
+    def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
         """*run*'s jobs Slurm killed for memory or time (:func:`killed_jobs`); an OOM's ask is learned grown.
 
         Grown by :data:`~lab_commons.compute.learned.OOM_GROWTH`, held to the most any grant gives, never
         lowering a known ask (:func:`~lab_commons.compute.learned.record_ask`): one learned store, read by the next
-        run's admission and plan.
+        run's admission and plan. Each file an OOM task ran is floored at its ask (:mod:`dev_lab.dev.forgeoom`),
+        in the learned table and in *record*, the run record every host folds.
         """
         state, shell = load_state(run.sha, run.platform, self.machine, self._runners())
         ids = [str(job) for one in state['rounds'] for job in one['job_ids']]
@@ -291,6 +294,7 @@ class SlurmCluster:
             learned.record_ask(
                 run.repo_url, learned.SLURM, needs_of(run.platform), ask_gb, safety=self.config.policy.safety
             )
+            learn_floors(run.repo_url, oom_floors(found, task_items(state, shell, [one.job for one in found])), record)
         return found
 
     def progress(self, run: Run) -> str:
@@ -356,7 +360,7 @@ class SlurmCluster:
     def started_tasks(self, run: Run) -> Draining:
         """*run*'s started tasks, each priced as the packer priced it: its items' estimate times ``policy.safety``.
 
-        The estimate is :meth:`lab_commons.compute.learned.Measured.estimate` over the learned table -- durations,
+        The estimate is :meth:`lab_commons.compute.measured.Measured.estimate` over the learned table -- durations,
         floors, overheads, an unmeasured file at ``cost.seconds`` -- and ``policy.safety`` is the margin the plan
         turns it into a ``--time`` with (:func:`lab_commons.hpc.plan.plan`): one source, no new constant. A task
         of no round's manifest is priced at the prior alone. Start and now are both the cluster's clock.
@@ -365,7 +369,7 @@ class SlurmCluster:
         names = ','.join((job_name(run.sha, run.platform), *run.job_aliases))
         lines = shell(f"date +%s; squeue -h --me -n {names} -t {STARTED} -o '%i|%M'", None).split()
         now = float(lines[0])
-        measured = learned.Measured.of(learned.learned(run.repo_url))
+        measured = Measured.of(learned.learned(run.repo_url))
         cost, safety = self.config.cost, self.config.policy.safety
         manifests: dict[str, dict[str, Any]] = {}
         tasks = []
