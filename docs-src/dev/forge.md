@@ -44,7 +44,7 @@ Each tick it:
    integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms))
    and relocks;
 7. ON EVERY HOST, poller or not, runs the PR review where its declared command can run (a host whose
-   `[capabilities]` cannot fill or start it says so once and reads no PR; the head's claim keeps one review
+   `[runtimes]` cannot fill or start it says so once and reads no PR; the head's claim keeps one review
    per head across hosts; a head held over its cap is the integrator's takeover,
    [the review](integration.md#the-pr-reviewer-blocks-on-high-or-security)).
 

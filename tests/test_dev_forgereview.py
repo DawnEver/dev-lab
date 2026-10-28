@@ -246,37 +246,35 @@ def test_the_declared_command_is_the_ai_lab_review_module_on_the_hosts_python() 
     The method is ai-lab's own, so ``ai_lab`` is the only host value and no ``--method`` is passed.
     """
     declared = review_from((Path(__file__).parents[1] / 'pyproject.toml').read_text(encoding='utf-8'), 'pyproject')
-    assert declared.command[:3] == ('{capabilities.ai_lab.python}', '-m', 'ai_lab.review')
+    assert declared.command[:3] == ('{runtimes.ai_lab.python}', '-m', 'ai_lab.review')
     assert {m['name'] for arg in declared.command for m in HOST_FIELD.finditer(arg)} == {'ai_lab'}
     assert '--method' not in declared.command
 
 
-def test_a_host_value_field_is_replaced_by_the_hosts_declared_capability() -> None:
-    """The repo declares WHAT, the host WHERE: ``{capabilities.<name>.<key>}`` reads this host's machine file."""
-    declared = Review(
-        command=('{capabilities.ai_lab.python}', '--method', '{capabilities.sharp_review.path}', RANGE_FIELD)
-    )
-    host = {'ai_lab': {'python': 'C:/rt/python.exe'}, 'sharp_review': {'path': '~/method'}}
+def test_a_host_value_field_is_replaced_by_the_hosts_declared_runtime() -> None:
+    """The repo declares WHAT, the host WHERE: ``{runtimes.<name>.<key>}`` reads this host's machine file."""
+    declared = Review(command=('{runtimes.ai_lab.python}', '--data', '{runtimes.corpus.path}', RANGE_FIELD))
+    host = {'ai_lab': {'python': 'C:/rt/python.exe'}, 'corpus': {'path': '~/corpus'}}
     argv = command_for(declared, 'a..b', host)
-    assert argv == ['C:/rt/python.exe', '--method', str(Path('~/method').expanduser()), 'a..b']
+    assert argv == ['C:/rt/python.exe', '--data', str(Path('~/corpus').expanduser()), 'a..b']
 
 
 @pytest.mark.parametrize('host', [{}, {'ai_lab': {}}], ids=['no capability', 'no key'])
 def test_a_host_value_this_host_does_not_declare_is_skipped_unposted(tmp_path: Path, host) -> None:
     """Checked BEFORE the claim: the line names the capability, nothing is posted. PLANTED: a declaring host runs it."""
-    declared = Review(command=('{capabilities.ai_lab.python}', '--range', RANGE_FIELD))
-    with pytest.raises(ReviewUnsupported, match=r'\[capabilities\.ai_lab\] python'):
+    declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
+    with pytest.raises(ReviewUnsupported, match=r'\[runtimes\.ai_lab\] python'):
         command_for(declared, 'a..b', host)
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = FakeCommand()
     kw = {'base': 'integrate/main', 'run': command, 'ready': _can, 'host': 'box'}
-    lines = review_tick(work, forge, declared, capabilities=host, **kw)
-    assert '[capabilities.ai_lab] python' in lines[0]
+    lines = review_tick(work, forge, declared, runtimes=host, **kw)
+    assert '[runtimes.ai_lab] python' in lines[0]
     assert command.ran == []
     assert status_list(forge, head) == ()
     forge, _ = _forge(head)
-    review_tick(work, forge, declared, capabilities={'ai_lab': {'python': 'py'}}, **kw)
+    review_tick(work, forge, declared, runtimes={'ai_lab': {'python': 'py'}}, **kw)
     ((argv, _),) = command.ran
     assert argv[0] == 'py'
 
@@ -303,12 +301,12 @@ def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp
     """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    declared = Review(command=('{capabilities.ai_lab.python}', '--range', RANGE_FIELD))
+    declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
     command = FakeCommand()
     kw = {'base': 'integrate/main', 'run': command}
     review_tick(work, forge, declared, ready=_can, host='A', **kw)
     assert forge.statuses.get(head, []) == []
-    review_tick(work, forge, declared, ready=_can, host='B', capabilities={'ai_lab': {'python': 'py'}}, **kw)
+    review_tick(work, forge, declared, ready=_can, host='B', runtimes={'ai_lab': {'python': 'py'}}, **kw)
     assert len(command.ran) == 1
     assert status_list(forge, head)[0].state == 'success'
     assert len(forge.comments[number]) == 1

@@ -27,15 +27,13 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.box.machine import provided
-from lab_commons.config import section
 from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeintegration import _fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_list, marker, pr_list
-from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, load_review
+from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, host_runtimes, load_review
 from dev_lab.dev.forgereview_command import run_command
 from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
@@ -131,7 +129,7 @@ def scope_of(root: Path, client: Client, review: Review, pull: PullRequest, base
 def takeover(
     root: Path, client: Client, review: Review, sha: str, *, base: str, host: str,
     run: Callable[[Sequence[str], Path], str] = run_command,
-    capabilities: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),
+    runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),
 ) -> tuple[str, ...]:  # fmt: skip
     """Review held *sha* over every slice, post the findings and :data:`REVIEW_CONTEXT`, release; the lines said."""
     pull = _pull_of(client, sha)
@@ -145,8 +143,8 @@ def takeover(
     if scope.held is not None:
         msg = f'{scope.held}: declare {PATHS_FIELD} in the review command'
         raise TakeoverRefused(msg)
-    argvs = [command_for(review, scope.range, capabilities, paths=s.paths, lens=s.lens) for s in scope.slices]
-    synth = command_for(review, scope.range, capabilities, synthesis=True)
+    argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
+    synth = command_for(review, scope.range, runtimes, synthesis=True)
     found = parse_findings(gather(scope.range, argvs, synth, run, root))
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
@@ -211,10 +209,8 @@ def main(
             for one in scope.slices:
                 emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
             return 0
-        here = provided(section('capabilities'))
-        for said in takeover(
-            root, origin, review, args.sha, base=base, host=this_machine(), run=run, capabilities=here
-        ):
+        here = host_runtimes()
+        for said in takeover(root, origin, review, args.sha, base=base, host=this_machine(), run=run, runtimes=here):
             emit(f'[review] {said}')
     except (
         TakeoverRefused,

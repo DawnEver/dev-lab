@@ -9,7 +9,7 @@ it on ``<merge base>..<head>`` and reads its stdout as the findings JSON
 (:mod:`dev_lab.dev.forgereview_findings`). It holds no model client, no prompt and no key.
 
 WHERE IT RUNS follows what it needs -- the declared command -- never the poller lease. Every ``forge serve`` tick
-runs :func:`step` (via :func:`dev_lab.dev.forgeservesteps.review`), poller or not; a host whose ``[capabilities]``
+runs :func:`step` (via :func:`dev_lab.dev.forgeservesteps.review`), poller or not; a host whose ``[runtimes]``
 cannot fill or start the command (:func:`command_for`, :func:`can_start`) says so once and reads no PR. Among the
 capable hosts the claim below makes each head reviewed once.
 
@@ -54,7 +54,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
     # {principles}: a JSON file of dev_lab.dev.principles (written per run; ai-lab holds no copy);
-    # {capabilities.<name>.<key>}: THIS host's machine-file value (repo says WHAT, host WHERE)
+    # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_rounds = 3             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, blocking re-checks only
@@ -65,7 +65,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
 
 ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
-but this host's ``[capabilities]`` does not declare, or a command it cannot start (:func:`can_start`: a missing
+but this host's ``[runtimes]`` does not declare, or a command it cannot start (:func:`can_start`: a missing
 executable or module) -- is checked BEFORE the claim and posts NOTHING: a fact about the host is not the head's
 status. One that started and turned out unable (:class:`ReviewUnsupported`) replaces its own claim with
 :data:`HOST_UNABLE` naming the host and why, and that head stays claimable by a capable host, or by this one
@@ -93,7 +93,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.box.machine import provided
 from lab_commons.config import section
 from lab_commons.units import Q_
 
@@ -122,14 +121,17 @@ __all__ = [
     'MODEL_FIELD',
     'OVER_CAP_TAKEOVER',
     'RANGE_FIELD',
-    'RETIRED_CAPABILITIES',
+    'RETIRED_FIELD',
     'RETIRED_KEYS',
+    'RETIRED_RUNTIMES',
     'REVIEW_CONTEXT',
     'RULES_FIELD',
+    'RUNTIMES_TABLE',
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
     'Review',
     'command_for',
+    'host_runtimes',
     'load_review',
     'review_from',
     'review_tick',
@@ -159,13 +161,21 @@ FAMILY_MODEL: Final = 'claude-sonnet-5-5'
 #: interpreter, which packages the method, sliced (``{paths}``) under a lens. A repo declares ``command`` only
 #: when its method genuinely differs; redeclaring this one is refused, so no stale copy can drift from it.
 FAMILY_COMMAND: Final = (
-    '{capabilities.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
+    '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
     '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
     '--principles', forgereview_scope.PRINCIPLES_FIELD,
 )  # fmt: skip
 
-#: Host capabilities the family retired, each refused in a command naming what replaced it.
-RETIRED_CAPABILITIES: Final = {
+#: The machine-file table a host declares WHERE its runtimes live in: ``[runtimes.<name>] <key> = "<path>"``.
+#: Not ``[capabilities]``: a capability is a resource a part needs and admission counts; a runtime is only a path
+#: (user ruling 2026-10-28).
+RUNTIMES_TABLE: Final = 'runtimes'
+
+#: The retired spelling of a host value, refused naming its ``{runtimes.<name>.<key>}`` replacement.
+RETIRED_FIELD: Final = re.compile(r'\{capabilities\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
+
+#: Host values the family retired, each refused in a command naming what replaced it.
+RETIRED_RUNTIMES: Final = {
     'sharp_review': 'ai-lab packages the method: drop it (the family command needs none)',
 }
 
@@ -173,8 +183,8 @@ RETIRED_CAPABILITIES: Final = {
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
 LIGHT: Final = ('docs-src/**', '**/.claude/memory/**', '**/*.md')
 
-#: A placeholder for a value THIS host declares: ``{capabilities.<name>.<key>}`` (``~`` expanded).
-HOST_FIELD: Final = re.compile(r'\{capabilities\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
+#: A placeholder for a value THIS host declares: ``{runtimes.<name>.<key>}`` (``~`` expanded).
+HOST_FIELD: Final = re.compile(r'\{runtimes\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
 
 #: A reviewer status meaning its provider cannot serve this run at all: the review needs a takeover.
 TAKEOVER_KINDS: Final = frozenset({'exhausted', 'auth'})
@@ -252,11 +262,25 @@ def review_from(text: str, origin: str) -> Review:
     if 'command' in declared and review.command == FAMILY_COMMAND:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
-    for field in (one for arg in (*review.command, *review.synthesis) for one in HOST_FIELD.finditer(arg)):
-        if (why := RETIRED_CAPABILITIES.get(field['name'])) is not None:
-            msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {field[0]} is retired: {why}'
-            raise ValueError(msg)
+    for arg in (*review.command, *review.synthesis):
+        for field in (*RETIRED_FIELD.finditer(arg), *HOST_FIELD.finditer(arg)):
+            name, key = field['name'], field['key']
+            why = RETIRED_RUNTIMES.get(name)
+            if why is None and RETIRED_FIELD.fullmatch(field[0]):
+                why = f'{{{RUNTIMES_TABLE}.{name}.{key}}} ([{RUNTIMES_TABLE}.{name}] {key} in the machine file)'
+            if why is not None:
+                msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {field[0]} is retired: {why}'
+                raise ValueError(msg)
     return review
+
+
+def host_runtimes() -> dict[str, dict[str, Any]]:
+    """The machine file's ``[runtimes]``: ``{name: {key: value}}``; a row that is not a table is refused."""
+    table = section(RUNTIMES_TABLE)
+    if bad := sorted(name for name, row in table.items() if not isinstance(row, dict)):
+        msg = f'the machine file: [{RUNTIMES_TABLE}] {", ".join(bad)} must each be a table ([{RUNTIMES_TABLE}.<name>])'
+        raise ValueError(msg)
+    return {name: dict(row) for name, row in table.items()}
 
 
 def load_review(root: Path) -> Review:
@@ -327,18 +351,18 @@ def _passed(root: Path, client: Client, head: str, now: datetime, stale: timedel
 
 
 def command_for(
-    review: Review, reviewed: str, capabilities: Mapping[str, Mapping[str, Any]], *,
+    review: Review, reviewed: str, runtimes: Mapping[str, Mapping[str, Any]], *,
     paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False,
 ) -> list[str]:  # fmt: skip
     """The declared command (or *synthesis*), every placeholder replaced: the range, the slice, this host's values.
 
-    A host value *capabilities* (this host's ``[capabilities]``) does not declare is :class:`ReviewUnsupported`.
+    A host value *runtimes* (this host's ``[runtimes]``) does not declare is :class:`ReviewUnsupported`.
     """
 
     def host_value(field: re.Match[str]) -> str:
-        value = capabilities.get(field['name'], {}).get(field['key'])
+        value = runtimes.get(field['name'], {}).get(field['key'])
         if not isinstance(value, str) or not value:
-            where = f'[capabilities.{field["name"]}] {field["key"]}'
+            where = f'[{RUNTIMES_TABLE}.{field["name"]}] {field["key"]}'
             msg = f'unsupported: this host declares no {where} for the review command'
             raise ReviewUnsupported(msg)
         return str(Path(value).expanduser()) if value.startswith('~') else value
@@ -414,7 +438,7 @@ def review_tick(
     run: Callable[[Sequence[str], Path], str] = run_command,
     ready: Callable[[Sequence[str], Path], str | None] = can_start,
     host: str,
-    capabilities: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),  # this host's: none by default
+    runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),  # this host's: none by default
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[str, ...]:
     """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
@@ -438,7 +462,7 @@ def review_tick(
             lines.append(said)
             continue
         try:
-            argvs = [command_for(review, scope.range, capabilities, paths=s.paths, lens=s.lens) for s in scope.slices]
+            argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
             cannot = ready(argvs[0], root)
         except ReviewUnsupported as unsupported:
             cannot = str(unsupported)
@@ -448,7 +472,7 @@ def review_tick(
         claim = f'{CLAIMED} {host} at {clock().isoformat(timespec="seconds")}, reviewing'
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
         try:
-            synth = command_for(review, scope.range, capabilities, synthesis=True)
+            synth = command_for(review, scope.range, runtimes, synthesis=True)
             found = parse_findings(gather(scope.range, argvs, synth, run, root))
         except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
             lines.append(_unable(client, pull, host, str(unsupported)))
@@ -487,7 +511,7 @@ def step(
         if not review.command:
             say(f'[serve] review: not run -- [tool.dev_lab.{_TABLE}] command is not declared')
             return
-        here = provided(section('capabilities'))
+        here = host_runtimes()
         try:  # any range, any slice: can this host run the command at all
             cannot = ready(command_for(review, '', here), root)
         except ReviewUnsupported as unsupported:
@@ -496,7 +520,7 @@ def step(
             say(f'[serve] review: not run on this host -- {cannot}')
             return
         lines = review_tick(
-            root, built, review, base=policy.integration, run=run, ready=ready, host=host, capabilities=here
+            root, built, review, base=policy.integration, run=run, ready=ready, host=host, runtimes=here
         )
         for line in lines:
             say(f'[serve] review: {line}')

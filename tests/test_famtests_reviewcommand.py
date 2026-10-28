@@ -1,7 +1,7 @@
 """REVIEW-COMMAND-IS-THE-FAMILY'S: one default review command, a repo declares only where it differs.
 
 Adoption here, plus the planted controls that prove the refusal convicts: a repo that redeclares the family's
-command, or names a retired capability (``{capabilities.sharp_review.*}``), is refused.
+command, or a retired host field (``{capabilities.*}``, ``{runtimes.sharp_review.*}``), is refused.
 """
 
 from __future__ import annotations
@@ -93,8 +93,15 @@ def test_the_identical_command_redeclared_is_refused() -> None:
 
 def test_a_retired_capability_is_refused_naming_its_replacement() -> None:
     """PLANTED: ``{capabilities.sharp_review.path}`` is retired; ai-lab packages the method."""
-    stale = "command = ['{capabilities.ai_lab.python}', '--method', '{capabilities.sharp_review.path}', '{range}']"
+    stale = "command = ['{runtimes.ai_lab.python}', '--method', '{capabilities.sharp_review.path}', '{range}']"
     with pytest.raises(ValueError, match=r'sharp_review.*retired'):
+        review_from(f'[tool.dev_lab.review]\n{stale}\n', 'p')
+
+
+def test_a_capability_field_is_retired_into_a_runtime_field() -> None:
+    """PLANTED: a host value is where a runtime lives, never a capability (user ruling 2026-10-28)."""
+    stale = "command = ['{capabilities.corpus.path}', '{range}']"
+    with pytest.raises(ValueError, match=r'\{capabilities\.corpus\.path\} is retired: \{runtimes\.corpus\.path\}'):
         review_from(f'[tool.dev_lab.review]\n{stale}\n', 'p')
 
 
