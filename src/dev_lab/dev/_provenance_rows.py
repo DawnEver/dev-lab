@@ -177,6 +177,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'artefactstores': ('original',),
     'selection': ('original',),
     'forgealarm': ('original',),
+    'forgefleet': ('original',),
     # ORIGINAL: split out of forgetick/forgeserve inside the kit; no consumer held them.
     'forgetake': ('original',),
     'forgerounds': ('original',),

@@ -323,6 +323,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
 * :mod:`dev_lab.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
+* :mod:`dev_lab.dev.forgefleet` -- a platform with no live host, or a tick serving nothing, alarms once per episode.
 * :mod:`dev_lab.dev.pushgate` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`dev_lab.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
 * :mod:`dev_lab.dev.forgeroute` -- a run record's reds grouped by ``[tool.dev_lab.areas]``, one issue per area.
