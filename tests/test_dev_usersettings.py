@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import agent_guard
 from dev_lab.dev.agent_guard import wire_settings
 from dev_lab.dev.autodoors import claude_rows
 from dev_lab.dev.hooks import DENY_RULES, denies
@@ -28,7 +31,7 @@ def test_reading_them_or_writing_a_repo_settings_file_is_allowed(command: str) -
 
 @pytest.mark.parametrize(
     'path',
-    ['~/.claude/settings.json', 'C:/Users/me/.claude-evans/settings.json', '/home/me/.claude/settings.local.json'],
+    ['~/.claude/settings.json', 'C:/Users/me/.claude-work/settings.json', '/home/me/.claude/settings.local.json'],
 )
 def test_the_path_shape_reaches_every_user_spelling_and_not_a_repo_file(path: str) -> None:
     """The one path regex both renderings derive from."""
@@ -67,3 +70,16 @@ def test_the_rendered_allow_carries_each_family_grant(row: str) -> None:
 def test_no_rendered_row_spells_a_retired_module() -> None:
     """RETIRED-NAMES-REGISTERED: the pre-move ``lab_commons.dev`` spelling is never granted."""
     assert not [row for row in claude_rows() if 'lab_commons.dev' in row]
+
+
+def test_a_settings_file_missing_deny_rows_is_stale_and_names_every_one(tmp_path: Path) -> None:
+    """PLANTED: an installed guard with two deny rows removed reports STALE naming both, not INSTALLED."""
+    agent_guard.install_guard(tmp_path)
+    settings = tmp_path / agent_guard.SETTINGS_REL
+    document = json.loads(settings.read_text(encoding='utf-8'))
+    gone = list(PERMISSION_DENY[:2])
+    document['permissions']['deny'] = [row for row in document['permissions']['deny'] if row not in gone]
+    settings.write_text(json.dumps(document), encoding='utf-8')
+    wiring = next(part for part in agent_guard.guard_installation(tmp_path).parts if part.part == 'wiring')
+    assert wiring.status == agent_guard.STALE
+    assert all(row in wiring.detail for row in gone)

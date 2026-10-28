@@ -328,7 +328,7 @@ def _inspect_wiring(path: Path) -> tuple[str, str]:
     unwired = [f'the stray census is not wired on {event}' for event in _unwired(settings)]
     unwired += [f'permissions.deny lacks {row} (FAMILY-GRANTS-ARE-RENDERED)' for row in _undenied(settings)]
     if unwired:
-        return STALE, f'{unwired[0]} -- re-install to upgrade'
+        return STALE, f'{"; ".join(unwired)} -- re-install to upgrade'
     return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
 
 

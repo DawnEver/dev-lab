@@ -245,6 +245,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgeheadgate': ('original',),
     # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
     'autodoors': ('original',),
+    # ORIGINAL: the user-settings deny list and its rule rows are new (FAMILY-GRANTS-ARE-RENDERED, 2026-10-28).
+    'usersettings': ('original',),
+    '_rule_rows_grants': ('original',),
     # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
     'disclosure': ('original',),
     'injectedtext': ('original',),
