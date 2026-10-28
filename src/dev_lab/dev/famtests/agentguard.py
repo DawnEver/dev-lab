@@ -52,12 +52,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tomllib
 from typing import TYPE_CHECKING
 
 from dev_lab.dev._deny_rows import RETIRED_IDS
 from dev_lab.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_installation
-from dev_lab.dev.agenthooks import node_executable, run_engine
+from dev_lab.dev.agenthooks import run_engine
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.hook_adoption import DENY_RULES, assert_shippable, render
 from dev_lab.dev.rules import tracked_files
@@ -96,7 +97,11 @@ def _refuse(message: str) -> None:
 
 
 def assert_node_is_available() -> None:
-    """NOT A SKIP, AND THAT IS THE POINT: no node means no guard, on this box, for every repo.
+    """NOT A SKIP, AND THAT IS THE POINT: no host node means no guard, on this box, for every repo.
+
+    THE ONE HOST-NODE QUESTION LEFT. The wired hook line runs the BOX's ``node`` (the agent tool
+    launches it, outside any venv), so this asks the live workstation, not the locked engine that
+    :func:`dev_lab.dev.agenthooks.run_engine` drives everywhere else.
 
     The obvious spelling is ``skipif(shutil.which('node') is None)`` and it is the wrong one. The
     condition is not "this check does not apply here", it is "the thing under test cannot run at
@@ -106,13 +111,11 @@ def assert_node_is_available() -> None:
         GuardNotLive: no ``node`` resolves, so nothing executes any repo's hook on this box.
 
     """
-    try:
-        node_executable()
-    except RuntimeError as exc:
+    if shutil.which('node') is None:
         _refuse(
-            f"{exc} -- so nothing executes any repo's `.claude/hooks/deny-commands.js` and every "
-            f'checkout on this box refuses nothing, whatever its files report. Install node, or say '
-            f'somewhere a reader looks that this box is unguarded.'
+            "no `node` on PATH -- so nothing executes any repo's `.claude/hooks/deny-commands.js` and every "
+            'checkout on this box refuses nothing, whatever its files report. Install node, or say '
+            'somewhere a reader looks that this box is unguarded.'
         )
 
 

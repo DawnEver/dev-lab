@@ -25,6 +25,7 @@ from lab_commons.proc import kill_process_tree
 from dev_lab.dev import agenthooks, dep, forgeserve, liverun
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
+from dev_lab.dev.jsrun import node_path
 
 _SCRIPTS = 'Scripts' if os.name == 'nt' else 'bin'
 _PYTHON = 'python.exe' if os.name == 'nt' else 'python'
@@ -300,11 +301,10 @@ def _junction(link: Path, target: Path) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
-@pytest.mark.workstation
 def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one(
     live_tree: tuple[Path, int], tmp_path: Path
 ) -> None:
-    """PLANTED BOTH WAYS through `node`: the same `git -C <tree> merge` is refused live and free idle."""
+    """PLANTED BOTH WAYS through the locked Node: the same `git -C <tree> merge` is refused live and free idle."""
     root, pid = live_tree
     session = _checkout(tmp_path / 'session')
     _junction(session / '.venv', Path(sys.prefix))
@@ -326,10 +326,9 @@ _NEEDING = {rule.id for rule in DENY_RULES if rule.needs is not None}
 
 
 def _session_whose_interpreter_cannot_answer(root: Path) -> Path:
-    """A session checkout whose ``.venv`` python is NOT Python (a copy of ``node``): every probe crashes."""
+    """A session checkout whose ``.venv`` python is NOT Python (a copy of the locked Node): every probe crashes."""
     session = _checkout(root)
-    node = shutil.which('node')
-    assert node, 'the engine runs under node, so node is on PATH'
+    node = node_path()
     python = session / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     python.parent.mkdir(parents=True)
     try:
@@ -344,7 +343,6 @@ def _session_whose_interpreter_cannot_answer(root: Path) -> Path:
     return session
 
 
-@pytest.mark.workstation  # the engine runs under node, workstation kit
 @pytest.mark.parametrize(
     'spelling',
     [
@@ -365,7 +363,6 @@ def test_a_live_run_probe_that_cannot_answer_refuses_and_names_the_target(tmp_pa
     assert str(tree) in said or tree.as_posix() in said
 
 
-@pytest.mark.workstation  # the engine runs under node, workstation kit
 @pytest.mark.parametrize(
     'spelling',
     [
@@ -386,7 +383,6 @@ def test_the_live_run_target_is_the_tree_the_matching_segment_acts_in(tmp_path: 
     assert str(tree) in said or tree.as_posix() in said, said
 
 
-@pytest.mark.workstation  # the engine runs under node, workstation kit
 def test_a_session_venv_without_the_kit_is_no_refusal(tmp_path: Path) -> None:
     """A checkout mid-adoption has a real interpreter that cannot import dev_lab: nobody to ask, not a crash."""
     session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
@@ -399,7 +395,6 @@ def test_a_session_venv_without_the_kit_is_no_refusal(tmp_path: Path) -> None:
     assert agenthooks.decide(f'git -C {tree.as_posix()} merge origin/integrate/main', rules, cwd=session) is None
 
 
-@pytest.mark.workstation  # the engine runs under node, workstation kit
 def test_a_command_the_row_does_not_match_never_asks_the_probe(tmp_path: Path) -> None:
     """PLANTED CONTROL for the test above: the same broken probe, a read-only command, nothing refused."""
     session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
