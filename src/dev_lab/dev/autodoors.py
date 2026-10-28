@@ -117,7 +117,7 @@ VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
         'closes open PRs salvaged into another OPEN, unmerged PR or a commit; never deletes a branch'
     ),
     ('python', '-m', 'dev_lab.dev.branchprune', 'delete'): (
-        'LOSSLESS-DELETE: a remote branch only when every commit on it is held elsewhere'
+        'LOSSLESS-DELETE: a remote branch only when every commit is held elsewhere or its content is on integration'
     ),
 }
 
