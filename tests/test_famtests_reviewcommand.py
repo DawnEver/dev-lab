@@ -46,7 +46,7 @@ def test_the_family_command_slices_and_names_one_model() -> None:
     assert argv == [
         'C:/rt/python.exe', '-m', 'ai_lab.review', '--range', 'a..b', '--lens', 'strict',
         '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES),
-        '--principles', PRINCIPLES_FIELD, '--paths', 'x.py', 'y.py',
+        '--paths', 'x.py', 'y.py', '--principles', PRINCIPLES_FIELD,
     ]  # fmt: skip
 
 
