@@ -44,13 +44,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+
+from dev_lab.dev.jsrun import node_path
 
 __all__ = [
     'ENGINES',
@@ -60,12 +61,10 @@ __all__ = [
     'STAMP',
     'EngineNotReadable',
     'EngineNotShipped',
-    'NoNode',
     'decide',
     'engine_path',
     'engine_source',
     'main',
-    'node_executable',
     'run_engine',
 ]
 
@@ -110,15 +109,6 @@ class EngineNotReadable(OSError):
     """
 
 
-class NoNode(RuntimeError):
-    """No ``node`` could be resolved on this box.
-
-    ASSERTED RATHER THAN SKIPPED, for the reason :class:`dev_lab.dev.githooks.NoBash` gives: the
-    hook entry starts with ``node``, so a box without one runs NO guard at all while every repo on
-    it still reads as guarded. That is the finding, not a reason to report success.
-    """
-
-
 def engine_path(name: str = 'deny-commands') -> Path:
     """The absolute path of a shipped engine, as installed in this interpreter's ``lab_commons``.
 
@@ -138,20 +128,6 @@ def engine_source(name: str = 'deny-commands') -> str:
     return engine_path(name).read_text(encoding='utf-8')
 
 
-def node_executable() -> str:
-    """Resolve ``node`` on ``PATH``.
-
-    Raises:
-        NoNode: When it does not resolve.
-
-    """
-    found = shutil.which('node')
-    if found:
-        return found
-    msg = 'no `node` on PATH; this box can run no agent-guard hook, so every repo on it is unguarded'
-    raise NoNode(msg)
-
-
 def run_engine(
     engine: Path,
     command: str,
@@ -168,7 +144,10 @@ def run_engine(
 
     THE ENGINE IS DRIVEN, NEVER MODELLED. This feeds the real hook payload on stdin exactly as the
     tool does and reads the real decision off stdout, so a test built on it is testing a file that
-    will really run rather than a Python restatement of what it is believed to do.
+    will really run rather than a Python restatement of what it is believed to do. It runs on the
+    LOCKED Node (:func:`dev_lab.dev.jsrun.node_path`), so any host with the dev install can judge an
+    engine; whether the BOX's own ``node`` exists to run the live hook is a separate, workstation
+    question (:func:`dev_lab.dev.famtests.agentguard.assert_node_is_available`).
 
     AN ENGINE IS NAMED BY A PATH WHENEVER THE QUESTION IS *WHOSE COPY*, and this function is why
     there is one spelling of that rather than two. Two runners existed until 2026-09-17 -- this
@@ -221,7 +200,7 @@ def run_engine(
         METRICS_ROOT: str(metrics_root) if metrics_root is not None else '',
     }
     done = _door.run(
-        [node_executable(), str(engine), str(rules)],
+        [str(node_path()), str(engine), str(rules)],
         input=json.dumps(payload),
         capture_output=True,
         text=True,

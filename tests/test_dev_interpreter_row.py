@@ -61,7 +61,6 @@ def _rules(tmp_path: Path, remedies: dict[str, Remedy]) -> Path:
         'uv run mycli run cases/x',
     ],
 )
-@pytest.mark.workstation
 def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path, command: str) -> None:
     """REFUSAL-NAMES-THE-REMEDY: both concrete layouts and the allow row, read off the owner."""
     (tmp_path / '.git').mkdir()
@@ -72,7 +71,6 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
 
 
 @pytest.mark.parametrize('command', ['python x.py', 'python3 -c "print(1)"', 'py -3 x.py', 'cd sub && python x.py'])
-@pytest.mark.workstation
 def test_a_bare_python_is_hinted_with_the_owner_spelled_exit_and_still_runs(tmp_path: Path, command: str) -> None:
     """A hint refuses nothing, and it names the same exit the refusal does."""
     rules = _rules(tmp_path, {})
@@ -98,13 +96,11 @@ def test_a_bare_python_is_hinted_with_the_owner_spelled_exit_and_still_runs(tmp_
         'echo "a; python x.py"',
     ],
 )
-@pytest.mark.workstation
 def test_the_venv_spelling_is_allowed(tmp_path: Path, command: str) -> None:
     """The exit itself must not be refused, or the rule seals the road it names."""
     assert agenthooks.decide(command, _rules(tmp_path, {})) is None, command
 
 
-@pytest.mark.workstation
 def test_a_repo_cli_is_opened_only_by_that_repos_delta(tmp_path: Path) -> None:
     """The per-repo opening: `uv run <its cli>` passes there, and `uv run python` still does not."""
     rules = _rules(tmp_path, {INTERPRETER_RULE: CLI_OPENING})

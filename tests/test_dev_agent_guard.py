@@ -24,11 +24,10 @@ from dev_lab.dev import agent_guard, agenthooks
 from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
+from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.usersettings import PERMISSION_DENY
 
-# THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
-# whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
-pytestmark = pytest.mark.workstation
+# THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
 
 #: A minimal but REAL declaration: one rule with an exit that exists as a command.
 ADOPTION = HookAdoption(
@@ -183,7 +182,7 @@ def _run_hook(repo: Path, line: str, command: str, *, cwd: Path | None = None) -
     """Run the hook EXACTLY as the tool would: the wired line in a POSIX shell, from the session cwd."""
     where = cwd or repo
     payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(where)}
-    node = Path(agenthooks.node_executable()).parent.as_posix()
+    node = node_path().parent.as_posix()
     return subprocess.run(
         [_SHELL, '-c', line],
         cwd=where,
@@ -375,7 +374,9 @@ def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Pa
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
     agent_guard.install_guard(tmp_path)
-    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
+    # The wired line calls a bare `node`, as the tool's shell would; the locked one stands in for the host's.
+    node = node_path().parent.as_posix()
+    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path), 'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}'}
     done = subprocess.run(
         [_SHELL, '-c', agent_guard.STRAY_COMMAND],
         input='{}',

@@ -225,3 +225,21 @@ def test_the_slice_outputs_merge_once_per_finding_id() -> None:
     assert [one.id for one in merged.findings] == ['SR-1', 'SR-2']
     assert merged.profiles == ('a', 'b')
     assert len(merged.reviewers) == 3
+
+
+def test_a_moved_file_is_read_whole_in_one_slice(tmp_path: Path) -> None:
+    """PLANTED control: a move across directories puts both paths in one slice, so no reviewer reads a lone delete."""
+    _, work = clone_pair(tmp_path)
+    body = ''.join(f'x{n} = {n}\n' for n in range(40))
+    for name in ('a', 'b', 'z'):
+        (work / name).mkdir()
+    first = advance(work, 'pr/x', 'a/old.py', body)
+    advance(work, 'pr/x', 'b/pad.py', body.replace('x', 'y'))
+    run_git(work, 'mv', 'a/old.py', 'z/new.py')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'move')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
+    head = git_out(work, 'rev-parse', 'HEAD')
+    scope = plan(work, 'origin/integrate/main', head, Budget(slice_bytes=600, total_bytes=10**6), reviewed=[first])
+    assert len(scope.slices) > 1, 'the budget must cut the head into slices, else the control is vacuous'
+    (holder,) = [one for one in scope.slices if 'a/old.py' in one.paths]
+    assert 'z/new.py' in holder.paths

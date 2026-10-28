@@ -29,7 +29,7 @@ __all__ = [
 ROWS: tuple[CollectRow, ...] = (
     CollectRow(
         repo='dev-lab',
-        selected=(),
+        selected=('test',),
         errors=frozenset(),
         degrades=frozenset(),
         unresolved=frozenset(),
@@ -38,7 +38,9 @@ ROWS: tuple[CollectRow, ...] = (
             '2026-10-22 split the selection is EMPTY: dev-lab IS the development system, so pytest, ruff and '
             'the lab-commons runtime (with its units, paths, io and structured extras) are its BASE install, '
             'and the plotting adapters whose extras once degraded this tree stayed in lab-commons with their '
-            'tests. An empty UNRESOLVED set here proves the resolution rules cover an entire real tree.'
+            'tests. An empty UNRESOLVED set here proves the resolution rules cover an entire real tree. '
+            'Since 2026-10-28 the selection is `test`, the dev-only extra carrying the locked Node '
+            '(dev.jsrun) that `tests/test_dev_jsrun.py` imports; the cluster syncs --all-extras, so it has it.'
         ),
     ),
 )

@@ -423,6 +423,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL: no consumer file refused a platform skip; the need arose when an OS became a resource a host
     # supplies by itself (2026-10-21) and a skipped Windows path was found to run on no host at all.
     'platformskips': ('original',),
+    # ORIGINAL: no consumer file refused a host Node; the need arose when the cluster verdict host was ruled
+    # Node-free (2026-10-28) and wdg-lab's review JS tests were found to call shutil.which('node').
+    'hostnode': ('original',),
     'boundedremedy': ('supersedes', 'tests/architecture/test_a_bounded_wait_names_its_remedy.py'),
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was
@@ -515,6 +518,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
     # not a forked file.
     'venvpath': ('original',),
+    # ORIGINAL: no consumer file ran JS on a declared engine; every JS test called `shutil.which('node')` until the
+    # Node-free cluster verdict host (2026-10-28) made that host dependency red.
+    'jsrun': ('original',),
     'worktreeplace': ('original',),
     'ephemeralrefs': ('original',),
     'famfiles': ('original',),
