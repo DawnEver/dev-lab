@@ -77,6 +77,11 @@ ALLOWED: Final[dict[Site, str]] = {
     'import here is a cycle that fails at import time. The built-in unit producer is resolved where '
     'it is called, once per request read',
     (
+        'src/dev_lab/dev/family.py',
+        'ANN401',
+        'def declared_table(data: Mapping[str, Any], name: str, default: Any = None) -> Any:',
+    ): 'a TOML table is untyped: the value is whatever the manifest declares, handed back unchanged',
+    (
         'src/dev_lab/dev/forgework.py',
         'ANN401',
         'def resend(self, write: Write) -> Any:',
