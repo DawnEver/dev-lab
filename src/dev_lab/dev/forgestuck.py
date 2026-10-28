@@ -12,7 +12,7 @@ bounds it so an agent may run it unattended. A task is cancelled only when EVERY
   than its LIMIT, read once to judge and AGAIN just before ``scancel``.
 
 THE LIMIT IS MEASURED, ONE SOURCE: ``--factor`` x the longest MEASURED duration of the shard's tests, read
-from the forge's learned table (:attr:`lab_commons.compute.learned.Measured.durations`, keyed by node id) --
+from the forge's learned table (:attr:`lab_commons.compute.measured.Measured.durations`, keyed by node id) --
 the numbers every host prices runs from. A shard holding a test never measured cannot be priced, so its
 limit is at least ``--bound-minutes``, and the line says ``unmeasured``.
 
