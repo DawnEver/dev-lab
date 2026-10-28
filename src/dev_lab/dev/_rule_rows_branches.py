@@ -30,6 +30,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
     ),
     (
+        'RECURSIVE-DELETE',
+        (
+            'A recursive delete outside regenerable scratch (system temp, an `output/` tree) goes through its '
+            'door -- `branchset --apply`, whose reclaim refuses a main checkout and keeps real work, for a '
+            'worktree or branch, else the user -- and the agent guard refuses the raw verb in both shells '
+            '(`rm -r`, `Remove-Item -Recurse`, `rmdir /s`, `git worktree remove`, `git clean -x/-d`, '
+            '`shutil.rmtree`); earned 2026-10-27, when a hand-built list deleted a main checkout.'
+        ),
+        ('tests/test_dev_delete_row.py',),
+    ),
+    (
         'MERGE-DEVIATIONS-NAMED',
         (
             'A merge may not lose or rewrite a test in silence: every test whose body in the merge differs from '
