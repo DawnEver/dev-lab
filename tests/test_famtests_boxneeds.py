@@ -61,12 +61,13 @@ class TestGrouped:
 
 
 def test_a_planted_module_is_read_both_ways() -> None:
-    """PLANTED: live unmarked reds, marked/planted/origin green; node follows the body even when planted."""
+    """PLANTED: live unmarked reds, marked/planted/origin green; the host node follows its body via a helper.
+
+    Driving the engine runs on the locked Node (``dev.jsrun``), so those bodies need nothing.
+    """
     assert unmarked(_PLANTED) == {
         'test_live_unmarked': frozenset({'workstation'}),
         'test_node_through_a_helper': frozenset({'workstation'}),
-        'test_engine_on_a_planted_tree': frozenset({'workstation'}),
-        'test_allow_rows_unmarked': frozenset({'workstation'}),
     }
 
 
@@ -101,7 +102,8 @@ def test_every_need_names_a_real_body() -> None:
 
 
 def test_the_kits_own_tests_mark_what_they_judge() -> None:
-    """The kit adopts its own row: its tests that read this checkout or run node carry the marker."""
+    """The kit adopts its own row: its tests that read this checkout or ask for the host node carry the marker."""
+    # Floor 3 under the 4 measured 2026-10-28, after the engine-driving bodies left NEEDS (dev.jsrun).
     assert_box_bodies_are_marked(
-        tests=ROOT / 'tests', pyproject=(ROOT / 'pyproject.toml').read_text(encoding='utf-8'), floor=5
+        tests=ROOT / 'tests', pyproject=(ROOT / 'pyproject.toml').read_text(encoding='utf-8'), floor=3
     )

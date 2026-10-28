@@ -407,6 +407,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   at ~0.0s, so they are filed at the WALL: a naive reading acquits exactly what the wall caught.
   NOT RE-EXPORTED -- ``read``, ``write`` and ``over`` say nothing once flattened.
 * :mod:`dev_lab.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
+* :mod:`dev_lab.dev.jsrun` -- the family's one JS test runtime: a program on stdin under the locked Node.
 * :mod:`dev_lab.dev.supersede` -- has the family ALREADY expressed this roster row; overlap GRADES, never detects.
 
 LATEST-DEPENDENCIES, THE RESOLVED HALF (2026-09-21) -- two modules, split where the NETWORK is, so
