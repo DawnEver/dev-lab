@@ -333,7 +333,9 @@ def tick(
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
     if host:
-        lines += forgeheadgate.judge_heads(root, origin, [c for c in children if c.pr is not None], gate, monotonic)
+        lines += forgeheadgate.judge_heads(
+            root, origin, [c for c in children if c.pr is not None], gate, monotonic, integration=policy.integration
+        )
     return Ticked(tuple(lines), tuple(said))
 
 

@@ -82,7 +82,8 @@ deletes anything. Undeclared branches whose tip has been idle for at least `grac
 - **Remote deletion is a human decision, expressed as data.** `prune_merged` defaults to `false`. Until a repo
   opts in, `forge integration` and `forge queue` print each merged branch as `deletable`, and nothing is deleted.
   An agent never deletes a remote ref by a raw push (`PUSH-REMOTE-DELETE`); it deletes one through LOSSLESS-DELETE,
-  `python -m dev_lab.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere.
+  `python -m dev_lab.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere
+  or, by content, every non-generated file its own commits wrote is identical on integration (fails closed).
 - **Each deletion is pinned to the sha the survey judged.** The live tip is read from the forge first. A branch
   that moved is kept, because its new tip is somebody's new work.
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The
