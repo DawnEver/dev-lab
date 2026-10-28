@@ -20,8 +20,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from lab_commons.census import Process
 
 from dev_lab.dev import dep as dep_module
+from dev_lab.dev import liverun
 from dev_lab.dev.dep import HeldEnvironmentError, Port
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.selfbuild import (
@@ -244,3 +246,20 @@ def test_two_builds_at_one_version_both_reach_pip_as_a_forced_reinstall(tmp_path
         assert reinstall in argv, f'pip would skip this install and exit zero: {argv}'
         assert '--no-index' in argv, 'forcing must not have loosened the pin'
         assert '--no-deps' in argv, 'forcing must not have loosened the pin'
+
+
+def test_the_census_is_the_callers_and_a_holder_in_it_still_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The live-process census is a parameter: an empty one admits, a planted holder refuses before pip."""
+    monkeypatch.setattr(dep_module, 'executing_from', liverun.executing_from)
+    port = Port(name='plant', anchor_paths=lambda: ())
+    wheel, manifests = _wheel(tmp_path), _workspace(tmp_path)
+    run = _Recorder()
+    install_self_build(wheel, manifests=manifests, port=port, run=run, census=lambda: ())
+    assert len(run.calls) == 1, 'an empty census refused the install'
+    holder = Process(1, 0, str(Path(sys.prefix) / 'python.exe'), 'python -m pytest', 3600.0, sys.prefix)
+    refused = _Recorder()
+    with pytest.raises(HeldEnvironmentError):
+        install_self_build(wheel, manifests=manifests, port=port, run=refused, census=lambda: [holder])
+    assert refused.calls == []

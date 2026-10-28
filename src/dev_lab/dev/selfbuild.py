@@ -46,8 +46,10 @@ from pathlib import Path
 from typing import Any
 
 import lab_commons.launch as _door
+from lab_commons.census import processes
 
 from dev_lab.dev.dep import CHILD_WALL_S, Mode, Port, Report, Version, mutate
+from dev_lab.dev.liverun import Census
 
 __all__ = [
     'ForeignDistributionError',
@@ -158,6 +160,7 @@ def install_self_build(
     dry_run: bool = False,
     run: Callable[..., Any] = _door.run,
     timeout: float = CHILD_WALL_S,
+    census: Census = processes,
 ) -> Report:
     """Refuse a foreign wheel, then install it through the dependency door in PINNED mode.
 
@@ -184,6 +187,8 @@ def install_self_build(
         dry_run: run every check and mutate nothing.
         run: injected so a control can drive THIS function rather than a re-implementation.
         timeout: the child's hang detector.
+        census: the live processes the door refuses to change an environment under; passed to
+            :func:`dev_lab.dev.dep.mutate` unchanged, so a caller states it rather than patching it.
 
     Raises:
         FileNotFoundError: *wheel* is not a file. Checked here rather than left to pip, because a
@@ -204,4 +209,5 @@ def install_self_build(
         run=run,
         dry_run=dry_run,
         timeout=timeout,
+        census=census,
     )
