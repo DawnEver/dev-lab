@@ -46,7 +46,7 @@
         {
           "id": "matrix",
           "name": "The parts and their runners",
-          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted)\" >> \"$GITHUB_OUTPUT\""
+          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event ${{ github.event_name }})\" >> \"$GITHUB_OUTPUT\""
         }
       ],
       "outputs": {
@@ -118,7 +118,7 @@
         },
         {
           "name": "Post every part no job settled",
-          "run": "uv run --no-sync python -m dev_lab.dev.jobparts absent \"$HEAD_SHA\""
+          "run": "uv run --no-sync python -m dev_lab.dev.jobparts absent \"$HEAD_SHA\" --event ${{ github.event_name }}"
         }
       ],
       "permissions": {

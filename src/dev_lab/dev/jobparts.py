@@ -3,15 +3,19 @@
 ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who TRIGGERS differ. On Gitea a
 ``forge serve`` host claims a part and runs the declared producer; on GitHub a workflow fans out one job per part:
 
-* ``python -m dev_lab.dev.jobparts matrix [--runners hosted]`` prints the checkout's parts, each with the runner
-  its need-set needs (:func:`runner_for`), as the JSON a workflow's ``fromJSON`` fans out over -- the matrix is
-  this COMMAND's output, never a list typed into a workflow;
+* ``python -m dev_lab.dev.jobparts matrix [--runners hosted] [--event <name>]`` prints the checkout's parts, each
+  with the runner its need-set needs (:func:`runner_for`), as the JSON a workflow's ``fromJSON`` fans out over --
+  the matrix is this COMMAND's output, never a list typed into a workflow. A part that names no OS and runs hosted
+  runs on every OS of the EVENT (:func:`systems_for`, ruling D84): a pull request on linux and windows, a push or a
+  dispatch on macos too. Its row off its own runner is ``<part>@<os>`` (``tests/base@windows``), its own status, so
+  two OSes are two settled results; a part that names an OS keeps exactly that OS;
 * each job runs ``produce <part>``: the ONE declared producer (:func:`dev_lab.dev.platformparts.producer_argv`),
   which posts its part as any local verify does, the job token being the credential there
   (:func:`dev_lab.dev.forgework.actions_token`);
-* an ``if: always()`` job runs ``absent <sha>``: ``failure`` on every part the checkout derives that no job
-  settled, so a job that died before posting -- or a part no hosted runner can produce -- reads red, never as
-  nothing. :data:`ABSENT` is never a part's own description, so it is never read as a part.
+* an ``if: always()`` job runs ``absent <sha>`` over the SAME event's matrix: ``failure`` on every row the
+  checkout derives that no job settled, so a job that died before posting -- or a part no hosted runner can
+  produce -- reads red, never as nothing; merge-ready and promote then read every row (one source).
+  :data:`ABSENT` is never a part's own description, so it is never read as a part.
 """
 
 from __future__ import annotations
@@ -30,17 +34,30 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.platformparts import part_context, producer_argv
+from dev_lab.dev.platformparts import ROW_SEPARATOR, part_context, producer_argv
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from dev_lab.dev.forgework import Client
 
-__all__ = ['ABSENT', 'HOSTED_RUNNERS', 'absent', 'main', 'matrix', 'produce', 'pytest_collector', 'runner_for']
+__all__ = [
+    'ABSENT',
+    'HOSTED_RUNNERS',
+    'absent',
+    'main',
+    'matrix',
+    'produce',
+    'pytest_collector',
+    'runner_for',
+    'systems_for',
+]
 
 #: The GitHub-hosted runner of each OS resource (the values of :data:`lab_commons.compute.probe.OS_NAMES`).
 HOSTED_RUNNERS: Final = {'linux': 'ubuntu-latest', 'macos': 'macos-latest', 'windows': 'windows-latest'}
+
+#: The OSes a pull request's OS-free parts run on (ruling D84); every other event runs them on every hosted OS.
+PULL_REQUEST_SYSTEMS: Final = ('linux', 'windows')
 
 #: What an expected part no job settled says (``failure``): never a part's own description, so never a part.
 ABSENT: Final = 'absent: no job settled this part'
@@ -74,19 +91,37 @@ def runner_for(part: str) -> str | list[str]:
     return ['self-hosted', *sorted(needs)]
 
 
-def matrix(
-    root: Path, *, collect: Callable[[str], Sequence[str]], hosted: bool = False
-) -> dict[str, list[dict[str, Any]]]:
-    """The parts *root*'s checkout derives (:data:`BASE` always), each with :func:`runner_for`: a fromJSON matrix.
+def systems_for(event: str) -> tuple[str, ...]:
+    """The OSes a part naming none runs on for GitHub *event*: :data:`PULL_REQUEST_SYSTEMS`, else every one."""
+    return PULL_REQUEST_SYSTEMS if event == 'pull_request' else tuple(sorted(HOSTED_RUNNERS))
 
-    *hosted* keeps only the parts a GitHub-hosted runner produces; :func:`absent` then names the rest.
+
+def _rows(part: str, event: str) -> list[dict[str, Any]]:
+    """*part*'s matrix rows: one per OS of *event* when it runs hosted and names no OS, else its one runner."""
+    home = runner_for(part)
+    if not isinstance(home, str) or needs_of(part) & set(OS_NAMES.values()):
+        return [{'part': part, 'runs-on': home}]
+    runners = {system: HOSTED_RUNNERS[system] for system in systems_for(event)}
+    return [
+        {'part': part if runner == home else f'{part}{ROW_SEPARATOR}{system}', 'runs-on': runner}
+        for system, runner in runners.items()
+    ]
+
+
+def matrix(
+    root: Path, *, collect: Callable[[str], Sequence[str]], event: str, hosted: bool = False
+) -> dict[str, list[dict[str, Any]]]:
+    """The rows of the parts *root*'s checkout derives (:data:`BASE` always) for GitHub *event*: a fromJSON matrix.
+
+    Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`_rows`).
+    *hosted* keeps only the rows a GitHub-hosted runner produces; :func:`absent` then names the rest.
     """
     pyproject = root / 'pyproject.toml'
     vocabulary = read_vocabulary(pyproject.read_text(encoding='utf-8') if pyproject.is_file() else '')
     ids = list(collect(''))
     carrying = {name: set(collect(name)) for name in vocabulary.resources}
     names = sorted({BASE, *need_sets(ids, carrying).values()})
-    rows = [{'part': name, 'runs-on': runner_for(name)} for name in names]
+    rows = [row for name in names for row in _rows(name, event)]
     return {'include': [row for row in rows if not hosted or isinstance(row['runs-on'], str)]}
 
 
@@ -114,7 +149,7 @@ def produce(root: Path, part: str) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``matrix [--runners hosted]``, ``produce <part>``, ``absent <sha>`` (module docstring)."""
+    """``matrix [--runners hosted]``, ``produce <row>``, ``absent <sha>``; each list per ``--event`` (module docs)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.jobparts', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     listing = verbs.add_parser('matrix', help="print the checkout's parts and their runners as a fromJSON matrix")
@@ -124,16 +159,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     )  # fmt: skip
     verbs.add_parser('produce', help='run the declared producer of one part at HEAD').add_argument('part')
     verbs.add_parser('absent', help='post failure on every derived part no job settled').add_argument('sha')
+    for sub in (listing, verbs.choices['absent']):
+        sub.add_argument(
+            '--event', default='push', help='the GitHub event whose OSes the rows span (default push: every OS)'
+        )
     for sub in verbs.choices.values():
         sub.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout the parts are derived from')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     collect = pytest_collector(args.root)
     if args.verb == 'matrix':
-        emit(json.dumps(matrix(args.root, collect=collect, hosted=args.runners == 'hosted')))
+        emit(json.dumps(matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')))
         return 0
     if args.verb == 'produce':
         return produce(args.root, args.part)
-    for line in absent(client_for(args.root), args.sha, matrix(args.root, collect=collect)):
+    for line in absent(client_for(args.root), args.sha, matrix(args.root, collect=collect, event=args.event)):
         emit(f'[jobparts] {line}')
     return 0
 

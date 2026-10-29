@@ -10,10 +10,12 @@
 # `forge serve` runs: the same tests/<part> parts, the same review round, the same merge decision -- only
 # who PRODUCES and who TRIGGERS differ. Every job runs a dev_lab door; none holds logic of its own:
 #
-#   parts         `jobparts matrix`: the commit's parts and the runner each need-set needs (the
+#   parts         `jobparts matrix --event`: the commit's parts and the runner each need-set needs, an
+#                 OS-free part on every OS of the event -- PR linux+windows, push also macos (D84) -- (the
 #                 matrix is the COMMAND's output, never a list typed here)
-#   part          one job per part: `jobparts produce <part>`, the declared producer, posts tests/<part>
-#   absent-parts  always: `jobparts absent` posts failure on every expected part no job settled
+#   part          one job per row: `jobparts produce <row>`, the declared producer, posts tests/<row>
+#                 (tests/<part>, or tests/<part>@<os> off its own runner)
+#   absent-parts  always: `jobparts absent --event` posts failure on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
 #   review        `forge review run --pr N`: tests/review (pull_request ONLY -- never pull_request_target,
 #                 which would run a fork's code with this repository's secrets)
@@ -51,7 +53,7 @@ GITHUB_TOKEN = "${{ github.token }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { id = "matrix", name = "The parts and their runners", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted)" >> "$GITHUB_OUTPUT"' },
+    { id = "matrix", name = "The parts and their runners", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event ${{ github.event_name }})" >> "$GITHUB_OUTPUT"' },
 ]
 
 ["ci.yml".jobs.parts.outputs]
@@ -81,7 +83,7 @@ if = "${{ always() && needs.parts.result == 'success' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "Post every part no job settled", run = 'uv run --no-sync python -m dev_lab.dev.jobparts absent "$HEAD_SHA"' },
+    { name = "Post every part no job settled", run = 'uv run --no-sync python -m dev_lab.dev.jobparts absent "$HEAD_SHA" --event ${{ github.event_name }}' },
 ]
 
 ["ci.yml".jobs.absent-parts.permissions]

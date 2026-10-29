@@ -75,9 +75,10 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert jobs['part']['strategy']['matrix'] == '${{ fromJSON(needs.parts.outputs.matrix) }}'
     assert jobs['parts']['outputs'] == {'matrix': '${{ steps.matrix.outputs.matrix }}'}
     (computed,) = [step for step in jobs['parts']['steps'] if step.get('id') == 'matrix']
-    assert 'dev_lab.dev.jobparts matrix' in computed['run']
+    event = '--event ${{ github.event_name }}'
+    assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
-    assert 'dev_lab.dev.jobparts absent' in jobs['absent-parts']['steps'][-1]['run']
+    assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith('${{ always()')
     assert set(jobs['merge-ready']['needs']) == {'absent-parts', 'security', 'review'}
     assert jobs['merge-ready']['if'].startswith('${{ always()')

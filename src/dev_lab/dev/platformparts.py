@@ -81,7 +81,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.compute.probe import os_name
+from lab_commons.compute.probe import OS_NAMES, os_name
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
 from lab_commons.hpc.records import cells_of, read_record
@@ -109,6 +109,7 @@ __all__ = [
     'HOLD_CONTEXT',
     'PART_FIELD',
     'REVIEW_CONTEXT',
+    'ROW_SEPARATOR',
     'UNCLAIMED',
     'ClusterPart',
     'Composition',
@@ -119,12 +120,15 @@ __all__ = [
     'cluster_part',
     'compose',
     'derived',
+    'is_row',
     'main',
     'origin_url',
     'part_context',
     'part_of',
     'parts_of',
     'producer_argv',
+    'row_part',
+    'row_system',
     'run_tag',
     'select',
     'split',
@@ -167,6 +171,26 @@ class PartRefusal(ValueError):
 
 class UndeclaredPart(ValueError):
     """The repo does not declare how to produce a part; the message names the pyproject key to add."""
+
+
+#: Joins a part to the OS a row of it runs on, off its own runner: ``base@windows`` (:mod:`dev_lab.dev.jobparts`).
+ROW_SEPARATOR: Final = '@'
+
+
+def row_part(row: str) -> str:
+    """The part (need-set) a row produces: *row* less any ``@<os>``; a bare part is its own row."""
+    return row.partition(ROW_SEPARATOR)[0]
+
+
+def row_system(row: str) -> str:
+    """The OS *row* must run on, ``''`` when it names none (a bare part runs where its needs say)."""
+    return row.partition(ROW_SEPARATOR)[2]
+
+
+def is_row(name: str) -> bool:
+    """Whether *name* is a part, or a part qualified by one OS resource (:data:`ROW_SEPARATOR`)."""
+    part, separator, system = name.partition(ROW_SEPARATOR)
+    return bool(PART_NAME.match(part)) and (not separator or system in OS_NAMES.values())
 
 
 def part_context(part: str) -> str:
@@ -225,7 +249,7 @@ def producer_argv(root: Path, part: str, *, sha: str) -> list[str]:
         UndeclaredPart: the producer is absent, malformed or never told its part; the message names the key.
 
     """
-    needs_of(part)  # a name that is no need-set is refused by name
+    needs_of(row_part(part))  # a name that is no need-set is refused by name
     declared = _declared(root, sha).get('tests', {}).get('produce')
     produce = _strings(declared, 'tool.lab_commons.tests', 'produce', _PRODUCE_EXAMPLE, required=True)
     if not any(PART_FIELD in item for item in produce):
@@ -342,7 +366,7 @@ def part_of(record: Mapping[str, Any]) -> Part:
         )
         raise PartRefusal(msg)
     handed = {node: str(owner) for node, owner in record['handed'].items()}
-    disowned = sorted(node for node, owner in handed.items() if owner == platform)
+    disowned = sorted(node for node, owner in handed.items() if owner == row_part(platform))
     if disowned:
         msg = f'the {platform} record for {sha} hands off {len(disowned)} test(s) of its own part: {_elided(disowned)}'
         raise PartRefusal(msg)
@@ -375,7 +399,7 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
             continue
         name = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)
-        if status.state not in _RESULT or found is None or not PART_NAME.match(name):
+        if status.state not in _RESULT or found is None or not is_row(name):
             problems.append(f'{status.context} is {status.state} ({status.description!r}) -- not a settled part')
             continue
         hands = {} if found['hands'] == '-' else dict(item.split(':') for item in found['hands'].split(','))

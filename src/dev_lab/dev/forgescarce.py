@@ -40,7 +40,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgecarry import changed_paths
 from dev_lab.dev.forgework import ForgeCallFailed
-from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of
+from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of, row_part
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -95,7 +95,7 @@ def unreached(
         scarce = frozenset(vocabulary_at(root, head).scarce)
     except (ValueError, subprocess.SubprocessError):
         return frozenset()
-    wanted = scarce_parts(derived(statuses), scarce)
+    wanted = scarce_parts({row_part(name) for name in derived(statuses)}, scarce)
     settled = [one for one in statuses if one.context == part_context(BASE) and one.state in _SETTLED]
     base_status = settled[-1] if settled else None  # latest-per-context or oldest-first history: the last
     fork = _git(root, 'merge-base', f'refs/remotes/origin/{integration}', head)
@@ -143,7 +143,8 @@ def red_alarms(
     if not scarce:
         return []
     parts, _ = parts_of(history(tip))
-    red = sorted(n for n in scarce_parts(sorted(parts), scarce) if parts[n].result is Conclusion.FAIL)
+    bare = sorted(name for name in parts if name == row_part(name))  # an OS row is of a hosted, never scarce, part
+    red = sorted(n for n in scarce_parts(bare, scarce) if parts[n].result is Conclusion.FAIL)
     if not red:
         return []
     lines = []
