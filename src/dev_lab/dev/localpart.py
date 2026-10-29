@@ -36,15 +36,8 @@ from lab_commons.hpc.testcells import TestCell
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import verdict_commit
 from dev_lab.dev.jobparts import pytest_collector
-from dev_lab.dev.platformparts import (
-    PartRefusal,
-    UndeclaredPart,
-    post,
-    record_directory,
-    row_part,
-    row_system,
-    this_platform,
-)
+from dev_lab.dev.partrows import row_part, row_system, this_platform
+from dev_lab.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory
 from dev_lab.dev.test_outcomes import outcomes_dir, read_cells
 
 if TYPE_CHECKING:

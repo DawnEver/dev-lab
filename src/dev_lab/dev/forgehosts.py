@@ -76,7 +76,8 @@ from dev_lab.dev.forgepulls import (
     marker_kinds,
 )
 from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, client_for
-from dev_lab.dev.platformparts import origin_url, this_platform
+from dev_lab.dev.partrows import this_platform
+from dev_lab.dev.platformparts import origin_url
 
 __all__ = [
     'HOSTS_MARKER',

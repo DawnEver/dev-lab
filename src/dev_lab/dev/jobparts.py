@@ -35,7 +35,8 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.platformparts import ROW_SEPARATOR, part_context, producer_argv
+from dev_lab.dev.partrows import ROW_SEPARATOR
+from dev_lab.dev.platformparts import part_context, producer_argv
 from dev_lab.dev.producer import producing
 
 if TYPE_CHECKING:

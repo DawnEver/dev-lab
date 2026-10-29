@@ -40,7 +40,8 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgecarry import changed_paths
 from dev_lab.dev.forgework import ForgeCallFailed
-from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of, row_part
+from dev_lab.dev.partrows import row_part
+from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of
 
 if TYPE_CHECKING:
     from pathlib import Path

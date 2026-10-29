@@ -78,7 +78,6 @@ DEBT: dict[str, int] = {
     'src/dev_lab/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
     # Over the band AT the split base (lab-commons 8c401f0) and unpinned there: pinned at the split with
     # their measurement, each a refactor that has not happened.
-    'src/dev_lab/dev/platformparts.py': 301,  # 2026-10-26: the status contexts moved to forgecontexts.py (was 303)
     'src/dev_lab/dev/workstation.py': 335,
 }
 

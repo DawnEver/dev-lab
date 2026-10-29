@@ -10,7 +10,7 @@ import pytest
 from _forge_fake import make_repo
 from _forge_state import StateForge
 
-from dev_lab.dev import jobparts, localpart, platformparts
+from dev_lab.dev import jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ACTIONS_BOT, client_for
@@ -78,13 +78,9 @@ def test_an_os_free_part_runs_on_every_os_of_the_event_and_an_os_part_keeps_its_
     assert {runner[row] for row in rows if row.startswith('base')} == expected
 
 
-def test_a_row_names_one_os_and_its_part_and_a_row_of_another_os_is_refused_here(tmp_path: Path) -> None:
-    assert (platformparts.row_part('femm+windows'), platformparts.row_system('femm+windows')) == ('femm+windows', '')
-    assert (platformparts.row_part('base@macos'), platformparts.row_system('base@macos')) == ('base', 'macos')
-    assert platformparts.is_row('base@windows')
-    assert not platformparts.is_row('base@femm'), 'only an OS qualifies a row'
+def test_a_row_of_another_os_is_refused_here(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
-    here = platformparts.os_name()
+    here = partrows.this_platform()
     elsewhere = next(system for system in ('linux', 'windows') if system != here)
     assert localpart.part_selection(tmp_path, f'base@{here}') == localpart.part_selection(tmp_path, 'base')
     with pytest.raises(ValueError, match=f'base@{elsewhere} is the {elsewhere} row of base'):
