@@ -94,7 +94,7 @@ class _Asked(Client):
         super().__init__(forge, 'T', sleep=lambda _s: None)
         self.answers, self.sent = answers, []
 
-    def call(self, method: str, path: str, body: object = None, durable: object = None) -> Any:  # noqa: ANN401
+    def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         del durable
         self.sent.append((method, path, body))
         return self.answers[f'{method} {path}']
@@ -104,15 +104,15 @@ def test_on_github_a_created_pr_asks_for_native_auto_merge_as_a_merge_commit_and
     hub = _Asked(
         Forge('github.com', 'o', 'r'), {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'}, 'POST /graphql': {'data': {}}}
     )
-    assert 'auto-merge enabled' in hub.auto_merge(7)
+    assert 'auto-merge enabled' in forgemerge.auto_merge(hub, 7)
     method, path, body = hub.sent[-1]
     assert (method, path, body['variables']) == ('POST', '/graphql', {'id': 'PR_n7'})
     assert 'enablePullRequestAutoMerge' in body['query']
     assert 'mergeMethod: MERGE' in body['query']
     hub.answers['POST /graphql'] = {'errors': [{'message': 'Auto merge is not allowed for this repository'}]}
-    assert 'NOT enabled -- Auto merge is not allowed' in hub.auto_merge(7)
+    assert 'NOT enabled -- Auto merge is not allowed' in forgemerge.auto_merge(hub, 7)
     tea = _Asked(Forge('forge.example.org', 'o', 'r'), {})
-    assert 'serve tick merges it' in tea.auto_merge(7)
+    assert 'serve tick merges it' in forgemerge.auto_merge(tea, 7)
     assert tea.sent == []
 
 

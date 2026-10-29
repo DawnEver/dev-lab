@@ -14,7 +14,226 @@
     "group": "ci-${{ github.ref }}",
     "cancel-in-progress": true
   },
+  "permissions": {
+    "contents": "read"
+  },
+  "env": {
+    "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
+    "GITHUB_TOKEN": "${{ github.token }}"
+  },
   "jobs": {
+    "parts": {
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "id": "matrix",
+          "name": "The parts and their runners",
+          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted)\" >> \"$GITHUB_OUTPUT\""
+        }
+      ],
+      "outputs": {
+        "matrix": "${{ steps.matrix.outputs.matrix }}"
+      }
+    },
+    "part": {
+      "needs": "parts",
+      "name": "tests/${{ matrix.part }}",
+      "runs-on": "${{ matrix.runs-on }}",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Produce and post the part",
+          "run": "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}"
+        }
+      ],
+      "permissions": {
+        "contents": "write",
+        "statuses": "write"
+      },
+      "strategy": {
+        "fail-fast": false,
+        "matrix": "${{ fromJSON(needs.parts.outputs.matrix) }}"
+      }
+    },
+    "absent-parts": {
+      "needs": [
+        "parts",
+        "part"
+      ],
+      "if": "${{ always() && needs.parts.result == 'success' }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Post every part no job settled",
+          "run": "uv run --no-sync python -m dev_lab.dev.jobparts absent \"$HEAD_SHA\""
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write"
+      }
+    },
+    "security": {
+      "if": "${{ github.event_name == 'pull_request' }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "tests/security",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge security run --pr ${{ github.event.pull_request.number }}"
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write",
+        "pull-requests": "read"
+      }
+    },
+    "review": {
+      "if": "${{ github.event_name == 'pull_request' }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "tests/review",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime \"ai_lab.python=$GITHUB_WORKSPACE/.venv/bin/python\"",
+          "env": {
+            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
+          }
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write",
+        "pull-requests": "write",
+        "issues": "write"
+      }
+    },
+    "merge-ready": {
+      "needs": [
+        "absent-parts",
+        "security",
+        "review"
+      ],
+      "if": "${{ always() && github.event_name == 'pull_request' }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "tests/merge-ready",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }}"
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write",
+        "pull-requests": "read"
+      }
+    },
     "verify": {
       "uses": "./.github/workflows/python-verify.yml",
       "permissions": {
@@ -22,7 +241,6 @@
         "issues": "write"
       },
       "with": {
-        "python-versions": "[\"3.12\", \"3.13\"]",
         "runner-os": "[\"ubuntu-latest\", \"windows-latest\", \"macos-latest\"]",
         "extras": "",
         "guard-targets": "adoption"

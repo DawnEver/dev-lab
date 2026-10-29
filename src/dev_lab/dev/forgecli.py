@@ -203,7 +203,7 @@ def issue_and_pr(
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
-            emit(f'[forge] {client.auto_merge(result.number)}', err=True)
+            emit(f'[forge] {forgemerge.auto_merge(client, result.number)}', err=True)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)

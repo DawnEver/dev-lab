@@ -66,13 +66,6 @@ A ref filter is what keeps HEAVY work off development branches (user ruling 2026
 (:func:`dev_lab.dev.forgeschedule.candidates`) never offers a ref the part's filter excludes, and
 says so. It is read from the SERVING checkout, so a branch cannot widen the filter that judges it.
 
-ON GITHUB THE SAME PARTS ARE PRODUCED BY WORKFLOW JOBS (user ruling 2026-10-29: one lifecycle; the forges
-differ only in who produces and who triggers). ``matrix`` prints the checkout's parts, each with the runner its
-need-set needs (:func:`runner_for`), as the JSON a workflow's ``fromJSON`` fans out over; each job runs ``produce
-<part>`` -- the one declared producer, which posts its part as any local verify does, the job token being the
-credential there (:func:`dev_lab.dev.forgework.actions_token`); and an ``if: always()`` job runs ``absent`` to post
-``failure`` on every expected part no job settled, so a job that died before posting reads red, never as nothing.
-
 The repo url is origin's, spelled https. A missing declaration is refused naming the key to add --
 never a command with a hole in it.
 """
@@ -81,7 +74,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import json
 import re
 import sys
 from collections import Counter
@@ -89,13 +81,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-import lab_commons.launch as _door
-from lab_commons.compute.probe import OS_NAMES, os_name
+from lab_commons.compute.probe import os_name
 from lab_commons.hpc.declared import kit_tables, pyproject_at
-from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
+from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
 from lab_commons.hpc.records import cells_of, read_record
 from lab_commons.hpc.retired import refusal
-from lab_commons.hpc.shell import parse_ids
 from lab_commons.hpc.testcells import conclude
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
@@ -105,22 +95,18 @@ from dev_lab.dev.family import declared_in
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
-from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for, status_list, status_post
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for
 from dev_lab.dev.producer import ProducerExit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from dev_lab.dev.forgestatus import CommitStatus
-    from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'ABSENT',
     'BASE',
     'CONTEXT_PREFIX',
     'HOLD_CONTEXT',
-    'HOSTED_RUNNERS',
     'PART_FIELD',
     'REVIEW_CONTEXT',
     'UNCLAIMED',
@@ -130,21 +116,16 @@ __all__ = [
     'PartRefusal',
     'Standing',
     'UndeclaredPart',
-    'absent',
     'cluster_part',
     'compose',
     'derived',
     'main',
-    'matrix',
     'origin_url',
     'part_context',
     'part_of',
     'parts_of',
-    'produce',
     'producer_argv',
-    'pytest_collector',
     'run_tag',
-    'runner_for',
     'select',
     'split',
     'standing',
@@ -178,12 +159,6 @@ _PRODUCE_EXAMPLE: Final = '["-m", "dev_lab.dev.verify", "--part", "{part}"]'
 
 #: Where the run records a cluster part gathers land, under the declared dated base.
 _RECORD_KIND: Final = 'parts'
-
-#: The GitHub-hosted runner of each OS resource (the values of :data:`lab_commons.compute.probe.OS_NAMES`).
-HOSTED_RUNNERS: Final = {'linux': 'ubuntu-latest', 'macos': 'macos-latest', 'windows': 'windows-latest'}
-
-#: What an expected part no job settled says (``failure``): never a part's own description, so never a part.
-ABSENT: Final = 'absent: no job settled this part'
 
 
 class PartRefusal(ValueError):
@@ -525,62 +500,6 @@ def _settled(*, failed: bool, problems: Sequence[str]) -> Conclusion:
     return Conclusion.INCONCLUSIVE if problems else Conclusion.PASS
 
 
-def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str], list[str]]:
-    """A collector over *root*'s checkout: given a marker expression (``''`` for none), the ids pytest collects."""
-
-    def collect(expression: str) -> list[str]:
-        argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
-        command = [*argv, *(['-m', expression] if expression else []), *arguments]
-        done = _door.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
-        return parse_ids(done.stdout)
-
-    return collect
-
-
-def runner_for(part: str) -> str | list[str]:
-    """*part*'s ``runs-on``: a hosted runner when it needs at most one OS, else a self-hosted runner's labels.
-
-    A need-set naming a resource no hosted runner has (``femm``) runs on a self-hosted runner labelled with every
-    resource it needs, so a workstation registered under those labels produces it.
-    """
-    needs = needs_of(part)
-    systems = needs & set(OS_NAMES.values())
-    if needs == systems and len(systems) <= 1:
-        return HOSTED_RUNNERS[next(iter(systems), 'linux')]
-    return ['self-hosted', *sorted(needs)]
-
-
-def matrix(root: Path, *, collect: Callable[[str], Sequence[str]]) -> dict[str, list[dict[str, Any]]]:
-    """The parts *root*'s checkout derives (:data:`BASE` always), each with :func:`runner_for`: a fromJSON matrix."""
-    pyproject = root / 'pyproject.toml'
-    vocabulary = read_vocabulary(pyproject.read_text(encoding='utf-8') if pyproject.is_file() else '')
-    ids = list(collect(''))
-    carrying = {name: set(collect(name)) for name in vocabulary.resources}
-    names = sorted({BASE, *need_sets(ids, carrying).values()})
-    return {'include': [{'part': name, 'runs-on': runner_for(name)} for name in names]}
-
-
-def absent(client: Client, sha: str, expected: Mapping[str, Any]) -> list[str]:
-    """Post ``failure`` saying :data:`ABSENT` on each part of *expected* (a :func:`matrix`) no job settled; the lines.
-
-    Settled is a latest ``success`` or ``failure``: a ``pending`` claim left behind is a job that died -- absent.
-    """
-    latest = {status.context: status.state for status in status_list(client, sha)}
-    lines = []
-    for context in sorted(part_context(one['part']) for one in expected['include']):
-        if latest.get(context) not in _RESULT:
-            status_post(client, sha, context=context, state='failure', description=ABSENT)
-            lines.append(f'{context}: {ABSENT}')
-    return lines
-
-
-def produce(root: Path, part: str) -> int:
-    """Run the one declared producer of *part* at *root*'s HEAD with this interpreter, cwd *root*; its exit code."""
-    head = _door.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, check=True)
-    argv = producer_argv(root, part, sha=head.stdout.strip())
-    return _door.run([sys.executable, *argv], cwd=root, check=False).returncode
-
-
 def post(root: Path, path: Path, onto: str = '') -> str:
     """Queue the part *path*'s record proves, with the record attached, and flush; returns the lines.
 
@@ -598,7 +517,7 @@ def post(root: Path, path: Path, onto: str = '') -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``post <record>``, ``matrix``, ``produce <part>``, ``absent <sha> --matrix <json>`` (module docstring)."""
+    """``post <run-record>``: queue and post the part a run record proves."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.platformparts', description=__doc__.splitlines()[0])
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and (refused := refusal('platformparts', argv[0])):
@@ -606,25 +525,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs = parser.add_subparsers(dest='verb', required=True)
     posting = verbs.add_parser('post', help='post a run record as its part')
     posting.add_argument('record', type=Path, help='the run record `python -m lab_commons.hpc run gather -o` wrote')
-    listing = verbs.add_parser('matrix', help="print the checkout's parts and their runners as a fromJSON matrix")
-    producing = verbs.add_parser('produce', help='run the declared producer of one part at HEAD')
-    producing.add_argument('part')
-    missing = verbs.add_parser('absent', help='post failure on every expected part no job settled')
-    missing.add_argument('sha')
-    missing.add_argument('--matrix', required=True, help='the JSON `matrix` printed')
-    for sub in (posting, listing, producing, missing):
-        sub.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose origin receives the part')
+    posting.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose origin receives the part')
     args = parser.parse_args(argv)
-    if args.verb == 'matrix':
-        emit(json.dumps(matrix(args.root, collect=pytest_collector(args.root))))
-        return 0
-    if args.verb == 'produce':
-        return produce(args.root, args.part)
     try:
-        if args.verb == 'absent':
-            for line in absent(client_for(args.root), args.sha, json.loads(args.matrix)):
-                emit(f'[platformparts] {line}')
-            return 0
         emit(post(args.root, args.record))
     except PostFailed as why:
         emit(f'[platformparts] unreachable: {why}', err=True)

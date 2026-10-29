@@ -7,15 +7,18 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
-__all__ = ['REFUSED_EXIT', 'ReviewRefused', 'ReviewUnsupported', 'can_start', 'run_command']
+__all__ = ['REFUSED_EXIT', 'ReviewRefused', 'ReviewUnsupported', 'Runner', 'can_start', 'run_command']
 
 #: The exit a review command REFUSES with (a bad method, version or range): empty stdout, the reason on stderr.
 REFUSED_EXIT: Final = 2
@@ -77,3 +80,16 @@ def run_command(argv: Sequence[str], root: Path) -> str:
         msg = f'the review command exited {done.returncode}: {why}'
         raise OSError(msg)
     return done.stdout
+
+
+@dataclass(frozen=True)
+class Runner:
+    """How one host runs the review command: its name, its ``[runtimes]``, the run and start probes, its clock."""
+
+    host: str
+    runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({})  # this host's: none by default
+    run: Callable[[Sequence[str], Path], str] = run_command
+    ready: Callable[[Sequence[str], Path], str | None] = can_start
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    #: Whether the review command's secret is present; absent (a fork PR's job) holds the head for a maintainer.
+    secret: bool = True

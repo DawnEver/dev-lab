@@ -236,10 +236,17 @@ ignore = [
 ]
 
 # THIS REPO'S CI, as TOML: rendered to .github/workflows/ by `python -m dev_lab.dev.ciworkflows render`
-# (the family base is dev_lab/dev/ci_base.toml). ci.yml is the base caller, pointed at the reusable
-# workflow beside it; python-verify.yml is THE family CI definition, which every repo's ci.yml calls.
+# (the family base is dev_lab/dev/ci_base.toml: the one PR lifecycle, parts -> review -> merge-ready).
+# The `verify` job below still calls the reusable python-verify.yml beside it; it retires together with
+# lab-commons' copy, once the sync and door censuses that pin both are moved to the part jobs.
 [tool.dev_lab.ci."ci.yml".jobs.verify]
 uses = "./.github/workflows/python-verify.yml"
+
+# The reusable workflow's reporting job files its tracking issue in THIS repository, and a reusable
+# workflow can never widen the permissions its caller grants.
+[tool.dev_lab.ci."ci.yml".jobs.verify.permissions]
+contents = "read"
+issues = "write"
 
 [tool.dev_lab.ci."ci.yml".jobs.verify.with]
 runner-os = '["ubuntu-latest", "windows-latest", "macos-latest"]'

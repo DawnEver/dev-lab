@@ -335,7 +335,10 @@ def test_a_workflow_job_judges_its_one_pr_through_the_step_s_judgement(monkeypat
         3: SimpleNamespace(number=3, base='main', draft=False, head_sha='c' * 40),
     }
     client = SimpleNamespace(pr_view=pulls.__getitem__)
-    fake = lambda _root, _head, _declaration: Judgement('success', 'nothing found')  # noqa: E731
+
+    def fake(_root: Path, _head: str, _declaration: Declaration) -> Judgement:
+        return Judgement('success', 'nothing found')
+
     assert forgesecurity.run_pull(Path(), client, 1, judged=fake).startswith(f'#1 {"a" * 12} success')
     assert [one.state for one in posted['a' * 40]] == ['success']
     assert 'already judged' in forgesecurity.run_pull(Path(), client, 1, judged=fake)

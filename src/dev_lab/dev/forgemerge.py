@@ -58,7 +58,7 @@ from dev_lab.dev.forgereview import TAKEOVER_PENDING, load_review
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import GITEA, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import GITEA, GITHUB, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
@@ -72,7 +72,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
-    'FORGE_PULL', 'READY', 'Decision', 'decide', 'judged', 'main', 'merge', 'merge_message', 'ready', 'review_blocks',
+    'FORGE_PULL', 'READY', 'Decision', 'auto_merge', 'decide', 'judged', 'main', 'merge', 'merge_message', 'ready',
+    'review_blocks',
     'review_hold',
 ]  # fmt: skip
 
@@ -81,6 +82,12 @@ FORGE_PULL: Final = 'Forge-Pull'
 
 #: What a ``success`` :data:`MERGE_READY_CONTEXT` says.
 READY: Final = 'ready: every merge condition holds'
+
+#: GitHub's native auto-merge, as a merge commit (never squash or rebase: the merge audit reads merge commits).
+_AUTO_MERGE: Final = (
+    'mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) '
+    '{ clientMutationId } }'
+)
 
 
 def review_hold(statuses: Sequence[CommitStatus]) -> str | None:
@@ -218,6 +225,22 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
         emit(f'[merge] refused: {failed}', err=True)
         return 2
     return 0
+
+
+def auto_merge(client: Client, number: int) -> str:
+    """Have PR *number* merged once its merge decision is green; the line said. Who MERGES is the forge's.
+
+    Gitea: nothing to ask -- the serve tick merges on the decision (:func:`judged`). GitHub: its native auto-merge,
+    a merge commit, which waits on the branch's required checks (:data:`MERGE_READY_CONTEXT` among them). A refusal
+    GitHub answers (auto-merge off for the repository, a PR already mergeable) is said, never raised.
+    """
+    if client.backend is not GITHUB:
+        return f'#{number}: the forge serve tick merges it once its merge decision is green'
+    node = client.call('GET', f'{client.repo}/pulls/{number}')['node_id']
+    answer = client.call('POST', '/graphql', {'query': _AUTO_MERGE, 'variables': {'id': node}})
+    if errors := answer.get('errors'):
+        return f'#{number}: auto-merge NOT enabled -- {errors[0].get("message", errors[0])}'
+    return f'#{number}: auto-merge enabled -- GitHub merges it (a merge commit) once its required checks are green'
 
 
 def merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool) -> None:

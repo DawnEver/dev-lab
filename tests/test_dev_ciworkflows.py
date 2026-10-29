@@ -6,8 +6,20 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from dev_lab.dev.ciworkflows import RENDER_COMMAND, STAMP, drift, main, merge, render, workflows, write
+from dev_lab.dev.ciworkflows import (
+    RENDER_COMMAND,
+    STAMP,
+    USE_STEPS,
+    drift,
+    expand,
+    main,
+    merge,
+    render,
+    workflows,
+    write,
+)
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,11 +31,70 @@ def test_this_repo_s_workflows_are_exactly_their_render() -> None:
 
 def test_a_repo_opts_in_and_its_layer_merges_over_the_base(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."ci.yml".jobs.verify.with]\nextras = "dev"\n', encoding='utf-8'
+        '[tool.dev_lab.ci."ci.yml".jobs.review.permissions]\nissues = "read"\n', encoding='utf-8'
     )
     ci = workflows(tmp_path)['ci.yml']
-    assert ci['jobs']['verify']['with'] == {'python-versions': '["3.12", "3.13"]', 'extras': 'dev'}
-    assert ci['jobs']['verify']['uses'].startswith('DawnEver/lab-commons/')
+    assert ci['jobs']['review']['permissions'] == {
+        'contents': 'read',
+        'statuses': 'write',
+        'pull-requests': 'write',
+        'issues': 'read',
+    }
+
+
+def _base_ci(tmp_path: Path) -> dict[str, Any]:
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    return workflows(tmp_path)['ci.yml']
+
+
+def test_the_lifecycle_runs_on_pull_request_and_never_on_pull_request_target(tmp_path: Path) -> None:
+    ci = _base_ci(tmp_path)
+    assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch'}
+    assert 'pull_request_target' not in render(ci), "a fork's code would run with this repository's secrets"
+    assert ci['jobs']['review']['if'] == "${{ github.event_name == 'pull_request' }}"
+
+
+def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path: Path) -> None:
+    ci = _base_ci(tmp_path)
+    assert ci['permissions'] == {'contents': 'read'}
+    granted = {name: job.get('permissions', {}) for name, job in ci['jobs'].items()}
+    assert granted == {
+        'parts': {},
+        'part': {'contents': 'write', 'statuses': 'write'},
+        'absent-parts': {'contents': 'read', 'statuses': 'write'},
+        'security': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
+        'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
+        'merge-ready': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
+    }
+
+
+def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_same_workflow(tmp_path: Path) -> None:
+    ci = _base_ci(tmp_path)
+    jobs = ci['jobs']
+    assert jobs['part']['strategy']['matrix'] == '${{ fromJSON(needs.parts.outputs.matrix) }}'
+    assert jobs['parts']['outputs'] == {'matrix': '${{ steps.matrix.outputs.matrix }}'}
+    (computed,) = [step for step in jobs['parts']['steps'] if step.get('id') == 'matrix']
+    assert 'dev_lab.dev.jobparts matrix' in computed['run']
+    assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
+    assert 'dev_lab.dev.jobparts absent' in jobs['absent-parts']['steps'][-1]['run']
+    assert jobs['absent-parts']['if'].startswith('${{ always()')
+    assert set(jobs['merge-ready']['needs']) == {'absent-parts', 'security', 'review'}
+    assert jobs['merge-ready']['if'].startswith('${{ always()')
+    assert 'forge merge ready --pr' in jobs['merge-ready']['steps'][-1]['run']
+    assert 'forge review run --pr' in jobs['review']['steps'][-1]['run']
+    assert 'workflow_run' not in ci['on'], 'no cross-workflow trigger'
+
+
+def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path: Path) -> None:
+    ci = _base_ci(tmp_path)
+    setups = [job['steps'][:3] for job in ci['jobs'].values()]
+    assert all(steps == setups[0] for steps in setups)
+    assert setups[0][0]['with'] == {'ref': '${{ env.HEAD_SHA }}', 'fetch-depth': 0}
+    assert '_steps' not in workflows(tmp_path)
+    shared = {'a': [{'run': 'x'}]}
+    assert expand({'jobs': {'j': {'steps': [{USE_STEPS: 'a'}, {'run': 'z'}]}}}, shared) == {
+        'jobs': {'j': {'steps': [{'run': 'x'}, {'run': 'z'}]}}
+    }
 
 
 def test_a_repo_that_declares_nothing_renders_nothing(tmp_path: Path) -> None:

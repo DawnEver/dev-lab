@@ -6,9 +6,21 @@
 # does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
 # parsed back. Re-render with `python -m dev_lab.dev.ciworkflows render`.
 
-# The thin caller: the checks are the repo's `make verify`; the CI shape (matrix, uv sync, failure
-# reporting) is defined once, in lab-commons' reusable python-verify.yml. `@main`, not a sha: the
-# caller follows the one shared definition, as the dependency on lab-commons carries no ref either.
+# ONE PR LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29). ci.yml is GitHub's half of the model Gitea's
+# `forge serve` runs: the same tests/<part> parts, the same review round, the same merge decision -- only
+# who PRODUCES and who TRIGGERS differ. Every job runs a dev_lab door; none holds logic of its own:
+#
+#   parts         `jobparts matrix`: the commit's parts and the runner each need-set needs (the
+#                 matrix is the COMMAND's output, never a list typed here)
+#   part          one job per part: `jobparts produce <part>`, the declared producer, posts tests/<part>
+#   absent-parts  always: `jobparts absent` posts failure on every expected part no job settled
+#   security      `forge security run --pr N`: tests/security
+#   review        `forge review run --pr N`: tests/review (pull_request ONLY -- never pull_request_target,
+#                 which would run a fork's code with this repository's secrets)
+#   merge-ready   last, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
+#                 tests/merge-ready; GitHub's native auto-merge (enabled by `forge pr create`) waits on it
+#
+# Permissions are least per job; the workflow grants only `contents: read`.
 ["ci.yml"]
 name = "CI"
 
@@ -23,14 +35,103 @@ branches = ["main"]
 group = "ci-${{ github.ref }}"
 cancel-in-progress = true
 
-["ci.yml".jobs.verify]
-uses = "DawnEver/lab-commons/.github/workflows/python-verify.yml@main"
-
-# Required: the reusable workflow's reporting job files its tracking issue in the CALLING repository,
-# and a reusable workflow can never widen the permissions its caller grants.
-["ci.yml".jobs.verify.permissions]
+["ci.yml".permissions]
 contents = "read"
+
+# The commit every status is posted on: a PR's HEAD (never the synthetic merge commit), else the pushed sha.
+["ci.yml".env]
+HEAD_SHA = "${{ github.event.pull_request.head.sha || github.sha }}"
+GITHUB_TOKEN = "${{ github.token }}"
+
+["ci.yml".jobs.parts]
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { id = "matrix", name = "The parts and their runners", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted)" >> "$GITHUB_OUTPUT"' },
+]
+
+["ci.yml".jobs.parts.outputs]
+matrix = "${{ steps.matrix.outputs.matrix }}"
+
+["ci.yml".jobs.part]
+needs = "parts"
+name = "tests/${{ matrix.part }}"
+runs-on = "${{ matrix.runs-on }}"
+steps = [
+    { use-steps = "setup" },
+    { name = "Produce and post the part", run = "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },
+]
+
+# Records are attached as assets of the records prerelease (dev_lab.dev.forgerecords), hence contents: write.
+["ci.yml".jobs.part.permissions]
+contents = "write"
+statuses = "write"
+
+["ci.yml".jobs.part.strategy]
+fail-fast = false
+matrix = "${{ fromJSON(needs.parts.outputs.matrix) }}"
+
+["ci.yml".jobs.absent-parts]
+needs = ["parts", "part"]
+if = "${{ always() && needs.parts.result == 'success' }}"
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { name = "Post every part no job settled", run = 'uv run --no-sync python -m dev_lab.dev.jobparts absent "$HEAD_SHA"' },
+]
+
+["ci.yml".jobs.absent-parts.permissions]
+contents = "read"
+statuses = "write"
+
+["ci.yml".jobs.security]
+if = "${{ github.event_name == 'pull_request' }}"
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { name = "tests/security", run = "uv run --no-sync python -m dev_lab.dev.forge security run --pr ${{ github.event.pull_request.number }}" },
+]
+
+["ci.yml".jobs.security.permissions]
+contents = "read"
+statuses = "write"
+pull-requests = "read"
+
+# A fork PR's job gets no secret: the review then holds the head for a maintainer's takeover.
+["ci.yml".jobs.review]
+if = "${{ github.event_name == 'pull_request' }}"
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { name = "tests/review", run = 'uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$GITHUB_WORKSPACE/.venv/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+]
+
+# Findings are PR comments (the issues API) and a capped round's follow-up is an issue.
+["ci.yml".jobs.review.permissions]
+contents = "read"
+statuses = "write"
+pull-requests = "write"
 issues = "write"
 
-["ci.yml".jobs.verify.with]
-python-versions = '["3.12", "3.13"]'
+["ci.yml".jobs.merge-ready]
+needs = ["absent-parts", "security", "review"]
+if = "${{ always() && github.event_name == 'pull_request' }}"
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { name = "tests/merge-ready", run = "uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }}" },
+]
+
+["ci.yml".jobs.merge-ready.permissions]
+contents = "read"
+statuses = "write"
+pull-requests = "read"
+
+# THE SETUP EVERY JOB SHARES, once: the commit statuses are about (HEAD_SHA) with every origin branch fetched
+# -- the outbox posts only on a commit an origin ref holds, and the merge decision trial-merges against one.
+[_steps]
+setup = [
+    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
+    { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
+    { name = "Sync the environment", run = "uv sync --frozen --all-extras" },
+]

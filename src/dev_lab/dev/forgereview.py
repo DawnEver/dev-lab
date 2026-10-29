@@ -2,8 +2,9 @@
 
 Step 4 of the branch flow (user ruling 2026-10-19). ONE review on both forges (user ruling 2026-10-29); only who
 TRIGGERS it differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR; on GitHub a workflow
-job runs ``forge review run --pr <N>`` (:func:`review_run`) for the one PR its event names. Both run the same round
-(:func:`review_pull`). A job whose review secret is absent -- a fork PR, which GitHub never hands a secret -- holds
+job runs ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgetakeover.review_run`) for the one PR its event
+names. Both run the same round (:func:`review_pull`). A job whose review secret is absent -- a fork PR, which
+GitHub never hands a secret -- holds
 the head (:data:`NEEDS_MAINTAINER`) on the same hold the over-cap takeover uses, so a maintainer reviews it through
 ``forge review takeover <sha>``; nothing new is stored.
 
@@ -103,7 +104,7 @@ from dev_lab.dev import forgereview_scope
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
-from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
+from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, host_runtimes, retired_field
@@ -131,12 +132,10 @@ __all__ = [
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
     'Review',
-    'Runner',
     'command_for',
     'load_review',
     'review_from',
     'review_pull',
-    'review_run',
     'review_tick',
     'step',
 ]  # fmt: skip
@@ -412,19 +411,6 @@ def _hold(client: Client, pull: PullRequest, why: str) -> str:
     return f'#{pull.number} {pull.head_sha[:12]}: {why}'
 
 
-@dataclass(frozen=True)
-class Runner:
-    """How one host runs the review command: its name, its ``[runtimes]``, the run and start probes, its clock."""
-
-    host: str
-    runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({})  # this host's: none by default
-    run: Callable[[Sequence[str], Path], str] = run_command
-    ready: Callable[[Sequence[str], Path], str | None] = can_start
-    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
-    #: Whether the review command's secret is present; absent (a fork PR's job) holds the head for a maintainer.
-    secret: bool = True
-
-
 def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str | None:
     """Review *pull*'s head once (the round in the module docstring); the line said, ``None`` when nothing was.
 
@@ -489,14 +475,6 @@ def review_tick(
     runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock)
     pulls = (pull for pull in pr_list(client) if pull.base == base and not pull.draft and pull.head_sha)
     return tuple(said for pull in pulls if (said := review_pull(root, client, review, pull, runner)) is not None)
-
-
-def review_run(root: Path, client: Client, review: Review, number: int, *, base: str, runner: Runner) -> str:
-    """:func:`review_pull` on PR *number* alone -- what a GitHub workflow job runs for its event's PR; the line."""
-    pull = client.pr_view(number)
-    if pull.base != base or pull.draft or not pull.head_sha:
-        return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
-    return review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
 
 
 def step(

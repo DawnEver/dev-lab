@@ -1,4 +1,4 @@
-"""PARTS FROM GITHUB ACTIONS: the matrix the workflow fans out over, the absent parts, and the Actions token."""
+"""PARTS FROM WORKFLOW JOBS: the matrix a workflow fans out over, the absent parts, and the Actions token."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from _forge_fake import make_repo
 from _forge_state import StateForge
 
-from dev_lab.dev import platformparts
+from dev_lab.dev import jobparts, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ACTIONS_BOT, client_for
@@ -34,13 +34,13 @@ resources = ["femm", "windows"]
     ],
 )
 def test_a_part_runs_on_a_hosted_runner_only_when_it_needs_no_more_than_an_os(part: str, runs_on: object) -> None:
-    assert platformparts.runner_for(part) == runs_on
+    assert jobparts.runner_for(part) == runs_on
 
 
 def test_the_matrix_is_every_need_set_the_collection_derives_and_base_always(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
     carrying = {'': ['t::a', 't::w', 't::fw'], 'femm': ['t::fw'], 'windows': ['t::w', 't::fw']}
-    found = platformparts.matrix(tmp_path, collect=lambda expression: carrying[expression])
+    found = jobparts.matrix(tmp_path, collect=lambda expression: carrying[expression])
     assert found == {
         'include': [
             {'part': 'base', 'runs-on': 'ubuntu-latest'},
@@ -48,16 +48,14 @@ def test_the_matrix_is_every_need_set_the_collection_derives_and_base_always(tmp
             {'part': 'windows', 'runs-on': 'windows-latest'},
         ]
     }
-    nothing = platformparts.matrix(tmp_path, collect=lambda _expression: [])
+    nothing = jobparts.matrix(tmp_path, collect=lambda _expression: [])
     assert nothing == {'include': [{'part': 'base', 'runs-on': 'ubuntu-latest'}]}, 'base is always wanted'
 
 
 def test_the_matrix_command_prints_json_a_workflow_reads_with_fromjson(tmp_path: Path, monkeypatch, capsys) -> None:
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
-    monkeypatch.setattr(
-        platformparts, 'pytest_collector', lambda _root: lambda expression: [] if expression else ['t::a']
-    )
-    assert platformparts.main(['matrix', '--root', str(tmp_path)]) == 0
+    monkeypatch.setattr(jobparts, 'pytest_collector', lambda _root: lambda expression: [] if expression else ['t::a'])
+    assert jobparts.main(['matrix', '--root', str(tmp_path)]) == 0
     assert json.loads(capsys.readouterr().out) == {'include': [{'part': 'base', 'runs-on': 'ubuntu-latest'}]}
 
 
@@ -70,7 +68,7 @@ def test_every_expected_part_with_no_settled_status_is_posted_a_failure_and_a_se
             {'context': context, 'state': state, 'description': 'scope=full ran=1 hands=-'},
         )
     matrix = {'include': [{'part': name, 'runs-on': 'x'} for name in ('base', 'windows', 'femm+windows')]}
-    said = platformparts.absent(forge, SHA, matrix)
+    said = jobparts.absent(forge, SHA, matrix)
     latest = {status.context: status.state for status in status_list(forge, SHA)}
     assert latest == {'tests/base': 'success', 'tests/windows': 'failure', 'tests/femm+windows': 'failure'}
     assert [line.split(':')[0] for line in said] == ['tests/femm+windows', 'tests/windows']
@@ -95,3 +93,10 @@ def test_inside_github_actions_the_job_token_is_the_credential_on_github_only(tm
         client_for(hub, env={**store, 'GITHUB_TOKEN': 'job-token'})
     with pytest.raises(NoCredential):
         client_for(make_repo(tmp_path / 'tea', 'https://forge.example.org/o/r.git'), env=actions)
+
+
+def test_hosted_keeps_only_the_parts_a_hosted_runner_produces(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    carrying = {'': ['t::a', 't::fw'], 'femm': ['t::fw'], 'windows': ['t::fw']}
+    found = jobparts.matrix(tmp_path, collect=lambda expression: carrying[expression], hosted=True)
+    assert found == {'include': [{'part': 'base', 'runs-on': 'ubuntu-latest'}]}

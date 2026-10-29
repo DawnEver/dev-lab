@@ -10,10 +10,11 @@ from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
 
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgemerge import review_blocks, review_hold
-from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, Runner, review_run
+from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
+from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgetakeover import held, main, runtimes_with
+from dev_lab.dev.forgetakeover import held, main, review_run, runtimes_with
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 

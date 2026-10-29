@@ -34,8 +34,8 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeintegration import _fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_list, marker, pr_list
-from dev_lab.dev.forgereview import PATHS_FIELD, Review, Runner, command_for, load_review, review_run
-from dev_lab.dev.forgereview_command import run_command
+from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, load_review, review_pull
+from dev_lab.dev.forgereview_command import Runner, run_command
 from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
@@ -52,7 +52,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'DOOR', 'RELEASED', 'TakeoverRefused', 'alarms', 'held', 'main', 'release', 'runtimes_with', 'scope_of', 'takeover',
+    'DOOR', 'RELEASED', 'TakeoverRefused', 'alarms', 'held', 'main', 'release', 'review_run', 'runtimes_with',
+    'scope_of', 'takeover',
 ]  # fmt: skip
 
 #: The door the integrator runs on a held head; ``{sha}`` is the head.
@@ -158,6 +159,14 @@ def takeover(
         root, client, pull, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover'
     )
     return f'{said} ({len(scope.slices)} slice(s))', release(client, pull.head_sha, host=host)
+
+
+def review_run(root: Path, client: Client, review: Review, number: int, *, base: str, runner: Runner) -> str:
+    """:func:`review_pull` on PR *number* alone -- what a GitHub workflow job runs for its event's PR; the line."""
+    pull = client.pr_view(number)
+    if pull.base != base or pull.draft or not pull.head_sha:
+        return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
+    return review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
 
 
 def _parser() -> argparse.ArgumentParser:
