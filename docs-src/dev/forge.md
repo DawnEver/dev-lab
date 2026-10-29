@@ -531,6 +531,17 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   `read:user`. **GitHub**: a fine-grained token with Issues, Pull requests and Contents read/write, or let Git
   Credential Manager's OAuth store it on the first push.
 - Rotate by running `auth login` again; a revoked token shows as a failing `auth status`.
+- **A new machine takes every forge credential in one pipe** (run from a family checkout on the old one):
+
+  ```
+  python -m dev_lab.dev.forge auth export |
+      ssh <box> "cd <checkout> && <venv python> -m dev_lab.dev.forge auth login --from-file -"
+  ```
+
+  `export` writes one `<username>@<host> <token>` line per credential git holds for every host a family
+  checkout's remote lives on, plus `github.com` (`--host` narrows it), and refuses a terminal stdout; stderr
+  names hosts and sha256 prefixes, never a token. `login --from-file <path|->` verifies EVERY token before
+  storing ANY. An `OAUTH_USER` (GCM OAuth) token expires, so that host may re-authenticate on its first push.
 
 ### A gitea auth refusal is an expired OAuth token, not a bad credential
 
