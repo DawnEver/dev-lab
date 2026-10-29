@@ -30,11 +30,11 @@ def clone_pair(tmp_path: Path) -> tuple[Path, Path]:
     return bare, work
 
 
-def advance(work: Path, branch: str, name: str, text: str) -> str:
-    """Commit *name* on origin's *branch* (created from ``origin/main`` when absent); returns the sha."""
+def advance(work: Path, branch: str, name: str, text: str, message: str | None = None) -> str:
+    """Commit *name* (*message*, default the name) on origin's *branch* (from ``origin/main`` when absent); the sha."""
     start = f'origin/{branch}' if git_out(work, 'branch', '-r', '--list', f'origin/{branch}') else 'origin/main'
     run_git(work, 'checkout', '-q', '-B', f'tmp-{branch.replace("/", "-")}', start)
-    sha = commit(work, name, text)
+    sha = commit(work, name, text, message)
     run_git(work, 'push', '-q', '--no-verify', 'origin', f'HEAD:refs/heads/{branch}')
     run_git(work, 'fetch', '-q', 'origin')
     return sha

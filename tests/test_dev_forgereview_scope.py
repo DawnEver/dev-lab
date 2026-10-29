@@ -24,14 +24,18 @@ from dev_lab.dev.forgereview import (
     RANGE_FIELD,
     REVIEW_CONTEXT,
     Review,
+    review_from,
     review_tick,
 )
 from dev_lab.dev.forgereview_findings import merge_outputs, parse_findings
 from dev_lab.dev.forgereview_scope import (
+    CODE,
     FINDINGS_FIELD,
+    NOT_CODE,
     ONLY_GENERATED,
     OVER_CAP_TAKEOVER,
     Budget,
+    is_code,
     lens_of,
     own_base,
     plan,
@@ -90,21 +94,21 @@ def _paths(work: Path, reviewed: str) -> list[str]:
 def test_a_merge_of_the_integration_branch_is_not_the_branchs_own_change(tmp_path: Path) -> None:
     """PLANTED control: the branch's own file is read, the merged-in one is not."""
     _, work = clone_pair(tmp_path)
-    advance(work, 'pr/x', 'own.txt', 'mine\n')
-    advance(work, 'integrate/main', 'theirs.txt', 'theirs\n')
+    advance(work, 'pr/x', 'own.py', 'mine\n')
+    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
     head = _merge_integration(work, 'pr/x')
     scope = plan(work, 'origin/integrate/main', head, _WIDE)
-    assert [path for one in scope.slices for path in one.paths] == ['own.txt']
+    assert [path for one in scope.slices for path in one.paths] == ['own.py']
 
 
 def test_a_push_after_a_review_is_read_from_the_reviewed_head(tmp_path: Path) -> None:
     """Incremental; PLANTED control: an integration merge after the review reads the whole own change again."""
     _, work = clone_pair(tmp_path)
-    first = advance(work, 'pr/x', 'one.txt', '1\n')
-    second = advance(work, 'pr/x', 'two.txt', '2\n')
+    first = advance(work, 'pr/x', 'one.py', '1\n')
+    second = advance(work, 'pr/x', 'two.py', '2\n')
     assert own_base(work, 'origin/integrate/main', second, (first,)) == first
-    assert _paths(work, plan(work, 'origin/integrate/main', second, _WIDE, (first,)).range) == ['two.txt']
-    advance(work, 'integrate/main', 'theirs.txt', 'theirs\n')
+    assert _paths(work, plan(work, 'origin/integrate/main', second, _WIDE, (first,)).range) == ['two.py']
+    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
     merged = _merge_integration(work, 'pr/x')
     base = git_out(work, 'merge-base', 'origin/integrate/main', merged)
     assert own_base(work, 'origin/integrate/main', merged, (first,)) == base
@@ -227,6 +231,23 @@ def test_the_slice_outputs_merge_once_per_finding_id() -> None:
     assert len(merged.reviewers) == 3
 
 
+def test_the_merge_carries_the_one_summary_and_every_disposed_id() -> None:
+    """The summary is the one call's that printed it; the disposed ids are every call's, once each."""
+    summary = {'changes': [{'claim': 'adds a', 'cites': ['abc1234']}], 'open_items': []}
+
+    def doc(**top: object) -> str:
+        return json.dumps({**json.loads(_doc()), **top})
+
+    texts = [doc(summary=summary, disposed=[{'id': 'F-1', 'reason': 'r'}]),
+             doc(disposed=[{'id': 'F-1', 'reason': 'r'}, {'id': 'F-2', 'reason': 's'}])]  # fmt: skip
+    text = merge_outputs(texts, 'x..y')
+    assert next(iter(json.loads(text))) == 'summary', 'the summary is the first key, as the engine prints it'
+    merged = parse_findings(text)
+    assert merged.summary == summary
+    assert merged.disposed == (('F-1', 'r'), ('F-2', 's'))
+    assert parse_findings(merge_outputs([_doc()], 'x..y')).summary is None, 'PLANTED control: none printed, none'
+
+
 def test_a_moved_file_is_read_whole_in_one_slice(tmp_path: Path) -> None:
     """PLANTED control: a move across directories puts both paths in one slice, so no reviewer reads a lone delete."""
     _, work = clone_pair(tmp_path)
@@ -243,3 +264,72 @@ def test_a_moved_file_is_read_whole_in_one_slice(tmp_path: Path) -> None:
     assert len(scope.slices) > 1, 'the budget must cut the head into slices, else the control is vacuous'
     (holder,) = [one for one in scope.slices if 'a/old.py' in one.paths]
     assert 'z/new.py' in holder.paths
+
+
+# --- code only (user ruling 2026-10-29) ---------------------------------------------------------------
+
+_NOT_CODE = (
+    '.claude/memory/2026/10/29/x.md', 'attic/old/legacy.py', 'docs-src/dev/x.md', 'README.md', 'Cargo.lock',
+    'cases/a/golden.npz', 'cases/a/golden_jmag_ring.toml', 'tests/fixtures/f.json', 'data/t.csv', 'output/logs/run.log',
+)  # fmt: skip
+_CODE = ('src/pkg/a.py', 'rust/Cargo.toml', '.forgejo/workflows/ci.yml', 'scripts/x.sh', 'web/app.mjs')
+
+
+def _mixed(tmp_path: Path, body: str = 'x = 1\n') -> tuple[Path, str]:
+    _, work = clone_pair(tmp_path)
+    head = ''
+    for path in (*_NOT_CODE, *_CODE):
+        (work / path).parent.mkdir(parents=True, exist_ok=True)
+        head = advance(work, 'pr/x', path, body)
+    return work, head
+
+
+def test_only_code_is_reviewed_and_the_rest_is_counted(tmp_path: Path) -> None:
+    """Prose, data, locks, memory, attic and docs are outside; PLANTED control: every code file is read."""
+    work, head = _mixed(tmp_path)
+    scope = plan(work, 'origin/integrate/main', head, _WIDE)
+    assert sorted(p for one in scope.slices for p in one.paths) == sorted(_CODE)
+    assert scope.outside == len(_NOT_CODE)
+
+
+def test_the_cap_counts_code_bytes_only(tmp_path: Path) -> None:
+    """A head whose bulk is prose fits the cap; PLANTED control: the same cap holds it when code is the bulk."""
+    work, head = _mixed(tmp_path, 'x = 1\n' * 50)
+    code_bytes = sum(s.size for s in plan(work, 'origin/integrate/main', head, _WIDE).slices)
+    tight = Budget(slice_bytes=10**6, total_bytes=code_bytes)
+    assert plan(work, 'origin/integrate/main', head, tight).held is None
+    everything = Budget(slice_bytes=10**6, total_bytes=code_bytes, code=('**',), not_code=())
+    assert plan(work, 'origin/integrate/main', head, everything).held is not None
+
+
+def test_a_head_of_only_prose_is_nothing_to_review(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    (work / 'docs-src').mkdir()
+    head = advance(work, 'pr/x', 'docs-src/a.md', 'prose\n')
+    assert plan(work, 'origin/integrate/main', head, _WIDE).slices == ()
+
+
+def test_a_repo_may_declare_its_own_code_globs() -> None:
+    review = review_from('[tool.dev_lab.review]\ncode = ["**/*.md"]\nnot_code = []\n', 'pyproject.toml')
+    assert review.budget.code == ('**/*.md',)
+    assert review.budget.not_code == ()
+    assert Review().budget.code == CODE
+    assert Review().budget.not_code == NOT_CODE
+
+
+def test_the_review_comment_names_the_files_outside_scope(tmp_path: Path) -> None:
+    work, head = _mixed(tmp_path)
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=Recorder(), ready=_can, host='box')
+    (comment,) = forge.comments[number]
+    assert f'{len(_NOT_CODE)} non-code file(s) outside the review scope' in comment['body']
+
+
+def test_a_not_code_glob_never_hides_code_by_its_name() -> None:
+    """Hooks, a ``logs`` package and a ``golden_*`` module execute; PLANTED control: memory and golden data do not."""
+    for path in ('.claude/hooks/guard.py', '.claude/hooks/x.sh', 'src/pkg/logs/handler.py', 'tests/golden_helpers.py',
+                 'src/pkg/golden_section.py', 'tests/golden_utils/loader.py'):  # fmt: skip
+        assert is_code(path, CODE, NOT_CODE), path
+    for path in ('.claude/memory/2026/10/29/x.toml', 'cases/a/golden_jmag_ring.toml', 'attic/old/legacy.py'):
+        assert not is_code(path, CODE, NOT_CODE), path

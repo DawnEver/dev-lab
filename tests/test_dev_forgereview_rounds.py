@@ -13,21 +13,25 @@ import pytest
 from _branch_repos import advance
 from test_dev_forgereview import FakeCommand, _forge, _tick, _work
 
+from dev_lab.dev._forgebackends import GITEA, GITHUB
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview import RANGE_FIELD, REVIEW_CONTEXT, Review
 from dev_lab.dev.forgereview_findings import Finding, Findings
 from dev_lab.dev.forgereview_rounds import (
     FAMILY_MAX_ROUNDS,
+    SUMMARY_CITES,
     Ledger,
     context_summary,
     disposed,
     disposition_text,
     ledger_of,
     verdict,
+    what_it_does,
 )
 from dev_lab.dev.forgereview_rounds import (
     advance as advance_round,
 )
+from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, SUMMARY_FIELD
 from dev_lab.dev.forgestatus import status_list
 
 _REVIEW = Review(command=('reviewer', '--range', RANGE_FIELD))
@@ -38,8 +42,8 @@ def _finding(fid: str = 'F-000000000001', *, severity: str = 'MEDIUM', security:
     return Finding(fid, severity, security, 'occams-razor', file, anchor, f'{fid} summary', 'Bug')
 
 
-def _doc(*findings: Finding) -> str:
-    """A findings-output v3 document of *findings*, one ok reviewer."""
+def _doc(*findings: Finding, **top: object) -> str:
+    """A findings-output v3 document of *findings*, one ok reviewer; *top* adds top-level keys."""
     rows = [
         {'id': one.id, 'severity': one.severity, 'security': one.security, 'rule': one.rule, 'file': one.file,
          'anchor': one.anchor, 'summary': one.summary, 'category': one.category, 'status': 'OPEN',
@@ -48,7 +52,7 @@ def _doc(*findings: Finding) -> str:
     ]  # fmt: skip
     return json.dumps({
         'schema_version': 3, 'range': 'a..b', 'profiles': ['c'],
-        'reviewers': [{'name': 'c', 'provider': 'p', 'status': 'ok', 'dropped_findings': 0}], 'findings': rows,
+        'reviewers': [{'name': 'c', 'provider': 'p', 'status': 'ok', 'dropped_findings': 0}], 'findings': rows, **top,
     })  # fmt: skip
 
 
@@ -168,16 +172,29 @@ def test_the_context_summary_names_what_changed_why_and_where(tmp_path: Path) ->
     assert '**Why** (the commits):\n- docs/b.md\n- src/pkg/layer/a.py' in text  # the subjects, newest first
 
 
+def test_the_context_summary_cites_each_declared_source_in_order(tmp_path: Path) -> None:
+    """SUMMARY_CITES is the order the WHY is cited in: commits, the memory landed, merges, the PR body."""
+    work, _ = _work(tmp_path)
+    (work / '.claude' / 'memory').mkdir(parents=True, exist_ok=True)
+    head = advance(work, 'pr/x', '.claude/memory/m.md', '# m\n', message='docs(memory): m')
+    text = context_summary(work, f'origin/integrate/main..{head}', pr_body='Adds x.\n\nMore.')
+    assert SUMMARY_CITES == ('commits', 'memory', 'merge_audit', 'pr_body')
+    assert '- `.claude/memory/m.md`' in text
+    assert '> Adds x.' in text
+    assert text.index('(the commits)') < text.index('`.claude/memory/m.md`') < text.index('> Adds x.')
+    assert '(the merges)' not in text, 'PLANTED control: a range without merges cites none'
+
+
 # --- through the forge ----------------------------------------------------------------------------------
 
 
 def test_a_fix_pushed_after_a_blocking_round_closes_it_and_the_head_succeeds(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    high = _finding('F-x', severity='HIGH', anchor='x')
+    high = _finding('F-x', severity='HIGH', file='x.py', anchor='x')
     _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
     assert _state(forge, head)[0] == 'failure'
-    fixed = advance(work, 'pr/x', 'x.txt', 'fixed\n')
+    fixed = advance(work, 'pr/x', 'x.py', 'fixed\n')
     forge.pulls[number]['head']['sha'] = fixed
     command = FakeCommand(_doc())
     _tick(work, forge, command, _REVIEW)
@@ -206,7 +223,7 @@ def test_past_max_rounds_no_command_runs_and_one_follow_up_issue_takes_the_rest(
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     review = Review(command=_REVIEW.command, max_rounds=1)
-    high, medium = _finding('F-h', severity='HIGH', anchor='x'), _finding('F-m', anchor='x')
+    high, medium = _finding('F-h', severity='HIGH', file='x.py', anchor='x'), _finding('F-m', file='x.py', anchor='x')
     _tick(work, forge, FakeCommand(_doc(high, medium)), review)
     after = advance(work, 'pr/x', 'y.txt', 'y\n')
     forge.pulls[number]['head']['sha'] = after
@@ -218,3 +235,78 @@ def test_past_max_rounds_no_command_runs_and_one_follow_up_issue_takes_the_rest(
     assert 'F-m' in issue['body']
     assert 'F-h' not in issue['body']
     assert FAMILY_MAX_ROUNDS == Review().max_rounds == 3
+
+
+def test_the_comment_opens_with_what_the_pr_does_and_lists_what_was_disposed_earlier(tmp_path: Path) -> None:
+    """The engine's summary opens the comment, each claim's cites linked; the ids it dropped are listed.
+
+    It is handed the PR body and the forge's own dispositions ONLY: a commit trailer is the author's, applied
+    after the engine returns.
+    """
+    work, _ = _work(tmp_path)
+    trailer = 'fix(x): keep x\n\nReview-Disposed: F-old -- a false positive'
+    head = advance(work, 'pr/x', 'x.py', 'x\nw\n', message=trailer)
+    forge, number = _forge(head, body='This PR adds x.')
+    comment_upsert(forge, number, kind=Marker.DISPOSITION, key='F-led', text=disposition_text('F-led', 'box', 'up'))
+    memory = '.claude/memory/2026/10/29/x.md'
+    summary = {'changes': [{'claim': 'adds x', 'cites': [head, memory]}], 'tests_altered': [], 'resolutions': [],
+               'open_items': ['wire y'], 'sources': ['commits']}  # fmt: skip
+    seen: list[tuple[str, object]] = []
+
+    def run(argv: list[str], _root: Path) -> str:
+        body = Path(argv[argv.index('--pr-body') + 1]).read_text(encoding='utf-8')
+        seen.append((body, json.loads(Path(argv[argv.index('--disposed') + 1]).read_text(encoding='utf-8'))))
+        return _doc(_finding('F-m', file='x.py', anchor='w'), summary=summary,
+                    disposed=[{'id': 'F-led', 'reason': 'up'}])  # fmt: skip
+
+    review = Review(command=('reviewer', '--range', RANGE_FIELD, SUMMARY_FIELD, '--disposed', DISPOSED_FIELD))
+    _tick(work, forge, run, review)
+    ((body, gone),) = seen
+    assert body == 'This PR adds x.'
+    assert gone == {'disposed': [{'id': 'F-led', 'reason': 'up'}]}, 'a commit trailer never reaches the engine'
+    text = forge.comments[number][-1]['body']
+    repo = forge.pulls[number]['html_url'].rsplit('/pulls/', 1)[0]
+    commit_link, memory_link = (
+        f'[`{head[:12]}`]({repo}/commit/{head})',
+        f'[`{memory}`]({repo}/src/commit/{head}/{memory})',
+    )
+    assert text.removeprefix(marker(Marker.REVIEW, head) + '\n').startswith('### What this PR does\n')
+    assert f'- adds x ({commit_link}, {memory_link})' in text
+    assert '**Open items**:\n- wire y' in text
+    assert '### Disposed earlier\n- `F-led`: up' in text
+    assert text.index('What this PR does') < text.index('Review round 1') < text.index('F-m summary')
+
+
+def _authored(tmp_path: Path, *findings: Finding, names: str) -> tuple[str, str]:
+    """Round 1 of a head whose commit trailer disposes of *names*; its ``(state, comment body)``."""
+    work, _ = _work(tmp_path)
+    head = advance(work, 'pr/x', 'x.py', 'x\nw\n', message=f'fix(x): keep x\n\nReview-Disposed: {names} -- by design')
+    forge, number = _forge(head)
+    _tick(work, forge, FakeCommand(_doc(*findings)), _REVIEW)
+    return _state(forge, head)[0], forge.comments[number][-1]['body']
+
+
+def test_an_author_trailer_never_suppresses_a_blocking_finding(tmp_path: Path) -> None:
+    """A trailer naming a HIGH finding leaves it open and blocking, and says the integrator's door is needed."""
+    state, text = _authored(tmp_path, _finding('F-h', severity='HIGH', file='x.py', anchor='w'), names='F-h')
+    assert state == 'failure'
+    rows = text.split('### Blocking (open)\n', 1)[1].split('\n\n', 1)[0]
+    assert 'F-h summary' in rows
+    assert 'the author disposed it (by design); a blocking finding needs `forge review dispose`' in rows
+    assert 'by the author' not in text
+
+
+def test_an_author_trailer_disposes_of_a_non_blocking_finding_after_the_engine(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same trailer naming a MEDIUM finding lists it as disposed by the author."""
+    state, text = _authored(tmp_path, _finding('F-m', file='x.py', anchor='w'), names='F-m')
+    assert state == 'success'
+    assert '### Disposed earlier (by the author)\n- `F-m` -- by design' in text
+    assert '### Open, not blocking' not in text
+
+
+@pytest.mark.parametrize(('backend', 'file_form'), [(GITEA, 'src/commit'), (GITHUB, 'blob')])
+def test_what_it_does_links_its_cites_in_the_backend_form(backend: object, file_form: str) -> None:
+    repo, head, sha = 'https://f/o/r', 'b' * 40, 'a' * 40
+    summary = {'changes': [{'claim': 'adds x', 'cites': [sha, 'x.py']}]}
+    text = what_it_does(summary, repo, head, backend)
+    assert f'- adds x ([`{sha[:12]}`]({repo}/commit/{sha}), [`x.py`]({repo}/{file_form}/{head}/x.py))' in text

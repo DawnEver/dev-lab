@@ -41,7 +41,7 @@ def test_the_takeover_reviews_every_slice_unmetered_posts_and_releases(tmp_path:
     command = FakeCommand()
     said = takeover(work, forge, _SLICED, head, base='integrate/main', host='box', run=command)
     ((argv, _),) = command.ran  # the one file over the slice cap is a slice of its own, read by the session
-    assert argv[-1] == 'x.txt'
+    assert argv[-1] == 'x.py'
     (comment,) = forge.comments[number]
     assert marker(Marker.REVIEW, head) in comment['body']
     assert _latest(forge, head, REVIEW_CONTEXT).state == 'success'
@@ -106,7 +106,7 @@ def test_the_door_lists_held_heads_and_runs_the_takeover(tmp_path: Path, capsys:
     assert main(['held'], cwd=work, client=forge) == 1
     assert DOOR.format(sha=head) in capsys.readouterr().out
     assert main(['plan', head], cwd=work, client=forge, fetch=lambda _r, n: fetched.append(n)) == 0
-    assert 'x.txt' in capsys.readouterr().out
+    assert 'x.py' in capsys.readouterr().out
     assert main(['takeover', head], cwd=work, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 0
     assert _latest(forge, head, HOLD_CONTEXT).state == 'success'
     assert main(['takeover', head], cwd=work, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 2

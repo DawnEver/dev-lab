@@ -56,13 +56,13 @@ _MANIFEST = (
 def _output(
     *, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), severity: str = 'MEDIUM', **top: object
 ) -> str:
-    """A findings-output v3 document: one tagged finding anchored on ``x.txt``'s line, when any reviewer is ok."""
+    """A findings-output v3 document: one tagged finding anchored on ``x.py``'s line, when any reviewer is ok."""
     rows = [
         {'name': name, 'provider': 'anthropic', 'status': status, 'dropped_findings': 0} for name, status in reviewers
     ]
     ok = [{'name': row['name'], 'provider': 'anthropic'} for row in rows if row['status'] == 'ok']
     finding = {
-        'id': 'F-0123456789ab', 'severity': severity, 'security': False, 'rule': 'NEVER-DO-X', 'file': 'x.txt',
+        'id': 'F-0123456789ab', 'severity': severity, 'security': False, 'rule': 'NEVER-DO-X', 'file': 'x.py',
         'anchor': 'x', 'summary': 'adds x, which NEVER-DO-X forbids', 'category': 'Bug', 'status': 'OPEN',
         'suggestion': 'drop x', 'detail': 'x is forbidden', 'confidence': 'single', 'reviewers': ok,
     }  # fmt: skip
@@ -95,7 +95,7 @@ def _work(tmp_path: Path) -> tuple[Path, str]:
     advance(work, 'integrate/main', 'AGENTS.md', '# Agents\n')
     advance(work, 'integrate/main', '.claude/rules/taste.md', _RULES)
     (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
-    head = advance(work, 'pr/x', 'x.txt', 'x\n')
+    head = advance(work, 'pr/x', 'x.py', 'x\n')
     return work, head
 
 
@@ -122,7 +122,7 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert where == work
     (comment,) = forge.comments[number]
     assert marker(Marker.REVIEW, head) in comment['body']
-    assert '**HIGH** `x.txt`' in comment['body']
+    assert '**HIGH** `x.py`' in comment['body']
     assert 'F-0123456789ab' in comment['body']
     assert 'correctness@anthropic' in comment['body']
     assert 'rule `NEVER-DO-X`' in comment['body']
@@ -209,7 +209,7 @@ def test_every_reviewer_exhausted_or_auth_is_takeover_pending_and_never_a_failur
         Conclusion.PASS
     )
     for mixed, state in (((*reviewers, ('c', 'ok')), 'success'), ((*reviewers, ('c', 'timeout')), 'error')):
-        moved = advance(work, 'pr/x', f'{state}{len(mixed)}{kinds[0]}.txt', 'z\n')
+        moved = advance(work, 'pr/x', f'{state}{len(mixed)}{kinds[0]}.py', 'z\n')
         forge.pulls[number]['head']['sha'] = moved
         _tick(work, forge, FakeCommand(_output(reviewers=mixed)))
         (posted,) = status_list(forge, moved)
@@ -445,7 +445,7 @@ def test_a_second_tick_on_the_same_head_posts_nothing_and_runs_nothing(tmp_path:
     _tick(work, forge, command)
     assert len(command.ran) == 1
     assert (len(forge.comments[number]), len(forge.statuses[head])) == posted
-    moved = advance(work, 'pr/x', 'y.txt', 'y\n')
+    moved = advance(work, 'pr/x', 'y.py', 'y\n')
     forge.pulls[number]['head']['sha'] = moved
     _tick(work, forge, command)
     assert len(command.ran) == 2
@@ -466,7 +466,8 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     That the retired reviewer's names are gone is the retired-spelling scan's (``lab_commons.hpc.retired``).
     """
     assert {field.name for field in dataclasses.fields(Review)} == {
-        'command', 'model', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
+        'command', 'model', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light', 'code',
+        'not_code',
         'claim_stale', 'max_rounds',
     }  # fmt: skip
 

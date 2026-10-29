@@ -73,6 +73,8 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.principles` — the family's engineering PRINCIPLES, one tuple (user ruling 2026-10-27):
   rendered to ``.claude/rules/principles.md`` by ``hook_install --install`` in every repo (pinned by
   :mod:`dev_lab.dev.famtests.principlespage`), and handed to the review method as ``--principles <json>``.
+* :mod:`dev_lab.dev.reviewpolicy` — the family REVIEW POLICY resolved for one repo (``--json [--repo]``),
+  read from the values the forge review runs on and exported for both triggers (user ruling D83).
 * :mod:`dev_lab.dev.hook_install` — HOOKS-ARE-WIRED, and the half a hook table cannot answer
   for itself: the TOML DECLARES hooks, installing their shims is a separate act on a separate
   machine, and nothing links the two. Measured 2026-09-16: ``consumer-b`` and

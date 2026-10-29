@@ -54,6 +54,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
     # {principles}: a JSON file of dev_lab.dev.principles (written per run; ai-lab holds no copy);
+    # {summary}: --pr-body <file> on the one summarizing call, --no-summary on the rest;
+    # {disposed}: a JSON file of the findings disposed earlier (the forge's own dispositions only);
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
@@ -62,6 +64,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     max_total_bytes = 4000000  # one head: past it, held for a session
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
+    code = [...]               # globs of what executes (forgereview_scope.CODE): nothing else is read or capped
+    not_code = [...]           # globs never code whatever their extension (forgereview_scope.NOT_CODE)
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
 
 ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
@@ -101,7 +105,7 @@ from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, disposed, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import (
     HOST_FIELD,
     RUNTIMES_TABLE,
@@ -166,7 +170,8 @@ FAMILY_MODEL: Final = 'claude-sonnet-5-5'
 FAMILY_COMMAND: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
     '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
-    '--principles', forgereview_scope.PRINCIPLES_FIELD,
+    '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
+    '--disposed', forgereview_scope.DISPOSED_FIELD,
 )  # fmt: skip
 
 #: The runtimes the family command reads from a host's ``[runtimes]``: the ONE set a deploy migrates.
@@ -221,6 +226,8 @@ class Review:
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = STRICT
     light: tuple[str, ...] = LIGHT
+    code: tuple[str, ...] = forgereview_scope.CODE
+    not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
 
     def __post_init__(self) -> None:
@@ -235,7 +242,9 @@ class Review:
     @property
     def budget(self) -> Budget:
         """The bounds and globs :func:`~dev_lab.dev.forgereview_scope.plan` cuts a head by."""
-        return Budget(self.max_diff_bytes, self.max_total_bytes, self.derived, self.strict, self.light)
+        return Budget(
+            self.max_diff_bytes, self.max_total_bytes, self.derived, self.strict, self.light, self.code, self.not_code
+        )
 
 
 def review_from(text: str, origin: str) -> Review:
@@ -375,7 +384,8 @@ def _unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     return f'#{pull.number} {head[:12]}: {said}'
 
 
-def _settle(root: Path, client: Client, pull: PullRequest, review: Review, *, reviewed: str, found: Findings) -> str:
+def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
+            authored: Mapping[str, str]) -> str:  # fmt: skip
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
@@ -388,7 +398,8 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, *, re
         why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
-    return post_round(root, client, pull, reviewed, found=found, max_rounds=review.max_rounds)
+    return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
+                      outside=scope.outside, authored=authored)  # fmt: skip
 
 
 def _without_command(root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope) -> str | None:
@@ -448,7 +459,8 @@ def review_tick(
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
         try:
             synth = command_for(review, scope.range, runtimes, synthesis=True)
-            found = parse_findings(gather(scope.range, argvs, synth, run, root))
+            found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body,
+                                          disposed=disposed(trusted_bodies(client, pull.number))))  # fmt: skip
         except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
             lines.append(_unable(client, pull, host, str(unsupported)))
             continue
@@ -462,7 +474,7 @@ def review_tick(
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
             continue
-        lines.append(_settle(root, client, pull, review, reviewed=scope.range, found=found))
+        lines.append(_settle(root, client, pull, review, scope, found=found, authored=trailed(root, target, head)))
     return tuple(lines)
 
 

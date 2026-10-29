@@ -15,6 +15,11 @@ reviewer's, so it bounds a SLICE (``max_diff_bytes``); the head is held for a se
   a push is reviewed for what it added (:func:`own_base`).
 * GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev.famfiles.GENERATED`) and
   the globs the repo declares (``derived``). Their generator is reviewed, not its output.
+* CODE ONLY (user ruling 2026-10-29): a review reads what executes -- source, tests, scripts, and the build and
+  workflow config that runs -- never prose or data. :data:`CODE` and :data:`NOT_CODE` are that one classification
+  (a repo overrides either: ``code``, ``not_code``); the caps and slices count code bytes only, and the comment
+  says how many changed files were outside (:attr:`Scope.outside`). A 33-branch merge was held at 127 MB that
+  was almost all memory, attic, docs and logs.
 * A LENS per slice: ``strict`` for the paths that refuse or declare (``strict`` globs), ``light`` for prose
   (``light`` globs), ``standard`` for the rest. A slice holds one lens, so the command is told which.
 """
@@ -39,8 +44,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
 __all__ = [
-    'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'PRINCIPLES_FIELD', 'Budget', 'Scope', 'Slice',
-    'gather', 'lens_of', 'own_base', 'plan', 'reviewable', 'reviewed_heads',
+    'CODE', 'DISPOSED_FIELD', 'FINDINGS_FIELD', 'LENSES', 'NOT_CODE', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER',
+    'PRINCIPLES_FIELD', 'SUMMARY_FIELD', 'Budget',
+    'Scope', 'Slice',
+    'gather', 'is_code', 'lens_of', 'own_base', 'plan', 'reviewable', 'reviewed_heads',
 ]  # fmt: skip
 
 #: The review description of a held head (its :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` says the same): a
@@ -50,7 +57,19 @@ __all__ = [
 OVER_CAP_TAKEOVER: Final = 'over the cap: integrator takeover -- forge review takeover <sha> reviews it and releases'
 
 #: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
-ONLY_GENERATED: Final = 'nothing to review: every changed file is generated'
+ONLY_GENERATED: Final = 'nothing to review: every changed file is generated or not code'
+
+#: What executes, by glob: a changed file is reviewed only if it matches one and no :data:`NOT_CODE` glob.
+CODE: Final = (
+    '**/*.py', '**/*.pyi', '**/*.rs', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.ts', '**/*.tsx', '**/*.sh',
+    '**/*.ps1', '**/*.bat', '**/*.cmd', '**/*.c', '**/*.h', '**/*.cpp', '**/*.hpp', '**/*.toml', '**/*.yml',
+    '**/*.yaml', '**/*.cfg', '**/*.ini', '**/Makefile', '**/Dockerfile', '**/justfile',
+)  # fmt: skip
+
+#: Never code though its extension says so: agent memory, archived code, and golden reference data (a motronics
+#: golden is a TOML of measured values, 15 MB each). Each glob is narrow -- a hook under ``.claude/``, a ``logs``
+#: package or a ``golden_*.py`` module executes and is read.
+NOT_CODE: Final = ('**/.claude/memory/**', 'attic/**', '**/golden*.toml')
 
 #: In the ``synthesis`` command: replaced by the merged slice findings' path.
 FINDINGS_FIELD: Final = '{findings}'
@@ -58,6 +77,15 @@ FINDINGS_FIELD: Final = '{findings}'
 #: Replaced by the path of a JSON file holding :func:`dev_lab.dev.principles.payload`, written under the run's
 #: scratch: the method judges against the family's principles and owns no copy of them.
 PRINCIPLES_FIELD: Final = '{principles}'
+
+#: An argument exactly this expands, per call, into the engine's summary flags: ``--pr-body <file of the PR body>``
+#: for the ONE designated call (the first slice), ``--no-summary`` for every other slice and the synthesis -- so the
+#: summary is produced once per head (user ruling D83).
+SUMMARY_FIELD: Final = '{summary}'
+
+#: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: the findings disposed earlier (the
+#: forge's own dispositions only; an author's trailer never reaches the engine), which the engine drops and lists.
+DISPOSED_FIELD: Final = '{disposed}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.
 LENSES: Final = ('strict', 'standard', 'light')
@@ -81,6 +109,7 @@ class Scope:
     range: str
     slices: tuple[Slice, ...] = ()
     held: str | None = None
+    outside: int = 0  # changed files that are not code: counted, never read
 
 
 def _git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
@@ -118,6 +147,11 @@ def _matches(path: str, globs: Iterable[str]) -> bool:
 def reviewable(path: str, derived: Iterable[str]) -> bool:
     """Whether *path* is read: not a family render, not a declared *derived* glob."""
     return path not in GENERATED and not _matches(path, derived)
+
+
+def is_code(path: str, code: Iterable[str], not_code: Iterable[str]) -> bool:
+    """Whether *path* executes: it matches a *code* glob and no *not_code* one."""
+    return _matches(path, code) and not _matches(path, not_code)
 
 
 def lens_of(path: str, strict: Iterable[str], light: Iterable[str]) -> str:
@@ -185,6 +219,8 @@ class Budget:
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = ()
     light: tuple[str, ...] = ()
+    code: tuple[str, ...] = CODE
+    not_code: tuple[str, ...] = NOT_CODE
 
 
 def plan(
@@ -204,13 +240,16 @@ def plan(
     slice is a slice of its own, and the session reads every slice.
     """
     reviewed_range = f'{own_base(root, target, head, reviewed)}..{head}'
-    sizes = {path: n for path, n in _sizes(root, reviewed_range).items() if reviewable(path, budget.derived)}
+    read = {path: n for path, n in _sizes(root, reviewed_range).items() if reviewable(path, budget.derived)}
+    sizes = {path: n for path, n in read.items() if is_code(path, budget.code, budget.not_code)}
+    outside = len(read) - len(sizes)
     total = sum(sizes.values())
     if metered and total > budget.total_bytes:
-        return Scope(reviewed_range, held=f'{total} reviewable bytes > max_total_bytes={budget.total_bytes}')
+        why = f'{total} reviewable code bytes > max_total_bytes={budget.total_bytes}'
+        return Scope(reviewed_range, held=why, outside=outside)
     if metered and (huge := sorted(path for path, n in sizes.items() if n > budget.slice_bytes)):
         why = f'{huge[0]} alone is over max_diff_bytes={budget.slice_bytes}: derive it, or the integrator takes over'
-        return Scope(reviewed_range, held=why)
+        return Scope(reviewed_range, held=why, outside=outside)
     by_lens: dict[str, dict[str, int]] = {}
     for path, n in sizes.items():
         by_lens.setdefault(lens_of(path, budget.strict, budget.light), {})[path] = n
@@ -219,8 +258,9 @@ def plan(
         one for lens in LENSES if lens in by_lens for one in _pack(lens, by_lens[lens], budget.slice_bytes, moves)
     ]
     if len(slices) > 1 and not sliceable:
-        return Scope(reviewed_range, held=f'{len(slices)} slices, and the command takes no paths')
-    return Scope(reviewed_range, tuple(slices))
+        why = f'{len(slices)} slices, and the command takes no paths'
+        return Scope(reviewed_range, held=why, outside=outside)
+    return Scope(reviewed_range, tuple(slices), outside=outside)
 
 
 _REVIEWED: Final = re.compile(re.escape(marker(Marker.REVIEW, 'SHA')).replace('SHA', '(?P<sha>[0-9a-f]{7,40})'))
@@ -232,21 +272,34 @@ def reviewed_heads(bodies: Iterable[str]) -> tuple[str, ...]:
 
 
 def gather(
-    reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path
-) -> str:
+    reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path, *,
+    pr_body: str, disposed: Mapping[str, str],
+) -> str:  # fmt: skip
     """The slices' outputs merged over *reviewed*; with several, the *synthesis* command's reading of them merged in.
 
     *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
-    the principles file as :data:`PRINCIPLES_FIELD`.
+    the principles file as :data:`PRINCIPLES_FIELD` and the *disposed* file as :data:`DISPOSED_FIELD`; the first
+    slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``.
     """
     with tempfile.TemporaryDirectory() as scratch:
         given = Path(scratch) / 'principles.json'
         given.write_text(json.dumps(payload()), encoding='utf-8')
+        body = Path(scratch) / 'pr-body.md'
+        body.write_text(pr_body, encoding='utf-8')
+        gone = Path(scratch) / 'disposed.json'
+        rows = [{'id': fid, 'reason': why} for fid, why in disposed.items()]
+        gone.write_text(json.dumps({'disposed': rows}, ensure_ascii=False), encoding='utf-8')
 
-        def filled(argv: Sequence[str]) -> list[str]:
-            return [arg.replace(PRINCIPLES_FIELD, str(given)) for arg in argv]
+        def filled(argv: Sequence[str], *, summarizes: bool = False) -> list[str]:
+            flags = ['--pr-body', str(body)] if summarizes else ['--no-summary']
+            return [
+                one
+                for arg in argv
+                for one in (flags if arg == SUMMARY_FIELD else [arg.replace(PRINCIPLES_FIELD, str(given))
+                                                                .replace(DISPOSED_FIELD, str(gone))])
+            ]  # fmt: skip
 
-        merged = merge_outputs([run(filled(argv), root) for argv in argvs], reviewed)
+        merged = merge_outputs([run(filled(argv, summarizes=not at), root) for at, argv in enumerate(argvs)], reviewed)
         if not synthesis or len(argvs) == 1:
             return merged
         path = Path(scratch) / 'findings.json'

@@ -39,7 +39,7 @@ from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
-from dev_lab.dev.forgereview_rounds import post_round
+from dev_lab.dev.forgereview_rounds import disposed, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
@@ -146,13 +146,22 @@ def takeover(
         raise TakeoverRefused(msg)
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
     synth = command_for(review, scope.range, runtimes, synthesis=True)
-    found = parse_findings(gather(scope.range, argvs, synth, run, root))
+    gone = disposed(trusted_bodies(client, pull.number))  # the forge's own: a trailer never reaches the engine
+    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body, disposed=gone))
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         msg = f'no reviewer returned findings ({kinds}); nothing is posted and the hold stands'
         raise TakeoverRefused(msg)
     said = post_round(
-        root, client, pull, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover'
+        root,
+        client,
+        pull,
+        scope.range,
+        found=found,
+        max_rounds=review.max_rounds,
+        by='integrator takeover',
+        outside=scope.outside,
+        authored=trailed(root, f'origin/{base}', pull.head_sha),
     )
     return f'{said} ({len(scope.slices)} slice(s))', release(client, pull.head_sha, host=host)
 
@@ -205,8 +214,10 @@ def main(
         if args.verb == 'plan':
             scope = scope_of(root, origin, review, pull, base)
             emit(
-                f'#{pull.number} {scope.range}: {len(scope.slices)} slice(s){f" -- {scope.held}" if scope.held else ""}'
+                f'#{pull.number} {scope.range}: {len(scope.slices)} slice(s), {scope.outside} non-code file(s) outside'
+                f'{f" -- {scope.held}" if scope.held else ""}'
             )
+            emit(f'  code bytes: {sum(one.size for one in scope.slices)}')
             for one in scope.slices:
                 emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
             return 0

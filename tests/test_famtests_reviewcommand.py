@@ -24,7 +24,7 @@ from dev_lab.dev.forgereview import (
     command_for,
     review_from,
 )
-from dev_lab.dev.forgereview_scope import PRINCIPLES_FIELD, gather
+from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, PRINCIPLES_FIELD, SUMMARY_FIELD, gather
 from dev_lab.dev.principles import payload
 from dev_lab.dev.rules import RULES
 
@@ -46,7 +46,7 @@ def test_the_family_command_slices_and_names_one_model() -> None:
     assert argv == [
         'C:/rt/python.exe', '-m', 'ai_lab.review', '--range', 'a..b', '--lens', 'strict',
         '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES),
-        '--paths', 'x.py', 'y.py', '--principles', PRINCIPLES_FIELD,
+        '--paths', 'x.py', 'y.py', '--principles', PRINCIPLES_FIELD, SUMMARY_FIELD, '--disposed', DISPOSED_FIELD,
     ]  # fmt: skip
 
 
@@ -76,8 +76,39 @@ def test_the_principles_reach_the_method_as_a_file(tmp_path: Path) -> None:
         raise _Ran
 
     with pytest.raises(_Ran):
-        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path)
+        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path, pr_body='', disposed={})
     assert seen == [payload()]
+
+
+def _slice_doc(**top: object) -> str:
+    return json.dumps({
+        'schema_version': 3, 'range': 'a..b', 'profiles': ['c'],
+        'reviewers': [{'name': 'c', 'provider': 'p', 'status': 'ok', 'dropped_findings': 0}], 'findings': [], **top,
+    })  # fmt: skip
+
+
+def test_one_call_summarizes_with_the_pr_body_and_every_call_is_handed_the_dispositions(tmp_path: Path) -> None:
+    """The FIRST slice carries ``--pr-body``; the other slices and the synthesis pass ``--no-summary``.
+
+    PLANTED control: a summary only the first call printed is the merged document's; the rest printed none.
+    """
+    seen: list[tuple[list[str], str, object]] = []
+    summary = {'changes': [{'claim': 'adds x', 'cites': ['abc1234']}]}
+
+    def run(argv: Sequence[str], _root: Path) -> str:
+        argv = list(argv)
+        body = Path(argv[argv.index('--pr-body') + 1]).read_text(encoding='utf-8') if '--pr-body' in argv else ''
+        gone = json.loads(Path(argv[argv.index('--disposed') + 1]).read_text(encoding='utf-8'))
+        seen.append((argv, body, gone))
+        return _slice_doc(summary=summary) if body else _slice_doc()
+
+    shape = ['r', SUMMARY_FIELD, '--disposed', DISPOSED_FIELD]
+    merged = gather('a..b', [shape, shape], ['s', '{findings}', *shape], run, tmp_path,
+                    pr_body='Why: x.', disposed={'F-1': 'upstream'})  # fmt: skip
+    assert [body for _, body, _ in seen] == ['Why: x.', '', '']
+    assert ['--no-summary' in argv for argv, _, _ in seen] == [False, True, True]
+    assert all(gone == {'disposed': [{'id': 'F-1', 'reason': 'upstream'}]} for _, _, gone in seen)
+    assert json.loads(merged)['summary'] == summary
 
 
 class _Ran(Exception):
