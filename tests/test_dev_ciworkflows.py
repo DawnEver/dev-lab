@@ -25,7 +25,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    assert set(workflows(_ROOT)) == {'ci.yml', 'python-verify.yml'}, 'a floor: an empty table drifts from nothing'
+    assert set(workflows(_ROOT)) == {'ci.yml'}, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 

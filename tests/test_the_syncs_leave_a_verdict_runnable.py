@@ -1,9 +1,9 @@
-"""THE LIVE HALF: the kit's recorded sync selections re-measured against its own working tree.
+"""THE LIVE HALF: the kit's pruning commands re-measured against its own working tree.
 
 `test_dev_syncscope.py` proves the reader can fail, over planted manifests. THIS file is a
-MEASUREMENT -- which selections this repo makes, and what each would leave behind -- so a recorded
-scope cannot age quietly into prose. It reads no sibling: each consumer declares its own selections
-and calls the same `assert_scopes` over its own checkout. Nothing here installs, syncs or prunes.
+MEASUREMENT -- which commands in this repo's declared doors move a population -- so a new `uv sync`
+cannot join quietly. The kit makes no extras selection of its own (`_synccensus_rows`); each consumer
+declares its own and calls `assert_scopes` over its own checkout. Nothing here installs, syncs or prunes.
 """
 
 from __future__ import annotations
@@ -11,19 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-import pytest
-
 from dev_lab.dev._doorcensus_rows import DOORS
-from dev_lab.dev._synccensus_rows import REPO_FLOOR, ROW_FLOOR, ROWS, SITE_COMMAND_FLOOR, SITES
+from dev_lab.dev._synccensus_rows import SITE_COMMAND_FLOOR, SITES
 from dev_lab.dev.doorcensus import door_text, reachable
 from dev_lab.dev.installdoor import commands
-from dev_lab.dev.synccensus import (
-    EvidenceGoneError,
-    ScopeDriftError,
-    ScopeRow,
-    assert_scopes,
-    pruning_sites,
-)
+from dev_lab.dev.synccensus import pruning_sites
 
 #: This repo's checkout, and the directory it sits in -- the census API joins the two.
 _ROOT: Final = Path(__file__).resolve().parents[1]
@@ -49,12 +41,6 @@ def _door_texts() -> dict[tuple[str, str], str]:
     return out
 
 
-def test_every_recorded_selection_still_leaves_what_the_table_records() -> None:
-    """THE CENSUS. Equality on scope AND on the stranded set, in both directions, per row."""
-    seen = assert_scopes(_BASE, _PATHS, ROWS, repo_floor=REPO_FLOOR, row_floor=ROW_FLOOR, here=_HERE)
-    assert _HERE in seen, 'the census did not even read the tree it runs in'
-
-
 def test_this_repo_has_no_pruning_command_no_row_accounts_for() -> None:
     """THE OTHER SIDE OF THE RATCHET: a new `uv sync` in a declared door must red, not join quietly.
 
@@ -77,60 +63,13 @@ def test_this_repo_has_no_pruning_command_no_row_accounts_for() -> None:
     )
 
 
-def test_every_declared_site_carries_a_reason_rather_than_a_caption() -> None:
-    """A site listed with a caption is a decision nobody made; the floor is what makes the row evidence."""
-    assert SITES, 'the site table read empty -- an unread table is not a clean one'
-    for key, why in SITES.items():
-        assert len(why) >= 150, f'{key} is declared with a {len(why)}-character reason'
-
-
-def test_the_census_refuses_a_scope_planted_into_the_real_table() -> None:
-    """A PLANTED CONTROL ON THE REAL ROWS: the COMPLETE selection recorded as stranding nothing, flipped.
-
-    The plant is the edit that would actually hide the finding -- a row's verdict rewritten to what
-    somebody wished it said -- driven through the real guard over the real checkouts.
-    """
-    broken = tuple(
-        ScopeRow(
-            row.repo,
-            row.path,
-            row.evidence,
-            row.selected,
-            'STRANDS' if row.scope == 'COMPLETE' else 'COMPLETE',
-            frozenset({'pytest'}) if row.scope == 'COMPLETE' else frozenset(),
-            row.why,
-        )
-        for row in ROWS
-    )
-    with pytest.raises(ScopeDriftError, match='records'):
-        assert_scopes(_BASE, _PATHS, broken, repo_floor=REPO_FLOOR, row_floor=ROW_FLOOR, here=_HERE)
-
-
-@pytest.mark.parametrize(
-    'evidence',
-    [pytest.param(lambda row: row.evidence + ' #gone', id='gone'), pytest.param(lambda _row: '=', id='ambiguous')],
-)
-def test_the_census_refuses_a_row_whose_evidence_is_not_on_exactly_one_line(evidence) -> None:
-    """The second plant: evidence that stands nowhere, and evidence that stands on many lines."""
-    moved = tuple(
-        ScopeRow(row.repo, row.path, evidence(row), row.selected, row.scope, row.stranded, row.why) for row in ROWS
-    )
-    with pytest.raises(EvidenceGoneError, match='exactly one line'):
-        assert_scopes(_BASE, _PATHS, moved, repo_floor=REPO_FLOOR, row_floor=ROW_FLOOR, here=_HERE)
-
-
 def test_a_pruning_command_planted_into_a_real_door_is_found() -> None:
-    """THE SCAN'S OWN CONTROL: the `--no-sync` dropped off this repo's real CI door, through the real scanner.
+    """THE SCAN'S OWN CONTROL: a `uv sync` planted into a copy of this repo's real Makefile, through the real scanner.
 
-    The remedy `installdoor` names for a lock-consuming command is the same token that keeps it out
-    of THIS census, so removing it must make the file appear as a pruning site. No environment is
-    touched; the plant is a string replacement on a copy of the text.
+    The live scan reads no pruning site, and an empty reading proves nothing alone: the same text with
+    one population-moving command added must surface exactly that command. Nothing is installed.
     """
-    home = _ROOT / 'pyproject.toml'
-    text = home.read_text(encoding='utf-8')
-    assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
-    planted = {('dev-lab', 'planted'): text.replace('uv run --no-sync', 'uv run')}
-    (command,) = [command for repo, path, command in SITES if (repo, path) == ('dev-lab', 'pyproject.toml')]
-    assert ('dev-lab', 'planted', command) in pruning_sites(planted)
-    assert len(pruning_sites(planted)) > 1, 'removing the remedy surfaced no further pruning command'
-    assert pruning_sites({('dev-lab', 'planted'): text}) == (('dev-lab', 'planted', command),)
+    text = (_ROOT / 'Makefile').read_text(encoding='utf-8')
+    assert pruning_sites({('dev-lab', 'planted'): text}) == ()
+    planted = text + '\nsync:\n\tuv sync --frozen\n'
+    assert pruning_sites({('dev-lab', 'planted'): planted}) == (('dev-lab', 'planted', 'uv sync --frozen'),)

@@ -16,11 +16,10 @@ from typing import Final
 
 import pytest
 
-from dev_lab.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
+from dev_lab.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR
 from dev_lab.dev.doorcensus import (
     DoorDriftError,
     assert_census,
-    door_text,
     reachable,
     read,
 )
@@ -45,38 +44,18 @@ def test_every_declared_door_still_measures_what_the_table_records() -> None:
     assert _HERE in seen, 'the census did not even read the tree it runs in'
 
 
-def test_the_shared_ci_door_is_judged_against_what_its_callers_float() -> None:
-    """THE FINDING, kept live: at home it reads INERT, and at home is not where it runs.
-
-    Both classifications of the one file are asserted, because the row's whole content is that they
-    DIFFER. If the home reading ever stops being vacuous -- the day lab-commons declares a floating
-    requirement of its own -- this reds, and that is the day the ordinary row acquires teeth.
-    """
-    for shared in SHARED:
-        assert shared.repo == _HERE, f'{shared.repo} is not this repo, and only this repo`s doors are read here'
-        text = door_text(_ROOT, shared.path, at_head=False)
-        assert text is not None, f'{shared.path} is declared shared and is not in this tree'
-        assert read(text, ()).deliveries <= {'INERT'}, 'the home reading is no longer vacuous'
-        assert read(text, shared.caller_floats).deliveries == shared.deliveries, (
-            f'{shared.path} run by a caller floating {shared.caller_floats} no longer delivers '
-            f'{sorted(shared.deliveries)}'
-        )
-
-
 def test_a_reverting_door_planted_into_a_live_repo_is_refused() -> None:
     """THE PLANTED CONTROL FOR THE LIVE HALF: a green census over real trees proves nothing alone.
 
-    The plant is the edit somebody would actually make -- the `--no-sync` dropped off the shared CI
-    workflow's `uv run` -- applied to a copy of THIS repo's real file and classified against a real
-    caller's real floating names. No environment is touched and nothing is installed; this is a
-    statement about command text, which is the only kind this layer ever makes.
+    The plant is the edit somebody would actually make -- a `uv run` without `--no-sync` added to this
+    repo's real Makefile -- classified against a real caller's floating names. At home it reads INERT;
+    against a floating `lab-commons` the planted implicit sync is convicted UNLOCKED. Nothing is installed.
     """
-    home = _ROOT / 'pyproject.toml'
-    text = home.read_text(encoding='utf-8')
-    assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
-    # No caller lock is supplied to this text-only reading: the frozen sync remains unmeasured,
-    # while every planted implicit run is still convicted as UNLOCKED.
-    assert read(text.replace('uv run --no-sync', 'uv run'), ('lab-commons',)).deliveries == {'UNLOCKED', 'UNMEASURED'}
+    text = (_ROOT / 'Makefile').read_text(encoding='utf-8')
+    assert read(text, ()).deliveries == {'INERT'}
+    assert 'UNLOCKED' not in read(text, ('lab-commons',)).deliveries
+    planted = text + '\nrun:\n\tuv run python -m dev_lab.dev.verify\n'
+    assert 'UNLOCKED' in read(planted, ('lab-commons',)).deliveries
 
 
 def test_the_census_refuses_a_drift_planted_into_the_real_table() -> None:

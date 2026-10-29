@@ -164,16 +164,8 @@ def test_a_missing_manifest_raises_rather_than_answering_none(tmp_path: Path) ->
         floating_requirements(tmp_path / 'pyproject.toml')
 
 
-#: THIS repo's own install doors, declared as a named set. `python-verify.yml` is here because it
-#: RUNS in every caller's checkout, so its lock-consuming steps are a door of this tree even though
-#: the environment they move is somebody's CI runner.
-#:
-#: AND THAT SENTENCE WAS INERT UNTIL 2026-09-19, which is worth keeping rather than tidying away.
-#: The claim was true and the scan below could not carry it: it classifies against THIS repo's
-#: floating requirements, which are `()`, so all three of that workflow's lock-consuming commands
-#: read INERT here and would have gone on doing so against any caller. The honest reading is
-#: `_doorcensus_rows.SHARED`, which judges the file against the names of the repos that RUN it.
-_OWN_DOORS: tuple[str, ...] = ('Makefile', '.github/workflows/ci.yml', '.github/workflows/python-verify.yml')
+#: THIS repo's own install doors, declared as a named set: the Makefile and the rendered CI workflow.
+_OWN_DOORS: tuple[str, ...] = ('Makefile', '.github/workflows/ci.yml')
 
 #: MEASURED 2026-09-19: 16 installer-capable commands across those three files. The floor is under it
 #: because "no reverting door" over a set that was never read is the vacuous green this family refuses.
