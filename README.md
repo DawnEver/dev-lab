@@ -15,7 +15,7 @@ A consumer declares it beside lab-commons, as one bare git URL that its `uv.lock
 
 ```toml
 [dependency-groups]
-dev = ["dev-lab @ git+https://gitea.mingyangbao.site/Tianjie-Zou-Team/dev-lab.git"]
+dev = ["dev-lab @ git+https://github.com/DawnEver/dev-lab.git"]
 ```
 
 Its own environment is built through the dependency door, never a bare installer:

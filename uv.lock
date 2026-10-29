@@ -224,7 +224,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "commitizen" },
-    { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git" },
+    { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://github.com/DawnEver/lab-commons.git?branch=integrate%2Fmain" },
     { name = "nodejs-wheel-binaries", marker = "extra == 'test'" },
     { name = "pytest" },
     { name = "pytest-mock" },
@@ -280,8 +280,8 @@ wheels = [
 
 [[package]]
 name = "lab-commons"
-version = "0.3.1.dev1224+gd1e02c4c5"
-source = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git#d1e02c4c5a5e12f57ca23562e031c9da2d216ccb" }
+version = "0.3.1.dev1225+gafe909969"
+source = { git = "https://github.com/DawnEver/lab-commons.git?branch=integrate%2Fmain#afe909969d95188d9a0c0d4fe6c764a2dad0ef03" }
 
 [package.optional-dependencies]
 io = [

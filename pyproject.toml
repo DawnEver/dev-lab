@@ -35,7 +35,7 @@ test = ["nodejs-wheel-binaries"]
 forge = "dev_lab.dev.forgerecords:read_allocation"
 
 [project.urls]
-Homepage = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/dev-lab"
+Homepage = "https://github.com/DawnEver/dev-lab"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -53,8 +53,8 @@ template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_t
 packages = ["src/dev_lab"]
 
 [tool.uv.sources]
-# The forge HEAD is the split integration line; one bare URL composes with downstream declarations.
-lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git" }
+# lab-commons follows its integration line on GitHub, its one home.
+lab-commons = { git = "https://github.com/DawnEver/lab-commons.git", branch = "integrate/main" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.dev_lab.placement]
