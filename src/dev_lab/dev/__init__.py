@@ -172,6 +172,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   ``[tool.dev_lab.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`dev_lab.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
   (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
+* :mod:`dev_lab.dev.partrows` -- the name of an OS-qualified part row (``base@windows``): its part, its
+  system, and this machine's platform.
 * :mod:`dev_lab.dev.producer` -- the producer exit contract: what a part producer's exit code
   means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE), one source.
 * :mod:`dev_lab.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
