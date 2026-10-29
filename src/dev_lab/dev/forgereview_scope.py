@@ -94,7 +94,9 @@ LENSES: Final = ('strict', 'standard', 'light')
 
 _GIT_TIMEOUT_S: Final = 120
 
-#: ``git diff -M``'s similarity threshold: a delete and an add this alike are one move, sized by its hunks.
+#: ``git diff -M``'s similarity threshold: a delete and an add this alike are one move, sized by its hunks. The
+#: call passes ``-l0``: past git's default rename limit (1000) inexact detection is SKIPPED with a warning, and
+#: the motronics 33-branch merge (1504 adds) read 318 edited moves as deletes plus adds.
 _SIMILAR: Final = '50%'
 _NUL: Final = chr(0)
 
@@ -175,7 +177,8 @@ def _diff(root: Path, reviewed: str) -> tuple[dict[str, int], dict[str, str], tu
     path, and its old path costs 0 (it stays, so the slice holding the move reads it as one): a 33-branch merge with
     859 moves read as deletes plus adds measured 30 MB of code. A pure move (``R100``) is listed in the third item.
     """
-    raw, _, patch = _git(root, 'diff', f'-M{_SIMILAR}', '-z', '--patch-with-raw', reviewed)[1].partition(_NUL * 2)
+    text = _git(root, 'diff', f'-M{_SIMILAR}', '-l0', '-z', '--patch-with-raw', reviewed)[1]
+    raw, _, patch = text.partition(_NUL * 2)
     fields = raw.split(_NUL)
     entries: list[tuple[str, ...]] = []
     at = 0
