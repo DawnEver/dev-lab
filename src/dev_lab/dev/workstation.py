@@ -3,7 +3,7 @@
 The counterpart of a cluster account's ``python -m dev_lab.dev.hpchost deploy``, and it reuses that
 deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 
-``deploy --repos dev-lab,<repo>,... (--capabilities workstation,jmag:4 | --role light) [--forge <https base>]
+``deploy --repos <repo>,... (--capabilities workstation,jmag:4 | --role light) [--forge <https base>]
 [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. A ``--role`` is a declared profile
 (:data:`ROLES`: its capabilities and ``[serve]`` rule); ``template --role <role> --repos ...`` prints the tables
 it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses one in ``--capabilities``.
@@ -223,8 +223,8 @@ class Programs:
 
 def _repos(text: str) -> tuple[str, ...]:
     repos = tuple(dict.fromkeys(part.strip() for part in text.split(',') if part.strip()))
-    if KIT not in repos:
-        msg = f'the Task runs from the {KIT} checkout, so --repos must include it'
+    if not repos:
+        msg = 'name at least one repo to serve'
         raise argparse.ArgumentTypeError(msg)
     return repos
 
@@ -233,7 +233,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.workstation', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     dep = verbs.add_parser('deploy', help='make this workstation a forge serve host')
-    dep.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {KIT}')
+    dep.add_argument(
+        '--repos',
+        type=_repos,
+        required=True,
+        help=f'comma-separated, the repos served; {KIT} only if its queue is served here',
+    )
     dep.add_argument('--capabilities', type=capabilities, default=None, help='comma-separated name or name:seats')
     dep.add_argument(
         '--role', choices=sorted(ROLES), help='a declared profile (ROLES): its capabilities and [serve] rule'
@@ -244,7 +249,12 @@ def _parser() -> argparse.ArgumentParser:
     verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
     tpl = verbs.add_parser('template', help='print the machine-file tables a --role deploy writes')
     tpl.add_argument('--role', choices=sorted(ROLES), required=True)
-    tpl.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {KIT}')
+    tpl.add_argument(
+        '--repos',
+        type=_repos,
+        required=True,
+        help=f'comma-separated, the repos served; {KIT} only if its queue is served here',
+    )
     return parser
 
 
@@ -361,7 +371,8 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     if args.role and (why := role_refusal(args.role, args.capabilities)):
         parser.error(why)
     tools = programs or Programs()
-    checkouts = {name: servetask.checkout(tools.home, name) for name in args.repos}
+    # the Task runs from the kit checkout, so it is deployed on every host, served or not (ruling 2026-10-29)
+    checkouts = {name: servetask.checkout(tools.home, name) for name in dict.fromkeys((KIT, *args.repos))}
     try:
         urls = _preflight(args, tools, checkouts)
     except ValueError as bad:
@@ -404,7 +415,8 @@ def serve(
 ) -> int:
     """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock, each in a LANE; the worst exit.
 
-    dev-lab is refreshed first, then each repo in order (:func:`dev_lab.dev.hostrefresh.refresh`):
+    The kit (dev-lab) is refreshed first whether or not ``[serve] repos`` names it (ruling 2026-10-29), then
+    each repo in order (:func:`dev_lab.dev.hostrefresh.refresh`):
     a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
     The serving dev-lab checkout's own hooks are re-installed whenever they are not live (stale after a move).
 
@@ -444,7 +456,9 @@ def serve(
             return 0
         if why:
             return _stand_down(tools, root, repos, why)
-        return serve_lanes(repos, refreshed, serving(root, run, out), period_s=period_s)
+        # the kit is refreshed every tick whether or not it is served (ruling 2026-10-29); served, its lane does it
+        kit_rc = 0 if KIT in repos else refreshed(KIT)
+        return max(kit_rc, serve_lanes(repos, refreshed, serving(root, run, out), period_s=period_s))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
