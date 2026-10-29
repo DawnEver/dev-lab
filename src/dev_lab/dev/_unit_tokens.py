@@ -382,9 +382,9 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'and `s`, and this token has never seen a microsecond.'
     ),
     'uv': (
-        'microvolt -- 1,051 `_uv` rows measured and every one a CASE NAME: `ipm_uv` x891 and '
-        '`pmasynrm_uv` x119 are the U-shape/V-shape magnet layouts two motor cases are named for, and '
-        '`IPM_UV` x13 is the same name shouting. Two case families account for 1,047 of the 1,051 rows; '
+        'microvolt -- 1,051 `_uv` rows measured and every one a CASE NAME: two downstream case '
+        'families carry `_uv` (a U-shape/V-shape layout) in their names, lower and upper case. '
+        'They account for 1,047 of the 1,051 rows; '
         'zero microvolts.'
     ),
     'v': (

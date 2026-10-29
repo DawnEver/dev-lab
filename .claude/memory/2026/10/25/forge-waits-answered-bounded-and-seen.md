@@ -15,7 +15,7 @@ metadata:
 | (a) no live host can ever fit | none measured: host-A's size is 30.1 GB after its reserve, the 12.4 GB base part fits it | 0 | `forgewait.nowhere` now refuses such a part on its commit at once, naming the remedy |
 | (b)+(c) fits, host busy, smaller claims keep passing | consumer-c milestone `base` on host-A, `lacking mem_gb (12.4 asked, 0 free)` for hours; G read 0.21-0.8 GB free all day beside interactive verify claims | 1 | the claim pass protects its earliest start (`Box.delays`, the ledger's backfill rule) and posts `waits/base` past `request_unadmitted_hours` |
 | (d) host liveness | 12 dev-lab PRs `no host provides workstation` (13 reported), host-A's only serve busy, its card STALE | 12 | dev-lab #135 |
-| (e) Ada idle-core waits | ezxmw9 last 36 h: 1149 tasks, shortq p90 wait 1.27 h even at a <=1 h limit; defq tasks asked a median 45.2 h wall and used a median 0.27 h (p90 10 % of the limit) | 92 defq tasks over 12 h | lab-commons `hpc/gather.py:102`, open, below |
+| (e) Ada idle-core waits | user4 last 36 h: 1149 tasks, shortq p90 wait 1.27 h even at a <=1 h limit; defq tasks asked a median 45.2 h wall and used a median 0.27 h (p90 10 % of the limit) | 92 defq tasks over 12 h | lab-commons `hpc/gather.py:102`, open, below |
 
 The G case is NOT (a): `Capacity.read()` on host-A is 31 cores / 30.14 GB. What starved it was ordering -- a part
 refused for room never took a ledger ticket, so every interactive verify and every smaller part was admitted

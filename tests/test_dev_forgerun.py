@@ -764,7 +764,7 @@ def test_a_run_whose_ref_is_gone_is_cancelled_started_tasks_too_unless_its_resul
 ) -> None:
     """A run whose sha is no ref's tip any more -- its PR merged or closed, the branch deleted -- drains for no one.
 
-    Ada 2026-10-24: 16 started shards of eight motronics shas that were no origin head ran 7 h to 1 d 16 h while
+    Ada 2026-10-24: 16 started shards of eight consumer-a shas that were no origin head ran 7 h to 1 d 16 h while
     the live PR crawled. NEWEST-HEAD-ONLY keeps a superseded run's started tasks because its TIP carries them;
     a deleted ref has no tip, so unless the integration tip carries its result (equivalent, P6) every job goes.
     """
@@ -923,7 +923,7 @@ def test_a_superseded_runs_started_task_drains_until_its_learned_deadline_then_i
 ) -> None:
     """USER RULING 2026-10-24 "B": a superseded run drains WITH A DEADLINE.
 
-    Ada 2026-10-24: five superseded heads of live PRs held ezxmw9 for up to 1 d 16 h. A started task's deadline
+    Ada 2026-10-24: five superseded heads of live PRs held user4 for up to 1 d 16 h. A started task's deadline
     is its learned limit (the estimate times ``policy.safety``, :meth:`SlurmCluster.started_tasks`) counted
     from supersession or its own start, whichever is later; past it the task is cancelled, its tests left to
     the tip, and the run releases once nothing else runs. PLANTED CONTROL: a run that is still its ref's tip,

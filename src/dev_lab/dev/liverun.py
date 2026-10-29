@@ -1,7 +1,7 @@
 """TREE-HAS-A-LIVE-RUN: a checkout whose run is in progress is not edited, merged into, or re-synced.
 
-THE INCIDENTS (motronics, 2026-10-19). While a JMAG run executed from a checkout -- its interpreter
-``<checkout>/.venv/Scripts/python.exe -m motronics case sweep|deck run ...`` -- an agent edited a test file in
+THE INCIDENTS (downstream, 2026-10-19). While a JMAG run executed from a checkout -- its interpreter
+``<checkout>/.venv/Scripts/python.exe -m app case sweep|deck run ...`` -- an agent edited a test file in
 that checkout, ran ``git merge`` into it, and ran ``dep --sync`` on a worktree's venv the run was executing
 from. ``deck run`` holds no environment seat, so the seat could not refuse the sync: a seat is a promise the
 run has to make, and this one forgot.
@@ -27,7 +27,7 @@ WHAT IS NOT A RUN, each decided by evidence:
   minutes. A run started within the floor is caught by the next tool call.
 * A multiprocessing worker whose parent is gone (:data:`SPAWN_WORKER`). It serves its parent through a pipe,
   so without the parent it can never advance; it only holds the cwd it inherited. Measured 2026-10-24: two
-  day-old spawn workers of a dead pid sat in a motronics worktree and refused every mutation there.
+  day-old spawn workers of a dead pid sat in a downstream worktree and refused every mutation there.
 
 WHAT IS NOT THE TREE: ``output/`` (a run's own logs, a person's log moves) and ``.claude/`` (agent state no
 run reads). Everything else under the checkout root is, down to the nearest nested checkout: a worktree
