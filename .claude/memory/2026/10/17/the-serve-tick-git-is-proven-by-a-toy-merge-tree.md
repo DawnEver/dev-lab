@@ -5,7 +5,7 @@ created: 2026-10-17
 ---
 # The serve tick's git is proven by a toy merge-tree (2026-10-17)
 
-- Incident (Ada, ezztz@hpclogin02, after `python -m lab_commons.hpc deploy`): `dev/trialmerge.py` and
+- Incident (Ada, user2@login02, after `python -m lab_commons.hpc deploy`): `dev/trialmerge.py` and
   `dev/integrate.py` run `git merge-tree --write-tree` (git >= 2.38). Cron's PATH
   (`~/.local/bin:~/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/opt/slurm/...`) resolved `/usr/bin/git` 2.31.1:
   `usage: git merge-tree <base-tree> <branch1> <branch2>` every tick. The grant's

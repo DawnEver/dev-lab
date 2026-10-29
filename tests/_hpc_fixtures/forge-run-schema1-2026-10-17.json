@@ -3,7 +3,7 @@
   "sha": "c4b6bfd37f235761a21c79390ff1cf218c88cf98",
   "ref": "feat/optimization",
   "collect": "tests",
-  "output": "/gpfs01/home/alice/src/consumer/output/logs/26/10/17/parts/c4b6bfd37f235761a21c79390ff1cf218c88cf98",
+  "output": "/shared/home/alice/src/consumer/output/logs/26/10/17/parts/c4b6bfd37f235761a21c79390ff1cf218c88cf98",
   "owner": "claim machine=login1 login=alice until=2026-10-17T20:10:45Z hpc=site-ada/alice",
   "phase": "submitted",
   "job_ids": [

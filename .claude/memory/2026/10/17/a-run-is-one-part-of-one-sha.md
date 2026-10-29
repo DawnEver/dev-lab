@@ -5,7 +5,7 @@ created: 2026-10-17
 ---
 # A run is one part of one sha (2026-10-17)
 
-- Incident (Ada, ezxmw9, <consumer> 59ad34a6657d): base ran there (job 7714447, record
+- Incident (Ada, user4, <consumer> 59ad34a6657d): base ran there (job <job>, record
   `run-<sha>-base-20261017-053549.json.gz`). The femm part was then claimed on the same account.
   `SlurmCluster.submitted` read `~/ci/runs/<sha>/state.json` -- BASE's -- found its rounds, so `advance`
   skipped `submit` (the log has no `[femm] ... submitted jobs` line and sacct no femm job). `gather` settled

@@ -269,7 +269,7 @@ def test_an_orphan_whose_parent_pid_was_reused_by_a_younger_process_is_still_an_
 
 def test_an_orphan_is_refused_naming_why_when_any_one_condition_fails() -> None:
     """PLANTED CONTROLS: each condition alone refuses -- a live parent, a claim, an undeclared tool, no ledger."""
-    parented = {40: (7, _DESIGNER), 7: (1, 'python -m motronics case run')}
+    parented = {40: (7, _DESIGNER), 7: (1, 'python -m app case run')}
     orphaned = {40: (7, _DESIGNER), 41: (40, 'child'), 70: (5, 'notepad.exe')}
     born = {40: 200, 7: 100}.get
     killed: list[int] = []
@@ -357,7 +357,7 @@ def test_an_orphaned_multiprocessing_worker_is_an_orphan_by_liverun_s_rule() -> 
     for line in (spawn, forkserver):
         code, lines = stop(80, {80: (7, line)}, dry_run=True, claimed=_none_claimed)
         assert code == 0, lines
-    parented = {80: (7, spawn), 7: (1, 'python -m motronics case run')}
+    parented = {80: (7, spawn), 7: (1, 'python -m app case run')}
     code, lines = stop(80, parented, dry_run=True, claimed=_none_claimed, born={80: 200, 7: 100}.get)
     assert code == 3
     assert 'parent 7 is alive' in lines[0]

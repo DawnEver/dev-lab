@@ -69,10 +69,10 @@ def test_a_dark_platform_alarms_once_per_episode_and_clears_when_a_host_ticks_ag
 
 def test_a_tick_whose_every_repo_is_serve_false_alarms_loudly_once_and_a_serving_tick_clears_it(capsys) -> None:
     raised: list[Alarm] = []
-    assert serve_off({'dev-lab': False, 'motronics': False}, 'alice', alarm=raised.append, repo=REPO)
-    assert serve_off({'dev-lab': False, 'motronics': False}, 'alice', alarm=raised.append, repo=REPO)
+    assert serve_off({'dev-lab': False, 'consumer-a': False}, 'alice', alarm=raised.append, repo=REPO)
+    assert serve_off({'dev-lab': False, 'consumer-a': False}, 'alice', alarm=raised.append, repo=REPO)
     assert [(a.kind, a.about) for a in raised] == [(FLEET, 'serve-off:alice')]
     assert 'serves nothing' in capsys.readouterr().err
-    assert not serve_off({'dev-lab': False, 'motronics': True}, 'alice', alarm=raised.append, repo=REPO)
+    assert not serve_off({'dev-lab': False, 'consumer-a': True}, 'alice', alarm=raised.append, repo=REPO)
     serve_off({'dev-lab': False}, 'alice', alarm=raised.append, repo=REPO)
     assert len(raised) == 2

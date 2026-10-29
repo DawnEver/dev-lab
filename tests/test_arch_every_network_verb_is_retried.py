@@ -1,6 +1,6 @@
 """NETWORK-RETRY-THEN-REPORT, BY CONSTRUCTION: every network argv the kit spells reaches the ONE retry door.
 
-INCIDENTS 2026-10-19 (motronics): ``dep --sync`` ran ``uv sync`` raw and one forge auth blip failed it; a
+INCIDENTS 2026-10-19 (consumer-a): ``dep --sync`` ran ``uv sync`` raw and one forge auth blip failed it; a
 ``git ls-remote`` reach probe, a host refresh's ``git fetch`` and a workstation's ``git clone`` ran raw too.
 The primitive is :func:`dev_lab.dev.netverb.run_network_verb`; which argv is a network verb is
 :func:`dev_lab.dev.netverb.is_network_verb`, read here rather than restated.
