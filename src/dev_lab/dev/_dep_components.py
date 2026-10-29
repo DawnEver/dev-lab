@@ -1,6 +1,6 @@
 """Which ``[tool.dev_lab.components]`` packages an environment holds at a tree that has since MOVED.
 
-INCIDENT (consumer-a, 2026-10-19): ``components/numerics-lab`` moved to a commit adding
+INCIDENT (a downstream repo, 2026-10-19): ``components/numerics-lab`` moved to a commit adding
 ``TrialNotEvaluable``; its lock source is ``{ directory = "components/numerics-lab" }``, installed
 non-editable at a version string that did not change, so uv called it current and every sync exited 0
 over the OLD module. A version is no identity for a path build (:class:`dev_lab.dev.dep.Version`).

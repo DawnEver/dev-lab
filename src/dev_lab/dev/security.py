@@ -51,7 +51,7 @@ __all__ = [
 ]
 
 #: The ``S`` rules off for the WHOLE family, each with why. Measured 2026-10-26 over the seven repos'
-#: integrate/main, outside test trees: S603 217 findings, S101 about 230 (196 of them consumer-a ``src/``).
+#: integrate/main, outside test trees: S603 217 findings, S101 about 230 (196 of them in one downstream ``src/``).
 FAMILY_IGNORE: Final[dict[str, str]] = {
     'S101': (
         'assert is flagged because `python -O` strips it; no family entry point runs under -O, the sites are '

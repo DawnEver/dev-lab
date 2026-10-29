@@ -28,7 +28,7 @@ from typing import Final
 #: refs", and reading that first would turn a refusal into three refusals.
 ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
     (
-        # GIT'S OWN PROTOCOL POLICY REFUSED A LOCAL TRANSPORT. Measured 2026-10-19 in consumer-a: `dep
+        # GIT'S OWN PROTOCOL POLICY REFUSED A LOCAL TRANSPORT. Measured 2026-10-19 downstream: `dep
         # --bootstrap <worktree>` ran `git submodule update --init --recursive`, whose submodule URL is a
         # LOCAL path (the main checkout's `.git/modules/...`), and git refused it as `transport 'file' not
         # allowed` (protocol.file.allow defaults to `user` since 2.38.1). Retried three times as
@@ -101,7 +101,7 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         True,
         (
             'authentication failed',
-            # uv's spelling, measured 2026-10-19 (consumer-a `dep --sync`): one `uv sync` of a git
+            # uv's spelling, measured 2026-10-19 (a downstream `dep --sync`): one `uv sync` of a git
             # dependency failed with it, and the next run passed on its first attempt.
             'failed to authenticate',
             'error: 401',

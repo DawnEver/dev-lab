@@ -1,6 +1,6 @@
 """AN OOM-KILLED TASK FLOORS EVERY FILE IT RAN AT THE LIMIT IT DIED AT -- in the record every host folds.
 
-Measured 2026-10-20..27 (Ada, user1): 302 ``base`` tasks OUT_OF_MEMORY, ~10 per consumer-a run, the same
+Measured 2026-10-20..27 (Ada, user1): 302 ``base`` tasks OUT_OF_MEMORY, ~10 per downstream run, the same
 shape every run -- 1-2 GB tasks of multi-file items whose files' learned peaks were 0.5-0.8 GB. An item is ONE
 pytest process over its files, so its memory is its combination's, not its heaviest file's; the run's retry
 grows and bisects it, then the files re-measure alone or in smaller items, the growth is dropped
