@@ -174,10 +174,10 @@ def test_the_context_summary_names_what_changed_why_and_where(tmp_path: Path) ->
 def test_a_fix_pushed_after_a_blocking_round_closes_it_and_the_head_succeeds(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    high = _finding('F-x', severity='HIGH', anchor='x')
+    high = _finding('F-x', severity='HIGH', file='x.py', anchor='x')
     _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
     assert _state(forge, head)[0] == 'failure'
-    fixed = advance(work, 'pr/x', 'x.txt', 'fixed\n')
+    fixed = advance(work, 'pr/x', 'x.py', 'fixed\n')
     forge.pulls[number]['head']['sha'] = fixed
     command = FakeCommand(_doc())
     _tick(work, forge, command, _REVIEW)
@@ -206,7 +206,7 @@ def test_past_max_rounds_no_command_runs_and_one_follow_up_issue_takes_the_rest(
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     review = Review(command=_REVIEW.command, max_rounds=1)
-    high, medium = _finding('F-h', severity='HIGH', anchor='x'), _finding('F-m', anchor='x')
+    high, medium = _finding('F-h', severity='HIGH', file='x.py', anchor='x'), _finding('F-m', file='x.py', anchor='x')
     _tick(work, forge, FakeCommand(_doc(high, medium)), review)
     after = advance(work, 'pr/x', 'y.txt', 'y\n')
     forge.pulls[number]['head']['sha'] = after
