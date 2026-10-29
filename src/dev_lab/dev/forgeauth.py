@@ -11,6 +11,19 @@ VERIFIED BEFORE STORED. The token is sent to ``GET /api/v1/user`` (Gitea) or ``G
 first; a rejected token is reported with the forge's answer and is NOT stored, so a typo cannot
 displace a credential that worked.
 
+ONE COMMAND MOVES EVERY FORGE CREDENTIAL TO A NEW BOX::
+
+    python -m dev_lab.dev.forge auth export |
+        ssh <box> "cd <checkout> && .venv/bin/python -m dev_lab.dev.forge auth login --from-file -"
+
+``auth export`` writes a KEY FILE to stdout -- one line ``<username>@<host> <token>`` per credential git
+holds for each forge host the family uses (:func:`family_hosts`: every remote of every checkout beside
+this one, plus ``github.com``), ``#`` comments and blank lines ignored. It refuses a terminal stdout, so a
+token is never painted on a screen; stderr carries counts, names and sha256 prefixes only. ``auth login
+--from-file <path|->`` reads the file WHOLE: every line parsed, every token verified, and only then is any
+stored, each under its file username. A GCM OAuth access token (username ``OAUTH_USER``) travels too but
+expires; that host re-authenticates through GCM on its first push.
+
 ``auth status`` names the login the stored token authenticates as -- never the secret.
 
 ``auth check --url <repo url>`` asks what a ``forge serve`` TICK needs of the stored token on that
@@ -24,17 +37,23 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hashlib
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final, TextIO
+from typing import Any, Final, NamedTuple, TextIO
 
+import lab_commons.launch as _door
+from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S
 from lab_commons.log import emit
 
+from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import (
     Forge,
     NoCredential,
     Transport,
+    UnreadableRemote,
+    credential_for,
     forge_from_remote,
     forge_of_url,
     https_transport,
@@ -42,14 +61,83 @@ from dev_lab.dev.forge import (
 )
 from dev_lab.dev.forgework import Client, ForgeCallFailed, stored_client
 from dev_lab.dev.venvpath import running_interpreter
+from dev_lab.dev.worktreeplace import family_root
 
-__all__ = ['TICK_SCOPES', 'login', 'main', 'status', 'tick_refusal']
+__all__ = [
+    'TICK_SCOPES',
+    'KeyLine',
+    'family_hosts',
+    'format_key_file',
+    'login',
+    'main',
+    'parse_key_file',
+    'status',
+    'tick_refusal',
+]
 
 #: The exit status for a usage error, as argparse uses it.
 _USAGE = 2
 
+#: A key file line's fields: ``<username>@<host>`` and the token.
+_KEY_FIELDS: Final = 2
+
 #: The token scopes a tick needs, as the forge's token page names them.
 TICK_SCOPES: Final = 'repository (read and write), issue (read and write), user (read)'
+
+
+class KeyLine(NamedTuple):
+    """One credential of a key file: ``<username>@<host> <token>``."""
+
+    host: str
+    username: str
+    token: str
+
+
+def format_key_file(keys: Sequence[KeyLine]) -> str:
+    """The key file :func:`parse_key_file` reads back: one ``<username>@<host> <token>`` line per key."""
+    head = '# forge credentials: python -m dev_lab.dev.forge auth login --from-file <this file|->\n'
+    return head + ''.join(f'{k.username}@{k.host} {k.token}\n' for k in keys)
+
+
+def parse_key_file(text: str) -> tuple[KeyLine, ...]:
+    """Every key of *text*; a malformed or repeated line refuses the WHOLE file, naming its number only.
+
+    Raises:
+        ValueError: a line is not ``<username>@<host> <token>``, or names one username of a host twice.
+
+    """
+    keys: dict[tuple[str, str], KeyLine] = {}
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        fields = line.split()
+        username, at, host = fields[0].rpartition('@')
+        if len(fields) != _KEY_FIELDS or not (at and username and host):
+            msg = f'key file line {number}: expected `<username>@<host> <token>`'
+            raise ValueError(msg)
+        if (host, username) in keys:
+            msg = f'key file line {number}: {username}@{host} named twice'
+            raise ValueError(msg)
+        keys[host, username] = KeyLine(host, username, fields[1])
+    return tuple(keys.values())
+
+
+def family_hosts(root: Path) -> tuple[str, ...]:
+    """Every forge host a remote of a family checkout (each sibling of *root*'s main checkout) lives on."""
+    hosts: set[str] = set()
+    for checkout in sorted(family_root(root).iterdir()):
+        if not (checkout / '.git').exists():
+            continue
+        names = _door.run(
+            [_GIT, 'remote'], cwd=checkout, capture_output=True, text=True, timeout=_GIT_TIMEOUT_S, check=False
+        )
+        for remote in names.stdout.split():
+            try:
+                hosts.add(forge_from_remote(checkout, remote=remote).host)
+            except UnreadableRemote:
+                continue
+    return tuple(sorted(hosts))
 
 
 def login(
@@ -114,7 +202,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge auth', description='set up or check the forge token')
     verbs = parser.add_subparsers(dest='verb', required=True)
     signin = verbs.add_parser('login', help='verify a personal access token and store it with git credential')
-    signin.add_argument('--token-stdin', action='store_true', help='read the token from stdin instead of a prompt')
+    source = signin.add_mutually_exclusive_group()
+    source.add_argument('--token-stdin', action='store_true', help='read the token from stdin instead of a prompt')
+    source.add_argument('--from-file', metavar='PATH', help='import every key of an `auth export` file (- for stdin)')
+    export = verbs.add_parser('export', help='write every stored forge credential as a key file to stdout')
+    export.add_argument('--host', action='append', help='a host to export (repeatable; default: the family hosts)')
     check = verbs.add_parser('status', help='who the stored token authenticates as')
     for sub in (signin, check):
         sub.add_argument('--host', help="the forge host (default: the host of this checkout's origin)")
@@ -136,17 +228,17 @@ def main(
     transport: Transport = https_transport,
     read_secret: Callable[[str], str] = getpass.getpass,
     stdin: TextIO | None = None,
+    stdout: TextIO | None = None,
 ) -> int:
-    """``auth login [--host H] [--token-stdin]`` / ``auth status [--host H]``; nonzero when not authenticated."""
+    """``auth login|status|check|export`` (module docstring); nonzero when not authenticated."""
     args = _parser().parse_args(list(sys.argv[2:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
-    if args.verb == 'check':
-        return _check(forge_of_url(args.url) if args.url else forge_from_remote(root), root, env, transport)
+    stdin = sys.stdin if stdin is None else stdin
+    if args.verb != 'login' or args.from_file:
+        return _without_prompt(args, root, env, transport, stdin=stdin, stdout=stdout or sys.stdout)
     forge = _forge(root, args.host)
-    if args.verb == 'status':
-        return _status(forge, root, env, transport)
     if args.token_stdin:
-        token = (sys.stdin if stdin is None else stdin).read().strip()
+        token = stdin.read().strip()
     else:
         token = read_secret(f'Personal access token for {forge.host} (input hidden): ').strip()
     if not token:
@@ -163,6 +255,26 @@ def main(
         return 1
     emit(f'[forge] {forge.host}: authenticated as {who}; stored with git credential for https://{forge.host}')
     return 0
+
+
+def _without_prompt(
+    args: argparse.Namespace,
+    root: Path,
+    env: Mapping[str, str] | None,
+    transport: Transport,
+    *,
+    stdin: TextIO,
+    stdout: TextIO,
+) -> int:
+    """Every verb but an interactive ``login``: ``export``, ``login --from-file``, ``check``, ``status``."""
+    if args.verb == 'export':
+        return _export(args.host or [*family_hosts(root), GITHUB_HOST], root, env, stdout)
+    if args.verb == 'login':
+        text = stdin.read() if args.from_file == '-' else Path(args.from_file).read_text(encoding='utf-8')
+        return _import(text, root, env, transport)
+    if args.verb == 'check':
+        return _check(forge_of_url(args.url) if args.url else forge_from_remote(root), root, env, transport)
+    return _status(_forge(root, args.host), root, env, transport)
 
 
 def _check(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Transport) -> int:
@@ -186,4 +298,56 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         emit(failed.report.attempts[-1].output, err=True)
         return 1
     emit(f'[forge] {forge.host}: token from git credential; authenticated as {who}')
+    return 0
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()[:8]
+
+
+def _export(hosts: Sequence[str], root: Path, env: Mapping[str, str] | None, out: TextIO) -> int:
+    if out.isatty():
+        emit('[forge] auth export writes secrets: pipe or redirect it, never to a terminal', err=True)
+        return _USAGE
+    keys, missing = [], []
+    for host in dict.fromkeys(hosts):
+        try:
+            username, token = credential_for(host, cwd=root, env=env)
+        except NoCredential:
+            missing.append(host)
+            continue
+        keys.append(KeyLine(host, username, token))
+    out.write(format_key_file(keys))
+    out.flush()
+    named = ', '.join(f'{k.username}@{k.host} sha256:{_digest(k.token)}' for k in keys)
+    emit(f'[forge] exported {len(keys)} credential(s): {named or "none"}', err=True)
+    if missing:
+        emit(f'[forge] no credential stored for: {", ".join(missing)}', err=True)
+    return 0 if keys else 1
+
+
+def _import(text: str, root: Path, env: Mapping[str, str] | None, transport: Transport) -> int:
+    try:
+        keys = parse_key_file(text)
+    except ValueError as malformed:
+        emit(f'[forge] {malformed}; nothing was stored', err=True)
+        return _USAGE
+    if not keys:
+        emit('[forge] the key file holds no credential; nothing was stored', err=True)
+        return _USAGE
+    for key in keys:
+        try:
+            Client(Forge(key.host, '', ''), key.token, transport=transport).whoami()
+        except ForgeCallFailed as failed:
+            emit(
+                f'[forge] {key.host} refused the token of {key.username}: NOT stored, nor any other. {failed}', err=True
+            )
+            return 1
+    try:
+        for key in keys:
+            store_credential(key.host, key.username, key.token, cwd=root, env=env)
+    except NoCredential as refused:
+        emit(f'[forge] {refused}', err=True)
+        return 1
+    emit(f'[forge] stored {len(keys)} credential(s): {", ".join(f"{k.username}@{k.host}" for k in keys)}')
     return 0
