@@ -52,6 +52,7 @@ _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
+    "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # PRs into integration: the flow is declared
 )
 
 
