@@ -14,9 +14,18 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.config import section
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
-__all__ = ['HOST_FIELD', 'RETIRED_FIELD', 'RETIRED_RUNTIMES', 'RUNTIMES_TABLE', 'host_runtimes', 'retired_field']
+__all__ = [
+    'HOST_FIELD',
+    'RETIRED_FIELD',
+    'RETIRED_RUNTIMES',
+    'RUNTIMES_TABLE',
+    'host_runtimes',
+    'retired_field',
+    'retired_table',
+    'runtime_names',
+]
 
 #: The machine-file table a host declares WHERE its runtimes live in: ``[runtimes.<name>] <key> = "<path>"``.
 RUNTIMES_TABLE: Final = 'runtimes'
@@ -53,3 +62,22 @@ def host_runtimes() -> dict[str, dict[str, Any]]:
         msg = f'the machine file: [{RUNTIMES_TABLE}] {", ".join(bad)} must each be a table ([{RUNTIMES_TABLE}.<name>])'
         raise ValueError(msg)
     return {name: dict(row) for name, row in table.items()}
+
+
+def runtime_names(command: Iterable[str]) -> frozenset[str]:
+    """Every ``<name>`` *command* reads as ``{runtimes.<name>.<key>}``: the runtimes it needs a host to declare."""
+    return frozenset(field['name'] for arg in command for field in HOST_FIELD.finditer(arg))
+
+
+def retired_table(
+    command: Iterable[str], runtimes: Mapping[str, Any], capabilities: Mapping[str, Any] | None = None
+) -> str | None:
+    """The remedy when a runtime *command* needs is still spelled ``[capabilities.<name>]`` in the machine file.
+
+    *capabilities* defaults to this host's ``[capabilities]``; None when every needed runtime is not so spelled.
+    """
+    held = section('capabilities') if capabilities is None else capabilities
+    if stale := sorted(n for n in runtime_names(command) if n not in runtimes and n in held):
+        tables = ', '.join(f'[capabilities.{n}]' for n in stale)
+        return f'the machine file still spells {tables}; run workstation deploy to move it to [{RUNTIMES_TABLE}]'
+    return None
