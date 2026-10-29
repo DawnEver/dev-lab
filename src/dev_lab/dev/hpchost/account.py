@@ -41,23 +41,29 @@ def _store_mode(store: Path) -> int | None:
 
 
 def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
-    """Refuse (2) unless git can read every served repo and the forge API answers what a tick needs."""
-    emit('[credentials] git credential helper, git ls-remote and the forge API, per served repo')
+    """Refuse (2) unless git can read every repo and the forge API answers what a tick needs on each served one.
+
+    Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81); an unserved
+    one is only cloned and fetched, so an anonymous ``git ls-remote`` -- no credential helper -- must succeed.
+    """
+    emit('[credentials] git credential helper and the forge API per served repo; git ls-remote per repo')
+    served = [repo for repo in spec.repos if repo.serve]
     helper = step.read([*step.tools.git, 'config', '--global', '--get', 'credential.helper']).stdout.strip()
     store = home / '.git-credentials'
-    if problem := store_problem(helper, store, mode=_store_mode(store)):
+    if served and (problem := store_problem(helper, store, mode=_store_mode(store))):
         emit(f'deploy refused: {problem}', err=True)
         return 2
     denied = []
     for repo in spec.repos:
-        rc = step.read([*step.tools.git, 'ls-remote', repo.url, f'refs/heads/{repo.ref}']).returncode
+        anonymous = () if repo.serve else ('-c', 'credential.helper=', '-c', 'credential.interactive=never')
+        rc = step.read([*step.tools.git, *anonymous, 'ls-remote', repo.url, f'refs/heads/{repo.ref}']).returncode
         emit(f'  {repo.name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
             denied.append(repo.name)
     if denied:
         emit(f'deploy refused: no read access to {", ".join(denied)}; {_CREDENTIAL_REMEDY}', err=True)
         return 2
-    refused = {repo.name: why for repo in spec.repos if (why := api(repo.url, home))}
+    refused = {repo.name: why for repo in served if (why := api(repo.url, home))}
     for name, why in refused.items():
         emit(f'  {name}: {why}', err=True)
     if refused:

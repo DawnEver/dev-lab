@@ -288,9 +288,35 @@ def test_deploy_reserves_nothing_for_people(flag: str) -> None:
         workstation.deploy(['--repos', REPOS, '--capabilities', 'jmag:4', flag])
 
 
-def test_the_repos_must_include_lab_commons_the_task_runs_from() -> None:
-    with pytest.raises(SystemExit):
-        workstation.deploy(['--repos', 'alpha'])
+def test_serve_repos_hold_exactly_the_declared_repos_and_the_kit_is_still_deployed(box: Box) -> None:
+    """Ruling 2026-10-29 (D73): the kit runs the serve on every host but is served only when declared."""
+    assert (
+        workstation.deploy(
+            ['--repos', 'alpha,beta', '--capabilities', 'workstation', '--forge', FORGE], programs=box.programs
+        )
+        == 0
+    )
+    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
+    assert declared['serve'] == {'repos': ['alpha', 'beta']}, 'deploy never forces the kit into [serve] repos'
+    assert f'bootstrap {box.root / "dev-lab"}' in box.calls(), 'the Task still runs from a deployed kit checkout'
+    assert box.deploy() == 0
+    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
+    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta']}, 'PLANTED CONTROL: asked, the kit is served'
+
+
+def test_the_kit_is_refreshed_every_tick_even_when_it_is_not_served(box: Box, tmp_path: Path) -> None:
+    assert (
+        workstation.deploy(
+            ['--repos', 'alpha', '--capabilities', 'workstation', '--forge', FORGE], programs=box.programs
+        )
+        == 0
+    )
+    kit = box.root / 'dev-lab'
+    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
+    worst, ran = _serve(box, tmp_path)
+    assert worst == 0
+    assert (kit / '.git' / 'HEAD_SHA').read_text() == 'b' * 40, 'the unserved kit is fast-forwarded by the tick'
+    assert [cwd.name for _, cwd in ran] == ['alpha'], 'only the declared repo is served'
 
 
 def test_a_bad_capability_is_refused_by_name() -> None:

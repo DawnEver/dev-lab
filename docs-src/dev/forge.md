@@ -207,7 +207,7 @@ none stored it refuses naming this step.
 **4. Deploy, dry run first.**
 
 ```
-.venv\Scripts\python.exe -m dev_lab.dev.workstation deploy --forge <forge> --repos dev-lab,<repo>,... `
+.venv\Scripts\python.exe -m dev_lab.dev.workstation deploy --forge <forge> --repos <repo>,... `
     --capabilities workstation,jmag:4 --dry-run
 ```
 
@@ -215,7 +215,7 @@ Read every action and the machine-file diff, then run it again without `--dry-ru
 nothing. In order, it:
 
 1. probes the prerequisites above;
-2. clones each repo into `<forge home>/repos/<repo>` at `--ref` (default `integrate/main`, the branch a serving kit follows), or
+2. clones each repo, and always the dev-lab kit the Task runs from (served only when `--repos` names it), into `<forge home>/repos/<repo>` at `--ref` (default `integrate/main`, the branch a serving kit follows), or
    fast-forwards an existing clean checkout. A dirty checkout is refused;
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;

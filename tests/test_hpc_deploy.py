@@ -56,8 +56,9 @@ if args[:3] == ['config', '--global', '--get']:
 if 'rev-parse' in args and args[-1] == 'HEAD':
     head = pathlib.Path(args[args.index('-C') + 1], '.git', 'HEAD_SHA')
     sys.stdout.write(head.read_text() if head.exists() else 'a' * 40)
-if args[0] == 'ls-remote':
-    sys.exit(128 if any(d in args[1] for d in os.environ.get('FAKE_GIT_DENY', '').split(',') if d) else 0)
+if 'ls-remote' in args:
+    url = args[args.index('ls-remote') + 1]
+    sys.exit(128 if any(d in url for d in os.environ.get('FAKE_GIT_DENY', '').split(',') if d) else 0)
 if args[0] == 'clone':
     target = pathlib.Path(args[-1])
     (target / '.git').mkdir(parents=True)
