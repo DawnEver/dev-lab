@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 from lab_commons.box.machine import provided
 from lab_commons.box.providers import inventory
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
+from lab_commons.compute.probe import os_name
 from lab_commons.config import section
 from lab_commons.envkey import env_record
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
@@ -40,6 +41,8 @@ from dev_lab.dev.platformparts import (
     UndeclaredPart,
     post,
     record_directory,
+    row_part,
+    row_system,
     this_platform,
 )
 from dev_lab.dev.test_outcomes import outcomes_dir, read_cells
@@ -91,8 +94,9 @@ def local_record(
     (*tools*, default :func:`lab_commons.compute.presence.measured` over the cached reading): nothing is
     pinned, so the record is the reproducibility.
     """
-    mine = [node for node, owner in owned.items() if owner == part and node in cells]
-    handed = {node: owner for node, owner in owned.items() if owner != part}
+    need = row_part(part)
+    mine = [node for node, owner in owned.items() if owner == need and node in cells]
+    handed = {node: owner for node, owner in owned.items() if owner != need}
     return {
         'sha': sha,
         'platform': part,
@@ -181,10 +185,13 @@ def part_selection(root: Path, part: str) -> tuple[str, ...]:
     """The pytest arguments selecting exactly *part*'s tests in *root*'s checkout; ``()`` for no part.
 
     Raises:
-        ValueError: *part* is no need-set over the checkout's declared resources.
+        ValueError: *part* is no need-set over the checkout's declared resources, or a row of another OS.
 
     """
+    if (system := row_system(part)) and system != os_name():
+        msg = f'{part} is the {system} row of {row_part(part)}; this host runs {os_name()}'
+        raise ValueError(msg)
     manifest = root / 'pyproject.toml'
     declared = manifest.read_text(encoding='utf-8') if manifest.is_file() else ''
-    expression = selecting(read_vocabulary(declared), part) if part else ''
+    expression = selecting(read_vocabulary(declared), row_part(part)) if part else ''
     return ('-m', expression) if expression else ()
