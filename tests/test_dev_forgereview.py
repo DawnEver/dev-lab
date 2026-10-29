@@ -24,9 +24,7 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import (
-    CLAIMED,
     DEFAULT_CLAIM_STALE,
-    HOST_UNABLE,
     RANGE_FIELD,
     RETIRED_KEYS,
     REVIEW_CONTEXT,
@@ -37,6 +35,7 @@ from dev_lab.dev.forgereview import (
     review_tick,
     step,
 )
+from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE
 from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table

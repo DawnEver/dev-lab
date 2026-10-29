@@ -77,11 +77,12 @@ ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review
 but this host's ``[runtimes]`` does not declare, or a command it cannot start (:func:`can_start`: a missing
 executable or module) -- is checked BEFORE the claim and posts NOTHING: a fact about the host is not the head's
 status. One that started and turned out unable (:class:`ReviewUnsupported`) replaces its own claim with
-:data:`HOST_UNABLE` naming the host and why, and that head stays claimable by a capable host, or by this one
-once fixed. A command that ran and refused or printed no known findings is the head's
-own ``error``, and that head is not retried. Otherwise the host CLAIMS the head:
+:data:`~dev_lab.dev.forgereview_claim.HOST_UNABLE` naming the host and why, and that head stays
+claimable by a capable host, or by this one once fixed. A command that ran and refused or printed no known
+findings is the head's own ``error``, and that head is not retried. Otherwise the host CLAIMS the head:
 a ``pending`` status ``claimed by <host> at <time>, reviewing``. Every other host skips a head whose review status is
-anything but a released (``released by``) or stale claim (:func:`claimable`), so N serving hosts review a head once.
+anything but a released (``released by``) or stale claim (:func:`~dev_lab.dev.forgereview_claim.claimable`), so
+N serving hosts review a head once.
 
 Undeclared, nothing is reviewed and the step says so. Exit :data:`REFUSED_EXIT` is the command's named refusal
 (:class:`ReviewRefused`): its stderr reason is the ``error`` status.
@@ -106,8 +107,8 @@ from lab_commons.units import Q_
 
 from dev_lab.dev import forgereview_scope
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
+from dev_lab.dev.forgereview_claim import CLAIMED, DESCRIPTION, passed, unable
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, disposed, post_round, trailed, trusted_bodies
@@ -120,13 +121,12 @@ from dev_lab.dev.forgereview_runtimes import (
     runtime_names,
 )
 from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
-from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
-    from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
     from dev_lab.dev.lanepolicy import Policy
 
@@ -198,21 +198,9 @@ TAKEOVER_PENDING: Final = 'takeover pending'
 #: command's own timeout, so a live review is never taken over.
 DEFAULT_CLAIM_STALE: Final = '1 h'
 
-#: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
-CLAIMED: Final = 'claimed by'
-
-#: A claim given back by hand (``pending``): the head is free again at once.
-RELEASED: Final = 'released by'
-
-#: What an ``error`` says when THIS HOST cannot run the review (:class:`ReviewUnsupported`): a fact about the host,
-#: not the head, so the head stays claimable -- by a capable host, or by this one once it is fixed.
-HOST_UNABLE: Final = 'not reviewed: cannot run on host'
-
 #: What :data:`REVIEW_CONTEXT` and the hold say (``pending``) when the job running the review has no review secret:
 #: a fork PR. The head is held; a maintainer's ``forge review takeover <sha>`` reviews it and releases the hold.
 NEEDS_MAINTAINER: Final = 'review needs a maintainer: the review secret is absent (a fork PR)'
-
-_CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
 
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
@@ -221,7 +209,6 @@ RETIRED_KEYS: Final = {
 }
 
 _TABLE: Final = 'review'
-_DESCRIPTION: Final = 240  # a commit-status description is short
 
 
 @dataclass(frozen=True)
@@ -297,54 +284,6 @@ def stale_after(review: Review) -> timedelta:
     return timedelta(seconds=float(quantity.m_as('s')))
 
 
-def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> bool:
-    """Whether a head whose review status is *status* may be claimed: none, a released or stale claim, or a host unable.
-
-    A host that could not run the review (:data:`HOST_UNABLE`) is the host's fault, never the head's.
-    """
-    if status is None or (status.state, status.description.startswith(HOST_UNABLE)) == ('error', True):
-        return True
-    if status.state != 'pending':
-        return False
-    if status.description.startswith(RELEASED):
-        return True
-    if (claim := _CLAIM.match(status.description)) is None:
-        return False  # takeover pending, or any other pending: not ours to take
-    try:
-        at = datetime.fromisoformat(claim['at'])
-    except ValueError:
-        return True  # an unreadable claim cannot hold a head forever
-    return now - at >= stale
-
-
-def _standing(client: Client, now: datetime, stale: timedelta) -> Callable[[str], CommitStatus | str]:
-    """A sha's review as :func:`dev_lab.dev.forgecarry.docs_only` reads it: posted, live claim, else none."""
-
-    def stood(sha: str) -> CommitStatus | str:
-        latest = next((one for one in status_list(client, sha) if one.context == REVIEW_CONTEXT), None)
-        if latest is not None and latest.state == 'success':
-            return latest
-        return RUNNING if latest is not None and latest.state == 'pending' and not claimable(latest, now, stale) else ''
-
-    return stood
-
-
-def _passed(root: Path, client: Client, head: str, now: datetime, stale: timedelta) -> str | None:
-    """Why *head* is not reviewed now: ``''`` its own review is posted or held, else what carries; ``None``: review it.
-
-    DOCS-ONLY-CARRIES: an earlier head's review stands (posted on *head*, no command run) or is still running.
-    """
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if not claimable(latest, now, stale):
-        return ''
-    carry = docs_only(root, head, _standing(client, now, stale), data_waits=False)
-    if carry is not None and carry.verdict is not None:
-        why = f'{carry.hold}: the review of {carry.source[:12]} stands'[:_DESCRIPTION]
-        status_post(client, head, context=REVIEW_CONTEXT, state=carry.verdict.state, description=why,
-                    target_url=carry.verdict.url)  # fmt: skip
-    return None if carry is None else carry.hold
-
-
 def command_for(
     review: Review, reviewed: str, runtimes: Mapping[str, Mapping[str, Any]], *,
     paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False,
@@ -382,31 +321,18 @@ def _scope(root: Path, client: Client, review: Review, pull: PullRequest, target
     return plan(root, target, pull.head_sha, review.budget, done, sliceable=PATHS_FIELD in review.command)
 
 
-def _unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
-    """Post :data:`HOST_UNABLE` naming *host* and *why* on *pull*'s head (not again if it already says so); the line.
-
-    The head stays claimable: another host, or this one once fixed, reviews it on a later tick.
-    """
-    head = pull.head_sha
-    said = f'{HOST_UNABLE} {host}: {why}'[:_DESCRIPTION]
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if latest is None or (latest.state, latest.description) != ('error', said):
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=said)
-    return f'#{pull.number} {head[:12]}: {said}'
-
-
 def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
             authored: Mapping[str, str]) -> str:  # fmt: skip
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
-        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); advisory, never blocks'[:_DESCRIPTION]
+        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); advisory, never blocks'[:DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
-        why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
+        why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
@@ -421,15 +347,15 @@ def _without_command(root: Path, client: Client, review: Review, pull: PullReque
     if scope.held is None and scope.slices:
         return None
     state, why = ('pending', f'{OVER_CAP_TAKEOVER} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
-    status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:_DESCRIPTION])
-    status_post(client, head, context=HOLD_CONTEXT, state=state, description=why[:_DESCRIPTION])
+    status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:DESCRIPTION])
+    status_post(client, head, context=HOLD_CONTEXT, state=state, description=why[:DESCRIPTION])
     return f'#{pull.number} {head[:12]}: {why}'
 
 
 def _hold(client: Client, pull: PullRequest, why: str) -> str:
     """Hold *pull*'s head for the takeover door: :data:`REVIEW_CONTEXT` and the hold both ``pending`` *why*."""
     for context in (REVIEW_CONTEXT, HOLD_CONTEXT):
-        status_post(client, pull.head_sha, context=context, state='pending', description=why[:_DESCRIPTION])
+        status_post(client, pull.head_sha, context=context, state='pending', description=why[:DESCRIPTION])
     return f'#{pull.number} {pull.head_sha[:12]}: {why}'
 
 
@@ -442,8 +368,8 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     retried on that head.
     """
     head = pull.head_sha
-    if (passed := _passed(root, client, head, runner.clock(), review.stale)) is not None:
-        return f'#{pull.number} {head[:12]}: {passed}' if passed else None
+    if (stands := passed(root, client, head, runner.clock(), review.stale)) is not None:
+        return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     scope = _scope(root, client, review, pull, f'origin/{pull.base}')
     said = _without_command(root, client, review, pull, scope)
     if said is None and not runner.secret:
@@ -470,9 +396,9 @@ def _command_round(
         found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body,
                                       disposed=disposed(trusted_bodies(client, pull.number))))  # fmt: skip
     except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
-        return _unable(client, pull, runner.host, str(unsupported))
+        return unable(client, pull, runner.host, str(unsupported))
     except (UnknownSchemaVersion, ReviewRefused) as named:
-        why = f'not reviewed: {named}'[:_DESCRIPTION]
+        why = f'not reviewed: {named}'[:DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:

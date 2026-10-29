@@ -348,6 +348,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgecontexts` -- the status contexts under ``tests/``: the part prefix, and those never a part.
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
 * :mod:`dev_lab.dev.forgereview` -- the review of each open PR head by the declared command; HIGH/security block.
+* :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, what stands on it, a host unable.
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-checked, capped.
