@@ -82,8 +82,8 @@ PRINCIPLES_FIELD: Final = '{principles}'
 #: summary is produced once per head (user ruling D83).
 SUMMARY_FIELD: Final = '{summary}'
 
-#: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: the findings disposed earlier (commit
-#: ``Review-Disposed`` trailers and the forge's own dispositions), which the engine drops and lists.
+#: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: the findings disposed earlier (the
+#: forge's own dispositions only; an author's trailer never reaches the engine), which the engine drops and lists.
 DISPOSED_FIELD: Final = '{disposed}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.

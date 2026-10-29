@@ -55,7 +55,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
     # {principles}: a JSON file of dev_lab.dev.principles (written per run; ai-lab holds no copy);
     # {summary}: --pr-body <file> on the one summarizing call, --no-summary on the rest;
-    # {disposed}: a JSON file of the findings disposed earlier (commit trailers and the forge's dispositions);
+    # {disposed}: a JSON file of the findings disposed earlier (the forge's own dispositions only);
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
@@ -105,7 +105,7 @@ from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, dispositions, post_round
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, disposed, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, host_runtimes, retired_field
 from dev_lab.dev.forgereview_scope import (
     CODE,
@@ -384,7 +384,15 @@ def _unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
 
 
 def _settle(
-    root: Path, client: Client, pull: PullRequest, review: Review, *, reviewed: str, found: Findings, outside: int = 0
+    root: Path,
+    client: Client,
+    pull: PullRequest,
+    review: Review,
+    *,
+    reviewed: str,
+    found: Findings,
+    outside: int = 0,
+    authored: Mapping[str, str] | None = None,
 ) -> str:
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
@@ -398,7 +406,8 @@ def _settle(
         why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
-    return post_round(root, client, pull, reviewed, found=found, max_rounds=review.max_rounds, outside=outside)
+    return post_round(root, client, pull, reviewed, found=found, max_rounds=review.max_rounds, outside=outside,
+                      authored=authored)  # fmt: skip
 
 
 def _without_command(root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope) -> str | None:
@@ -459,7 +468,7 @@ def review_tick(
         try:
             synth = command_for(review, scope.range, runtimes, synthesis=True)
             found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body,
-                                          disposed=dispositions(root, client, pull, target)))  # fmt: skip
+                                          disposed=disposed(trusted_bodies(client, pull.number))))  # fmt: skip
         except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
             lines.append(_unable(client, pull, host, str(unsupported)))
             continue
@@ -473,7 +482,9 @@ def review_tick(
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
             continue
-        lines.append(_settle(root, client, pull, review, reviewed=scope.range, found=found, outside=scope.outside))
+        authored = trailed(root, target, head)
+        lines.append(_settle(root, client, pull, review, reviewed=scope.range, found=found, outside=scope.outside,
+                             authored=authored))  # fmt: skip
     return tuple(lines)
 
 

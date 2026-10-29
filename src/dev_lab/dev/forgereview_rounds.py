@@ -20,9 +20,11 @@ A finding BLOCKS while open when it is ``HIGH`` or a security finding (:attr:`Fi
 :data:`~dev_lab.dev.platformparts.REVIEW_CONTEXT` is ``failure`` while any blocking finding is open and not
 DISPOSED, else ``success``; the auto-merge waits on that failure (:func:`dev_lab.dev.forgemerge.review_blocks`).
 A disposition is the integrator's, posted through ``forge review dispose`` (:mod:`dev_lab.dev.forgereview_dispose`)
-as a keyed comment (``Marker.DISPOSITION``) carrying its reason. The engine is handed those AND the branch commits'
-``Review-Disposed: <F-id> -- <reason>`` trailers (:func:`dispositions`); the ids it drops are listed as
-"disposed earlier". A trailer is the author's: it reaches the engine and the comment, never :func:`verdict`.
+as a keyed comment (``Marker.DISPOSITION``) carrying its reason; the engine is handed those alone and the ids it
+drops are listed as "disposed earlier". A branch commit's ``Review-Disposed: <F-id> -- <reason>`` trailer
+(:func:`trailed`) is the AUTHOR's, so it never reaches the engine nor :func:`verdict`: applied after the engine
+returns, it disposes of a non-blocking finding ("disposed earlier (by the author)"), while a blocking one stays
+open and blocking until ``forge review dispose`` (user ruling 2026-10-29).
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 from dev_lab.dev.forgereview_findings import SEVERITIES, Finding, Findings
 from dev_lab.dev.forgestatus import status_post
@@ -44,6 +47,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
+    from dev_lab.dev._forgebackends import Backend
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
@@ -58,10 +62,10 @@ __all__ = [
     'context_summary',
     'disposed',
     'disposition_text',
-    'dispositions',
     'ledger_of',
     'post_round',
     'render',
+    'trailed',
     'trusted_bodies',
     'verdict',
     'what_it_does',
@@ -157,15 +161,10 @@ def disposed(bodies: Iterable[str]) -> dict[str, str]:
     }
 
 
-def dispositions(root: Path, client: Client, pull: PullRequest, target: str) -> dict[str, str]:
-    """``{finding id: why}`` handed to the engine: commit trailers, then the forge's own dispositions.
-
-    The trailers are the ``Review-Disposed`` ones of *pull*'s commits since *target*; a forge disposition of the
-    same id wins.
-    """
-    _, text = _git(root, 'log', f'--format=%(trailers:key={_TRAILER},valueonly,unfold)', f'{target}..{pull.head_sha}')
-    trailed = {m['id']: m['why'].strip() for line in text.splitlines() if (m := _TRAILED.match(line.strip()))}
-    return trailed | disposed(trusted_bodies(client, pull.number))
+def trailed(root: Path, target: str, head: str) -> dict[str, str]:
+    """``{finding id: why}`` of the author's ``Review-Disposed`` trailers on the commits *target*..*head*."""
+    _, text = _git(root, 'log', f'--format=%(trailers:key={_TRAILER},valueonly,unfold)', f'{target}..{head}')
+    return {m['id']: m['why'].strip() for line in text.splitlines() if (m := _TRAILED.match(line.strip()))}
 
 
 def blocking(ledger: Ledger, gone: Mapping[str, str]) -> tuple[Finding, ...]:
@@ -286,22 +285,25 @@ def _repo_url(pull_url: str) -> str:
     return pull_url.rsplit('/pulls/', 1)[0].rsplit('/pull/', 1)[0]
 
 
-def _cite(cite: str, repo: str, head: str) -> str:
+def _cite(cite: str, repo: str, head: str, backend: Backend) -> str:
     """One cite as a link: a commit sha to the commit, anything else as a path in the tree at *head*."""
     if _SHA.match(cite):
-        return f'[`{cite[:12]}`]({repo}/commit/{cite})'
-    return f'[`{cite}`]({repo}/src/commit/{head}/{cite})'
+        return f'[`{cite[:12]}`]({backend.commit_url(repo, cite)})'
+    return f'[`{cite}`]({backend.file_url(repo, head, cite)})'
 
 
-def what_it_does(summary: Mapping[str, Any] | None, repo: str, head: str) -> str:
-    """The engine's *summary* as the comment's opening section ("What this PR does"); empty when none."""
+def what_it_does(summary: Mapping[str, Any] | None, repo: str, head: str, backend: Backend) -> str:
+    """The engine's *summary* as the comment's opening section ("What this PR does"); empty when none.
+
+    Its cites link in *backend*'s URL forms under the web root *repo*.
+    """
     if summary is None:
         return ''
     if summary.get('error'):
         return f'### What this PR does\nThe engine could not summarize this head: {summary["error"]}'
     rows = []
     for change in summary.get('changes', ()):
-        cites = ', '.join(_cite(str(one), repo, head) for one in change.get('cites', ()))
+        cites = ', '.join(_cite(str(one), repo, head, backend) for one in change.get('cites', ()))
         rows.append(f'- {change["claim"]}' + (f' ({cites})' if cites else ''))
     parts = ['### What this PR does\n' + ('\n'.join(rows) or '- (no claims)')]
     for key, title in (
@@ -314,7 +316,7 @@ def what_it_does(summary: Mapping[str, Any] | None, repo: str, head: str) -> str
     return '\n\n'.join(parts)
 
 
-def _row(one: Finding, number: int) -> str:
+def _row(one: Finding, number: int, authored: Mapping[str, str]) -> str:
     tags = f'**{one.severity}**{" **security**" if one.security else ""}'
     by = f'; by {", ".join(one.reviewers)}' if one.reviewers else ''
     lines = [f'- {tags} `{one.file}` -- {one.summary} (`{one.id}`, rule `{one.rule}`{by})']
@@ -322,23 +324,29 @@ def _row(one: Finding, number: int) -> str:
     if one.suggestion:
         lines.append(f'  - suggestion: {one.suggestion}')
     if one.blocking:
+        if one.id in authored:
+            why = authored[one.id]
+            lines.append(f'  - the author disposed it ({why}); a blocking finding needs `forge review dispose`')
         lines.append(f'  - dispose: `{DISPOSE_DOOR.format(pr=number, id=one.id)}`')
     return '\n'.join(lines)
 
 
 def render(
     ledger: Ledger, gone: Mapping[str, str], *, number: int, reviewed: str, max_rounds: int,
-    found: Findings | None, summary: str = '', outside: int = 0, repo: str = '',
+    found: Findings | None, summary: str = '', outside: int = 0, repo: str = '', backend: Backend = GITEA,
+    authored: Mapping[str, str] | None = None,
 ) -> str:  # fmt: skip
     """The round's one PR comment: what the PR does, the verdict, (round 1) the context, the findings, the ledger.
 
     The findings are listed by standing, then what was disposed earlier. *repo* is the web root the summary's
-    cites link into.
+    cites link into, in *backend*'s forms. *authored* is the author's trailer dispositions: they dispose of a
+    non-blocking finding and only annotate a blocking one.
     """
+    authored = authored or {}
     state, said = verdict(ledger, gone, number)
     capped = ' -- past the cap: blocking findings re-checked only, no reviewer ran' if found is None else ''
     head = f'**Review round {ledger.round}/{max_rounds}** of `{ledger.head[:12]}` over `{reviewed}`{capped}'
-    does = what_it_does(None if found is None else found.summary, repo, ledger.head)
+    does = what_it_does(None if found is None else found.summary, repo, ledger.head, backend)
     parts = [*([does] if does else []), f'{head}\n\n`tests/review` {state}: {said}']
     if summary:
         parts.append(summary)
@@ -348,8 +356,10 @@ def render(
         who = ', '.join(f'`{one.name}` ({one.provider or "-"}): {one.status}' for one in found.reviewers) or 'none'
         parts.append(f'Reviewers: {who}')
     order = sorted(ledger.open, key=lambda one: (not one.blocking, SEVERITIES.index(one.severity)))
-    held = [_row(one, number) for one in order if one.blocking and one.id not in gone]
-    rest = [_row(one, number) for one in order if not one.blocking and one.id not in gone]
+    held = [_row(one, number, authored) for one in order if one.blocking and one.id not in gone]
+    live = [one for one in order if not one.blocking and one.id not in gone]
+    rest = [_row(one, number, authored) for one in live if one.id not in authored]
+    by_author = [f'- `{one.id}` -- {authored[one.id]}' for one in live if one.id in authored]
     sections = (
         ('Blocking (open)', held),
         ('Open, not blocking', rest),
@@ -357,6 +367,7 @@ def render(
         ('Disposed', [f'- `{fid}`: {why}' for fid, why in gone.items() if any(one.id == fid for one in ledger.open)]),
         ('Moved to the follow-up issue', [f'- `{one.id}` {one.summary}' for one in ledger.deferred]),
         ('Disposed earlier', [f'- `{fid}`: {why}' for fid, why in (() if found is None else found.disposed)]),
+        ('Disposed earlier (by the author)', by_author),
     )
     parts += [f'### {title}\n' + '\n'.join(rows) for title, rows in sections if rows]
     if not ledger.open and not ledger.closed:
@@ -381,12 +392,12 @@ def _follow_up(client: Client, pull: PullRequest, ledger: Ledger) -> None:
 
 def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings | None, max_rounds: int,
-    by: str = 'review', outside: int = 0,
+    by: str = 'review', outside: int = 0, authored: Mapping[str, str] | None = None,
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment, :data:`REVIEW_CONTEXT`, any follow-up issue; the line said.
 
     *found* is ``None`` past the cap (no command ran). *by* names who reviewed, for the status. *outside* counts
-    the changed files that are not code, said in the comment.
+    the changed files that are not code, said in the comment. *authored* is the author's trailer dispositions.
     """
     head = pull.head_sha
     bodies = trusted_bodies(client, pull.number)
@@ -396,7 +407,8 @@ def post_round(
     gone = disposed(bodies)
     summary = context_summary(root, reviewed, pull.body) if ledger.round == 1 else ''
     text = render(ledger, gone, number=pull.number, reviewed=reviewed, max_rounds=max_rounds,
-                  found=found, summary=summary, outside=outside, repo=_repo_url(pull.url))  # fmt: skip
+                  found=found, summary=summary, outside=outside, repo=_repo_url(pull.url),
+                  backend=client.backend, authored=authored)  # fmt: skip
     _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=text)
     _follow_up(client, pull, ledger)
     state, said = verdict(ledger, gone, pull.number)
