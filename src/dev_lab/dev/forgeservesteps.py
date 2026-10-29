@@ -104,8 +104,8 @@ def prompt(
                 *sync_alarms(ticked.said, policy, repo, now=forge_now(built)),
                 *glass,
                 *red,
-                *held_reviews(built, policy.pr_base, repo),  # an over-cap head: the integrator's takeover
-                *blocked_reviews(built, policy.pr_base, repo),  # a blocking finding: the integrator disposes
+                *held_reviews(built, policy.integration, repo),  # an over-cap head: the integrator's takeover
+                *blocked_reviews(built, policy.integration, repo),  # a blocking finding: the integrator disposes
             ],
             alarm=alarm,
         )

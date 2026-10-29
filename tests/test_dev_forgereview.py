@@ -45,14 +45,14 @@ from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 
-_LANE_POLICY = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_LANE_POLICY = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
-    "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # PRs into integration: the flow is declared
+    "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
 
 

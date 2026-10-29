@@ -11,7 +11,7 @@ ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :
 decides; on Gitea the serve tick merges on it, and on GitHub a workflow job runs ``forge merge ready --pr <N>``
 (:func:`ready`), which posts the decision as ONE status, :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and
 GitHub's native auto-merge -- enabled on every PR ``forge pr create`` opens there -- merges once that required check
-is green. The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.pr_base`: integration where declared, else the trunk.
+is green. The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
@@ -128,7 +128,7 @@ class Decision:
 def merge_message(branch: str, number: int, policy: Policy) -> str:
     """The merge commit's message: a conventional subject, then the ``Merged-Branch``/``Forge-Pull`` trailers."""
     return (
-        f'chore(merge): {branch} into {policy.pr_base} (#{number})\n\n'
+        f'chore(merge): {branch} into {policy.integration} (#{number})\n\n'
         f'{MERGED_BRANCH}: {branch}\n{FORGE_PULL}: {number}\n'
     )
 
@@ -147,7 +147,7 @@ def decide(
 
     *waived* are the scarce parts its diff does not reach (:func:`dev_lab.dev.forgescarce.unreached`).
     """
-    into = policy.pr_base
+    into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
@@ -190,7 +190,7 @@ def decide(
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses, its unreached scarce parts."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
-    waived = unreached(root, client, policy.pr_base, head, statuses)
+    waived = unreached(root, client, policy.integration, head, statuses)
     return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses, waived=waived)
 
 
@@ -201,8 +201,8 @@ def ready(root: Path, client: Client, number: int) -> str:
     workflow log carries the whole line). A PR into another branch than the PR base is ``failure`` saying so.
     """
     policy, pull = load_policy(root), client.pr_view(number)
-    if pull.base != policy.pr_base:
-        missing: tuple[str, ...] = (f'a PR into {policy.pr_base}, not {pull.base}',)
+    if pull.base != policy.integration:
+        missing: tuple[str, ...] = (f'a PR into {policy.integration}, not {pull.base}',)
     else:
         missing = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha).missing
     state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)

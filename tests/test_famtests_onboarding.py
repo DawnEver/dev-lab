@@ -48,9 +48,9 @@ def test_a_bare_repo_names_every_missing_piece_at_once(tmp_path: Path) -> None:
     with pytest.raises(OnboardingViolation) as refused:
         assert_repo_is_onboarded(root=bare)
     text = str(refused.value)
-    for piece in ('branchset', 'produce', 'hooks', 'AGENTS.md', 'uv.lock'):
+    for piece in ('branchset', 'integrator] integration', 'pr_merges_since', 'produce', 'hooks', 'AGENTS.md'):
         assert piece in text, f'{piece} is missing from:\n{text}'
-    assert 'pr_merges_since' not in text, 'a repo declaring no integrator has no integration flow to start'
+    assert 'uv.lock' in text
 
 
 def test_a_declared_integrator_without_its_start_is_named(tmp_path: Path) -> None:

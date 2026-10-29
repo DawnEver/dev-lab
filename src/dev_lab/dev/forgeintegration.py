@@ -297,8 +297,6 @@ def tick(
     merge is auto-synced (:mod:`dev_lab.dev.forgeautosync`), and every open PR head carries its lock and branch-set
     statuses (:mod:`dev_lab.dev.forgeheadgate`); ``forge integration`` passes no host and only reports.
     """
-    if not policy.declared:
-        return Ticked((), ())  # no integration branch declared: nothing to retarget, merge or sync
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
     children: list[Child] = []

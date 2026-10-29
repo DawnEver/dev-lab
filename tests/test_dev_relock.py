@@ -21,7 +21,7 @@ from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.relock import PREFIX, Relock, RelockFailed, branch_for, carry, decision, dist_of
 
-_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 _SHA = 'dca72b71758ee4c70fb991fbcb44c56a9e52498d'
 _GIT = shutil.which('git') or 'git'
@@ -191,6 +191,7 @@ def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure
 
     monkeypatch.setattr(forgeservesteps, 'carry', failing)
     monkeypatch.setattr(forgeservesteps, 'pr_list', lambda _client: ())
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nintegration = "integrate/main"\n', 'utf-8')
     forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)
     assert (said, raised) == ([], []), 'CONTROL: no pr_merges_since, no relock'
     manifest = '[project]\nname = "x"\nversion = "0"\n'

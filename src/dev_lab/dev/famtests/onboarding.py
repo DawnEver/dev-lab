@@ -50,7 +50,11 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
 
     """
     missing: list[str] = []
-    policy = load_policy(root)
+    try:
+        policy = load_policy(root)
+    except ValueError as undeclared:
+        policy = None
+        missing.append(f'[tool.dev_lab.integrator] integration = "integrate/main" -- {undeclared}')
     try:
         declared = declared_branchset(root)
     except BranchSetNotDeclared as undeclared:
@@ -61,14 +65,14 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
             *([EPHEMERAL_OFF] if not declared.is_ephemeral('pr/x') else []),
             *(
                 [f'[tool.dev_lab.branchset] sessions names {policy.integration!r}']
-                if policy.declared and policy.integration not in declared.sessions
+                if policy is not None and policy.integration not in declared.sessions
                 else []
             ),
         ]
     missing += [
         *(
             ['[tool.dev_lab.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"']
-            if policy.declared and not policy.pr_merges_since
+            if policy is None or not policy.pr_merges_since
             else []
         ),
         *(

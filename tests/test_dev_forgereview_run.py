@@ -8,10 +8,9 @@ import pytest
 from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
 
-from dev_lab.dev import forgequeue
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgemerge import review_blocks, review_hold
-from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, _hold
+from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgestatus import status_list
@@ -98,56 +97,3 @@ def test_on_github_the_job_bots_comments_are_trusted_and_on_gitea_they_are_not()
         forge.issue_comment(number, 'a disposition')
         assert ('the ledger' in ' '.join(trusted_bodies(forge, number))) is trusted
         assert any('a disposition' in body for body in trusted_bodies(forge, number))
-
-
-_UNDECLARED = (
-    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\nephemeral = ['pr/*']\n"
-    "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
-)
-
-
-@pytest.mark.parametrize(('base', 'listed'), [('main', 1), ('integrate/main', 0)])
-def test_an_undeclared_repo_s_doors_list_its_prs_into_the_trunk(tmp_path: Path, capsys, base: str, listed: int) -> None:
-    """PLANTED CONTROL: the same held head on a PR into a branch the repo never declared is listed by no door."""
-    work, head = _work(tmp_path)
-    (work / 'pyproject.toml').write_text(_UNDECLARED, encoding='utf-8')
-    forge = StateForge()
-    number = forge.add_pull('pr/x', base, sha=head)
-    forge.comments[number] = []
-    pull = forge.pr_view(number)
-
-    _hold(forge, pull, NEEDS_MAINTAINER)
-    assert main(['held'], cwd=work, client=forge) == listed
-    assert (head in capsys.readouterr().out) is bool(listed)
-    assert len(held(forge, 'main')) == (base == 'main')
-
-
-class _Asked(Exception):
-    """Raised by the fake candidate reader once it has asked for one waiver."""
-
-
-@pytest.mark.parametrize(
-    ('manifest', 'base'),
-    [
-        (_UNDECLARED, 'main'),
-        (_UNDECLARED + "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n", 'integrate/main'),
-    ],
-)
-def test_the_queue_waives_scarce_parts_against_the_pr_base(
-    tmp_path: Path, monkeypatch, manifest: str, base: str
-) -> None:
-    """PLANTED CONTROL: a declared repo waives against integration, an undeclared one against its trunk."""
-    (tmp_path / 'pyproject.toml').write_text(manifest, encoding='utf-8')
-    asked: list[str] = []
-    monkeypatch.setattr(forgequeue, 'repo_name', lambda _client: 'r')
-    monkeypatch.setattr(forgequeue, 'SettledHistories', lambda _client: lambda _sha: ())
-    monkeypatch.setattr(forgequeue, 'unreached', lambda _root, _client, into, _sha, _history: asked.append(into))
-
-    def candidates(*_args: object, waived: object, **_kwargs: object) -> None:
-        waived('a' * 40)
-        raise _Asked
-
-    monkeypatch.setattr(forgequeue, 'candidates', candidates)
-    with pytest.raises(_Asked):
-        forgequeue.forge_queue(tmp_path, object(), (), now=None, schedule=None)
-    assert asked == [base]

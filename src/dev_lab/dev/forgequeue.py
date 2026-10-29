@@ -127,7 +127,7 @@ def forge_queue(
     policy = load_policy(root)
     found = candidates(
         root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule, policy=policy, now=now,
-        waived=lambda sha: unreached(root, client, policy.pr_base, sha, history(sha)),
+        waived=lambda sha: unreached(root, client, policy.integration, sha, history(sha)),
     )  # fmt: skip
     waiting, in_flight = _standing(found, history, now)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)

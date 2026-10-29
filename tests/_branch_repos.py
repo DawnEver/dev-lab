@@ -6,7 +6,7 @@ from pathlib import Path
 
 from _forge_fake import git_out, run_git
 
-#: The integration flow these repos run is opt-in, so their root commit declares it.
+#: Every repo declares its integration branch (D83), so their root commit declares it.
 _DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
 
 

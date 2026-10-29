@@ -505,7 +505,9 @@ def step(
         if cannot is not None:
             say(f'[serve] review: not run on this host -- {cannot}')
             return
-        lines = review_tick(root, built, review, base=policy.pr_base, run=run, ready=ready, host=host, runtimes=here)
+        lines = review_tick(
+            root, built, review, base=policy.integration, run=run, ready=ready, host=host, runtimes=here
+        )
         for line in lines:
             say(f'[serve] review: {line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:

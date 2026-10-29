@@ -59,8 +59,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'both-needed (the resolution principles), every class with its why; the conflicted set is recomputed '
             'from the parents` trees, never trusted from the message; the FORGE enforces it, refusing to merge a PR '
             'whose head adds a merge commit that leaves one undeclared or declares one the parents do not '
-            'conflict on (remedy: redo that merge, a message cannot be amended) -- the forge half only where '
-            '`[tool.dev_lab.integrator]` is declared -- and the commit-msg '
+            'conflict on (remedy: redo that merge, a message cannot be amended), and the commit-msg '
             'hook makes the same judgement early on the merge being committed.'
         ),
         ('tests/test_dev_mergeresolution.py',),
@@ -68,8 +67,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'DOWNSTREAM-SYNCS-INTEGRATION',
         (
-            'Only in a repo declaring `[tool.dev_lab.integrator]` (absent elsewhere, where PRs target the trunk): '
-            'a child branch (a lane, a feat branch, a pull-request head) merges ONLY the integration branch, so '
+            'A child branch (a lane, a feat branch, a pull-request head) merges ONLY the integration branch, so '
             'another child`s work reaches it once, through integration, unless the owner opts in to watch named '
             'refs recorded in the checkout`s own git config (`branch.<child>.labSyncFrom`), never in a file, and '
             '`forge sync` merges integration first, then the watched refs, refusing any other ref by name.'
@@ -79,8 +77,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'TRUNK-MOVES-BY-FAST-FORWARD',
         (
-            'Only in a repo declaring `[tool.dev_lab.integrator]` (absent elsewhere, where PRs target the trunk): '
-            'the trunk moves only by fast-forward to an integration commit whose every required '
+            'The trunk moves only by fast-forward to an integration commit whose every required '
             '`tests/<part>` part stands PASS at scope full, through `integrate promote`; it refuses with the '
             'missing parts named, and refuses a trunk that cannot fast-forward rather than merging into it.'
         ),
@@ -89,8 +86,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PRS-TARGET-INTEGRATION',
         (
-            'Only in a repo declaring `[tool.dev_lab.integrator]` (absent elsewhere, where PRs target the trunk): '
-            'every pull request targets the integration branch, one opened against the trunk is retargeted with a '
+            'Every pull request targets the integration branch, one opened against the trunk is retargeted with a '
             'comment saying why, and each child branch carries ONE integration comment (or, without a PR, one '
             '`integration` commit status) updated in place by `forge integration`, never a new one per tick.'
         ),
@@ -128,8 +124,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'INTEGRATION-IS-MERGES-ONLY',
         (
-            'Only in a repo declaring `[tool.dev_lab.integrator]` (absent elsewhere, where PRs target the trunk): '
-            'every new first-parent commit of the integration branch, from the declared `merges_only_since` '
+            'Every new first-parent commit of the integration branch, from the declared `merges_only_since` '
             'forward, is a two-parent merge naming its branch in a `Merged-Branch:` trailer whose merge audit '
             'passes (the same judgement the commit-msg hook makes), refused at pre-push, until `pr_merges_since` '
             'stands and INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge.'

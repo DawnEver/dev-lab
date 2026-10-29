@@ -89,8 +89,6 @@ def _policy(root: Path, at: str) -> Policy:
 
 def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
     """Whether the local trunk may fast-forward to *sha*; pure of any write. Reads origin's integration branch."""
-    if not policy.declared:
-        return Promotion('refused', sha, ('[tool.dev_lab.integrator] declares no integration branch to promote from',))
     found = rev(root, sha)
     trunk = rev(root, f'refs/heads/{policy.trunk}') or rev(root, f'origin/{policy.trunk}')
     published = rev(root, f'origin/{policy.integration}')

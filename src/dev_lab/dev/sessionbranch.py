@@ -202,11 +202,9 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
             f'{P3}: {branch} at {old[:12]} on origin is not an ancestor of {sha[:12]}; history only grows: '
             f'fetch, merge origin/{branch} into {branch}, push again (never force)'
         )
-    if not policy.declared or branch != policy.integration:
-        return found  # no integration branch declared: P4 and P5 are absent
-    if policy.pr_merges_since:
+    if branch == policy.integration and policy.pr_merges_since:
         found += _forge_merges_only(root, policy, old, sha)
-    else:
+    elif branch == policy.integration:
         found += _merges_only(root, policy, old, sha)
     return found
 
@@ -226,28 +224,28 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
 
 
 def _deletion_rev(root: Path) -> str:
-    """The rev a deletion is judged by: ``origin/<integration>`` where declared, else ``origin/<trunk>``, else ``HEAD``.
+    """The rev a deletion is judged by: ``origin/<integration>``, else ``origin/<trunk>``, else ``HEAD``.
 
-    The names come from ``HEAD``'s ``[tool.dev_lab.integrator]``, defaults when it cannot be read: a stale
-    checkout must not decide what deleting a ref means, and a deletion carries nothing of its own to read.
+    The names come from ``HEAD``'s ``[tool.dev_lab.integrator]``; when it cannot be read, ``HEAD`` itself is the
+    rev, so the deletion is refused by name there: a stale checkout must not decide what deleting a ref means.
     """
     try:
         policy = policy_at(root, 'HEAD')
     except (ValueError, OSError, subprocess.CalledProcessError):
-        policy = Policy()
-    for name in dict.fromkeys((policy.pr_base, policy.trunk)):
+        return 'HEAD'
+    for name in (policy.integration, policy.trunk):
         rev = f'refs/remotes/origin/{name}'
         if _git(root, 'rev-parse', '-q', '--verify', f'{rev}^{{commit}}').returncode == 0:
             return rev
     return 'HEAD'
 
 
-def _trusted(root: Path, pushed: Policy, old: str) -> Policy:
+def _trusted(root: Path, pushed: Policy | None, old: str) -> Policy | None:
     """*pushed*, unless it drops or renames the integration branch origin's tip *old* declares: then that one.
 
-    Fail closed: a push cannot switch the integration audits off by dropping or renaming the table it is
-    judged by -- such a change is judged by the declaration origin already holds, and binds once it lands.
-    A pushed table that keeps the name still binds at once, so a tightening (``pr_merges_since``) applies.
+    Fail closed: a push cannot switch the integration audits off by dropping (*pushed* ``None``) or renaming
+    the table it is judged by -- such a change is judged by the declaration origin already holds, and binds
+    once it lands. A pushed table that keeps the name still binds at once, so a tightening applies.
     """
     if _zero(old) or _git(root, 'cat-file', '-e', f'{old}^{{commit}}').returncode != 0:
         return pushed
@@ -255,7 +253,7 @@ def _trusted(root: Path, pushed: Policy, old: str) -> Policy:
         held = policy_at(root, old)
     except (ValueError, subprocess.CalledProcessError):
         return pushed
-    return held if held.declared and held.integration != pushed.integration else pushed
+    return held if pushed is None or held.integration != pushed.integration else pushed
 
 
 def refusals(root: Path, lines: str) -> list[str]:
@@ -273,14 +271,19 @@ def refusals(root: Path, lines: str) -> list[str]:
         label = at if _zero(fields[1]) else at[:12]
         try:
             declared = branchset_at(root, at)
-            policy = policy_at(root, at)
         except (BranchSetNotDeclared, ValueError, subprocess.CalledProcessError) as exc:
             found.append(f'{P2}: {label} declares no readable branch set, so {fields[2]} cannot be judged: {exc}')
             continue
+        try:
+            policy: Policy | None = policy_at(root, at)
+        except (ValueError, subprocess.CalledProcessError) as exc:
+            found.append(f'{P2}: {label} declares no readable integrator, so {fields[2]} cannot be judged: {exc}')
+            policy = None
         if not _zero(fields[1]):
             found += _undeclared(declared, fields[2][len(_HEADS) :])
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
-            found += _judge_ref(root, _trusted(root, policy, fields[3]), fields)
+            if (judged := _trusted(root, policy, fields[3])) is not None:
+                found += _judge_ref(root, judged, fields)
         elif (named := _local(root, fields[0])).startswith(_HEADS) and named != fields[2]:
             branch = named[len(_HEADS) :]
             found.append(

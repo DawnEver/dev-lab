@@ -221,7 +221,7 @@ def main(
     root = Path.cwd() if cwd is None else cwd
     pull_in = fetch or (lambda where, number: _fetch_pull(where, 'origin', number))
     try:
-        origin, base = client or client_for(root), load_policy(root).pr_base
+        origin, base = client or client_for(root), load_policy(root).integration
         if args.verb == 'run':
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, secret=secret)

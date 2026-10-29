@@ -32,7 +32,7 @@ from dev_lab.dev.integrator import (
 )
 from dev_lab.dev.lanepolicy import Policy, load_policy
 
-_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 _POLICY = _DECLARED
 _SCHEDULE = Schedule()
@@ -123,7 +123,20 @@ def test_the_consumer_declares_its_branches_and_a_retired_host_is_refused_by_nam
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nhost = "G"\n', encoding='utf-8')
     with pytest.raises(ValueError, match=r'host is retired: .*no host owns integration'):
         load_policy(tmp_path)
-    assert load_policy(tmp_path / 'absent') == Policy()
+
+
+@pytest.mark.parametrize(
+    'manifest',
+    [None, '[tool.dev_lab.branchset]\ntrunk = "main"\n', '[tool.dev_lab.integrator]\ntrunk = "main"\n'],
+)
+def test_every_repo_declares_its_integration_branch_and_an_absent_one_is_refused_by_name(
+    tmp_path: Path, manifest: str | None
+) -> None:
+    """ONE FLOW (D83): no manifest, no table and a table naming no branch are each refused, never defaulted."""
+    if manifest is not None:
+        (tmp_path / 'pyproject.toml').write_text(manifest, encoding='utf-8')
+    with pytest.raises(ValueError, match=r'\[tool\.dev_lab\.integrator\] .*integration'):
+        load_policy(tmp_path)
 
 
 def test_the_retired_prefix_list_is_refused_by_name_with_the_rule_that_replaced_it(tmp_path: Path) -> None:

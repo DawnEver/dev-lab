@@ -20,7 +20,7 @@ from dev_lab.dev.forgeintegration import Child, Feedback, alarms, tick
 from dev_lab.dev.labsession import TRAILER
 from dev_lab.dev.lanepolicy import Policy, policy_from
 
-_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client

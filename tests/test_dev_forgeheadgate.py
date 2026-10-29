@@ -16,7 +16,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UNRESOLVED
 
-_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 if TYPE_CHECKING:
     from collections.abc import Callable

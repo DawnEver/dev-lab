@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _branch_repos import commit
-from _forge_fake import run_git
 from _forge_state import StateForge
 from test_dev_forgemerge import _MANIFEST, _work
 
@@ -62,22 +60,10 @@ def test_a_pr_missing_a_condition_is_posted_failure_naming_it(tmp_path: Path) ->
     assert description.startswith('waits on: its security check: tests/security is not yet judged')
 
 
-def test_a_pr_into_another_branch_than_the_pr_base_is_never_ready(tmp_path: Path) -> None:
+def test_a_pr_into_another_branch_than_integration_is_never_ready(tmp_path: Path) -> None:
     work, forge, number, head = _pr(tmp_path, base='main')
     ready(work, forge, number)
     assert _merge_ready(forge, head) == ('failure', 'waits on: a PR into integrate/main, not main')
-
-
-def test_a_repo_declaring_no_integration_decides_against_its_trunk(tmp_path: Path) -> None:
-    work, forge, number, head = _pr(tmp_path, base='main', manifest=_MANIFEST)
-    run_git(work, 'checkout', '-q', '-B', 'tmp-main', 'origin/main')
-    (work / 'tests').mkdir(exist_ok=True)
-    commit(work, 'tests/test_m.py', 'def test_m():\n    assert True\n')  # the audit's subject on the trunk
-    run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/main')
-    run_git(work, 'fetch', '-q', 'origin')
-    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
-    ready(work, forge, number)
-    assert _merge_ready(forge, head) == ('success', READY)
 
 
 def test_the_merge_noun_is_the_forge_cli_door(tmp_path: Path) -> None:

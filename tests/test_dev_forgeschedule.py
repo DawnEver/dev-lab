@@ -199,7 +199,9 @@ def test_a_served_ref_no_class_names_is_a_pr_head_so_its_moved_tip_supersedes_it
     head's run never stood down, while ``behind`` (the candidate's kind ``pr``) kept every newer tip waiting on it.
     PLANTED CONTROL: a ``lane/*`` branch is still classed ``branch`` -- not coalesced.
     """
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\n[tool.dev_lab.integrator]\nintegration = "integrate/main"\n', encoding='utf-8'
+    )
     assert coalesced(tmp_path, 'pr/post-milestone-followups')
     assert coalesced(tmp_path, 'integrate/main')
     assert not coalesced(tmp_path, 'lane/a-lane')

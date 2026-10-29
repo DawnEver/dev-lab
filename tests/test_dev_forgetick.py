@@ -65,7 +65,7 @@ from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.producer import ProducerExit, release_reason
 
-_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 SLURM = frozenset({'cpu', 'mem_gb', 'submits'})
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
@@ -201,7 +201,7 @@ def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
 RETIRED_TABLE = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))
 
 PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
-_INTEGRATOR = "\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # the integration flow is opt-in
+_INTEGRATOR = "\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 PRODUCE += _INTEGRATOR
 
 

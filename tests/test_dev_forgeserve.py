@@ -51,7 +51,14 @@ from dev_lab.dev.platformparts import ClusterPart
 from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
 from dev_lab.dev.shatree import Tree, TreeFailed
 
-_DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # the integration flow is opt-in
+_DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
+
+
+@pytest.fixture(autouse=True)
+def _declared(tmp_path: Path) -> None:
+    """Every repo declares its integration branch (D83), so the serve root a test hands over declares it too."""
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
+
 
 SHA = 'a' * 40
 BOX = Capacity(cpu=3.0, mem_bytes=24 * GB, seats={})

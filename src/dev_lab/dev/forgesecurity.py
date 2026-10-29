@@ -288,7 +288,7 @@ def step(
     A failure to read the forge or the declaration is said, never raised: the next tick tries afresh.
     """
     try:
-        into = load_policy(root).pr_base
+        into = load_policy(root).integration
         base = f'origin/{into}'
         declaration = declared(_git(root, 'show', f'{base}:pyproject.toml').decode('utf-8'))
         heads: list[tuple[int | None, str]] = [
@@ -326,7 +326,7 @@ def run_pull(
     root: Path, client: Client, number: int, *, judged: Callable[[Path, str, Declaration], Judgement] = _judge_head
 ) -> str:
     """:func:`judge_one` on PR *number*'s head, under the table ``origin/<PR base>`` declares; the line said."""
-    into = load_policy(root).pr_base
+    into = load_policy(root).integration
     pull = client.pr_view(number)
     if pull.base != into or not pull.head_sha:
         return f'#{number}: not judged -- only a PR into {into} is'
@@ -348,7 +348,7 @@ def release(
     if len(why.strip()) < _MIN_WHY:
         msg = f'a release needs its reason: --why "<at least {_MIN_WHY} characters>"'
         raise ReleaseRefused(msg)
-    integration = load_policy(root).pr_base
+    integration = load_policy(root).integration
     pull = next((one for one in pr_list(client) if one.number == number and one.base == integration), None)
     if pull is None or not pull.head_sha:
         msg = f'#{number} is not an open PR into {integration}'

@@ -5,10 +5,6 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
 `integrate/main`; `main` moves only by `integrate promote`. No long-lived feature branch exists
 (user ruling 2026-10-19).
 
-This page applies ONLY to a repo that declares `[tool.dev_lab.integrator]` with its `integration` branch
-name (user ruling 2026-10-29). A repo that declares no such table has no integration branch: its trunk is
-`main`, `forge pr create` targets `main`, and every integration rule and gate below is absent for it.
-
 ## The path of one change
 
 1. Cut `pr/<topic>` from `origin/integrate/main` (`ephemeral = ['pr/*']` lets it be pushed with no row), push it,

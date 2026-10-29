@@ -24,7 +24,7 @@ from dev_lab.dev.lanepolicy import Policy, policy_from
 from dev_lab.dev.mergeresolution import judge as resolution_judge
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 
-_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
 _MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"

@@ -20,7 +20,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import standing
 
-_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
 _PYPROJECT = (

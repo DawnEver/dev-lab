@@ -170,11 +170,8 @@ def decide(destination: str, *, head: str, statuses: Callable[[], Sequence[Commi
 
 
 def destination_of(remote_ref: str, policy: Policy) -> str:
-    """:data:`INTEGRATION` for the declared integration branch, else :data:`LANE`; the trunk is the caller's.
-
-    A repo declaring no integration branch has no :data:`INTEGRATION` destination.
-    """
-    return INTEGRATION if policy.declared and remote_ref == f'refs/heads/{policy.integration}' else LANE
+    """:data:`INTEGRATION` for the declared integration branch, else :data:`LANE`; the trunk is the caller's."""
+    return INTEGRATION if remote_ref == f'refs/heads/{policy.integration}' else LANE
 
 
 def _head(root: Path) -> str:
