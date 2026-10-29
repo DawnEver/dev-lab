@@ -146,7 +146,7 @@ def test_a_wrapper_cannot_hide_the_interpreter_that_consumes_a_heredoc(rules: Pa
 #: here rather than the registry row's segment-shaped `refuses`.
 _PREFIXED_BARE_TESTS = (
     (
-        'cd /d/Documents/MingyangBao/motronics-studio/.claude/worktrees/longrun-js && .venv/Scripts/python.exe'
+        'cd /d/Documents/someone/consumer-a/.claude/worktrees/longrun-js && .venv/Scripts/python.exe'
         ' -m pytest -q -x tests/unit/hamilton/adapters/jmag/ -k "job_system or system_check or jobs"'
         ' -p no:cacheprovider 2>&1 | tail -5'
     ),

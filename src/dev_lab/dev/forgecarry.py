@@ -35,7 +35,7 @@ finishes, which is then never superseded for it (:mod:`dev_lab.dev.forgerun`) an
 A DATA-ONLY head that is NOT equivalent -- its diff holds no Python, no :data:`~dev_lab.dev.footprint.ALWAYS`
 path and no ``everywhere`` glob, but a test reads the tree by path (``reads = ["*"]``) -- also WAITS while its
 source runs, then runs itself carrying every outcome its diff cannot reach (:func:`carry_from`). Measured
-2026-10-22: motronics docs(memory) heads ran their full suite BESIDE their running parent, so nothing could
+2026-10-22: downstream docs(memory) heads ran their full suite BESIDE their running parent, so nothing could
 carry (``carried 0`` of 55k cells); 427 of 5124 test files reach a memory path there by a declared whole-tree read.
 """
 

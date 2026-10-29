@@ -252,7 +252,7 @@ def test_a_docs_only_head_on_a_running_head_waits_for_its_result(tmp_path: Path)
 def test_a_data_only_head_a_whole_tree_scan_reaches_waits_for_the_running_head_instead_of_running_beside_it(
     tmp_path: Path,
 ) -> None:
-    """The cause of docs(memory) heads running full suites (motronics a3b326d0a829, 2026-10-20).
+    """The cause of docs(memory) heads running full suites (consumer-a a3b326d0a829, 2026-10-20).
 
     A test that reads the whole tree (``reads = ["*"]``) reaches a memory diff, so the head is not equivalent
     -- and it ran BESIDE its running parent, so nothing could be carried and every outcome ran again. Now a head

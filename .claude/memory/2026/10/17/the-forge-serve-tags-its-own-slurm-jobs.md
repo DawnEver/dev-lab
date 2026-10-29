@@ -5,8 +5,8 @@ created: 2026-10-17
 ---
 # The forge serve tags its own Slurm jobs (2026-10-17)
 
-- Incident (forge queue 18:12Z): `ALARM untagged` on every Ada account (ezzls2 26, ezztz 76, alyyw103 18,
-  ezxmw9 8, <user-b> 1). squeue on ezxmw9 showed only `run-89f11a39d6fe|(null)` x7 and
+- Incident (forge queue 18:12Z): `ALARM untagged` on every Ada account (user1 26, user2 76, user3 18,
+  user4 8, <user-b> 1). squeue on user4 showed only `run-89f11a39d6fe|(null)` x7 and
   `run-4ad64054bba3-base|(null)`: the forge's own arrays.
 - User ruling: no allocation in machine files, so no host config. `forgeslurm.slurm_cluster` defaults the
   machine's session to `FORGE_SESSION = 'forge'` when `$LC_HPC_SESSION` is unset; an explicit one wins.
