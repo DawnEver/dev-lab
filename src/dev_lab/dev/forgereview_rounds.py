@@ -43,12 +43,30 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'DISPOSE_DOOR', 'FAMILY_MAX_ROUNDS', 'LEDGER_VERSION', 'Ledger', 'advance', 'blocking', 'capped', 'context_summary',
-    'disposed', 'disposition_text', 'ledger_of', 'post_round', 'render', 'trusted_bodies', 'verdict',
+    'DISPOSE_DOOR',
+    'FAMILY_MAX_ROUNDS',
+    'LEDGER_VERSION',
+    'SUMMARY_CITES',
+    'Ledger',
+    'advance',
+    'blocking',
+    'capped',
+    'context_summary',
+    'disposed',
+    'disposition_text',
+    'ledger_of',
+    'post_round',
+    'render',
+    'trusted_bodies',
+    'verdict',
 ]  # fmt: skip
 
 #: The family's cap on full review rounds per PR; a repo declares ``max_rounds`` only to differ.
 FAMILY_MAX_ROUNDS: Final = 3
+
+#: What a review's context summary cites as the change's WHY, in order: its commits, the memory entries it lands,
+#: the merge audit of its merges, and the PR body. Exported by :mod:`dev_lab.dev.reviewpolicy` for every trigger.
+SUMMARY_CITES: Final = ('commits', 'memory', 'merge_audit', 'pr_body')
 
 #: The ledger's format version; a ledger of another version is refused, never guessed at.
 LEDGER_VERSION: Final = 1

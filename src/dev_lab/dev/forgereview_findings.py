@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 __all__ = [
+    'BLOCKING',
     'REVIEWER_STATUSES',
     'SCHEMA_VERSIONS',
     'SEVERITIES',
@@ -41,6 +42,10 @@ REVIEWER_STATUSES: Final = frozenset(
 
 #: A finding's severity, most severe first: ``HIGH`` blocks the merge, the rest never do.
 SEVERITIES: Final = ('HIGH', 'MEDIUM', 'LOW')
+
+#: What blocks the merge while open: these severities, and ``security`` (any severity). One value, read by
+#: :attr:`Finding.blocking` and exported by :mod:`dev_lab.dev.reviewpolicy`.
+BLOCKING: Final = ('HIGH', 'security')
 
 _TOP: Final = ('schema_version', 'range', 'profiles', 'reviewers', 'findings')
 _REVIEWER: Final = ('name', 'provider', 'status', 'dropped_findings')
@@ -91,7 +96,7 @@ class Finding:
     @property
     def blocking(self) -> bool:
         """Whether, while open, it blocks the merge: a ``HIGH`` or a security finding."""
-        return self.severity == 'HIGH' or self.security
+        return self.severity in BLOCKING or ('security' in BLOCKING and self.security)
 
 
 @dataclass(frozen=True)
