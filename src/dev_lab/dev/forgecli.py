@@ -37,6 +37,7 @@ from dev_lab.dev import (
     forgehosts,
     forgeintegration,
     forgeissue,
+    forgemerge,
     forgenotice,
     forgeoutbox,
     forgepublish,
@@ -80,6 +81,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,
+    'merge': forgemerge.main,
     'notices': forgenotice.main,
     'review': forgetakeover.main,
     'security': forgesecurity.main,
@@ -200,6 +202,8 @@ def issue_and_pr(
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
+        if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
+            emit(f'[forge] {client.auto_merge(result.number)}', err=True)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)

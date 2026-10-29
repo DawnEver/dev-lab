@@ -93,6 +93,12 @@ __all__ = [
     'stored_client',
 ]
 
+#: GitHub's native auto-merge, as a merge commit (never squash or rebase: the merge audit reads merge commits).
+_AUTO_MERGE: Final = (
+    'mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) '
+    '{ clientMutationId } }'
+)
+
 #: Statuses below this are answers; at or above it the call failed.
 _HTTP_ERROR_FLOOR: Final = 400
 
@@ -416,6 +422,21 @@ class Client:
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""
         return pull_of(self.call('GET', f'{self.repo}/pulls/{number}'))
+
+    def auto_merge(self, number: int) -> str:
+        """Have PR *number* merged once its merge decision is green; the line said. Who MERGES is the forge's.
+
+        Gitea: nothing to ask -- the serve tick merges on the decision (:mod:`dev_lab.dev.forgemerge`). GitHub: its
+        native auto-merge, a merge commit, which waits on the required checks (``tests/merge-ready`` among them).
+        A refusal GitHub answers (auto-merge off for the repository, a PR already mergeable) is said, not raised.
+        """
+        if self.backend is not GITHUB:
+            return f'#{number}: the forge serve tick merges it once its merge decision is green'
+        node = self.call('GET', f'{self.repo}/pulls/{number}')['node_id']
+        answer = self.call('POST', '/graphql', {'query': _AUTO_MERGE, 'variables': {'id': node}})
+        if errors := answer.get('errors'):
+            return f'#{number}: auto-merge NOT enabled -- {errors[0].get("message", errors[0])}'
+        return f'#{number}: auto-merge enabled -- GitHub merges it (a merge commit) once its required checks are green'
 
 
 def client_for(
