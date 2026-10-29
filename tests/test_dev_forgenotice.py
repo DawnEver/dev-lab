@@ -20,6 +20,8 @@ from dev_lab.dev.forgeintegration import Child, Feedback, alarms, tick
 from dev_lab.dev.labsession import TRAILER
 from dev_lab.dev.lanepolicy import Policy, policy_from
 
+_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
@@ -60,7 +62,7 @@ def _part(forge: StateForge, sha: str, state: str) -> None:
 
 
 def _tick(work: Path, forge: StateForge, head: str, *, now: datetime = _NOW, host: str = 'h1') -> None:
-    tick(work, forge, Policy(), fetch_pull=lambda _r, _m, _n: head, host=host, clock=lambda _c: now)
+    tick(work, forge, _DECLARED, fetch_pull=lambda _r, _m, _n: head, host=host, clock=lambda _c: now)
 
 
 def _notices(work: Path, forge: StateForge, *argv: str, now: datetime = _NOW) -> tuple[int, str]:
@@ -146,7 +148,7 @@ def test_a_conflict_is_its_own_kind() -> None:
 
 
 def test_the_notice_durations_are_declared_with_a_unit() -> None:
-    policy = policy_from("[tool.dev_lab.integrator]\nnotice_escalate = '30 min'\n", 'p')
+    policy = policy_from("[tool.dev_lab.integrator]\nintegration = 'integrate/main'\nnotice_escalate = '30 min'\n", 'p')
     assert forgenotice.duration('notice_escalate', policy.notice_escalate) == timedelta(minutes=30)
     with pytest.raises(ValueError, match='needs a unit'):
         forgenotice.duration('notice_escalate', '2')
@@ -161,6 +163,6 @@ def test_an_escalated_notice_is_an_integration_alarm_naming_it_and_an_owned_fres
     orphan = forgenotice.Notice(7, 'pr/x', 'a' * 40, forgenotice.CONFLICT, (SESSION,), 'conflicts', old)
     text = forgenotice.write('integration says', forgenotice.Block('a' * 40, (owned, orphan)))
     said = [(Child('pr/x', 'a' * 40, client=cast('Client', None), pr=7), Feedback(text, 'pending', 'waiting'))]
-    found = alarms(said, Policy(), 'o/r', now=now)
+    found = alarms(said, _DECLARED, 'o/r', now=now)
     assert [one.about for one in found] == [f'notice {orphan.id}']
     assert 'the integrator takes #7 pr/x: conflict' in found[0].subject

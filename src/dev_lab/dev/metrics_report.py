@@ -52,11 +52,11 @@ def _cli_record(args: argparse.Namespace) -> int:
 
 
 def _integration_ref(root: Path) -> str:
-    """``origin/<integration>`` as *root*'s ``HEAD`` declares it; the default name when it declares none."""
+    """``origin/<integration>`` as *root*'s ``HEAD`` declares it; ``origin/<trunk>`` when it declares none."""
     try:
-        name = policy_at(root, 'HEAD').integration
+        name = policy_at(root, 'HEAD').pr_base
     except (ValueError, OSError, subprocess.CalledProcessError):
-        name = Policy().integration
+        name = Policy().pr_base
     return f'origin/{name}'
 
 

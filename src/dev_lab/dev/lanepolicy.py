@@ -1,5 +1,10 @@
 """The names a repo declares for its branches, in ``[tool.dev_lab.integrator]`` -- names only, never a rule.
 
+The integration flow is OPT-IN. A repo that declares no ``[tool.dev_lab.integrator]`` table has NO integration
+branch (``integration == ''``): its trunk is ``main``, its pull requests target the trunk, and every
+integration rule is absent for it. A repo that declares the table names its integration branch there -- the
+one source of the name, never a default.
+
 A LEAF: the integrator's queue, push admission, the forge tick and the record attacher all read the
 same declaration, and none of them may import another just to learn a branch name. Which origin
 branches are CHILDREN is not a name but a rule, and it is the schedule's one rule
@@ -28,8 +33,9 @@ _TABLE: Final = 'integrator'
 class Policy:
     """What a consumer declares in ``[tool.dev_lab.integrator]``: names only, never a rule."""
 
-    #: The coordination branch: only the integrator merges into it, and every PR targets it.
-    integration: str = 'integrate/main'
+    #: The coordination branch: only the integrator merges into it, and every PR targets it. ``''`` (no
+    #: ``[tool.dev_lab.integrator]`` table): the repo has none, and every integration rule is absent.
+    integration: str = ''
     #: The stable branch: moved ONLY by fast-forward to an integration commit whose parts are full PASS.
     trunk: str = 'main'
     #: The test trees :mod:`dev_lab.dev.mergeaudit` reads when a merge is committed.
@@ -53,6 +59,16 @@ class Policy:
     #: A PR head whose parts are still unsettled this long after its commit is a ``stall`` notice.
     notice_stall: str = '6 h'
 
+    @property
+    def declared(self) -> bool:
+        """Whether the repo declares an integration branch, so the integration rules apply to it."""
+        return bool(self.integration)
+
+    @property
+    def pr_base(self) -> str:
+        """The branch every pull request targets and a child syncs from: integration when declared, else trunk."""
+        return self.integration or self.trunk
+
 
 def load_policy(root: Path) -> Policy:
     """*root*'s working-tree ``[tool.dev_lab.integrator]``; defaults when it has no manifest."""
@@ -66,8 +82,14 @@ def policy_at(root: Path, rev: str) -> Policy:
 
 
 def policy_from(text: str, origin: str) -> Policy:
-    """The policy *text* declares, defaults for what it omits; a retired or unknown key is refused naming *origin*."""
-    declared = declared_table(tomllib.loads(text), _TABLE, {})
+    """The policy *text* declares, defaults for what it omits; a retired or unknown key is refused naming *origin*.
+
+    No table is no integration branch (:class:`Policy` defaults); a table that omits ``integration`` is refused,
+    so the branch name has one source.
+    """
+    declared = declared_table(tomllib.loads(text), _TABLE)
+    if declared is None:
+        return Policy()
     spelled = {key: f'{_TABLE}.{key}' if f'{_TABLE}.{key}' in RETIRED else key for key in declared}
     if retired := [f'{key} is retired: {RETIRED[name]}' for key, name in spelled.items() if name in RETIRED]:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: ' + '; '.join(retired)
@@ -76,6 +98,9 @@ def policy_from(text: str, origin: str) -> Policy:
     unknown = sorted(set(declared) - known)
     if unknown:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
+        raise ValueError(msg)
+    if not declared.get('integration'):
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin} names no integration branch; declare integration = "<branch>"'
         raise ValueError(msg)
     declared = declared | {key: tuple(declared[key]) for key in ('test_roots',) if key in declared}
     return Policy(**declared)

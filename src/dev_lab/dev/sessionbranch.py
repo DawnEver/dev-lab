@@ -202,9 +202,11 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
             f'{P3}: {branch} at {old[:12]} on origin is not an ancestor of {sha[:12]}; history only grows: '
             f'fetch, merge origin/{branch} into {branch}, push again (never force)'
         )
-    if branch == policy.integration and policy.pr_merges_since:
+    if not policy.declared or branch != policy.integration:
+        return found  # no integration branch declared: P4 and P5 are absent
+    if policy.pr_merges_since:
         found += _forge_merges_only(root, policy, old, sha)
-    elif branch == policy.integration:
+    else:
         found += _merges_only(root, policy, old, sha)
     return found
 
@@ -224,7 +226,7 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
 
 
 def _deletion_rev(root: Path) -> str:
-    """The rev a deletion is judged by: ``origin/<integration>``, else ``origin/<trunk>``, else ``HEAD``.
+    """The rev a deletion is judged by: ``origin/<integration>`` where declared, else ``origin/<trunk>``, else ``HEAD``.
 
     The names come from ``HEAD``'s ``[tool.dev_lab.integrator]``, defaults when it cannot be read: a stale
     checkout must not decide what deleting a ref means, and a deletion carries nothing of its own to read.
@@ -233,7 +235,7 @@ def _deletion_rev(root: Path) -> str:
         policy = policy_at(root, 'HEAD')
     except (ValueError, OSError, subprocess.CalledProcessError):
         policy = Policy()
-    for name in (policy.integration, policy.trunk):
+    for name in dict.fromkeys((policy.pr_base, policy.trunk)):
         rev = f'refs/remotes/origin/{name}'
         if _git(root, 'rev-parse', '-q', '--verify', f'{rev}^{{commit}}').returncode == 0:
             return rev

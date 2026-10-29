@@ -28,6 +28,7 @@ sessions = ["integrate/main"]
 ephemeral = ["pr/*"]
 
 [tool.dev_lab.integrator]
+integration = "integrate/main"
 """
 
 

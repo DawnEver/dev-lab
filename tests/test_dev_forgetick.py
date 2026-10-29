@@ -65,6 +65,8 @@ from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.producer import ProducerExit, release_reason
 
+_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+
 SLURM = frozenset({'cpu', 'mem_gb', 'submits'})
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 LATER = NOW + timedelta(hours=6)
@@ -186,7 +188,8 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
     """A new integration head whose OWN commit carries *pyproject*; the working tree is not what is read."""
     answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))  # the head it replaces: never claimed
-    (repo / 'pyproject.toml').write_text(pyproject, encoding='utf-8')
+    declared = pyproject if '[tool.dev_lab.integrator]' in pyproject else pyproject + _INTEGRATOR
+    (repo / 'pyproject.toml').write_text(declared, encoding='utf-8')
     run_git(repo, 'add', 'pyproject.toml')
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'declare')
     tips['integrate/main'] = git_out(repo, 'rev-parse', 'HEAD')
@@ -198,6 +201,8 @@ def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
 RETIRED_TABLE = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))
 
 PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
+_INTEGRATOR = "\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # the integration flow is opt-in
+PRODUCE += _INTEGRATOR
 
 
 def _argv(part: str = BASE) -> list[str]:
@@ -621,7 +626,7 @@ def test_every_host_names_every_class_one_candidate_per_ref(server, tmp_path: Pa
     built = client(forge, Loopback(server))
     found = candidates(
         repo, built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
-        policy=Policy(), now=NOW,
+        policy=_DECLARED, now=NOW,
     )  # fmt: skip
     got = {(c.ref, c.sha, c.kind, c.labels) for c in found}
     assert got == {
@@ -652,7 +657,7 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
     notes: list[str] = []
     found = candidates(
         repo, client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
-        parts=lambda _sha: ('windows', 'jmag'), schedule=load_schedule(repo), policy=Policy(), now=NOW,
+        parts=lambda _sha: ('windows', 'jmag'), schedule=load_schedule(repo), policy=_DECLARED, now=NOW,
         say=notes.append,
     )  # fmt: skip
     assert {(c.ref, c.platform) for c in found} == {
@@ -735,7 +740,7 @@ def _integrate(server, tmp_path: Path, notes: list[str]) -> set[tuple[str, str]]
     built = client(Forge('forge.example.org', 'o', 'r'), Loopback(server))
     found = candidates(
         repo, built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
-        policy=Policy(), now=NOW, say=notes.append,
+        policy=_DECLARED, now=NOW, say=notes.append,
     )  # fmt: skip
     return {(c.ref, c.kind) for c in found}
 
@@ -772,7 +777,7 @@ def test_a_request_naming_no_full_sha_is_skipped_and_said_never_served(server, t
     notes: list[str] = []
     found = candidates(
         repo, client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
-        parts=lambda _sha: (BASE,), schedule=load_schedule(repo), policy=Policy(), now=NOW, say=notes.append,
+        parts=lambda _sha: (BASE,), schedule=load_schedule(repo), policy=_DECLARED, now=NOW, say=notes.append,
     )  # fmt: skip
     assert [c.ref for c in found] == ['integrate/main']
     assert notes == ['[serve] skipped request issue #4727: its body names no 40-hex `sha` (got "3d27380859")']
@@ -1175,7 +1180,7 @@ def test_two_shas_of_one_ref_only_the_newest_is_a_candidate(server, tmp_path: Pa
     new = _push(repo, tips, 'integrate/main')
     built = client(Forge('forge.example.org', 'o', 'r'), Loopback(server))
     found = candidates(
-        repo, built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo), policy=Policy(), now=NOW
+        repo, built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo), policy=_DECLARED, now=NOW
     )
     shas = {c.sha for c in found if c.ref == 'integrate/main'}
     assert shas == {new}, f'the never-claimed {old[:12]} is skipped, not a candidate'

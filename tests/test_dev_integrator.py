@@ -32,7 +32,9 @@ from dev_lab.dev.integrator import (
 )
 from dev_lab.dev.lanepolicy import Policy, load_policy
 
-_POLICY = Policy()
+_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+
+_POLICY = _DECLARED
 _SCHEDULE = Schedule()
 
 
@@ -149,6 +151,7 @@ def _commit(repo: Path, message: str) -> str:
 def _repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     """origin/main = base; origin/integrate/main holds feat/in; feat/out is new work; wip/x undeclared."""
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
+    (repo / 'pyproject.toml').write_text("[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n", 'utf-8')
     tips = {'main': _commit(repo, 'feat: base')}
     run_git(repo, 'switch', '-q', '-c', 'feat/in')
     tips['feat/in'] = _commit(repo, 'feat: in')

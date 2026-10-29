@@ -61,14 +61,14 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
             *([EPHEMERAL_OFF] if not declared.is_ephemeral('pr/x') else []),
             *(
                 [f'[tool.dev_lab.branchset] sessions names {policy.integration!r}']
-                if policy.integration not in declared.sessions
+                if policy.declared and policy.integration not in declared.sessions
                 else []
             ),
         ]
     missing += [
         *(
             ['[tool.dev_lab.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"']
-            if not policy.pr_merges_since
+            if policy.declared and not policy.pr_merges_since
             else []
         ),
         *(

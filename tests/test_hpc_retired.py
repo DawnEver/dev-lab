@@ -104,7 +104,7 @@ def test_the_github_pr_mirror_key_is_refused_by_name() -> None:
     """GitHub is ONLY a push mirror (user ruling 2026-10-19). PLANTED CONTROL: the table without the key loads."""
     with pytest.raises(ValueError, match=r'mirror is retired: .*push mirror'):
         policy_from('[tool.dev_lab.integrator]\nmirror = "https://github.com/o/r"\n', 'p')
-    assert policy_from('[tool.dev_lab.integrator]\ntrunk = "main"\n', 'p').trunk == 'main'
+    assert policy_from('[tool.dev_lab.integrator]\nintegration = "i"\ntrunk = "main"\n', 'p').trunk == 'main'
 
 
 @pytest.mark.parametrize('argv', [['serve', '--mode', 'integrate'], ['tick', '--mode', 'develop', '--json']])

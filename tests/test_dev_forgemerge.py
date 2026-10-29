@@ -7,6 +7,7 @@ the same PR, with the one missing condition supplied, is merged.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,9 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 
-POLICY = Policy(pr_merges_since='0' * 40)
+_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+
+POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
 _MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 
 
@@ -156,7 +159,7 @@ def test_the_tick_merges_a_green_pr_once_declared_and_never_without(tmp_path: Pa
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     forge.statuses[head] = _green()
-    _tick(work, forge, head, Policy())
+    _tick(work, forge, head, _DECLARED)
     assert forge.merges == []
     _tick(work, forge, head, POLICY)
     ((merged, body),) = forge.merges

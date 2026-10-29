@@ -62,9 +62,9 @@ def _key(branch: str) -> str:
 
 
 def upstreams(root: Path, branch: str, policy: Policy) -> tuple[str, ...]:
-    """*branch*'s upstream set: ``origin/<integration>`` first, then each watched ref in watch order."""
+    """*branch*'s upstream set: ``origin/<integration>`` (else the trunk) first, then each watched ref."""
     watched = _git(root, 'config', '--get-all', _key(branch)).stdout.split()
-    base = _ORIGIN + policy.integration
+    base = _ORIGIN + policy.pr_base
     return (base, *(ref for ref in dict.fromkeys(watched) if ref != base))
 
 
@@ -114,6 +114,8 @@ def _current(root: Path, policy: Policy) -> str:
         msg = (
             f'{branch} is not a child branch: only the integrator moves {policy.integration}, '
             f'only promote moves {policy.trunk}'
+            if policy.declared
+            else f'{branch} is the trunk, not a child branch'
         )
         raise ValueError(msg)
     return branch

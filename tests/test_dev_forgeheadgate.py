@@ -16,6 +16,8 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UNRESOLVED
 
+_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -139,7 +141,7 @@ def test_a_gate_that_raises_for_one_head_leaves_the_tick_and_the_next_head(tmp_p
         judged.append(head)
         return ['lock/fresh: success']
 
-    done = tick(work, forge, Policy(), fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate)
+    done = tick(work, forge, _DECLARED, fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate)
     assert judged == [heads[second]]
     assert any('pr/a' in line and 'gate raised RuntimeError: boom' in line for line in done.lines), done.lines
     assert len(done.said) == len(heads), 'every child still got its integration feedback'
@@ -158,7 +160,7 @@ def test_the_gate_runs_after_the_tick_work_within_a_budget_oldest_first(tmp_path
         return ['lock/fresh: success']
 
     done = tick(
-        work, forge, Policy(), fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate,
+        work, forge, _DECLARED, fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate,
         monotonic=lambda: next(clock),
     )  # fmt: skip
     assert order == [heads[first]], 'the oldest is judged; the budget is spent before the second'

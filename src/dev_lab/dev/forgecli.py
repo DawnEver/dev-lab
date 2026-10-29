@@ -62,6 +62,7 @@ from dev_lab.dev import (
 from dev_lab.dev.forge import Transport, https_transport
 from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, Issue, PullRequest, client_for
 from dev_lab.dev.labsession import ENV
+from dev_lab.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -155,7 +156,7 @@ def _parser() -> argparse.ArgumentParser:
     opened.add_argument('--title', required=True)
     opened.add_argument('--body', default='')
     opened.add_argument('--head', required=True)
-    opened.add_argument('--base', required=True)
+    opened.add_argument('--base', help='default: the declared integration branch, else the trunk')
     return parser
 
 
@@ -189,6 +190,8 @@ def issue_and_pr(
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     client = client_for(root, env=env, transport=transport)
+    if (args.noun, args.verb) == ('pr', 'create') and not args.base:
+        args.base = load_policy(root).pr_base
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
             said := pradmit.create_advice(root, client, head=args.head, base=args.base)

@@ -20,6 +20,8 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import standing
 
+_DECLARED = Policy(integration='integrate/main')  # the integration flow is opt-in: these fixtures declare it
+
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
 _PYPROJECT = (
     '[tool.lab_commons.tests]\nresources = ["jmag", "windows"]\nscarce = ["jmag"]\n'
@@ -122,7 +124,7 @@ def test_a_pr_is_offered_only_its_reached_scarce_parts_whatever_the_ref_filter(
 
     def offered(waived: frozenset[str]) -> set[tuple[str, str]]:
         found = forgeschedule.candidates(
-            repo, None, repo='o/r', parts=lambda _sha: ('base', 'jmag'), schedule=Schedule(), policy=Policy(),
+            repo, None, repo='o/r', parts=lambda _sha: ('base', 'jmag'), schedule=Schedule(), policy=_DECLARED,
             now=NOW, waived=lambda _sha: waived,
         )  # fmt: skip
         return {(one.ref, one.platform) for one in found}

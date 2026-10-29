@@ -43,7 +43,8 @@ def assert_the_pr_flow_is_declared(*, root: Path) -> str:
     ``integrate/main`` moving ONCE BY FORGE MERGES is INTEGRATION-TAKES-ONLY-FORGE-MERGES, enforced from
     ``pr_merges_since`` forward (:mod:`dev_lab.dev.sessionbranch`); ``ephemeral = ['pr/*']`` is what lets an
     author push a PR head with no declared session row (:mod:`dev_lab.dev.branchset`). A repo declaring
-    neither admits a hand merge, so the declarations ARE the flow and not a convention beside it.
+    neither admits a hand merge, so the declarations ARE the flow and not a convention beside it. A repo
+    declaring no ``[tool.dev_lab.integrator]`` has no integration branch: only its ``pr/*`` namespace is asked.
 
     Returns:
         The declared sha the rule starts after, so a case can print it.
@@ -59,11 +60,15 @@ def assert_the_pr_flow_is_declared(*, root: Path) -> str:
         msg = f'{root} declares no branch set ({undeclared}); add:\n{_PR_FLOW}'
         raise BranchSetViolation(msg) from undeclared
     missing = [
-        *(['[tool.dev_lab.integrator] pr_merges_since = "<sha>"'] if not policy.pr_merges_since else []),
+        *(
+            ['[tool.dev_lab.integrator] pr_merges_since = "<sha>"']
+            if policy.declared and not policy.pr_merges_since
+            else []
+        ),
         *([EPHEMERAL_OFF] if not declared.is_ephemeral('pr/x') else []),
         *(
             [f'[tool.dev_lab.branchset] sessions names {policy.integration!r}']
-            if policy.integration not in declared.sessions
+            if policy.declared and policy.integration not in declared.sessions
             else []
         ),
     ]

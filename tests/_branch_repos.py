@@ -6,6 +6,9 @@ from pathlib import Path
 
 from _forge_fake import git_out, run_git
 
+#: The integration flow these repos run is opt-in, so their root commit declares it.
+_DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
+
 
 def commit(repo: Path, name: str, text: str, message: str | None = None) -> str:
     """Write *name* with *text*, commit it, return the new HEAD."""
@@ -16,7 +19,7 @@ def commit(repo: Path, name: str, text: str, message: str | None = None) -> str:
 
 
 def clone_pair(tmp_path: Path) -> tuple[Path, Path]:
-    """``(bare origin, clone)``: main and integrate/main at one root commit, both pushed."""
+    """``(bare origin, clone)``: main and integrate/main at one root commit declaring them, both pushed."""
     bare = tmp_path / 'origin.git'
     run_git(tmp_path, 'init', '-q', '--bare', '-b', 'main', str(bare))
     work = tmp_path / 'work'
@@ -24,6 +27,8 @@ def clone_pair(tmp_path: Path) -> tuple[Path, Path]:
     run_git(work, 'config', 'user.name', 't')
     run_git(work, 'config', 'user.email', 't@t')
     run_git(work, 'checkout', '-q', '-b', 'main')
+    (work / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
+    run_git(work, 'add', 'pyproject.toml')
     commit(work, 'base.txt', 'base\n')
     run_git(work, 'push', '-q', '--no-verify', 'origin', 'main', 'main:integrate/main')
     run_git(work, 'fetch', '-q', 'origin')
