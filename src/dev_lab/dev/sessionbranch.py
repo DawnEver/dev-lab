@@ -242,6 +242,22 @@ def _deletion_rev(root: Path) -> str:
     return 'HEAD'
 
 
+def _trusted(root: Path, pushed: Policy, old: str) -> Policy:
+    """*pushed*, unless it drops or renames the integration branch origin's tip *old* declares: then that one.
+
+    Fail closed: a push cannot switch the integration audits off by dropping or renaming the table it is
+    judged by -- such a change is judged by the declaration origin already holds, and binds once it lands.
+    A pushed table that keeps the name still binds at once, so a tightening (``pr_merges_since``) applies.
+    """
+    if _zero(old) or _git(root, 'cat-file', '-e', f'{old}^{{commit}}').returncode != 0:
+        return pushed
+    try:
+        held = policy_at(root, old)
+    except (ValueError, subprocess.CalledProcessError):
+        return pushed
+    return held if held.declared and held.integration != pushed.integration else pushed
+
+
 def refusals(root: Path, lines: str) -> list[str]:
     """Every refusal for the push *lines* describe; local reads only.
 
@@ -264,7 +280,7 @@ def refusals(root: Path, lines: str) -> list[str]:
         if not _zero(fields[1]):
             found += _undeclared(declared, fields[2][len(_HEADS) :])
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
-            found += _judge_ref(root, policy, fields)
+            found += _judge_ref(root, _trusted(root, policy, fields[3]), fields)
         elif (named := _local(root, fields[0])).startswith(_HEADS) and named != fields[2]:
             branch = named[len(_HEADS) :]
             found.append(
