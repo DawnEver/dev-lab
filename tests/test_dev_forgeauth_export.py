@@ -43,7 +43,7 @@ def test_parse_reads_user_at_host_and_skips_comments_and_blanks() -> None:
 
 
 def test_parse_keeps_a_username_holding_an_at_and_a_host_with_a_port() -> None:
-    assert parse_key_file('a@b.org@git.example:3000 t\n') == (KeyLine('git.example:3000', 'a@b.org', 't'),)
+    assert parse_key_file('a@b.invalid@git.example:3000 t\n') == (KeyLine('git.example:3000', 'a@b.invalid', 't'),)
 
 
 @pytest.mark.parametrize(

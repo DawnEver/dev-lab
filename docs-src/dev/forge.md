@@ -535,7 +535,7 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
 
   ```
   python -m dev_lab.dev.forge auth export |
-      ssh <box> "cd <checkout> && .venv/bin/python -m dev_lab.dev.forge auth login --from-file -"
+      ssh <box> "cd <checkout> && <venv python> -m dev_lab.dev.forge auth login --from-file -"
   ```
 
   `export` writes one `<username>@<host> <token>` line per credential git holds for every host a family

@@ -14,7 +14,7 @@ displace a credential that worked.
 ONE COMMAND MOVES EVERY FORGE CREDENTIAL TO A NEW BOX::
 
     python -m dev_lab.dev.forge auth export |
-        ssh <box> "cd <checkout> && .venv/bin/python -m dev_lab.dev.forge auth login --from-file -"
+        ssh <box> "cd <checkout> && <venv python> -m dev_lab.dev.forge auth login --from-file -"
 
 ``auth export`` writes a KEY FILE to stdout -- one line ``<username>@<host> <token>`` per credential git
 holds for each forge host the family uses (:func:`family_hosts`: every remote of every checkout beside
@@ -130,7 +130,13 @@ def family_hosts(root: Path) -> tuple[str, ...]:
         if not (checkout / '.git').exists():
             continue
         names = _door.run(
-            [_GIT, 'remote'], cwd=checkout, capture_output=True, text=True, timeout=_GIT_TIMEOUT_S, check=False
+            [_GIT, 'remote'],
+            cwd=checkout,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            timeout=_GIT_TIMEOUT_S,
+            check=False,
         )
         for remote in names.stdout.split():
             try:
