@@ -25,10 +25,11 @@ from dev_lab.dev.forgereview_findings import BLOCKING
 from dev_lab.dev.forgereview_rounds import SUMMARY_CITES
 from dev_lab.dev.principles import payload
 
-__all__ = ['SCHEMA', 'main', 'policy']
+__all__ = ['EXPORT_VERSION', 'main', 'policy']
 
-#: The export's format version: a consumer refuses one it does not know.
-SCHEMA: Final = 1
+#: The export's version, written as ``schema``: a consumer refuses one it does not know. Printed for another
+#: process to read and never persisted or read back here, so it is not a stored format with an upgrade table.
+EXPORT_VERSION: Final = 1
 
 
 def policy(repo: Path) -> dict[str, Any]:
@@ -36,7 +37,7 @@ def policy(repo: Path) -> dict[str, Any]:
     review = load_review(repo)
     budget = review.budget
     return {
-        'schema': SCHEMA,
+        'schema': EXPORT_VERSION,
         'principles': payload()['principles'],
         'code': list(budget.code),
         'not_code': list(budget.not_code),

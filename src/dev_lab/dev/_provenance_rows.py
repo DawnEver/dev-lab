@@ -562,5 +562,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'metrics_compute': ('original',),
     'metrics_report': ('original',),
     'reviewcommand': ('original',),
+    'reviewpolicy': ('original',),  # the review policy exported for every trigger, new here
     'security': ('original',),
 }

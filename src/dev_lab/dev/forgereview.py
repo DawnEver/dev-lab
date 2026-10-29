@@ -107,17 +107,7 @@ from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, ca
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, disposed, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, host_runtimes, retired_field
-from dev_lab.dev.forgereview_scope import (
-    CODE,
-    NOT_CODE,
-    ONLY_GENERATED,
-    OVER_CAP_TAKEOVER,
-    Budget,
-    Scope,
-    gather,
-    plan,
-    reviewed_heads,
-)
+from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -225,8 +215,8 @@ class Review:
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = STRICT
     light: tuple[str, ...] = LIGHT
-    code: tuple[str, ...] = CODE
-    not_code: tuple[str, ...] = NOT_CODE
+    code: tuple[str, ...] = forgereview_scope.CODE
+    not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
 
     def __post_init__(self) -> None:
@@ -383,17 +373,8 @@ def _unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     return f'#{pull.number} {head[:12]}: {said}'
 
 
-def _settle(
-    root: Path,
-    client: Client,
-    pull: PullRequest,
-    review: Review,
-    *,
-    reviewed: str,
-    found: Findings,
-    outside: int = 0,
-    authored: Mapping[str, str] | None = None,
-) -> str:
+def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
+            authored: Mapping[str, str]) -> str:  # fmt: skip
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
@@ -406,8 +387,8 @@ def _settle(
         why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
-    return post_round(root, client, pull, reviewed, found=found, max_rounds=review.max_rounds, outside=outside,
-                      authored=authored)  # fmt: skip
+    return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
+                      outside=scope.outside, authored=authored)  # fmt: skip
 
 
 def _without_command(root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope) -> str | None:
@@ -482,9 +463,7 @@ def review_tick(
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
             continue
-        authored = trailed(root, target, head)
-        lines.append(_settle(root, client, pull, review, reviewed=scope.range, found=found, outside=scope.outside,
-                             authored=authored))  # fmt: skip
+        lines.append(_settle(root, client, pull, review, scope, found=found, authored=trailed(root, target, head)))
     return tuple(lines)
 
 
