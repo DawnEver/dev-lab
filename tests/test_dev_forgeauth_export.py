@@ -55,6 +55,16 @@ def test_parse_refuses_a_malformed_line_naming_its_number_never_its_token(bad: s
     assert 'tok' not in str(refused.value).replace('token', '')
 
 
+@pytest.mark.parametrize(
+    'host',
+    ['internal-admin:8080/x', 'h?q=1', 'h#frag', r'h\evil', 'h:port', 'h:', '-h', 'h..example', 'h\x01'],
+)
+def test_parse_refuses_a_host_that_is_not_a_bare_name_with_an_optional_port(host: str) -> None:
+    """The host becomes an HTTPS target the token is sent to: a path, query, fragment or junk is refused."""
+    with pytest.raises(ValueError, match='line 1: host'):
+        parse_key_file(f'alice@{host} tok\n')
+
+
 def test_parse_refuses_a_host_named_twice_for_one_username() -> None:
     with pytest.raises(ValueError, match='twice'):
         parse_key_file('a@h t1\na@h t2\n')

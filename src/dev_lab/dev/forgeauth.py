@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import hashlib
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -80,6 +81,10 @@ _USAGE = 2
 
 #: A key file line's fields: ``<username>@<host>`` and the token.
 _KEY_FIELDS: Final = 2
+# A host the token is SENT to: a DNS name, an IPv4 or a bracketed IPv6, with an optional numeric port -- never a path,
+# query, fragment or userinfo, which would turn a key file into a forwarder of the token to any URL.
+_LABEL: Final = r'[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?'
+_HOST: Final = re.compile(rf'(?:{_LABEL}(?:\.{_LABEL})*|\[[0-9A-Fa-f:.]+\])(?::[0-9]{{1,5}})?')
 
 #: The token scopes a tick needs, as the forge's token page names them.
 TICK_SCOPES: Final = 'repository (read and write), issue (read and write), user (read)'
@@ -103,7 +108,8 @@ def parse_key_file(text: str) -> tuple[KeyLine, ...]:
     """Every key of *text*; a malformed or repeated line refuses the WHOLE file, naming its number only.
 
     Raises:
-        ValueError: a line is not ``<username>@<host> <token>``, or names one username of a host twice.
+        ValueError: a line is not ``<username>@<host> <token>``, its host is not a bare name with an optional
+            port, or it names one username of a host twice.
 
     """
     keys: dict[tuple[str, str], KeyLine] = {}
@@ -115,6 +121,9 @@ def parse_key_file(text: str) -> tuple[KeyLine, ...]:
         username, at, host = fields[0].rpartition('@')
         if len(fields) != _KEY_FIELDS or not (at and username and host):
             msg = f'key file line {number}: expected `<username>@<host> <token>`'
+            raise ValueError(msg)
+        if not _HOST.fullmatch(host):
+            msg = f'key file line {number}: host is not a bare name with an optional port'
             raise ValueError(msg)
         if (host, username) in keys:
             msg = f'key file line {number}: {username}@{host} named twice'
