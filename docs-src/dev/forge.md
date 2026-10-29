@@ -343,7 +343,7 @@ serve (`lab_commons.hpc`) does not read the registry.
   - DATA-ONLY WAITS (2026-10-22, `forgecarry.data_only`): a head whose diff holds no Python, no `ALWAYS` path and
     no `everywhere` glob but that a whole-tree read (`reads = ["*"]`) still reaches is not equivalent -- it WAITS
     while its source runs, then runs carrying every outcome its diff cannot reach, instead of running beside it
-    and carrying nothing. Measured: motronics `a3b326d0a829` (docs(memory), 2026-10-20) ran beside its running
+    and carrying nothing. Measured: consumer-a `a3b326d0a829` (docs(memory), 2026-10-20) ran beside its running
     parent with `carried 0`; 427 of 5124 test files there reach a memory path through declared `"*"` reads.
 
 ## Scheduling

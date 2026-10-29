@@ -11,17 +11,17 @@ The role is declared ONCE, `dev_lab.dev.workstationfile.ROLES`, and the deploy r
 (`~/.config/lab-commons/config.toml`). Print it for your repos with
 
 ```
-.venv\Scripts\python.exe -m dev_lab.dev.workstation template --role light --repos dev-lab,lab-commons,motronics-studio
+.venv\Scripts\python.exe -m dev_lab.dev.workstation template --role light --repos dev-lab,lab-commons,consumer-a
 ```
 
 which prints exactly this (a test pins this block to the command's output, so it cannot drift):
 
-<!-- template: light dev-lab,lab-commons,motronics-studio -->
+<!-- template: light dev-lab,lab-commons,consumer-a -->
 ```toml
 [capabilities.workstation]
 
 [serve]
-repos = ["dev-lab", "lab-commons", "motronics-studio"]
+repos = ["dev-lab", "lab-commons", "consumer-a"]
 parts = "every"
 withhold = ["femm", "jmag", "matlab", "simba"]
 ```
@@ -62,7 +62,7 @@ Nothing else is written: no `[reserve]`, no seats. Every other table, key and co
 
    ```
    .venv\Scripts\python.exe -m dev_lab.dev.workstation deploy --role light --forge <forge> `
-       --repos dev-lab,lab-commons,motronics-studio --dry-run
+       --repos dev-lab,lab-commons,consumer-a --dry-run
    ```
 
    Read every action and the machine-file diff, then run it again without `--dry-run`. It clones and bootstraps
