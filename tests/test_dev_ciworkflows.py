@@ -80,7 +80,7 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith('${{ always()')
-    assert set(jobs['merge-ready']['needs']) == {'absent-parts', 'security', 'review'}
+    assert set(jobs['merge-ready']['needs']) == {'security', 'review'}, 'the parts gate promote, never the merge'
     assert jobs['merge-ready']['if'].startswith('${{ always()')
     assert 'forge merge ready --pr' in jobs['merge-ready']['steps'][-1]['run']
     assert 'forge review run --pr' in jobs['review']['steps'][-1]['run']

@@ -72,25 +72,19 @@ def test_a_green_clean_pr_is_ready_and_its_message_names_branch_and_pull(tmp_pat
     assert found.message.startswith('chore(merge): pr/x into integrate/main (#4)')
 
 
-def test_a_pr_whose_parts_are_not_all_pass_waits_naming_them(tmp_path: Path) -> None:
-    """PLANTED control: the same head with a PASS part is ready (the test above)."""
-    work, head = _work(tmp_path)
-    pending = [{'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': 'scope=full ran=0 hands=-'}]
-    for statuses in ((), _statuses(pending)):
-        found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=statuses)
-        assert not found.ready
-        assert any('every `tests/<part>` part PASS' in why for why in found.missing), found.missing
+def test_a_pr_whose_parts_are_not_all_pass_is_still_ready(tmp_path: Path) -> None:
+    """User ruling 2026-10-29: the test parts gate promotion to main, never a merge into integration.
 
-
-def test_a_pr_nobody_posted_on_says_unclaimed_and_a_claimed_one_inconclusive(tmp_path: Path) -> None:
-    """The two waits are told apart: nothing posted is UNCLAIMED, a pending claim is INCONCLUSIVE."""
+    Absent, pending and FAILED parts alike leave a PR with its review and security posted ready.
+    """
     work, head = _work(tmp_path)
-    pending = [{'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': 'claim machine=G'}]
-    nothing = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=()).missing[0]
-    claimed = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(pending)).missing[0]
-    assert 'UNCLAIMED' in nothing, nothing
-    assert 'INCONCLUSIVE' not in nothing, nothing
-    assert 'INCONCLUSIVE' in claimed, claimed
+    gates = [r for r in _green() if r['context'] != 'tests/base']
+    for part in ('pending', 'failure', None):
+        raw = gates + (
+            [{'id': 9, 'context': 'tests/base', 'status': part, 'description': 'scope=full'}] if part else []
+        )
+        found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(raw))
+        assert found.ready, (part, found.missing)
 
 
 def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_path: Path) -> None:
@@ -170,17 +164,30 @@ def test_the_tick_merges_a_green_pr_once_declared_and_never_without(tmp_path: Pa
     assert 'merged by the forge' in comment['body']
 
 
-def test_a_red_pr_stays_open_with_what_is_missing_in_its_one_comment(tmp_path: Path) -> None:
+def test_a_pr_with_a_failed_part_is_merged_by_the_forge(tmp_path: Path) -> None:
+    """A red ``tests/<part>`` does not hold the merge into integration; it holds the promotion to main."""
     work, head = _work(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    forge.statuses[head] = [{'id': 1, 'context': 'tests/base', 'status': 'failure', 'description': 'scope=full ran=3'}]
+    red = {'id': 1, 'context': 'tests/base', 'status': 'failure', 'description': 'scope=full ran=3'}
+    forge.statuses[head] = [red, *(r for r in _green() if r['context'] != 'tests/base')]
+    _tick(work, forge, head, POLICY)
+    ((merged, _),) = forge.merges
+    assert merged == number
+
+
+def test_an_unsafe_pr_stays_open_with_what_is_missing_in_its_one_comment(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    unsafe = {'id': 3, 'context': 'tests/security', 'status': 'failure', 'description': 'B602 shell=True'}
+    forge.statuses[head] = [*(r for r in _green() if r['context'] != 'tests/security'), unsafe]
     _tick(work, forge, head, POLICY)
     _tick(work, forge, head, POLICY)
     assert forge.merges == []
     assert forge.pulls[number]['state'] == 'open'
     (comment,) = forge.comments[number]
-    assert 'the forge merges it once it has: every `tests/<part>` part PASS' in comment['body']
+    assert 'the forge merges it once it has: its security check' in comment['body']
 
 
 # --- the verb -------------------------------------------------------------------------------------

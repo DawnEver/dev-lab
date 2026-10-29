@@ -21,8 +21,9 @@
 #                 which would run a fork's code with this repository's secrets)
 #   merge-ready   last, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready; GitHub's native auto-merge into integrate/main (enabled by
-#                 `forge pr create`) waits on it
-#   promote       on a push to integrate/main (a merged PR), once every part settled: `integrate promote`,
+#                 `forge pr create`) waits on it; the parts never gate it (user ruling 2026-10-29)
+#   promote       on a push to integrate/main (a merged PR), once every part settled: `integrate promote`
+#                 refuses unless every part stands PASS -- the ONE place the parts gate,
 #                 the SAME decision Gitea's integrator runs, fast-forwards main and the job token pushes it
 #
 # Permissions are least per job; the workflow grants only `contents: read`.
@@ -120,7 +121,7 @@ pull-requests = "write"
 issues = "write"
 
 ["ci.yml".jobs.merge-ready]
-needs = ["absent-parts", "security", "review"]
+needs = ["security", "review"]
 if = "${{ always() && github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
 steps = [

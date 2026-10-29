@@ -25,7 +25,7 @@ The invariants refused here by name, with NO network call beyond the push itself
   (:func:`dev_lab.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
   Judged from ``[tool.dev_lab.integrator] merges_only_since`` forward: no retroactive check.
 * ``INTEGRATION-TAKES-ONLY-FORGE-MERGES`` (P5) -- once ``[tool.dev_lab.integrator] pr_merges_since`` is
-  declared, the integration branch moves ONLY by the forge's server-side merge of a green pull request
+  declared, the integration branch moves ONLY by the forge's server-side merge of a pull request
   (:mod:`dev_lab.dev.forgemerge`). Such a merge is on origin before any client holds it, so a client push
   that adds ANY first-parent commit past origin's tip (and past the declared start) is not one, and is refused.
   It replaces P4 for that branch. The ONE bypass is in the history: a push whose every new first-parent
@@ -157,7 +157,7 @@ def _forge_merges_only(root: Path, policy: Policy, old: str, new: str) -> list[s
         (
             f'{P5}: this push adds {len(added)} commit(s) to {policy.integration}, {len(unglassed)} with no '
             f'{BREAK_GLASS}: <reason> trailer (newest {unglassed[0][:12]}); it moves only by the forge merging a '
-            f'green pull request. Push a pr/<topic> branch and open a PR into {policy.integration} instead -- or, '
+            f'pull request. Push a pr/<topic> branch and open a PR into {policy.integration} instead -- or, '
             f'only when the forge itself is down or its auto-merge broken, give EVERY new commit a '
             f'{BREAK_GLASS}: <reason> trailer'
         )

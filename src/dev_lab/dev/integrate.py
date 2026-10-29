@@ -9,7 +9,8 @@ moved in. So the verb checks nothing out and pushes nothing -- the session publi
   every derived ``tests/<part>`` stands PASS at scope full (:func:`decide`, the same standing push
   admission reads). Never a merge onto the trunk.
 
-The integration branch is moved by the FORGE alone, server side, when it merges a green pull request
+The integration branch is moved by the FORGE alone, server side, when it merges a reviewed, safe, clean pull request
+-- whose parts need NOT pass: they gate only this promotion
 (:mod:`dev_lab.dev.forgemerge`). A client has no verb for that, and this one is not a bypass: a ref that
 is checked out in some worktree is refused, and a trunk that cannot fast-forward is refused rather than merged.
 """

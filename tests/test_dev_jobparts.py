@@ -124,7 +124,7 @@ def test_every_expected_part_with_no_settled_status_is_posted_a_failure_and_a_se
     assert set(parts) == {'base', 'base@macos'}, 'an absent row is never read as a settled part; a settled one is'
     assert len(problems) == 3
     judged = platformparts.standing(status_list(forge, SHA), head=SHA)
-    assert judged.result.name == 'INCONCLUSIVE', 'merge-ready and promote read every row absent judged'
+    assert judged.result.name == 'INCONCLUSIVE', 'promote reads every row absent judged'
 
 
 def test_inside_github_actions_the_job_token_is_the_credential_on_github_only(tmp_path: Path) -> None:

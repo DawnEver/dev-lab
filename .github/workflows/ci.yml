@@ -198,7 +198,6 @@
     },
     "merge-ready": {
       "needs": [
-        "absent-parts",
         "security",
         "review"
       ],
