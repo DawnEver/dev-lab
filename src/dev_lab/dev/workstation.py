@@ -408,7 +408,7 @@ def serve(
     a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
     The serving dev-lab checkout's own hooks are re-installed whenever they are not live (stale after a move).
 
-    ONE BUSY REPO NEVER STARVES THE OTHERS (incident 2026-10-25: a wdg-lab part held the one host lock for
+    ONE BUSY REPO NEVER STARVES THE OTHERS (incident 2026-10-25: a downstream part held the one host lock for
     an hour, and dev-lab's card read STALE with its whole queue unclaimed). Each repo serves in a lane of its
     own; a lane whose serve ended serves again *period_s* later (the ``[schedule] tick_minutes``) while any
     other lane's serve still runs, so its card keeps ticking and its queue keeps being claimed against the

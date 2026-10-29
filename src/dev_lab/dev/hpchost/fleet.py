@@ -61,7 +61,7 @@ class Target:
 def declared_target(grant: Grant, shell: Runner) -> Target | str:
     """*grant*'s declared ``[deploy]`` host and root, read through *shell*; else why it cannot be deployed.
 
-    The host may name a grant login host in full or by its first DNS label (``hpclogin01``); a label resolves
+    The host may name a grant login host in full or by its first DNS label (``login01``); a label resolves
     to the ONE full host it names, and a label two login hosts share is refused rather than the first kept.
     """
     lines = shell(_READ_DEPLOY, None).splitlines()

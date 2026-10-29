@@ -8,7 +8,7 @@ from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev.hpchost.fleet import Target, deploy_fleet, remote_argv
 
-_HOSTS = ('hpclogin01.example', 'hpclogin02.example')
+_HOSTS = ('login01.example', 'login02.example')
 _FLEET = (
     Grant(user='alice', hosts=_HOSTS, slurm_account='acct'),
     Grant(user='bob', hosts=_HOSTS, slurm_account='acct'),
@@ -18,9 +18,9 @@ _FLEET = (
 #: What each account's own machine file declares, as ``sed`` prints its [deploy] table (and the next header).
 _DEPLOY = {
     'alice': (
-        '[deploy]\nhost = "hpclogin02.example"\nroot = "src"\nrepos = [\n  { name = "dev-lab" },\n]\n[[hpc.grant]]\n'
+        '[deploy]\nhost = "login02.example"\nroot = "src"\nrepos = [\n  { name = "dev-lab" },\n]\n[[hpc.grant]]\n'
     ),
-    'bob': '[deploy]\nhost = "hpclogin01.example"\nroot = "work"\n',
+    'bob': '[deploy]\nhost = "login01.example"\nroot = "work"\n',
     'carol': '',
 }
 
@@ -45,7 +45,7 @@ def _run(
 def test_each_account_deploys_on_its_own_declared_host(tmp_path: Path) -> None:
     code, started, said = _run(tmp_path, ('alice', 'bob'))
     assert code == 0
-    assert [argv[5] for argv in started] == ['alice@hpclogin02.example', 'bob@hpclogin01.example']
+    assert [argv[5] for argv in started] == ['alice@login02.example', 'bob@login01.example']
     assert 'cd ~/work/dev-lab' in started[1][-1], "bob's declared root"
     assert {p.name for p in tmp_path.rglob('*.log')} == {'alice.log', 'bob.log'}
     assert not any('refused' in line for line in said)
@@ -54,7 +54,7 @@ def test_each_account_deploys_on_its_own_declared_host(tmp_path: Path) -> None:
 def test_an_account_with_no_declared_host_is_refused_and_the_rest_deploy(tmp_path: Path) -> None:
     code, started, said = _run(tmp_path)
     assert code == 2
-    assert [argv[5] for argv in started] == ['alice@hpclogin02.example', 'bob@hpclogin01.example']
+    assert [argv[5] for argv in started] == ['alice@login02.example', 'bob@login01.example']
     assert any(line.startswith('carol: refused') and '[deploy] host' in line for line in said)
 
 
@@ -74,7 +74,7 @@ def test_an_undeclared_account_is_refused_and_nothing_starts(tmp_path: Path) -> 
 
 
 def test_the_remote_runs_the_accounts_own_deploy_never_prompting() -> None:
-    argv = remote_argv('alice', Target('hpclogin02.example', 'src'))
+    argv = remote_argv('alice', Target('login02.example', 'src'))
     assert argv[:3] == ['ssh', '-o', 'BatchMode=yes']
     assert 'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.hpchost deploy' in argv[-1]
 
@@ -96,16 +96,16 @@ def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp
 
 
 def test_a_declared_short_host_resolves_to_its_grant_login_host(tmp_path: Path) -> None:
-    """A machine file's ``hpclogin01`` IS the grant's ``hpclogin01.example``: the full name is what is dialled."""
-    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "hpclogin01"\n'})
+    """A machine file's ``login01`` IS the grant's ``login01.example``: the full name is what is dialled."""
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login01"\n'})
     assert code == 0
-    assert [argv[5] for argv in started] == ['bob@hpclogin01.example']
+    assert [argv[5] for argv in started] == ['bob@login01.example']
     assert not any('refused' in line for line in said)
 
 
 def test_a_short_host_matching_no_grant_label_is_refused(tmp_path: Path) -> None:
     """PLANTED CONTROL: a bare label that is no grant host's first label is still refused."""
-    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "hpclogin"\n'})
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login"\n'})
     assert code == 2
     assert started == []
     assert any('not a login host' in line for line in said)
@@ -113,7 +113,7 @@ def test_a_short_host_matching_no_grant_label_is_refused(tmp_path: Path) -> None
 
 def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
     """PLANTED CONTROL: a label naming two login hosts names neither, so it is refused, never the first kept."""
-    twins = (Grant(user='bob', hosts=('hpclogin01.a.example', 'hpclogin01.b.example'), slurm_account='acct'),)
+    twins = (Grant(user='bob', hosts=('login01.a.example', 'login01.b.example'), slurm_account='acct'),)
     started: list[list[str]] = []
     said: list[str] = []
     code = deploy_fleet(
@@ -122,7 +122,7 @@ def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
         home=tmp_path,
         dry_run=False,
         say=said.append,
-        connect=lambda _grant: lambda _cmd, _stdin=None: '[deploy]\nhost = "hpclogin01"\n',
+        connect=lambda _grant: lambda _cmd, _stdin=None: '[deploy]\nhost = "login01"\n',
         launch=lambda argv, _log: started.append(list(argv)),
     )
     assert code == 2

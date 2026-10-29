@@ -5,7 +5,7 @@ created: 2026-10-17
 ---
 # One run per (ref, part) in flight (2026-10-17)
 
-- Incident: every pushed integrate/main tip was claimed separately -- Ada ezxmw9 held 7 shas of
+- Incident: every pushed integrate/main tip was claimed separately -- Ada user4 held 7 shas of
   integrate/main at once, <user-b> another -- filling account memory so the newest tip was never admitted.
 - Ruling (D6 of <consumer> DECISION-distributed-compute-final-architecture): never cancel a running
   part; newer pushes queue and the next tip is tested as one batch (per-test carry makes it cheap).

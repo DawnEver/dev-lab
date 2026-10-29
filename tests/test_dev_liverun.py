@@ -41,7 +41,7 @@ def _proc(
 ) -> Process:
     """A process; by default a sweep, whose cwd is the checkout its venv interpreter lives in."""
     where = str(Path(exe).parents[2]) if cwd is None and exe else str(cwd or '')
-    return Process(pid, ppid, str(exe), cmd or f'{exe} -m motronics case sweep cases/x', age, where)
+    return Process(pid, ppid, str(exe), cmd or f'{exe} -m app case sweep cases/x', age, where)
 
 
 @pytest.fixture
@@ -118,7 +118,7 @@ def _spawn_worker(pid: int, parent: int, tree: Path) -> Process:
 
 
 def test_a_spawn_worker_whose_parent_is_gone_is_an_orphan_not_a_run(tree: Path) -> None:
-    """MEASURED 2026-10-24 in a motronics worktree: two day-old spawn workers of a dead pid refused every mutation.
+    """MEASURED 2026-10-24 in a consumer-a worktree: two day-old spawn workers of a dead pid refused every mutation.
 
     A multiprocessing child serves its parent through a pipe; with the parent gone it can never advance, so it
     holds the tree's cwd and nothing else. PLANTED CONTROL: the same worker whose parent is alive is a run.
@@ -153,13 +153,13 @@ def _edit(path: Path, tool: str = 'Edit') -> io.StringIO:
 def test_the_hook_denies_an_edit_of_a_tree_with_a_live_run_and_names_it(
     tree: Path, tool: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    run = _proc(4242, _venv_python(tree), cmd='python.exe -m motronics deck run cases/x')
+    run = _proc(4242, _venv_python(tree), cmd='python.exe -m app deck run cases/x')
     assert liverun.main(['hook'], stdin=_edit(tree / 'src' / 'a.py', tool), census=lambda: [run]) == 0
     decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
     assert decision['permissionDecision'] == 'deny'
     reason = decision['permissionDecisionReason']
     assert reason.startswith('TREE-HAS-A-LIVE-RUN:')
-    assert 'pid 4242: python.exe -m motronics deck run cases/x' in reason
+    assert 'pid 4242: python.exe -m app deck run cases/x' in reason
     assert 'another worktree' in reason
 
 
@@ -212,10 +212,10 @@ def test_the_row_binds_only_while_a_run_is_live() -> None:
 
 def test_dep_refuses_an_environment_a_live_process_executes_from(tmp_path: Path) -> None:
     prefix = tmp_path / 'env'
-    user = _proc(5151, prefix / _SCRIPTS / _PYTHON, cmd='python -m motronics deck run cases/x')
+    user = _proc(5151, prefix / _SCRIPTS / _PYTHON, cmd='python -m app deck run cases/x')
     ran: list[object] = []
     port = dep.Port(name='repo', anchor_paths=lambda: (), key=lambda: 'k')
-    with pytest.raises(dep.HeldEnvironmentError, match=r'pid 5151: python -m motronics deck run'):
+    with pytest.raises(dep.HeldEnvironmentError, match=r'pid 5151: python -m app deck run'):
         dep._change(
             ['uv', 'sync'], port=port, prefix=str(prefix), python=None, run=ran.append, dry_run=False,
             census=lambda: [user],

@@ -167,7 +167,7 @@ def test_a_tree_holding_a_path_past_max_path_is_removed(tmp_path: Path) -> None:
 
 
 def test_a_commit_whose_paths_pass_max_path_inside_the_tree_is_checked_out(tmp_path: Path) -> None:
-    """PLANTED (2026-10-27, wdg-lab #392): prefix 107 + a 153-char tracked path = 260 > MAX_PATH.
+    """PLANTED (2026-10-27, a downstream repo, #392): prefix 107 + a 153-char tracked path = 260 > MAX_PATH.
 
     ``git worktree add`` exited 128 (``Could not reset index file``) on every head while a shorter tree name
     checked the same commit out, so the tree, not the commit, must carry the long-path switch.
