@@ -38,12 +38,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
     ),
     (
-        'ROUND-ENDS-GREEN',
+        'PUSHED-HEAD-IS-WATCHED',
         (
-            "A session's round ends only when every head it pushed (an origin tip carrying its `Lab-Session`) is "
-            'green: the `Stop` hook refuses while one is red, and while one is pending with no live background '
-            '`forge watch <sha>`, naming the command to start -- the same on both forges.'
+            'A pushed head is watched to its verdict, ADVISED and never blocked, the same on both forges: '
+            '`forge watch <sha> --stream` prints one line per status change and exits 0 green, 1 red, 3 at its '
+            'deadline, to run as a Monitor; `forge pr create` and a successful push through the family door print '
+            'that exact command; and a `PostToolUse` hook adds one reminder line when a push leaves its head '
+            'with no live `forge watch <sha>`.'
         ),
-        ('tests/test_dev_roundgate.py',),
+        ('tests/test_dev_pushwatch.py',),
     ),
 )

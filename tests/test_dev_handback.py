@@ -9,15 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import handback
 from dev_lab.dev.handback import INTERACTIVE_ONLY, handed_commands, main, refusal
-
-
-@pytest.fixture(autouse=True)
-def _no_round(monkeypatch: pytest.MonkeyPatch) -> None:
-    """These tests are about a handed command: the round gate (tests/test_dev_roundgate.py) reads no forge here."""
-    monkeypatch.setattr(handback, 'round_refusal', lambda _cwd: None)
-
 
 # The incident, 2026-10-26, verbatim in shape.
 _INCIDENT = (

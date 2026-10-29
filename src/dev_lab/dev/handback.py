@@ -10,10 +10,6 @@ So the final assistant message is read at ``Stop`` and a handed command blocks t
 agent reads: run it yourself; if a guard refused it, follow the refusal's remedy; only an interactive login
 goes to the user. :data:`INTERACTIVE_ONLY` is the one place the exceptions are declared. A turn is blocked
 once: with ``stop_hook_active`` the agent already saw the reason, and a loop would hold the session.
-
-The same ``Stop`` also ends a session's ROUND, so it asks :mod:`dev_lab.dev.roundgate` (ROUND-ENDS-GREEN) whether
-every head the session pushed is green or watched while pending. A ``SubagentStop`` does not: a subagent hands
-back to its session, which owns the round.
 """
 
 from __future__ import annotations
@@ -26,9 +22,7 @@ from typing import Final, TextIO
 
 from lab_commons.log import emit
 
-from dev_lab.dev.roundgate import for_session
-
-__all__ = ['INTERACTIVE_ONLY', 'handed_commands', 'last_assistant_text', 'main', 'refusal', 'round_refusal']
+__all__ = ['INTERACTIVE_ONLY', 'handed_commands', 'last_assistant_text', 'main', 'refusal']
 
 #: THE ALLOW-SET, ONE PLACE: command prefixes that need a human at a prompt or a browser. Nothing else may
 #: be handed to the user, because everything else the agent can run itself.
@@ -147,11 +141,6 @@ def _final_text(payload: dict) -> str:
     return ''
 
 
-def round_refusal(cwd: str) -> str | None:
-    """Why the session working in *cwd* may not end its round (:func:`dev_lab.dev.roundgate.for_session`)."""
-    return for_session(Path(cwd))
-
-
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The hook: read the payload, block a handed command once, else stay silent. Never exits nonzero."""
     del argv
@@ -164,9 +153,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     try:
         reason = refusal(_final_text(payload))
     except OSError:
-        reason = None
-    if reason is None and payload.get('hook_event_name', 'Stop') == 'Stop':
-        reason = round_refusal(str(payload.get('cwd') or Path.cwd()))
+        return 0
     if reason is not None:
         emit(json.dumps({'decision': 'block', 'reason': reason}))
     return 0

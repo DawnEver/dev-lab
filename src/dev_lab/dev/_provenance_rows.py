@@ -547,6 +547,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'automode': ('original',),
     'forgestuck': ('original',),
     'forgewatch': ('original',),
+    'jobparts': ('original',),
+    'pushwatch': ('original',),
     'liverun': ('original',),
     'metrics': ('original',),
     'monthsummary': ('original',),
