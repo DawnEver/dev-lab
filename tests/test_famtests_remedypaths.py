@@ -93,7 +93,7 @@ def test_a_scan_that_read_too_little_is_not_a_pass() -> None:
 def test_every_remedy_this_kit_prints_names_an_absolute_interpreter(tmp_path: Path) -> None:
     """ADOPTION: every deny row's exit, and the runtime remedies of the doors, as the agent reads them."""
     root = tmp_path / 'tree'
-    run = Process(7, 1, str(root / venv_interpreter(os_name=_OS)), 'x -m motronics deck run', 600.0, str(root))
+    run = Process(7, 1, str(root / venv_interpreter(os_name=_OS)), 'x -m app deck run', 600.0, str(root))
     texts = {f'deny row {rule.id}': rule.remedy for rule in DENY_RULES}
     texts |= {
         'interpreter remedy': INTERPRETER_REMEDY,

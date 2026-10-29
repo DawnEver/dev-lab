@@ -5,7 +5,7 @@ created: 2026-10-17
 ---
 # A run nothing more will come of settles once (2026-10-17)
 
-- Incident: after 669f7be keyed state by part, the pre-fix femm runs of 59ad34a6657d (ezxmw9) and
+- Incident: after 669f7be keyed state by part, the pre-fix femm runs of 59ad34a6657d (user4) and
   af1e282ccfbe (<user-b>) stayed `submitted` with base's job ids; `gather` raised "ended without a record"
   and `forgeserve._advance` alarmed `run ... cannot advance` on every tick, forever.
 - Rule (`forgerun._gather` / `_settle`): at `submitted`, no `state.json` for the part AND no job of its

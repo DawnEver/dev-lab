@@ -4,7 +4,7 @@ The branch's own change, minus generated files, since the last reviewed head; ea
 paths earn.
 
 THE CAP USED TO DECIDE WHETHER A HEAD WAS REVIEWED AT ALL, and a byte count of the whole diff answered the
-wrong question: most of a large motronics diff was a lock file, a rendered allow block or a merge of
+wrong question: most of a large downstream diff was a lock file, a rendered allow block or a merge of
 ``integrate/main``, and the heads that most needed a review were the ones that got none. The budget is the
 reviewer's, so it bounds a SLICE (``max_diff_bytes``); the head is held for a session only past the TOTAL
 (``max_total_bytes``), or when one file alone outgrows a slice.

@@ -336,14 +336,14 @@ def _no_run(*_: object, **__: object) -> None:
 
 
 # ``squeue --me -h -t PENDING,RUNNING -o %Z``: a job-file job submits from its run dir under the tree
-SQUEUE = '/gpfs01/home/u/ci/trees/orphan/.lab-hpc/sweep-20261015\n/gpfs01/home/u/ci/trees/a3\n/gpfs01/home/u/scratch\n'
+SQUEUE = '/shared/home/u/ci/trees/orphan/.lab-hpc/sweep-20261015\n/shared/home/u/ci/trees/a3\n/shared/home/u/scratch\n'
 
 
 def test_slurm_workdirs_name_the_trees_jobs_occupy() -> None:
     assert parse_workdirs(SQUEUE) == [
-        '/gpfs01/home/u/ci/trees/orphan/.lab-hpc/sweep-20261015',
-        '/gpfs01/home/u/ci/trees/a3',
-        '/gpfs01/home/u/scratch',
+        '/shared/home/u/ci/trees/orphan/.lab-hpc/sweep-20261015',
+        '/shared/home/u/ci/trees/a3',
+        '/shared/home/u/scratch',
     ]
     assert occupied_shas(parse_workdirs(SQUEUE)) == {'orphan', 'a3'}
 
@@ -509,7 +509,7 @@ def test_an_artifact_goes_once_no_job_runs_it_and_it_is_not_the_newest(home: Pat
     for n, sha in enumerate(['c1', 'c2', 'c3', 'c4']):
         _touch(store / f'{sha}.tar.gz', OLD + timedelta(hours=n))
     _touch(store / 'c5.tar.gz.part', YOUNG)  # being built
-    occupied = occupied_shas(['/gpfs01/home/u/ci/jobs/c2/sweep-20261018-0'])
+    occupied = occupied_shas(['/shared/home/u/ci/jobs/c2/sweep-20261018-0'])
     assert occupied == {'c2'}
     plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=occupied)
     gone = {d.path.name for d in plan.doomed if d.rule == 'artifact-not-live'}
