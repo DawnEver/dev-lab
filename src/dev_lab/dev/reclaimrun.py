@@ -38,7 +38,7 @@ from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_br
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.reclaim import QUIET_S
 
-__all__ = ['BATCH', 'LOCK_NAME', 'STALE_LOCK_S', 'detach', 'held', 'main', 'main_checkout', 'run']
+__all__ = ['BATCH', 'LOCK_NAME', 'STALE_LOCK_S', 'detach', 'detach_argv', 'held', 'main', 'main_checkout', 'run']
 
 #: Trees removed per run at most: a run stays minutes, and the next session start takes the next batch.
 BATCH: Final = 10
@@ -115,7 +115,12 @@ def run(
 
 def detach(root: Path, *, batch: int = BATCH) -> None:
     """Start a background :func:`run` of *root* that outlives this process and opens no window."""
-    argv = [sys.executable, '-m', 'dev_lab.dev.reclaimrun', '--root', str(root), '--batch', str(batch)]
+    detach_argv(root, ['-m', 'dev_lab.dev.reclaimrun', '--root', str(root), '--batch', str(batch)])
+
+
+def detach_argv(root: Path, args: list[str]) -> None:
+    """Start this interpreter with *args* in *root*, outliving this process and opening no window."""
+    argv = [sys.executable, *args]
     quiet = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL}
     if sys.platform != 'win32':
         _door.popen(argv, cwd=root, start_new_session=True, **quiet)

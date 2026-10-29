@@ -37,7 +37,7 @@ from dev_lab.dev.labsession import ENV
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['EVENT', 'close_landed', 'landing', 'main', 'serve_close_landed']
+__all__ = ['EVENT', 'close_landed', 'close_pr', 'landing', 'main', 'serve_close_landed']
 
 #: The ``event`` of the one structured line each close writes.
 EVENT: Final = 'lab_commons.forge.pr-close-landed'
@@ -55,6 +55,17 @@ def landing(root: Path, pr: PullRequest) -> str:
         return ''
     path = git_out(root, 'rev-list', '--first-parent', '--ancestry-path', '--reverse', f'{sha}..{base}') or ''
     return (path.split() or [sha])[0]
+
+
+def close_pr(
+    client: Client, pr: PullRequest, *, head: str, merged_by: str, session: str, say: Callable[[str], None]
+) -> None:
+    """Close *pr*, whose *head* landed on its base (*merged_by*: the commit or content holding it), commenting once."""
+    text = f'landed: head {head[:12]} is on {pr.base} (merged by {merged_by[:12]})'
+    comment_upsert(client, pr.number, kind=Marker.LANDED, key=head, text=text)
+    client.call('PATCH', f'{client.repo}/pulls/{pr.number}', {'state': 'closed'})
+    record = {'event': EVENT, 'pr': pr.number, 'head': pr.head, 'sha': head, 'base': pr.base}
+    say(json.dumps(record | {'merged_by': merged_by, 'session': session or None}))
 
 
 def close_landed(
@@ -77,12 +88,7 @@ def close_landed(
             if numbers:
                 refused.append(f'#{pr.number}: refused -- head {_head_sha(root, pr)[:12]} is not on {pr.base}')
             continue
-        head = _head_sha(root, pr)
-        text = f'landed: head {head[:12]} is on {pr.base} (merged by {merged_by[:12]})'
-        comment_upsert(client, pr.number, kind=Marker.LANDED, key=head, text=text)
-        client.call('PATCH', f'{client.repo}/pulls/{pr.number}', {'state': 'closed'})
-        record = {'event': EVENT, 'pr': pr.number, 'head': pr.head, 'sha': head, 'base': pr.base}
-        say(json.dumps(record | {'merged_by': merged_by, 'session': session or None}))
+        close_pr(client, pr, head=_head_sha(root, pr), merged_by=merged_by, session=session, say=say)
     for line in refused:
         say(line)
     return 1 if refused else 0
