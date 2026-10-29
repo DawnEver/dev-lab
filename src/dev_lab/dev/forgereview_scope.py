@@ -20,6 +20,8 @@ reviewer's, so it bounds a SLICE (``max_diff_bytes``); the head is held for a se
   (a repo overrides either: ``code``, ``not_code``); the caps and slices count code bytes only, and the comment
   says how many changed files were outside (:attr:`Scope.outside`). A 33-branch merge was held at 127 MB that
   was almost all memory, attic, docs and logs.
+* A RENAME costs its own patch, not the file twice (D85): sized from one ``git diff -M`` (:func:`_diff`), a pure
+  move costs its header and is listed (:attr:`Scope.moved`); the reviewer still reads its ``rename from/to``.
 * A LENS per slice: ``strict`` for the paths that refuse or declare (``strict`` globs), ``light`` for prose
   (``light`` globs), ``standard`` for the rest. A slice holds one lens, so the command is told which.
 """
@@ -92,6 +94,12 @@ LENSES: Final = ('strict', 'standard', 'light')
 
 _GIT_TIMEOUT_S: Final = 120
 
+#: ``git diff -M``'s similarity threshold: a delete and an add this alike are one move, sized by its hunks. The
+#: call passes ``-l0``: past git's default rename limit (1000) inexact detection is SKIPPED with a warning, and
+#: the motronics 33-branch merge (1504 adds) read 318 edited moves as deletes plus adds.
+_SIMILAR: Final = '50%'
+_NUL: Final = chr(0)
+
 
 @dataclass(frozen=True)
 class Slice:
@@ -110,6 +118,7 @@ class Scope:
     slices: tuple[Slice, ...] = ()
     held: str | None = None
     outside: int = 0  # changed files that are not code: counted, never read
+    moved: tuple[str, ...] = ()  # pure moves (new paths): read for their path change, cost ~0
 
 
 def _git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
@@ -161,24 +170,37 @@ def lens_of(path: str, strict: Iterable[str], light: Iterable[str]) -> str:
     return 'light' if _matches(path, light) else 'standard'
 
 
-def _sizes(root: Path, reviewed: str) -> dict[str, int]:
-    """``{path: bytes of its diff}`` over *reviewed*, renames read as a delete and an add."""
-    names = [name for name in _git(root, 'diff', '--no-renames', '-z', '--name-only', reviewed)[1].split('\0') if name]
-    text = _git(root, 'diff', '--no-renames', reviewed)[1]
-    chunks = [chunk for chunk in text.split('\ndiff --git ') if chunk]
-    if len(chunks) != len(names):
-        return {name: len(text.encode()) // max(len(names), 1) for name in names}  # unsplittable: share it out
-    return {name: len(chunk.encode()) for name, chunk in zip(names, chunks, strict=True)}
+def _diff(root: Path, reviewed: str) -> tuple[dict[str, int], dict[str, str], tuple[str, ...]]:
+    """``({path: bytes of its diff}, {old: new}, pure moves)`` over *reviewed*, from ONE ``git diff -M`` call.
+
+    A rename is sized by its own patch -- the ``rename from/to`` header and the hunks it changed -- under its new
+    path, and its old path costs 0 (it stays, so the slice holding the move reads it as one): a 33-branch merge with
+    859 moves read as deletes plus adds measured 30 MB of code. A pure move (``R100``) is listed in the third item.
+    """
+    text = _git(root, 'diff', f'-M{_SIMILAR}', '-l0', '-z', '--patch-with-raw', reviewed)[1]
+    raw, _, patch = text.partition(_NUL * 2)
+    fields = raw.split(_NUL)
+    entries: list[tuple[str, ...]] = []
+    at = 0
+    while at < len(fields) and fields[at].startswith(':'):
+        status = fields[at].split()[-1]
+        span = 3 if status[0] in 'RC' else 2
+        entries.append((status, *fields[at + 1 : at + span]))
+        at += span
+    names = [entry[-1] for entry in entries]
+    chunks = [chunk for chunk in patch.split('diff --git ') if chunk]
+    if len(chunks) == len(names):
+        sizes = {name: len(chunk.encode()) for name, chunk in zip(names, chunks, strict=True)}
+    else:  # unsplittable: share it out
+        sizes = dict.fromkeys(names, len(patch.encode()) // max(len(names), 1))
+    moves = {entry[1]: entry[2] for entry in entries if entry[0].startswith('R')}
+    sizes |= dict.fromkeys(set(moves) - set(sizes), 0)
+    pure = tuple(sorted(entry[2] for entry in entries if entry[0] == 'R100'))
+    return sizes, moves, pure
 
 
 def _group(path: str) -> str:
     return '/'.join(PurePosixPath(path).parts[:-1][:2]) or '.'
-
-
-def _moves(root: Path, reviewed: str) -> dict[str, str]:
-    """``{old: new}`` for every rename git detects over *reviewed*."""
-    fields = _git(root, 'diff', '-M', '-z', '--name-status', '--diff-filter=R', reviewed)[1].split('\0')
-    return {fields[i + 1]: fields[i + 2] for i in range(0, len(fields) - 2, 3) if fields[i].startswith('R')}
 
 
 def _pack(lens: str, sizes: dict[str, int], budget: int, moves: Mapping[str, str]) -> list[Slice]:
@@ -240,7 +262,8 @@ def plan(
     slice is a slice of its own, and the session reads every slice.
     """
     reviewed_range = f'{own_base(root, target, head, reviewed)}..{head}'
-    read = {path: n for path, n in _sizes(root, reviewed_range).items() if reviewable(path, budget.derived)}
+    every, moves, pure = _diff(root, reviewed_range)
+    read = {path: n for path, n in every.items() if reviewable(path, budget.derived)}
     sizes = {path: n for path, n in read.items() if is_code(path, budget.code, budget.not_code)}
     outside = len(read) - len(sizes)
     total = sum(sizes.values())
@@ -253,14 +276,14 @@ def plan(
     by_lens: dict[str, dict[str, int]] = {}
     for path, n in sizes.items():
         by_lens.setdefault(lens_of(path, budget.strict, budget.light), {})[path] = n
-    moves = _moves(root, reviewed_range)
     slices = [
         one for lens in LENSES if lens in by_lens for one in _pack(lens, by_lens[lens], budget.slice_bytes, moves)
     ]
     if len(slices) > 1 and not sliceable:
         why = f'{len(slices)} slices, and the command takes no paths'
         return Scope(reviewed_range, held=why, outside=outside)
-    return Scope(reviewed_range, tuple(slices), outside=outside)
+    moved = tuple(path for path in pure if path in sizes)
+    return Scope(reviewed_range, tuple(slices), outside=outside, moved=moved)
 
 
 _REVIEWED: Final = re.compile(re.escape(marker(Marker.REVIEW, 'SHA')).replace('SHA', '(?P<sha>[0-9a-f]{7,40})'))

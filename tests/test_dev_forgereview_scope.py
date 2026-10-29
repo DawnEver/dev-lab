@@ -252,10 +252,11 @@ def test_a_moved_file_is_read_whole_in_one_slice(tmp_path: Path) -> None:
     """PLANTED control: a move across directories puts both paths in one slice, so no reviewer reads a lone delete."""
     _, work = clone_pair(tmp_path)
     body = ''.join(f'x{n} = {n}\n' for n in range(40))
-    for name in ('a', 'b', 'z'):
+    for name in ('a', 'b', 'c', 'z'):
         (work / name).mkdir()
     first = advance(work, 'pr/x', 'a/old.py', body)
     advance(work, 'pr/x', 'b/pad.py', body.replace('x', 'y'))
+    advance(work, 'pr/x', 'c/pad.py', body.replace('x', 'w'))
     run_git(work, 'mv', 'a/old.py', 'z/new.py')
     run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'move')
     run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
@@ -333,3 +334,50 @@ def test_a_not_code_glob_never_hides_code_by_its_name() -> None:
         assert is_code(path, CODE, NOT_CODE), path
     for path in ('.claude/memory/2026/10/29/x.toml', 'cases/a/golden_jmag_ring.toml', 'attic/old/legacy.py'):
         assert not is_code(path, CODE, NOT_CODE), path
+
+
+# --- a rename is sized by what it changed (D85) -------------------------------------------------------
+
+_BODY = ''.join(f'value_{n} = {n} * {n}\n' for n in range(400))
+
+
+def _moved(tmp_path: Path, edit: str = '', *, unrelated: bool = False) -> tuple[Path, str, str]:
+    """``a/old.py`` reviewed, then moved to ``z/new.py`` (plus *edit*); *unrelated*: a delete and an add."""
+    _, work = clone_pair(tmp_path)
+    for name in ('a', 'z'):
+        (work / name).mkdir()
+    first = advance(work, 'pr/x', 'a/old.py', _BODY)
+    run_git(work, 'rm', '-q', 'a/old.py')
+    other = ''.join(f'other_{n} = "{n}"\n' for n in range(400))
+    (work / 'z/new.py').write_text(other if unrelated else _BODY + edit, encoding='utf-8')
+    run_git(work, 'add', 'z/new.py')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'move')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
+    return work, first, git_out(work, 'rev-parse', 'HEAD')
+
+
+def test_a_pure_rename_costs_nothing_and_is_listed_as_moved(tmp_path: Path) -> None:
+    """A move is still read (both paths, one slice) but its bytes are the rename header, not the file twice."""
+    work, first, head = _moved(tmp_path)
+    scope = plan(work, 'origin/integrate/main', head, _WIDE, reviewed=[first])
+    (one,) = scope.slices
+    assert set(one.paths) == {'a/old.py', 'z/new.py'}
+    assert one.size < 200 < len(_BODY)
+    assert scope.moved == ('z/new.py',)
+
+
+def test_a_rename_with_an_edit_costs_its_hunk(tmp_path: Path) -> None:
+    """The edited move costs about its hunk; it is not listed as a pure move."""
+    work, first, head = _moved(tmp_path, 'added = 1\n')
+    scope = plan(work, 'origin/integrate/main', head, _WIDE, reviewed=[first])
+    (one,) = scope.slices
+    assert 0 < one.size < 600 < len(_BODY)
+    assert scope.moved == ()
+
+
+def test_a_delete_and_an_unrelated_add_cost_both(tmp_path: Path) -> None:
+    """PLANTED control: no rename is detected between unrelated files, so both full diffs count."""
+    work, first, head = _moved(tmp_path, unrelated=True)
+    scope = plan(work, 'origin/integrate/main', head, _WIDE, reviewed=[first])
+    assert sum(one.size for one in scope.slices) > 2 * len(_BODY) * 0.9
+    assert scope.moved == ()
