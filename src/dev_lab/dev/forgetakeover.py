@@ -255,6 +255,7 @@ def main(
                 f'{f" -- {scope.held}" if scope.held else ""}'
             )
             emit(f'  code bytes: {sum(one.size for one in scope.slices)}')
+            emit(f'  moved (path change only): {len(scope.moved)}')
             for one in scope.slices:
                 emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
             return 0
