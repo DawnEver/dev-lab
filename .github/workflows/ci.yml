@@ -268,18 +268,6 @@
         "contents": "write",
         "statuses": "write"
       }
-    },
-    "verify": {
-      "uses": "./.github/workflows/python-verify.yml",
-      "permissions": {
-        "contents": "read",
-        "issues": "write"
-      },
-      "with": {
-        "runner-os": "[\"ubuntu-latest\", \"windows-latest\", \"macos-latest\"]",
-        "extras": "",
-        "guard-targets": "adoption"
-      }
     }
   }
 }

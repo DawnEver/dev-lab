@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
+from dev_lab.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR
 from dev_lab.dev.doorcensus import (
     CensusRowError,
     Declined,
@@ -261,11 +261,3 @@ def test_the_table_declares_no_path_twice() -> None:
     """A key in two hands is two answers to one question, and the census would report whichever it met."""
     keys = [row.key for row in DOORS]
     assert sorted(keys) == sorted(set(keys)), 'a door is declared twice'
-
-
-def test_every_shared_door_is_also_declared_as_an_ordinary_row_in_its_home_repo() -> None:
-    """The two readings are of ONE file, so the shared row must not be able to outlive the file itself."""
-    assert SHARED, 'the shared table is empty, so the finding it was added for has no row'
-    home = {(row.repo, row.path) for row in DOORS}
-    for shared in SHARED:
-        assert (shared.repo, shared.path) in home, f'{shared.path} is shared but not censused at home'

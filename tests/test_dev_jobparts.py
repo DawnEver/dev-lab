@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from _forge_fake import make_repo
@@ -13,6 +14,7 @@ from dev_lab.dev import jobparts, localpart, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ACTIONS_BOT, client_for
+from dev_lab.dev.producer import full_suite_refusal
 
 SHA = 'b' * 40
 
@@ -152,3 +154,21 @@ def test_hosted_keeps_only_the_parts_a_hosted_runner_produces(tmp_path: Path) ->
     carrying = {'': ['t::a', 't::fw'], 'femm': ['t::fw'], 'windows': ['t::fw']}
     found = jobparts.matrix(tmp_path, collect=lambda expression: carrying[expression], event='push', hosted=True)
     assert [row['part'] for row in found['include']] == ['base', 'base@macos', 'base@windows']
+
+
+def test_produce_hands_the_part_the_producing_marker_of_its_own_context_at_sha(tmp_path: Path, monkeypatch) -> None:
+    sha = 'a' * 40
+    seen: dict[str, object] = {}
+
+    def run(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        if argv[:2] == ['git', 'rev-parse']:
+            return SimpleNamespace(stdout=f'{sha}\n', returncode=0)
+        seen.update(kwargs)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(jobparts._door, 'run', run)
+    monkeypatch.setattr(jobparts, 'producer_argv', lambda _root, part, *, sha: ['-m', 'x', part, sha])
+    assert jobparts.produce(tmp_path, 'base') == 0
+    env = seen['env']
+    assert full_suite_refusal('verify', env, platformparts.part_context('base')) is None
+    assert full_suite_refusal('verify', env, platformparts.part_context('femm')) is not None, 'planted control'

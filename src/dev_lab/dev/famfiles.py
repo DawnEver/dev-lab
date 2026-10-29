@@ -95,7 +95,6 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
         _g('.claude/rules/principles.md', 'principles.render via hook_install --install: the family principles'),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
-        _g('.github/workflows/python-verify.yml', 'ciworkflows RENDERED from TOML: THE family CI definition'),
         _g('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.dev_lab.ci]'),
         _g('uv.lock', 'famtests.lockpin pins it on the forge; the forge relock keeps it newest (PIN + FRESHNESS)'),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
