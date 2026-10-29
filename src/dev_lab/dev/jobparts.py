@@ -106,7 +106,9 @@ def absent(client: Client, sha: str, expected: Mapping[str, Any]) -> list[str]:
 
 def produce(root: Path, part: str) -> int:
     """Run the one declared producer of *part* at *root*'s HEAD with this interpreter, cwd *root*; its exit code."""
-    head = _door.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, check=True)
+    head = _door.run(
+        ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
+    )
     argv = producer_argv(root, part, sha=head.stdout.strip())
     return _door.run([sys.executable, *argv], cwd=root, check=False).returncode
 

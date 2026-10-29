@@ -20,6 +20,9 @@ from dev_lab.dev.mergeaudit import ALTERED, CONFLICTED, LOST, Deviation
 
 _GIT = shutil.which('git') or 'git'
 
+#: Every repo names its integration branch, so the fixture's root commit declares it.
+DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
+
 A = 'def test_a():\n    assert 1 == 1\n'
 A2 = 'def test_a():\n    assert 1 == 2\n'
 A3 = 'def test_a():\n    assert 1 == 3\n'
@@ -128,7 +131,7 @@ def repo(tmp_path: Path) -> Path:
     _git(tmp_path, 'init', '-q', '-b', 'main')
     _git(tmp_path, 'config', 'user.email', 't@t')
     _git(tmp_path, 'config', 'user.name', 't')
-    _commit(tmp_path, {'tests/test_a.py': A, 'src/m.py': 'X = 1\n'}, 'base')
+    _commit(tmp_path, {'tests/test_a.py': A, 'src/m.py': 'X = 1\n', 'pyproject.toml': DECLARED}, 'base')
     return tmp_path
 
 
@@ -256,10 +259,10 @@ def test_the_check_reads_its_declaration_from_the_tree_being_committed_never_the
     message.write_text('feat: x\n', encoding='utf-8')
     (repo / 'pyproject.toml').write_text('not [toml\n', encoding='utf-8')
     assert mergeaudit.main([str(message)]) == 0, 'a plain commit read the working-tree manifest'
-    (repo / 'pyproject.toml').unlink()
+    _git(repo, 'checkout', '--', 'pyproject.toml')
     _pending_merge_dropping_b(repo)
     message.write_text(f'merge lane\n\n{mergeaudit.TRAILER}: LOST test_b -- moved upstream\n', encoding='utf-8')
-    (repo / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nhost = "G"\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text(DECLARED + 'host = "G"\n', encoding='utf-8')
     assert mergeaudit.main([str(message)]) == 0, 'the unstaged working-tree manifest was read'
     _git(repo, 'add', 'pyproject.toml')
     assert mergeaudit.main([str(message)]) == 1
