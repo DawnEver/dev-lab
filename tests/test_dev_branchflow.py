@@ -22,10 +22,12 @@ from dev_lab.dev.forgerecords import RECORDS_TAG, attach, listing
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.trialmerge import merged_at, trial
 
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
+
 GITEA = Forge('forge.example.org', 'o', 'r')
 GITHUB = Forge('github.com', 'o', 'r')
 GAPI, HAPI = '/api/v1/repos/o/r', '/repos/o/r'
-POLICY = Policy()
+POLICY = _DECLARED
 
 
 @pytest.fixture

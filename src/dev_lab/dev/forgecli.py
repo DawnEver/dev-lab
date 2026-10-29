@@ -37,6 +37,7 @@ from dev_lab.dev import (
     forgehosts,
     forgeintegration,
     forgeissue,
+    forgemerge,
     forgenotice,
     forgeoutbox,
     forgepublish,
@@ -57,6 +58,7 @@ from dev_lab.dev import (
     pradmit,
     prlanded,
     prsuperseded,
+    pushwatch,
     servelock,
 )
 from dev_lab.dev.forge import Transport, https_transport
@@ -79,6 +81,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,
+    'merge': forgemerge.main,
     'notices': forgenotice.main,
     'review': forgetakeover.main,
     'security': forgesecurity.main,
@@ -197,6 +200,10 @@ def issue_and_pr(
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
+        if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
+            emit(f'[forge] {forgemerge.auto_merge(client, result.number)}', err=True)
+            if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
+                emit(f'[forge] {pushwatch.arm_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)

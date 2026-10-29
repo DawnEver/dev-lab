@@ -3,7 +3,8 @@
 User ruling 2026-10-26: the security check is a property of a HEAD, judged once on the serving host -- not a
 test that every part's shards re-run on compute nodes. :func:`step` runs on the elected poller each tick
 (:func:`dev_lab.dev.forgeserve._repo_wide`) over every open, non-draft PR into integration and over the
-integration head itself; a head already carrying a settled :data:`SECURITY_CONTEXT` status is not judged
+integration head itself (on GitHub a workflow job judges its event's PR, ``forge security run --pr <N>``, through
+the same :func:`judge_one`); a head already carrying a settled :data:`SECURITY_CONTEXT` status is not judged
 again. The head's TRACKED tree is exported (``git archive``) and judged by :mod:`dev_lab.dev.security`'s
 three scans: ruff ``S``, the tracked-credential scan, and ``uv.lock`` against OSV.
 
@@ -93,8 +94,10 @@ __all__ = [
     'declared',
     'delta',
     'judge',
+    'judge_one',
     'main',
     'release',
+    'run_pull',
     'security_wait',
     'step',
 ]
@@ -285,26 +288,51 @@ def step(
     A failure to read the forge or the declaration is said, never raised: the next tick tries afresh.
     """
     try:
-        policy = load_policy(root)
-        base = f'origin/{policy.integration}'
+        into = load_policy(root).integration
+        base = f'origin/{into}'
         declaration = declared(_git(root, 'show', f'{base}:pyproject.toml').decode('utf-8'))
         heads: list[tuple[int | None, str]] = [
             (pull.number, pull.head_sha)
             for pull in pr_list(client)
-            if pull.base == policy.integration and not pull.draft and pull.head_sha
+            if pull.base == into and not pull.draft and pull.head_sha
         ]
         heads.append((None, _git(root, 'rev-parse', base).decode().strip()))
         for number, head in heads:
-            if any(one.context == SECURITY_CONTEXT and one.state in _SETTLED for one in status_list(client, head)):
-                continue
-            found = judged(root, head, declaration)
-            if number is not None and found.state == 'failure':
-                found = _covered(root, number, head, declaration, found, judged=judged)
-            name = policy.integration if number is None else f'#{number}'
-            status_post(client, head, context=SECURITY_CONTEXT, state=found.state, description=found.description)
-            say(f'[serve] security: {name} {head[:12]} {found.state}: {found.description}')
+            if (line := judge_one(root, client, number, head, declaration, judged=judged)) is not None:
+                say(f'[serve] security: {into if number is None else ""}{line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.CalledProcessError) as failed:
         say(f'[serve] security: not judged this tick: {failed}')
+
+
+def judge_one(
+    root: Path, client: Client, number: int | None, head: str, declaration: Declaration, *,
+    judged: Callable[[Path, str, Declaration], Judgement] = _judge_head,
+) -> str | None:  # fmt: skip
+    """Post ``tests/security`` on *head* (PR *number*'s, or the base's for ``None``) unless settled; the line, if any.
+
+    The one judgement both triggers share: the serve tick's :func:`step` over every head, and a GitHub workflow
+    job's ``forge security run --pr <N>`` over its event's PR (:func:`run_pull`).
+    """
+    if any(one.context == SECURITY_CONTEXT and one.state in _SETTLED for one in status_list(client, head)):
+        return None
+    found = judged(root, head, declaration)
+    if number is not None and found.state == 'failure':
+        found = _covered(root, number, head, declaration, found, judged=judged)
+    status_post(client, head, context=SECURITY_CONTEXT, state=found.state, description=found.description)
+    return f'{"" if number is None else f"#{number}"} {head[:12]} {found.state}: {found.description}'
+
+
+def run_pull(
+    root: Path, client: Client, number: int, *, judged: Callable[[Path, str, Declaration], Judgement] = _judge_head
+) -> str:
+    """:func:`judge_one` on PR *number*'s head, under the table ``origin/<PR base>`` declares; the line said."""
+    into = load_policy(root).integration
+    pull = client.pr_view(number)
+    if pull.base != into or not pull.head_sha:
+        return f'#{number}: not judged -- only a PR into {into} is'
+    declaration = declared(_git(root, 'show', f'origin/{into}:pyproject.toml').decode('utf-8'))
+    said = judge_one(root, client, number, pull.head_sha, declaration, judged=judged)
+    return said or f'#{number} {pull.head_sha[:12]}: already judged'
 
 
 def release(
@@ -345,7 +373,7 @@ def release(
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
-    """``forge security release <pr> --why "<reason>"``. Exit 0 released, 2 refused."""
+    """``forge security release <pr> --why "<reason>"``, ``forge security run --pr <N>``. Exit 0 done, 2 refused."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge security', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     door = verbs.add_parser(
@@ -353,10 +381,16 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
     )
     door.add_argument('pr', type=int)
     door.add_argument('--why', required=True, help='why the new exemptions are right: refused when short')
+    running = verbs.add_parser('run', help="judge one PR's head: what a GitHub workflow job runs for its event")
+    running.add_argument('--pr', type=int, required=True)
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     try:
-        said = release(root, client or client_for(root), args.pr, args.why, host=this_machine())
+        origin = client or client_for(root)
+        if args.verb == 'run':
+            said = run_pull(root, origin, args.pr)
+        else:
+            said = release(root, origin, args.pr, args.why, host=this_machine())
     except (ReleaseRefused, ForgeCallFailed, OSError, ValueError, subprocess.CalledProcessError) as failed:
         emit(f'[security] refused: {failed}', err=True)
         return 2

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -22,7 +21,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.lanepolicy import Policy, policy_at
+from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.metrics import KINDS, read, record, repo_of
 from dev_lab.dev.metrics_compute import Metrics, compute, landings
 
@@ -52,12 +51,8 @@ def _cli_record(args: argparse.Namespace) -> int:
 
 
 def _integration_ref(root: Path) -> str:
-    """``origin/<integration>`` as *root*'s ``HEAD`` declares it; the default name when it declares none."""
-    try:
-        name = policy_at(root, 'HEAD').integration
-    except (ValueError, OSError, subprocess.CalledProcessError):
-        name = Policy().integration
-    return f'origin/{name}'
+    """``origin/<integration>`` as *root*'s ``HEAD`` declares it; a ``HEAD`` declaring none is refused by name."""
+    return f'origin/{policy_at(root, "HEAD").integration}'
 
 
 def _measure(root: Path, *, since: datetime, until: datetime) -> Metrics:

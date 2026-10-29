@@ -61,7 +61,7 @@ from dev_lab.dev._forge_journal import (
     write_key,
 )
 from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, is_pull, pull_of
-from dev_lab.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
+from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB, GITHUB_HOST, Backend, actions_token, backend_for
 from dev_lab.dev.forge import (
     _GIT,
     _GIT_TIMEOUT_S,
@@ -74,6 +74,7 @@ from dev_lab.dev.forge import (
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 
 __all__ = [
+    'ACTIONS_BOT',
     'GITEA',
     'GITHUB',
     'GITHUB_HOST',
@@ -368,7 +369,12 @@ class Client:
         return text if self.stamp is None else f'{self.stamp}\n\n{text}'
 
     def whoami(self) -> str:
-        """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub."""
+        """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub.
+
+        A workflow job token cannot read ``/user``; it writes as :data:`ACTIONS_BOT` (:func:`stored_client`).
+        """
+        if self.username == ACTIONS_BOT:
+            return ACTIONS_BOT
         return self.call('GET', f'{self.backend.api_root}/user')['login']
 
     def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
@@ -439,10 +445,14 @@ def stored_client(
 ) -> Client:
     """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
 
+    Inside GitHub Actions against GitHub the job token is the credential (:func:`actions_token`), never refreshed.
+
     Raises:
         NoCredential: the store holds no credential for the host.
 
     """
+    if job := actions_token(forge, os.environ if env is None else env):
+        return Client(forge, job, transport=transport, username=ACTIONS_BOT, stamp=stamp, journal=journal)
     username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
 
     def refresh(refused_user: str, refused: str) -> tuple[str, str]:

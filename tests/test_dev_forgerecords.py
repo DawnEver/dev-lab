@@ -31,6 +31,7 @@ from dev_lab.dev.retentionplan import Policy
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'
+DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
 LIVE, DEAD = 'a' * 40, 'b' * 40
 
 
@@ -117,6 +118,8 @@ def test_github_records_live_on_the_prerelease_never_an_issue(server) -> None:
 
 def _history(tmp_path: Path) -> tuple[Path, list[str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
+    (repo / 'pyproject.toml').write_text(DECLARED, encoding='utf-8')  # every repo names its integration branch
+    run_git(repo, 'add', 'pyproject.toml')
     shas = []
     for name in ('one', 'two', 'three'):
         (repo / name).write_text(name, encoding='utf-8')

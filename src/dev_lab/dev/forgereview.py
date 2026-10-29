@@ -1,7 +1,12 @@
-"""PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on every open PR into integration, per head.
+"""PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on every open PR into the PR base, per head.
 
-Step 4 of the branch flow (user ruling 2026-10-19). Gitea only: GitHub is ONLY a push mirror, and no GitHub
-pull request is read or reviewed.
+Step 4 of the branch flow (user ruling 2026-10-19). ONE review on both forges (user ruling 2026-10-29); only who
+TRIGGERS it differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR; on GitHub a workflow
+job runs ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgetakeover.review_run`) for the one PR its event
+names. Both run the same round (:func:`review_pull`). A job whose review secret is absent -- a fork PR, which
+GitHub never hands a secret -- holds
+the head (:data:`NEEDS_MAINTAINER`) on the same hold the over-cap takeover uses, so a maintainer reviews it through
+``forge review takeover <sha>``; nothing new is stored.
 
 THE FORGE ONLY ORCHESTRATES. The review itself -- profiles, prompts, providers, models, keys, merging -- is
 the method's, run by the command the repo declares (``[tool.dev_lab.review] command``); this module runs
@@ -103,7 +108,7 @@ from dev_lab.dev import forgereview_scope
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
-from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
+from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, disposed, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import (
@@ -130,6 +135,7 @@ __all__ = [
     'FAMILY_MODEL',
     'FAMILY_RUNTIMES',
     'MODEL_FIELD',
+    'NEEDS_MAINTAINER',
     'OVER_CAP_TAKEOVER',
     'RANGE_FIELD',
     'RETIRED_KEYS',
@@ -141,6 +147,7 @@ __all__ = [
     'command_for',
     'load_review',
     'review_from',
+    'review_pull',
     'review_tick',
     'step',
 ]  # fmt: skip
@@ -200,6 +207,10 @@ RELEASED: Final = 'released by'
 #: What an ``error`` says when THIS HOST cannot run the review (:class:`ReviewUnsupported`): a fact about the host,
 #: not the head, so the head stays claimable -- by a capable host, or by this one once it is fixed.
 HOST_UNABLE: Final = 'not reviewed: cannot run on host'
+
+#: What :data:`REVIEW_CONTEXT` and the hold say (``pending``) when the job running the review has no review secret:
+#: a fork PR. The head is held; a maintainer's ``forge review takeover <sha>`` reviews it and releases the hold.
+NEEDS_MAINTAINER: Final = 'review needs a maintainer: the review secret is absent (a fork PR)'
 
 _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
 
@@ -415,6 +426,63 @@ def _without_command(root: Path, client: Client, review: Review, pull: PullReque
     return f'#{pull.number} {head[:12]}: {why}'
 
 
+def _hold(client: Client, pull: PullRequest, why: str) -> str:
+    """Hold *pull*'s head for the takeover door: :data:`REVIEW_CONTEXT` and the hold both ``pending`` *why*."""
+    for context in (REVIEW_CONTEXT, HOLD_CONTEXT):
+        status_post(client, pull.head_sha, context=context, state='pending', description=why[:_DESCRIPTION])
+    return f'#{pull.number} {pull.head_sha[:12]}: {why}'
+
+
+def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str | None:
+    """Review *pull*'s head once (the round in the module docstring); the line said, ``None`` when nothing was.
+
+    The declared command reviews ``<merge base>..<head>`` and prints the findings JSON; one comment and one
+    :data:`REVIEW_CONTEXT` status per head are posted from it. A host that cannot start it posts nothing;
+    a command that fails or prints anything but a known findings version posts ``error`` naming why, and is not
+    retried on that head.
+    """
+    head = pull.head_sha
+    if (passed := _passed(root, client, head, runner.clock(), review.stale)) is not None:
+        return f'#{pull.number} {head[:12]}: {passed}' if passed else None
+    scope = _scope(root, client, review, pull, f'origin/{pull.base}')
+    said = _without_command(root, client, review, pull, scope)
+    if said is None and not runner.secret:
+        said = _hold(client, pull, NEEDS_MAINTAINER)
+    return said if said is not None else _command_round(root, client, review, pull, scope=scope, runner=runner)
+
+
+def _command_round(
+    root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner
+) -> str:
+    """Claim *pull*'s head, run the command over *scope*'s slices and settle the head; the line said."""
+    head, clock = pull.head_sha, runner.clock
+    try:
+        argvs = [command_for(review, scope.range, runner.runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
+        cannot = runner.ready(argvs[0], root)
+    except ReviewUnsupported as unsupported:
+        cannot = str(unsupported)
+    if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
+        return f'#{pull.number} {head[:12]}: not reviewed on this host -- {cannot}'
+    claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
+    status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
+    try:
+        synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
+        found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body,
+                                      disposed=disposed(trusted_bodies(client, pull.number))))  # fmt: skip
+    except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
+        return _unable(client, pull, runner.host, str(unsupported))
+    except (UnknownSchemaVersion, ReviewRefused) as named:
+        why = f'not reviewed: {named}'[:_DESCRIPTION]
+        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        return f'#{pull.number} {head[:12]}: {why}'
+    except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
+        why = f'the review command failed ({type(failed).__name__}); advisory, not retried on this head'
+        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        return f'#{pull.number} {head[:12]}: {why}: {failed}'
+    authored = trailed(root, f'origin/{pull.base}', head)
+    return _settle(root, client, pull, review, scope, found=found, authored=authored)
+
+
 def review_tick(
     root: Path,
     client: Client,
@@ -427,55 +495,10 @@ def review_tick(
     runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),  # this host's: none by default
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[str, ...]:
-    """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
-
-    The declared command reviews ``<merge base>..<head>`` and prints the findings JSON; one comment and one
-    :data:`REVIEW_CONTEXT` status per head are posted from it. A host that cannot start it posts nothing;
-    a command that fails or prints anything but a known findings
-    version posts ``error`` naming why, and is not retried on that head.
-    """
-    lines: list[str] = []
-    target = f'origin/{base}'
-    for pull in pr_list(client):
-        head = pull.head_sha
-        if pull.base != base or pull.draft or not head:
-            continue
-        if (passed := _passed(root, client, head, clock(), review.stale)) is not None:
-            lines.extend([f'#{pull.number} {head[:12]}: {passed}'] if passed else [])
-            continue
-        scope = _scope(root, client, review, pull, target)
-        if (said := _without_command(root, client, review, pull, scope)) is not None:
-            lines.append(said)
-            continue
-        try:
-            argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
-            cannot = ready(argvs[0], root)
-        except ReviewUnsupported as unsupported:
-            cannot = str(unsupported)
-        if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
-            lines.append(f'#{pull.number} {head[:12]}: not reviewed on this host -- {cannot}')
-            continue
-        claim = f'{CLAIMED} {host} at {clock().isoformat(timespec="seconds")}, reviewing'
-        status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
-        try:
-            synth = command_for(review, scope.range, runtimes, synthesis=True)
-            found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body,
-                                          disposed=disposed(trusted_bodies(client, pull.number))))  # fmt: skip
-        except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
-            lines.append(_unable(client, pull, host, str(unsupported)))
-            continue
-        except (UnknownSchemaVersion, ReviewRefused) as named:
-            why = f'not reviewed: {named}'[:_DESCRIPTION]
-            status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
-            lines.append(f'#{pull.number} {head[:12]}: {why}')
-            continue
-        except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
-            why = f'the review command failed ({type(failed).__name__}); advisory, not retried on this head'
-            status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
-            lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
-            continue
-        lines.append(_settle(root, client, pull, review, scope, found=found, authored=trailed(root, target, head)))
-    return tuple(lines)
+    """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said."""
+    runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock)
+    pulls = (pull for pull in pr_list(client) if pull.base == base and not pull.draft and pull.head_sha)
+    return tuple(said for pull in pulls if (said := review_pull(root, client, review, pull, runner)) is not None)
 
 
 def step(

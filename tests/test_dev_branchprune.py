@@ -41,6 +41,7 @@ trunk = "main"
 sessions = ["integrate/main", "feat/session"]
 {extra}
 [tool.dev_lab.integrator]
+integration = "integrate/main"
 """
 
 

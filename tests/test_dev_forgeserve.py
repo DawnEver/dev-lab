@@ -51,6 +51,15 @@ from dev_lab.dev.platformparts import ClusterPart
 from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
 from dev_lab.dev.shatree import Tree, TreeFailed
 
+_DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
+
+
+@pytest.fixture(autouse=True)
+def _declared(tmp_path: Path) -> None:
+    """Every repo declares its integration branch (D83), so the serve root a test hands over declares it too."""
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
+
+
 SHA = 'a' * 40
 BOX = Capacity(cpu=3.0, mem_bytes=24 * GB, seats={})
 UNREACHABLE = 'forge unreachable'
@@ -404,6 +413,7 @@ def test_every_host_runs_the_review_step_poller_or_not(monkeypatch, tmp_path: Pa
     The step itself decides whether this host can run the command. PLANTED CONTROL: a tick whose integration
     queue cannot be derived still reviews -- the review does not ride on the integrator's derivation.
     """
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     reviewed: list = []
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), reviewed=reviewed)
     ((given,),) = [tuple(one['policy'] for one in reviewed)]
@@ -425,6 +435,7 @@ def test_every_tick_reports_behind_and_conflicts_and_alarms_past_the_bound(monke
     PLANTED CONTROL: a child at the bound and clean raises nothing; the same set with a conflicting and a
     far-behind child raises exactly those two, beside the integrator's prompts.
     """
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     calm = (Child('lane/ok', 'a' * 40, None), Feedback('t', 'pending', 's', behind=20))
     forge = _Issues()
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), issues=forge, children=(calm,))

@@ -22,6 +22,7 @@ from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
 from dev_lab.dev.forgesecurity import Declaration, DeclarationInvalid, Judgement, declared, judge, security_wait, step
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import parts_of
 from dev_lab.dev.security import AdvisoriesUnreachable
 
@@ -125,7 +126,7 @@ def _step(monkeypatch: pytest.MonkeyPatch, posted: dict[str, list[CommitStatus]]
         ('show', 'origin/integrate/main:pyproject.toml'): b'[tool.dev_lab.security]\naccepted = { G = "unused" }\n',
         ('rev-parse', 'origin/integrate/main'): b'i' * 40 + b'\n',
     }
-    monkeypatch.setattr(forgesecurity, 'load_policy', lambda _root: SimpleNamespace(integration='integrate/main'))
+    monkeypatch.setattr(forgesecurity, 'load_policy', lambda _root: Policy(integration='integrate/main'))
     monkeypatch.setattr(forgesecurity, '_git', lambda _root, *argv: git[argv])
     monkeypatch.setattr(forgesecurity, 'pr_list', lambda _client: tuple(pulls))
     monkeypatch.setattr(forgesecurity, 'status_list', lambda _client, sha: tuple(posted.get(sha, ())))
@@ -184,7 +185,7 @@ def _fake_forge(monkeypatch: pytest.MonkeyPatch, head_toml: bytes) -> tuple[dict
     pull = SimpleNamespace(number=7, base='integrate/main', draft=False, head_sha=head)
     posted: dict[str, list[CommitStatus]] = {}
     comments: list = []
-    monkeypatch.setattr(forgesecurity, 'load_policy', lambda _root: SimpleNamespace(integration='integrate/main'))
+    monkeypatch.setattr(forgesecurity, 'load_policy', lambda _root: Policy(integration='integrate/main'))
     monkeypatch.setattr(forgesecurity, '_git', lambda _root, *argv: git[argv])
     monkeypatch.setattr(forgesecurity, 'pr_list', lambda _client: (pull,))
     monkeypatch.setattr(forgesecurity, 'status_list', lambda _client, sha: tuple(reversed(posted.get(sha, ()))))
@@ -323,3 +324,23 @@ def test_a_raw_status_post_on_tests_security_is_refused_to_agents() -> None:
     pattern = re.compile(STATUS_VIA_DOORS['pattern'])
     assert pattern.search('python -m dev_lab.dev.forge status post abc --context tests/security --state success')
     assert not pattern.search('python -m dev_lab.dev.forge security release 7 --why "seeded samples only"')
+
+
+def test_a_workflow_job_judges_its_one_pr_through_the_step_s_judgement(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``forge security run --pr N``: the one PR judged once; a PR into another base is not (PLANTED control)."""
+    posted: dict[str, list[CommitStatus]] = {}
+    _step(monkeypatch, posted, [])  # the same fakes; the step judges only the integration head
+    pulls = {
+        1: SimpleNamespace(number=1, base='integrate/main', draft=False, head_sha='a' * 40),
+        3: SimpleNamespace(number=3, base='main', draft=False, head_sha='c' * 40),
+    }
+    client = SimpleNamespace(pr_view=pulls.__getitem__)
+
+    def fake(_root: Path, _head: str, _declaration: Declaration) -> Judgement:
+        return Judgement('success', 'nothing found')
+
+    assert forgesecurity.run_pull(Path(), client, 1, judged=fake).startswith(f'#1 {"a" * 12} success')
+    assert [one.state for one in posted['a' * 40]] == ['success']
+    assert 'already judged' in forgesecurity.run_pull(Path(), client, 1, judged=fake)
+    assert 'not judged' in forgesecurity.run_pull(Path(), client, 3, judged=fake)
+    assert 'c' * 40 not in posted

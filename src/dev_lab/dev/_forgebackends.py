@@ -6,15 +6,19 @@ public import path is unchanged.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
 from dev_lab.dev.forge import Forge
 
-__all__ = ['GITEA', 'GITHUB', 'GITHUB_HOST', 'Backend', 'backend_for']
+__all__ = ['ACTIONS_BOT', 'GITEA', 'GITHUB', 'GITHUB_HOST', 'Backend', 'actions_token', 'backend_for']
 
 #: The one host that is GitHub. Every other host is treated as the Gitea-shaped forge.
 GITHUB_HOST: Final = 'github.com'
+
+#: The login GitHub records for every write a workflow's job token makes: the author a GitHub ledger is trusted by.
+ACTIONS_BOT: Final = 'github-actions[bot]'
 
 
 @dataclass(frozen=True)
@@ -76,3 +80,15 @@ GITHUB: Final = Backend(
 def backend_for(forge: Forge) -> Backend:
     """GitHub for ``github.com``, the Gitea-shaped forge for every other host."""
     return GITHUB if forge.host.lower() == GITHUB_HOST else GITEA
+
+
+def actions_token(forge: Forge, env: Mapping[str, str]) -> str:
+    """The job's ``GITHUB_TOKEN`` when this process runs inside GitHub Actions against GitHub, else ``''``.
+
+    WHO PRODUCES differs between the forges, never what is produced: on GitHub the parts, the review and the merge
+    decision run as workflow jobs, where no git credential store exists and the job token is the credential. Read
+    ONLY there (``GITHUB_ACTIONS=true`` and a ``github.com`` remote): anywhere else the store is the one source.
+    """
+    if backend_for(forge) is not GITHUB or env.get('GITHUB_ACTIONS') != 'true':
+        return ''
+    return env.get('GITHUB_TOKEN', '')

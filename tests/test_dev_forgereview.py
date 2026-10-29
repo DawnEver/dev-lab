@@ -45,11 +45,14 @@ from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 
+_LANE_POLICY = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
+
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
+    "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
 
 
@@ -144,7 +147,7 @@ def test_an_empty_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
     said: list[str] = []
     opted_out = _MANIFEST.split('[tool.dev_lab.review]', maxsplit=1)[0] + '[tool.dev_lab.review]\ncommand = []\n'
     (work / 'pyproject.toml').write_text(opted_out, encoding='utf-8')
-    step(work, forge, policy=Policy(), say=said.append, host='box', run=command, ready=_can)
+    step(work, forge, policy=_LANE_POLICY, say=said.append, host='box', run=command, ready=_can)
     assert command.ran == []
     assert forge.comments[number] == []
     assert any('command is not declared' in line for line in said)
@@ -546,7 +549,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     failed = (passed, _status('tests/jmag', 'failure', 'scope=full ran=3 hands=-'))
     assert standing(failed, head='h').result is Conclusion.FAIL
     work, head = _work(tmp_path)
-    policy = Policy(pr_merges_since='0' * 40)
+    policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
 
     def ready(*review: tuple[str, str]) -> bool:
         statuses = (passed, secured, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
@@ -571,7 +574,7 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     work, head = _work(tmp_path)
-    policy = Policy(pr_merges_since='0' * 40)
+    policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     over = f'{OVER_CAP_TAKEOVER} (9 reviewable bytes > max_total_bytes=5)'
     held = (_status(HOLD_CONTEXT, 'pending', over), _status(REVIEW_CONTEXT, 'success', 'reviewed'), passed)
     found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
@@ -622,11 +625,11 @@ def test_a_host_that_cannot_run_the_command_skips_the_step_without_reading_the_f
     def cannot(_argv: Sequence[str], _root: Path) -> str:
         return 'unsupported: no ai_lab here'
 
-    step(work, Unread(), policy=Policy(), say=said.append, host='ada/x', run=command, ready=cannot)
+    step(work, Unread(), policy=_LANE_POLICY, say=said.append, host='ada/x', run=command, ready=cannot)
     assert said == ['[serve] review: not run on this host -- unsupported: no ai_lab here']
     assert command.ran == []
     forge, _ = _forge(head)
-    step(work, forge, policy=Policy(), say=said.append, host='G', run=command, ready=_can)
+    step(work, forge, policy=_LANE_POLICY, say=said.append, host='G', run=command, ready=_can)
     assert len(command.ran) == 1
 
 
@@ -636,7 +639,7 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
     forge, _ = _forge(head)
     command = FakeCommand()
     said: list[str] = []
-    step(work, forge, policy=Policy(), say=said.append, host='box', run=command, ready=_can)
+    step(work, forge, policy=_LANE_POLICY, say=said.append, host='box', run=command, ready=_can)
     assert len(command.ran) == 1
     assert any('review round 1, success' in line for line in said)
 
@@ -646,7 +649,7 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
             raise OSError(msg)
 
     said.clear()
-    step(work, Down(), policy=Policy(), say=said.append, host='box', run=command, ready=_can)
+    step(work, Down(), policy=_LANE_POLICY, say=said.append, host='box', run=command, ready=_can)
     assert any('did not run' in line for line in said)
 
 
@@ -655,7 +658,7 @@ def test_the_steps_claim_names_the_serve_host_not_the_box(tmp_path: Path) -> Non
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     said: list[str] = []
-    step(work, forge, policy=Policy(), say=said.append, host='cluster/acct', run=FakeCommand(), ready=_can)
+    step(work, forge, policy=_LANE_POLICY, say=said.append, host='cluster/acct', run=FakeCommand(), ready=_can)
     posted = [one['description'] for one in forge.statuses[head]]
     assert posted[0].startswith(f'{CLAIMED} cluster/acct at ')
     assert socket.gethostname() not in posted[0]

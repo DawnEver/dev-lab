@@ -176,6 +176,8 @@ _ENFORCED = {
     # Incident 2026-10-27: a hand-rolled Remove-Item -Recurse over a worktree list deleted a main checkout.
     'RECURSIVE-DELETE': (guard('tests/test_dev_delete_row.py'),),
     'DOCS-ONLY-CARRIES': (guard('tests/test_dev_forgecarry.py'), guard('tests/test_dev_forgetick.py')),
+    # User ruling 2026-10-29 (D83): a pushed head nobody watches goes red unseen -- advised, never blocked.
+    'PUSHED-HEAD-IS-WATCHED': (guard('tests/test_dev_pushwatch.py'),),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (
         # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates

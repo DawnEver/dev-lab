@@ -7,6 +7,12 @@ which takes ONLY server-side merges of PRs whose every forge part passed. Opted 
 when nothing is missing, asks the forge to merge it (:func:`merge`). A client push adding a commit to the
 branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).
 
+ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :func:`judged` reads a PR's head and
+decides; on Gitea the serve tick merges on it, and on GitHub a workflow job runs ``forge merge ready --pr <N>``
+(:func:`ready`), which posts the decision as ONE status, :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and
+GitHub's native auto-merge -- enabled on every PR ``forge pr create`` opens there -- merges once that required check
+is green. The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
+
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
 * every ``tests/<part>`` part of its head stands PASS (:func:`dev_lab.dev.platformparts.standing`), except a
@@ -37,15 +43,23 @@ namespace is deleted by the forge with the merge.
 
 from __future__ import annotations
 
+import argparse
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
+from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgereview import TAKEOVER_PENDING, load_review
+from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgesecurity import security_wait
-from dev_lab.dev.forgework import GITEA
+from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgework import GITEA, GITHUB, ForgeCallFailed, client_for
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT, standing
@@ -53,16 +67,27 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['FORGE_PULL', 'Decision', 'decide', 'merge', 'merge_message', 'review_blocks', 'review_hold']
+__all__ = [
+    'FORGE_PULL', 'READY', 'Decision', 'auto_merge', 'decide', 'judged', 'main', 'merge', 'merge_message', 'ready',
+    'review_blocks',
+    'review_hold',
+]  # fmt: skip
 
 #: The trailer naming the pull request a forge merge closed.
 FORGE_PULL: Final = 'Forge-Pull'
+
+#: What a ``success`` :data:`MERGE_READY_CONTEXT` says.
+READY: Final = 'ready: every merge condition holds'
+
+#: GitHub's native auto-merge, as a merge commit (never squash or rebase: the merge audit reads merge commits).
+_AUTO_MERGE: Final = (
+    'mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) '
+    '{ clientMutationId } }'
+)
 
 
 def review_hold(statuses: Sequence[CommitStatus]) -> str | None:
@@ -122,7 +147,8 @@ def decide(
 
     *waived* are the scarce parts its diff does not reach (:func:`dev_lab.dev.forgescarce.unreached`).
     """
-    base = f'refs/remotes/origin/{policy.integration}'
+    into = policy.integration
+    base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
     stood = standing(statuses, head=head, waived=waived)
@@ -139,7 +165,7 @@ def decide(
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)
         missing.append(
-            f'a clean merge: it conflicts with `{policy.integration}` in {files} -- merge `{policy.integration}` '
+            f'a clean merge: it conflicts with `{into}` in {files} -- merge `{into}` '
             f'into the branch (python -m dev_lab.dev.forge sync) and push it'
         )
     else:
@@ -159,6 +185,62 @@ def decide(
         for sha, problems in undeclared
     ]
     return Decision(tuple(missing), message)
+
+
+def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
+    """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses, its unreached scarce parts."""
+    statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
+    waived = unreached(root, client, policy.integration, head, statuses)
+    return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses, waived=waived)
+
+
+def ready(root: Path, client: Client, number: int) -> str:
+    """Post PR *number*'s :func:`judged` decision as ONE :data:`MERGE_READY_CONTEXT` status on its head; the line.
+
+    ``success`` when nothing is missing, else ``failure`` naming what is (cut to the forge's description limit; the
+    workflow log carries the whole line). A PR into another branch than the PR base is ``failure`` saying so.
+    """
+    policy, pull = load_policy(root), client.pr_view(number)
+    if pull.base != policy.integration:
+        missing: tuple[str, ...] = (f'a PR into {policy.integration}, not {pull.base}',)
+    else:
+        missing = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha).missing
+    state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)
+    status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
+    return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
+
+
+def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
+    """``forge merge ready --pr <N>``: post the PR's merge decision. Exit 0 posted (ready or not), 2 refused."""
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.forge merge', description=__doc__.splitlines()[0])
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    verbs.add_parser('ready', help=f'post the PR head its {MERGE_READY_CONTEXT} decision').add_argument(
+        '--pr', type=int, required=True
+    )
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    root = Path.cwd() if cwd is None else cwd
+    try:
+        emit(f'[merge] {ready(root, client or client_for(root), args.pr)}')
+    except (ForgeCallFailed, OSError, ValueError) as failed:
+        emit(f'[merge] refused: {failed}', err=True)
+        return 2
+    return 0
+
+
+def auto_merge(client: Client, number: int) -> str:
+    """Have PR *number* merged once its merge decision is green; the line said. Who MERGES is the forge's.
+
+    Gitea: nothing to ask -- the serve tick merges on the decision (:func:`judged`). GitHub: its native auto-merge,
+    a merge commit, which waits on the branch's required checks (:data:`MERGE_READY_CONTEXT` among them). A refusal
+    GitHub answers (auto-merge off for the repository, a PR already mergeable) is said, never raised.
+    """
+    if client.backend is not GITHUB:
+        return f'#{number}: the forge serve tick merges it once its merge decision is green'
+    node = client.call('GET', f'{client.repo}/pulls/{number}')['node_id']
+    answer = client.call('POST', '/graphql', {'query': _AUTO_MERGE, 'variables': {'id': node}})
+    if errors := answer.get('errors'):
+        return f'#{number}: auto-merge NOT enabled -- {errors[0].get("message", errors[0])}'
+    return f'#{number}: auto-merge enabled -- GitHub merges it (a merge commit) once its required checks are green'
 
 
 def merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool) -> None:

@@ -118,7 +118,11 @@ def test_a_cards_alarms_and_a_stale_cards_silence_are_shown_by_the_queue(server)
 
 def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
-    (repo / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nproduce = ["x", "{part}"]\n', 'utf-8')
+    (repo / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nproduce = ["x", "{part}"]\n'
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n",  # every repo declares it (D83)
+        'utf-8',
+    )
     tips = {}
     for branch in ('integrate/main', 'feat/a'):
         run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', branch)

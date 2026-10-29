@@ -21,6 +21,8 @@ from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.relock import PREFIX, Relock, RelockFailed, branch_for, carry, decision, dist_of
 
+_DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
+
 _SHA = 'dca72b71758ee4c70fb991fbcb44c56a9e52498d'
 _GIT = shutil.which('git') or 'git'
 _CHANGE = 'Update pint v0.26.1 -> v0.26.2'
@@ -132,11 +134,11 @@ def test_a_stale_integration_lock_is_carried_as_one_pull_request(world: tuple[Pa
     """PLANTED control: the same integration with a fresh lock pushes and opens nothing."""
     clone, origin, sha = world
     forge = _Forge()
-    said = carry(clone, Policy(), pulls=forge.pulls, create=forge.create, resolve=_fresh, upgrade=_relocked)
+    said = carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_fresh, upgrade=_relocked)
     assert said == f'the lock of integrate/main at {sha[:12]} is the newest resolution'
     assert (forge.created, _git(origin, 'branch', '--list', f'{PREFIX}-*')) == ([], '')
 
-    said = carry(clone, Policy(), pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=_relocked)
+    said = carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=_relocked)
     branch = branch_for('pint', sha)
     assert said == f'relocked pint onto {branch}: https://forge/pulls/99'
     ((title, body, head, base),) = forge.created
@@ -152,7 +154,7 @@ def test_a_stale_integration_lock_is_carried_as_one_pull_request(world: tuple[Pa
 def test_an_open_relock_pull_request_is_waited_for_and_nothing_resolves(world: tuple[Path, Path, str]) -> None:
     clone, _, _ = world
     forge = _Forge('pr/other', f'{PREFIX}-pint-0123456789ab')
-    said = carry(clone, Policy(), pulls=forge.pulls, create=forge.create, resolve=_never, upgrade=_relocked)
+    said = carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_never, upgrade=_relocked)
     assert said == f'a relock is already open: #2 {PREFIX}-pint-0123456789ab'
     assert forge.created == []
 
@@ -162,9 +164,9 @@ def test_a_door_that_moves_nothing_is_a_named_refusal(world: tuple[Path, Path, s
     clone, origin, _ = world
     forge = _Forge()
     with pytest.raises(RelockFailed, match=r'left uv\.lock unchanged'):
-        carry(clone, Policy(), pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=lambda _t: 0)
+        carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=lambda _t: 0)
     with pytest.raises(RelockFailed, match='the dependency door exited 1'):
-        carry(clone, Policy(), pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=lambda _t: 1)
+        carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=lambda _t: 1)
     assert (forge.created, _git(origin, 'branch', '--list', f'{PREFIX}-*')) == ([], '')
     assert _git(clone, 'worktree', 'list', '--porcelain').count('worktree ') == 1
 
@@ -173,7 +175,7 @@ def test_no_integration_branch_is_a_named_refusal(tmp_path: Path) -> None:
     _git(tmp_path, 'init', '-q')
     forge = _Forge()
     with pytest.raises(RelockFailed, match='no origin/integrate/main'):
-        carry(tmp_path, Policy(), pulls=forge.pulls, create=forge.create, resolve=_never, upgrade=_relocked)
+        carry(tmp_path, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_never, upgrade=_relocked)
 
 
 def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure(
@@ -189,9 +191,11 @@ def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure
 
     monkeypatch.setattr(forgeservesteps, 'carry', failing)
     monkeypatch.setattr(forgeservesteps, 'pr_list', lambda _client: ())
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nintegration = "integrate/main"\n', 'utf-8')
     forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)
     assert (said, raised) == ([], []), 'CONTROL: no pr_merges_since, no relock'
-    manifest = '[project]\nname = "x"\nversion = "0"\n[tool.dev_lab.integrator]\npr_merges_since = "abc"\n'
+    manifest = '[project]\nname = "x"\nversion = "0"\n'
+    manifest += '[tool.dev_lab.integrator]\nintegration = "integrate/main"\npr_merges_since = "abc"\n'
     (tmp_path / 'pyproject.toml').write_text(manifest, encoding='utf-8')
     forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)
     (alarm,) = raised
@@ -234,7 +238,7 @@ def test_a_toolchain_behind_the_newest_stable_is_carried_like_a_stale_lock(world
 
     forge = _Forge()
     said = carry(
-        clone, Policy(), pulls=forge.pulls, create=forge.create, resolve=_fresh, stable=lambda: '1.99.1',
+        clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_fresh, stable=lambda: '1.99.1',
         upgrade=bumped,
     )  # fmt: skip
     branch = branch_for('rust', sha)

@@ -22,6 +22,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.platformparts import Part, part_context
 
 _GIT = shutil.which('git') or 'git'
+_DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 HEAD = 'abc1234' + 'd' * 33
 
 
@@ -121,6 +122,7 @@ def _forge(monkeypatch: pytest.MonkeyPatch, statuses: list[CommitStatus]) -> Non
 
 def test_the_cli_reads_the_forge_and_routes_each_destination(tmp_path: Path, monkeypatch) -> None:
     _forge(monkeypatch, [_status('base', Conclusion.FAIL)])
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     base = ['--root', str(tmp_path), '--trunk-ref', 'refs/heads/main']
     assert pushgate.main([*base, '--remote-ref', 'refs/heads/feat/x']) == 0
     assert pushgate.main([*base, '--remote-ref', 'refs/heads/integrate/main']) == 0
@@ -135,6 +137,7 @@ def test_the_hook_spelling_reads_git_s_pre_push_lines_on_stdin(tmp_path: Path, m
     PLANTED: the trunk with NO part posted is refused through the hook spelling -- the vacuous case.
     """
     _forge(monkeypatch, [])
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     base = ['--root', str(tmp_path), '--trunk-ref', 'refs/heads/main']
     sha = 'a' * 40
     monkeypatch.setattr(sys, 'stdin', io.StringIO(f'refs/heads/main {sha} refs/heads/main {"0" * 40}\n'))
@@ -175,6 +178,7 @@ def test_a_push_publishing_many_unnamed_merges_does_no_audit_work(tmp_path: Path
     integration pushes admit; the trunk reads the forge alone.
     """
     _git(tmp_path, 'init', '-q', '-b', 'main')
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'tests' / 'test_a.py').write_text('def test_a():\n    assert 1\n', encoding='utf-8')
     _git(tmp_path, 'add', '-A')
@@ -198,6 +202,7 @@ def test_a_push_publishing_many_unnamed_merges_does_no_audit_work(tmp_path: Path
         monkeypatch.setattr(mergeaudit, name, trap)
     monkeypatch.setattr(pushgate, 'unprompted_client', lambda _root: None)
     monkeypatch.setattr(pushgate, 'status_list', lambda _client, _sha: [_status('base')])
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     base = ['--root', str(tmp_path), '--trunk-ref', 'refs/heads/main']
     for ref in ('refs/heads/feat/x', 'refs/heads/integrate/main', 'refs/heads/main'):
         assert pushgate.main([*base, '--remote-ref', ref]) == 0

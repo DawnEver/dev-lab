@@ -4,6 +4,10 @@ It only reads commit statuses (:func:`dev_lab.dev.forgestatus.status_list`) and 
 per ``tests/<part>`` context. SETTLED means at least one test status and none ``pending``. Exit 0 settled
 and every part ``success``, 1 settled with a red or an error, 3 when the deadline passed first. It never
 posts, claims or cancels anything.
+
+``--stream`` is the shape a Claude Code ``Monitor`` reads (PUSHED-HEAD-IS-WATCHED, :mod:`dev_lab.dev.pushwatch`):
+ONE flushed line per status CHANGE of any context -- ``<sha12> <context> <state>`` -- and a last line
+``<sha12> green|red|deadline``; a re-read status that did not change prints nothing.
 """
 
 from __future__ import annotations
@@ -42,30 +46,39 @@ def watch(
     say: Callable[[str], None],
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    stream: bool = False,
 ) -> int:
-    """Poll *sha*'s statuses, printing each change, until settled or *deadline_s* has passed."""
+    """Poll *sha*'s statuses, printing each change, until settled or *deadline_s* has passed (``--stream``: above)."""
     end, seen = clock() + deadline_s, set()
     while True:
         statuses = status_list(client, sha)
         for status in statuses:
-            line = f'{status.context}: {status.state} {status.description}'
-            if status.context.startswith(TESTS) and line not in seen:
+            line = (
+                f'{sha[:12]} {status.context} {status.state}'
+                if stream
+                else f'{status.context}: {status.state} {status.description}'
+            )
+            if (stream or status.context.startswith(TESTS)) and line not in seen:
                 seen.add(line)
                 say(line)
         if settled(statuses):
-            return 0 if all(s.state == 'success' for s in statuses if s.context.startswith(TESTS)) else 1
+            green = all(s.state == 'success' for s in statuses if s.context.startswith(TESTS))
+            if stream:
+                say(f'{sha[:12]} {"green" if green else "red"}')
+            return 0 if green else 1
         if clock() >= end:
-            say(f'watch: {sha[:12]} not settled by the deadline')
+            say(f'{sha[:12]} deadline' if stream else f'watch: {sha[:12]} not settled by the deadline')
             return _DEADLINE
         sleep(every_s)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``forge watch <sha> [--deadline-minutes M] [--every-seconds S]``."""
+    """``forge watch <sha> [--deadline-minutes M] [--every-seconds S] [--stream]``."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge watch', description=main.__doc__)
     parser.add_argument('sha')
     parser.add_argument('--deadline-minutes', type=float, default=120.0)
     parser.add_argument('--every-seconds', type=float, default=60.0)
+    parser.add_argument('--stream', action='store_true', help='one flushed line per status change, for a Monitor')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         return watch(
@@ -73,7 +86,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.sha,
             deadline_s=args.deadline_minutes * 60,
             every_s=max(args.every_seconds, 5.0),
-            say=emit,
+            say=lambda line: emit(line, flush=True),
+            stream=args.stream,
         )
     except (ForgeCallFailed, ValueError) as failed:
         emit(f'watch: {failed}', err=True)

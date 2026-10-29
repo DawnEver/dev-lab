@@ -1,5 +1,9 @@
 """The names a repo declares for its branches, in ``[tool.dev_lab.integrator]`` -- names only, never a rule.
 
+EVERY repo declares the table and names its ``integration`` branch there -- the one source of the name
+(user ruling 2026-10-29, ONE flow on every forge). An absent manifest, an absent table and a table naming no
+branch are each refused by name, never defaulted.
+
 A LEAF: the integrator's queue, push admission, the forge tick and the record attacher all read the
 same declaration, and none of them may import another just to learn a branch name. Which origin
 branches are CHILDREN is not a name but a rule, and it is the schedule's one rule
@@ -29,7 +33,7 @@ class Policy:
     """What a consumer declares in ``[tool.dev_lab.integrator]``: names only, never a rule."""
 
     #: The coordination branch: only the integrator merges into it, and every PR targets it.
-    integration: str = 'integrate/main'
+    integration: str
     #: The stable branch: moved ONLY by fast-forward to an integration commit whose parts are full PASS.
     trunk: str = 'main'
     #: The test trees :mod:`dev_lab.dev.mergeaudit` reads when a merge is committed.
@@ -55,9 +59,9 @@ class Policy:
 
 
 def load_policy(root: Path) -> Policy:
-    """*root*'s working-tree ``[tool.dev_lab.integrator]``; defaults when it has no manifest."""
+    """*root*'s working-tree ``[tool.dev_lab.integrator]``; a missing manifest is refused like a missing table."""
     manifest = root / 'pyproject.toml'
-    return policy_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Policy()
+    return policy_from(manifest.read_text(encoding='utf-8') if manifest.is_file() else '', str(manifest))
 
 
 def policy_at(root: Path, rev: str) -> Policy:
@@ -66,7 +70,10 @@ def policy_at(root: Path, rev: str) -> Policy:
 
 
 def policy_from(text: str, origin: str) -> Policy:
-    """The policy *text* declares, defaults for what it omits; a retired or unknown key is refused naming *origin*."""
+    """The policy *text* declares, defaults for what it omits; a retired or unknown key is refused naming *origin*.
+
+    ``integration`` is never defaulted: an absent table, or one naming no branch, is refused naming *origin*.
+    """
     declared = declared_table(tomllib.loads(text), _TABLE, {})
     spelled = {key: f'{_TABLE}.{key}' if f'{_TABLE}.{key}' in RETIRED else key for key in declared}
     if retired := [f'{key} is retired: {RETIRED[name]}' for key, name in spelled.items() if name in RETIRED]:
@@ -76,6 +83,9 @@ def policy_from(text: str, origin: str) -> Policy:
     unknown = sorted(set(declared) - known)
     if unknown:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
+        raise ValueError(msg)
+    if not declared.get('integration'):
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin} names no integration branch; declare integration = "integrate/main"'
         raise ValueError(msg)
     declared = declared | {key: tuple(declared[key]) for key in ('test_roots',) if key in declared}
     return Policy(**declared)

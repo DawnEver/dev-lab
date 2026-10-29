@@ -1,8 +1,8 @@
 """``forge integration``: the integration tick -- integration's standing for EVERY open child branch.
 
 A child branch is an ``origin`` branch the schedule's one rule classes (``classes_by_ref``) or the head
-of an open pull request on ``origin`` (fetched as ``pull/N/head``). PRs are opened on the forge only; GitHub is
-a push mirror and is never read. The tick never writes a child;
+of an open pull request on ``origin`` (fetched as ``pull/N/head``). PRs are opened on the forge only; on GitHub
+the same merge decision is a workflow job's (:func:`dev_lab.dev.forgemerge.ready`). The tick never writes a child;
 it REPORTS on it -- and, where ``[tool.dev_lab.integrator] pr_merges_since`` is declared, asks the forge to
 MERGE a PR that is green, clean and audit-passing (:mod:`dev_lab.dev.forgemerge`), saying in its comment
 what is missing otherwise. Per child branch, against ``origin/<integration>`` and with no
@@ -52,7 +52,7 @@ from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
-from dev_lab.dev.forgemerge import decide, merge
+from dev_lab.dev.forgemerge import judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -263,15 +263,12 @@ def _publish(child: Child, said: Feedback) -> str:
 def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback:
     """Merge PR *child* through the forge when nothing is missing; *said* with the outcome added as a line.
 
-    Only where ``pr_merges_since`` is declared and the forge is gitea; an already-merged child is left alone.
+    Only where ``pr_merges_since`` is declared and the forge is gitea (GitHub merges natively on the same decision,
+    :func:`dev_lab.dev.forgemerge.ready`); an already-merged child is left alone.
     """
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said
-    statuses = status_list(child.client, child.head)
-    waived = unreached(root, child.client, policy.integration, child.head, statuses)
-    found = decide(
-        root, policy, branch=child.branch, number=child.pr, head=child.head, statuses=statuses, waived=waived
-    )
+    found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
     if found.ready:
         ephemeral = declared_branchset(root).is_ephemeral(child.branch)
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)

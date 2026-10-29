@@ -19,11 +19,9 @@ outcomes, kept beside its log: the cache already holds the evidence, so nothing 
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.box.providers import inventory
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
@@ -31,11 +29,12 @@ from lab_commons.config import section
 from lab_commons.envkey import env_record
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
-from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
+from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.hpc.testcells import TestCell
 
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import verdict_commit
+from dev_lab.dev.jobparts import pytest_collector
 from dev_lab.dev.platformparts import (
     PartRefusal,
     UndeclaredPart,
@@ -158,12 +157,7 @@ def post_part(
     except UndeclaredPart as why:
         return f'part: not posted -- {why}'
 
-    def collect(expression: str) -> list[str]:
-        argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
-        command = [*argv, *(['-m', expression] if expression else []), *arguments]
-        done = _door.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
-        return parse_ids(done.stdout)
-
+    collect = pytest_collector(root, arguments)
     judged = outcomes_dir(log)
     cells, flaky = read_cells(judged)
     owned = owners(root, commit, list(cells), collect)

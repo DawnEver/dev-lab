@@ -52,7 +52,11 @@ def assert_the_pr_flow_is_declared(*, root: Path) -> str:
         BranchSetViolation: a declaration is missing, naming the line to add.
 
     """
-    policy = load_policy(root)
+    try:
+        policy = load_policy(root)
+    except ValueError as undeclared:
+        msg = f'{root} declares no integration branch ({undeclared}); add:\n{_PR_FLOW}'
+        raise BranchSetViolation(msg) from undeclared
     try:
         declared = declared_branchset(root)
     except BranchSetNotDeclared as undeclared:

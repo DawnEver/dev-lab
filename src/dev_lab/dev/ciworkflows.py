@@ -8,6 +8,10 @@ deep-merged (tables key by key; anything else replaces) and each workflow is wri
 is needed. Nothing ever parses a workflow back: the drift check compares RENDERED BYTES to the file,
 and a workflow file the table does not declare is refused as hand-written.
 
+SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
+merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
+so the setup every job repeats has one source. ``_steps`` is never a workflow and never rendered.
+
 ``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift.
 """
 
@@ -23,9 +27,18 @@ from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
 
-__all__ = ['BASE_PATH', 'RENDER_COMMAND', 'STAMP', 'WORKFLOW_DIR', 'drift', 'merge', 'render', 'workflows', 'write']
+__all__ = [
+    'BASE_PATH', 'RENDER_COMMAND', 'SHARED', 'STAMP', 'USE_STEPS', 'WORKFLOW_DIR', 'drift', 'expand', 'merge', 'render',
+    'workflows', 'write',
+]  # fmt: skip
 
 BASE_PATH: Final = Path(__file__).resolve().parent / 'ci_base.toml'
+
+#: The top-level table of named step lists; never a workflow.
+SHARED: Final = '_steps'
+
+#: The key of a step that stands for a named list of :data:`SHARED`.
+USE_STEPS: Final = 'use-steps'
 WORKFLOW_DIR: Final = Path('.github') / 'workflows'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 
@@ -44,13 +57,31 @@ def merge(base: dict[str, Any], layer: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def expand(workflow: dict[str, Any], shared: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """*workflow* with every ``{use-steps = <name>}`` step replaced by *shared*'s list of that name. PURE.
+
+    Raises:
+        KeyError: a step names a list no ``_steps`` table declares.
+
+    """
+
+    def steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+        return [one for step in job['steps'] for one in (shared[step[USE_STEPS]] if USE_STEPS in step else [step])]
+
+    if 'jobs' not in workflow:
+        return workflow
+    jobs = {name: {**job, 'steps': steps(job)} if 'steps' in job else job for name, job in workflow['jobs'].items()}
+    return {**workflow, 'jobs': jobs}
+
+
 def workflows(root: Path) -> dict[str, dict[str, Any]]:
     """Every workflow *root* declares, by file name, with the base merged under the ones it names."""
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     pyproject = root / 'pyproject.toml'
     data = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
-    declared = declared_table(data, 'ci', {})
-    return {name: merge(base.get(name, {}), layer) for name, layer in sorted(declared.items())}
+    declared = dict(declared_table(data, 'ci', {}))
+    shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
+    return {name: expand(merge(base.get(name, {}), layer), shared) for name, layer in sorted(declared.items())}
 
 
 def render(workflow: dict[str, Any]) -> str:
