@@ -65,6 +65,7 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
         'security': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
         'merge-ready': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
+        'promote': {'contents': 'write', 'statuses': 'write'},
     }
 
 
@@ -83,6 +84,20 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert 'forge merge ready --pr' in jobs['merge-ready']['steps'][-1]['run']
     assert 'forge review run --pr' in jobs['review']['steps'][-1]['run']
     assert 'workflow_run' not in ci['on'], 'no cross-workflow trigger'
+
+
+def test_a_push_to_integration_runs_every_part_then_promote_fast_forwards_main_by_the_one_decision(
+    tmp_path: Path,
+) -> None:
+    """ONE FLOW (D83): GitHub promotes by the SAME `integrate promote` Gitea runs, once every part settled."""
+    ci = _base_ci(tmp_path)
+    assert ci['on']['push'] == {'branches': ['integrate/main']}, 'main moves only by promote, never by a push run'
+    promote = ci['jobs']['promote']
+    assert promote['needs'] == ['absent-parts']
+    assert promote['if'] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/integrate/main' }}"
+    (step,) = [one for one in promote['steps'] if 'integrate promote' in one.get('run', '')]
+    assert 'python -m dev_lab.dev.integrate promote "$HEAD_SHA"' in step['run']
+    assert 'git push origin main' in step['run']
 
 
 def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@
   "on": {
     "push": {
       "branches": [
-        "main"
+        "integrate/main"
       ]
     },
     "pull_request": {},
@@ -232,6 +232,41 @@
         "contents": "read",
         "statuses": "write",
         "pull-requests": "read"
+      }
+    },
+    "promote": {
+      "needs": [
+        "absent-parts"
+      ],
+      "if": "${{ github.event_name == 'push' && github.ref == 'refs/heads/integrate/main' }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Promote main",
+          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote \"$HEAD_SHA\" && git push origin main"
+        }
+      ],
+      "permissions": {
+        "contents": "write",
+        "statuses": "write"
       }
     },
     "verify": {
