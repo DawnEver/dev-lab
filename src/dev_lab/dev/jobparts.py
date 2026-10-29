@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -35,6 +36,7 @@ from lab_commons.log import emit
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.platformparts import ROW_SEPARATOR, part_context, producer_argv
+from dev_lab.dev.producer import producing
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -140,12 +142,18 @@ def absent(client: Client, sha: str, expected: Mapping[str, Any]) -> list[str]:
 
 
 def produce(root: Path, part: str) -> int:
-    """Run the one declared producer of *part* at *root*'s HEAD with this interpreter, cwd *root*; its exit code."""
+    """Run the one declared producer of *part* at *root*'s HEAD with this interpreter, cwd *root*; its exit code.
+
+    The job IS the producer of ``tests/<part>`` at that sha, so the child carries :func:`producing` -- the same
+    marker ``forge serve`` hands its producer -- and the full suite it runs is admitted for that part only.
+    """
     head = _door.run(
         ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
     )
-    argv = producer_argv(root, part, sha=head.stdout.strip())
-    return _door.run([sys.executable, *argv], cwd=root, check=False).returncode
+    sha = head.stdout.strip()
+    argv = producer_argv(root, part, sha=sha)
+    env = os.environ | producing(part_context(part), sha)
+    return _door.run([sys.executable, *argv], cwd=root, env=env, check=False).returncode
 
 
 def main(argv: Sequence[str] | None = None) -> int:
