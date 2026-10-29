@@ -18,6 +18,7 @@ from dev_lab.dev.forgereview import RANGE_FIELD, REVIEW_CONTEXT, Review
 from dev_lab.dev.forgereview_findings import Finding, Findings
 from dev_lab.dev.forgereview_rounds import (
     FAMILY_MAX_ROUNDS,
+    SUMMARY_CITES,
     Ledger,
     context_summary,
     disposed,
@@ -28,6 +29,7 @@ from dev_lab.dev.forgereview_rounds import (
 from dev_lab.dev.forgereview_rounds import (
     advance as advance_round,
 )
+from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, SUMMARY_FIELD
 from dev_lab.dev.forgestatus import status_list
 
 _REVIEW = Review(command=('reviewer', '--range', RANGE_FIELD))
@@ -38,8 +40,8 @@ def _finding(fid: str = 'F-000000000001', *, severity: str = 'MEDIUM', security:
     return Finding(fid, severity, security, 'occams-razor', file, anchor, f'{fid} summary', 'Bug')
 
 
-def _doc(*findings: Finding) -> str:
-    """A findings-output v3 document of *findings*, one ok reviewer."""
+def _doc(*findings: Finding, **top: object) -> str:
+    """A findings-output v3 document of *findings*, one ok reviewer; *top* adds top-level keys."""
     rows = [
         {'id': one.id, 'severity': one.severity, 'security': one.security, 'rule': one.rule, 'file': one.file,
          'anchor': one.anchor, 'summary': one.summary, 'category': one.category, 'status': 'OPEN',
@@ -48,7 +50,7 @@ def _doc(*findings: Finding) -> str:
     ]  # fmt: skip
     return json.dumps({
         'schema_version': 3, 'range': 'a..b', 'profiles': ['c'],
-        'reviewers': [{'name': 'c', 'provider': 'p', 'status': 'ok', 'dropped_findings': 0}], 'findings': rows,
+        'reviewers': [{'name': 'c', 'provider': 'p', 'status': 'ok', 'dropped_findings': 0}], 'findings': rows, **top,
     })  # fmt: skip
 
 
@@ -168,6 +170,19 @@ def test_the_context_summary_names_what_changed_why_and_where(tmp_path: Path) ->
     assert '**Why** (the commits):\n- docs/b.md\n- src/pkg/layer/a.py' in text  # the subjects, newest first
 
 
+def test_the_context_summary_cites_each_declared_source_in_order(tmp_path: Path) -> None:
+    """SUMMARY_CITES is the order the WHY is cited in: commits, the memory landed, merges, the PR body."""
+    work, _ = _work(tmp_path)
+    (work / '.claude' / 'memory').mkdir(parents=True, exist_ok=True)
+    head = advance(work, 'pr/x', '.claude/memory/m.md', '# m\n', message='docs(memory): m')
+    text = context_summary(work, f'origin/integrate/main..{head}', pr_body='Adds x.\n\nMore.')
+    assert SUMMARY_CITES == ('commits', 'memory', 'merge_audit', 'pr_body')
+    assert '- `.claude/memory/m.md`' in text
+    assert '> Adds x.' in text
+    assert text.index('(the commits)') < text.index('`.claude/memory/m.md`') < text.index('> Adds x.')
+    assert '(the merges)' not in text, 'PLANTED control: a range without merges cites none'
+
+
 # --- through the forge ----------------------------------------------------------------------------------
 
 
@@ -218,3 +233,44 @@ def test_past_max_rounds_no_command_runs_and_one_follow_up_issue_takes_the_rest(
     assert 'F-m' in issue['body']
     assert 'F-h' not in issue['body']
     assert FAMILY_MAX_ROUNDS == Review().max_rounds == 3
+
+
+def test_the_comment_opens_with_what_the_pr_does_and_lists_what_was_disposed_earlier(tmp_path: Path) -> None:
+    """The engine's summary opens the comment, each claim's cites linked; the ids it dropped are listed.
+
+    It is handed the PR body and every disposition: the commit trailers and the forge's own.
+    """
+    work, _ = _work(tmp_path)
+    trailer = 'fix(x): keep x\n\nReview-Disposed: F-old -- a false positive'
+    head = advance(work, 'pr/x', 'x.py', 'x\nw\n', message=trailer)
+    forge, number = _forge(head, body='This PR adds x.')
+    comment_upsert(forge, number, kind=Marker.DISPOSITION, key='F-led', text=disposition_text('F-led', 'box', 'up'))
+    memory = '.claude/memory/2026/10/29/x.md'
+    summary = {'changes': [{'claim': 'adds x', 'cites': [head, memory]}], 'tests_altered': [], 'resolutions': [],
+               'open_items': ['wire y'], 'sources': ['commits']}  # fmt: skip
+    seen: list[tuple[str, object]] = []
+
+    def run(argv: list[str], _root: Path) -> str:
+        body = Path(argv[argv.index('--pr-body') + 1]).read_text(encoding='utf-8')
+        seen.append((body, json.loads(Path(argv[argv.index('--disposed') + 1]).read_text(encoding='utf-8'))))
+        return _doc(_finding('F-m', file='x.py', anchor='w'), summary=summary,
+                    disposed=[{'id': 'F-old', 'reason': 'a false positive'}])  # fmt: skip
+
+    review = Review(command=('reviewer', '--range', RANGE_FIELD, SUMMARY_FIELD, '--disposed', DISPOSED_FIELD))
+    _tick(work, forge, run, review)
+    ((body, gone),) = seen
+    assert body == 'This PR adds x.'
+    assert sorted(gone['disposed'], key=lambda one: one['id']) == [
+        {'id': 'F-led', 'reason': 'up'}, {'id': 'F-old', 'reason': 'a false positive'},
+    ]  # fmt: skip
+    text = forge.comments[number][-1]['body']
+    repo = forge.pulls[number]['html_url'].rsplit('/pulls/', 1)[0]
+    commit_link, memory_link = (
+        f'[`{head[:12]}`]({repo}/commit/{head})',
+        f'[`{memory}`]({repo}/src/commit/{head}/{memory})',
+    )
+    assert text.removeprefix(marker(Marker.REVIEW, head) + '\n').startswith('### What this PR does\n')
+    assert f'- adds x ({commit_link}, {memory_link})' in text
+    assert '**Open items**:\n- wire y' in text
+    assert '### Disposed earlier\n- `F-old`: a false positive' in text
+    assert text.index('What this PR does') < text.index('Review round 1') < text.index('F-m summary')

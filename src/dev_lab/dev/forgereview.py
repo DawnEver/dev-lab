@@ -54,6 +54,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
     # {principles}: a JSON file of dev_lab.dev.principles (written per run; ai-lab holds no copy);
+    # {summary}: --pr-body <file> on the one summarizing call, --no-summary on the rest;
+    # {disposed}: a JSON file of the findings disposed earlier (commit trailers and the forge's dispositions);
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
@@ -103,7 +105,7 @@ from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, dispositions, post_round
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, host_runtimes, retired_field
 from dev_lab.dev.forgereview_scope import (
     CODE,
@@ -170,7 +172,8 @@ FAMILY_MODEL: Final = 'claude-sonnet-5-5'
 FAMILY_COMMAND: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
     '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
-    '--principles', forgereview_scope.PRINCIPLES_FIELD,
+    '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
+    '--disposed', forgereview_scope.DISPOSED_FIELD,
 )  # fmt: skip
 
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
@@ -455,7 +458,8 @@ def review_tick(
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
         try:
             synth = command_for(review, scope.range, runtimes, synthesis=True)
-            found = parse_findings(gather(scope.range, argvs, synth, run, root))
+            found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body,
+                                          disposed=dispositions(root, client, pull, target)))  # fmt: skip
         except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
             lines.append(_unable(client, pull, host, str(unsupported)))
             continue

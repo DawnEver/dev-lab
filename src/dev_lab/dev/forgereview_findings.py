@@ -7,6 +7,10 @@ an id stable across rounds (a hash of rule, file and anchor line). This reader c
 version, the required fields, the closed vocabularies) and builds frozen records; it never guesses at a
 version it does not know (:class:`UnknownSchemaVersion`), because a renamed field or a new status is exactly
 what a reader of the old version would misread.
+
+Two optional top-level keys come from the unified engine (user ruling D83): ``summary`` (what the PR does, each
+claim with its cites; printed by the ONE call handed ``--pr-body``) and ``disposed`` (the ids it was handed via
+``--disposed`` and dropped, each ``{id, reason}``). :func:`merge_outputs` carries both through.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 __all__ = [
     'BLOCKING',
@@ -108,6 +112,11 @@ class Findings:
     profiles: tuple[str, ...]
     reviewers: tuple[Reviewer, ...]
     findings: tuple[Finding, ...]
+    #: The engine's ``summary`` object (``changes``, ``tests_altered``, ``resolutions``, ``open_items``,
+    #: ``sources``, ``error``), or ``None`` when no call printed one.
+    summary: Mapping[str, Any] | None = None
+    #: ``(id, reason)`` of every finding the engine dropped as disposed earlier.
+    disposed: tuple[tuple[str, str], ...] = ()
 
 
 def _fields(row: object, required: tuple[str, ...], where: str) -> dict[str, Any]:
@@ -160,25 +169,40 @@ def parse_findings(text: str) -> Findings:
         msg = f'the review output is findings schema_version {version!r}; this reader knows {sorted(SCHEMA_VERSIONS)}'
         raise UnknownSchemaVersion(msg)
     got = _fields(raw, _TOP, 'the review output')
+    summary = got.get('summary')
+    if summary is not None and not isinstance(summary, dict):
+        msg = 'the review output summary is not a JSON object'
+        raise FindingsInvalid(msg)
+    gone = tuple(_fields(row, ('id', 'reason'), f'disposed[{at}]') for at, row in enumerate(got.get('disposed', ())))
     return Findings(
         version, str(got['range']), tuple(map(str, got['profiles'])),
         tuple(_reviewer(row, at) for at, row in enumerate(got['reviewers'])),
         tuple(_finding(row, at) for at, row in enumerate(got['findings'])),
+        summary, tuple((str(row['id']), str(row['reason'])) for row in gone),
     )  # fmt: skip
 
 
 def merge_outputs(texts: Sequence[str], range_: str) -> str:
     """ONE findings document of the slice outputs *texts* over *range_*: reviewers in order, findings once by id.
 
-    Each output is read first (:func:`parse_findings`), so a slice printing an unknown version is refused here.
+    The ``summary`` is the first one printed (one call is handed ``--pr-body``), first key as the engine prints it;
+    ``disposed`` is every call's, once per id. Each output is read first (:func:`parse_findings`), so a slice
+    printing an unknown version is refused here.
     """
     for text in texts:
         parse_findings(text)
     docs = [json.loads(text) for text in texts]
     findings = {row['id']: row for doc in docs for row in doc['findings']}
+    gone: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        for row in doc.get('disposed', ()):
+            gone.setdefault(row['id'], row)
+    summary = next((doc['summary'] for doc in docs if doc.get('summary') is not None), None)
     merged = {
+        **({'summary': summary} if summary is not None else {}),
         'schema_version': docs[0]['schema_version'], 'range': range_,
         'profiles': list(dict.fromkeys(name for doc in docs for name in doc['profiles'])),
         'reviewers': [row for doc in docs for row in doc['reviewers']], 'findings': list(findings.values()),
+        **({'disposed': list(gone.values())} if gone else {}),
     }  # fmt: skip
     return json.dumps(merged, ensure_ascii=False)

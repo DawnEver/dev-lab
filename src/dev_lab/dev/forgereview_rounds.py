@@ -4,8 +4,10 @@ User ruling 2026-10-26. A finding is TAGGED (``severity``, ``security``, ``rule`
 (ai-lab's hash of rule, file and anchor line). Each reviewed head is one ROUND, recorded as a :class:`Ledger` in the
 head's findings comment (a hidden ``review-ledger`` line); the next round starts from the newest one.
 
-* ROUND 1 reviews the whole branch change, and its comment opens with a :func:`context_summary` -- what changed,
-  why (the commit subjects), which layers -- the team's shared context.
+* EVERY round's comment OPENS with the engine's summary (:func:`what_it_does`) -- "What this PR does", each claim
+  with its cites linked (a commit sha to the commit, a path to the file at the head) -- then the round. ROUND 1
+  reviews the whole branch change and also carries a :func:`context_summary` -- what changed, which layers, and
+  the WHY cited from each of :data:`SUMMARY_CITES` in order -- the team's shared context.
 * ROUND k > 1 reviews only what the branch added since its last reviewed head
   (:func:`dev_lab.dev.forgereview_scope.own_base`) and RE-CHECKS every open finding: one whose anchor line is
   gone from its file at the new head is CLOSED as fixed. NO MOVING GOALPOSTS: a new finding below ``HIGH`` whose
@@ -18,7 +20,9 @@ A finding BLOCKS while open when it is ``HIGH`` or a security finding (:attr:`Fi
 :data:`~dev_lab.dev.platformparts.REVIEW_CONTEXT` is ``failure`` while any blocking finding is open and not
 DISPOSED, else ``success``; the auto-merge waits on that failure (:func:`dev_lab.dev.forgemerge.review_blocks`).
 A disposition is the integrator's, posted through ``forge review dispose`` (:mod:`dev_lab.dev.forgereview_dispose`)
-as a keyed comment (``Marker.DISPOSITION``) carrying its reason.
+as a keyed comment (``Marker.DISPOSITION``) carrying its reason. The engine is handed those AND the branch commits'
+``Review-Disposed: <F-id> -- <reason>`` trailers (:func:`dispositions`); the ids it drops are listed as
+"disposed earlier". A trailer is the author's: it reaches the engine and the comment, never :func:`verdict`.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
@@ -54,11 +58,13 @@ __all__ = [
     'context_summary',
     'disposed',
     'disposition_text',
+    'dispositions',
     'ledger_of',
     'post_round',
     'render',
     'trusted_bodies',
     'verdict',
+    'what_it_does',
 ]  # fmt: skip
 
 #: The family's cap on full review rounds per PR; a repo declares ``max_rounds`` only to differ.
@@ -81,7 +87,11 @@ _DISPOSED: Final = re.compile(
     re.MULTILINE,
 )
 _GIT_TIMEOUT_S: Final = 120
-_SUBJECTS: Final = 20  # commit subjects the summary lists
+_SUBJECTS: Final = 20  # commit subjects (memory paths, merges) the summary lists
+_TRAILER: Final = 'Review-Disposed'
+_TRAILED: Final = re.compile(r'^(?P<id>\S+)\s+--\s+(?P<why>.+)$')
+_SHA: Final = re.compile(r'^[0-9a-f]{7,40}$')
+_MEMORY: Final = '.claude/memory/'
 _DESCRIPTION: Final = 240  # a commit-status description is short
 
 
@@ -145,6 +155,17 @@ def disposed(bodies: Iterable[str]) -> dict[str, str]:
         for body in bodies
         if (match := _DISPOSED.search(body)) is not None and match['key'] == match['id']
     }
+
+
+def dispositions(root: Path, client: Client, pull: PullRequest, target: str) -> dict[str, str]:
+    """``{finding id: why}`` handed to the engine: commit trailers, then the forge's own dispositions.
+
+    The trailers are the ``Review-Disposed`` ones of *pull*'s commits since *target*; a forge disposition of the
+    same id wins.
+    """
+    _, text = _git(root, 'log', f'--format=%(trailers:key={_TRAILER},valueonly,unfold)', f'{target}..{pull.head_sha}')
+    trailed = {m['id']: m['why'].strip() for line in text.splitlines() if (m := _TRAILED.match(line.strip()))}
+    return trailed | disposed(trusted_bodies(client, pull.number))
 
 
 def blocking(ledger: Ledger, gone: Mapping[str, str]) -> tuple[Finding, ...]:
@@ -223,8 +244,13 @@ def advance(root: Path, head: str, reviewed: str, prior: Ledger | None, found: F
     return Ledger(head, number, tuple(kept.values()), tuple(closed))
 
 
-def context_summary(root: Path, reviewed: str) -> str:
-    """What changed over *reviewed*, why (its commit subjects) and in which layers: round 1's shared context."""
+def _bullets(rows: list[str]) -> str:
+    more = f'\n- ... and {len(rows) - _SUBJECTS} more' if len(rows) > _SUBJECTS else ''
+    return '\n'.join(f'- {one}' for one in rows[:_SUBJECTS]) + more
+
+
+def context_summary(root: Path, reviewed: str, pr_body: str = '') -> str:
+    """What changed over *reviewed*, in which layers, and WHY -- cited from each of :data:`SUMMARY_CITES` in order."""
     _, numstat = _git(root, 'diff', '--no-renames', '--numstat', reviewed)
     layers: dict[str, list[int]] = {}
     for row in numstat.splitlines():
@@ -234,17 +260,58 @@ def context_summary(root: Path, reviewed: str) -> str:
         tally[0] += 1
         tally[1] += int(added) if added.isdigit() else 0
         tally[2] += int(removed) if removed.isdigit() else 0
-    _, log = _git(root, 'log', '--no-merges', '--format=%s', reviewed)
-    subjects = [line for line in log.splitlines() if line.strip()]
     files = sum(t[0] for t in layers.values())
     plus, minus = sum(t[1] for t in layers.values()), sum(t[2] for t in layers.values())
     where = ', '.join(f'`{name}` ({t[0]})' for name, t in sorted(layers.items(), key=lambda kv: -kv[1][0]))
-    why = '\n'.join(f'- {one}' for one in subjects[:_SUBJECTS])
-    more = f'\n- ... and {len(subjects) - _SUBJECTS} more' if len(subjects) > _SUBJECTS else ''
-    return (
-        f'**What changed**: {files} file(s), +{plus}/-{minus}, in {len(layers)} layer(s): {where or "none"}.\n\n'
-        f'**Why** (the commits):\n{why or "- (no commits)"}{more}'
-    )
+    _, log = _git(root, 'log', '--no-merges', '--format=%s', reviewed)
+    _, merges = _git(root, 'log', '--merges', '--format=%s', reviewed)
+    _, landed = _git(root, 'diff', '--no-renames', '--diff-filter=A', '--name-only', reviewed, '--', _MEMORY)
+    lead = pr_body.strip().split('\n\n', 1)[0]
+    cited = {
+        'commits': '**Why** (the commits):\n' + (_bullets([one for one in log.splitlines() if one.strip()])
+                                                  or '- (no commits)'),
+        'memory': _bullets([f'`{one}`' for one in landed.splitlines() if one.strip()]),
+        'merge_audit': _bullets([one for one in merges.splitlines() if one.strip()]),
+        'pr_body': '\n'.join(f'> {line}' for line in lead.splitlines()),
+    }  # fmt: skip
+    titles = {'memory': '**Memory** (the entries landed):\n', 'merge_audit': '**Merges** (the merges):\n',
+              'pr_body': '**PR body**:\n'}  # fmt: skip
+    why = [titles.get(cite, '') + cited[cite] for cite in SUMMARY_CITES if cited[cite]]
+    head = f'**What changed**: {files} file(s), +{plus}/-{minus}, in {len(layers)} layer(s): {where or "none"}.'
+    return '\n\n'.join([head, *why])
+
+
+def _repo_url(pull_url: str) -> str:
+    """The web root of the repository a PR page *pull_url* is in (gitea ``/pulls/N``, github ``/pull/N``)."""
+    return pull_url.rsplit('/pulls/', 1)[0].rsplit('/pull/', 1)[0]
+
+
+def _cite(cite: str, repo: str, head: str) -> str:
+    """One cite as a link: a commit sha to the commit, anything else as a path in the tree at *head*."""
+    if _SHA.match(cite):
+        return f'[`{cite[:12]}`]({repo}/commit/{cite})'
+    return f'[`{cite}`]({repo}/src/commit/{head}/{cite})'
+
+
+def what_it_does(summary: Mapping[str, Any] | None, repo: str, head: str) -> str:
+    """The engine's *summary* as the comment's opening section ("What this PR does"); empty when none."""
+    if summary is None:
+        return ''
+    if summary.get('error'):
+        return f'### What this PR does\nThe engine could not summarize this head: {summary["error"]}'
+    rows = []
+    for change in summary.get('changes', ()):
+        cites = ', '.join(_cite(str(one), repo, head) for one in change.get('cites', ()))
+        rows.append(f'- {change["claim"]}' + (f' ({cites})' if cites else ''))
+    parts = ['### What this PR does\n' + ('\n'.join(rows) or '- (no claims)')]
+    for key, title in (
+        ('tests_altered', 'Tests altered'),
+        ('resolutions', 'Resolutions'),
+        ('open_items', 'Open items'),
+    ):
+        if items := summary.get(key):
+            parts.append(f'**{title}**:\n' + '\n'.join(f'- {one}' for one in items))
+    return '\n\n'.join(parts)
 
 
 def _row(one: Finding, number: int) -> str:
@@ -261,13 +328,18 @@ def _row(one: Finding, number: int) -> str:
 
 def render(
     ledger: Ledger, gone: Mapping[str, str], *, number: int, reviewed: str, max_rounds: int,
-    found: Findings | None, summary: str = '', outside: int = 0,
+    found: Findings | None, summary: str = '', outside: int = 0, repo: str = '',
 ) -> str:  # fmt: skip
-    """The round's one PR comment: verdict, (round 1) the context summary, the findings by standing, the ledger."""
+    """The round's one PR comment: what the PR does, the verdict, (round 1) the context, the findings, the ledger.
+
+    The findings are listed by standing, then what was disposed earlier. *repo* is the web root the summary's
+    cites link into.
+    """
     state, said = verdict(ledger, gone, number)
     capped = ' -- past the cap: blocking findings re-checked only, no reviewer ran' if found is None else ''
     head = f'**Review round {ledger.round}/{max_rounds}** of `{ledger.head[:12]}` over `{reviewed}`{capped}'
-    parts = [f'{head}\n\n`tests/review` {state}: {said}']
+    does = what_it_does(None if found is None else found.summary, repo, ledger.head)
+    parts = [*([does] if does else []), f'{head}\n\n`tests/review` {state}: {said}']
     if summary:
         parts.append(summary)
     if outside:
@@ -284,6 +356,7 @@ def render(
         ('Closed this round', [f'- `{fid}` {how}' for fid, how in ledger.closed]),
         ('Disposed', [f'- `{fid}`: {why}' for fid, why in gone.items() if any(one.id == fid for one in ledger.open)]),
         ('Moved to the follow-up issue', [f'- `{one.id}` {one.summary}' for one in ledger.deferred]),
+        ('Disposed earlier', [f'- `{fid}`: {why}' for fid, why in (() if found is None else found.disposed)]),
     )
     parts += [f'### {title}\n' + '\n'.join(rows) for title, rows in sections if rows]
     if not ledger.open and not ledger.closed:
@@ -321,9 +394,9 @@ def post_round(
     prior = None if prior is not None and prior.head == head else prior  # a head re-posted is not a new round
     ledger = advance(root, head, reviewed, prior, found)
     gone = disposed(bodies)
-    summary = context_summary(root, reviewed) if ledger.round == 1 else ''
+    summary = context_summary(root, reviewed, pull.body) if ledger.round == 1 else ''
     text = render(ledger, gone, number=pull.number, reviewed=reviewed, max_rounds=max_rounds,
-                        found=found, summary=summary, outside=outside)  # fmt: skip
+                  found=found, summary=summary, outside=outside, repo=_repo_url(pull.url))  # fmt: skip
     _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=text)
     _follow_up(client, pull, ledger)
     state, said = verdict(ledger, gone, pull.number)

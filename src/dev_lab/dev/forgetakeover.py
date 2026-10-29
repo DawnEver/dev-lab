@@ -39,7 +39,7 @@ from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
-from dev_lab.dev.forgereview_rounds import post_round
+from dev_lab.dev.forgereview_rounds import dispositions, post_round
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
@@ -146,7 +146,8 @@ def takeover(
         raise TakeoverRefused(msg)
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
     synth = command_for(review, scope.range, runtimes, synthesis=True)
-    found = parse_findings(gather(scope.range, argvs, synth, run, root))
+    gone = dispositions(root, client, pull, f'origin/{base}')
+    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body, disposed=gone))
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         msg = f'no reviewer returned findings ({kinds}); nothing is posted and the hold stands'

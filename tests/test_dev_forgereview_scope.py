@@ -230,6 +230,23 @@ def test_the_slice_outputs_merge_once_per_finding_id() -> None:
     assert len(merged.reviewers) == 3
 
 
+def test_the_merge_carries_the_one_summary_and_every_disposed_id() -> None:
+    """The summary is the one call's that printed it; the disposed ids are every call's, once each."""
+    summary = {'changes': [{'claim': 'adds a', 'cites': ['abc1234']}], 'open_items': []}
+
+    def doc(**top: object) -> str:
+        return json.dumps({**json.loads(_doc()), **top})
+
+    texts = [doc(summary=summary, disposed=[{'id': 'F-1', 'reason': 'r'}]),
+             doc(disposed=[{'id': 'F-1', 'reason': 'r'}, {'id': 'F-2', 'reason': 's'}])]  # fmt: skip
+    text = merge_outputs(texts, 'x..y')
+    assert next(iter(json.loads(text))) == 'summary', 'the summary is the first key, as the engine prints it'
+    merged = parse_findings(text)
+    assert merged.summary == summary
+    assert merged.disposed == (('F-1', 'r'), ('F-2', 's'))
+    assert parse_findings(merge_outputs([_doc()], 'x..y')).summary is None, 'PLANTED control: none printed, none'
+
+
 def test_a_moved_file_is_read_whole_in_one_slice(tmp_path: Path) -> None:
     """PLANTED control: a move across directories puts both paths in one slice, so no reviewer reads a lone delete."""
     _, work = clone_pair(tmp_path)

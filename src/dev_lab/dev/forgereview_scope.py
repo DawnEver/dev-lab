@@ -44,7 +44,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
 __all__ = [
-    'CODE', 'FINDINGS_FIELD', 'LENSES', 'NOT_CODE', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'PRINCIPLES_FIELD', 'Budget',
+    'CODE', 'DISPOSED_FIELD', 'FINDINGS_FIELD', 'LENSES', 'NOT_CODE', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER',
+    'PRINCIPLES_FIELD', 'SUMMARY_FIELD', 'Budget',
     'Scope', 'Slice',
     'gather', 'is_code', 'lens_of', 'own_base', 'plan', 'reviewable', 'reviewed_heads',
 ]  # fmt: skip
@@ -75,6 +76,15 @@ FINDINGS_FIELD: Final = '{findings}'
 #: Replaced by the path of a JSON file holding :func:`dev_lab.dev.principles.payload`, written under the run's
 #: scratch: the method judges against the family's principles and owns no copy of them.
 PRINCIPLES_FIELD: Final = '{principles}'
+
+#: An argument exactly this expands, per call, into the engine's summary flags: ``--pr-body <file of the PR body>``
+#: for the ONE designated call (the first slice), ``--no-summary`` for every other slice and the synthesis -- so the
+#: summary is produced once per head (user ruling D83).
+SUMMARY_FIELD: Final = '{summary}'
+
+#: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: the findings disposed earlier (commit
+#: ``Review-Disposed`` trailers and the forge's own dispositions), which the engine drops and lists.
+DISPOSED_FIELD: Final = '{disposed}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.
 LENSES: Final = ('strict', 'standard', 'light')
@@ -261,21 +271,34 @@ def reviewed_heads(bodies: Iterable[str]) -> tuple[str, ...]:
 
 
 def gather(
-    reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path
-) -> str:
+    reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path, *,
+    pr_body: str, disposed: Mapping[str, str],
+) -> str:  # fmt: skip
     """The slices' outputs merged over *reviewed*; with several, the *synthesis* command's reading of them merged in.
 
     *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
-    the principles file as :data:`PRINCIPLES_FIELD`.
+    the principles file as :data:`PRINCIPLES_FIELD` and the *disposed* file as :data:`DISPOSED_FIELD`; the first
+    slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``.
     """
     with tempfile.TemporaryDirectory() as scratch:
         given = Path(scratch) / 'principles.json'
         given.write_text(json.dumps(payload()), encoding='utf-8')
+        body = Path(scratch) / 'pr-body.md'
+        body.write_text(pr_body, encoding='utf-8')
+        gone = Path(scratch) / 'disposed.json'
+        rows = [{'id': fid, 'reason': why} for fid, why in disposed.items()]
+        gone.write_text(json.dumps({'disposed': rows}, ensure_ascii=False), encoding='utf-8')
 
-        def filled(argv: Sequence[str]) -> list[str]:
-            return [arg.replace(PRINCIPLES_FIELD, str(given)) for arg in argv]
+        def filled(argv: Sequence[str], *, summarizes: bool = False) -> list[str]:
+            flags = ['--pr-body', str(body)] if summarizes else ['--no-summary']
+            return [
+                one
+                for arg in argv
+                for one in (flags if arg == SUMMARY_FIELD else [arg.replace(PRINCIPLES_FIELD, str(given))
+                                                                .replace(DISPOSED_FIELD, str(gone))])
+            ]  # fmt: skip
 
-        merged = merge_outputs([run(filled(argv), root) for argv in argvs], reviewed)
+        merged = merge_outputs([run(filled(argv, summarizes=not at), root) for at, argv in enumerate(argvs)], reviewed)
         if not synthesis or len(argvs) == 1:
             return merged
         path = Path(scratch) / 'findings.json'
