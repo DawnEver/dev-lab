@@ -11,7 +11,7 @@ not install one), so the test reds there for a reason the lock never stated. The
 ``nodejs-wheel-binaries``, so every family repo that installs ``dev-lab[test]`` gets the same Node
 binary from its own lock on every host the wheel covers (Windows, manylinux_2_28, musllinux, macOS).
 
-WHY NODE AND NOT AN EMBEDDED ENGINE. Measured 2026-10-28 against wdg-lab's review-report JS and its
+WHY NODE AND NOT AN EMBEDDED ENGINE. Measured 2026-10-28 against a downstream repo's review-report JS and its
 tests and dev-lab's own hook engines: the guard engine needs ``require``/``fs``/``process``, the review
 code decodes payloads with ``DecompressionStream``, ``Response``/``Blob``,
 ``TextDecoder`` and ``atob``, waits on ``setTimeout``, and its harnesses report through

@@ -342,7 +342,7 @@ def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(
 
 
 def test_the_stray_hook_spells_no_interpreter_and_runs_through_the_launcher() -> None:
-    """One door resolves the venv per platform: a hook naming ``.venv`` drifts from it (motronics pins this)."""
+    """One door resolves the venv per platform: a hook naming ``.venv`` drifts from it (consumer-a pins this)."""
     assert '.venv' not in agent_guard.STRAY_COMMAND
     assert agent_guard.STRAY_COMMAND.startswith('node ')
     assert agent_guard.LAUNCHER_REL in agent_guard.STRAY_COMMAND

@@ -356,7 +356,7 @@ def live_repo(tmp_path: Path) -> Iterator[Path]:
 
 
 def test_a_probe_names_the_shape_rule_while_a_run_is_live_in_the_tree(live_repo: Path) -> None:
-    """INCIDENT (wdg-lab cutover): the probing suite IS a live run, so TREE-HAS-A-LIVE-RUN answered first."""
+    """INCIDENT (a downstream cutover): the probing suite IS a live run, so TREE-HAS-A-LIVE-RUN answered first."""
     assert_refused_by(root=live_repo, command='git stash', rule='GIT-STASH')
 
 

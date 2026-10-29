@@ -92,7 +92,7 @@ SETTINGS_REL: Final = '.claude/settings.json'
 
 #: THE ONE DOOR a hook reaches this checkout's interpreter through: a node launcher that resolves the venv
 #: per platform (and the main checkout's from a linked worktree). A hook spelling ``.venv`` inline drifts
-#: from it -- motronics pins that (``test_no_hook_spells_its_own_interpreter``). A repo's own launcher at
+#: from it -- a downstream repo pins that (``test_no_hook_spells_its_own_interpreter``). A repo's own launcher at
 #: this path is kept: the install writes it only where none is.
 LAUNCHER_REL: Final = '.claude/hooks/py.js'
 

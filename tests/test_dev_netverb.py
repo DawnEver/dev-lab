@@ -379,7 +379,7 @@ def test_netverb_hands_git_s_ref_lines_to_the_pre_push_hook_and_an_up_to_date_pu
     assert got.read_text(encoding='utf-8') == '', 'an up-to-date push runs pre-push with an empty stdin'
 
 
-#: THE INCIDENT (motronics, 2026-10-19): `dep --bootstrap <worktree>` gave up "after 3 of 3 attempts, last
+#: THE INCIDENT (consumer-a, 2026-10-19): `dep --bootstrap <worktree>` gave up "after 3 of 3 attempts, last
 #: diagnosis unclassified" on a submodule whose URL is a LOCAL path -- deterministic, never transient.
 _FILE_TRANSPORT = (
     "Cloning into 'D:/w/cases/winding/connection'...\n"
@@ -400,7 +400,7 @@ def test_a_blocked_file_transport_is_refused_on_the_first_attempt_and_names_its_
 
 
 def test_uvs_spelling_of_a_forge_auth_failure_is_transient_and_recovers(tmp_path: Path) -> None:
-    """THE OTHER INCIDENT (motronics, 2026-10-19): `uv sync` failed once on a git dependency's auth; a re-run passed."""
+    """THE OTHER INCIDENT (consumer-a, 10-19): `uv sync` failed once on a git dependency's auth; a re-run passed."""
     message = (
         'error: Failed to download and build `ai-lab @ git+https://x/ai-lab`\n  remote: Failed to authenticate user\n'
     )
