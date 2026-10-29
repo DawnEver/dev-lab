@@ -269,6 +269,16 @@ def test_creating_the_integration_branch_judges_only_commits_after_the_declared_
     assert done.returncode == 0, done.stderr
 
 
+def test_a_push_that_drops_the_integrator_table_is_judged_by_the_table_origin_held(repo: Path) -> None:
+    """PLANTED: a plain commit deleting the declaration cannot switch the merges-only audit off on its own push."""
+    _git(repo, 'checkout', 'int/line')
+    (repo / 'pyproject.toml').write_text(_DECL.split('[tool.dev_lab.integrator]', maxsplit=1)[0], encoding='utf-8')
+    _git(repo, 'commit', '-am', 'chore: drop the integrator table')
+    done = _push(repo, 'int/line')
+    assert done.returncode != 0
+    assert 'INTEGRATION-IS-MERGES-ONLY' in done.stderr
+
+
 def test_a_push_is_judged_by_its_pushed_tip_never_the_working_tree(repo: Path) -> None:
     """PLANTED: a working tree holding garbage and a retired key changes no verdict either way."""
     (repo / 'pyproject.toml').write_text('this is [not toml\n[tool.dev_lab.integrator]\nhost = "G"\n', encoding='utf-8')
