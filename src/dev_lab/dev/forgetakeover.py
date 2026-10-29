@@ -20,6 +20,7 @@ A human is asked only for a decision the review surfaces, never for the routine 
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -33,7 +34,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeintegration import _fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_list, marker, pr_list
-from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, load_review
+from dev_lab.dev.forgereview import PATHS_FIELD, Review, Runner, command_for, load_review, review_run
 from dev_lab.dev.forgereview_command import run_command
 from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
@@ -50,7 +51,9 @@ from dev_lab.dev.platformparts import HOLD_CONTEXT
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['DOOR', 'RELEASED', 'TakeoverRefused', 'alarms', 'held', 'main', 'release', 'scope_of', 'takeover']
+__all__ = [
+    'DOOR', 'RELEASED', 'TakeoverRefused', 'alarms', 'held', 'main', 'release', 'runtimes_with', 'scope_of', 'takeover',
+]  # fmt: skip
 
 #: The door the integrator runs on a held head; ``{sha}`` is the head.
 DOOR: Final = 'python -m dev_lab.dev.forge review takeover {sha}'
@@ -77,7 +80,7 @@ def held(client: Client, base: str) -> tuple[PullRequest, ...]:
 
 def line(pull: PullRequest) -> str:
     """The prompt line for a held *pull*: what it is and the exact door."""
-    return f'#{pull.number} {pull.head_sha[:12]}: review held over the cap -- run {DOOR.format(sha=pull.head_sha)}'
+    return f'#{pull.number} {pull.head_sha[:12]}: review held -- run {DOOR.format(sha=pull.head_sha)}'
 
 
 def alarms(client: Client, base: str, repo: str) -> list[Alarm]:
@@ -170,7 +173,30 @@ def _parser() -> argparse.ArgumentParser:
     disposal.add_argument('finding')
     disposal.add_argument('--why', required=True, help='why it is not fixed: refused when empty')
     verbs.add_parser('blocked', help='list the heads a blocking finding holds, with their ids and the door')
+    running = verbs.add_parser('run', help="review one PR's head: what a GitHub workflow job runs for its event")
+    running.add_argument('--pr', type=int, required=True)
+    running.add_argument(
+        '--secret-env', action='append', default=[], metavar='NAME',
+        help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer',
+    )  # fmt: skip
+    running.add_argument(
+        '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
+        help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
+    )  # fmt: skip
     return parser
+
+
+def runtimes_with(here: Mapping[str, Mapping[str, Any]], given: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """*here* (the machine file's ``[runtimes]``) with each ``NAME.KEY=VALUE`` of *given* over it."""
+    out = {name: dict(row) for name, row in here.items()}
+    for one in given:
+        where, equals, value = one.partition('=')
+        name, dot, key = where.partition('.')
+        if not (equals and dot and name and key):
+            msg = f'--runtime {one!r} is not NAME.KEY=VALUE'
+            raise ValueError(msg)
+        out.setdefault(name, {})[key] = value
+    return out
 
 
 def main(
@@ -178,7 +204,7 @@ def main(
     run: Callable[[Sequence[str], Path], str] = run_command,
     fetch: Callable[[Path, int], object] | None = None,
 ) -> int:  # fmt: skip
-    """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``.
+    """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``, ``run --pr <N>``.
 
     Exit 0 done, 1 held or blocked heads listed, 2 refused.
     """
@@ -186,17 +212,19 @@ def main(
     root = Path.cwd() if cwd is None else cwd
     pull_in = fetch or (lambda where, number: _fetch_pull(where, 'origin', number))
     try:
-        origin, base = client or client_for(root), load_policy(root).integration
-        if args.verb == 'held':
-            pulls = held(origin, base)
-            for pull in pulls:
-                emit(line(pull))
-            return 1 if pulls else 0
-        if args.verb == 'blocked':
-            rows = review_blocked(origin, base)
-            for pull, ids in rows:
-                emit(blocked_line(pull, ids))
-            return 1 if rows else 0
+        origin, base = client or client_for(root), load_policy(root).pr_base
+        if args.verb == 'run':
+            secret = all(os.environ.get(name) for name in args.secret_env)
+            runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, secret=secret)
+            emit(f'[review] {review_run(root, origin, load_review(root), args.pr, base=base, runner=runner)}')
+            return 0
+        if args.verb in {'held', 'blocked'}:
+            said = [line(pull) for pull in held(origin, base)] if args.verb == 'held' else [
+                blocked_line(pull, ids) for pull, ids in review_blocked(origin, base)
+            ]  # fmt: skip
+            for one in said:
+                emit(one)
+            return 1 if said else 0
         if args.verb == 'dispose':
             emit(f'[review] {dispose(origin, args.pr, args.finding, args.why, host=this_machine())}')
             return 0

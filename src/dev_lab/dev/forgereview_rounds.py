@@ -34,6 +34,7 @@ import lab_commons.launch as _door
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 from dev_lab.dev.forgereview_findings import SEVERITIES, Finding, Findings
 from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 
 if TYPE_CHECKING:
@@ -91,10 +92,11 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
     """PR *number*'s comment bodies (oldest first) the forge records as written by THIS client's login.
 
     A ledger or a disposition is state the forge and the integrator write; a comment anyone else writes that
-    merely LOOKS like one (an author pasting a disposition) is never read as one.
+    merely LOOKS like one (an author pasting a disposition) is never read as one. On GitHub the review's own
+    rounds are written by the workflow job token, so :data:`~dev_lab.dev.forgework.ACTIONS_BOT` is trusted too.
     """
-    me = client.whoami()
-    return [comment.body for comment in comment_list(client, number) if comment.author == me]
+    trusted = {client.whoami(), *((ACTIONS_BOT,) if client.backend is GITHUB else ())}
+    return [comment.body for comment in comment_list(client, number) if comment.author in trusted]
 
 
 def _finding(row: Mapping) -> Finding:
