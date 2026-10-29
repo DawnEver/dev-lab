@@ -65,7 +65,7 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
         'security': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
         'merge-ready': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
-        'promote': {'contents': 'write', 'statuses': 'write'},
+        'promote': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write'},
     }
 
 
@@ -99,6 +99,15 @@ def test_a_push_to_integration_runs_every_part_then_promote_fast_forwards_main_b
     (step,) = [one for one in promote['steps'] if 'integrate promote' in one.get('run', '')]
     assert 'python -m dev_lab.dev.integrate promote "$HEAD_SHA"' in step['run']
     assert 'git push origin main' in step['run']
+
+
+def test_after_promote_the_push_job_sweeps_every_branch_integration_now_contains(tmp_path: Path) -> None:
+    """LANDED-BRANCHES-SWEPT (ruling 2026-10-29): the sweep runs after promote, even when promote failed."""
+    steps = _base_ci(tmp_path)['jobs']['promote']['steps']
+    runs = [one.get('run', '') for one in steps]
+    swept = next(i for i, run in enumerate(runs) if 'dev_lab.dev.branchprune sweep' in run)
+    assert swept > next(i for i, run in enumerate(runs) if 'integrate promote' in run)
+    assert steps[swept]['if'] == '${{ !cancelled() }}'
 
 
 def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path: Path) -> None:

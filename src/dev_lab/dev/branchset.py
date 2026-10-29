@@ -61,6 +61,7 @@ __all__ = [
     'branchset_at',
     'branchset_from',
     'census',
+    'checked_out',
     'declared_branchset',
     'holders',
     'main',
@@ -284,7 +285,8 @@ def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] 
     return tuple(rows)
 
 
-def _checked_out(root: Path) -> frozenset[str]:
+def checked_out(root: Path) -> frozenset[str]:
+    """The local branches checked out in any worktree of *root*."""
     out = git_out(root, 'for-each-ref', '--format=%(refname:short)|%(worktreepath)', 'refs/heads/')
     rows = (line.partition('|') for line in (out or '').splitlines())
     return frozenset(name for name, _, tree in rows if tree.strip())
@@ -315,7 +317,7 @@ def apply_local(
     rows = merge_candidates(root, branchset)
     if rows is None or trees is None:
         return None
-    busy = _checked_out(root)
+    busy = checked_out(root)
     out: list[str] = list(trees)
     for row in rows:
         if row.where == 'origin':

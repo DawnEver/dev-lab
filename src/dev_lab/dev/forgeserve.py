@@ -19,7 +19,8 @@ run the storage retention pass, every tick (:mod:`dev_lab.dev.retention`; still 
 ``storage`` alarm); publish this host's card; then, ONLY ON THE REPO'S POLLER -- the host holding the poller
 lease (:func:`polls`, :mod:`dev_lab.dev.forgepoller`; measured 2026-10-24, every host polling every repo
 pegged the forge) -- close open PRs whose head is on their base (:func:`dev_lab.dev.prlanded.serve_close_landed`),
-prune merged idle origin branches (idempotent) (:func:`dev_lab.dev.branchprune.serve_prune`),
+delete every origin branch integration now contains (:func:`dev_lab.dev.branchprune.serve_sweep`), prune merged
+idle origin branches (idempotent) (:func:`dev_lab.dev.branchprune.serve_prune`),
 prune the records home -- dead shas' records, unit results over budget -- once per interval
 (:func:`dev_lab.dev.forgerecords.serve_prune`)
 tidy the repo's issues (``forge tidy``, :func:`dev_lab.dev.forgetidy.tidy`), raise the starved parts, prompt
@@ -130,7 +131,7 @@ from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerun, forgerunstate, metrics, retention
-from dev_lab.dev.branchprune import serve_prune
+from dev_lab.dev.branchprune import serve_prune, serve_sweep
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from dev_lab.dev.forgealarm import (
     AUTH,
@@ -312,8 +313,9 @@ def _repo_wide(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """The repo-wide passes only the elected poller runs (:func:`polls`): close, prune, starve, prompt, relock."""
+    """Repo-wide passes only the elected poller runs (:func:`polls`): close, sweep, prune, starve, prompt, relock."""
     serve_close_landed(root, client(root), say=say, alarm=alarm)
+    serve_sweep(root, client(root), say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     hygiene(root, client(root), say=say)

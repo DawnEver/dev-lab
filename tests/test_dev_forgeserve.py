@@ -188,6 +188,7 @@ def _serve(
     issues: _Issues | None = None,
     prune=lambda _root, _client, **_kw: (),
     close_landed=lambda *_a, **_k: None,
+    sweep=lambda *_a, **_k: 0,
     records_prune=lambda _root, _client, **_kw: (),
     starving: tuple = (),
     issue_tidy=lambda _client, _hygiene: [],
@@ -249,6 +250,7 @@ def _serve(
     monkeypatch.setattr(forgeserve, 'serve_close_landed', close_landed)
     monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
+    monkeypatch.setattr(forgeserve, 'serve_sweep', sweep)
     monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
@@ -1054,6 +1056,7 @@ def test_a_host_not_holding_the_poller_lease_claims_and_publishes_but_never_poll
         elected=(False, 'ada/alice'),
         prune=lambda *_a, **_k: ran.append('prune') or (),
         close_landed=lambda *_a, **_k: ran.append('close'),
+        sweep=lambda *_a, **_k: ran.append('sweep') or 0,
         records_prune=lambda *_a, **_k: ran.append('records') or (),
         issue_tidy=lambda *_a: ran.append('tidy') or [],
         observe=lambda *_a, **_k: ran.append('observe') or [],
@@ -1073,12 +1076,13 @@ def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch,
         TickReport((), (), ()),
         prune=lambda *_a, **_k: ran.append('prune') or (),
         close_landed=lambda *_a, **_k: ran.append('close'),
+        sweep=lambda *_a, **_k: ran.append('sweep') or 0,
         records_prune=lambda *_a, **_k: ran.append('records') or (),
         issue_tidy=lambda *_a: ran.append('tidy') or [],
         observe=lambda *_a, **_k: ran.append('observe') or [],
         held=lambda *_a, **_k: ran.append('held') or [],
     )
-    assert ran == ['close', 'prune', 'records', 'tidy', 'observe', 'held']
+    assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'held']
 
 
 def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:

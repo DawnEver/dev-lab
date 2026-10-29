@@ -23,7 +23,8 @@
 #                 tests/merge-ready; GitHub's native auto-merge into integrate/main (enabled by
 #                 `forge pr create`) waits on it
 #   promote       on a push to integrate/main (a merged PR), once every part settled: `integrate promote`,
-#                 the SAME decision Gitea's integrator runs, fast-forwards main and the job token pushes it
+#                 the SAME decision Gitea's integrator runs, fast-forwards main and the job token pushes it;
+#                 then `branchprune sweep` deletes every branch integration now contains
 #
 # Permissions are least per job; the workflow grants only `contents: read`.
 ["ci.yml"]
@@ -133,7 +134,8 @@ contents = "read"
 statuses = "write"
 pull-requests = "read"
 
-# Pushes the fast-forwarded main with the job token, hence contents: write.
+# Pushes the fast-forwarded main and deletes every branch integration now contains (LANDED-BRANCHES-SWEPT,
+# closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
 ["ci.yml".jobs.promote]
 needs = ["absent-parts"]
 if = "${{ github.event_name == 'push' && github.ref == 'refs/heads/integrate/main' }}"
@@ -141,11 +143,13 @@ runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
     { name = "Promote main", run = 'uv run --no-sync python -m dev_lab.dev.integrate promote "$HEAD_SHA" && git push origin main' },
+    { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", run = "uv run --no-sync python -m dev_lab.dev.branchprune sweep" },
 ]
 
 ["ci.yml".jobs.promote.permissions]
 contents = "write"
 statuses = "write"
+pull-requests = "write"
 
 # THE SETUP EVERY JOB SHARES, once: the commit statuses are about (HEAD_SHA) with every origin branch fetched
 # -- the outbox posts only on a commit an origin ref holds, and the merge decision trial-merges against one.
