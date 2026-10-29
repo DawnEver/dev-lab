@@ -10,7 +10,7 @@ verbs are on [the integration branch](integration.md); the bars are on [the verd
 | layer | proves | moved by |
 |---|---|---|
 | child (`pr/<topic>`, a session branch, a PR head) | this change, on a tree nobody else writes | its owner's commits and `forge sync` |
-| integration (`integrate/main`) | these children together, on one tree | the forge's merges of green PRs |
+| integration (`integrate/main`) | these children together, on one tree | the forge's merges of reviewed, clean PRs (parts not required) |
 | trunk (`main`) | the state everyone may branch from and fast-forward to | `integrate promote` only |
 
 - **Branch from integration, never from `main`**, which lags by the integration cycle.

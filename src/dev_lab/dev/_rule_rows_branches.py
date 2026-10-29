@@ -135,8 +135,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'INTEGRATION-TAKES-ONLY-FORGE-MERGES',
         (
             'Where `[tool.dev_lab.integrator] pr_merges_since` is declared, the integration branch moves only '
-            'by the forge merging a pull request server-side once every `tests/<part>` part of its head stands '
-            'PASS, the head merges cleanly and the merge audit passes (a PR still missing one stays open, its one '
+            'by the forge merging a pull request server-side once its review and security stand (its '
+            '`tests/<part>` parts never gate it -- they gate only the promotion to the trunk), the head merges '
+            'cleanly and the merge audit passes (a PR still missing one stays open, its one '
             'integration comment naming what is missing), a client push adding any commit to it is refused at '
             'pre-push, and the ONE bypass is a direct push whose EVERY new first-parent commit carries a non-empty '
             '`Break-Glass: <reason>` trailer (an empty reason refused at commit-msg), each such commit past the '

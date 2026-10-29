@@ -8,7 +8,8 @@ MERGE a PR that is green, clean and audit-passing (:mod:`dev_lab.dev.forgemerge`
 what is missing otherwise. Per child branch, against ``origin/<integration>`` and with no
 checkout (:mod:`dev_lab.dev.trialmerge`):
 
-* merged into integration at <sha>, or deferred and why (conflicts / parts not green / ready, waiting);
+* merged into integration at <sha>, or deferred and why (conflicts, or clean and waiting on review and
+  security -- the parts gate only the trunk);
 * behind N, clean or the conflicting files;
 * its watched upstream set (``DOWNSTREAM-SYNCS-INTEGRATION``: integration unless opted in);
 * the head's ``tests/<part>`` states, with the open ``area:*`` issues that cite the head;
@@ -70,7 +71,7 @@ from dev_lab.dev.forgework import GITEA, Client, ForgeCallFailed, PullRequest, c
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.platformparts import CONTEXT_PREFIX, UNCLAIMED, standing
+from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
 
 __all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'settle', 'tick']
@@ -155,21 +156,14 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     statuses = status_list(child.client, child.head)
     waived = unreached(root, child.client, policy.integration, child.head, statuses) if child.pr else frozenset()
     standing_now = standing(statuses, head=child.head, waived=waived)
-    result = standing_now.result
     merge = merged_at(root, base, child.head)
     tried = trial(root, base, child.head)
     if merge is not None:
         state, verdict = 'success', f'merged into `{policy.integration}` at {merge}'
     elif not tried.clean:
         state, verdict = 'failure', f'deferred: conflicts with `{policy.integration}`'
-    elif result is Conclusion.FAIL:
-        state, verdict = 'failure', 'deferred: a `tests/<part>` part FAILED'
-    elif result is Conclusion.PASS:
-        state, verdict = 'pending', 'ready: clean and every part PASS; waiting for the integrator to merge'
-    elif standing_now.reading == UNCLAIMED:
-        state, verdict = 'pending', 'deferred: UNCLAIMED -- no producer has posted a `tests/<part>` status yet'
     else:
-        state, verdict = 'pending', 'deferred: INCONCLUSIVE -- the posted `tests/<part>` statuses do not settle yet'
+        state, verdict = 'pending', 'clean; its `tests/<part>` parts gate the promotion to the trunk, not this merge'
     position = 'clean' if tried.clean else 'conflicts in ' + ', '.join(f'`{f}`' for f in tried.conflicts)
     promoted = (
         f'promoted to `{policy.trunk}` (it holds {merge})'

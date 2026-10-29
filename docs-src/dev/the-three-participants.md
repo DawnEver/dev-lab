@@ -12,7 +12,7 @@ chat message is a hint, never a trigger.
 | human | sets goals, reviews, accepts; decides forge settings and remote deletions | accepts "done" from an agent without its tests |
 | author (any box, the weakest included) | cuts `pr/<topic>`, measures what it touched, commits, pushes, opens a PR | runs a full suite; merges another branch |
 | producer (a box with capacity, or a cluster) | runs `forge serve`: claims a sha lacking its part, runs it, posts `tests/<part>` | produces a part it did not claim |
-| forge | merges a PR whose every part stands PASS into integration, server side | merges a PR lacking a part |
+| forge | merges a reviewed, safe, clean PR into integration, server side; its parts gate only `main` | merges a PR lacking its review, security or a clean merge |
 | integrator | `forge integration`, `forge queue`, routes stuck PRs to their authors, `integrate promote` | hand merges; direct pushes to integration; runs tests |
 | owner (per area) | fixes the reds in its `area:<name>` issue on its own PR | is interrupted by another area's reds |
 

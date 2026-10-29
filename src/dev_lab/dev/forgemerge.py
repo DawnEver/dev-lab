@@ -1,7 +1,9 @@
-"""INTEGRATION-TAKES-ONLY-FORGE-MERGES: the forge merges a green pull request into integration, server side.
+"""INTEGRATION-TAKES-ONLY-FORGE-MERGES: the forge merges a reviewed, safe, clean PR into integration, server side.
 
 User ruling 2026-10-19: every change is a short-lived branch returning by a PR to the integration branch,
-which takes ONLY server-side merges of PRs whose every forge part passed. Opted into by declaring
+which takes ONLY server-side merges. THE TEST PARTS DO NOT GATE THAT MERGE (user ruling 2026-10-29, every repo):
+they still run on a PR head, and a part that is absent, pending or FAILED is reported, but full PASS is required
+only to promote integration to the trunk (:func:`dev_lab.dev.integrate.promote`). Opted into by declaring
 ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration tick
 (:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and,
 when nothing is missing, asks the forge to merge it (:func:`merge`). A client push adding a commit to the
@@ -15,9 +17,6 @@ is green. The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
-* every ``tests/<part>`` part of its head stands PASS (:func:`dev_lab.dev.platformparts.standing`), except a
-  scarce part its diff does not reach -- WAIVED, run on integration after the merge
-  (:mod:`dev_lab.dev.forgescarce`, user ruling 2026-10-22);
 * its review is not HELD: a pending ``tests/review-hold`` waits until the integrator's takeover review releases it
   (``forge review takeover <sha>``, :mod:`dev_lab.dev.forgetakeover`; :func:`review_hold`);
 * its review does not BLOCK it (:func:`review_blocks`, user ruling 2026-10-26): with a review declared, the head's
@@ -51,18 +50,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgereview import TAKEOVER_PENDING, load_review
-from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA, GITHUB, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT, standing
+from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -141,20 +138,12 @@ def decide(
     number: int,
     head: str,
     statuses: Sequence[CommitStatus],
-    waived: frozenset[str] = frozenset(),
 ) -> Decision:
-    """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing.
-
-    *waived* are the scarce parts its diff does not reach (:func:`dev_lab.dev.forgescarce.unreached`).
-    """
+    """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing."""
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
-    stood = standing(statuses, head=head, waived=waived)
-    if stood.result is not Conclusion.PASS:
-        but = f' but the unreached scarce {", ".join(sorted(waived))}' if waived else ''
-        missing.append(f'every `tests/<part>` part{but} PASS on {head[:12]} (it stands {stood.reading})')
     if (held := review_hold(statuses)) is not None:
         missing.append(f'its review: {held}')
     if load_review(root).command and (blocks := review_blocks(statuses)) is not None:
@@ -188,10 +177,9 @@ def decide(
 
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
-    """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses, its unreached scarce parts."""
+    """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
-    waived = unreached(root, client, policy.integration, head, statuses)
-    return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses, waived=waived)
+    return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses)
 
 
 def ready(root: Path, client: Client, number: int) -> str:

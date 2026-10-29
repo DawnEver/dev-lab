@@ -9,18 +9,19 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
 
 1. Cut `pr/<topic>` from `origin/integrate/main` (`ephemeral = ['pr/*']` lets it be pushed with no row), push it,
    and open a PR into `integrate/main` (`forge pr create`). Sync with `forge sync`, never rebase.
-2. The forge produces its `tests/<part>` parts. Each tick (`forge integration`, and every `forge serve`), a PR
-   whose every part stands PASS, whose head merges cleanly into `integrate/main`, and whose merge passes the
+2. The forge produces its `tests/<part>` parts, but they DO NOT GATE THE MERGE (user ruling 2026-10-29, every
+   repo: full PASS is required only to promote to `main`). Each tick (`forge integration`, and every
+   `forge serve`), a PR whose review and `tests/security` stand, whose head merges cleanly into `integrate/main`, and whose merge passes the
    merge audit is MERGED BY THE FORGE: a merge commit carrying `Merged-Branch: <head>` and `Forge-Pull: <N>`
    (`dev_lab.dev.forgemerge`), the `pr/*` head deleted with it. Otherwise its one integration comment says
    what is missing -- on a conflict, "merge `integrate/main` into the branch".
 
    SCARCE PARTS BY REACH (user ruling 2026-10-22, `dev_lab.dev.forgescarce`). A part whose need-set holds a
    resource the repo declares scarce -- ONE table, `[tool.lab_commons.tests] scarce = ["femm", "jmag", ...]`, a
-   subset of `resources` -- is required of a PR only when a path of `merge-base..head` reaches one of its test
+   subset of `resources` -- is produced for a PR only when a path of `merge-base..head` reaches one of its test
    files (the carry's footprint rule; the files are read off the `handed` map of the record the head's
-   `tests/base` links). An unreached scarce part is WAIVED: never produced for the PR, never read for its
-   merge, and named in its integration comment. A reached one is required and is produced for the PR whatever
+   `tests/base` links). An unreached scarce part is WAIVED: never produced for the PR, and named in its
+   integration comment. A reached one is produced for the PR whatever
    `[tool.dev_lab.parts.refs]` says. Any doubt (no record, no merge-base) waives nothing. The full scarce
    parts run on `integrate/main` after the merge; a red one there keeps ONE `integration` issue naming every
    merge since its last green and the sessions (`Lab-Session`/`Claude-Session` trailers) that merge brought.

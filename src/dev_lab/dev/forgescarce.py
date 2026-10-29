@@ -1,26 +1,25 @@
-"""SCARCE-PARTS-BY-REACH -- a PR needs a scarce part only where its diff reaches that part's tests.
+"""SCARCE-PARTS-BY-REACH -- a scarce part runs on a PR only where its diff reaches that part's tests.
 
 User ruling 2026-10-22 ("unify all of it"): Windows capacity is scarce (G is the only Windows forge host), so a PR must
-not wait on it for tests its change cannot affect. A part is SCARCE when its need-set holds a resource the
+not spend it on tests its change cannot affect. A part is SCARCE when its need-set holds a resource the
 repository declares scarce -- ONE table, data, at the judged commit::
 
     [tool.lab_commons.tests]
     resources = ["femm", "jmag", "matlab", "simba", "windows"]
     scarce = ["femm", "jmag", "matlab", "simba", "windows"]      # a subset of resources
 
-A PR into integration is MERGEABLE (:func:`dev_lab.dev.forgemerge.decide`) when every part its head's
-need-set derives stands PASS, EXCEPT a scarce part whose tests no path of ``merge-base..head`` reaches
-(:func:`unreached`): that one is WAIVED -- neither produced for the PR
-(:func:`dev_lab.dev.forgeschedule.candidates`) nor read for its merge. A REACHED scarce part is required and
-is produced for the PR whatever its part's ref filter says. The full scarce parts run on the integration
-branch after the merge; a red one there opens ONE ``integration`` issue
-naming the merges since its last green and their sessions (:func:`red_alarms`).
+No part gates a PR's merge into integration (user ruling 2026-10-29; :mod:`dev_lab.dev.forgemerge`), so
+this decides only PRODUCTION: a scarce part whose tests no path of ``merge-base..head`` reaches
+(:func:`unreached`) is WAIVED -- never produced for the PR (:func:`dev_lab.dev.forgeschedule.candidates`)
+and named in its integration comment. A REACHED scarce part is produced for the PR whatever its part's ref
+filter says. The full scarce parts run on the integration branch after the merge; a red one there opens ONE
+``integration`` issue naming the merges since its last green and their sessions (:func:`red_alarms`).
 
 REACH is the carry's rule (:mod:`dev_lab.dev.forgecarry`): a scarce part's test files are read from the
 record its head's ``base`` part links (every id the base run handed to another part names that part); a part
 reaches the diff when any of its files' footprints at the head (:mod:`dev_lab.dev.footprint`) holds a
 changed path. ANY DOUBT -- no record, no merge-base, an unreadable declaration -- waives nothing: the part is
-required, which only costs the run a waiver would have saved.
+produced, which only costs the run a waiver would have saved.
 """
 
 from __future__ import annotations
