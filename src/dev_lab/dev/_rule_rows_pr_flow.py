@@ -37,4 +37,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'tests/test_dev_forgereview.py',
         ),
     ),
+    (
+        'ROUND-ENDS-GREEN',
+        (
+            "A session's round ends only when every head it pushed (an origin tip carrying its `Lab-Session`) is "
+            'green: the `Stop` hook refuses while one is red, and while one is pending with no live background '
+            '`forge watch <sha>`, naming the command to start -- the same on both forges.'
+        ),
+        ('tests/test_dev_roundgate.py',),
+    ),
 )
