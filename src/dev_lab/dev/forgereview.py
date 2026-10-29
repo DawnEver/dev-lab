@@ -62,6 +62,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     max_total_bytes = 4000000  # one head: past it, held for a session
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
+    code = [...]               # globs of what executes (forgereview_scope.CODE): nothing else is read or capped
+    not_code = [...]           # globs never code whatever their extension (forgereview_scope.NOT_CODE)
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
 
 ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
@@ -103,7 +105,17 @@ from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, ca
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, host_runtimes, retired_field
-from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import (
+    CODE,
+    NOT_CODE,
+    ONLY_GENERATED,
+    OVER_CAP_TAKEOVER,
+    Budget,
+    Scope,
+    gather,
+    plan,
+    reviewed_heads,
+)
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -210,6 +222,8 @@ class Review:
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = STRICT
     light: tuple[str, ...] = LIGHT
+    code: tuple[str, ...] = CODE
+    not_code: tuple[str, ...] = NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
 
     def __post_init__(self) -> None:
@@ -224,7 +238,9 @@ class Review:
     @property
     def budget(self) -> Budget:
         """The bounds and globs :func:`~dev_lab.dev.forgereview_scope.plan` cuts a head by."""
-        return Budget(self.max_diff_bytes, self.max_total_bytes, self.derived, self.strict, self.light)
+        return Budget(
+            self.max_diff_bytes, self.max_total_bytes, self.derived, self.strict, self.light, self.code, self.not_code
+        )
 
 
 def review_from(text: str, origin: str) -> Review:
@@ -364,7 +380,9 @@ def _unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     return f'#{pull.number} {head[:12]}: {said}'
 
 
-def _settle(root: Path, client: Client, pull: PullRequest, review: Review, *, reviewed: str, found: Findings) -> str:
+def _settle(
+    root: Path, client: Client, pull: PullRequest, review: Review, *, reviewed: str, found: Findings, outside: int = 0
+) -> str:
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
@@ -377,7 +395,7 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, *, re
         why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
-    return post_round(root, client, pull, reviewed, found=found, max_rounds=review.max_rounds)
+    return post_round(root, client, pull, reviewed, found=found, max_rounds=review.max_rounds, outside=outside)
 
 
 def _without_command(root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope) -> str | None:
@@ -451,7 +469,7 @@ def review_tick(
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
             continue
-        lines.append(_settle(root, client, pull, review, reviewed=scope.range, found=found))
+        lines.append(_settle(root, client, pull, review, reviewed=scope.range, found=found, outside=scope.outside))
     return tuple(lines)
 
 

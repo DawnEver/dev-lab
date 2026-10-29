@@ -15,6 +15,11 @@ reviewer's, so it bounds a SLICE (``max_diff_bytes``); the head is held for a se
   a push is reviewed for what it added (:func:`own_base`).
 * GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev.famfiles.GENERATED`) and
   the globs the repo declares (``derived``). Their generator is reviewed, not its output.
+* CODE ONLY (user ruling 2026-10-29): a review reads what executes -- source, tests, scripts, and the build and
+  workflow config that runs -- never prose or data. :data:`CODE` and :data:`NOT_CODE` are that one classification
+  (a repo overrides either: ``code``, ``not_code``); the caps and slices count code bytes only, and the comment
+  says how many changed files were outside (:attr:`Scope.outside`). A 33-branch merge was held at 127 MB that
+  was almost all memory, attic, docs and logs.
 * A LENS per slice: ``strict`` for the paths that refuse or declare (``strict`` globs), ``light`` for prose
   (``light`` globs), ``standard`` for the rest. A slice holds one lens, so the command is told which.
 """
@@ -39,8 +44,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
 __all__ = [
-    'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'PRINCIPLES_FIELD', 'Budget', 'Scope', 'Slice',
-    'gather', 'lens_of', 'own_base', 'plan', 'reviewable', 'reviewed_heads',
+    'CODE', 'FINDINGS_FIELD', 'LENSES', 'NOT_CODE', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER', 'PRINCIPLES_FIELD', 'Budget',
+    'Scope', 'Slice',
+    'gather', 'is_code', 'lens_of', 'own_base', 'plan', 'reviewable', 'reviewed_heads',
 ]  # fmt: skip
 
 #: The review description of a held head (its :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` says the same): a
@@ -50,7 +56,18 @@ __all__ = [
 OVER_CAP_TAKEOVER: Final = 'over the cap: integrator takeover -- forge review takeover <sha> reviews it and releases'
 
 #: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
-ONLY_GENERATED: Final = 'nothing to review: every changed file is generated'
+ONLY_GENERATED: Final = 'nothing to review: every changed file is generated or not code'
+
+#: What executes, by glob: a changed file is reviewed only if it matches one and no :data:`NOT_CODE` glob.
+CODE: Final = (
+    '**/*.py', '**/*.pyi', '**/*.rs', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.ts', '**/*.tsx', '**/*.sh',
+    '**/*.ps1', '**/*.bat', '**/*.cmd', '**/*.c', '**/*.h', '**/*.cpp', '**/*.hpp', '**/*.toml', '**/*.yml',
+    '**/*.yaml', '**/*.cfg', '**/*.ini', '**/Makefile', '**/Dockerfile', '**/justfile',
+)  # fmt: skip
+
+#: Never code whatever its extension: agent memory and rules, archived code, rendered docs, logs, lock files, and
+#: golden reference data (a motronics golden is a TOML of measured values, 15 MB each).
+NOT_CODE: Final = ('**/.claude/**', 'attic/**', 'docs-src/**', '**/logs/**', '**/*.lock', '**/*.log', '**/golden*')
 
 #: In the ``synthesis`` command: replaced by the merged slice findings' path.
 FINDINGS_FIELD: Final = '{findings}'
@@ -81,6 +98,7 @@ class Scope:
     range: str
     slices: tuple[Slice, ...] = ()
     held: str | None = None
+    outside: int = 0  # changed files that are not code: counted, never read
 
 
 def _git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
@@ -118,6 +136,11 @@ def _matches(path: str, globs: Iterable[str]) -> bool:
 def reviewable(path: str, derived: Iterable[str]) -> bool:
     """Whether *path* is read: not a family render, not a declared *derived* glob."""
     return path not in GENERATED and not _matches(path, derived)
+
+
+def is_code(path: str, code: Iterable[str], not_code: Iterable[str]) -> bool:
+    """Whether *path* executes: it matches a *code* glob and no *not_code* one."""
+    return _matches(path, code) and not _matches(path, not_code)
 
 
 def lens_of(path: str, strict: Iterable[str], light: Iterable[str]) -> str:
@@ -185,6 +208,8 @@ class Budget:
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = ()
     light: tuple[str, ...] = ()
+    code: tuple[str, ...] = CODE
+    not_code: tuple[str, ...] = NOT_CODE
 
 
 def plan(
@@ -204,13 +229,16 @@ def plan(
     slice is a slice of its own, and the session reads every slice.
     """
     reviewed_range = f'{own_base(root, target, head, reviewed)}..{head}'
-    sizes = {path: n for path, n in _sizes(root, reviewed_range).items() if reviewable(path, budget.derived)}
+    read = {path: n for path, n in _sizes(root, reviewed_range).items() if reviewable(path, budget.derived)}
+    sizes = {path: n for path, n in read.items() if is_code(path, budget.code, budget.not_code)}
+    outside = len(read) - len(sizes)
     total = sum(sizes.values())
     if metered and total > budget.total_bytes:
-        return Scope(reviewed_range, held=f'{total} reviewable bytes > max_total_bytes={budget.total_bytes}')
+        why = f'{total} reviewable code bytes > max_total_bytes={budget.total_bytes}'
+        return Scope(reviewed_range, held=why, outside=outside)
     if metered and (huge := sorted(path for path, n in sizes.items() if n > budget.slice_bytes)):
         why = f'{huge[0]} alone is over max_diff_bytes={budget.slice_bytes}: derive it, or the integrator takes over'
-        return Scope(reviewed_range, held=why)
+        return Scope(reviewed_range, held=why, outside=outside)
     by_lens: dict[str, dict[str, int]] = {}
     for path, n in sizes.items():
         by_lens.setdefault(lens_of(path, budget.strict, budget.light), {})[path] = n
@@ -219,8 +247,9 @@ def plan(
         one for lens in LENSES if lens in by_lens for one in _pack(lens, by_lens[lens], budget.slice_bytes, moves)
     ]
     if len(slices) > 1 and not sliceable:
-        return Scope(reviewed_range, held=f'{len(slices)} slices, and the command takes no paths')
-    return Scope(reviewed_range, tuple(slices))
+        why = f'{len(slices)} slices, and the command takes no paths'
+        return Scope(reviewed_range, held=why, outside=outside)
+    return Scope(reviewed_range, tuple(slices), outside=outside)
 
 
 _REVIEWED: Final = re.compile(re.escape(marker(Marker.REVIEW, 'SHA')).replace('SHA', '(?P<sha>[0-9a-f]{7,40})'))

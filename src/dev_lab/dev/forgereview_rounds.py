@@ -243,7 +243,7 @@ def _row(one: Finding, number: int) -> str:
 
 def render(
     ledger: Ledger, gone: Mapping[str, str], *, number: int, reviewed: str, max_rounds: int,
-    found: Findings | None, summary: str = '',
+    found: Findings | None, summary: str = '', outside: int = 0,
 ) -> str:  # fmt: skip
     """The round's one PR comment: verdict, (round 1) the context summary, the findings by standing, the ledger."""
     state, said = verdict(ledger, gone, number)
@@ -252,6 +252,8 @@ def render(
     parts = [f'{head}\n\n`tests/review` {state}: {said}']
     if summary:
         parts.append(summary)
+    if outside:
+        parts.append(f'{outside} non-code file(s) outside the review scope (prose, data, locks): not read')
     if found is not None:
         who = ', '.join(f'`{one.name}` ({one.provider or "-"}): {one.status}' for one in found.reviewers) or 'none'
         parts.append(f'Reviewers: {who}')
@@ -288,11 +290,12 @@ def _follow_up(client: Client, pull: PullRequest, ledger: Ledger) -> None:
 
 def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings | None, max_rounds: int,
-    by: str = 'review',
+    by: str = 'review', outside: int = 0,
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment, :data:`REVIEW_CONTEXT`, any follow-up issue; the line said.
 
-    *found* is ``None`` past the cap (no command ran). *by* names who reviewed, for the status.
+    *found* is ``None`` past the cap (no command ran). *by* names who reviewed, for the status. *outside* counts
+    the changed files that are not code, said in the comment.
     """
     head = pull.head_sha
     bodies = trusted_bodies(client, pull.number)
@@ -302,7 +305,7 @@ def post_round(
     gone = disposed(bodies)
     summary = context_summary(root, reviewed) if ledger.round == 1 else ''
     text = render(ledger, gone, number=pull.number, reviewed=reviewed, max_rounds=max_rounds,
-                        found=found, summary=summary)  # fmt: skip
+                        found=found, summary=summary, outside=outside)  # fmt: skip
     _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=text)
     _follow_up(client, pull, ledger)
     state, said = verdict(ledger, gone, pull.number)

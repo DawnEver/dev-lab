@@ -152,7 +152,14 @@ def takeover(
         msg = f'no reviewer returned findings ({kinds}); nothing is posted and the hold stands'
         raise TakeoverRefused(msg)
     said = post_round(
-        root, client, pull, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover'
+        root,
+        client,
+        pull,
+        scope.range,
+        found=found,
+        max_rounds=review.max_rounds,
+        by='integrator takeover',
+        outside=scope.outside,
     )
     return f'{said} ({len(scope.slices)} slice(s))', release(client, pull.head_sha, host=host)
 
@@ -205,8 +212,10 @@ def main(
         if args.verb == 'plan':
             scope = scope_of(root, origin, review, pull, base)
             emit(
-                f'#{pull.number} {scope.range}: {len(scope.slices)} slice(s){f" -- {scope.held}" if scope.held else ""}'
+                f'#{pull.number} {scope.range}: {len(scope.slices)} slice(s), {scope.outside} non-code file(s) outside'
+                f'{f" -- {scope.held}" if scope.held else ""}'
             )
+            emit(f'  code bytes: {sum(one.size for one in scope.slices)}')
             for one in scope.slices:
                 emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
             return 0
