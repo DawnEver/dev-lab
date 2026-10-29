@@ -66,9 +66,10 @@ CODE: Final = (
     '**/*.yaml', '**/*.cfg', '**/*.ini', '**/Makefile', '**/Dockerfile', '**/justfile',
 )  # fmt: skip
 
-#: Never code whatever its extension: agent memory and rules, archived code, rendered docs, logs, lock files, and
-#: golden reference data (a motronics golden is a TOML of measured values, 15 MB each).
-NOT_CODE: Final = ('**/.claude/**', 'attic/**', 'docs-src/**', '**/logs/**', '**/*.lock', '**/*.log', '**/golden*')
+#: Never code though its extension says so: agent memory, archived code, and golden reference data (a motronics
+#: golden is a TOML of measured values, 15 MB each). Each glob is narrow -- a hook under ``.claude/``, a ``logs``
+#: package or a ``golden_*.py`` module executes and is read.
+NOT_CODE: Final = ('**/.claude/memory/**', 'attic/**', '**/golden*.toml')
 
 #: In the ``synthesis`` command: replaced by the merged slice findings' path.
 FINDINGS_FIELD: Final = '{findings}'

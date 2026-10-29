@@ -35,6 +35,7 @@ from dev_lab.dev.forgereview_scope import (
     ONLY_GENERATED,
     OVER_CAP_TAKEOVER,
     Budget,
+    is_code,
     lens_of,
     own_base,
     plan,
@@ -323,3 +324,12 @@ def test_the_review_comment_names_the_files_outside_scope(tmp_path: Path) -> Non
     review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=Recorder(), ready=_can, host='box')
     (comment,) = forge.comments[number]
     assert f'{len(_NOT_CODE)} non-code file(s) outside the review scope' in comment['body']
+
+
+def test_a_not_code_glob_never_hides_code_by_its_name() -> None:
+    """Hooks, a ``logs`` package and a ``golden_*`` module execute; PLANTED control: memory and golden data do not."""
+    for path in ('.claude/hooks/guard.py', '.claude/hooks/x.sh', 'src/pkg/logs/handler.py', 'tests/golden_helpers.py',
+                 'src/pkg/golden_section.py', 'tests/golden_utils/loader.py'):  # fmt: skip
+        assert is_code(path, CODE, NOT_CODE), path
+    for path in ('.claude/memory/2026/10/29/x.toml', 'cases/a/golden_jmag_ring.toml', 'attic/old/legacy.py'):
+        assert not is_code(path, CODE, NOT_CODE), path
