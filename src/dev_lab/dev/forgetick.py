@@ -205,7 +205,7 @@ def tick(
             policy=policy,
             now=now,
             say=lines.append,
-            waived=lambda sha: unreached(root, built, policy.integration, sha, history(sha)),
+            waived=lambda sha: unreached(root, built, policy.pr_base, sha, history(sha)),
         ),
         owners or {},
     )

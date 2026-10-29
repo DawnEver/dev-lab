@@ -207,7 +207,7 @@ def _blocks(client: Client, policy: Policy) -> list[tuple[int, Block, Any]]:
 
     found = []
     for pr in pr_list(client):
-        if pr.base != policy.integration:
+        if pr.base != policy.pr_base:
             continue
         comment = integration_comment(client, pr.number)
         if comment is not None and (block := read(comment.body)).notices:
@@ -247,8 +247,8 @@ def main(
         blocks = _blocks(origin, policy)
         if args.ack:
             return _ack(origin, blocks, args.ack)
-        reviews = held(origin, policy.integration) if not args.session else ()  # over the cap: the integrator's
-        blocking = blocked(origin, policy.integration) if not args.session else ()  # a blocking finding: likewise
+        reviews = held(origin, policy.pr_base) if not args.session else ()  # over the cap: the integrator's
+        blocking = blocked(origin, policy.pr_base) if not args.session else ()  # a blocking finding: likewise
     except (ForgeCallFailed, OSError, ValueError) as failed:
         emit(f'[notices] {failed}', err=True)
         return 2

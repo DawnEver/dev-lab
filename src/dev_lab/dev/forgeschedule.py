@@ -314,7 +314,7 @@ def _part_refs(
     )
     for pull in optional('open pull requests', lambda: pr_list(client), say):
         sha = tips.get(pull.head, pull.head_sha)
-        if pull.base == policy.integration and pull.head != policy.integration and sha:
+        if pull.base == policy.pr_base and pull.head != policy.integration and sha:
             refs.append((pull.head, sha, PR, pull.labels, pull.number, pull.author))
     served = {ref for ref, *_ in refs}
     for branch, sha in sorted(tips.items()):
