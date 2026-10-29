@@ -81,7 +81,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.compute.probe import OS_NAMES, os_name
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
 from lab_commons.hpc.records import cells_of, read_record
@@ -96,6 +95,7 @@ from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for
+from dev_lab.dev.partrows import is_row, row_part
 from dev_lab.dev.producer import ProducerExit
 
 if TYPE_CHECKING:
@@ -109,7 +109,6 @@ __all__ = [
     'HOLD_CONTEXT',
     'PART_FIELD',
     'REVIEW_CONTEXT',
-    'ROW_SEPARATOR',
     'UNCLAIMED',
     'ClusterPart',
     'Composition',
@@ -120,20 +119,16 @@ __all__ = [
     'cluster_part',
     'compose',
     'derived',
-    'is_row',
     'main',
     'origin_url',
     'part_context',
     'part_of',
     'parts_of',
     'producer_argv',
-    'row_part',
-    'row_system',
     'run_tag',
     'select',
     'split',
     'standing',
-    'this_platform',
 ]
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
@@ -171,26 +166,6 @@ class PartRefusal(ValueError):
 
 class UndeclaredPart(ValueError):
     """The repo does not declare how to produce a part; the message names the pyproject key to add."""
-
-
-#: Joins a part to the OS a row of it runs on, off its own runner: ``base@windows`` (:mod:`dev_lab.dev.jobparts`).
-ROW_SEPARATOR: Final = '@'
-
-
-def row_part(row: str) -> str:
-    """The part (need-set) a row produces: *row* less any ``@<os>``; a bare part is its own row."""
-    return row.partition(ROW_SEPARATOR)[0]
-
-
-def row_system(row: str) -> str:
-    """The OS *row* must run on, ``''`` when it names none (a bare part runs where its needs say)."""
-    return row.partition(ROW_SEPARATOR)[2]
-
-
-def is_row(name: str) -> bool:
-    """Whether *name* is a part, or a part qualified by one OS resource (:data:`ROW_SEPARATOR`)."""
-    part, separator, system = name.partition(ROW_SEPARATOR)
-    return bool(PART_NAME.match(part)) and (not separator or system in OS_NAMES.values())
 
 
 def part_context(part: str) -> str:
@@ -560,11 +535,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'[platformparts] refused: {why}', err=True)
         return 1
     return 0
-
-
-def this_platform() -> str:
-    """The OS resource THIS box is (:func:`lab_commons.compute.probe.os_name`)."""
-    return os_name(sys.platform)
 
 
 if __name__ == '__main__':

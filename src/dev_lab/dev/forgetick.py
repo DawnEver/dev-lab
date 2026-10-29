@@ -110,7 +110,8 @@ from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgewait import Box, nowhere, tell
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.platformparts import derived, origin_url, parts_of, this_platform
+from dev_lab.dev.partrows import this_platform
+from dev_lab.dev.platformparts import derived, origin_url, parts_of
 
 __all__ = ['TickReport', 'main', 'tick']
 
