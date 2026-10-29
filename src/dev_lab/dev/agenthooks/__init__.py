@@ -171,7 +171,7 @@ def run_engine(
             on a call it lets run.
         live_run: judge ``when: 'live-run'`` rows against the box's process table, as the tool does. A
             PROBE of which rule owns a shape passes ``False``: the probing suite is itself a run in the
-            checkout it probes, so the state row would answer for every shape it covers (wdg-lab cutover,
+            checkout it probes, so the state row would answer for every shape it covers (a downstream cutover,
             2026-10-25). The payload key carrying it is one the tool never sends, so no agent command can.
         metrics_root: the checkout a refusal of this probe is logged in; ``None`` logs none. A probe is a
             test or a ``--check``, never an agent refused: guard suites probing a real checkout's rules

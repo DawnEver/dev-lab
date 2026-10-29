@@ -11,7 +11,7 @@ passes only when it is TRACKED (a re-included lock file, the scratch README). Wh
 
 NOT EPHEMERAL: an untracked path under a tracked root (``src/gone.py``) is a broken or cross-repo
 link, not cited content that lives outside version control; measured 2026-10-28 that reading
-refused ~10k such lines in motronics alone, almost all dated memory, so it is a different defect.
+refused ~10k such lines in consumer-a alone, almost all dated memory, so it is a different defect.
 
 THREE PROPERTIES, over every tracked file (2 and 3 skip archived code, ``attic/``):
 

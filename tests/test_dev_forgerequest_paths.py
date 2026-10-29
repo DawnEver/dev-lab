@@ -89,7 +89,7 @@ def test_the_body_carries_the_paths_and_reads_them_back() -> None:
 def test_a_request_at_a_sha_whose_manifest_the_kit_retires_is_refused_by_name(repo: tuple[Path, str]) -> None:
     """PLANTED (live 2026-10-28, Ada): a request pinned to a pre-A3 sha spells a moved table.
 
-    The kit's RetiredTable escaped the serve on every tick, so no motronics part was claimed; it is refused
+    The kit's RetiredTable escaped the serve on every tick, so no consumer-a part was claimed; it is refused
     per request instead.
     """
     root, _sha = repo
