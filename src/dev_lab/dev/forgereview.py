@@ -102,7 +102,14 @@ from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round
-from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, host_runtimes, retired_field
+from dev_lab.dev.forgereview_runtimes import (
+    HOST_FIELD,
+    RUNTIMES_TABLE,
+    host_runtimes,
+    retired_field,
+    retired_table,
+    runtime_names,
+)
 from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
@@ -117,6 +124,7 @@ if TYPE_CHECKING:
 __all__ = [
     'FAMILY_COMMAND',
     'FAMILY_MODEL',
+    'FAMILY_RUNTIMES',
     'MODEL_FIELD',
     'OVER_CAP_TAKEOVER',
     'RANGE_FIELD',
@@ -160,6 +168,9 @@ FAMILY_COMMAND: Final = (
     '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
     '--principles', forgereview_scope.PRINCIPLES_FIELD,
 )  # fmt: skip
+
+#: The runtimes the family command reads from a host's ``[runtimes]``: the ONE set a deploy migrates.
+FAMILY_RUNTIMES: Final = runtime_names(FAMILY_COMMAND)
 
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
@@ -479,7 +490,7 @@ def step(
         try:  # any range, any slice: can this host run the command at all
             cannot = ready(command_for(review, '', here), root)
         except ReviewUnsupported as unsupported:
-            cannot = str(unsupported)
+            cannot = retired_table(review.command, here) or str(unsupported)
         if cannot is not None:
             say(f'[serve] review: not run on this host -- {cannot}')
             return

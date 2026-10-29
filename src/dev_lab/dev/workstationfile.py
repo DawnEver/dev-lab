@@ -3,13 +3,15 @@
 A ``--role`` is a declared profile (:data:`ROLES`: its capabilities and ``[serve]`` rule); ``template --role
 <role> --repos ...`` prints the tables it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses
 one in ``--capabilities``. The merge (:func:`machine_file`) keeps every other table, key and comment, removes a
-RETIRED ``[capabilities.<name>]`` -- carrying its keys into ``[runtimes.<name>]`` when that is its remedy -- and
-under ``--dry-run`` prints the diff without writing.
+RETIRED ``[capabilities.<name>]`` -- one naming a runtime (:data:`~dev_lab.dev.forgereview.FAMILY_RUNTIMES`, or a
+registry row whose remedy is ``[runtimes.<name>]``) is RENAMED in place, keys and comment kept, after a one-time
+``<file>.lab-deploy.bak`` -- and under ``--dry-run`` prints the diff (each move named) without writing.
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
 import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
@@ -22,7 +24,8 @@ from lab_commons.config import config_path
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
-from dev_lab.dev._machinefile import diff, merged
+from dev_lab.dev._machinefile import diff, merged, renamed
+from dev_lab.dev.forgereview import FAMILY_RUNTIMES
 from dev_lab.dev.forgereview_runtimes import RUNTIMES_TABLE
 
 if TYPE_CHECKING:
@@ -113,25 +116,36 @@ def template(role: str, repos: Sequence[str]) -> str:
     return merged('', role_tables(ROLES[role], capabilities(','.join(ROLES[role].capabilities)), repos))
 
 
-def _retirements(text: str) -> dict[str, Any]:
-    """Every RETIRED ``[capabilities.<name>]`` in machine-file *text*, dropped; one retired into a runtime, moved.
+def _retirements(text: str) -> tuple[str, dict[str, Any], list[str]]:
+    """*text* with every RETIRED ``[capabilities.<name>]`` resolved: the text, the tables to drop, the moves made.
 
-    No alias survives a deploy (:data:`lab_commons.hpc.retired.RETIRED`): the table goes, and when its remedy is
-    ``[runtimes.<name>]`` its keys (where that runtime lives) are carried there, since only this host knows them.
+    No alias survives a deploy (:data:`lab_commons.hpc.retired.RETIRED`). A runtime's table (its name in
+    :data:`FAMILY_RUNTIMES`, or its registry remedy ``[runtimes.<name>]``) holds where it lives, which only this
+    host knows: renamed in place when ``[runtimes.<name>]`` is absent, else its keys carried there. Any other
+    retired table is dropped.
     """
     try:
-        declared = tomllib.loads(text).get('capabilities', {})
+        data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
-        return {}  # the merge refuses the file by name
+        return text, {}, []  # the merge refuses the file by name
+    declared, runtimes = data.get('capabilities', {}), data.get(RUNTIMES_TABLE, {})
     out: dict[str, Any] = {}
+    moves: list[str] = []
     for name, facts in declared.items():
-        remedy = RETIRED.get(f'capabilities.{name}')
-        if remedy is None:
+        old, new = f'capabilities.{name}', f'{RUNTIMES_TABLE}.{name}'
+        remedy = RETIRED.get(old)
+        if name not in FAMILY_RUNTIMES and not (remedy or '').startswith(f'[{new}]'):
+            if remedy is not None:
+                out[old] = None
             continue
-        out[f'capabilities.{name}'] = None
-        if remedy.startswith(f'[{RUNTIMES_TABLE}.{name}]') and isinstance(facts, dict) and facts:
-            out[f'{RUNTIMES_TABLE}.{name}'] = dict(facts)
-    return out
+        moves.append(f'[{old}] -> [{new}]')
+        if name not in runtimes:
+            text = renamed(text, old, new)
+            continue
+        out[old] = None
+        if isinstance(facts, dict) and facts:
+            out[new] = dict(facts)
+    return text, out, moves
 
 
 def machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
@@ -139,18 +153,25 @@ def machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
     path = config_path()
     emit(f'[machine file] {path}')
     before = path.read_text(encoding='utf-8') if path.is_file() else ''
+    moved, dropped, moves = _retirements(before)
     try:
-        after = merged(before, {**_retirements(before), **tables})
+        after = merged(moved, {**dropped, **tables})
     except ValueError as broken:
         emit(f'deploy refused: {path}: {broken}', err=True)
         return 2
     if after == before:
         emit('  already declares every table')
         return 0
+    for move in moves:
+        emit(f'  retired spelling moved: {move}')
     for line in diff(before, after, str(path)).splitlines():
         emit(f'  {line}')
     if step.dry:
         emit('  [dry-run] the diff above is not written')
         return 0
+    backup = path.with_name(f'{path.name}.lab-deploy.bak')
+    if moves and not backup.exists():
+        shutil.copy2(path, backup)
+        emit(f'  backed up to {backup}')
     durable_text(path, after)
     return 0

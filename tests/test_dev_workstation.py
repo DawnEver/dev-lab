@@ -699,6 +699,45 @@ def test_deploy_drops_every_retired_capability_table_and_moves_a_runtime_path(
     assert declared['runtimes'] == {'olden': {'python': 'C:/rt/python.exe'}}
 
 
+G_RUNTIME: Final = '[capabilities.ai_lab]  # the review interpreter\npython = "C:/ai-lab/.venv/Scripts/python.exe"\n'
+
+
+def _g_shaped(box: Box) -> str:
+    """G's 2026-10-29 machine file: the retired runtime table, commented, between live capabilities tables."""
+    text = box.machine.read_text(encoding='utf-8').replace('[capabilities.jmag]', G_RUNTIME + '\n[capabilities.jmag]')
+    text += '\n[capabilities.connection]  # supply\nseats = 1\n'
+    box.machine.write_text(text, encoding='utf-8')
+    return text
+
+
+def test_a_dry_run_reports_the_runtime_move_it_would_make(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    """The live bug: G's dry run said "already declares every table" over a retired ``[capabilities.ai_lab]``."""
+    assert box.deploy() == 0
+    held = _g_shaped(box)
+    capsys.readouterr()
+    assert box.deploy('--dry-run') == 0
+    out = capsys.readouterr().out
+    assert 'already declares every table' not in out
+    assert 'retired spelling moved: [capabilities.ai_lab] -> [runtimes.ai_lab]' in out
+    assert '+[runtimes.ai_lab]  # the review interpreter' in out
+    assert box.machine.read_text(encoding='utf-8') == held, 'a dry run writes nothing'
+
+
+def test_deploy_moves_a_commented_runtime_table_backs_up_once_and_is_idempotent(box: Box) -> None:
+    assert box.deploy() == 0
+    held = _g_shaped(box)
+    assert box.deploy() == 0
+    text = box.machine.read_text(encoding='utf-8')
+    assert G_RUNTIME.replace('capabilities', 'runtimes') in text, 'keys and the comment are kept'
+    declared = tomllib.loads(text)
+    assert set(declared['capabilities']) == {'workstation', 'jmag', 'connection'}, 'PLANTED CONTROL: supply kept'
+    assert declared['runtimes'] == {'ai_lab': {'python': 'C:/ai-lab/.venv/Scripts/python.exe'}}
+    backup = box.machine.with_name(box.machine.name + '.lab-deploy.bak')
+    assert backup.read_text(encoding='utf-8') == held
+    assert box.deploy() == 0
+    assert box.machine.read_text(encoding='utf-8') == text, 'a second deploy changes nothing'
+
+
 def test_the_template_is_the_role_as_deploy_writes_it(capsys: pytest.CaptureFixture[str]) -> None:
     assert workstation.main(['template', '--role', 'light', '--repos', 'dev-lab,alpha']) == 0
     printed = tomllib.loads(capsys.readouterr().out)

@@ -39,7 +39,7 @@ from dev_lab.dev.forgereview import (
 )
 from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_runtimes import HOST_FIELD
+from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
 from dev_lab.dev.forgereview_scope import OVER_CAP_TAKEOVER
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
@@ -686,3 +686,14 @@ def test_a_docs_only_head_carries_the_previous_heads_review_and_runs_no_command(
     assert status.description.startswith(f'carried from {head[:12]}: docs-only')
     assert len(forge.comments[number]) == 1, 'the earlier head s comment stands; nothing new is posted'
     assert lines == (f'#{number} {after[:12]}: carried from {head[:12]}: docs-only',)
+
+
+def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> None:
+    """G's serve tick said only "declares no [runtimes.ai_lab]"; the retired spelling names its remedy."""
+    command = ('{runtimes.ai_lab.python}', RANGE_FIELD)
+    why = retired_table(command, {}, {'ai_lab': {'python': 'x'}, 'jmag': {}})
+    assert why == (
+        'the machine file still spells [capabilities.ai_lab]; run workstation deploy to move it to [runtimes]'
+    )
+    assert retired_table(command, {'ai_lab': {'python': 'x'}}, {'ai_lab': {}}) is None, 'PLANTED: a declared runtime'
+    assert retired_table(command, {}, {'jmag': {}}) is None

@@ -15,7 +15,7 @@ import tomllib
 from collections.abc import Mapping
 from typing import Final
 
-__all__ = ['diff', 'merged']
+__all__ = ['diff', 'merged', 'renamed']
 
 #: A ``[table]`` or ``[[array]]`` header line.
 _HEADER: Final = re.compile(r'^\s*(\[\[?)\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
@@ -115,6 +115,15 @@ def merged(text: str, tables: Mapping[str, Mapping[str, Value | None] | None]) -
             msg = f'[{table}] does not read back as {dict(values)} after the merge; edit it by hand'
             raise ValueError(msg)
     return out
+
+
+def renamed(text: str, table: str, to: str) -> str:
+    """*text* with the ``[table]`` header renamed ``[to]``: its keys, its trailing comment and every other line kept."""
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if (m := _HEADER.match(line)) and m[1] == '[' and m[2] == table:
+            lines[i] = line[: m.start(2)] + to + line[m.end(2) :]
+    return ''.join(lines)
 
 
 def diff(before: str, after: str, path: str) -> str:
