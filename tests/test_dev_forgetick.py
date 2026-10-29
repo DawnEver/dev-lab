@@ -763,7 +763,7 @@ def test_a_repo_with_pull_requests_disabled_has_no_pr_candidates(server, tmp_pat
 
 
 def test_a_request_naming_no_full_sha_is_skipped_and_said_never_served(server, tmp_path: Path) -> None:
-    """A FLEET OUTAGE (2026-10-22): motronics-studio issue #4727 named ``sha = "3d27380859"`` -- ten hex digits.
+    """A FLEET OUTAGE (2026-10-22): consumer-a issue #4727 named ``sha = "3d27380859"`` -- ten hex digits.
 
     It became a candidate at sha ``''``, its statuses were read at ``GET .../statuses/`` (refused), and every
     host's tick of the repository exited 1. The one unreadable request is now SKIPPED and SAID, one line

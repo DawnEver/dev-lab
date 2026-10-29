@@ -239,14 +239,14 @@ class TestCrossover:
         """
         got = crossover(
             {
-                'ipm_uv_cummins_fea': (31901.0, 0.81),
-                'pmasynrm_uv_fea': (32572.0, 1.70),
-                'ipm_uv_fea': (35430.0, 0.78),
+                'case_a_alt_fea': (31901.0, 0.81),
+                'case_b_fea': (32572.0, 1.70),
+                'case_a_fea': (35430.0, 0.78),
             }
         )
 
         assert got.threshold is None
-        assert got.inversions == (('pmasynrm_uv_fea', 'ipm_uv_fea'),)
+        assert got.inversions == (('case_b_fea', 'case_a_fea'),)
         assert 'changes back' in got.reason
         assert 'dispatch on the wrong variable' in got.reason
 

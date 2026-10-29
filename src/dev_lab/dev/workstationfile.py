@@ -52,7 +52,7 @@ HEAVY: Final = tuple(sorted(CHECKS))
 
 
 #: The images whose running count is the JMAG seats in use: ONE per solve. The solver kernel family as the
-#: installation ships it (motronics ``hamilton/adapters/jmag/processes.py``, checked 2026-09-19 against
+#: installation ships it (a downstream JMAG adapter, checked 2026-09-19 against
 #: JMAG-Designer25.1). Not ``execsolver.exe`` -- it launches ``jam.exe``, so counting both counts one solve
 #: twice -- and not ``scheduler.exe`` or ``designer.exe``: a seat is a SOLVE, never an open Designer (user
 #: correction 2026-10-16).

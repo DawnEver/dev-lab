@@ -178,5 +178,5 @@ def test_a_home_relative_run_dir_keeps_its_home_and_quotes_the_rest() -> None:
     """A run dir recorded as ``~/ci/...``: quoted whole it reached the shell as ``'~/ci/...'`` (live 2026-10-26)."""
     assert remote_path('~/ci/trees/abc/.lab-hpc/run-1') == '"$HOME"/ci/trees/abc/.lab-hpc/run-1'
     assert remote_path("~/ci/it's here") == '"$HOME"/' + "'ci/it'\"'\"'s here'"
-    assert remote_path('/gpfs01/home/u/ci/run 1') == "'/gpfs01/home/u/ci/run 1'"
+    assert remote_path('/shared/home/u/ci/run 1') == "'/shared/home/u/ci/run 1'"
     assert remote_path('~user/ci') == "'~user/ci'"

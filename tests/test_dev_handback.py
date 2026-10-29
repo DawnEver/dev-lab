@@ -30,7 +30,7 @@ _INCIDENT = (
     'text',
     [
         _INCIDENT,
-        '! uv run motronics case run cases/ipm_uv',
+        '! uv run app case run cases/case_a',
         'Please run:\n\n```bash\npython -m dev_lab.dev.verify tests\n```',
         'You can run `git push origin lane/x` to publish it.',
         '\u8bf7\u5728\u7ec8\u7aef\u8fd0\u884c:\n```\npython -m dev_lab.dev.stoprun --pid 1\n```',

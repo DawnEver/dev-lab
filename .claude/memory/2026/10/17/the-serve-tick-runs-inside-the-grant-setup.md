@@ -5,7 +5,7 @@ created: 2026-10-17
 ---
 # The serve tick runs inside the grant setup (2026-10-17)
 
-- Incident (Ada ezztz@hpclogin02, the redeploy log of 2026-10-17, line 226 (evidence no longer available)): lane/serve-git (959f59f)
+- Incident (Ada user2@login02, the redeploy log of 2026-10-17, line 226 (evidence no longer available)): lane/serve-git (959f59f)
   found the EasyBuild git 2.42.0 (GCCcore-13.2.0) under the cluster software tree via
   `bash -lc '<setup>; command -v git'`, but run outside the module environment it fails with
   `error while loading shared libraries: libiconv.so.2`. The deploy refused, the old cron lines stayed, and

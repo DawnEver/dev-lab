@@ -160,7 +160,7 @@ def test_the_cli_retires_through_the_forge_door(monkeypatch, capsys) -> None:
 # opaque stable host id. A private repo's card is unchanged.
 
 _SEAT = 'ada/zz9acct'
-_HOME = '/gpfs01/home/zz9acct/artefacts'
+_HOME = '/shared/home/zz9acct/artefacts'
 
 
 def _identifying_card() -> HostCard:

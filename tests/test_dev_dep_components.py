@@ -1,6 +1,6 @@
 """A COMPONENT WHOSE TREE MOVED IS REINSTALLED ON EVERY SYNC -- derived from evidence, never remembered.
 
-INCIDENT (motronics, 2026-10-19): ``components/numerics-lab`` moved to a commit adding a symbol, its
+INCIDENT (consumer-a, 2026-10-19): ``components/numerics-lab`` moved to a commit adding a symbol, its
 ``uv.lock`` source is ``{ directory = ... }`` installed non-editable at an unchanged version string, and
 ``dep --sync``, ``--upgrade-package`` and ``--bootstrap`` all exited 0 leaving the OLD module installed. The
 door now stamps each ``[tool.dev_lab.components]`` package's tree (git HEAD, plus its diff when dirty)
