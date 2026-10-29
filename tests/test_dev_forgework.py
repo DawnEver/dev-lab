@@ -90,6 +90,13 @@ def test_github_com_selects_the_github_backend_and_any_other_host_the_gitea_one(
     assert backend_for(Forge('GitHub.com', 'o', 'r')) is GITHUB
 
 
+@pytest.mark.parametrize(('backend', 'file_form'), [(GITEA, 'src/commit'), (GITHUB, 'blob')])
+def test_each_backend_links_a_commit_and_a_file_at_a_commit_in_its_own_form(backend: object, file_form: str) -> None:
+    repo, sha = 'https://forge.example.org/o/r', 'a' * 40
+    assert backend.commit_url(repo, sha) == f'{repo}/commit/{sha}'
+    assert backend.file_url(repo, sha, 'd/x.py') == f'{repo}/{file_form}/{sha}/d/x.py'
+
+
 @pytest.mark.parametrize('remote', ['https://forge.example.org/o/r.git', 'https://github.com/o/r.git'])
 def test_the_token_is_the_git_credential_and_a_token_variable_is_never_read(tmp_path: Path, remote: str) -> None:
     """PLANTED CONTROL: the conventional token variables are set, the credential store is empty -- refused."""
