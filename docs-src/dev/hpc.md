@@ -119,16 +119,20 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
     region (`hpc.region.may_place`).
   - *Drain, not kill.* While a large task waits nothing new enters the region, so it empties within one
     movable wall. Running work is never cancelled. The session caps still apply on top.
-- **Research yields the verify accounts** (user ruling 2026-10-30, D103). A workstation session submits research
-  with `run build` on a grant's login node, then `python -m lab_commons.hpc submit -c <job.toml>` under its
-  `$LC_HPC_SESSION`, from a checkout whose forge carries the host cards. `plan`, `submit` and `retry` read the
-  affinity through the forge's reader (`lab_commons.hpc.affinity`, filled by `dev_lab.dev.forgeaffinity.research_affinity`):
-  the verify accounts are the cards showing `verify first` (each declared once on its own `[deploy] repos` row, see
-  [forge.md](forge.md)); one is BUSY while its live card holds a run or has a part it covers waiting.
-  - Research goes to the other accounts, by the rules above, even when a verify account is emptier.
-  - Only when they have no room is an IDLE verify account borrowed, and that array carries `--nice=1000`
-    (`affinity.NICE`), so verify jobs queued later start first. Nothing is cancelled or reserved.
-  - A busy verify account is never borrowed: the work waits on a research account (room 0), or is refused for room.
+- **Research and verify accounts never borrow from each other** (user ruling 2026-10-30), in either direction,
+  unless the user opts in. This is the one statement of the rule; [forge.md](forge.md#hpc-account-affinity) and
+  [hpc-from-a-workstation.md](hpc-from-a-workstation.md#which-account-takes-the-work) link here.
+  - *Verify accounts* are the host cards showing `verify first`, each declared once on its own `[deploy] repos`
+    row ([forge.md](forge.md#hpc-account-affinity)). `plan`, `submit` and `retry` read them through the forge's
+    reader (`lab_commons.hpc.affinity`, filled by `dev_lab.dev.forgeaffinity.research_affinity`).
+  - *Research side.* A job-file submit goes to the other accounts only, by the rules above, even when a verify
+    account is idle. Work they cannot take now waits there; nothing is cancelled or reserved.
+  - *Claim side.* A research seat never claims a verify part that a live verify card covers, however long it has
+    waited. With no live verify card at all nothing is deferred, so the forge never deadlocks.
+  - *The only opt-in* is the expiring allocation record:
+    `python -m dev_lab.dev.hpchost allocate --until 2026-10-31T09:00Z --borrow research->verify` (research may land
+    on a verify account) or `--borrow verify->research` (a research seat may claim a verify part). Both readers
+    honour it until `--until`; expired, cleared or absent, nothing is borrowed. `allocate --show` prints it.
   - No reader installed, an unreadable forge, or no card declaring `verify`: placement is unchanged. A public
     repository's opaque cards name no account, so they declare nothing here. `run submit` (the forge's own verify
     runs) never reads it.

@@ -31,9 +31,8 @@ independent. The mechanisms are stated once in [HPC clusters](./hpc.md); this pa
 ## Which account takes the work
 
 The account a job lands on follows the cluster's placement rules ([paged placement](./hpc.md#grants-the-machine-file)).
-An account whose deploy row declares `verify` produces the forge's verify parts first
-([the forge](./forge.md)). Research borrows such an account only while it is idle, and only at a lower
-Slurm priority (`--nice`), so the next verify job starts ahead of it. Nothing running is ever cancelled.
+A research job never lands on an account that produces the forge's verify parts, unless you opt in with
+`allocate --borrow research->verify --until <iso>` ([the rule and the opt-in](./hpc.md#grants-the-machine-file)).
 
 ## When it does not work
 
