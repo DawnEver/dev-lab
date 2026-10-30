@@ -54,7 +54,7 @@ packages = ["src/dev_lab"]
 
 [tool.uv.sources]
 # lab-commons follows its integration line on GitHub, its one home.
-lab-commons = { git = "https://github.com/DawnEver/lab-commons.git", branch = "integrate/main" }
+lab-commons = { git = "https://github.com/DawnEver/lab-commons.git" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.dev_lab.placement]
