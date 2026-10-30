@@ -14,7 +14,7 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev.branchprune import delete
+from dev_lab.dev.branchdelete import delete
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
 
