@@ -151,3 +151,41 @@ def test_the_render_is_a_stamp_then_json() -> None:
 
 def test_merge_replaces_a_non_table_and_merges_a_table() -> None:
     assert merge({'a': {'b': 1, 'c': [1]}}, {'a': {'c': [2]}}) == {'a': {'b': 1, 'c': [2]}}
+
+
+_HOSTED = """
+[tool.lab_commons.tests]
+resources = ["live"]
+
+[tool.dev_lab.parts]
+hosted = { live = { secrets = ["MODEL_KEY"], setup = "login --from-file -" } }
+
+[tool.dev_lab.ci."ci.yml"]
+"""
+
+
+def test_a_hosted_part_renders_its_own_push_only_job_and_only_its_setup_step_sees_the_secret(
+    tmp_path: Path, monkeypatch
+) -> None:
+    planted = 'sk-planted-value-never-rendered'
+    monkeypatch.setenv('MODEL_KEY', planted)
+    (tmp_path / 'pyproject.toml').write_text(_HOSTED, encoding='utf-8')
+    ci = workflows(tmp_path)['ci.yml']
+    job = ci['jobs']['part-live']
+    assert job['runs-on'] == 'ubuntu-latest'
+    assert job['if'] == "${{ github.event_name != 'pull_request' }}"
+    assert job['name'] == 'tests/live'
+    carrying = [step for step in job['steps'] if 'env' in step]
+    assert len(carrying) == 1
+    setup = carrying[0]
+    assert setup['env'] == {'MODEL_KEY': '${{ secrets.MODEL_KEY }}'}
+    assert setup['run'] == r"""printf '%s=%s\n' MODEL_KEY "$MODEL_KEY" | { login --from-file -; }"""
+    assert job['steps'][-1]['run'].endswith('jobparts produce live')
+    assert 'part-live' in ci['jobs']['absent-parts']['needs'], 'absent waits for it'
+    others = {name: render({'j': body}) for name, body in ci['jobs'].items() if name not in {'part-live', 'review'}}
+    assert all('MODEL_KEY' not in text for text in others.values()), 'no other job carries the secret'
+    assert planted not in render(ci), 'the render never prints a secret value'
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    assert not [name for name in workflows(tmp_path)['ci.yml']['jobs'] if name.startswith('part-')], (
+        'PLANTED CONTROL: nothing declared, no hosted job'
+    )

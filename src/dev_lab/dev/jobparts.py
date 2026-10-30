@@ -16,6 +16,17 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
   checkout derives that no job settled, so a job that died before posting -- or a part no hosted runner can
   produce -- reads red, never as nothing; merge-ready and promote then read every row (one source).
   :data:`ABSENT` is never a part's own description, so it is never read as a part.
+
+A PART FED BY A SECRET (user decision 2026-10-30). A part whose resource no hosted runner has can still run
+hosted when repository secrets supply it; the repo declares that ONCE, in its pyproject::
+
+    [tool.dev_lab.parts]
+    hosted = { live = { secrets = ["ANTHROPIC_API_KEY"], setup = "python -m ai_lab.auth login --from-file -" } }
+
+It gets ONE linux row, on a push or a dispatch only (as macos, D84), carrying its secrets' NAMES
+(:func:`hosted_parts`). The generic matrix job never runs it: :func:`hosted_jobs` renders it its own job, in which
+ONE setup step alone has the secrets in its environment and reads them on stdin as ``NAME=value`` lines -- never
+argv, never echoed -- before the part is produced. The render names a secret; it never holds a value.
 """
 
 from __future__ import annotations
@@ -23,7 +34,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -33,10 +46,11 @@ from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary
 from lab_commons.hpc.shell import parse_ids
 from lab_commons.log import emit
 
+from dev_lab.dev.family import declared_in
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.partrows import ROW_SEPARATOR
-from dev_lab.dev.platformparts import part_context, producer_argv
+from dev_lab.dev.platformparts import UndeclaredPart, part_context, producer_argv
 from dev_lab.dev.producer import producing
 from dev_lab.dev.unproduced import unproduced, unproduced_parts
 
@@ -48,7 +62,10 @@ if TYPE_CHECKING:
 __all__ = [
     'ABSENT',
     'HOSTED_RUNNERS',
+    'Hosted',
     'absent',
+    'hosted_jobs',
+    'hosted_parts',
     'main',
     'matrix',
     'produce',
@@ -65,6 +82,76 @@ PULL_REQUEST_SYSTEMS: Final = ('linux', 'windows')
 
 #: What an expected part no job settled says (``failure``): never a part's own description, so never a part.
 ABSENT: Final = 'absent: no job settled this part'
+
+#: A secret's name: all that ``${{ secrets.<NAME> }}`` and ``"$<NAME>"`` carry into a rendered workflow.
+_SECRET_NAME: Final = re.compile(r'[A-Z][A-Z0-9_]*')
+
+#: The ``if`` of a hosted part's job: a push or a dispatch, never a pull request (as macos, D84).
+_PUSH_ONLY: Final = "${{ github.event_name != 'pull_request' }}"
+
+
+@dataclass(frozen=True)
+class Hosted:
+    """A part run hosted because secrets supply its resource: their names, and the command taking them on stdin."""
+
+    secrets: tuple[str, ...]
+    setup: str
+
+
+def _malformed(name: str, entry: object, produced: set[str]) -> bool:
+    """Whether hosted *entry* of part *name* is not a produced resource with named secrets and a setup command."""
+    if name not in produced or not isinstance(entry, dict):
+        return True
+    secrets, setup = entry.get('secrets'), entry.get('setup')
+    named = isinstance(secrets, list) and bool(secrets)
+    named = named and all(isinstance(one, str) and _SECRET_NAME.fullmatch(one) for one in secrets)
+    return not named or not isinstance(setup, str) or not setup.strip()
+
+
+def hosted_parts(text: str) -> dict[str, Hosted]:
+    """``[tool.dev_lab.parts] hosted`` of pyproject *text*, by part; a malformed or unproduced one is refused."""
+    parts = declared_in(text, 'parts')
+    value = parts.get('hosted', {})
+    resources = set(read_vocabulary(text).resources)
+    produced = resources - set(parts.get('unproduced', []))
+    if not isinstance(value, dict) or any(_malformed(name, entry, produced) for name, entry in value.items()):
+        msg = (
+            f'[tool.dev_lab.parts] hosted = {value!r}: each a produced resource of {sorted(resources)} '
+            '= { secrets = ["UPPER_NAME", ...], setup = "<command reading NAME=value lines on stdin>" }'
+        )
+        raise UndeclaredPart(msg)
+    return {name: Hosted(tuple(entry['secrets']), entry['setup']) for name, entry in value.items()}
+
+
+def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dict[str, Any]:
+    """*workflow* with one ``part-<name>`` job per *declared* part, cut from its matrix ``part`` job. PURE.
+
+    The job is the ``part`` job at one part: push-only, on linux, its setup step inserted before the produce step
+    with the secrets in THAT step's environment only; ``absent-parts`` waits for it. A workflow without the
+    ``part`` job, or nothing declared, is returned as is.
+    """
+    jobs = workflow.get('jobs', {})
+    if not declared or 'part' not in jobs:
+        return workflow
+    template = json.dumps({key: value for key, value in jobs['part'].items() if key != 'strategy'})
+    added = {}
+    for name, part in sorted(declared.items()):
+        one = json.loads(template.replace('${{ matrix.part }}', name))
+        values = ' '.join(f'{secret} "${secret}"' for secret in part.secrets)
+        setup = {
+            'name': f'Set up tests/{name} from its secrets',
+            'run': f"printf '%s=%s\\n' {values} | {{ {part.setup}; }}",
+            'env': {secret: f'${{{{ secrets.{secret} }}}}' for secret in part.secrets},
+        }
+        steps = [*one['steps'][:-1], setup, one['steps'][-1]]
+        added[f'part-{name}'] = {**one, 'if': _PUSH_ONLY, 'runs-on': HOSTED_RUNNERS['linux'], 'steps': steps}
+    out = dict(jobs)
+    if 'absent-parts' in out:
+        needs = out['absent-parts'].get('needs', [])
+        needs = [needs] if isinstance(needs, str) else list(needs)
+        out['absent-parts'] = {**out['absent-parts'], 'needs': [*needs, *added]}
+    return {**workflow, 'jobs': {**out, **added}}
+
 
 #: The states a settled part reads back as.
 _SETTLED: Final = frozenset({'success', 'failure'})
@@ -100,8 +187,14 @@ def systems_for(event: str) -> tuple[str, ...]:
     return PULL_REQUEST_SYSTEMS if event == 'pull_request' else tuple(sorted(HOSTED_RUNNERS))
 
 
-def _rows(part: str, event: str) -> list[dict[str, Any]]:
-    """*part*'s matrix rows: one per OS of *event* when it runs hosted and names no OS, else its one runner."""
+def _rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str, Any]]:
+    """*part*'s matrix rows: one per OS of *event* when it runs hosted and names no OS, else its one runner.
+
+    A *declared* hosted part has one linux row carrying its secrets' names, and none on a pull request.
+    """
+    if part in declared:
+        row = {'part': part, 'runs-on': HOSTED_RUNNERS['linux'], 'secrets': list(declared[part].secrets)}
+        return [] if event == 'pull_request' else [row]
     home = runner_for(part)
     if not isinstance(home, str) or needs_of(part) & set(OS_NAMES.values()):
         return [{'part': part, 'runs-on': home}]
@@ -119,7 +212,8 @@ def matrix(
 
     A part needing a resource the checkout declares ``unproduced`` has no row (:mod:`dev_lab.dev.unproduced`).
     Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`_rows`).
-    *hosted* keeps only the rows a GitHub-hosted runner produces; :func:`absent` then names the rest.
+    *hosted* keeps only the rows the generic job produces on a GitHub-hosted runner -- a row carrying secrets has
+    its own job (:func:`hosted_jobs`) -- and :func:`absent` then names the rest.
     """
     pyproject = root / 'pyproject.toml'
     text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
@@ -128,8 +222,10 @@ def matrix(
     carrying = {name: set(collect(name)) for name in vocabulary.resources}
     derived = {BASE, *need_sets(ids, carrying).values()}
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
-    rows = [row for name in names for row in _rows(name, event)]
-    return {'include': [row for row in rows if not hosted or isinstance(row['runs-on'], str)]}
+    declared = hosted_parts(text)
+    rows = [row for name in names for row in _rows(name, event, declared)]
+    generic = [row for row in rows if isinstance(row['runs-on'], str) and 'secrets' not in row]
+    return {'include': generic if hosted else rows}
 
 
 def absent(client: Client, sha: str, expected: Mapping[str, Any]) -> list[str]:

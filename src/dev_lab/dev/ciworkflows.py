@@ -12,6 +12,9 @@ SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the 
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
 so the setup every job repeats has one source. ``_steps`` is never a workflow and never rendered.
 
+A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
+the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
+
 ``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift.
 """
 
@@ -26,6 +29,7 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 
 __all__ = [
     'BASE_PATH', 'RENDER_COMMAND', 'SHARED', 'STAMP', 'USE_STEPS', 'WORKFLOW_DIR', 'drift', 'expand', 'merge', 'render',
@@ -78,10 +82,14 @@ def workflows(root: Path) -> dict[str, dict[str, Any]]:
     """Every workflow *root* declares, by file name, with the base merged under the ones it names."""
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     pyproject = root / 'pyproject.toml'
-    data = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
-    declared = dict(declared_table(data, 'ci', {}))
+    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
+    declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
-    return {name: expand(merge(base.get(name, {}), layer), shared) for name, layer in sorted(declared.items())}
+    hosted = hosted_parts(text)
+    return {
+        name: hosted_jobs(expand(merge(base.get(name, {}), layer), shared), hosted)
+        for name, layer in sorted(declared.items())
+    }
 
 
 def render(workflow: dict[str, Any]) -> str:
