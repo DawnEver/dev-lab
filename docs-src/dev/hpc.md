@@ -119,6 +119,19 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
     region (`hpc.region.may_place`).
   - *Drain, not kill.* While a large task waits nothing new enters the region, so it empties within one
     movable wall. Running work is never cancelled. The session caps still apply on top.
+- **Research yields the verify accounts** (user ruling 2026-10-30, D103). A workstation session submits research
+  with `run build` on a grant's login node, then `python -m lab_commons.hpc submit -c <job.toml>` under its
+  `$LC_HPC_SESSION`, from a checkout whose forge carries the host cards. `plan`, `submit` and `retry` read the
+  affinity through the forge's reader (`lab_commons.hpc.affinity`, filled by `dev_lab.dev.forgeaffinity.research_affinity`):
+  the verify accounts are the cards showing `verify first` (each declared once on its own `[deploy] repos` row, see
+  [forge.md](forge.md)); one is BUSY while its live card holds a run or has a part it covers waiting.
+  - Research goes to the other accounts, by the rules above, even when a verify account is emptier.
+  - Only when they have no room is an IDLE verify account borrowed, and that array carries `--nice=1000`
+    (`affinity.NICE`), so verify jobs queued later start first. Nothing is cancelled or reserved.
+  - A busy verify account is never borrowed: the work waits on a research account (room 0), or is refused for room.
+  - No reader installed, an unreadable forge, or no card declaring `verify`: placement is unchanged. A public
+    repository's opaque cards name no account, so they declare nothing here. `run submit` (the forge's own verify
+    runs) never reads it.
 - Each tick the host publishes its supply, partitions and quota on its forge host card.
 
 ## Runs on the cluster
