@@ -31,6 +31,7 @@ from lab_commons.box.ledger import holdings
 from lab_commons.box.supply import Reading, room
 from lab_commons.compute import learned
 from lab_commons.compute.model import Demand, Resources
+from lab_commons.log import emit
 
 from dev_lab.dev.forgedemand import refresh_checkout
 from dev_lab.dev.platformparts import origin_url
@@ -191,7 +192,7 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     in :data:`UNENFORCED_PLATFORMS` (run unboxed).
     """
     if sys.platform in UNENFORCED_PLATFORMS:
-        sys.stderr.write(f'verify: box unenforced on {sys.platform}; the step runs unboxed\n')
+        emit(f'verify: box unenforced on {sys.platform}; the step runs unboxed', err=True)
         return argv, None
     if INSIDE_ENV in os.environ:
         return [*argv, *claimed_width(argv, os.environ.get(CPU_ENV), xdist=xdist_installed())], None
