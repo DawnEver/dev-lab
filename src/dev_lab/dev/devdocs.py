@@ -131,6 +131,11 @@ PAGES: Final[tuple[Page, ...]] = (
     ),
     Page('hpc', 'HPC clusters', 'A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records'),
     Page(
+        'hpc-from-a-workstation',
+        'Submitting research from a workstation',
+        "A session's own cluster jobs: reach, grants, build, submit, gather, and which account takes them",
+    ),
+    Page(
         'components',
         'Components',
         'A product mounts its engines as submodules: the table, the derived-file check, the bump loop',
