@@ -32,6 +32,7 @@ import json
 import re
 import tempfile
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
@@ -148,9 +149,19 @@ def own_base(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str
     return base
 
 
+def _whole(parts: Sequence[str], pattern: Sequence[str]) -> bool:
+    """Whether *parts* match *pattern* segment by segment: ``**`` spans any number of segments."""
+    if not pattern:
+        return not parts
+    if pattern[0] == '**':
+        return any(_whole(parts[i:], pattern[1:]) for i in range(len(parts) + 1))
+    return bool(parts) and fnmatchcase(parts[0], pattern[0]) and _whole(parts[1:], pattern[1:])
+
+
 def _matches(path: str, globs: Iterable[str]) -> bool:
-    pure = PurePosixPath(path)
-    return any(pure.full_match(glob) for glob in globs)
+    """Whole-path glob match (``PurePath.full_match`` semantics, which needs 3.13; this repo declares 3.12)."""
+    parts = path.split('/')
+    return any(_whole(parts, glob.split('/')) for glob in globs)
 
 
 def reviewable(path: str, derived: Iterable[str]) -> bool:

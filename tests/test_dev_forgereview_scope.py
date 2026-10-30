@@ -39,6 +39,7 @@ from dev_lab.dev.forgereview_scope import (
     lens_of,
     own_base,
     plan,
+    reviewable,
     reviewed_heads,
 )
 from dev_lab.dev.forgestatus import status_list
@@ -381,3 +382,13 @@ def test_a_delete_and_an_unrelated_add_cost_both(tmp_path: Path) -> None:
     scope = plan(work, 'origin/integrate/main', head, _WIDE, reviewed=[first])
     assert sum(one.size for one in scope.slices) > 2 * len(_BODY) * 0.9
     assert scope.moved == ()
+
+
+def test_a_derived_glob_matches_whole_paths_on_the_declared_minimum_python() -> None:
+    """``*`` stays in one segment, ``**`` spans any; no 3.13-only ``PurePath.full_match`` (CI row ran 3.12)."""
+    derived = ('docs/**/*.json', '*.lock')
+    assert not reviewable('docs/a/b/c.json', derived)
+    assert not reviewable('docs/c.json', derived)
+    assert not reviewable('uv.lock', derived)
+    assert reviewable('sub/uv.lock', derived)
+    assert reviewable('docs/a/c.py', derived)
