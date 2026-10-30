@@ -42,6 +42,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
@@ -73,13 +74,14 @@ from dev_lab.dev.reports import (
     MalformedAllowance,
     StepReport,
     declared_skips,
-    read_pytest,
     read_ruff,
+    read_stages,
     stale_declarations,
     vanished_shortfall,
 )
 from dev_lab.dev.runcache import cache_path, cached, remember
 from dev_lab.dev.selection import census_scope, is_targeted
+from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
@@ -89,6 +91,7 @@ from dev_lab.dev.verifybox import (
     boxed,
     ended_in_the_box,
     learn_ended,
+    serial_width,
 )
 
 __all__ = [
@@ -385,24 +388,27 @@ def run_verify(
             durations.LEDGER_ENV_VAR: env_key(env_manifest()),
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
         }
-        pytest = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *pytest_args]
+        pytest = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN, *pytest_args]
+        seen = path.with_suffix('.serial-seen')
         argv, record = boxed(root, pytest, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
-        code = _tee(argv, cwd=root, handle=handle, extra_env=stamp)
-    distillate = distil_log(path, banner=_PYTEST_BANNER)
-    learn_ended(root, pytest, record)
-    cut = ended_in_the_box(record)
+        codes = [_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'parallel', SEEN_ENV: str(seen)})]
+        learn_ended(root, pytest, record)
+        cut = ended_in_the_box(record)
+        if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
+            handle.write(SERIAL_BANNER)
+            argv, record = boxed(root, [*pytest, *serial_width()], queue_s=wait_s, outcome=seen.with_suffix('.json'))
+            codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
+            cut += ended_in_the_box(record)
+    stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]
+    stages += [distil_log(path, banner=SERIAL_BANNER) for _ in codes[1:]]
     complete_census, scope_refusal = census_scope(pytest_args)
-    report = read_pytest(distillate.text, returncode=code, allowed_skips=allowed, complete_skip_census=complete_census)
-    reports.append(
-        distillate.annotate(
-            StepReport(
-                name=report.name,
-                reported=report.reported,
-                failures=report.failures,
-                truncated=(*report.truncated, *scope_refusal, *vanished, *cut),
-            )
-        )
+    report = read_stages(
+        tuple((one.text, code) for one, code in zip(stages, codes, strict=True)),
+        allowed_skips=allowed,
+        complete_skip_census=complete_census,
     )
+    report = replace(report, truncated=(*report.truncated, *scope_refusal, *vanished, *cut))
+    reports.append(functools.reduce(lambda done, stage: stage.annotate(done), stages, report))
     return build_verdict(
         tuple(reports),
         tree=content_address(root, MEASURED_TARGETS),

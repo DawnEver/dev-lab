@@ -52,6 +52,7 @@ __all__ = [
     'selection_mem_gb',
     'selection_producer',
     'selection_workers',
+    'serial_width',
     'xdist_installed',
 ]
 
@@ -237,3 +238,12 @@ def ended_in_the_box(record: Path | None) -> tuple[str, ...]:
     if ended.killed:
         return (f'the box killed pytest past its declared memory or {SELECTION_WALL_S} s ({ended.reason})',)
     return ()
+
+
+def serial_width() -> list[str]:
+    """The ``-n 0`` the serial stage appends (:mod:`dev_lab.dev.serialpass`): last, so it wins over a configured width.
+
+    ``-n 0`` and not ``-p no:xdist``: a repository whose ``addopts`` carries ``-n`` would reject the flag without the
+    plugin. :func:`selection_workers` reads it as the caller's own width, so the claim is one core.
+    """
+    return ['-n', '0'] if xdist_installed() else []

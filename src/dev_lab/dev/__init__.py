@@ -139,6 +139,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   reached the VALUE instead, and ``migration_conflicts`` refuses a key in both waiver and registry.
 * :mod:`dev_lab.dev.verifybox` -- the verify door's box claim: a selection's pytest step runs in the
   box at a declared, enforced demand; a producer serve spawned is not boxed twice.
+* :mod:`dev_lab.dev.serialpass` -- the family's ``serial`` marker: a marked test runs alone in verify's
+  single-worker stage after the parallel one.
 * :mod:`dev_lab.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
 * :mod:`dev_lab.dev.lockwait` -- verify's ``--lock-wait``: a duration quantity, a bare number refused.

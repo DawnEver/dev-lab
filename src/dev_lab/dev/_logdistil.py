@@ -136,19 +136,22 @@ class Distillate:
         return replace(report, truncated=(*report.truncated, reason))
 
 
-def distil(lines: Iterable[str], *, banner: str) -> Distillate:
+def distil(lines: Iterable[str], *, banner: str, until: str = '') -> Distillate:
     """Reduce *lines* to the pytest half's parsable lines. Pure over an ITERABLE, so it never opens.
 
     The banner reset is the streaming equivalent of ``whole.rpartition(banner)[2]``, which is what
     this replaced: clearing on EVERY occurrence leaves exactly what followed the LAST one. It is
     matched INSIDE the line rather than against it, so a child that printed the banner with something
-    in front of it splits here exactly where ``rpartition`` split it.
+    in front of it splits here exactly where ``rpartition`` split it. A non-empty *until* ends the half at
+    the first line carrying it: the parallel stage's half ends where the serial stage's banner opens its own.
     """
-    marker = banner.rstrip('\n')
+    marker, end = banner.rstrip('\n'), until.rstrip('\n')
     kept: list[str] = []
     read = 0
     for raw in lines:
         line = raw
+        if end and end in line:
+            break
         if marker and marker in line:
             kept.clear()
             read = 0
@@ -161,11 +164,11 @@ def distil(lines: Iterable[str], *, banner: str) -> Distillate:
     return Distillate(text=''.join(kept), read=read, kept=len(kept))
 
 
-def distil_log(path: Path, *, banner: str) -> Distillate:
+def distil_log(path: Path, *, banner: str, until: str = '') -> Distillate:
     """:func:`distil` over the file at *path*, streamed -- one line resident at a time, never the log.
 
     ``errors='replace'`` matches both the whole-file read this replaced and the encoding ``_tee``
     wrote with, so a log that already survived a mis-decode is read here exactly as it was before.
     """
     with path.open('r', encoding='utf-8', errors='replace') as handle:
-        return distil(handle, banner=banner)
+        return distil(handle, banner=banner, until=until)

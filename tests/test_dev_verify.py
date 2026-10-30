@@ -45,7 +45,7 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.testcells import TestCell
 from lab_commons.outcomes import Cell, Conclusion, Record, Status
 
-from dev_lab.dev import forgerequest, localpart, platformparts, verify, verifybox
+from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox
 from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -648,7 +648,15 @@ class TestThePlantedControl:
         monkeypatch.setattr(verify, 'boxed', _unboxed)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path, selection)
-        expected_command = (sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *verify.OUTCOME_PLUGIN)
+        expected_command = (
+            sys.executable,
+            '-m',
+            'pytest',
+            *PYTEST_ARGS,
+            *LEDGER_PLUGIN,
+            *verify.OUTCOME_PLUGIN,
+            *serialpass.PLUGIN,
+        )
         assert commands[-1] == (*expected_command, *selection)
         assert verdict.selector.spec == ' '.join(('verify', *selection))
         assert verdict.result.outcome is expected

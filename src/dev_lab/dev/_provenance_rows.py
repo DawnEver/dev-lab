@@ -74,6 +74,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'lockpins': ('original',),
     'lockwait': ('original',),
     'test_outcomes': ('original',),
+    'serialpass': ('original',),
     'lanepolicy': ('original',),
     'platformparts': ('original',),
     'bypath': ('supersedes', 'scripts/gate/_by_path.py'),

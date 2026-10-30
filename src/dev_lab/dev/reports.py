@@ -82,6 +82,7 @@ __all__ = [
     'declared_skips',
     'read_pytest',
     'read_ruff',
+    'read_stages',
     'stale_declarations',
     'vanished_shortfall',
 ]
@@ -96,11 +97,14 @@ SKIP_CEILING: Final = 0.10
 #: pytest's documented exit codes, and what each one means for a PROOF. 0 and 1 are the only two
 #: that describe a run which reached its tests; every other one is a reason the run was cut short,
 #: and it is named rather than folded into "non-zero".
+#: pytest's exit when it collected nothing (everything deselected, or no test at all).
+_NOTHING_COLLECTED: Final = 5
+
 _PYTEST_EXITS: Final[dict[int, str]] = {
     2: 'pytest exit 2: the run was interrupted by the user or an internal condition',
     3: 'pytest exit 3: an internal error happened while running tests',
     4: 'pytest exit 4: pytest was misused, so the selection it ran is not the one asked for',
-    5: 'pytest exit 5: NO TESTS WERE COLLECTED, which is not the same as none failing',
+    _NOTHING_COLLECTED: 'pytest exit 5: NO TESTS WERE COLLECTED, which is not the same as none failing',
 }
 
 #: The words that mean a selected test PRODUCED an outcome. ``skipped`` and ``deselected`` are
@@ -251,17 +255,8 @@ def _skip_shortfall(
             f'skipped and not declared in [tool.dev_lab.verify] allowed_skips: {", ".join(undeclared)}. '
             f'A skip is a selected test that reported nothing; a known failure is an xfail with its residual.'
         )
-    stale = (
-        sorted(prefix for prefix in allowed if not any(site.startswith(prefix) for site in observed))
-        if complete_skip_census
-        else []
-    )
-    if stale:
-        reasons.append(
-            f'declared in allowed_skips and NOT skipped by this run: {", ".join(stale)}. Delete the '
-            f'entry in the same edit that un-skipped it -- a waiver nothing uses is a hole that reads '
-            f'as a decision.'
-        )
+    if complete_skip_census:
+        reasons.extend(_stale_skips(observed, allowed))
     accounted = sum(counts.values())
     if total_skipped and accounted and total_skipped / accounted > SKIP_CEILING:
         reasons.append(
@@ -270,6 +265,19 @@ def _skip_shortfall(
             f'holes and has become the way the suite is run'
         )
     return tuple(reasons)
+
+
+def _stale_skips(observed: set[str], allowed: tuple[str, ...]) -> tuple[str, ...]:
+    """The STALE side of the skip ratchet over the *observed* skip sites of a complete census."""
+    stale = sorted(prefix for prefix in allowed if not any(site.startswith(prefix) for site in observed))
+    if not stale:
+        return ()
+    reason = (
+        f'declared in allowed_skips and NOT skipped by this run: {", ".join(stale)}. Delete the '
+        f'entry in the same edit that un-skipped it -- a waiver nothing uses is a hole that reads '
+        f'as a decision.'
+    )
+    return (reason,)
 
 
 def stale_declarations(root: Path, allowed: tuple[str, ...]) -> tuple[str, ...]:
@@ -433,3 +441,39 @@ def read_pytest(
     if truncated:
         return StepReport(name='pytest', truncated=tuple(dict.fromkeys(truncated)))
     return StepReport(name='pytest', reported=('pytest', *failures), failures=failures)
+
+
+def read_stages(
+    stages: tuple[tuple[str, int], ...], *, allowed_skips: tuple[str, ...] = (), complete_skip_census: bool = True
+) -> StepReport:
+    """ONE pytest report over the selection's stages (:mod:`dev_lab.dev.serialpass`): ``(text, returncode)`` each.
+
+    A lone stage is :func:`read_pytest` exactly. Split, each stage is read on its own -- a stage that ran
+    nothing (exit 5, no outcome) is dropped while another ran, since the split emptied it and not the
+    selection -- and the reports are unioned. The STALE skip side needs the whole census, so it is judged
+    once over every stage's skips rather than per stage, where each half would call the other's skips stale.
+    """
+    if len(stages) == 1:
+        text, code = stages[0]
+        return read_pytest(
+            text, returncode=code, allowed_skips=allowed_skips, complete_skip_census=complete_skip_census
+        )
+    ran = [(text, code) for text, code in stages if not _ran_nothing(text, code)] or list(stages[:1])
+    reports = [
+        read_pytest(text, returncode=code, allowed_skips=allowed_skips, complete_skip_census=False)
+        for text, code in ran
+    ]
+    observed = {node.replace('\\', '/') for text, _ in ran for node in _SKIPPED.findall(text)}
+    allowed = tuple(prefix.replace('\\', '/') for prefix in allowed_skips)
+    stale = _stale_skips(observed, allowed) if complete_skip_census else ()
+    truncated = tuple(dict.fromkeys([*(r for one in reports for r in one.truncated), *stale]))
+    if truncated:
+        return StepReport(name='pytest', truncated=truncated)
+    failures = tuple(dict.fromkeys(f for one in reports for f in one.failures))
+    return StepReport(name='pytest', reported=('pytest', *failures), failures=failures)
+
+
+def _ran_nothing(text: str, returncode: int) -> bool:
+    """A stage pytest exited 5 from with no outcome in its summary: everything it collected was deselected."""
+    counts = summary_counts(text) or {}
+    return returncode == _NOTHING_COLLECTED and not any(counts.get(word) for word in _OUTCOME_WORDS)
