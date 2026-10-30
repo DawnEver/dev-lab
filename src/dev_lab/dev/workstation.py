@@ -77,7 +77,7 @@ from dev_lab.dev.forgealarm import RUN, Alarm, sound
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv, venv_python
+from dev_lab.dev.hostrefresh import ENV_STAMP, Moved, follow, network, read, refresh, sync_venv, venv_python
 from dev_lab.dev.hpchost.spec import KIT
 from dev_lab.dev.hpchost.steps import Step, Tools
 from dev_lab.dev.netverb import run_network_verb
@@ -405,6 +405,13 @@ def _stand_down(tools: Programs, root: Path, repos: Sequence[str], why: str) -> 
     return 0
 
 
+def _kit_at(git: Sequence[str], kit: Path) -> tuple[str, str]:
+    """What the kit's code is: its HEAD and the env key its venv was last synced at."""
+    stamp = kit / '.venv' / ENV_STAMP
+    head = read([*git, '-C', str(kit), 'rev-parse', 'HEAD']).stdout.strip()
+    return head, stamp.read_text(encoding='utf-8') if stamp.is_file() else ''
+
+
 def serve(
     *,
     run: Callable[..., Any] = _door.run,
@@ -425,6 +432,11 @@ def serve(
     own; a lane whose serve ended serves again *period_s* later (the ``[schedule] tick_minutes``) while any
     other lane's serve still runs, so its card keeps ticking and its queue keeps being claimed against the
     one box ledger. dev-lab is never refreshed again inside one call: the other lanes run its code.
+
+    A MOVED KIT ENDS THE TICK (incident 2026-10-30: G served a day on a kit that still gated merges on a
+    retired parts PASS). The kit is refreshed before any lane; when its HEAD or venv moved, this process is
+    the OLD code, so it serves nothing and exits 0 -- the Task's next run starts on the new kit. A kit that
+    cannot refresh (a dirty checkout is never touched) sounds a ``run`` alarm naming it; the others serve.
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
     table, tools = section('serve'), programs or Programs()
@@ -444,6 +456,9 @@ def serve(
         emit(f'[serve] {name}', flush=True)
         if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
             emit(f'[serve] {name} released, not served this tick: {why}', err=True)
+            if name == KIT:
+                url = read([*tools.git, '-C', str(checkout), 'remote', 'get-url', 'origin']).stdout.strip()
+                tools.alarm(Alarm(RUN, url, f'serve kit {checkout} cannot refresh; this host runs an old kit', why))
             return 2
         # the serving kit's own shims follow it (plan R1): kept current by the machine, never by hand
         if name == KIT and (rc := _hooks(step, tools, checkout, name)):
@@ -456,9 +471,16 @@ def serve(
             return 0
         if why:
             return _stand_down(tools, root, repos, why)
-        # the kit is refreshed every tick whether or not it is served (ruling 2026-10-29); served, its lane does it
-        kit_rc = 0 if KIT in repos else refreshed(KIT)
-        return max(kit_rc, serve_lanes(repos, refreshed, serving(root, run, out), period_s=period_s))
+        # the kit is refreshed every tick, served or not (ruling 2026-10-29), and before any lane
+        kit = servetask.checkout(tools.home, KIT)
+        before = _kit_at(tools.git, kit)
+        kit_rc = refreshed(KIT)
+        if _kit_at(tools.git, kit) != before:
+            emit(f'[serve] {KIT} moved; this process is the old kit, so the next Task run serves', flush=True)
+            return kit_rc
+        lanes = [name for name in repos if not (name == KIT and kit_rc)]
+        fresh = lambda name: 0 if name == KIT else refreshed(name)  # noqa: E731
+        return max(kit_rc, serve_lanes(lanes, fresh, serving(root, run, out), period_s=period_s))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

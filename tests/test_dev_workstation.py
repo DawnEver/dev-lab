@@ -316,7 +316,8 @@ def test_the_kit_is_refreshed_every_tick_even_when_it_is_not_served(box: Box, tm
     worst, ran = _serve(box, tmp_path)
     assert worst == 0
     assert (kit / '.git' / 'HEAD_SHA').read_text() == 'b' * 40, 'the unserved kit is fast-forwarded by the tick'
-    assert [cwd.name for _, cwd in ran] == ['alpha'], 'only the declared repo is served'
+    assert ran == [], 'the moved kit defers this tick to the next Task run'
+    assert [cwd.name for _, cwd in _serve(box, tmp_path)[1]] == ['alpha'], 'only the declared repo is served'
 
 
 def test_a_bad_capability_is_refused_by_name() -> None:
@@ -680,8 +681,8 @@ def test_the_kits_own_venv_is_resynced_when_its_lock_moves_before_any_other_repo
         return _Done(0)
 
     assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
-    synced = box.calls().index(f'bootstrap {kit}', seen)
-    assert synced < min(served.values()), 'the kit venv is synced before any lane serves'
+    assert f'bootstrap {kit}' in box.calls()[seen:], 'the kit venv is synced'
+    assert served == {}, 'and no lane serves on the old code: the next Task run does'
     again = len(box.calls())
     assert _serve(box, tmp_path)[0] == 0
     assert f'bootstrap {kit}' not in box.calls()[again:], 'PLANTED CONTROL: an unmoved lock syncs nothing'
@@ -785,3 +786,46 @@ def test_the_docs_template_is_the_profile_rendered_never_a_hand_copy() -> None:
     assert [b['role'] for b in blocks] == ['light'], 'the page carries the one light template'
     for block in blocks:
         assert block['body'] == workstationfile.template(block['role'], block['repos'].split(','))
+
+
+def test_a_behind_kit_is_fast_forwarded_and_the_tick_defers_to_the_next_run(box: Box, tmp_path: Path) -> None:
+    """Incident 2026-10-30: G's serve never moved its own kit, so it merged by a gate dev-lab had retired.
+
+    The tick fast-forwards the kit and then serves NOTHING: the running process is the old code, and the next
+    Task run starts on the new. PLANTED CONTROL: that next tick, its kit current, serves every repo.
+    """
+    _serving(box)
+    kit = box.root / 'dev-lab'
+    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
+    worst, ran = _serve(box, tmp_path)
+    assert (kit / '.git' / 'HEAD_SHA').read_text() == 'b' * 40, 'the behind kit is fast-forwarded'
+    assert (worst, ran) == (0, []), 'the tick defers: nothing is served on the old code'
+    worst, ran = _serve(box, tmp_path)
+    assert worst == 0
+    assert sorted(cwd.name for _, cwd in ran) == ['alpha', 'beta', 'dev-lab'], 'a current kit serves normally'
+
+
+def test_a_dirty_kit_is_never_touched_and_an_alarm_names_it(box: Box, tmp_path: Path) -> None:
+    """A dirty kit checkout is refused, never fetched or moved, and an alarm names it; the other repos serve."""
+    _serving(box)
+    kit = box.root / 'dev-lab'
+    (kit / '.git' / 'DIRTY').touch()
+    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
+    alarms: list[Alarm] = []
+    seen = len(box.calls())
+    programs = replace(box.programs, alarm=alarms.append)
+    ran: list[str] = []
+    worst = workstation.serve(
+        run=lambda _a, *, cwd, **_k: ran.append(cwd.name) or _Done(0), lock=tmp_path / 'l', programs=programs
+    )
+    assert worst == 2
+    assert [c for c in _changes(box.calls()[seen:]) if str(kit) in c] == [], 'the dirty kit is never touched'
+    assert (kit / '.git' / 'HEAD_SHA').read_text() == 'a' * 40
+    assert len(alarms) == 1
+    assert str(kit) in alarms[0].subject
+    assert 'local changes' in alarms[0].body
+    assert sorted(ran) == ['alpha', 'beta'], 'the other repos still serve; the dirty kit is not served'
+    (kit / '.git' / 'DIRTY').unlink()
+    alarms.clear()
+    assert workstation.serve(run=lambda *_a, **_k: _Done(0), lock=tmp_path / 'l', programs=programs) == 0
+    assert alarms == [], 'PLANTED CONTROL: a clean kit raises no alarm'
