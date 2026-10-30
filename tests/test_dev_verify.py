@@ -1190,6 +1190,10 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     finally:
         holder.kill()
         holder.wait(timeout=30)
+    if sys.platform in verifybox.UNENFORCED_PLATFORMS:  # no enforcer: the step runs unboxed, held box or not
+        assert 'box unenforced' in done.stderr, done.stdout + done.stderr
+        assert done.returncode != ProducerExit.INCONCLUSIVE, 'an unenforced box cannot hold the step'
+        return
     assert done.returncode == ProducerExit.INCONCLUSIVE, done.stdout + done.stderr
     assert 'this box is held and nothing was measured' in done.stderr
     assert 'planted-holder' in done.stderr, 'the refusal names the holder'
@@ -1252,6 +1256,7 @@ def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool, free_
     monkeypatch.setattr(verifybox, 'free_room', lambda size: Resources(cpu=size.cpu, mem_gb=free_gb))
     monkeypatch.setattr(verifybox, 'xdist_installed', lambda: xdist)
     monkeypatch.setattr(verifybox, 'refresh_checkout', lambda _root: 0)  # no forge in a unit test
+    monkeypatch.setattr(verifybox, 'UNENFORCED_PLATFORMS', frozenset())  # the box logic, on any host OS
 
 
 def _claimed(argv: list[str]) -> tuple[str, list[str]]:
@@ -1276,10 +1281,10 @@ def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(
 def test_a_platform_with_no_box_enforcer_runs_its_step_unboxed_and_says_so(monkeypatch, capsys) -> None:
     """No box enforcer on macOS (``lab_commons.box`` refuses there): the step runs as given, judged by pytest."""
     _boxed_on(monkeypatch, 2.0, xdist=True)
-    monkeypatch.setattr(verifybox.sys, 'platform', 'darwin')
+    monkeypatch.setattr(verifybox, 'UNENFORCED_PLATFORMS', frozenset({sys.platform}))
     assert verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json')) == (['py'], None)
     assert 'unenforced' in capsys.readouterr().err
-    monkeypatch.setattr(verifybox.sys, 'platform', 'win32')
+    monkeypatch.setattr(verifybox, 'UNENFORCED_PLATFORMS', frozenset())
     assert verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json'))[1] == Path('o.json'), (
         'PLANTED CONTROL: an enforced platform is boxed'
     )
