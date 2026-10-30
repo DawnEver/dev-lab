@@ -27,6 +27,7 @@ from lab_commons.hpc import run as hpc_run
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Config
+from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.grants import SESSION_ENV, Grant, Machine, Session
 from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NoRoom
@@ -667,6 +668,45 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     post = store.posts[-1]
     assert post['status'] == 'error'
     assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
+
+
+def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_failure_is_retried(
+    home: Path, monkeypatch
+) -> None:
+    """Ada 2026-10-30: adb3e21b88e2 held ``publishing`` every tick, alarming "cannot advance".
+
+    Its tree declares ``[tool.lab_commons.areas]``, which this kit refuses. That is fixed AT THE SHA: no retry
+    can publish it, so the run settles -- released inconclusive naming the cause, dropped, one alarm.
+    PLANTED CONTROL: a transient publish failure (the forge unreachable) keeps the run for the next tick.
+    """
+    store, slurm = _Store(), _Slurm(home / 'r')
+    slurm.done = True
+
+    def unreachable(_root: Path, _sha: str) -> str:
+        msg = 'forge unreachable'
+        raise OSError(msg)
+
+    monkeypatch.setattr(forgerun, 'pyproject_at', unreachable)
+    _start(home, store)
+    with pytest.raises(OSError, match='unreachable'):
+        _tick(store, slurm)
+    (kept,) = forgerunstate.live('https://f/o/r.git')
+    assert kept.phase == forgerunstate.GATHERED, 'a transient failure leaves the run to be retried'
+
+    cause = '[tool.lab_commons.areas] is retired: declare it as [tool.dev_lab.areas]'
+
+    def retired(_root: Path, _sha: str) -> str:
+        raise RetiredTable(cause)
+
+    alarms: list[Alarm] = []
+    monkeypatch.setattr(forgerun, 'pyproject_at', retired)
+    assert _tick(store, slurm, alarms=alarms) is None
+    assert forgerunstate.live('https://f/o/r.git') == (), 'settled: the host is free'
+    assert [a.kind for a in alarms] == [RUN]
+    post = store.posts[-1]
+    assert post['status'] == 'error'
+    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
+    assert 'tool.lab_commons.areas' in post['description']
 
 
 def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sha_is_the_tip(

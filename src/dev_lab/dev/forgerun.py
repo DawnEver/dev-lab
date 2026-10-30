@@ -28,7 +28,10 @@ A RUN NOTHING MORE WILL COME OF SETTLES, ONCE (:func:`_settle`). A ``submitted``
 state and no job of its name never ran; one whose jobs ended without a record never will have one. Each
 is released with its reason on record and its file dropped -- one alarm, never one per tick (Ada,
 2026-10-17: two femm runs re-alarmed "ended without a record" every tick). A run that never ran is
-released RETRYABLE while its sha is its ref's tip, else settled as superseded.
+released RETRYABLE while its sha is its ref's tip, else settled as superseded. So is a gathered run whose
+OWN TREE refuses to publish (a retired ``[tool.lab_commons]`` table at its sha): no retry changes the sha,
+so it is released inconclusive naming the cause (Ada, 2026-10-30: adb3e21b88e2 held ``publishing`` every
+tick). A transient failure (the forge, the network, an outdated kit on this host) still waits and retries.
 
 INTENT BEFORE ACTION (design D19). The run file says ``submitting`` -- fsynced -- BEFORE ``sbatch`` is
 called, so a crash between the submit and the run state ``hpc`` writes after it is never an orphan: jobs of
@@ -84,6 +87,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
+from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.tree import NotSubmitted
 
@@ -177,7 +181,7 @@ def advance(
             run = _ship(root, run, client=client, cluster=cluster, say=say, tag=tag)
             say(publish(root, Path(run.record), client=client, ref=run.ref, sha=run.sha, platform=run.platform))
             run = forgerunpost.step(run, phase=PUBLISHED)
-    except (MissingOutput, NotSubmitted, PartRefusal) as why:
+    except (MissingOutput, NotSubmitted, PartRefusal, RetiredTable) as why:
         say(f'{tag}: {why}')
         forgerunpost.release(client, run, forgerunpost.release_reason_for(run, why, alarm), say)
         drop(run)
