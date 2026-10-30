@@ -1273,6 +1273,18 @@ def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(
     assert reboxed == (['py'], None), 'PLANTED CONTROL: a boxed tree is not reboxed'
 
 
+def test_a_platform_with_no_box_enforcer_runs_its_step_unboxed_and_says_so(monkeypatch, capsys) -> None:
+    """No box enforcer on macOS (``lab_commons.box`` refuses there): the step runs as given, judged by pytest."""
+    _boxed_on(monkeypatch, 2.0, xdist=True)
+    monkeypatch.setattr(verifybox.sys, 'platform', 'darwin')
+    assert verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json')) == (['py'], None)
+    assert 'unenforced' in capsys.readouterr().err
+    monkeypatch.setattr(verifybox.sys, 'platform', 'win32')
+    assert verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json'))[1] == Path('o.json'), (
+        'PLANTED CONTROL: an enforced platform is boxed'
+    )
+
+
 @pytest.mark.parametrize(
     ('xdist', 'given', 'cores', 'runs'),
     [

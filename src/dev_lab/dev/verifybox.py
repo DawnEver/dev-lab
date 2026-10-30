@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
@@ -38,6 +39,7 @@ __all__ = [
     'MEASURE_WAIT_S',
     'SELECTION_CPU',
     'SELECTION_WALL_S',
+    'UNENFORCED_PLATFORMS',
     'WAIT_S',
     'boxed',
     'claimed_width',
@@ -58,6 +60,11 @@ MEASURE_WAIT_S: Final = 60.0
 
 #: The ceiling on the PRODUCER's wait for its environment seat, in seconds (its box claim is serve's).
 WAIT_S: Final = 1800.0
+
+#: The platforms ``lab_commons.box`` has no enforcer on (it refuses there), where a selection runs UNBOXED:
+#: no claim, no ledger row, no kill, its width the repo's own, judged by pytest's exit alone. Only the macOS
+#: CI row lands here, and it runs on push only (D84) on a single-tenant hosted VM with no ledger to share.
+UNENFORCED_PLATFORMS: Final = frozenset({'darwin'})
 
 #: The pytest-xdist workers a selection runs at most when its caller names no width.
 SELECTION_CPU: Final = 4
@@ -180,8 +187,12 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     """*argv* run in the box at :func:`selection_demand` of the workers it runs, and its record.
 
     The ``-n`` it appends and the cores it declares are ONE number (:func:`selection_workers`). The record
-    is *outcome* when the box runs it, ``None`` for a tree the box already holds (not reboxed).
+    is *outcome* when the box runs it, ``None`` for a tree the box already holds (not reboxed) or a platform
+    in :data:`UNENFORCED_PLATFORMS` (run unboxed).
     """
+    if sys.platform in UNENFORCED_PLATFORMS:
+        sys.stderr.write(f'verify: box unenforced on {sys.platform}; the step runs unboxed\n')
+        return argv, None
     if INSIDE_ENV in os.environ:
         return [*argv, *claimed_width(argv, os.environ.get(CPU_ENV), xdist=xdist_installed())], None
     size = Capacity.read()
