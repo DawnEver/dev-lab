@@ -38,7 +38,7 @@ from lab_commons.hpc.config import Cost
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import forgeaffinity, forgeproduce, forgerounds, forgetick
+from dev_lab.dev import forgeproduce, forgerounds, forgetick
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeaffinity import DEFERRED
 from dev_lab.dev.forgeclaim import (
@@ -1340,21 +1340,18 @@ def test_a_docs_only_head_on_a_running_head_waits_for_it_and_is_no_idle_work(ser
     assert head not in {w.sha for w in report.pending}
 
 
-#: Each case: this seat's own affinity, what the one verify card v1 leaves waiting, and whether this seat claims.
+#: Each case: this seat's own affinity, whether the user opted verify->research in, and whether this seat claims.
 _AFFINITY_CASES = {
-    'affined-claims-at-once': (('tests/*',), {}, True),
-    'research-defers-in-the-grace': ((), {}, False),
-    'backlog-behind-saturated-verify-claims-early': ((), {'x': f'{NOT_ADMITTED}: lacking cpu'}, True),
+    'affined-claims-at-once': (('tests/*',), False, True),
+    'research-never-claims-it': ((), False, False),
+    'research-claims-it-by-the-opt-in': ((), True, True),
 }
 
 
 @pytest.mark.parametrize('case', list(_AFFINITY_CASES))
-def test_a_cluster_seat_claims_a_verify_part_by_the_declared_affinity(
-    server, tmp_path: Path, case: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """User ruling 2026-10-30: a verify account claims at once; a research account waits out the grace."""
-    mine, v1_waits, claimed = _AFFINITY_CASES[case]
-    monkeypatch.setattr(forgeaffinity, 'BACKLOG', 1)  # this origin has one head: one waiting part is the backlog
+def test_a_cluster_seat_claims_a_verify_part_by_the_declared_affinity(server, tmp_path: Path, case: str) -> None:
+    """User ruling 2026-10-30: a verify account claims at once; a research account only by the user's opt-in."""
+    mine, borrow, claimed = _AFFINITY_CASES[case]
     repo, tips = _origin(tmp_path)
     sha = _declare(
         repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
@@ -1363,9 +1360,8 @@ def test_a_cluster_seat_claims_a_verify_part_by_the_declared_affinity(
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me)]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
-    # the head is younger than the grace on the forge's clock: only affinity, or a backlog behind v1, claims it
-    v1 = HostCard('ada/v1', 'bot', 'linux', NOW.isoformat(), waiting=v1_waits, verify=('tests/*',))
-    report = _tick(repo, server, seat=SEAT, host='linux', verify=mine, warm_here=True, cards=[v1])
+    v1 = HostCard('ada/v1', 'bot', 'linux', NOW.isoformat(), verify=('tests/*',))
+    report = _tick(repo, server, seat=SEAT, host='linux', verify=mine, borrow=borrow, cards=[v1])
     assert bool(report.claimed) is claimed
     if not claimed:
         assert report.queue[0].blocked.startswith(DEFERRED)
