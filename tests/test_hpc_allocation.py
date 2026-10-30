@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from lab_commons.hpc.allocation import READER, RECORD, parse
+from lab_commons.hpc.allocation import READER, RECORD, VERIFY_BORROWS_RESEARCH, borrowing, parse
 
 from dev_lab.dev import forgerecords, hpchost
 from dev_lab.dev.hpchost import allocate as verb
@@ -57,6 +57,19 @@ def test_allocate_writes_shows_and_clears_the_one_record(
     # Planted control: shown with nothing stored, it says the share is derived.
     assert hpchost.main(['allocate', '--show']) == 0
     assert 'derived' in capsys.readouterr().out
+
+
+def test_allocate_opts_one_borrow_direction_in_until_it_expires(monkeypatch: pytest.MonkeyPatch) -> None:
+    """User ruling 2026-10-30: research and verify accounts borrow nothing by default; this record is the opt-in."""
+    store = _Store()
+    monkeypatch.setattr(verb, 'allocation_store', lambda: store)
+    until = (datetime.now(UTC) + timedelta(days=1)).replace(minute=0, second=0, microsecond=0)
+    assert hpchost.main(['allocate', '--until', until.strftime('%Y-%m-%dT%H:%MZ'), '--borrow', 'verify->research']) == 0
+    assert borrowing(store.text, now=datetime.now(UTC)) == {VERIFY_BORROWS_RESEARCH}
+    assert borrowing(store.text, now=until) == frozenset(), 'an expired opt-in is ignored'
+    assert borrowing(None, now=datetime.now(UTC)) == frozenset(), 'PLANTED CONTROL: no record borrows nothing'
+    with pytest.raises(SystemExit):
+        hpchost.main(['allocate', '--until', until.strftime('%Y-%m-%dT%H:%MZ'), '--borrow', 'research->box'])
 
 
 def test_allocate_refuses_a_past_expiry_and_a_naive_time(monkeypatch: pytest.MonkeyPatch) -> None:

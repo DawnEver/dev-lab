@@ -418,34 +418,20 @@ repos = [
 ```
 
 Its tick reads the row and publishes `verify` on its host card (`verify first: tests/*`), so every other seat learns
-the affined accounts, and whether they are free, from the cards it already reads. No account name is written in
-dev-lab. The timings are stated once, as `forgeaffinity` constants: `GRACE` 20 min, `COLD` 10 min, `WARM_FOR`
-24 h, `BACKLOG` 2 parts.
+the affined accounts from the cards it already reads. No account name is written in dev-lab.
 
 On a cluster seat only (a workstation and a request are never gated):
 
 - An affined seat orders a covered part before every other candidate and claims it at once. This is OR'd into its
   `[priority]`, which stays as each machine file declares it.
-- Any other seat (the research accounts) defers a part some LIVE affined card covers. The part waits as
-  `deferred to the verify accounts` until it has been claimable (`Candidate.since`) for `GRACE`. It is claimed at
-  once instead when `BACKLOG` covered parts are claimable and every live affined card is SATURATED, meaning it
-  leaves a part `not admitted`. With no live affined card nothing is deferred. A deferred part is not idle work,
-  so it raises no idle alarm.
-- CACHE AFFINITY. A deferring seat that is WARM for the repo claims at `GRACE`. Warm means it finished a run of
-  the repo within `WARM_FOR`, read off the last write of its learned-demand table. A COLD seat waits `COLD`
-  longer: 20 min against 30. No seat reads another's cache, so the preference is a stagger in time.
+- Any other seat (the research accounts) never claims a part some LIVE affined card covers: it waits as
+  `deferred to the verify accounts`. That is the claim side of the no-borrow rule; the rule, its no-live-card
+  exception and its one opt-in (`allocate --borrow verify->research`) are stated once in
+  [hpc.md](hpc.md#grants-the-machine-file). A deferred part is not idle work, so it raises no idle alarm.
 
 Picking it up: the code arrives with each seat's dev-lab rebuild on its cron tick. The `verify` key arrives when it
 is added to the affined accounts' own `[deploy]` rows. Until then no card declares an affinity, and every seat
 claims as before.
-
-REVERSE BORROWING. A verify account with no verify part waiting is free for research. On a cluster, research is
-not forge work (a seat runs no request): it is submitted by hand or by a campaign script. So borrowing means
-submitting that job under the verify account's own login, tagged with the campaign's `LC_HPC_SESSION`. The verify
-part keeps precedence where each side queues. In the forge, its claim is ordered first. In Slurm, a borrowed job
-is submitted with `sbatch --nice=1000`, so a forge job submitted later starts ahead of it. Nothing is preempted: a
-borrowed job that is already RUNNING keeps its cores until it ends. So borrow with a wall limit you accept as the
-verify part's delay.
 
 ### Admission
 

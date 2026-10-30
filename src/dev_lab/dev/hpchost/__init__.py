@@ -9,8 +9,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   :mod:`~dev_lab.dev.hpchost.steps`.
 * ``tick <repo>...`` (:mod:`~dev_lab.dev.hpchost.tick`) is one cron tick: the host refreshes the kit (this
   package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's checkout.
-* ``allocate --until <iso> name=cpus/mem_gb ... | --show | --clear`` (:mod:`~dev_lab.dev.hpchost.allocate`)
-  writes, prints or deletes the ONE expiring allocation record on the forge
+* ``allocate --until <iso> [name=cpus/mem_gb ...] [--borrow <direction>] | --show | --clear``
+  (:mod:`~dev_lab.dev.hpchost.allocate`) writes, prints or deletes the ONE expiring allocation record on the forge
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
 
 * ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpchost.fleet`) starts, detached over ssh,
