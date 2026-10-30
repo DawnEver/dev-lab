@@ -675,7 +675,7 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
 ) -> None:
     """Ada 2026-10-30: adb3e21b88e2 held ``publishing`` every tick, alarming "cannot advance".
 
-    Its tree declares ``[tool.lab_commons.areas]``, which this kit refuses. That is fixed AT THE SHA: no retry
+    Its tree declares a table this kit retired, which it refuses. That is fixed AT THE SHA: no retry
     can publish it, so the run settles -- released inconclusive naming the cause, dropped, one alarm.
     PLANTED CONTROL: a transient publish failure (the forge unreachable) keeps the run for the next tick.
     """
@@ -693,7 +693,7 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
     (kept,) = forgerunstate.live('https://f/o/r.git')
     assert kept.phase == forgerunstate.GATHERED, 'a transient failure leaves the run to be retried'
 
-    cause = '[tool.lab_commons.areas] is retired: declare it as [tool.dev_lab.areas]'
+    cause = 'a retired table: declare it under its new namespace'
 
     def retired(_root: Path, _sha: str) -> str:
         raise RetiredTable(cause)
@@ -706,7 +706,7 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
     post = store.posts[-1]
     assert post['status'] == 'error'
     assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
-    assert 'tool.lab_commons.areas' in post['description']
+    assert cause in post['description']
 
 
 def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sha_is_the_tip(
