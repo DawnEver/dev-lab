@@ -328,8 +328,12 @@ def run_verify(
     *,
     wait_s: float = WAIT_S,
     poll_s: float = POLL_S,
+    hooks: bool = True,
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
+
+    *hooks* adds :data:`~dev_lab.dev.hook_install.HOOKS_STEP`, which guards a checkout someone COMMITS from; a
+    producer's checkout (*hooks* false) commits nothing and judges a sha that already passed whatever hooks it met.
 
     The pytest step RUNS IN THE BOX (:mod:`dev_lab.dev.verifybox`) at its declared claim: admitted
     on the machine's one ledger within *wait_s*, held to its cores, memory and wall. The interpreter's
@@ -371,7 +375,8 @@ def run_verify(
     reports: list[StepReport] = []
     seat = EnvironmentSeat(sys.prefix, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
     with seat.held(), path.open('w', encoding='utf-8') as handle:
-        reports.append(read_hooks(root, handle=handle))
+        if hooks:
+            reports.append(read_hooks(root, handle=handle))
         for name, arguments in RUFF_STEPS:
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
         handle.write(_PYTEST_BANNER)
@@ -540,7 +545,7 @@ def _judge(
     """
     head, start = head_sha(root), status_paths(root)
     try:
-        verdict = run_verify(root, arguments, wait_s=wait_s)
+        verdict = run_verify(root, arguments, wait_s=wait_s, hooks=post is None)
     except MalformedAllowance as exc:
         return _inconclusive(f'verify refuses to run: {exc}')
     except Refused as exc:  # CAPACITY, never a verdict: a producer's claim goes back to claimable (UNREACHABLE)

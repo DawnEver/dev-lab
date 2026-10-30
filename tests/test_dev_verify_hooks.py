@@ -12,6 +12,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from dev_lab.dev import verify
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND, install, read_hooks
 
 _GIT = shutil.which('git') or 'git'
@@ -46,3 +49,21 @@ def test_a_checkout_that_does_not_opt_in_has_nothing_to_guard(tmp_path: Path) ->
     subprocess.run([_GIT, 'init', '-q', str(at)], check=True, capture_output=True, timeout=60)
     report = read_hooks(at, handle=io.StringIO())
     assert report.failures == ()
+
+
+@pytest.mark.parametrize(('hooks', 'failed'), [(True, True), (False, False)])
+def test_a_producer_run_does_not_judge_the_hooks_of_its_fresh_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, hooks: bool, failed: bool
+) -> None:
+    """A producer judges a sha whose commit already passed its hooks; a developer run (the control) still fails."""
+    repo = _repo(tmp_path / 'r')
+
+    def step(command: list[str], *, handle: io.StringIO, **_where: object) -> int:
+        handle.write('1 passed in 0.1s\n' if 'pytest' in command else 'All checks passed!\n')
+        handle.flush()
+        return 0
+
+    monkeypatch.setattr(verify, 'boxed', lambda _root, argv, **_k: (argv, None))
+    monkeypatch.setattr(verify, '_tee', step)
+    verdict = verify.run_verify(repo, hooks=hooks)
+    assert (HOOKS_STEP in verdict.result.failures) is failed
