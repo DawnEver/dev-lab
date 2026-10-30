@@ -115,6 +115,16 @@ def test_a_card_carries_its_supply_and_running_and_reads_back() -> None:
     assert 'running: gate measure' in next(iter(forge.comments.values()))[0]['body']
 
 
+def test_a_card_carries_the_verify_parts_its_account_produces_first_and_reads_back() -> None:
+    """HPC account affinity (user ruling 2026-10-30): other seats learn the affined accounts from the cards."""
+    card = HostCard('ada/alice', 'a', 'linux', NOW.isoformat(), verify=('tests/*',))
+    forge = StateForge()
+    publish(forge, card)
+    assert read_cards(forge) == (card,)
+    assert 'verify first: tests/*' in next(iter(forge.comments.values()))[0]['body']
+    assert card.redacted().verify == ('tests/*',), 'scheduling reads it, so a public card keeps it'
+
+
 def test_a_card_written_before_a_field_was_renamed_reads_without_it() -> None:
     """A field a version no longer declares is not read: a fleet mid-upgrade never crashes its readers.
 

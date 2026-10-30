@@ -138,6 +138,7 @@ class HostCard:
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
     serves: str = EVERY  # machine-file [serve] parts: which parts this host claims
     withholds: tuple[str, ...] = ()  # machine-file [serve] withhold: resources it keeps for its own work
+    verify: tuple[str, ...] = ()  # [deploy] repos verify: the contexts it produces first (dev_lab.dev.forgeaffinity)
     size: Mapping[str, float] = field(default_factory=dict)  # a box's cpu and mem_gb after its reserve; {}: unstated
 
     def favours(self, candidate: Candidate) -> bool:
@@ -182,6 +183,7 @@ class HostCard:
         head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
         rule = Serves(self.serves, frozenset(self.withholds))
         head += f'\n\nserves: {rule.text()}' if self.serves != EVERY or self.withholds else ''
+        head += f'\n\nverify first: {", ".join(self.verify)}' if self.verify else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
@@ -189,6 +191,7 @@ class HostCard:
             'alarms': [dict(a) for a in self.alarms],
             'running': list(self.running),
             'withholds': list(self.withholds),
+            'verify': list(self.verify),
         }
         return f'{head}{loud}\n\n```json\n{json.dumps(raw, indent=1)}\n```'
 
@@ -304,7 +307,7 @@ def card_of(comment: Comment) -> HostCard | None:
         return None
     raw = json.loads(found['json'])
     known = {key: value for key, value in raw.items() if key in HostCard.__dataclass_fields__}
-    tupled = {key: tuple(raw.get(key, ())) for key in ('holds', 'alarms', 'running', 'withholds')}
+    tupled = {key: tuple(raw.get(key, ())) for key in ('holds', 'alarms', 'running', 'withholds', 'verify')}
     return HostCard(**{**known, **tupled, 'login': comment.author or known.get('login', '')})
 
 
@@ -360,13 +363,15 @@ def publish_card(
     serves: str = EVERY,
     withholds: Sequence[str] = (),
     size: Mapping[str, float] | None = None,
+    verify: Sequence[str] = (),
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
     *progress* is what each local part it holds has done so far, by ``(sha, platform)`` (``producing 42m``),
     published while they run. *supply* is what the tick admitted against (default: the cluster
     standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
-    ``[serve] parts`` rule, *size* a box's size (what a part larger than any live host is refused against).
+    ``[serve] parts`` rule, *size* a box's size (what a part larger than any live host is refused against),
+    *verify* the contexts this account produces first (:mod:`dev_lab.dev.forgeaffinity`).
     """
     progress = progress or {}
     built = client(root)
@@ -394,6 +399,7 @@ def publish_card(
             serves=serves,
             withholds=tuple(sorted(withholds)),
             size=dict(size or {}),
+            verify=tuple(verify),
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:
