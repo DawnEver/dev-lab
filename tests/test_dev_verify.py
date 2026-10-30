@@ -1192,7 +1192,9 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
         holder.wait(timeout=30)
     if sys.platform in verifybox.UNENFORCED_PLATFORMS:  # no enforcer: the step runs unboxed, held box or not
         assert 'box unenforced' in done.stderr, done.stdout + done.stderr
-        assert done.returncode != ProducerExit.INCONCLUSIVE, 'an unenforced box cannot hold the step'
+        # The probe selects no node, so the unboxed run is INCONCLUSIVE on its own proof (exit 3 too):
+        # what an unenforced box rules out is the HELD refusal, not the exit code it shares.
+        assert 'this box is held' not in done.stderr, 'an unenforced box cannot hold the step'
         return
     assert done.returncode == ProducerExit.INCONCLUSIVE, done.stdout + done.stderr
     assert 'this box is held and nothing was measured' in done.stderr
