@@ -62,13 +62,15 @@ class Repo:
 
     ``serve = false`` checks it out and installs it without serving its queue: on the kit (dev-lab) its own
     tick still refreshes the kit (the one writer of that checkout) and serves nothing; any other such repo
-    gets no crontab line.
+    gets no crontab line. ``verify`` names the status contexts of this repo the account is the DEFAULT producer
+    of (HPC account affinity, :mod:`dev_lab.dev.forgeaffinity`): ``verify = ["tests/*"]`` on a verify account's row.
     """
 
     name: str
     url: str
     ref: str
     serve: bool = True
+    verify: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,7 +105,10 @@ def load(path: Path) -> Deployment | None:
             host=raw['host'],
             root=raw.get('root', DEFAULT_ROOT),
             python=raw.get('python', DEFAULT_PYTHON),
-            repos=tuple(Repo(r['name'], r['url'], r['ref'], r.get('serve', True)) for r in raw['repos']),
+            repos=tuple(
+                Repo(r['name'], r['url'], r['ref'], r.get('serve', True), tuple(r.get('verify', ())))
+                for r in raw['repos']
+            ),
             slurm_account=raw.get('slurm_account', ''),
             partitions=tuple(raw.get('partitions', ())),
             tick_minutes=_tick_minutes(path, table.get('schedule', {})),
@@ -123,7 +128,7 @@ def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
 
 
 def _unserved(repo: Repo) -> str:
-    return '' if repo.serve else ', serve = false'
+    return ('' if repo.serve else ', serve = false') + (f', verify = {_list(repo.verify)}' if repo.verify else '')
 
 
 def _toml(value: str) -> str:

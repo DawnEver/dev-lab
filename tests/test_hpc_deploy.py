@@ -383,6 +383,15 @@ def test_the_rendered_declaration_reads_back(tmp_path: Path) -> None:
     assert deploy_spec.load(path) == spec
 
 
+def test_a_repo_row_declares_the_parts_this_account_produces_first_and_it_reads_back(tmp_path: Path) -> None:
+    """HPC account affinity (user ruling 2026-10-30): a verify account's row names the contexts it is affined to."""
+    affined = deploy_spec.Repo('a', 'https://x/a', 'r', verify=('tests/*',))
+    spec = deploy_spec.Deployment('h', 'src', '3.13', (affined, deploy_spec.Repo('b', 'https://x/b', 'r')))
+    path = _write(tmp_path / 'config.toml', deploy_spec.render(spec))
+    assert deploy_spec.load(path) == spec
+    assert [repo.verify for repo in deploy_spec.load(path).repos] == [('tests/*',), ()], 'PLANTED CONTROL: b has none'
+
+
 def test_the_retired_serve_key_is_refused_by_name_with_its_remedy(tmp_path: Path) -> None:
     spec = deploy_spec.Deployment('h', 'src', '3.13', (deploy_spec.Repo('a', 'https://x/a', 'r'),))
     stale = deploy_spec.render(spec).replace('[deploy]', '[deploy]' + chr(10) + 'serve = []')
