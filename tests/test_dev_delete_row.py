@@ -75,7 +75,6 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'git clean -Xf',
     ],
 )
-@pytest.mark.workstation
 def test_a_recursive_delete_is_refused_with_its_doors(rules: Path, command: str) -> None:
     """REFUSAL-NAMES-THE-REMEDY: the branchset door, and asking the user for anything else."""
     reason = agenthooks.decide(command, rules)
@@ -112,7 +111,6 @@ def test_a_recursive_delete_is_refused_with_its_doors(rules: Path, command: str)
         'grep -n "shutil.rmtree" src/a.py',
     ],
 )
-@pytest.mark.workstation
 def test_a_scratch_target_or_a_non_recursive_delete_is_permitted(rules: Path, command: str) -> None:
     """System temp and `output/` are regenerable scratch; a single file or an empty dir is not a tree."""
     reason = agenthooks.decide(command, rules)

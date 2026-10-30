@@ -73,6 +73,10 @@ install = "uv sync --frozen --all-extras"
 # The run record's root (dev_lab.dev.platformparts).
 [tool.dev_lab.parts]
 output = "output/logs"
+# User ruling 2026-10-30: the toolchain lives on GitHub and no hosted runner is a workstation, so the
+# workstation-marked tests (codex CLI, installed hooks, the live checkout, host node) run in no part and
+# nothing waits on one (dev_lab.dev.unproduced).
+unproduced = ["workstation"]
 
 # One need vocabulary (lab_commons.hpc.needsets): a test marks the resources it needs, and its part is its
 # need-set -- tests/base and tests/workstation. A host claims a part when its machine file's
