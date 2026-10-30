@@ -172,3 +172,16 @@ def test_produce_hands_the_row_the_producing_marker_of_its_own_context_at_sha(
     env = seen['env']
     assert full_suite_refusal('verify', env, platformparts.part_context(row)) is None
     assert full_suite_refusal('verify', env, platformparts.part_context(other)) is not None, 'planted control'
+
+
+def test_an_unproduced_resource_has_no_row_and_a_declared_one_keeps_its_row(tmp_path: Path) -> None:
+    """User ruling 2026-10-30: no job, so no ``absent`` failure, for a part the repo declares it does not produce."""
+    declared = '[tool.lab_commons.tests]\nresources = ["workstation"]\n'
+    carrying = {'': ['t::a', 't::w'], 'workstation': ['t::w']}
+    (tmp_path / 'pyproject.toml').write_text(declared, encoding='utf-8')
+    kept = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='push')
+    assert 'workstation' in [row['part'] for row in kept['include']], 'PLANTED CONTROL: a declared part keeps its row'
+    unproduced = declared + '\n[tool.dev_lab.parts]\nunproduced = ["workstation"]\n'
+    (tmp_path / 'pyproject.toml').write_text(unproduced, encoding='utf-8')
+    found = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='push')
+    assert [row['part'] for row in found['include'] if not row['part'].startswith('base')] == []

@@ -112,6 +112,7 @@ from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import derived, origin_url, parts_of
+from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = ['TickReport', 'main', 'tick']
 
@@ -206,7 +207,10 @@ def tick(
             policy=policy,
             now=now,
             say=lines.append,
-            waived=lambda sha: unreached(root, built, policy.integration, sha, history(sha)),
+            waived=lambda sha: (
+                unreached(root, built, policy.integration, sha, history(sha))
+                | unproduced_waived(root, sha, history(sha))
+            ),
         ),
         owners or {},
     )

@@ -58,6 +58,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import derived, origin_url, part_context
+from dev_lab.dev.unproduced import unproduced_waived
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
 _STALE = '  STALE (no tick published: host down, cron line gone, or its forge credential refused -- see its cron log)'
@@ -127,7 +128,8 @@ def forge_queue(
     policy = load_policy(root)
     found = candidates(
         root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule, policy=policy, now=now,
-        waived=lambda sha: unreached(root, client, policy.integration, sha, history(sha)),
+        waived=lambda sha: unreached(root, client, policy.integration, sha, history(sha))
+        | unproduced_waived(root, sha, history(sha)),
     )  # fmt: skip
     waiting, in_flight = _standing(found, history, now)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)

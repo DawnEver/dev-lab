@@ -73,6 +73,7 @@ from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
+from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'settle', 'tick']
 
@@ -154,7 +155,8 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     """The integration text for *child*, from the object store and the forge; writes nothing."""
     base, trunk = f'{_TRACKING}{policy.integration}', f'{_TRACKING}{policy.trunk}'
     statuses = status_list(child.client, child.head)
-    waived = unreached(root, child.client, policy.integration, child.head, statuses) if child.pr else frozenset()
+    scarce = unreached(root, child.client, policy.integration, child.head, statuses) if child.pr else frozenset()
+    waived = scarce | unproduced_waived(root, child.head, statuses)
     standing_now = standing(statuses, head=child.head, waived=waived)
     merge = merged_at(root, base, child.head)
     tried = trial(root, base, child.head)

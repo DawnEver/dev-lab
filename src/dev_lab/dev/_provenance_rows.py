@@ -261,6 +261,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'servetask': ('original',),
     'workstation': ('original',),
     'workstationfile': ('original',),
+    # ORIGINAL: user ruling 2026-10-30, a resource a repo produces no part for.
+    'unproduced': ('original',),
     'hostrefresh': ('original',),
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees': ('original',),

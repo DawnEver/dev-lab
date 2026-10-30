@@ -38,6 +38,7 @@ from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.platformparts import standing
 from dev_lab.dev.trialmerge import contains, rev
+from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'promote']
 
@@ -100,7 +101,8 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
     if trunk is not None and not contains(root, found, trunk):
         why = f'{policy.trunk} ({trunk[:12]}) is not an ancestor of {found[:12]}: it cannot fast-forward'
         return Promotion('refused', found, (why,))
-    parts = standing(status_list(client, found), head=found, scope=FULL)
+    statuses = status_list(client, found)
+    parts = standing(statuses, head=found, scope=FULL, waived=unproduced_waived(root, found, statuses))
     if parts.result is not Conclusion.PASS:
         return Promotion('refused', found, (f'the parts of {found[:12]} stand {parts.result.name}', *parts.problems))
     return Promotion('promote', found)

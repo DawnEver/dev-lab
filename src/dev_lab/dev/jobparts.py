@@ -38,6 +38,7 @@ from dev_lab.dev.forgework import client_for
 from dev_lab.dev.partrows import ROW_SEPARATOR
 from dev_lab.dev.platformparts import part_context, producer_argv
 from dev_lab.dev.producer import producing
+from dev_lab.dev.unproduced import unproduced, unproduced_parts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -116,14 +117,17 @@ def matrix(
 ) -> dict[str, list[dict[str, Any]]]:
     """The rows of the parts *root*'s checkout derives (:data:`BASE` always) for GitHub *event*: a fromJSON matrix.
 
+    A part needing a resource the checkout declares ``unproduced`` has no row (:mod:`dev_lab.dev.unproduced`).
     Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`_rows`).
     *hosted* keeps only the rows a GitHub-hosted runner produces; :func:`absent` then names the rest.
     """
     pyproject = root / 'pyproject.toml'
-    vocabulary = read_vocabulary(pyproject.read_text(encoding='utf-8') if pyproject.is_file() else '')
+    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
+    vocabulary = read_vocabulary(text)
     ids = list(collect(''))
     carrying = {name: set(collect(name)) for name in vocabulary.resources}
-    names = sorted({BASE, *need_sets(ids, carrying).values()})
+    derived = {BASE, *need_sets(ids, carrying).values()}
+    names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     rows = [row for name in names for row in _rows(name, event)]
     return {'include': [row for row in rows if not hosted or isinstance(row['runs-on'], str)]}
 
