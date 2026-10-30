@@ -76,7 +76,7 @@ from lab_commons.compute.model import (
 from lab_commons.compute.presence import cached
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.serves import SERVE_TABLE, Serves
-from lab_commons.config import section
+from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
@@ -88,6 +88,7 @@ from dev_lab.dev.forge import (
     fetch_origin,
     https_transport,
 )
+from dev_lab.dev.forgeaffinity import context_of, covers, declared, deferral, warm
 from dev_lab.dev.forgeclaim import (
     DEFAULT_LEASE,
     Claim,
@@ -159,6 +160,8 @@ def tick(
     reserve: Callable[[Work], int | str] | None = None,
     box: Box | None = None,
     cards: Sequence[HostCard] = (),
+    verify: Sequence[str] | None = None,
+    warm_here: bool | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -181,7 +184,11 @@ def tick(
     skips waits, named, for another host. *reserve* takes a local part's box claim before it is claimed (its
     ledger row, or why the box refused it); ``None`` (a cluster seat, a dry run's caller) takes none.
     *box* is this box as the pass sees it (:class:`~dev_lab.dev.forgewait.Box`; ``None`` on a cluster seat) and
-    *cards* every host card, read for whether a part too large for this box fits any live host.
+    *cards* every host card, read for whether a part too large for this box fits any live host -- and, on a cluster
+    seat, which affined accounts are live and free. *verify* is this seat's HPC account affinity -- the contexts it
+    produces first (default: its ``[deploy]`` row for this repo, :func:`dev_lab.dev.forgeaffinity.declared`); on a
+    cluster seat a covered part is ordered first, and a part another live card covers is deferred
+    (:mod:`dev_lab.dev.forgeaffinity`). *warm_here* is whether this seat is warm for the repo (default: measured).
     """
     lines: list[str] = []
     try:
@@ -227,9 +234,15 @@ def tick(
         store_why=probe(root) if serve.hpc else '', history=history,
         serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve, box=box,
     )  # fmt: skip
+    favoured = (priority or Priority.of(section(PRIORITY_TABLE))).matches
+    mine = (declared(config_path(), origin_url(root)) if verify is None else tuple(verify)) if serve.hpc else ()
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
-        priority=(priority or Priority.of(section(PRIORITY_TABLE))).matches,
+        priority=lambda one: favoured(one) or covers(mine, context_of(one)),
     )  # fmt: skip
+    if serve.hpc:  # HPC ACCOUNT AFFINITY (dev_lab.dev.forgeaffinity): a workstation is never gated
+        taken.defer = deferral(ranked, cards, me=me, now=now, history=history, mine=mine,
+            warm_here=warm(origin_url(root)) if warm_here is None else warm_here,
+        )  # fmt: skip
     for item in ranked:
         taken.consider(item)
     answered = set()

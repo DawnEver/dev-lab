@@ -125,13 +125,14 @@ from lab_commons.compute.model import Supply
 from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.serves import SERVE_TABLE, Serves
-from lab_commons.config import section
+from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerun, forgerunstate, metrics, retention
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, https_transport
+from dev_lab.dev.forgeaffinity import declared
 from dev_lab.dev.forgealarm import (
     AUTH,
     IDLE,
@@ -235,6 +236,7 @@ def serve(
     tools = {name: one.row() for name, one in inventory(provided(section('capabilities')), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
     serves = Serves.of(section(SERVE_TABLE))
+    verify = declared(config_path(), repo) if seat is not None else ()  # HPC account affinity
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     if slurm is not None:
         _cancel_strays(slurm, repo, seat, alarm)
@@ -256,13 +258,13 @@ def serve(
         ticking={
             'client': client, 'machine': machine, 'seat': seat, 'lease': lease, 'fetch': fetched, 'host': host,
             'usage': standing.usage if standing else None, 'weights': host_weights(table),
-            'owners': card_owners(cards), 'priority': priority, 'serves': serves,
+            'owners': card_owners(cards), 'priority': priority, 'serves': serves, 'verify': verify,
             'reserve': None if seat is not None else functools.partial(reserving, root=root),
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
             'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
-            'serves': serves.parts, 'withholds': sorted(serves.withholds),
+            'serves': serves.parts, 'withholds': sorted(serves.withholds), 'verify': verify,
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,

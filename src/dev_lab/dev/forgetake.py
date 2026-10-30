@@ -42,6 +42,7 @@ from lab_commons.hpc.declared import OutdatedKit
 from lab_commons.hpc.needsets import declared_at, needs_of
 from lab_commons.resources import admits
 
+from dev_lab.dev.forgeaffinity import DEFERRED
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import (
     CLAIMABLE,
@@ -120,6 +121,8 @@ class ClaimPass:
     reserve: Callable[[Work], int | str] | None = None
     #: This box as the pass sees it (None: a cluster seat): what tells a waiting part its outlook and protects it.
     box: Box | None = None
+    #: Why a cluster seat defers a candidate to the affined accounts (:mod:`dev_lab.dev.forgeaffinity`); '' claims.
+    defer: Callable[[Candidate], str] = lambda _wanted: ''
     ahead: list[tuple[str, Mapping[str, float]]] = dataclasses.field(default_factory=list)  # (key, demand) to protect
     over: dict[str, tuple[Candidate, Mapping[str, float], Outlook]] = dataclasses.field(default_factory=dict)
 
@@ -160,6 +163,7 @@ class ClaimPass:
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
             skipped = wanted.kind != REQUEST and skips(self.serves, wanted.kind, needs_of(wanted.platform))
+            skipped = skipped or blocked.startswith(DEFERRED)  # its affined accounts serve it: not idle work here
             if not held(blocked) and not skipped and wanted.key not in self.unservable and self._servable(wanted):
                 self.pending.append(one)
 
@@ -259,6 +263,7 @@ class ClaimPass:
         needed = self._needs(wanted)
         why = (
             skips(self.serves, wanted.kind, needed)
+            or self.defer(wanted)
             or behind(self.root, wanted, self.schedule, self.history, self.now)
             or over_budget(self.root, wanted, self.schedule, self.usage)
             or self._admission(wanted, needed)
