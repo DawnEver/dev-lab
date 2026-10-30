@@ -23,24 +23,31 @@ reads another's cache, so the preference is a stagger in time, never a negotiati
 
 An affined seat's own uncovered work -- another repo, research -- is never deferred: an idle verify account is free.
 Nothing is reserved or preempted; how a research job borrows a verify account is docs-src/dev/forge.md's.
+
+THE RESEARCH SIDE reads the same cards. A workstation's ``python -m lab_commons.hpc plan|submit|retry`` loads
+:func:`research_affinity` (entry point :data:`lab_commons.hpc.affinity.READER`): the verify accounts, and which
+of them are BUSY -- a live card holding a run, or with a part its patterns cover waiting on it -- so
+:func:`lab_commons.hpc.affinity.place` keeps research off them and borrows only an idle one, niced.
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Final
 
 from lab_commons.compute.learned import _path as learned_path  # the one spelling of a repo's learned-table path
 from lab_commons.compute.model import REQUEST, Candidate, Ranked
+from lab_commons.hpc.grants import Affinity
 
 from dev_lab.dev.forgeclaim import CLAIMABLE, Claim, assess
-from dev_lab.dev.forgehosts import HostCard
+from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgeschedule import NOT_ADMITTED
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hpchost.spec import load
 from dev_lab.dev.platformparts import part_context
 
@@ -55,6 +62,8 @@ __all__ = [
     'declared',
     'deferral',
     'defers',
+    'research_affinity',
+    'research_affinity_of',
     'saturated',
     'warm',
 ]
@@ -161,3 +170,33 @@ def warm(repo_url: str, *, now: float | None = None) -> bool:
     path = learned_path(repo_url)
     at = time.time() if now is None else now
     return path.is_file() and at - path.stat().st_mtime <= WARM_FOR.total_seconds()
+
+
+def research_affinity_of(cards: Sequence[HostCard], *, now: datetime) -> Affinity | None:
+    """The verify accounts in *cards* and the busy ones among them, each by its Slurm user; ``None`` when none.
+
+    A card names its seat ``<cluster>/<user>``; a public repository's opaque card
+    (:func:`~dev_lab.dev.forgehosts.host_id`) names no account and is not read.
+    BUSY is a live card holding a run, or with a part its patterns cover waiting on it; a stale card claims
+    nothing, so its account is idle.
+    """
+    seats = [(card, card.host.rpartition('/')[2]) for card in cards if card.verify and '/' in card.host]
+    if not seats:
+        return None
+
+    def busy(card: HostCard) -> bool:
+        waits = (key.rpartition(':')[2] for key in card.waiting)
+        return not card.stale(now) and (bool(card.holds) or any(covers(card.verify, part_context(p)) for p in waits))
+
+    return Affinity(
+        verify=frozenset(user for _, user in seats), busy=frozenset(user for card, user in seats if busy(card))
+    )
+
+
+def research_affinity(root: Path | None = None) -> Affinity | None:
+    """:func:`research_affinity_of` the host cards on *root*'s forge (default: the working directory's).
+
+    THE READER lab-commons loads (entry point :data:`lab_commons.hpc.affinity.READER`), so a workstation
+    session's research submission yields the accounts the forge's verify parts prefer.
+    """
+    return research_affinity_of(read_cards(client_for(Path.cwd() if root is None else root)), now=datetime.now(UTC))

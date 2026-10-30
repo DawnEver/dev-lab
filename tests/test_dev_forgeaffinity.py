@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from importlib.metadata import entry_points
 from pathlib import Path
 
 import pytest
 from lab_commons.compute.model import INTEGRATION, REQUEST, Candidate, Ranked
+from lab_commons.hpc.affinity import READER
 from lab_commons.hpc.shell import FULL
 
-from dev_lab.dev import forgeaffinity
+from dev_lab.dev import forgeaffinity, forgehosts
 from dev_lab.dev.forgeaffinity import COLD, DEFERRED, GRACE, covers, declared, deferral, defers, saturated
 from dev_lab.dev.forgeclaim import Claim
 from dev_lab.dev.forgehosts import HostCard
@@ -114,3 +116,34 @@ def test_a_seat_is_warm_for_a_repo_it_finished_a_run_of_lately(tmp_path: Path, m
     written = table.stat().st_mtime
     assert forgeaffinity.warm('u', now=written + 3600)
     assert not forgeaffinity.warm('u', now=written + 25 * 3600), 'PLANTED CONTROL: a day-old run is cold'
+
+
+def _seat(host: str, *, verify=('tests/*',), holds=(), waiting=None, at: datetime = NOW) -> HostCard:
+    return HostCard(host, 'bot', 'linux', at.isoformat(), holds=holds, waiting=waiting or {}, verify=verify)
+
+
+def test_research_reads_the_verify_accounts_and_which_are_busy_off_the_host_cards() -> None:
+    """The one source: each verify account's card. Busy = a verify part held, or one it covers waiting on it."""
+    cards = [
+        _seat('ada/idle'),
+        _seat('ada/running', holds=('abcdef012345 base',)),
+        _seat('ada/claimable', waiting={'integrate/main@abcdef012345:base': f'{NOT_ADMITTED}: lacking cpu'}),
+        _seat('ada/uncovered', verify=('tests/gpu',), waiting={'integrate/main@abcdef012345:base': 'serves'}),
+        _seat('ada/gone', holds=('abcdef012345 base',), at=NOW - timedelta(days=1)),
+        _seat('ada/research', verify=()),
+        _seat(forgehosts.host_id('ada/opaque')),
+        _seat('box', verify=()),
+    ]
+    held = forgeaffinity.research_affinity_of(cards, now=NOW)
+    assert held.verify == {'idle', 'running', 'claimable', 'uncovered', 'gone'}
+    assert held.busy == {'running', 'claimable'}, 'a stale card claims nothing; an uncovered wait is not verify work'
+
+
+def test_with_no_affinity_declared_on_any_card_the_reader_returns_none() -> None:
+    """PLANTED CONTROL: research placement stays exactly as it was when no account declares ``verify``."""
+    assert forgeaffinity.research_affinity_of([_seat('ada/a', verify=()), _seat('box', verify=())], now=NOW) is None
+
+
+def test_the_reader_is_installed_where_lab_commons_looks_for_it() -> None:
+    (point,) = entry_points(group=READER)
+    assert point.load() is forgeaffinity.research_affinity

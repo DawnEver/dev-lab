@@ -34,6 +34,10 @@ test = ["nodejs-wheel-binaries"]
 [project.entry-points."lab_commons.hpc.allocation"]
 forge = "dev_lab.dev.forgerecords:read_allocation"
 
+# The HPC account affinity's reader, loaded by lab_commons.hpc.affinity.declared: a research submit yields verify.
+[project.entry-points."lab_commons.hpc.affinity"]
+forge = "dev_lab.dev.forgeaffinity:research_affinity"
+
 [project.urls]
 Homepage = "https://github.com/DawnEver/dev-lab"
 
