@@ -10,6 +10,7 @@ import dataclasses
 import shlex
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.run import NoRoom
 
 from dev_lab.dev.artefacts import MissingOutput
@@ -50,6 +51,9 @@ def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None])
     if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
         alarm(Alarm(RUN, run.repo_url, f'the run of {run.sha[:12]} lacks a declared output', str(why)))
         return f'declared outputs missing: {why}'[:DESCRIPTION_MAX]
+    if isinstance(why, RetiredTable):  # fixed AT THE SHA: no retry publishes it, so it settles once
+        alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', str(why)))
+        return f'{release_reason(ProducerExit.INCONCLUSIVE)}: {why}'[:DESCRIPTION_MAX]
     if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
         return f'{RETRYABLE} -- this host had no room: {why}'[:DESCRIPTION_MAX]
     log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named
