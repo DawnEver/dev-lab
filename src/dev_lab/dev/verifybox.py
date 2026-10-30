@@ -31,8 +31,10 @@ from lab_commons.box.ledger import holdings
 from lab_commons.box.supply import Reading, room
 from lab_commons.compute import learned
 from lab_commons.compute.model import Demand, Resources
+from lab_commons.file_io import read_toml
 from lab_commons.log import emit
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgedemand import refresh_checkout
 from dev_lab.dev.platformparts import origin_url
 
@@ -44,6 +46,7 @@ __all__ = [
     'WAIT_S',
     'boxed',
     'claimed_width',
+    'declared_worker_gb',
     'ended_in_the_box',
     'free_room',
     'learn_ended',
@@ -140,7 +143,7 @@ def selection_files(root: Path, argv: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(one.relative_to(root).as_posix() for one in found))
 
 
-def selection_mem_gb(repo: str, files: Sequence[str], workers: int) -> float:
+def selection_mem_gb(repo: str, files: Sequence[str], workers: int, *, declared_gb: float = 0.0) -> float:
     """The memory a selection's tree declares: each worker at the worst file's peak times the box headroom.
 
     The peaks are the forge's (:mod:`dev_lab.dev.forgedemand`); an unmeasured file is priced at its
@@ -148,10 +151,36 @@ def selection_mem_gb(repo: str, files: Sequence[str], workers: int) -> float:
     ever measured for at :class:`~lab_commons.hpc.config.Cost`'s per-task floor. A per-file peak is what one
     SMALL item reached, and one process running many files holds more: a selection that ran before is also
     priced at its own whole-tree peak (:func:`learn_ended`) times the headroom -- one the box killed for
-    memory at twice the limit it died at -- whichever is larger.
+    memory at twice the limit it died at -- whichever is larger. Never under *declared_gb*
+    (:func:`declared_worker_gb`) a worker times the headroom: the price where nothing was learned.
     """
     ran = learned.run_of(repo, selection_producer(files), ())
-    return learned.selection_gb(repo, files, workers, whole_gb=0.0 if ran is None else ran.peak_mem_gb)
+    priced = learned.selection_gb(repo, files, workers, whole_gb=0.0 if ran is None else ran.peak_mem_gb)
+    return max(priced, round(max(1, workers) * declared_gb * learned.BOX_HEADROOM, 3))
+
+
+def declared_worker_gb(root: Path) -> float:
+    """``[tool.dev_lab.verify] worker_mem_gb``: one worker's MEASURED peak in GB, ``0.0`` when undeclared.
+
+    D101: a hosted runner holds no learned table (it lives beside the machine config, never in a checkout,
+    and no CI step carries it), so every worker there was priced at :class:`~lab_commons.hpc.config.Cost`'s
+    1 GB floor and the width filled the runner -- optimi-lab's windows row ran 2 workers, stalled ~400 tests
+    in and died ``0xC0000017`` (out of memory) at 3600 s. The repository is the one place a CI run can read,
+    so it declares the peak its last run measured, and :func:`selection_mem_gb` prices each worker at it.
+
+    Raises:
+        ValueError: the key is present and is not a positive number.
+
+    """
+    manifest = root / 'pyproject.toml'
+    table = declared_table(read_toml(manifest), 'verify', {}) if manifest.is_file() else {}
+    value = table.get('worker_mem_gb', 0.0)
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        msg = (
+            f'[tool.dev_lab.verify] worker_mem_gb in {manifest} is {value!r}: declare one worker`s measured peak in GB'
+        )
+        raise ValueError(msg)
+    return float(value)
 
 
 def selection_producer(files: Sequence[str]) -> str:
@@ -200,9 +229,10 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     size = Capacity.read()
     refresh_checkout(root)
     repo, files = _repo(root), selection_files(root, argv)
-    per = selection_mem_gb(repo, files, 1)
+    declared = declared_worker_gb(root)
+    per = selection_mem_gb(repo, files, 1, declared_gb=declared)
     workers, width = selection_workers(argv, free_room(size), files=len(files), per_gb=per, xdist=xdist_installed())
-    demand = selection_demand(workers, selection_mem_gb(repo, files, workers))
+    demand = selection_demand(workers, selection_mem_gb(repo, files, workers, declared_gb=declared))
     run = [*argv, *width]
     return command(
         run,

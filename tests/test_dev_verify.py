@@ -1404,6 +1404,28 @@ def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure
     assert verifybox.selection_mem_gb('https://g/none.git', ['tests/x.py'], 4) == 4.0, 'the 1 GB floor per worker'
 
 
+def test_a_declared_worker_peak_prices_a_worker_where_nothing_was_learned(tmp_path: Path) -> None:
+    """D101: a hosted runner has no learned table, so the repo's measured ``worker_mem_gb`` is the price.
+
+    PLANTED CONTROL: without the declaration the same unmeasured selection is priced at the 1 GB floor; with
+    it each worker carries the declared peak x the box headroom, and a learned price above it still wins.
+    """
+    assert verifybox.declared_worker_gb(tmp_path) == 0.0, 'no pyproject declares nothing'
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = 4.0\n', encoding='utf-8')
+    declared = verifybox.declared_worker_gb(tmp_path)
+    assert declared == 4.0
+    assert verifybox.selection_mem_gb('https://g/hosted.git', ['tests/x.py'], 2) == 2.0
+    priced = verifybox.selection_mem_gb('https://g/hosted.git', ['tests/x.py'], 2, declared_gb=declared)
+    assert priced == 2 * 4.0 * learned.BOX_HEADROOM
+    learned.learn_peaks('https://g/big.git', {'tests/x.py': 8 * 1024.0})
+    assert (
+        verifybox.selection_mem_gb('https://g/big.git', ['tests/x.py'], 1, declared_gb=1.0) == 8 * learned.BOX_HEADROOM
+    )
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = "4"\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='worker_mem_gb'):
+        verifybox.declared_worker_gb(tmp_path)
+
+
 def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_path: Path, monkeypatch) -> None:
     """Per-file peaks under-price one process running many files: the box's own measurement of the tree wins.
 
