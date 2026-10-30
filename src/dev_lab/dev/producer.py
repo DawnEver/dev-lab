@@ -56,13 +56,16 @@ PRODUCING_VAR: Final = 'LAB_COMMONS_PRODUCING'
 
 
 def producing(context: str, sha: str) -> dict[str, str]:
-    """The environment ``forge serve`` adds to the producer of part *context* at *sha*."""
+    """The environment ``forge serve`` adds to the producer of part *context* at *sha*.
+
+    The sha is the text after the LAST ``@``: a row's context carries one itself (``tests/base@windows``), a sha never.
+    """
     return {PRODUCING_VAR: f'{context}@{sha}'}
 
 
 def full_suite_refusal(what: str, env: Mapping[str, str], context: str) -> str | None:
     """``None`` inside a producer serve spawned for *context* (this box's part), else the refusal naming the remedy."""
-    if env.get(PRODUCING_VAR, '').partition('@')[0] == context:
+    if env.get(PRODUCING_VAR, '').rpartition('@')[0] == context:
         return None
     return (
         f'{what}: refused -- a full suite is a verdict, and a verdict is produced once per sha, after the push, '

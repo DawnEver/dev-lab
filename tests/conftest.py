@@ -50,6 +50,22 @@ def _git_never_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+#: Every commit a test makes has an author: a CI runner has no global ``user.name``/``user.email``, and a
+#: ``commit``/``commit-tree`` there exits 128. The environment outranks any config, so a test is never
+#: carried by the host's own identity either. A test that means another identity sets its own.
+IDENTITY: Final = {
+    f'GIT_{role}_{what}': value
+    for role in ('AUTHOR', 'COMMITTER')
+    for what, value in (('NAME', 'test'), ('EMAIL', 'test@example.invalid'))
+}
+
+
+@pytest.fixture(autouse=True)
+def _a_git_identity_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in IDENTITY.items():
+        monkeypatch.setenv(name, value)
+
+
 #: The checkout this repository's live metrics log lives in, resolved once per session.
 _LIVE_CHECKOUT: list[Path] = []
 

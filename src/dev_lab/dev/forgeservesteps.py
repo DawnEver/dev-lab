@@ -7,11 +7,14 @@ so one broken step never stops the others (:func:`dev_lab.dev.forgeserve.serve` 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from pathlib import Path
 
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgeship, retention
+from dev_lab.dev.branchdelete import serve_sweep
+from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
 from dev_lab.dev.forgeclaim import forge_now
@@ -20,6 +23,7 @@ from dev_lab.dev.forgeintegration import alarms as sync_alarms
 from dev_lab.dev.forgeintegration import tick as integration_tick
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
+from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgereview import step as review_step
 from dev_lab.dev.forgereview_dispose import alarms as blocked_reviews
 from dev_lab.dev.forgeroute import reconcile
@@ -33,9 +37,20 @@ from dev_lab.dev.forgetidy import tidy as issue_tidy
 from dev_lab.dev.forgework import Client, ForgeCallFailed
 from dev_lab.dev.integrator import observe
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.relock import carry
 
-__all__ = ['hygiene', 'prompt', 'raise_once', 'relock', 'retain_storage', 'review', 'starved', 'tidy_runs']
+__all__ = [
+    'hygiene',
+    'prompt',
+    'raise_once',
+    'relock',
+    'repo_wide',
+    'retain_storage',
+    'review',
+    'starved',
+    'tidy_runs',
+]
 
 
 def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Callable[[Alarm], object]) -> None:
@@ -187,3 +202,28 @@ def relock(
         say(f'[serve] relock: {carry(root, policy, pulls=lambda: pulls, create=built.pr_create)}')
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
         alarm(Alarm(INTEGRATION, repo, f'the {policy.integration} lock could not be relocked', str(failed)))
+
+
+def repo_wide(
+    root: Path,
+    repo: str,
+    client: Callable[[Path], Client],
+    name: str,
+    cards: Sequence[HostCard],
+    *,
+    clock: Callable[[], datetime],
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], object],
+) -> None:
+    """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgeserve.polls`).
+
+    In order: close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock.
+    """
+    serve_close_landed(root, client(root), say=say, alarm=alarm)
+    serve_sweep(root, client(root), say=say, alarm=alarm)
+    serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+    serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+    hygiene(root, client(root), say=say)
+    starved(root, repo, client(root), cards, say=say, alarm=alarm)
+    prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
+    relock(root, repo, client(root), say=say, alarm=alarm)

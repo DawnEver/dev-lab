@@ -2,7 +2,7 @@
 
 User ruling 2026-10-26: the security check is a property of a HEAD, judged once on the serving host -- not a
 test that every part's shards re-run on compute nodes. :func:`step` runs on the elected poller each tick
-(:func:`dev_lab.dev.forgeserve._repo_wide`) over every open, non-draft PR into integration and over the
+(:func:`dev_lab.dev.forgeservesteps.repo_wide`) over every open, non-draft PR into integration and over the
 integration head itself (on GitHub a workflow job judges its event's PR, ``forge security run --pr <N>``, through
 the same :func:`judge_one`); a head already carrying a settled :data:`SECURITY_CONTEXT` status is not judged
 again. The head's TRACKED tree is exported (``git archive``) and judged by :mod:`dev_lab.dev.security`'s

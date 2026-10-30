@@ -16,7 +16,8 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev.branchprune import DELETED_EVENT, post_push, sweep
+from dev_lab.dev.branchdelete import DELETED_EVENT, sweep
+from dev_lab.dev.branchprune import post_push
 from dev_lab.dev.forge import fetch_origin
 
 SESSION = 'session_aaaabbbbcccc'

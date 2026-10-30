@@ -152,7 +152,11 @@ def test_hosted_keeps_only_the_parts_a_hosted_runner_produces(tmp_path: Path) ->
     assert [row['part'] for row in found['include']] == ['base', 'base@macos', 'base@windows']
 
 
-def test_produce_hands_the_part_the_producing_marker_of_its_own_context_at_sha(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize(('row', 'other'), [('base', 'femm'), ('base@windows', 'base'), ('base@macos', 'base@windows')])
+def test_produce_hands_the_row_the_producing_marker_of_its_own_context_at_sha(
+    tmp_path: Path, monkeypatch, row: str, other: str
+) -> None:
+    """An OS-qualified row (``base@windows``) is admitted under the context verify checks; another row is not."""
     sha = 'a' * 40
     seen: dict[str, object] = {}
 
@@ -164,7 +168,7 @@ def test_produce_hands_the_part_the_producing_marker_of_its_own_context_at_sha(t
 
     monkeypatch.setattr(jobparts._door, 'run', run)
     monkeypatch.setattr(jobparts, 'producer_argv', lambda _root, part, *, sha: ['-m', 'x', part, sha])
-    assert jobparts.produce(tmp_path, 'base') == 0
+    assert jobparts.produce(tmp_path, row) == 0
     env = seen['env']
-    assert full_suite_refusal('verify', env, platformparts.part_context('base')) is None
-    assert full_suite_refusal('verify', env, platformparts.part_context('femm')) is not None, 'planted control'
+    assert full_suite_refusal('verify', env, platformparts.part_context(row)) is None
+    assert full_suite_refusal('verify', env, platformparts.part_context(other)) is not None, 'planted control'

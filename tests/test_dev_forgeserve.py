@@ -247,11 +247,11 @@ def _serve(
         lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
     )
     monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
-    monkeypatch.setattr(forgeserve, 'serve_close_landed', close_landed)
+    monkeypatch.setattr(forgeservesteps, 'serve_close_landed', close_landed)
     monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
-    monkeypatch.setattr(forgeserve, 'serve_prune', prune)
-    monkeypatch.setattr(forgeserve, 'serve_sweep', sweep)
-    monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
+    monkeypatch.setattr(forgeservesteps, 'serve_prune', prune)
+    monkeypatch.setattr(forgeservesteps, 'serve_sweep', sweep)
+    monkeypatch.setattr(forgeservesteps, 'serve_records_prune', records_prune)
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())

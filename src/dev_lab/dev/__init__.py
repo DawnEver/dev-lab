@@ -387,9 +387,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
-  branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; and ``sweep``
-  deletes every branch integration now contains (ancestry or content), after each integration move: the serve
-  pass, GitHub's push job, and a workstation's ``PostToolUse`` hook (``--local``: local branches, clean trees).
+  branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
+  command line of ``delete`` and ``sweep``, and a workstation's ``PostToolUse`` hook detaches ``sweep --local``.
+* :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
+  its content is held elsewhere; ``sweep`` deletes every branch integration now contains (ancestry or content),
+  after each integration move: the serve pass, GitHub's push job, and the ``PostToolUse`` hook.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
