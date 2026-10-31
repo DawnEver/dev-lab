@@ -213,13 +213,23 @@ def occupants(root: Path | str, *, census: Census = processes, me: int | None = 
     A tree about to be archived and removed is stricter than one about to be edited: a session's node process
     sitting in it (another agent's worktree) and a ``tail`` of its ``output/`` are its occupants too.
     """
+    return _others(tuple(census()), lambda one: _occupies(one, root), os.getpid() if me is None else me)
 
-    def inside(one: Process) -> bool:
-        return (
-            (bool(one.cwd) and _under(one.cwd, str(root))) or _under(one.executable, str(root)) or reads_tree(one, root)
-        )
 
-    return _others(tuple(census()), inside, os.getpid() if me is None else me)
+def _occupies(one: Process, root: Path | str) -> bool:
+    """Whether *one* works in, executes from, or reads checkout *root*."""
+    return (bool(one.cwd) and _under(one.cwd, str(root))) or _under(one.executable, str(root)) or reads_tree(one, root)
+
+
+def removal_holders(root: Path | str, *, census: Census = processes, me: int | None = None) -> tuple[Process, ...]:
+    """REMOVAL LOCK: every process but the asker that works in, executes from or reads *root* -- its family INCLUDED.
+
+    :func:`occupants` forgives the asker's own lineage and every hook-young process, which an edit may. A removal
+    may not (incident 2026-10-31): the sweep ran under ai-lab's ``runtime`` session, whose venv python was its own
+    ancestor, judged that tree free, and deleted every tracked file before the held interpreter refused.
+    """
+    mine = os.getpid() if me is None else me
+    return tuple(one for one in census() if one.pid != mine and one.executable and _occupies(one, root))
 
 
 def describe(runs: Iterable[Process]) -> str:

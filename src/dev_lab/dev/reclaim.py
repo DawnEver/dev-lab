@@ -37,7 +37,7 @@ from dev_lab.dev.checkout import (
 )
 from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.liverun import occupants
+from dev_lab.dev.liverun import Census, removal_holders
 from dev_lab.dev.worktree_archive import home_outputs
 
 __all__ = [
@@ -198,10 +198,10 @@ def _landed(tree: Path, branch: str, holders: tuple[str, ...]) -> bool:
     return (track or '').strip() == '[gone]' and any(_squash_landed(tree, holder) for holder in holders)
 
 
-def _occupancy() -> Callable[[Path], bool]:
-    """LIVE-RUN's whole-tree lock (:func:`dev_lab.dev.liverun.occupants`) over ONE process snapshot."""
-    table = tuple(processes())
-    return lambda path: bool(occupants(path, census=lambda: table))
+def occupancy(*, census: Census = processes, me: int | None = None) -> Callable[[Path], bool]:
+    """The REMOVAL lock (:func:`dev_lab.dev.liverun.removal_holders`) over ONE process snapshot."""
+    table = tuple(census())
+    return lambda path: bool(removal_holders(path, census=lambda: table, me=me))
 
 
 _LIVE: Final = 'live -- a process works in, executes from or reads it'
@@ -273,7 +273,8 @@ def reclaimable(
     * QUIET: its index unchanged for *quiet_s* seconds (a session that stages, commits or checks out is live);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
-    * UNOCCUPIED: no process works in, executes from or reads it (LIVE-RUN's :func:`occupants` by default).
+    * UNOCCUPIED: no process works in, executes from or reads it -- the sweep's own ancestors included
+      (:func:`occupancy` by default).
 
     An orphan directory under *home* is reclaimable iff nothing occupies it and it is not SEVERED (a ``.git``
     file). *holders* are the refs whose content counts
@@ -284,7 +285,7 @@ def reclaimable(
     orphans = orphan_directories(root, home=home)
     if trees is None or locked is None or orphans is None:
         return None
-    is_occupied = occupied or _occupancy()
+    is_occupied = occupied or occupancy()
     judge = _Judge(holders, declared_generated(root), quiet_s)
     leases: list[Lease] = []
     for path, branch in trees[1:]:

@@ -13,12 +13,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
+from lab_commons.census import Process
+
 from dev_lab.dev.branchset import BranchSet, apply_local
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
-from dev_lab.dev.reclaim import reclaim, reclaimable
+from dev_lab.dev.reclaim import occupancy, reclaim, reclaimable
 
 _GIT = shutil.which('git') or 'git'
 _HOLDERS = ('origin/main',)
@@ -154,3 +157,36 @@ def test_branchset_apply_reclaims_first_so_the_landed_branch_is_deleted(tmp_path
 def test_an_unreadable_root_is_none(tmp_path: Path) -> None:
     assert reclaimable(tmp_path, _HOLDERS, occupied=_free) is None
     assert reclaim(tmp_path, _HOLDERS, occupied=_free) is None
+
+
+def test_a_tree_the_sweeps_own_ancestor_executes_from_is_kept(tmp_path: Path) -> None:
+    """INCIDENT 2026-10-31: the sweep ran under ai-lab's ``runtime`` session, whose venv python IS its ancestor.
+
+    The edit lock forgives the asker's own family; a removal cannot: it would delete the interpreter its own
+    session runs on. A planted census: the sweep (pid 3) under a shell (2) under the tree's venv python (1).
+    """
+    tree = tmp_path / 'runtime'
+    python = tree / '.venv' / 'Scripts' / 'python.exe'
+    table = (
+        Process(1, 0, str(python), f'{python} -m ai_lab.session', 9e4, str(tmp_path)),
+        Process(2, 1, 'bash', 'bash', 9e4, str(tmp_path)),
+        Process(3, 2, 'python', 'python -m dev_lab.dev.branchprune sweep --local', 1.0, str(tmp_path)),
+    )
+    assert occupancy(census=lambda: table, me=3)(tree), 'its own ancestor executes from the tree'
+    assert not occupancy(census=lambda: table, me=3)(tmp_path / 'free'), 'CONTROL: a free tree is not in use'
+
+
+def test_a_tree_a_live_process_holds_is_kept_and_a_free_one_still_goes(tmp_path: Path) -> None:
+    """PLANTED LIVE PROCESS working in the landed tree, judged by the REAL census (the default occupancy)."""
+    work = _planted(tmp_path)
+    home = work / '.claude' / 'worktrees'
+    held = home / 'landed'
+    planted = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], cwd=held)
+    try:
+        lines = reclaim(work, _HOLDERS) or ()
+    finally:
+        planted.kill()
+        planted.wait()
+    assert (held / 'landed.txt').is_file(), 'a tree in use is not touched'
+    assert any(line.startswith('kept') and 'landed' in line and 'live' in line for line in lines), lines
+    assert not (home / 'squashed').exists(), 'CONTROL: a free landed tree is still removed'
