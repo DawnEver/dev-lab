@@ -86,7 +86,8 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-10-18 AT 328 (outcomes, compute, forge coalesce/unit): floor 317.
 #: RE-TAKEN 2026-10-23 AT 261 (netverb, liverun, worktree archive, fleet deploy, automode): floor 235.
 #: RE-TAKEN 2026-10-25 AT 289 (supervise moved in from lab-commons): floor 270.
-FILE_FLOOR = 290  # re-taken 2026-10-26 at 312 (forge review/security/takeover, metrics split)
+#: RE-TAKEN 2026-10-31 AT 332 (affinity, unproduced, hosted parts, serial pass, run show): floor 310.
+FILE_FLOOR = 310
 
 
 def _tree() -> dict[str, str]:

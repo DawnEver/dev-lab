@@ -301,6 +301,11 @@ class SlurmCluster:
         """Where the run's current job is, from the cluster's run state and one ``squeue``."""
         return progress_text(where(run.sha, run.platform, self.machine, self.connect, policy=self.config.policy))
 
+    def rounds(self, run: Run) -> list[dict[str, Any]]:
+        """The run state's rounds, read on this login node (:func:`lab_commons.hpc.run.load_state`)."""
+        state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
+        return list(state.get('rounds', []))
+
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""
         return cancel_run(run.sha, run.platform, self.machine, self.connect, also=run.job_ids, aliases=run.job_aliases)

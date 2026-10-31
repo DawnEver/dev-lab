@@ -106,6 +106,7 @@ class _Slurm:
         self.started: list[str] = []
         self.draining = forgerunstate.Draining(0.0, ())
         self.cut: list[str] = []
+        self.state_rounds: list[dict[str, Any]] = []
 
     def submitted(self, _run: forgerunstate.Run) -> list[str]:
         return list(self.recorded)
@@ -126,6 +127,9 @@ class _Slurm:
 
     def progress(self, _run: forgerunstate.Run) -> str:
         return self.phrase
+
+    def rounds(self, _run: forgerunstate.Run) -> list[dict[str, Any]]:
+        return list(self.state_rounds)
 
     def cancel(self, run: forgerunstate.Run) -> list[str]:
         self.cancelled += run.job_ids
