@@ -110,8 +110,8 @@ pull-requests = "read"
 # 2026-10-31: "cannot import 'ai_lab.review'", nothing posted): the job installs ai-lab, from this owner's forge,
 # into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
 # the head and fails (forgetakeover.review_run), never exits green with no review.
-# The ai-lab COMMIT is declared here, never a floating branch (dev-lab #5 took whatever was current that minute);
-# bump it when ai-lab's review changes. ai-lab reads keys from the git credential store ONLY, never the environment
+# The ai-lab COMMIT is the job's AI_LAB_REF, declared once below, never a floating branch (dev-lab #5 took whatever
+# was current that minute); `python -m dev_lab.dev.ciworkflows pin` says when it falls behind ai-lab's head. ai-lab reads keys from the git credential store ONLY, never the environment
 # (dev-lab #5: every reviewer `unsupported` with the secret set), so the job stores the key for the review task in
 # an in-memory credential cache, on stdin; with no secret (a fork PR) it stores nothing and the review holds.
 ["ci.yml".jobs.review]
@@ -119,10 +119,14 @@ if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "Install the review method", run = 'uv venv "$RUNNER_TEMP/ai-lab" && uv pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@58660bb8275c7a5c8e9e4dfa7b1ab6672cfff8aa"' },
+    { name = "Install the review method", run = 'uv venv "$RUNNER_TEMP/ai-lab" && uv pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"' },
     { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=3600' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
     { name = "tests/review", run = 'uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
+
+# The ONE declaration of the ai-lab commit the review installs (ciworkflows.ai_lab_ref); `ciworkflows pin` checks it.
+["ci.yml".jobs.review.env]
+AI_LAB_REF = "12f22cc920fba83eabdd1764594231df1a5eac60"
 
 # Findings are PR comments (the issues API) and a capped round's follow-up is an issue.
 ["ci.yml".jobs.review.permissions]

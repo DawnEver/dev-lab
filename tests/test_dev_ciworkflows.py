@@ -10,13 +10,16 @@ from pathlib import Path
 from typing import Any
 
 from dev_lab.dev.ciworkflows import (
+    AI_LAB_REF_VAR,
     RENDER_COMMAND,
     STAMP,
     USE_STEPS,
+    ai_lab_ref,
     drift,
     expand,
     main,
     merge,
+    pin_drift,
     render,
     workflows,
     write,
@@ -97,12 +100,9 @@ def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_
     assert '$GITHUB_WORKSPACE/.venv' not in review, "the repo's own environment does not carry the method"
 
 
-def test_the_review_method_is_pinned_to_the_commit_dev_lab_declares(tmp_path: Path) -> None:
+def test_the_review_method_is_pinned_to_the_commit_dev_lab_declares() -> None:
     """dev-lab #5 (2026-10-31) installed whatever ai-lab's default branch was that minute: a pin, never a float."""
-    install = next(
-        s for s in _base_ci(tmp_path)['jobs']['review']['steps'] if s.get('name') == 'Install the review method'
-    )
-    assert re.search(r'/ai-lab\.git@[0-9a-f]{40}"', install['run']), install['run']
+    assert re.fullmatch(r'[0-9a-f]{40}', ai_lab_ref()), ai_lab_ref()
 
 
 def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_path: Path) -> None:
@@ -224,3 +224,27 @@ def test_a_hosted_part_renders_its_own_push_only_job_and_only_its_setup_step_see
     assert not [name for name in workflows(tmp_path)['ci.yml']['jobs'] if name.startswith('part-')], (
         'PLANTED CONTROL: nothing declared, no hosted job'
     )
+
+
+def test_the_ai_lab_ref_is_declared_once_and_the_install_reads_it(tmp_path: Path) -> None:
+    """Round 1 F-581fef0aab0b: one declared value, rendered as the job's env; the install names no sha itself."""
+    review = _base_ci(tmp_path)['jobs']['review']
+    assert review['env'] == {AI_LAB_REF_VAR: ai_lab_ref()}
+    install = next(s for s in review['steps'] if s.get('name') == 'Install the review method')['run']
+    assert f'/ai-lab.git@${AI_LAB_REF_VAR}"' in install
+    assert ai_lab_ref() not in install
+
+
+def test_the_pin_check_names_a_stale_ref_and_the_bump() -> None:
+    """PLANTED control: the declared ref at ai-lab's head is no drift."""
+    assert pin_drift(ai_lab_ref(), ai_lab_ref()) is None
+    stale = pin_drift(ai_lab_ref(), 'f' * 40)
+    assert ai_lab_ref()[:12] in stale
+    assert 'f' * 12 in stale
+    assert AI_LAB_REF_VAR in stale
+
+
+def test_the_pin_verb_reads_ai_labs_head_through_its_seam(capsys) -> None:
+    assert main(['pin'], head=ai_lab_ref) == 0
+    assert main(['pin'], head=lambda: 'f' * 40) == 1
+    assert 'f' * 12 in capsys.readouterr().out
