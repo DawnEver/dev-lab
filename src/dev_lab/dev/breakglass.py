@@ -10,6 +10,14 @@ flag -- so every use is in the history it bypassed:
 * every ``forge serve`` tick keeps one ``integration`` issue per break-glass commit past the declared start
   (:func:`notices`), naming the commit and its reason. It closes when ``pr_merges_since`` is moved past it
   -- by a pull request, which is the follow-up the use owes.
+
+BREAK-GLASS BYPASSES THE FORGE'S MERGE, NEVER THE REVIEW (user ruling 2026-10-31, every PR must get a review,
+after lab-commons #11 and dev-lab #3 landed by Break-Glass with none). Every head a Break-Glass push lands -- a
+merge's PR head, else the commit itself -- needs a POSTED review (:func:`unreviewed`): its latest
+:data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no hold is pending. The emergency path for a
+head the forge's own review never reached is :data:`TAKEOVER_DOOR`: the same method run by the session, which posts
+the review and releases the hold. A forge that cannot be read refuses: a push needs the forge, so a forge down for
+reads is down for the push too.
 """
 
 from __future__ import annotations
@@ -22,11 +30,19 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgework import ForgeCallFailed, client_for
 
 if TYPE_CHECKING:
+    from dev_lab.dev.forgestatus import CommitStatus
+    from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['BREAK_GLASS', 'empty_reason', 'notices', 'reason']
+__all__ = ['BREAK_GLASS', 'TAKEOVER_DOOR', 'empty_reason', 'forge_unreviewed', 'notices', 'reason', 'unreviewed']
+
+#: The door that reviews a head no forge review reached: the same method, run by the session, posted as the status.
+TAKEOVER_DOOR: Final = 'python -m dev_lab.dev.forge review takeover'
 
 #: The trailer that admits a direct push to the integration branch, with its reason as the value.
 BREAK_GLASS: Final = 'Break-Glass'
@@ -76,3 +92,26 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
             )
             found.append(Alarm(INTEGRATION, repo, subject, body, about=f'break-glass {sha[:12]}'))
     return found
+
+
+def unreviewed(client: Client, head: str) -> str | None:
+    """Why *head* carries no posted review on *client*'s forge, or ``None``: latest review ``success``, no hold."""
+    latest: dict[str, CommitStatus] = {}
+    for one in status_list(client, head):  # newest first: the first of each context is its latest
+        latest.setdefault(one.context, one)
+    review, hold = latest.get(REVIEW_CONTEXT), latest.get(HOLD_CONTEXT)
+    if review is None:
+        return f'{REVIEW_CONTEXT} is not posted'
+    if review.state != 'success':
+        return f'{REVIEW_CONTEXT} is {review.state}: {review.description}'
+    if hold is not None and hold.state != 'success':
+        return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
+    return None
+
+
+def forge_unreviewed(root: Path, head: str) -> str | None:
+    """:func:`unreviewed` on *root*'s origin forge; a forge that cannot be read is a reason, never a pass."""
+    try:
+        return unreviewed(client_for(root), head)
+    except (ForgeCallFailed, OSError, ValueError) as failed:
+        return f'the forge cannot be read ({type(failed).__name__}: {failed})'
