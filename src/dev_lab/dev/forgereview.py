@@ -34,18 +34,16 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integrati
   when the command failed or printed no known findings version (those two stay advisory: no finding exists).
   It is not a PART (:func:`dev_lab.dev.platformparts.parts_of` skips it): promotion and push admission never wait
   on it, the merge does;
-* ``pending`` saying :data:`OVER_CAP_TAKEOVER`, with a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT`
-  beside it, when a metered program review cannot read the head (its reviewable change is over
-  ``max_total_bytes``, one file alone is over ``max_diff_bytes``, or it needs several slices and the command takes
-  no ``{paths}``). That is a TAKEOVER, as :data:`TAKEOVER_PENDING` is: the INTEGRATOR AGENT owns it (user ruling
-  2026-10-26). The forge lists the held head in its integration prompts with the door to run, and the integrator
-  session runs ``python -m dev_lab.dev.forge review takeover <sha>`` (:mod:`dev_lab.dev.forgetakeover`): the SAME
-  method over every slice, unmetered, then the findings comment, :data:`REVIEW_CONTEXT` and the release. The hold
-  is the ONE review context the auto-merge (:mod:`dev_lab.dev.forgemerge`) waits on, and only that door releases
-  it, refusing without a findings comment for the sha. A human is asked only for a decision the review surfaces.
+* a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` beside a ``pending`` :data:`REVIEW_CONTEXT` ONLY
+  when the review could not run for this PR: its job has no review secret (:data:`NEEDS_MAINTAINER`) or its host
+  cannot run the command (:class:`HostCannot`, on a workflow job). The integrator session runs ``python -m
+  dev_lab.dev.forge review takeover <sha>`` (:mod:`dev_lab.dev.forgetakeover`): the SAME method, then the findings
+  comment, :data:`REVIEW_CONTEXT` and the release. A head is never held for its SIZE (D123, user ruling 2026-10-31,
+  superseding 2026-10-26): an oversize head is one structure-level review of the whole range.
 
 WHAT IS READ is :mod:`dev_lab.dev.forgereview_scope`'s: the branch's own change since its last reviewed head,
-minus generated files, in slices of at most ``max_diff_bytes`` under one lens each. Each slice runs the command
+minus generated files, in slices of at most ``max_diff_bytes`` under one lens each -- or, past the bounds, ONE
+whole-range slice the reviewer explores from the directory level. Each slice runs the command
 once; their outputs merge into one document, and a declared ``synthesis`` command then reads that document
 (``{findings}``) over the whole range for what crosses slices.
 
@@ -120,7 +118,7 @@ from dev_lab.dev.forgereview_runtimes import (
     retired_table,
     runtime_names,
 )
-from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP_TAKEOVER, Budget, Scope, gather, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import ONLY_GENERATED, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -136,15 +134,16 @@ __all__ = [
     'FAMILY_RUNTIMES',
     'MODEL_FIELD',
     'NEEDS_MAINTAINER',
-    'OVER_CAP_TAKEOVER',
     'RANGE_FIELD',
     'RETIRED_KEYS',
     'REVIEW_CONTEXT',
     'RULES_FIELD',
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
+    'HostCannot',
     'Review',
     'command_for',
+    'hold',
     'load_review',
     'review_from',
     'review_pull',
@@ -209,6 +208,14 @@ RETIRED_KEYS: Final = {
 }
 
 _TABLE: Final = 'review'
+
+
+class HostCannot(OSError):
+    """The host cannot fill or start the review command: a fact about the HOST, checked before any claim.
+
+    The serve tick says it and leaves the head to a capable host; a workflow job -- the ONLY reviewer of its PR
+    -- holds the head for the takeover door and fails (:func:`dev_lab.dev.forgetakeover.review_run`).
+    """
 
 
 @dataclass(frozen=True)
@@ -340,19 +347,17 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
 
 
 def _without_command(root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope) -> str | None:
-    """The line said when *pull*'s head is settled with no command run (past the cap, held, nothing to read)."""
+    """The line said when *pull*'s head is settled with no command run (past the round cap, nothing to read)."""
     head = pull.head_sha
     if capped(client, pull, review.max_rounds):  # past max_rounds: the blocking findings re-checked only
         return post_round(root, client, pull, scope.range, found=None, max_rounds=review.max_rounds, by='re-check')
-    if scope.held is None and scope.slices:
+    if scope.slices:
         return None
-    state, why = ('pending', f'{OVER_CAP_TAKEOVER} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
-    status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:DESCRIPTION])
-    status_post(client, head, context=HOLD_CONTEXT, state=state, description=why[:DESCRIPTION])
-    return f'#{pull.number} {head[:12]}: {why}'
+    status_post(client, head, context=REVIEW_CONTEXT, state='success', description=ONLY_GENERATED[:DESCRIPTION])
+    return f'#{pull.number} {head[:12]}: {ONLY_GENERATED}'
 
 
-def _hold(client: Client, pull: PullRequest, why: str) -> str:
+def hold(client: Client, pull: PullRequest, why: str) -> str:
     """Hold *pull*'s head for the takeover door: :data:`REVIEW_CONTEXT` and the hold both ``pending`` *why*."""
     for context in (REVIEW_CONTEXT, HOLD_CONTEXT):
         status_post(client, pull.head_sha, context=context, state='pending', description=why[:DESCRIPTION])
@@ -373,7 +378,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     scope = _scope(root, client, review, pull, f'origin/{pull.base}')
     said = _without_command(root, client, review, pull, scope)
     if said is None and not runner.secret:
-        said = _hold(client, pull, NEEDS_MAINTAINER)
+        said = hold(client, pull, NEEDS_MAINTAINER)
     return said if said is not None else _command_round(root, client, review, pull, scope=scope, runner=runner)
 
 
@@ -388,7 +393,7 @@ def _command_round(
     except ReviewUnsupported as unsupported:
         cannot = str(unsupported)
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
-        return f'#{pull.number} {head[:12]}: not reviewed on this host -- {cannot}'
+        raise HostCannot(cannot)
     claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
     status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
     try:
@@ -423,8 +428,15 @@ def review_tick(
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said."""
     runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock)
+
+    def said(pull: PullRequest) -> str | None:
+        try:
+            return review_pull(root, client, review, pull, runner)
+        except HostCannot as cannot:  # another serving host may run it: nothing is posted
+            return f'#{pull.number} {pull.head_sha[:12]}: not reviewed on this host -- {cannot}'
+
     pulls = (pull for pull in pr_list(client) if pull.base == base and not pull.draft and pull.head_sha)
-    return tuple(said for pull in pulls if (said := review_pull(root, client, review, pull, runner)) is not None)
+    return tuple(line for pull in pulls if (line := said(pull)) is not None)
 
 
 def step(

@@ -1,11 +1,11 @@
-"""REVIEW TAKEOVER: an over-cap head is the INTEGRATOR AGENT's to review, and its door is the only release.
+"""REVIEW TAKEOVER: a head whose review could not run is the INTEGRATOR AGENT's to review; its door is the only release.
 
-User ruling 2026-10-26. A head a metered program review cannot read (:data:`OVER_CAP_TAKEOVER`: over
-``max_total_bytes``, one file over ``max_diff_bytes``) is HELD on :data:`HOLD_CONTEXT`, and the auto-merge waits
-on it. It is a TAKEOVER, as a review whose reviewers were all exhausted is: the integrator session reviews it
-through the SAME method -- the declared command, sliced, ``{paths}`` and ``{lens}`` -- over EVERY slice. A session
-is never metered, so the byte cap that bounds an API-key program review does not bind it (``plan(metered=False)``).
-A human is asked only for a decision the review surfaces, never for the routine review or the release.
+A head is HELD on :data:`HOLD_CONTEXT` only when the review could not run for it -- its job had no review secret
+(:data:`~dev_lab.dev.forgereview.NEEDS_MAINTAINER`) or its host could not run the command
+(:class:`~dev_lab.dev.forgereview.HostCannot`) -- never for its size (D123, user ruling 2026-10-31, superseding the
+2026-10-26 hold-on-oversize). The integrator session reviews it through the SAME method and scope the program
+review reads, and the auto-merge waits on the hold until then. It is also the Break-Glass path's review
+(:mod:`dev_lab.dev.breakglass`). A human is asked only for a decision the review surfaces.
 
 * :func:`held` -- the open PR heads into integration whose latest :data:`HOLD_CONTEXT` is ``pending``; the forge
   prompts the integrator with each (:func:`alarms`, one ``integration`` issue per head, and
@@ -34,8 +34,8 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeintegration import _fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_list, marker, pr_list
-from dev_lab.dev.forgereview import PATHS_FIELD, Review, command_for, load_review, review_pull
-from dev_lab.dev.forgereview_command import Runner, run_command
+from dev_lab.dev.forgereview import PATHS_FIELD, HostCannot, Review, command_for, hold, load_review, review_pull
+from dev_lab.dev.forgereview_command import Runner, can_start, run_command
 from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
@@ -125,10 +125,10 @@ def release(client: Client, sha: str, *, host: str) -> str:
 
 
 def scope_of(root: Path, client: Client, review: Review, pull: PullRequest, base: str) -> Scope:
-    """What the takeover reads: the same range and slices as the program review, unmetered."""
+    """What the takeover reads: the same range and slices as the program review."""
     done = reviewed_heads(comment.body for comment in comment_list(client, pull.number))
     sliceable = PATHS_FIELD in review.command
-    return plan(root, f'origin/{base}', pull.head_sha, review.budget, done, sliceable=sliceable, metered=False)
+    return plan(root, f'origin/{base}', pull.head_sha, review.budget, done, sliceable=sliceable)
 
 
 def takeover(
@@ -145,9 +145,6 @@ def takeover(
         msg = '[tool.dev_lab.review] command is not declared: there is no method to review with'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, pull, base)
-    if scope.held is not None:
-        msg = f'{scope.held}: declare {PATHS_FIELD} in the review command'
-        raise TakeoverRefused(msg)
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
     synth = command_for(review, scope.range, runtimes, synthesis=True)
     gone = disposed(trusted_bodies(client, pull.number))  # the forge's own: a trailer never reaches the engine
@@ -170,12 +167,23 @@ def takeover(
     return f'{said} ({len(scope.slices)} slice(s))', release(client, pull.head_sha, host=host)
 
 
+#: What the hold says when the job's host cannot run the review command: the takeover door reviews the head.
+HOST_CANNOT: Final = 'the review job cannot run the review command'
+
+
 def review_run(root: Path, client: Client, review: Review, number: int, *, base: str, runner: Runner) -> str:
-    """:func:`review_pull` on PR *number* alone -- what a GitHub workflow job runs for its event's PR; the line."""
+    """:func:`review_pull` on PR *number* alone -- what a GitHub workflow job runs for its event's PR; the line.
+
+    The job is the ONLY reviewer of its PR, so a host that cannot run the command is never silent: the head is held
+    for ``forge review takeover <sha>`` and :class:`~dev_lab.dev.forgereview.HostCannot` is raised (the job fails).
+    """
     pull = client.pr_view(number)
     if pull.base != base or pull.draft or not pull.head_sha:
         return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
-    return review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
+    try:
+        return review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
+    except HostCannot as cannot:
+        raise HostCannot(hold(client, pull, f'{HOST_CANNOT}: {cannot}')) from cannot
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -220,6 +228,7 @@ def runtimes_with(here: Mapping[str, Mapping[str, Any]], given: Sequence[str]) -
 def main(
     argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None,
     run: Callable[[Sequence[str], Path], str] = run_command,
+    ready: Callable[[Sequence[str], Path], str | None] = can_start,
     fetch: Callable[[Path, int], object] | None = None,
 ) -> int:  # fmt: skip
     """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``, ``run --pr <N>``.
@@ -233,7 +242,9 @@ def main(
         origin, base = client or client_for(root), load_policy(root).integration
         if args.verb == 'run':
             secret = all(os.environ.get(name) for name in args.secret_env)
-            runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, secret=secret)
+            runner = Runner(
+                this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready, secret=secret
+            )
             emit(f'[review] {review_run(root, origin, load_review(root), args.pr, base=base, runner=runner)}')
             return 0
         if args.verb in {'held', 'blocked'}:
@@ -252,7 +263,7 @@ def main(
             scope = scope_of(root, origin, review, pull, base)
             emit(
                 f'#{pull.number} {scope.range}: {len(scope.slices)} slice(s), {scope.outside} non-code file(s) outside'
-                f'{f" -- {scope.held}" if scope.held else ""}'
+                f'{f" -- one structure-level review: {scope.structure}" if scope.structure else ""}'
             )
             emit(f'  code bytes: {sum(one.size for one in scope.slices)}')
             emit(f'  moved (path change only): {len(scope.moved)}')

@@ -106,12 +106,17 @@ statuses = "write"
 pull-requests = "read"
 
 # A fork PR's job gets no secret: the review then holds the head for a maintainer's takeover.
+# The review METHOD is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3,
+# 2026-10-31: "cannot import 'ai_lab.review'", nothing posted): the job installs ai-lab, from this owner's forge,
+# into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
+# the head and fails (forgetakeover.review_run), never exits green with no review.
 ["ci.yml".jobs.review]
 if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "tests/review", run = 'uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$GITHUB_WORKSPACE/.venv/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+    { name = "Install the review method", run = 'uv venv "$RUNNER_TEMP/ai-lab" && uv pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git"' },
+    { name = "tests/review", run = 'uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
 
 # Findings are PR comments (the issues API) and a capped round's follow-up is an issue.

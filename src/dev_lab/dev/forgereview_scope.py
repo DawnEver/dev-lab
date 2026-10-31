@@ -3,11 +3,11 @@
 The branch's own change, minus generated files, since the last reviewed head; each slice under the lens its
 paths earn.
 
-THE CAP USED TO DECIDE WHETHER A HEAD WAS REVIEWED AT ALL, and a byte count of the whole diff answered the
-wrong question: most of a large downstream diff was a lock file, a rendered allow block or a merge of
-``integrate/main``, and the heads that most needed a review were the ones that got none. The budget is the
-reviewer's, so it bounds a SLICE (``max_diff_bytes``); the head is held for a session only past the TOTAL
-(``max_total_bytes``), or when one file alone outgrows a slice.
+A HEAD IS NEVER HELD FOR ITS SIZE (D123, user ruling 2026-10-31 "too many files: then review by reading the
+directories", superseding the 2026-10-26 hold-on-oversize). The budget bounds a SLICE (``max_diff_bytes``); past
+the TOTAL (``max_total_bytes``), when one file alone outgrows a slice, or when a command that takes no paths would
+need several slices, the head is ONE review of the whole range with no paths (:data:`WHOLE`, :attr:`Scope.structure`
+says why): the method hands the reviewer the change map at the directory level, and it reads what it chooses.
 
 * THE RANGE is ``<base>..<head>`` where *base* is the merge base with the integration branch -- a merge of
   ``integrate/main`` moves the merge base with it, so the branch's own change is what is read -- or, when an
@@ -47,17 +47,30 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
 __all__ = [
-    'CODE', 'DISPOSED_FIELD', 'FINDINGS_FIELD', 'LENSES', 'NOT_CODE', 'ONLY_GENERATED', 'OVER_CAP_TAKEOVER',
-    'PRINCIPLES_FIELD', 'SUMMARY_FIELD', 'Budget',
-    'Scope', 'Slice',
-    'gather', 'is_code', 'lens_of', 'own_base', 'plan', 'reviewable', 'reviewed_heads',
+    'CODE',
+    'DISPOSED_FIELD',
+    'FINDINGS_FIELD',
+    'LENSES',
+    'NOT_CODE',
+    'ONLY_GENERATED',
+    'PRINCIPLES_FIELD',
+    'SUMMARY_FIELD',
+    'WHOLE',
+    'Budget',
+    'Scope',
+    'Slice',
+    'gather',
+    'is_code',
+    'lens_of',
+    'own_base',
+    'plan',
+    'reviewable',
+    'reviewed_heads',
 ]  # fmt: skip
 
-#: The review description of a held head (its :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` says the same): a
-#: TAKEOVER, like a review whose reviewers were all exhausted. The integrator session reviews it through the same
-#: method over every slice -- a session is never metered, so the cap that bounds a program review does not bind it
-#: -- and its door posts the findings and releases the hold (:mod:`dev_lab.dev.forgetakeover`).
-OVER_CAP_TAKEOVER: Final = 'over the cap: integrator takeover -- forge review takeover <sha> reviews it and releases'
+#: The lens of the ONE slice an oversize head is reviewed as: no paths, so the method maps the whole range at the
+#: directory level and the reviewer reads what it chooses (D123, user ruling 2026-10-31).
+WHOLE: Final = 'standard'
 
 #: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
 ONLY_GENERATED: Final = 'nothing to review: every changed file is generated or not code'
@@ -113,11 +126,11 @@ class Slice:
 
 @dataclass(frozen=True)
 class Scope:
-    """What a head's review reads: the range, its slices, and -- when it cannot be read -- why it is held."""
+    """What a head's review reads: the range and its slices; past the bounds, why it is one structure-level review."""
 
     range: str
     slices: tuple[Slice, ...] = ()
-    held: str | None = None
+    structure: str | None = None  # why the head is ONE whole-range review (:data:`WHOLE`), or None
     outside: int = 0  # changed files that are not code: counted, never read
     moved: tuple[str, ...] = ()  # pure moves (new paths): read for their path change, cost ~0
 
@@ -264,13 +277,11 @@ def plan(
     reviewed: Sequence[str] = (),
     *,
     sliceable: bool = True,
-    metered: bool = True,
 ) -> Scope:
     """The :class:`Scope` of *head*'s review against *target*, cut by *budget*.
 
-    A command that cannot be told a slice's paths (not *sliceable*) reads the whole range: past one slice, held.
-    Not *metered* (a session's takeover), the total cap and the one-file cap do not hold it: a file larger than a
-    slice is a slice of its own, and the session reads every slice.
+    Past the bounds -- the total, one file over a slice, or several slices for a command that cannot be told a
+    slice's paths (not *sliceable*) -- the head is ONE structure-level review of the whole range (:data:`WHOLE`).
     """
     reviewed_range = f'{own_base(root, target, head, reviewed)}..{head}'
     every, moves, pure = _diff(root, reviewed_range)
@@ -278,23 +289,24 @@ def plan(
     sizes = {path: n for path, n in read.items() if is_code(path, budget.code, budget.not_code)}
     outside = len(read) - len(sizes)
     total = sum(sizes.values())
-    if metered and total > budget.total_bytes:
-        why = f'{total} reviewable code bytes > max_total_bytes={budget.total_bytes}'
-        return Scope(reviewed_range, held=why, outside=outside)
-    if metered and (huge := sorted(path for path, n in sizes.items() if n > budget.slice_bytes)):
-        why = f'{huge[0]} alone is over max_diff_bytes={budget.slice_bytes}: derive it, or the integrator takes over'
-        return Scope(reviewed_range, held=why, outside=outside)
+    moved = tuple(path for path in pure if path in sizes)
     by_lens: dict[str, dict[str, int]] = {}
     for path, n in sizes.items():
         by_lens.setdefault(lens_of(path, budget.strict, budget.light), {})[path] = n
     slices = [
         one for lens in LENSES if lens in by_lens for one in _pack(lens, by_lens[lens], budget.slice_bytes, moves)
     ]
-    if len(slices) > 1 and not sliceable:
+    huge = sorted(path for path, n in sizes.items() if n > budget.slice_bytes)
+    if total > budget.total_bytes:
+        why = f'{total} reviewable code bytes > max_total_bytes={budget.total_bytes}'
+    elif huge:
+        why = f'{huge[0]} alone is over max_diff_bytes={budget.slice_bytes}'
+    elif len(slices) > 1 and not sliceable:
         why = f'{len(slices)} slices, and the command takes no paths'
-        return Scope(reviewed_range, held=why, outside=outside)
-    moved = tuple(path for path in pure if path in sizes)
-    return Scope(reviewed_range, tuple(slices), outside=outside, moved=moved)
+    else:
+        return Scope(reviewed_range, tuple(slices), outside=outside, moved=moved)
+    whole = Slice(WHOLE, (), total)
+    return Scope(reviewed_range, (whole,), outside=outside, moved=moved, structure=why)
 
 
 _REVIEWED: Final = re.compile(re.escape(marker(Marker.REVIEW, 'SHA')).replace('SHA', '(?P<sha>[0-9a-f]{7,40})'))

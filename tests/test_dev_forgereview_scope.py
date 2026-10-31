@@ -33,7 +33,6 @@ from dev_lab.dev.forgereview_scope import (
     FINDINGS_FIELD,
     NOT_CODE,
     ONLY_GENERATED,
-    OVER_CAP_TAKEOVER,
     Budget,
     is_code,
     lens_of,
@@ -146,7 +145,7 @@ def test_a_head_of_only_generated_files_is_posted_as_nothing_to_review(tmp_path:
     review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=command, ready=_can, host='box')
     assert command.ran == []
     found = {(s.context, s.state, s.description) for s in status_list(forge, head)}
-    assert found == {(c, 'success', ONLY_GENERATED) for c in (REVIEW_CONTEXT, HOLD_CONTEXT)}
+    assert found == {(REVIEW_CONTEXT, 'success', ONLY_GENERATED)}, 'nothing to read is no hold to release'
 
 
 def test_each_path_earns_its_lens() -> None:
@@ -203,10 +202,14 @@ def test_a_synthesis_reads_the_merged_slices_once(tmp_path: Path) -> None:
     assert command.ran[-1][2].endswith('findings.json')
 
 
-def test_a_head_the_slices_cannot_hold_is_held_for_a_session(tmp_path: Path) -> None:
-    """Over the total, one file over a slice, or several slices for a command without paths: OVER_CAP_TAKEOVER.
+def test_an_oversize_head_gets_one_structure_level_review_over_the_whole_range(tmp_path: Path) -> None:
+    """D123: an oversize head gets one whole-range review from the directory level, never a hold.
 
-    PLANTED control: the same head under wide bounds is reviewed (the slices test).
+    User ruling 2026-10-31, superseding the 2026-10-26 hold-on-oversize: too many files means read the
+    directories, never hold. Over the total, one file over a slice, or several slices for a command without paths:
+    ONE reviewer over the whole range, no paths (ai-lab maps it at directory level), success posted, no hold.
+
+    PLANTED control: the same head under wide bounds is cut into its per-path slices (the slices test).
     """
     work, head = _many(tmp_path)
     for review in (
@@ -218,10 +221,13 @@ def test_a_head_the_slices_cannot_hold_is_held_for_a_session(tmp_path: Path) -> 
         forge.add_pull('pr/x', 'integrate/main', sha=head)
         command = Recorder()
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
-        assert command.ran == []
+        (argv,) = [one for one in command.ran if one[0] == 'reviewer']
+        assert not any(arg.endswith('.py') for arg in argv), 'no path list: the whole range'
         statuses = status_list(forge, head)
-        assert sorted(s.context for s in statuses) == [REVIEW_CONTEXT, HOLD_CONTEXT]
-        assert all(s.state == 'pending' and s.description.startswith(OVER_CAP_TAKEOVER) for s in statuses)
+        assert HOLD_CONTEXT not in {s.context for s in statuses}, 'an oversize head is reviewed, never held'
+        assert next(s for s in statuses if s.context == REVIEW_CONTEXT).state == 'success'
+    wide = plan(work, 'origin/integrate/main', head, _WIDE)
+    assert all(one.paths for one in wide.slices)
 
 
 def test_the_slice_outputs_merge_once_per_finding_id() -> None:
@@ -299,9 +305,10 @@ def test_the_cap_counts_code_bytes_only(tmp_path: Path) -> None:
     work, head = _mixed(tmp_path, 'x = 1\n' * 50)
     code_bytes = sum(s.size for s in plan(work, 'origin/integrate/main', head, _WIDE).slices)
     tight = Budget(slice_bytes=10**6, total_bytes=code_bytes)
-    assert plan(work, 'origin/integrate/main', head, tight).held is None
+    assert all(one.paths for one in plan(work, 'origin/integrate/main', head, tight).slices)
     everything = Budget(slice_bytes=10**6, total_bytes=code_bytes, code=('**',), not_code=())
-    assert plan(work, 'origin/integrate/main', head, everything).held is not None
+    (whole,) = plan(work, 'origin/integrate/main', head, everything).slices
+    assert whole.paths == (), 'past the cap: one structure-level review of the whole range'
 
 
 def test_a_head_of_only_prose_is_nothing_to_review(tmp_path: Path) -> None:
