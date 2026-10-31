@@ -55,7 +55,18 @@ from dev_lab.dev.principles import PRINCIPLES, Principle
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-__all__ = ['CLASSES', 'GROUNDS', 'UNCLASSED', 'conflicted', 'judge', 'main', 'pending', 'undeclared', 'ungrounded', 'unresolved']
+__all__ = [
+    'CLASSES',
+    'GROUNDS',
+    'UNCLASSED',
+    'conflicted',
+    'judge',
+    'main',
+    'pending',
+    'undeclared',
+    'ungrounded',
+    'unresolved',
+]
 
 #: How a conflicted file may be resolved, each class -> the principle(s) that decide it:
 #: ``newer-structure`` the newer structure, the other side's content re-expressed inside it;
