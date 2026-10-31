@@ -143,8 +143,10 @@ __all__ = [
     'RULES_FIELD',
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
+    'HostCannot',
     'Review',
     'command_for',
+    'hold',
     'load_review',
     'review_from',
     'review_pull',
@@ -209,6 +211,14 @@ RETIRED_KEYS: Final = {
 }
 
 _TABLE: Final = 'review'
+
+
+class HostCannot(OSError):
+    """The host cannot fill or start the review command: a fact about the HOST, checked before any claim.
+
+    The serve tick says it and leaves the head to a capable host; a workflow job -- the ONLY reviewer of its PR
+    -- holds the head for the takeover door and fails (:func:`dev_lab.dev.forgetakeover.review_run`).
+    """
 
 
 @dataclass(frozen=True)
@@ -352,7 +362,7 @@ def _without_command(root: Path, client: Client, review: Review, pull: PullReque
     return f'#{pull.number} {head[:12]}: {why}'
 
 
-def _hold(client: Client, pull: PullRequest, why: str) -> str:
+def hold(client: Client, pull: PullRequest, why: str) -> str:
     """Hold *pull*'s head for the takeover door: :data:`REVIEW_CONTEXT` and the hold both ``pending`` *why*."""
     for context in (REVIEW_CONTEXT, HOLD_CONTEXT):
         status_post(client, pull.head_sha, context=context, state='pending', description=why[:DESCRIPTION])
@@ -373,7 +383,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     scope = _scope(root, client, review, pull, f'origin/{pull.base}')
     said = _without_command(root, client, review, pull, scope)
     if said is None and not runner.secret:
-        said = _hold(client, pull, NEEDS_MAINTAINER)
+        said = hold(client, pull, NEEDS_MAINTAINER)
     return said if said is not None else _command_round(root, client, review, pull, scope=scope, runner=runner)
 
 
@@ -388,7 +398,7 @@ def _command_round(
     except ReviewUnsupported as unsupported:
         cannot = str(unsupported)
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
-        return f'#{pull.number} {head[:12]}: not reviewed on this host -- {cannot}'
+        raise HostCannot(cannot)
     claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
     status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
     try:
@@ -423,8 +433,15 @@ def review_tick(
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said."""
     runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock)
+
+    def said(pull: PullRequest) -> str | None:
+        try:
+            return review_pull(root, client, review, pull, runner)
+        except HostCannot as cannot:  # another serving host may run it: nothing is posted
+            return f'#{pull.number} {pull.head_sha[:12]}: not reviewed on this host -- {cannot}'
+
     pulls = (pull for pull in pr_list(client) if pull.base == base and not pull.draft and pull.head_sha)
-    return tuple(said for pull in pulls if (said := review_pull(root, client, review, pull, runner)) is not None)
+    return tuple(line for pull in pulls if (line := said(pull)) is not None)
 
 
 def step(

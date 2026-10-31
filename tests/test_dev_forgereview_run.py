@@ -97,3 +97,32 @@ def test_on_github_the_job_bots_comments_are_trusted_and_on_gitea_they_are_not()
         forge.issue_comment(number, 'a disposition')
         assert ('the ledger' in ' '.join(trusted_bodies(forge, number))) is trusted
         assert any('a disposition' in body for body in trusted_bodies(forge, number))
+
+
+def _cannot(_argv, _root: Path) -> str:
+    return "unsupported: the review command cannot import 'ai_lab.review' on this host"
+
+
+def test_a_job_whose_host_cannot_run_the_command_holds_the_head_and_fails(tmp_path: Path) -> None:
+    """A job whose host cannot run the review holds the head and fails; it never exits 0 silent.
+
+    lab-commons #11 and dev-lab #3 (2026-10-31): the job said "not reviewed on this host", exited 0 and posted
+    nothing, so the head waited for a review no host would ever post. A job is the ONLY reviewer of its PR: it
+    holds the head for the takeover door and fails. PLANTED CONTROL: the same PR on a capable runner holds nothing.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    command = FakeCommand()
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_cannot) == 2
+    assert command.ran == []
+    state, why = _latest(forge, head, HOLD_CONTEXT)
+    assert state == 'pending'
+    assert 'ai_lab.review' in why
+    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'pending'
+    assert [pull.number for pull in held(forge, 'integrate/main')] == [number], 'the takeover door lists it'
+    (tmp_path / 'control').mkdir()
+    other_work, other_head = _work(tmp_path / 'control')
+    control, other = _forge(other_head)
+    assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=command, ready=_can) == 0
+    assert _latest(control, other_head, HOLD_CONTEXT) is None
+    assert _latest(control, other_head, REVIEW_CONTEXT)[0] == 'success'

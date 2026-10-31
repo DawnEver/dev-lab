@@ -87,6 +87,15 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert 'workflow_run' not in ci['on'], 'no cross-workflow trigger'
 
 
+def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_path: Path) -> None:
+    """lab-commons #11, dev-lab #3: the repo's own .venv has no ai_lab, so the review never ran on GitHub."""
+    steps = _base_ci(tmp_path)['jobs']['review']['steps']
+    install, review = steps[-2]['run'], steps[-1]['run']
+    assert 'uv pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+' in install
+    assert '--runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' in review
+    assert '$GITHUB_WORKSPACE/.venv' not in review, "the repo's own environment does not carry the method"
+
+
 def test_a_push_to_integration_runs_every_part_then_promote_fast_forwards_main_by_the_one_decision(
     tmp_path: Path,
 ) -> None:
