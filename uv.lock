@@ -280,8 +280,8 @@ wheels = [
 
 [[package]]
 name = "lab-commons"
-version = "0.3.1.dev1247+g0b352024b"
-source = { git = "https://github.com/DawnEver/lab-commons.git#0b352024bdb40fd68f443cf850ba693e015b2a8e" }
+version = "0.3.1.dev1249+ge6f29d646"
+source = { git = "https://github.com/DawnEver/lab-commons.git#e6f29d646db7acb04f1847d595cd45cdc6cd35cd" }
 
 [package.optional-dependencies]
 io = [
