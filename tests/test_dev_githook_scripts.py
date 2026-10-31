@@ -428,3 +428,86 @@ def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path, tmp_path: Path) -> N
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'nothing to check' in done.stdout
     assert not argv_log.is_file(), 'the checker was invoked on an empty range'
+
+
+# ------------------------------------------------------------- cz-push-range.sh: the NAMED exemption
+
+_JUDGING_CZ = r"""import subprocess, sys
+args = sys.argv[1:]
+open(LOG, "a").write(" ".join(a.splitlines()[0] if a else a for a in args) + "\n")
+if "--message" in args:
+    subjects = [args[args.index("--message") + 1]]
+else:
+    rng = args[args.index("--rev-range") + 1]
+    subjects = subprocess.run(["git", "log", "--format=%s", rng], capture_output=True, text=True).stdout.splitlines()
+sys.exit(1 if any(s.startswith("data(") for s in subjects) else 0)
+"""
+
+
+def _plant_judging_commitizen(root: Path, tmp_path: Path) -> Path:
+    """A planted ``commitizen`` that REFUSES a ``data(...)`` subject, by ``--message`` or over ``--rev-range``."""
+    where = tmp_path / 'czjudge'
+    (where / 'commitizen').mkdir(parents=True)
+    argv_log = tmp_path / 'cz-argv.log'
+    (where / 'commitizen' / '__init__.py').write_text('', encoding='utf-8')
+    (where / 'commitizen' / '__main__.py').write_text(f'LOG = r"{argv_log}"\n' + _JUDGING_CZ, encoding='utf-8')
+    _plant_venv(root, pythonpath=where)
+    return argv_log
+
+
+def _commit(repo: Path, message: str) -> str:
+    (repo / 'g.txt').write_text(message, encoding='utf-8')
+    _git(repo, 'add', '-A')
+    _git(repo, 'commit', '-m', message)
+    return _git(repo, 'rev-parse', 'HEAD')
+
+
+def test_an_EXEMPT_sha_passes_and_every_other_commit_is_judged_unchanged(repo: Path, tmp_path: Path) -> None:
+    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    first = _git(repo, 'rev-parse', 'HEAD')
+    off = _commit(repo, 'data(femm): landed past every hook')
+    head = _commit(repo, 'feat: after it')
+    exempt = f'{off} landed on integration via #5311 before the forge judged messages'
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=exempt)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert f'exempt {off}' in done.stdout, done.stdout
+    assert argv_log.read_text(encoding='utf-8').splitlines() == ['check --message feat: after it']
+
+
+def test_a_data_message_NOT_declared_still_fails_beside_an_exempt_one(repo: Path, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the exemption names shas, never a type -- another ``data(...)`` is refused."""
+    _plant_judging_commitizen(repo, tmp_path)
+    first = _git(repo, 'rev-parse', 'HEAD')
+    off = _commit(repo, 'data(femm): exempt one')
+    head = _commit(repo, 'data(x): y')
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{off} named')
+    assert done.returncode == 1, done.stdout + done.stderr
+
+
+def test_a_data_message_with_no_exemption_in_range_fails_over_the_range(repo: Path, tmp_path: Path) -> None:
+    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    first = _git(repo, 'rev-parse', 'HEAD')
+    head = _commit(repo, 'data(x): y')
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{first} the seed')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range {first}..{head}'
+
+
+@pytest.mark.parametrize(
+    ('entry', 'said'),
+    [
+        ('SHORT reason', 'not a full 40-hex sha'),
+        ('{unknown} reason', 'names no commit'),
+        ('{head}', 'carries no reason'),
+    ],
+)
+def test_a_declaration_naming_no_full_existing_sha_with_a_reason_is_REFUSED(
+    repo: Path, tmp_path: Path, entry: str, said: str
+) -> None:
+    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    head = _git(repo, 'rev-parse', 'HEAD')
+    declared = entry.replace('SHORT', head[:12]).format(unknown='c' * 40, head=head)
+    done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=declared)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert said in done.stderr, done.stderr
+    assert not argv_log.is_file(), 'the checker ran under a refused declaration'
