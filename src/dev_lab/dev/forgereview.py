@@ -387,14 +387,19 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
-                      outside=scope.outside, authored=authored, **_judging(root, client, review, pull, scope=scope,
+                      outside=scope.outside, authored=authored, **_judging(root, client, review, pull,
                                                                             runner=runner))  # fmt: skip
 
 
-def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner) -> dict:
-    """The judge, the reviewer and the head's author sessions every round is posted with."""
+def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, runner: Runner) -> dict:
+    """The judge, the reviewer and the head's author sessions every round is posted with.
+
+    The JUDGE reads the PR's whole change at its head (merge base..head), never the round's increment: a finding
+    about a file the increment did not touch is judged on that file as the head holds it (#7 round 3).
+    """
+    since = forgereview_scope.git(root, 'merge-base', f'origin/{pull.base}', pull.head_sha)[1].strip()
     return {
-        'judged': judge_for(root, review, scope.range, runner.run, runner.runtimes),
+        'judged': judge_for(root, review, f'{since}..{pull.head_sha}', runner.run, runner.runtimes),
         'reviewer': identity(client, runner.host),
         'authors': sessions(root, f'origin/{pull.base}', pull.head_sha),
     }
@@ -407,7 +412,7 @@ def _without_command(
     head = pull.head_sha
     if capped(client, pull, review.max_rounds):  # past max_rounds: the blocking findings re-checked only
         return post_round(root, client, pull, scope.range, found=None, max_rounds=review.max_rounds, by='re-check',
-                          **_judging(root, client, review, pull, scope=scope, runner=runner))  # fmt: skip
+                          **_judging(root, client, review, pull, runner=runner))  # fmt: skip
     if scope.slices:
         return None
     status_post(client, head, context=REVIEW_CONTEXT, state='success', description=ONLY_GENERATED[:DESCRIPTION])

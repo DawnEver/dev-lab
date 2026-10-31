@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
+from _forge_fake import git_out
 from test_dev_forgereview import JUDGE, FakeCommand, _forge, _tick, _work
 
 from dev_lab.dev._forgebackends import GITEA, GITHUB
@@ -355,3 +356,29 @@ def test_what_it_does_links_its_cites_in_the_backend_form(backend: object, file_
     summary = {'changes': [{'claim': 'adds x', 'cites': [sha, 'x.py']}]}
     text = what_it_does(summary, repo, head, backend)
     assert f'- adds x ([`{sha[:12]}`]({repo}/commit/{sha}), [`x.py`]({repo}/{file_form}/{head}/x.py))' in text
+
+
+def test_the_re_judge_reads_the_whole_change_at_the_head_never_the_increment(tmp_path: Path) -> None:
+    """#7 round 3: a finding about a file the increment did not touch was judged on the increment alone.
+
+    The round's reviewer reads its increment; the JUDGE of an open finding reads the PR's whole change at the head.
+    PLANTED CONTROL: the round's own review command still reads only the increment.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    _tick(work, forge, FakeCommand(_doc(_finding('F-x', severity='HIGH', file='x.py', anchor='x'))), _REVIEW)
+    after = advance(work, 'pr/x', 'y.py', 'y = 1\n')
+    forge.pulls[number]['head']['sha'] = after
+    seen: list[list[str]] = []
+    command = FakeCommand(_doc())
+
+    def run(argv: list[str], root: Path) -> str:
+        seen.append(list(argv))
+        return command(argv, root)
+
+    _tick(work, forge, run, _REVIEW)
+    judged = next(argv for argv in seen if argv[0] == 'judge')
+    reviewed = next(argv for argv in seen if argv[0] == 'reviewer')
+    base = git_out(work, 'merge-base', 'origin/integrate/main', after)
+    assert judged[judged.index('--range') + 1] == f'{base}..{after}'
+    assert reviewed[-1] == f'{head}..{after}'
