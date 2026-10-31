@@ -1,11 +1,11 @@
-"""REVIEW TAKEOVER: an over-cap head is the INTEGRATOR AGENT's to review, and its door is the only release.
+"""REVIEW TAKEOVER: a head whose review could not run is the INTEGRATOR AGENT's to review; its door is the only release.
 
-User ruling 2026-10-26. A head a metered program review cannot read (:data:`OVER_CAP_TAKEOVER`: over
-``max_total_bytes``, one file over ``max_diff_bytes``) is HELD on :data:`HOLD_CONTEXT`, and the auto-merge waits
-on it. It is a TAKEOVER, as a review whose reviewers were all exhausted is: the integrator session reviews it
-through the SAME method -- the declared command, sliced, ``{paths}`` and ``{lens}`` -- over EVERY slice. A session
-is never metered, so the byte cap that bounds an API-key program review does not bind it (``plan(metered=False)``).
-A human is asked only for a decision the review surfaces, never for the routine review or the release.
+A head is HELD on :data:`HOLD_CONTEXT` only when the review could not run for it -- its job had no review secret
+(:data:`~dev_lab.dev.forgereview.NEEDS_MAINTAINER`) or its host could not run the command
+(:class:`~dev_lab.dev.forgereview.HostCannot`) -- never for its size (D123, user ruling 2026-10-31, superseding the
+2026-10-26 hold-on-oversize). The integrator session reviews it through the SAME method and scope the program
+review reads, and the auto-merge waits on the hold until then. It is also the Break-Glass path's review
+(:mod:`dev_lab.dev.breakglass`). A human is asked only for a decision the review surfaces.
 
 * :func:`held` -- the open PR heads into integration whose latest :data:`HOLD_CONTEXT` is ``pending``; the forge
   prompts the integrator with each (:func:`alarms`, one ``integration`` issue per head, and
@@ -125,10 +125,10 @@ def release(client: Client, sha: str, *, host: str) -> str:
 
 
 def scope_of(root: Path, client: Client, review: Review, pull: PullRequest, base: str) -> Scope:
-    """What the takeover reads: the same range and slices as the program review, unmetered."""
+    """What the takeover reads: the same range and slices as the program review."""
     done = reviewed_heads(comment.body for comment in comment_list(client, pull.number))
     sliceable = PATHS_FIELD in review.command
-    return plan(root, f'origin/{base}', pull.head_sha, review.budget, done, sliceable=sliceable, metered=False)
+    return plan(root, f'origin/{base}', pull.head_sha, review.budget, done, sliceable=sliceable)
 
 
 def takeover(
@@ -145,9 +145,6 @@ def takeover(
         msg = '[tool.dev_lab.review] command is not declared: there is no method to review with'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, pull, base)
-    if scope.held is not None:
-        msg = f'{scope.held}: declare {PATHS_FIELD} in the review command'
-        raise TakeoverRefused(msg)
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
     synth = command_for(review, scope.range, runtimes, synthesis=True)
     gone = disposed(trusted_bodies(client, pull.number))  # the forge's own: a trailer never reaches the engine
@@ -266,7 +263,7 @@ def main(
             scope = scope_of(root, origin, review, pull, base)
             emit(
                 f'#{pull.number} {scope.range}: {len(scope.slices)} slice(s), {scope.outside} non-code file(s) outside'
-                f'{f" -- {scope.held}" if scope.held else ""}'
+                f'{f" -- one structure-level review: {scope.structure}" if scope.structure else ""}'
             )
             emit(f'  code bytes: {sum(one.size for one in scope.slices)}')
             emit(f'  moved (path change only): {len(scope.moved)}')

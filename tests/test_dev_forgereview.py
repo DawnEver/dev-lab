@@ -25,6 +25,7 @@ from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import (
     DEFAULT_CLAIM_STALE,
+    NEEDS_MAINTAINER,
     RANGE_FIELD,
     RETIRED_KEYS,
     REVIEW_CONTEXT,
@@ -39,7 +40,6 @@ from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE
 from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
-from dev_lab.dev.forgereview_scope import OVER_CAP_TAKEOVER
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
@@ -488,18 +488,18 @@ def test_a_draft_is_skipped(tmp_path: Path) -> None:
         assert len(command.ran) == 1
 
 
-def test_a_diff_over_the_cap_is_not_sent_and_says_so_once(tmp_path: Path) -> None:
-    """PLANTED control: the same diff under a larger cap is reviewed (the first test)."""
+def test_a_diff_over_the_cap_is_reviewed_once_over_the_whole_range_never_held(tmp_path: Path) -> None:
+    """D123: past the bounds the head is one structure-level review. PLANTED control: a second tick runs nothing."""
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = FakeCommand()
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
-    assert command.ran == []
+    assert len(command.ran) == 1
     statuses = status_list(forge, head)
-    assert sorted(s.context for s in statuses) == [REVIEW_CONTEXT, HOLD_CONTEXT]
-    assert all(s.state == 'pending' and s.description.startswith(OVER_CAP_TAKEOVER) for s in statuses)
+    assert HOLD_CONTEXT not in {s.context for s in statuses}
+    assert next(s for s in statuses if s.context == REVIEW_CONTEXT).state == 'success'
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
-    assert len(forge.statuses[head]) == 2
+    assert len(command.ran) == 1
 
 
 def test_a_pr_into_another_base_is_not_reviewed(tmp_path: Path) -> None:
@@ -574,7 +574,7 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     work, head = _work(tmp_path)
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
-    over = f'{OVER_CAP_TAKEOVER} (9 reviewable bytes > max_total_bytes=5)'
+    over = NEEDS_MAINTAINER
     held = (_status(HOLD_CONTEXT, 'pending', over), _status(REVIEW_CONTEXT, 'success', 'reviewed'), passed)
     found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
     assert not found.ready
@@ -588,7 +588,7 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
         secured,
     )
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
-    worded = (_status(REVIEW_CONTEXT, 'success', OVER_CAP_TAKEOVER), passed, secured)
+    worded = (_status(REVIEW_CONTEXT, 'success', NEEDS_MAINTAINER), passed, secured)
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded).ready
 
 

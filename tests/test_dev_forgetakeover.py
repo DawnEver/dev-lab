@@ -1,17 +1,17 @@
-"""An over-cap head is the integrator's takeover: reviewed over every slice, and released only by the door."""
+"""A head whose review could not run is the integrator's takeover: reviewed, and released only by the door."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from test_dev_forgereview import FakeCommand, _forge, _output, _tick, _work
+from test_dev_forgereview import FakeCommand, _forge, _output, _work
 
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
-from dev_lab.dev.forgereview import PATHS_FIELD, RANGE_FIELD, REVIEW_CONTEXT, Review
-from dev_lab.dev.forgereview_scope import OVER_CAP_TAKEOVER
+from dev_lab.dev.forgereview import NEEDS_MAINTAINER, PATHS_FIELD, RANGE_FIELD, REVIEW_CONTEXT, Review
+from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgetakeover import DOOR, RELEASED, TakeoverRefused, alarms, held, main, release, takeover
+from dev_lab.dev.forgetakeover import DOOR, RELEASED, TakeoverRefused, alarms, held, main, release, review_run, takeover
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 
 _SLICED = Review(command=('reviewer', '--range', RANGE_FIELD, '--paths', PATHS_FIELD), max_diff_bytes=10)
@@ -24,24 +24,19 @@ def _latest(forge: object, sha: str, context: str) -> object:
 def _held(tmp_path: Path) -> tuple[Path, object, int, str]:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    _tick(work, forge, FakeCommand(), _SLICED)  # one file over max_diff_bytes: held for the integrator
+    secretless = Runner('runner-1', run=FakeCommand(), ready=lambda _a, _r: None, secret=False)
+    review_run(work, forge, _SLICED, number, base='integrate/main', runner=secretless)  # held for a maintainer
     assert _latest(forge, head, HOLD_CONTEXT).state == 'pending'
-    assert _latest(forge, head, REVIEW_CONTEXT).description.startswith(OVER_CAP_TAKEOVER)
+    assert _latest(forge, head, REVIEW_CONTEXT).description == NEEDS_MAINTAINER
     return work, forge, number, head
 
 
-def test_the_held_wording_names_the_integrator_takeover_and_no_hand() -> None:
-    assert 'integrator takeover' in OVER_CAP_TAKEOVER
-    assert 'review takeover' in OVER_CAP_TAKEOVER
-    assert 'by hand' not in OVER_CAP_TAKEOVER
-
-
-def test_the_takeover_reviews_every_slice_unmetered_posts_and_releases(tmp_path: Path) -> None:
+def test_the_takeover_reviews_the_head_posts_and_releases(tmp_path: Path) -> None:
     work, forge, number, head = _held(tmp_path)
     command = FakeCommand()
     said = takeover(work, forge, _SLICED, head, base='integrate/main', host='box', run=command)
-    ((argv, _),) = command.ran  # the one file over the slice cap is a slice of its own, read by the session
-    assert argv[-1] == 'x.py'
+    ((argv, _),) = command.ran  # the one file over the slice cap: one whole-range review, no paths (D123)
+    assert argv[-1] == '--paths'
     (comment,) = forge.comments[number]
     assert marker(Marker.REVIEW, head) in comment['body']
     assert _latest(forge, head, REVIEW_CONTEXT).state == 'success'
