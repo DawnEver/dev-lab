@@ -246,4 +246,6 @@ ignore = [
 # THIS REPO'S CI, as TOML: rendered to .github/workflows/ by `python -m dev_lab.dev.ciworkflows render`
 # (the family base is dev_lab/dev/ci_base.toml: the one PR lifecycle, parts -> review -> merge-ready).
 # The plain base render: this repo adds nothing to it.
+[tool.dev_lab.ci."review-claims.yml"]
+
 [tool.dev_lab.ci."ci.yml"]

@@ -183,7 +183,10 @@
         },
         {
           "name": "Install the review method",
-          "run": "uv venv \"$RUNNER_TEMP/ai-lab\" && uv pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\""
+          "run": "uv venv \"$RUNNER_TEMP/ai-lab\" && uv pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\"",
+          "env": {
+            "AI_LAB_REF": "12f22cc920fba83eabdd1764594231df1a5eac60"
+          }
         },
         {
           "name": "Store the review key",
@@ -200,9 +203,6 @@
           }
         }
       ],
-      "env": {
-        "AI_LAB_REF": "12f22cc920fba83eabdd1764594231df1a5eac60"
-      },
       "permissions": {
         "contents": "read",
         "statuses": "write",

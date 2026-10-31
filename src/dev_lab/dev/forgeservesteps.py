@@ -120,7 +120,7 @@ def prompt(
                 *glass,
                 *red,
                 *held_reviews(built, policy.integration, repo),  # an over-cap head: the integrator's takeover
-                *blocked_reviews(built, policy.integration, repo),  # a blocking finding: the integrator disposes
+                *blocked_reviews(built, policy.integration, repo),  # a blocking finding: fixed, or a claim adjudicated
             ],
             alarm=alarm,
         )

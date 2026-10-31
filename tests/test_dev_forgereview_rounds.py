@@ -11,19 +11,18 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
-from test_dev_forgereview import FakeCommand, _forge, _tick, _work
+from test_dev_forgereview import JUDGE, FakeCommand, _forge, _tick, _work
 
 from dev_lab.dev._forgebackends import GITEA, GITHUB
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview import RANGE_FIELD, REVIEW_CONTEXT, Review
 from dev_lab.dev.forgereview_findings import Finding, Findings
+from dev_lab.dev.forgereview_judge import Claim, Identity, Verdict, adjudication_text, claim, upheld
 from dev_lab.dev.forgereview_rounds import (
     FAMILY_MAX_ROUNDS,
     SUMMARY_CITES,
     Ledger,
     context_summary,
-    disposed,
-    disposition_text,
     ledger_of,
     verdict,
     what_it_does,
@@ -34,7 +33,7 @@ from dev_lab.dev.forgereview_rounds import (
 from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, SUMMARY_FIELD
 from dev_lab.dev.forgestatus import status_list
 
-_REVIEW = Review(command=('reviewer', '--range', RANGE_FIELD))
+_REVIEW = Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD))
 
 
 def _finding(fid: str = 'F-000000000001', *, severity: str = 'MEDIUM', security: bool = False,
@@ -100,7 +99,7 @@ def test_an_open_high_or_security_finding_is_a_failure(finding: Finding, state: 
     assert verdict(Ledger('h' * 40, 1, (finding,)), {}, 7)[0] == state
 
 
-def test_a_disposed_blocking_finding_no_longer_blocks() -> None:
+def test_an_upheld_blocking_finding_no_longer_blocks() -> None:
     high = _finding(severity='HIGH')
     ledger = Ledger('h' * 40, 1, (high,))
     state, said = verdict(ledger, {}, 7)
@@ -109,12 +108,17 @@ def test_a_disposed_blocking_finding_no_longer_blocks() -> None:
     assert verdict(ledger, {high.id: 'a false positive'}, 7)[0] == 'success'
 
 
-def test_a_disposition_counts_only_under_its_own_keyed_marker() -> None:
-    """PLANTED control: the same words quoted without the marker, or under another id's marker, dispose nothing."""
-    text = disposition_text('F-1', 'box', 'the guard  is upstream')
-    assert disposed([f'{marker(Marker.DISPOSITION, "F-1")}\n{text}']) == {'F-1': 'the guard is upstream'}
-    assert disposed([text]) == {}
-    assert disposed([f'{marker(Marker.DISPOSITION, "F-2")}\n{text}']) == {}
+def test_an_upheld_adjudication_counts_only_under_its_own_keyed_marker() -> None:
+    """PLANTED control: the same words quoted without the marker, under another id's, or REJECTED, close nothing."""
+    ask = Claim('F-1', 'the guard is upstream', Identity('author', 'box', 'S-a'))
+    text = adjudication_text(ask, Verdict('F-1', 'false-positive', 'guarded in a.py'), Identity('forge', 'ci'))
+    assert upheld([f'{marker(Marker.ADJUDICATION, "F-1")}\n{text}']) == {
+        'F-1': 'false-positive: guarded in a.py (claimed by author@box session S-a)'
+    }
+    assert upheld([text]) == {}
+    assert upheld([f'{marker(Marker.ADJUDICATION, "F-2")}\n{text}']) == {}
+    rejected = adjudication_text(ask, Verdict('F-1', 'present', 'not guarded'), Identity('forge', 'ci'))
+    assert upheld([f'{marker(Marker.ADJUDICATION, "F-1")}\n{rejected}']) == {}
 
 
 # --- rounds ---------------------------------------------------------------------------------------------
@@ -132,10 +136,38 @@ def test_round_two_closes_a_finding_whose_anchor_is_gone_and_keeps_one_whose_anc
     work, first, second = _repo(tmp_path)
     gone, stays = _finding('F-1', anchor='x'), _finding('F-2', anchor='  y ')
     prior = Ledger(first, 1, (gone, stays))
-    ledger = advance_round(work, second, f'{first}..{second}', prior, _found())
+    judged = {'F-1': Verdict('F-1', 'fixed', 'x is gone from x.txt'), 'F-2': Verdict('F-2', 'present', 'y stays')}
+    ledger = advance_round(work, second, f'{first}..{second}', prior, _found(), judged=judged)
     assert ledger.round == 2
     assert [one.id for one in ledger.open] == ['F-2']
-    assert [fid for fid, _ in ledger.closed] == ['F-1']
+    assert ledger.closed == (('F-1', 'fixed: x is gone from x.txt'),), 'the evidence is recorded'
+
+
+def test_every_round_re_judges_a_finding_whose_scenario_the_head_removed(tmp_path: Path) -> None:
+    """User ruling 2026-10-31: the round RE-JUDGES, never carries the text over.
+
+    The anchor line STAYS, but the head removed the scenario, and round 2 closes it with the judge's evidence -- no
+    dispose.
+
+    PLANTED CONTROL: the same finding judged `present` stays open and blocking.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    high = _finding('F-x', severity='HIGH', file='x.py', anchor='x')
+    _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
+    after = advance(work, 'pr/x', 'guard.py', 'assert x\n')  # x.py keeps its anchor line; a guard now covers it
+    forge.pulls[number]['head']['sha'] = after
+    rulings = {'F-x': ('fixed', 'guard.py asserts x before use')}
+    command = FakeCommand(_doc(), rulings=rulings)
+    _tick(work, forge, command, _REVIEW)
+    assert _state(forge, after)[0] == 'success'
+    ((asked,),) = command.judged
+    assert asked['id'] == 'F-x'
+    assert 'fixed: guard.py asserts x before use' in forge.comments[number][-1]['body']
+    still = advance(work, 'pr/x', 'other.py', 'o\n')
+    forge.pulls[number]['head']['sha'] = still
+    _tick(work, forge, FakeCommand(_doc(high), rulings={'F-x': ('present', 'nothing guards x')}), _REVIEW)
+    assert _state(forge, still)[0] == 'failure', 're-raised and judged present: it blocks again'
 
 
 def test_a_later_round_raises_no_new_non_high_finding_on_a_line_it_did_not_add(tmp_path: Path) -> None:
@@ -145,16 +177,16 @@ def test_a_later_round_raises_no_new_non_high_finding_on_a_line_it_did_not_add(t
     old_line = _finding('F-old', anchor='y')  # y was there before this round
     new_line = _finding('F-new', anchor='z')  # z is what this round added
     high = _finding('F-high', severity='HIGH', anchor='y')
-    ledger = advance_round(work, second, reviewed, Ledger(first, 1), _found(old_line, new_line, high))
+    ledger = advance_round(work, second, reviewed, Ledger(first, 1), _found(old_line, new_line, high), judged={})
     assert [one.id for one in ledger.open] == ['F-new', 'F-high']
-    first_round = advance_round(work, second, reviewed, None, _found(old_line))
+    first_round = advance_round(work, second, reviewed, None, _found(old_line), judged={})
     assert [one.id for one in first_round.open] == ['F-old'], 'round 1 reads the whole change'
 
 
 def test_past_the_cap_blocking_findings_stay_and_the_rest_are_deferred(tmp_path: Path) -> None:
     work, first, second = _repo(tmp_path)
     high, medium = _finding('F-h', severity='HIGH', anchor='y'), _finding('F-m', anchor='y')
-    ledger = advance_round(work, second, f'{first}..{second}', Ledger(first, 3, (high, medium)), None)
+    ledger = advance_round(work, second, f'{first}..{second}', Ledger(first, 3, (high, medium)), None, judged={})
     assert [one.id for one in ledger.open] == ['F-h']
     assert [one.id for one in ledger.deferred] == ['F-m']
 
@@ -207,22 +239,30 @@ def test_a_fix_pushed_after_a_blocking_round_closes_it_and_the_head_succeeds(tmp
     assert 'What changed' not in body, 'only round 1 carries the context summary'
 
 
-def test_a_disposition_on_the_pr_unblocks_the_next_round(tmp_path: Path) -> None:
-    work, head = _work(tmp_path)
-    forge, number = _forge(head)
-    high = _finding('F-x', severity='HIGH', anchor='x')
-    _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
-    comment_upsert(forge, number, kind=Marker.DISPOSITION, key='F-x', text=disposition_text('F-x', 'box', 'upstream'))
-    after = advance(work, 'pr/x', 'y.txt', 'y\n')
-    forge.pulls[number]['head']['sha'] = after
-    _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
-    assert _state(forge, after)[0] == 'success'
+def test_a_claim_is_adjudicated_by_the_next_round_and_only_an_upheld_one_unblocks(tmp_path: Path) -> None:
+    """The round's judge rules on the pending claim and posts the ruling. PLANTED CONTROL: a rejected claim blocks."""
+    for outcome, state in (('false-positive', 'success'), ('present', 'failure')):
+        (tmp_path / outcome).mkdir()
+        work, head = _work(tmp_path / outcome)
+        forge, number = _forge(head)
+        high = _finding('F-x', severity='HIGH', anchor='x')
+        _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
+        claim(forge, number, 'F-x', 'the guard is upstream', by=Identity('a', 'box', 'S-author'), open_ids=['F-x'])
+        assert _state(forge, head)[0] == 'failure', 'a claim moves no status'
+        after = advance(work, 'pr/x', 'y.py', 'y = 1\n')  # code: a round runs
+        forge.pulls[number]['head']['sha'] = after
+        command = FakeCommand(_doc(high), rulings={'F-x': (outcome, 'ruled on the code')})
+        _tick(work, forge, command, _REVIEW)
+        assert command.judged[0][0]['claim'] == 'the guard is upstream'
+        assert _state(forge, after)[0] == state
+        (ruling,) = [c['body'] for c in forge.comments[number] if marker(Marker.ADJUDICATION, 'F-x') in c['body']]
+        assert 'claimed by a@box session S-author' in ruling
 
 
 def test_past_max_rounds_no_command_runs_and_one_follow_up_issue_takes_the_rest(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    review = Review(command=_REVIEW.command, max_rounds=1)
+    review = Review(judge=JUDGE, command=_REVIEW.command, max_rounds=1)
     high, medium = _finding('F-h', severity='HIGH', file='x.py', anchor='x'), _finding('F-m', file='x.py', anchor='x')
     _tick(work, forge, FakeCommand(_doc(high, medium)), review)
     after = advance(work, 'pr/x', 'y.txt', 'y\n')
@@ -247,7 +287,9 @@ def test_the_comment_opens_with_what_the_pr_does_and_lists_what_was_disposed_ear
     trailer = 'fix(x): keep x\n\nReview-Disposed: F-old -- a false positive'
     head = advance(work, 'pr/x', 'x.py', 'x\nw\n', message=trailer)
     forge, number = _forge(head, body='This PR adds x.')
-    comment_upsert(forge, number, kind=Marker.DISPOSITION, key='F-led', text=disposition_text('F-led', 'box', 'up'))
+    ask = Claim('F-led', 'up', Identity('author', 'box', 'S-a'))
+    ruled = adjudication_text(ask, Verdict('F-led', 'false-positive', 'up'), Identity('forge', 'ci'))
+    comment_upsert(forge, number, kind=Marker.ADJUDICATION, key='F-led', text=ruled)
     memory = '.claude/memory/2026/10/29/x.md'
     summary = {'changes': [{'claim': 'adds x', 'cites': [head, memory]}], 'tests_altered': [], 'resolutions': [],
                'open_items': ['wire y'], 'sources': ['commits']}  # fmt: skip
@@ -259,11 +301,14 @@ def test_the_comment_opens_with_what_the_pr_does_and_lists_what_was_disposed_ear
         return _doc(_finding('F-m', file='x.py', anchor='w'), summary=summary,
                     disposed=[{'id': 'F-led', 'reason': 'up'}])  # fmt: skip
 
-    review = Review(command=('reviewer', '--range', RANGE_FIELD, SUMMARY_FIELD, '--disposed', DISPOSED_FIELD))
+    review = Review(
+        judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD, SUMMARY_FIELD, '--disposed', DISPOSED_FIELD)
+    )
     _tick(work, forge, run, review)
     ((body, gone),) = seen
     assert body == 'This PR adds x.'
-    assert gone == {'disposed': [{'id': 'F-led', 'reason': 'up'}]}, 'a commit trailer never reaches the engine'
+    reason = 'false-positive: up (claimed by author@box session S-a)'
+    assert gone == {'disposed': [{'id': 'F-led', 'reason': reason}]}, 'only an upheld claim reaches the engine'
     text = forge.comments[number][-1]['body']
     repo = forge.pulls[number]['html_url'].rsplit('/pulls/', 1)[0]
     commit_link, memory_link = (
@@ -287,12 +332,12 @@ def _authored(tmp_path: Path, *findings: Finding, names: str) -> tuple[str, str]
 
 
 def test_an_author_trailer_never_suppresses_a_blocking_finding(tmp_path: Path) -> None:
-    """A trailer naming a HIGH finding leaves it open and blocking, and says the integrator's door is needed."""
+    """A trailer naming a HIGH finding leaves it open and blocking, and says an upheld claim is needed."""
     state, text = _authored(tmp_path, _finding('F-h', severity='HIGH', file='x.py', anchor='w'), names='F-h')
     assert state == 'failure'
     rows = text.split('### Blocking (open)\n', 1)[1].split('\n\n', 1)[0]
     assert 'F-h summary' in rows
-    assert 'the author disposed it (by design); a blocking finding needs `forge review dispose`' in rows
+    assert 'the author disposed it (by design); a blocking finding needs an upheld claim' in rows
     assert 'by the author' not in text
 
 

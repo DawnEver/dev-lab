@@ -39,6 +39,13 @@ RETIRED_SPELLINGS: Final = {
             'user ruling 2026-10-31 (every PR must get a review): one predicate, nothing advisory',
         ),
     ),
+    **dict.fromkeys(
+        ('disposition_text', 'DisposeRefused', 'review-disposition'),
+        (
+            'forgereview_judge.claim + adjudicate',
+            'user ruling 2026-10-31: a dispose is a claim an independent reviewer rules on',
+        ),
+    ),
     'OVER_CAP_TAKEOVER': ('Scope.structure', 'D123 2026-10-31: an oversize head is one structure-level review'),
     **{
         f'tool.lab_commons.{table}': (

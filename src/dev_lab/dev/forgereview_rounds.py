@@ -9,8 +9,10 @@ head's findings comment (a hidden ``review-ledger`` line); the next round starts
   reviews the whole branch change and also carries a :func:`context_summary` -- what changed, which layers, and
   the WHY cited from each of :data:`SUMMARY_CITES` in order -- the team's shared context.
 * ROUND k > 1 reviews only what the branch added since its last reviewed head
-  (:func:`dev_lab.dev.forgereview_scope.own_base`) and RE-CHECKS every open finding: one whose anchor line is
-  gone from its file at the new head is CLOSED as fixed. NO MOVING GOALPOSTS: a new finding below ``HIGH`` whose
+  (:func:`dev_lab.dev.forgereview_scope.own_base`) and RE-JUDGES every open finding against the new head
+  (:func:`dev_lab.dev.forgereview_judge.judge`, user ruling 2026-10-31): ``fixed`` or ``false-positive`` CLOSES
+  it with the judge's evidence recorded, ``present`` keeps it -- the text is never merely carried over. NO MOVING
+  GOALPOSTS: a new finding below ``HIGH`` whose
   anchor is not a line the round added is dropped -- a later round may not raise a non-HIGH finding on a line
   the earlier rounds already read.
 * PAST ``max_rounds`` no command runs: the open BLOCKING findings are re-checked alone, and the open non-blocking
@@ -18,13 +20,13 @@ head's findings comment (a hidden ``review-ledger`` line); the next round starts
 
 A finding BLOCKS while open when it is ``HIGH`` or a security finding (:attr:`Finding.blocking`). The head's
 :data:`~dev_lab.dev.platformparts.REVIEW_CONTEXT` is ``failure`` while any blocking finding is open and not
-DISPOSED, else ``success``; the auto-merge waits on that failure (:func:`dev_lab.dev.reviewgate.review_missing`).
-A disposition is the integrator's, posted through ``forge review dispose`` (:mod:`dev_lab.dev.forgereview_dispose`)
-as a keyed comment (``Marker.DISPOSITION``) carrying its reason; the engine is handed those alone and the ids it
-drops are listed as "disposed earlier". A branch commit's ``Review-Disposed: <F-id> -- <reason>`` trailer
-(:func:`trailed`) is the AUTHOR's, so it never reaches the engine nor :func:`verdict`: applied after the engine
-returns, it disposes of a non-blocking finding ("disposed earlier (by the author)"), while a blocking one stays
-open and blocking until ``forge review dispose`` (user ruling 2026-10-29).
+UPHELD, else ``success``; the auto-merge waits on that failure (:func:`dev_lab.dev.reviewgate.review_missing`).
+``forge review dispose`` records a CLAIM, never a ruling: an independent reviewer adjudicates it
+(:mod:`dev_lab.dev.forgereview_judge`), and only an UPHELD claim closes the finding; the engine is handed the
+upheld ids alone and lists them as "disposed earlier". No session reviews, or rules on, a head it authored.
+A branch commit's ``Review-Disposed: <F-id> -- <reason>`` trailer (:func:`trailed`) is the AUTHOR's, so it never
+reaches the engine nor :func:`verdict`: applied after the engine returns, it disposes of a non-blocking finding
+("disposed earlier (by the author)"), while a blocking one stays open and blocking until a claim on it is upheld.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ import lab_commons.launch as _door
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 from dev_lab.dev.forgereview_findings import SEVERITIES, Finding, Findings
+from dev_lab.dev.forgereview_judge import CLOSING, adjudication_text, pending, self_review, upheld
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
@@ -49,6 +52,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from dev_lab.dev._forgebackends import Backend
+    from dev_lab.dev.forgereview_judge import Identity, Judge, Verdict
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
@@ -61,8 +65,6 @@ __all__ = [
     'blocking',
     'capped',
     'context_summary',
-    'disposed',
-    'disposition_text',
     'ledger_of',
     'post_round',
     'render',
@@ -82,15 +84,10 @@ SUMMARY_CITES: Final = ('commits', 'memory', 'merge_audit', 'pr_body')
 #: The ledger's format version; a ledger of another version is refused, never guessed at.
 LEDGER_VERSION: Final = 1
 
-#: The door the integrator disposes of a finding through; ``{pr}`` and ``{id}`` are filled.
-DISPOSE_DOOR: Final = 'python -m dev_lab.dev.forge review dispose {pr} {id} --why "<reason>"'
+#: The door an author claims against a finding through (an independent reviewer rules); ``{pr}``, ``{id}`` filled.
+DISPOSE_DOOR: Final = 'python -m dev_lab.dev.forge review dispose {pr} {id} --why "<claim>" (adjudicated)'
 
 _LEDGER: Final = re.compile(r'<!-- review-ledger (?P<json>\{.*?\}) -->', re.DOTALL)
-_DISPOSED: Final = re.compile(
-    re.escape(marker(Marker.DISPOSITION, 'KEY')).replace('KEY', r'(?P<key>\S+)')
-    + r'\n\*\*Disposed\*\* `(?P<id>[^`]+)` by (?P<who>\S+): (?P<why>.+)$',
-    re.MULTILINE,
-)
 _GIT_TIMEOUT_S: Final = 120
 _SUBJECTS: Final = 20  # commit subjects (memory paths, merges) the summary lists
 _TRAILER: Final = 'Review-Disposed'
@@ -149,20 +146,6 @@ def ledger_of(bodies: Iterable[str]) -> Ledger | None:
     return Ledger(found['head'], int(found['round']), tuple(_finding(row) for row in found['open']))
 
 
-def disposition_text(finding_id: str, who: str, why: str) -> str:
-    """The body of a disposition comment (after its marker): who disposed of *finding_id*, and why."""
-    return f'**Disposed** `{finding_id}` by {who}: {" ".join(why.split())}'
-
-
-def disposed(bodies: Iterable[str]) -> dict[str, str]:
-    """``{finding id: why}`` of every disposition the PR comment *bodies* carry."""
-    return {
-        match['id']: match['why']
-        for body in bodies
-        if (match := _DISPOSED.search(body)) is not None and match['key'] == match['id']
-    }
-
-
 def trailed(root: Path, target: str, head: str) -> dict[str, str]:
     """``{finding id: why}`` of the author's ``Review-Disposed`` trailers on the commits *target*..*head*."""
     _, text = _git(root, 'log', f'--format=%(trailers:key={_TRAILER},valueonly,unfold)', f'{target}..{head}')
@@ -197,12 +180,6 @@ def _norm(line: str) -> str:
     return ' '.join(line.split())
 
 
-def _anchored(root: Path, head: str, finding: Finding) -> bool:
-    """Whether *finding*'s anchor line is still in its file at *head* (a deleted file has none)."""
-    code, text = _git(root, 'show', f'{head}:{finding.file}')
-    return code == 0 and _norm(finding.anchor) in {_norm(line) for line in text.splitlines()}
-
-
 def _added(root: Path, reviewed: str) -> dict[str, set[str]]:
     """``{path: the lines the range *reviewed* added}``, whitespace-normalized."""
     code, text = _git(root, 'diff', '--no-renames', '--unified=0', reviewed)
@@ -219,19 +196,29 @@ def _added(root: Path, reviewed: str) -> dict[str, set[str]]:
     return out
 
 
-def advance(root: Path, head: str, reviewed: str, prior: Ledger | None, found: Findings | None) -> Ledger:
-    """The ledger of *head*'s round: *prior*'s open findings re-checked, *found*'s merged in by id.
+def advance(
+    root: Path,
+    head: str,
+    reviewed: str,
+    prior: Ledger | None,
+    found: Findings | None,
+    *,
+    judged: Mapping[str, Verdict],
+) -> Ledger:
+    """The ledger of *head*'s round: *prior*'s open findings RE-JUDGED (*judged*), *found*'s merged in by id.
 
-    *found* is ``None`` past the cap (no command ran): only blocking findings stay, the rest are deferred.
+    A prior finding the judge calls ``fixed`` or ``false-positive`` closes with its evidence; one it did not judge
+    stays open. *found* is ``None`` past the cap (no command ran): only blocking findings stay, the rest deferred.
     """
     number = 1 if prior is None else prior.round + 1
     kept: dict[str, Finding] = {}
     closed: list[tuple[str, str]] = []
     for one in () if prior is None else prior.open:
-        if _anchored(root, head, one):
-            kept[one.id] = one
+        verdict_ = judged.get(one.id)
+        if verdict_ is not None and verdict_.outcome in CLOSING:
+            closed.append((one.id, f'{verdict_.outcome}: {verdict_.evidence}'))
         else:
-            closed.append((one.id, f'fixed: its anchor line is gone from {one.file}'))
+            kept[one.id] = one
     if found is None:
         deferred = tuple(one for one in kept.values() if not one.blocking)
         stays = tuple(one for one in kept.values() if one.blocking)
@@ -328,7 +315,7 @@ def _row(one: Finding, number: int, authored: Mapping[str, str]) -> str:
     if one.blocking:
         if one.id in authored:
             why = authored[one.id]
-            lines.append(f'  - the author disposed it ({why}); a blocking finding needs `forge review dispose`')
+            lines.append(f'  - the author disposed it ({why}); a blocking finding needs an upheld claim')
         lines.append(f'  - dispose: `{DISPOSE_DOOR.format(pr=number, id=one.id)}`')
     return '\n'.join(lines)
 
@@ -394,19 +381,31 @@ def _follow_up(client: Client, pull: PullRequest, ledger: Ledger) -> None:
 
 def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings | None, max_rounds: int,
-    by: str = 'review', outside: int = 0, authored: Mapping[str, str] | None = None,
+    judged: Judge, reviewer: Identity, authors: frozenset[str], by: str = 'review', outside: int = 0,
+    authored: Mapping[str, str] | None = None,
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment, :data:`REVIEW_CONTEXT`, any follow-up issue; the line said.
 
-    *found* is ``None`` past the cap (no command ran). *by* names who reviewed, for the status. *outside* counts
-    the changed files that are not code, said in the comment. *authored* is the author's trailer dispositions.
+    *found* is ``None`` past the cap (no command ran). *judged* re-judges the prior open findings, each with its
+    pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and may not
+    be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the changed
+    files that are not code, said in the comment. *authored* is the author's trailer dispositions.
     """
+    self_review(reviewer, authors, f'reviewing #{pull.number}')
     head = pull.head_sha
     bodies = trusted_bodies(client, pull.number)
     prior = ledger_of(bodies)
     prior = None if prior is not None and prior.head == head else prior  # a head re-posted is not a new round
-    ledger = advance(root, head, reviewed, prior, found)
-    gone = disposed(bodies)
+    mine = reviewer.session
+    asked = {fid: one for fid, one in pending(bodies).items() if not (mine and one.by.session == mine)}
+    verdicts = judged([(one, asked[one.id].why if one.id in asked else '') for one in prior.open]) if prior else {}
+    for fid, one in asked.items():
+        if fid in verdicts:
+            text = adjudication_text(one, verdicts[fid], reviewer)
+            comment_upsert(client, pull.number, kind=Marker.ADJUDICATION, key=fid, text=text)
+            bodies = [*bodies, f'{marker(Marker.ADJUDICATION, fid)}\n{text}']
+    ledger = advance(root, head, reviewed, prior, found, judged=verdicts)
+    gone = upheld(bodies)
     summary = context_summary(root, reviewed, pull.body) if ledger.round == 1 else ''
     text = render(ledger, gone, number=pull.number, reviewed=reviewed, max_rounds=max_rounds,
                   found=found, summary=summary, outside=outside, repo=_repo_url(pull.url),

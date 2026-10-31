@@ -60,7 +60,9 @@ __all__ = [
     'Scope',
     'Slice',
     'gather',
+    'git',
     'is_code',
+    'landed_base',
     'lens_of',
     'own_base',
     'plan',
@@ -136,6 +138,7 @@ class Scope:
 
 
 def git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
+    """``git *args`` in *root*: its exit code (one of *ok*) and stdout; :class:`OSError` naming any other."""
     done = _door.run(
         ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
         timeout=_GIT_TIMEOUT_S, check=False,
@@ -352,3 +355,21 @@ def gather(
         path.write_text(merged, encoding='utf-8')
         argv = [arg.replace(FINDINGS_FIELD, str(path)) for arg in filled(synthesis)]
         return merge_outputs([merged, run(argv, root)], reviewed)
+
+
+def landed_base(root: Path, base: str, head: str) -> str:
+    """What *head*'s own change is measured from: integration for an unmerged head, else what it landed on.
+
+    A merged PR's head is an ancestor of integration, so the merge base would read nothing: its change is measured
+    from the first parent of the merge that landed it; a commit integration took directly, from its own parent.
+    """
+    landed = f'origin/{base}'
+    code, _ = git(root, 'merge-base', '--is-ancestor', head, landed, ok=(0, 1))
+    if code:
+        return landed
+    merges = git(root, 'log', '--first-parent', '--merges', '--format=%H %P', landed)[1]
+    for row in merges.splitlines():
+        merge, _first, *merged = row.split()
+        if head in merged:
+            return f'{merge}^1'
+    return f'{head}^'

@@ -109,8 +109,9 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_claim import CLAIMED, DESCRIPTION, passed, unable
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
-from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, disposed, post_round, trailed, trusted_bodies
+from dev_lab.dev.forgereview_findings import Finding, Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
+from dev_lab.dev.forgereview_judge import AdjudicationRefused, Judge, Verdict, identity, judge, self_review, upheld
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import (
     HOST_FIELD,
     RUNTIMES_TABLE,
@@ -122,6 +123,7 @@ from dev_lab.dev.forgereview_runtimes import (
 from dev_lab.dev.forgereview_scope import ONLY_GENERATED, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import ForgeCallFailed
+from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.rules import RULES
 
@@ -132,6 +134,7 @@ if TYPE_CHECKING:
 __all__ = [
     'EMPTY_COMMAND_FIX',
     'FAMILY_COMMAND',
+    'FAMILY_JUDGE',
     'FAMILY_MODEL',
     'FAMILY_RUNTIMES',
     'MODEL_FIELD',
@@ -146,6 +149,7 @@ __all__ = [
     'Review',
     'command_for',
     'hold',
+    'judge_for',
     'load_review',
     'review_from',
     'review_pull',
@@ -182,8 +186,16 @@ FAMILY_COMMAND: Final = (
     '--disposed', forgereview_scope.DISPOSED_FIELD,
 )  # fmt: skip
 
-#: The runtimes the family command reads from a host's ``[runtimes]``: the ONE set a deploy migrates.
-FAMILY_RUNTIMES: Final = runtime_names(FAMILY_COMMAND)
+#: The family's JUDGE (:mod:`dev_lab.dev.forgereview_judge`): ai-lab re-judges open findings and adjudicates
+#: claims over ``{findings}`` (each with its claim) at the head of ``{range}``. Declared only to differ.
+FAMILY_JUDGE: Final = (
+    '{runtimes.ai_lab.python}', '-m', 'ai_lab.review.judge', '--range', RANGE_FIELD, '--model', MODEL_FIELD,
+    '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD,
+    '--findings', forgereview_scope.FINDINGS_FIELD,
+)  # fmt: skip
+
+#: The runtimes the family's commands read from a host's ``[runtimes]``: the ONE set a deploy migrates.
+FAMILY_RUNTIMES: Final = runtime_names((*FAMILY_COMMAND, *FAMILY_JUDGE))
 
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
@@ -233,6 +245,7 @@ class Review:
     command: tuple[str, ...] = FAMILY_COMMAND  # declare only a genuinely different method
     model: str = FAMILY_MODEL  # fills ``{model}``
     synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
+    judge: tuple[str, ...] = FAMILY_JUDGE  # re-judges open findings and adjudicates claims, every round
     max_rounds: int = FAMILY_MAX_ROUNDS  # full rounds per PR; past it, the open blocking findings are re-checked only
     max_diff_bytes: int = 200_000  # one slice
     max_total_bytes: int = 4_000_000  # one head
@@ -304,7 +317,7 @@ def stale_after(review: Review) -> timedelta:
 
 def command_for(
     review: Review, reviewed: str, runtimes: Mapping[str, Mapping[str, Any]], *,
-    paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False,
+    paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False, judge: bool = False,
 ) -> list[str]:  # fmt: skip
     """The declared command (or *synthesis*), every placeholder replaced: the range, the slice, this host's values.
 
@@ -330,7 +343,27 @@ def command_for(
             .replace(RULES_FIELD, ','.join(rule.id for rule in RULES))
         ]
 
-    return [one for arg in (review.synthesis if synthesis else review.command) for one in filled(arg)]
+    declared = review.judge if judge else review.synthesis if synthesis else review.command
+    return [one for arg in declared for one in filled(arg)]
+
+
+def judge_for(
+    root: Path, review: Review, reviewed: str, run: Callable[[Sequence[str], Path], str],
+    runtimes: Mapping[str, Mapping[str, Any]],
+) -> Judge:  # fmt: skip
+    """The :data:`~dev_lab.dev.forgereview_judge.Judge` of *review*'s declared judge over *reviewed*, on this host.
+
+    The command is filled only when there is something to judge: a first round has no open finding.
+    """
+
+    def judged(items: Sequence[tuple[Finding, str]]) -> Mapping[str, Verdict]:
+        if not items:
+            return {}
+        argv = command_for(review, reviewed, runtimes, judge=True)
+        return judge(argv, items, run, root, findings_field=forgereview_scope.FINDINGS_FIELD,
+                     principles_field=forgereview_scope.PRINCIPLES_FIELD)  # fmt: skip
+
+    return judged
 
 
 def _scope(root: Path, client: Client, review: Review, pull: PullRequest, target: str) -> Scope:
@@ -340,7 +373,7 @@ def _scope(root: Path, client: Client, review: Review, pull: PullRequest, target
 
 
 def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
-            authored: Mapping[str, str]) -> str:  # fmt: skip
+            authored: Mapping[str, str], runner: Runner) -> str:  # fmt: skip
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
@@ -354,14 +387,27 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
-                      outside=scope.outside, authored=authored)  # fmt: skip
+                      outside=scope.outside, authored=authored, **_judging(root, client, review, pull, scope=scope,
+                                                                            runner=runner))  # fmt: skip
 
 
-def _without_command(root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope) -> str | None:
+def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner) -> dict:
+    """The judge, the reviewer and the head's author sessions every round is posted with."""
+    return {
+        'judged': judge_for(root, review, scope.range, runner.run, runner.runtimes),
+        'reviewer': identity(client, runner.host),
+        'authors': sessions(root, f'origin/{pull.base}', pull.head_sha),
+    }
+
+
+def _without_command(
+    root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope, *, runner: Runner
+) -> str | None:
     """The line said when *pull*'s head is settled with no command run (past the round cap, nothing to read)."""
     head = pull.head_sha
     if capped(client, pull, review.max_rounds):  # past max_rounds: the blocking findings re-checked only
-        return post_round(root, client, pull, scope.range, found=None, max_rounds=review.max_rounds, by='re-check')
+        return post_round(root, client, pull, scope.range, found=None, max_rounds=review.max_rounds, by='re-check',
+                          **_judging(root, client, review, pull, scope=scope, runner=runner))  # fmt: skip
     if scope.slices:
         return None
     status_post(client, head, context=REVIEW_CONTEXT, state='success', description=ONLY_GENERATED[:DESCRIPTION])
@@ -387,7 +433,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     if (stands := passed(root, client, head, runner.clock(), review.stale)) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     scope = _scope(root, client, review, pull, f'origin/{pull.base}')
-    said = _without_command(root, client, review, pull, scope)
+    said = _without_command(root, client, review, pull, scope, runner=runner)
     if said is None and not runner.secret:
         said = hold(client, pull, NEEDS_MAINTAINER)
     return said if said is not None else _command_round(root, client, review, pull, scope=scope, runner=runner)
@@ -405,12 +451,14 @@ def _command_round(
         cannot = str(unsupported)
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
         raise HostCannot(cannot)
+    # checked before the claim too: a session that authored the head posts nothing on it
+    self_review(identity(client, runner.host), sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
     claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
     status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
         found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body,
-                                      disposed=disposed(trusted_bodies(client, pull.number))))  # fmt: skip
+                                      disposed=upheld(trusted_bodies(client, pull.number))))  # fmt: skip
     except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
         return unable(client, pull, runner.host, str(unsupported))
     except (UnknownSchemaVersion, ReviewRefused) as named:
@@ -422,7 +470,7 @@ def _command_round(
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}: {failed}'
     authored = trailed(root, f'origin/{pull.base}', head)
-    return _settle(root, client, pull, review, scope, found=found, authored=authored)
+    return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner)
 
 
 def review_tick(
@@ -445,6 +493,8 @@ def review_tick(
             return review_pull(root, client, review, pull, runner)
         except HostCannot as cannot:  # another serving host may run it: nothing is posted
             return f'#{pull.number} {pull.head_sha[:12]}: not reviewed on this host -- {cannot}'
+        except AdjudicationRefused as author:  # the head's own author session: another reviewer runs it
+            return f'#{pull.number} {pull.head_sha[:12]}: not reviewed here -- {author}'
 
     pulls = (pull for pull in pr_list(client) if pull.base == base and not pull.draft and pull.head_sha)
     return tuple(line for pull in pulls if (line := said(pull)) is not None)

@@ -1,0 +1,73 @@
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
+{
+  "name": "Review claims",
+  "on": {
+    "issue_comment": {
+      "types": [
+        "created",
+        "edited"
+      ]
+    }
+  },
+  "concurrency": {
+    "group": "claims-${{ github.event.issue.number }}",
+    "cancel-in-progress": false
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "env": {
+    "HEAD_SHA": "${{ github.sha }}",
+    "GITHUB_TOKEN": "${{ github.token }}"
+  },
+  "jobs": {
+    "adjudicate": {
+      "if": "${{ contains(github.event.comment.body, '<!-- lab-commons:review-claim:') }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Install the review method",
+          "run": "uv venv \"$RUNNER_TEMP/ai-lab\" && uv pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\"",
+          "env": {
+            "AI_LAB_REF": "12f22cc920fba83eabdd1764594231df1a5eac60"
+          }
+        },
+        {
+          "name": "Store the review key",
+          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper 'cache --timeout=3600' && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -m ai_lab.auth login anthropic --task pr-review; fi",
+          "env": {
+            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
+          }
+        },
+        {
+          "name": "Adjudicate the claims",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\""
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write",
+        "pull-requests": "write",
+        "issues": "write"
+      }
+    }
+  }
+}
