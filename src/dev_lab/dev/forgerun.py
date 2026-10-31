@@ -70,6 +70,13 @@ cancelled while running, 34 points of it for supersession. A DOCS-ONLY tip
 never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
 submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
 2026-10-21: a superseded pr head kept 70 array tasks running on carol, eating the grant's QOS room.
+
+A STARTED INTEGRATION RUN FINISHES (D111, integrator 2026-10-31). The forge merges into integration many times an
+hour and a base takes hours, so superseding it left no integration commit a full verdict -- 6a335d1e9f released at
+50/51 jobs -- and ``integrate promote`` nothing to promote. Once a job of it is submitted, an integration run is
+never superseded: it publishes on its own sha, and the newest tip waits behind it (:mod:`forgecoalesce`). A run not
+yet submitted is still dropped for the newer tip. A PR head keeps NEWEST-HEAD-ONLY: only its head's verdict gates
+its merge, and its tip carries what its drained tasks finished.
 A ref of any OTHER class is tested at every pushed sha: its run finishes and posts on its own sha, and when
 the tip is reach-equivalent its record is posted on the tip too, as a part naming the sha it was judged at.
 
@@ -234,9 +241,13 @@ def _superseding_tip(root: Path, run: Run) -> str:
     A DATA-ONLY tip (a memory or docs head a whole-tree test still reads, P6) never supersedes either: it waits
     on this run and then carries every outcome its diff cannot reach (:func:`dev_lab.dev.forgecarry.docs_only`).
     :data:`_REF_GONE` when the ref itself is gone and no live head carries the run (:func:`_ref_gone`).
+    A STARTED run of the INTEGRATION branch (a job submitted) is never superseded (D111): it is the only verdict
+    ``integrate promote`` can read, and the branch moves faster than one run finishes.
     """
     if _ref_gone(root, run):
         return _REF_GONE
+    if run.job_ids and run.ref == _integration(root):
+        return ''
     tip = tip_of(root, run.ref)
     moved = tip and tip != run.sha and coalesced(root, run.ref)
     return tip if moved and not (equivalent(root, run.sha, tip) or data_only(root, run.sha, tip)) else ''

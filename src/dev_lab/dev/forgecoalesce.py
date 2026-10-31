@@ -38,6 +38,9 @@ WAITING_BEHIND: Final = 'waiting behind'
 EARLIER_TIPS: Final = 16
 #: The claim progress of a run posting its gathered record (:mod:`dev_lab.dev.forgerun`): never superseded.
 PUBLISHING: Final = 'publishing'
+#: What becomes of a held run of an integration tip (D111, :mod:`dev_lab.dev.forgerun`), and of any other's.
+_STARTED_FINISHES: Final = 'a started one finishes, else it yields'
+_PENDING_WITHDRAWN: Final = 'its pending tasks withdrawn at its next tick'
 #: The claim progress of a superseded run whose started tasks finish (:mod:`dev_lab.dev.forgerun`).
 DRAINING: Final = 'draining'
 
@@ -65,7 +68,8 @@ def behind(
                 return f'{WAITING_BEHIND} {sha[:12]} ({holder.progress} on {where})'
             if holder.progress.startswith(PUBLISHING):
                 return f'{WAITING_BEHIND} {sha[:12]} ({PUBLISHING} on {where})'
-            return f'{WAITING_BEHIND} {sha[:12]} (held on {where}: its pending tasks withdrawn at its next tick)'
+            fate = _STARTED_FINISHES if wanted.kind == INTEGRATION else _PENDING_WITHDRAWN
+            return f'{WAITING_BEHIND} {sha[:12]} (held on {where}: {fate})'
         if state == DONE:
             return ''
     return ''

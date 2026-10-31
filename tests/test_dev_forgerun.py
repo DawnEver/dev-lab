@@ -155,13 +155,21 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(forgerun, 'read_record', lambda _path: {'sha': SHA})
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: SHA)  # the run's sha is its ref's tip
     monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: True)
+    monkeypatch.setattr(forgerun, '_integration', lambda _root: INTEGRATION_REF)
     return tmp_path
 
 
-def _start(tmp_path: Path, store: _Store, owner: Claim = HERE, outputs: tuple[str, ...] = ()) -> forgerunstate.Run:
+#: The integration branch the ``home`` fixture declares, and a PR head: NEWEST-HEAD-ONLY differs between them (D111).
+INTEGRATION_REF = 'integrate/main'
+PR_REF = 'pr/lane'
+
+
+def _start(
+    tmp_path: Path, store: _Store, owner: Claim = HERE, outputs: tuple[str, ...] = (), ref: str = INTEGRATION_REF
+) -> forgerunstate.Run:
     store.add('pending', owner.description())
     part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts', outputs)
-    return forgerun.start(Work('integrate/main', SHA, 'linux', 'mine', owner, cluster=part), owner)
+    return forgerun.start(Work(ref, SHA, 'linux', 'mine', owner, cluster=part), owner)
 
 
 def _tick(
@@ -643,8 +651,8 @@ class _Unrecorded(_Slurm):
         raise forgerunstate.Unrecorded(msg)
 
 
-def _submitted_run(home: Path, store: _Store, slurm: _Slurm) -> None:
-    _start(home, store)
+def _submitted_run(home: Path, store: _Store, slurm: _Slurm, ref: str = INTEGRATION_REF) -> None:
+    _start(home, store, ref=ref)
     assert _tick(store, slurm).phase == forgerunstate.SUBMITTED
 
 
@@ -758,7 +766,7 @@ def test_a_run_whose_coalesced_ref_moves_on_withdraws_its_pending_tasks_and_drai
     """
     tip, began, coalesced, superseded = case
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
-    _submitted_run(home, store, slurm)
+    _submitted_run(home, store, slurm, ref=PR_REF)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: tip)
     monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: coalesced)
     slurm.started = ['4242'] if began else []
@@ -904,6 +912,38 @@ def _snapshot_untagged() -> Snapshot:
     return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)
 
 
+@pytest.mark.parametrize('ref', [INTEGRATION_REF, PR_REF])
+def test_a_started_integration_run_finishes_on_its_own_sha_when_integration_moves(
+    home: Path, monkeypatch: pytest.MonkeyPatch, ref: str
+) -> None:
+    """D111: a STARTED integration run is never superseded -- integration moves faster than one run finishes.
+
+    Superseding it left no integration commit a full verdict, so ``integrate promote`` had nothing to promote.
+
+    A started integration run is never superseded: nothing withdrawn, nothing drained, kept as running, then
+    published on its own sha. PLANTED CONTROL: the same started run of a PR head still drains for its tip.
+    """
+    store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+    _submitted_run(home, store, slurm, ref=ref)
+    monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40)
+    monkeypatch.setattr(forgecarry, 'post', lambda _root, _path: 'posted')
+    slurm.started = ['4242']
+    after = _tick(store, slurm, alarms=alarms)
+    assert after is not None
+    holder = Claim.parse(store.posts[-1]['description'])
+    if ref == PR_REF:
+        assert slurm.withdrawn == ['4242']
+        assert holder is not None
+        assert holder.progress.startswith(DRAINING)
+        return
+    assert slurm.withdrawn == [], 'a started integration run is kept whole'
+    assert (slurm.cancelled, alarms) == ([], [])
+    assert holder is None or not holder.progress.startswith(DRAINING)
+    slurm.done = True
+    assert _tick(store, slurm, alarms=alarms) is None
+    assert 'superseded' not in store.posts[-1]['description'], 'it reaches its verdict on its own sha'
+
+
 def test_a_run_not_yet_submitted_whose_ref_moved_on_is_released_superseded_without_a_submit(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -946,7 +986,7 @@ def test_a_run_whose_ref_moved_on_to_a_docs_only_tip_is_never_cancelled(
     """
     kept = change != 'code'
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
-    _submitted_run(home, store, slurm)
+    _submitted_run(home, store, slurm, ref=PR_REF)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40)
     monkeypatch.setattr(forgerun, 'equivalent', lambda _root, a, b: change == 'docs' and (a, b) == (SHA, 'd' * 40))
     monkeypatch.setattr(forgerun, 'data_only', lambda _root, a, b: change == 'memory' and (a, b) == (SHA, 'd' * 40))
@@ -971,7 +1011,7 @@ def test_a_superseded_runs_started_task_drains_until_its_learned_deadline_then_i
     """
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
     superseded = head == 'superseded'
-    _submitted_run(home, store, slurm)
+    _submitted_run(home, store, slurm, ref=PR_REF)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40 if superseded else SHA)
     slurm.started = ['4242']
     task = forgerunstate.Started('4242_0', started_at=1000.0, limit_s=600.0)

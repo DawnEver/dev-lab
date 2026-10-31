@@ -1122,6 +1122,8 @@ def _history(**by_sha: list[CommitStatus]) -> object:
 BOB = Claim('H', 'bob', LATER, 'ada/bob')
 #: What the queue says of a tip waiting behind BOB's run: its holder withdraws its pending tasks (ruling 2026-10-22).
 _SUPERSEDED = '(held on ada/bob: its pending tasks withdrawn at its next tick)'
+#: The same of an integration tip: a STARTED integration run finishes on its own sha, an unstarted one yields (D111).
+_INTEGRATION_HELD = '(held on ada/bob: a started one finishes, else it yields)'
 
 
 def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_does(tmp_path: Path) -> None:
@@ -1137,8 +1139,8 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     tip = _candidate('integrate/main', new, INTEGRATION)
     for progress in ('', 'queued 0/12', 'running 40/93 done 12/93'):
         held = _history(**{old: [_pending(dataclasses.replace(BOB, progress=progress), 1)]})
-        assert behind(repo, tip, schedule, held, NOW) == f'{WAITING_BEHIND} {old[:12]} {_SUPERSEDED}', (
-            f'({progress!r}) the queue says its holder withdraws its pending tasks for the tip (ruling 2026-10-22)'
+        assert behind(repo, tip, schedule, held, NOW) == f'{WAITING_BEHIND} {old[:12]} {_INTEGRATION_HELD}', (
+            f'({progress!r}) a started integration run finishes, the tip queues behind it (D111)'
         )
     draining = _history(**{old: [_pending(dataclasses.replace(BOB, progress='draining 2 started job(s)'), 1)]})
     assert behind(repo, tip, schedule, draining, NOW) == (
@@ -1199,7 +1201,7 @@ def test_a_tick_claims_no_tip_whose_ref_runs_elsewhere_and_claims_it_once_that_r
     report = _tick(repo, server)
     assert report.claimed == ()
     assert [r for r in Recorder.received if r['method'] == 'POST'] == [], 'a running run is never cancelled'
-    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_SUPERSEDED}' in (report.lines)
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_INTEGRATION_HELD}' in (report.lines)
     Recorder.received.clear()
     settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -1219,7 +1221,7 @@ def test_a_tip_another_host_claimed_that_this_host_never_fetched_still_blocks(tm
     assert unseen not in reflog, 'the claimed tip was never fetched here'
     tip = _candidate('integrate/main', new, INTEGRATION)
     running = _history(**{unseen: [_pending(BOB, 1)]})
-    assert behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} {_SUPERSEDED}'
+    assert behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} {_INTEGRATION_HELD}'
 
 
 def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(server, tmp_path: Path) -> None:
@@ -1231,7 +1233,7 @@ def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(serve
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
     held = _tick(repo, server, dry_run=True)
-    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_SUPERSEDED}' in held.lines
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_INTEGRATION_HELD}' in held.lines
     assert new not in {w.sha for w in held.pending}, 'waiting behind is a fleet hold, not this host idle'
     Recorder.received.clear()
     settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}
