@@ -63,6 +63,25 @@ def test_promote_refuses_a_sha_off_integration_and_a_trunk_that_cannot_fast_forw
     assert 'not a commit of origin/integrate/main' in promote(repo, built, stray).reasons[0]
 
 
+def test_promote_takes_a_full_pass_ancestor_of_integration_not_only_its_tip(server, tmp_path: Path) -> None:
+    """D111: integration moves faster than a run finishes, so the newest full-PASS sha is usually an ANCESTOR.
+
+    Promote fast-forwards the trunk to it while the tip still has no verdict. PLANTED CONTROL: the tip, with
+    no full part, is refused.
+    """
+    _, repo = clone_pair(tmp_path)
+    passed = advance(repo, 'integrate/main', 'f.txt', 'f\n')
+    tip = advance(repo, 'integrate/main', 'g.txt', 'g\n')
+    run_git(repo, 'checkout', '-q', '--detach')
+    run_git(repo, 'branch', '-f', 'main', 'origin/main')
+    built = client(GITEA, Loopback(server))
+    answer('GET', f'{GAPI}/statuses/{passed}', (200, [_part()]))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part('incremental')]))
+    assert promote(repo, built, tip).action == 'refused'
+    assert promote(repo, built, passed).action == 'promote'
+    assert git_out(repo, 'rev-parse', 'main') == passed
+
+
 def test_promote_reads_the_promoted_sha_never_the_working_tree(server, tmp_path: Path) -> None:
     _, repo = clone_pair(tmp_path)
     tip = advance(repo, 'integrate/main', 'f.txt', 'f\n')
