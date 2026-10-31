@@ -5,6 +5,7 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -89,11 +90,36 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
 
 def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_path: Path) -> None:
     """lab-commons #11, dev-lab #3: the repo's own .venv has no ai_lab, so the review never ran on GitHub."""
-    steps = _base_ci(tmp_path)['jobs']['review']['steps']
-    install, review = steps[-2]['run'], steps[-1]['run']
+    steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
+    install, review = steps['Install the review method']['run'], steps['tests/review']['run']
     assert 'uv pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+' in install
     assert '--runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' in review
     assert '$GITHUB_WORKSPACE/.venv' not in review, "the repo's own environment does not carry the method"
+
+
+def test_the_review_method_is_pinned_to_the_commit_dev_lab_declares(tmp_path: Path) -> None:
+    """dev-lab #5 (2026-10-31) installed whatever ai-lab's default branch was that minute: a pin, never a float."""
+    install = next(
+        s for s in _base_ci(tmp_path)['jobs']['review']['steps'] if s.get('name') == 'Install the review method'
+    )
+    assert re.search(r'/ai-lab\.git@[0-9a-f]{40}"', install['run']), install['run']
+
+
+def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_path: Path) -> None:
+    """The review key reaches ai-lab through its credential store, on stdin, never argv or the environment.
+
+    ai-lab reads keys from the git credential store ONLY: dev-lab #5's reviewers were all `unsupported` with
+    ANTHROPIC_API_KEY set. The job stores it (memory cache, stdin) for the review task.
+    """
+    steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
+    login = steps['Store the review key']
+    assert login['env'] == {'ANTHROPIC_API_KEY': '${{ secrets.ANTHROPIC_API_KEY }}'}
+    assert "credential.helper 'cache" in login['run'], 'in memory, never a file on the runner'
+    assert '-m ai_lab.auth login anthropic --task pr-review' in login['run']
+    assert '| "$RUNNER_TEMP/ai-lab/bin/python"' in login['run'], 'the key travels on stdin'
+    assert 'if [ -n "$ANTHROPIC_API_KEY" ]' in login['run'], 'a fork PR has no secret: the review holds the head'
+    names = list(steps)
+    assert names.index('Install the review method') < names.index('Store the review key') < names.index('tests/review')
 
 
 def test_a_push_to_integration_runs_every_part_then_promote_fast_forwards_main_by_the_one_decision(
