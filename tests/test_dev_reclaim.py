@@ -190,3 +190,39 @@ def test_a_tree_a_live_process_holds_is_kept_and_a_free_one_still_goes(tmp_path:
     assert (held / 'landed.txt').is_file(), 'a tree in use is not touched'
     assert any(line.startswith('kept') and 'landed' in line and 'live' in line for line in lines), lines
     assert not (home / 'squashed').exists(), 'CONTROL: a free landed tree is still removed'
+
+
+def test_a_removal_that_fails_partway_leaves_no_tracked_file_deleted(tmp_path: Path, monkeypatch) -> None:
+    """PLANTED MID-REMOVAL FAILURE: the deleter takes a tracked file, then a held file refuses it."""
+    work = _planted(tmp_path)
+    home = work / '.claude' / 'worktrees'
+
+    def half(path: Path) -> None:
+        (path / '.git').unlink()
+        for tracked in path.glob('*.txt'):
+            tracked.unlink()
+        raise PermissionError(13, 'access denied', str(path / '.venv' / 'Scripts' / 'python.exe'))
+
+    monkeypatch.setattr('dev_lab.dev.reclaim.remove_tree', half)
+    lines = reclaim(work, _HOLDERS, occupied=_free) or ()
+    landed = home / 'landed'
+    assert (landed / 'landed.txt').is_file(), 'a tracked file was left deleted'
+    assert _run(landed, 'status', '--porcelain', '--untracked-files=no') == '', 'the tree is not HEAD again'
+    assert any(line.startswith('FAILED') and 'landed' in line and 'restored' in line for line in lines), lines
+
+
+def test_a_tree_held_past_the_census_is_refused_before_anything_is_deleted(tmp_path: Path) -> None:
+    """A process the census cannot see (``occupied`` says free) still holds the tree: the move-aside refuses."""
+    work = _planted(tmp_path)
+    held = work / '.claude' / 'worktrees' / 'landed'
+    planted = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], cwd=held)
+    try:
+        lines = reclaim(work, _HOLDERS, occupied=_free) or ()
+    finally:
+        planted.kill()
+        planted.wait()
+    if os.name != 'nt':  # POSIX deletes under a working process; there is nothing to refuse
+        assert not held.exists()
+        return
+    assert (held / 'landed.txt').is_file(), 'a held tree lost a tracked file'
+    assert any(line.startswith('kept') and 'in use' in line and 'landed' in line for line in lines), lines

@@ -296,6 +296,39 @@ def reclaimable(
     return tuple(leases)
 
 
+def _removed(tree: Path) -> str:
+    """Delete *tree* all or nothing; ``''`` when gone, else the line saying why it stays and in what state.
+
+    Incident 2026-10-31: a deletion refused partway by a held interpreter left every tracked file deleted. So
+    the tree is first MOVED ASIDE -- Windows refuses to move a directory a process holds, before a byte is gone
+    -- and a deletion that still fails moves it back and restores its tracked files from HEAD.
+    """
+    aside = tree.with_name(f'{tree.name}.reclaiming')
+    link = tree / '.git'
+    gitfile = link.read_bytes() if link.is_file() else None
+    try:
+        tree.rename(aside)
+    except OSError as error:
+        return f'kept     {{label}}  (in use -- {error}; nothing was deleted)'
+    try:
+        remove_tree(aside)
+    except OSError as error:
+        return f'FAILED   {{label}}  ({error}; {_restored(aside, tree, gitfile)})'
+    return ''
+
+
+def _restored(aside: Path, tree: Path, gitfile: bytes | None) -> str:
+    """Put a half-deleted *aside* back at *tree*, its ``.git`` link and tracked files from HEAD; the state, in words."""
+    try:
+        aside.rename(tree)
+    except OSError as error:
+        return f'left half-deleted at {aside}: {error}'
+    if gitfile is not None and not (tree / '.git').exists():
+        (tree / '.git').write_bytes(gitfile)
+    restore = git_out(tree, 'restore', '--source=HEAD', '--worktree', '--', '.')
+    return 'restored from HEAD' if restore is not None else f'left half-deleted at {tree}: git restore failed'
+
+
 def reclaim(
     root: Path,
     holders: tuple[str, ...],
@@ -329,14 +362,11 @@ def reclaim(
             out.append(f'deferred {label}  (batch of {limit} reached)')
         elif unarchived := repository_at(root, lease.path) or home_outputs(root, lease.path):
             out.append(f'kept     {label}  ({unarchived}; nothing was deleted)')
+        elif refused := _removed(lease.path):
+            out.append(refused.replace('{label}', label))
         else:
-            try:
-                remove_tree(lease.path)
-            except OSError as error:
-                out.append(f'FAILED   {label}  ({error})')
-            else:
-                removed += 1
-                out.append(f'removed  {label}')
+            removed += 1
+            out.append(f'removed  {label}')
     if apply:
         git_out(root, 'worktree', 'prune')
     return tuple(out)
