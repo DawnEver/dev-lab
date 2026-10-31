@@ -5,12 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from _branch_repos import advance
+from _forge_fake import git_out, run_git
+from _forge_state import StateForge
 from test_dev_forgereview import FakeCommand, _forge, _output, _work
 
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, PATHS_FIELD, RANGE_FIELD, REVIEW_CONTEXT, Review
 from dev_lab.dev.forgereview_command import Runner
-from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import DOOR, RELEASED, TakeoverRefused, alarms, held, main, release, review_run, takeover
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 
@@ -60,11 +63,13 @@ def test_the_release_is_refused_without_a_findings_comment_for_the_sha(tmp_path:
     assert _latest(forge, head, HOLD_CONTEXT).state == 'success'
 
 
-def test_a_head_that_is_not_held_is_refused(tmp_path: Path) -> None:
+def test_an_open_head_with_no_review_and_no_hold_is_taken_over(tmp_path: Path) -> None:
+    """A missing review is enough: the door no longer needs a hold to exist (2026-10-31)."""
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
-    with pytest.raises(TakeoverRefused, match='no pending'):
-        takeover(work, forge, _SLICED, head, base='integrate/main', host='box', run=FakeCommand())
+    said = takeover(work, forge, _SLICED, head, base='integrate/main', host='box', run=FakeCommand())
+    assert len(said) == 1, 'no hold to release'
+    assert _latest(forge, head, REVIEW_CONTEXT).state == 'success'
 
 
 def test_no_reviewer_returning_findings_posts_nothing_and_the_hold_stands(tmp_path: Path) -> None:
@@ -106,3 +111,64 @@ def test_the_door_lists_held_heads_and_runs_the_takeover(tmp_path: Path, capsys:
     assert _latest(forge, head, HOLD_CONTEXT).state == 'success'
     assert main(['takeover', head], cwd=work, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 2
     assert fetched
+
+
+# --- the emergency door must always be satisfiable (2026-10-31) ----------------------------------------
+
+
+def _merged(tmp_path: Path) -> tuple[Path, object, int, str]:
+    """``pr/x`` merged into ``integrate/main`` on origin, its PR closed, its review an ``error``: the head."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    run_git(work, 'checkout', '-q', '-B', 'landing', 'origin/integrate/main')
+    run_git(work, 'merge', '-q', '--no-ff', '-m', 'chore(merge): pr/x', head)
+    run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/integrate/main')
+    run_git(work, 'fetch', '-q', 'origin')
+    forge.pulls[number] |= {'state': 'closed'}
+    status_post(forge, head, context=REVIEW_CONTEXT, state='error', description='the review command failed')
+    return work, forge, number, head
+
+
+def test_a_merged_prs_head_is_taken_over_over_its_own_change(tmp_path: Path) -> None:
+    """ai-lab #3 / dev-lab #5: merged unreviewed, so the door must reach a CLOSED PR's head. PLANTED: x.py read."""
+    work, forge, number, head = _merged(tmp_path)
+    command = FakeCommand()
+    takeover(work, forge, Review(command=('reviewer', '--range', RANGE_FIELD)), head, base='integrate/main',
+             host='box', run=command)  # fmt: skip
+    ((argv, _),) = command.ran
+    base, _, tip = argv[-1].partition('..')
+    assert tip == head
+    assert 'x.py' in git_out(work, 'diff', '--name-only', f'{base}..{tip}'), 'the PR own change, not an empty range'
+    assert _latest(forge, head, REVIEW_CONTEXT).state == 'success'
+    assert any(marker(Marker.REVIEW, head) in one['body'] for one in forge.comments[number])
+
+
+def test_a_plain_break_glass_commit_is_taken_over_with_no_pr(tmp_path: Path) -> None:
+    work, _ = _work(tmp_path)
+    forge = StateForge()
+    sha = advance(work, 'integrate/main', 'hot.py', 'x = 1\n', 'fix: hot\n\nBreak-Glass: forge down')
+    command = FakeCommand()
+    said = takeover(work, forge, Review(command=('reviewer', '--range', RANGE_FIELD)), sha, base='integrate/main',
+                    host='box', run=command)  # fmt: skip
+    ((argv, _),) = command.ran
+    assert argv[-1] == f'{git_out(work, "rev-parse", sha + "^")}..{sha}', 'its own change: from its parent'
+    assert _latest(forge, sha, REVIEW_CONTEXT).state == 'success'
+    assert sha[:12] in said[0]
+
+
+def test_an_already_reviewed_head_is_refused(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the two above: the door runs only where the review is missing."""
+    work, forge, _, head = _merged(tmp_path)
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed')
+    with pytest.raises(TakeoverRefused, match='already reviewed'):
+        takeover(work, forge, _SLICED, head, base='integrate/main', host='box', run=FakeCommand())
+
+
+def test_the_door_reads_the_repo_it_is_told_and_refuses_a_sha_it_lacks(tmp_path: Path) -> None:
+    work, forge, _, head = _merged(tmp_path)
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    argv = ['takeover', head, '--repo', str(work)]
+    assert main(argv, cwd=elsewhere, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 0
+    assert _latest(forge, head, REVIEW_CONTEXT).state == 'success'
+    assert main(['takeover', 'f' * 40, '--repo', str(work)], cwd=elsewhere, client=forge, run=FakeCommand()) == 2
