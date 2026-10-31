@@ -389,7 +389,6 @@ def _host_failure(root: Path, failure: BaseException) -> None:
     )
 
 
-
 def forge_user(table: Mapping[str, Any]) -> str | None:
     """The machine file's ``[serve] forge_user``: the forge login serve posts as (D11); ``None`` is the default fill.
 
@@ -403,6 +402,7 @@ def forge_user(table: Mapping[str, Any]) -> str | None:
         msg = f'[{SERVE_TABLE}] forge_user must be a non-empty login, got {user!r}'
         raise ValueError(msg)
     return user
+
 
 def main(
     argv: Sequence[str] | None = None,
