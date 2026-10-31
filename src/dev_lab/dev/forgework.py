@@ -425,11 +425,17 @@ def client_for(
     transport: Transport = https_transport,
     remote: str = 'origin',
     url: str = '',
+    username: str | None = None,
 ) -> Client:
-    """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp."""
+    """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp.
+
+    *username* selects that credential of the host (forge serve's ``[serve] forge_user``); ``None`` the default fill.
+    """
     forge = forge_of_url(url) if url else forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
-    built = stored_client(forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root))
+    built = stored_client(
+        forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root), username=username
+    )
     built.cache_dir = outbox_dir(root)
     return built
 
@@ -442,8 +448,9 @@ def stored_client(
     transport: Transport = https_transport,
     stamp: str | None = None,
     journal: Journal | None = None,
+    username: str | None = None,
 ) -> Client:
-    """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
+    """A client presenting the store's credential for *forge* (as *username* if given), refreshed as git does on a 401.
 
     Inside GitHub Actions against GitHub the job token is the credential (:func:`actions_token`), never refreshed.
 
@@ -453,7 +460,7 @@ def stored_client(
     """
     if job := actions_token(forge, os.environ if env is None else env):
         return Client(forge, job, transport=transport, username=ACTIONS_BOT, stamp=stamp, journal=journal)
-    username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
+    username, secret = _forge.credential_for(forge.host, username=username, cwd=cwd, env=env)
 
     def refresh(refused_user: str, refused: str) -> tuple[str, str]:
         return _forge.refresh_credential(forge.host, (refused_user, refused), cwd=cwd, env=env)

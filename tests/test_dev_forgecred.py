@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from _forge_fake import oauth_env
-from lab_commons.credentials import credential_for, store_credential
+from lab_commons.credentials import NoCredential, credential_for, store_credential
 
 from dev_lab.dev.forgecred import refresh_credential
 
@@ -34,3 +35,14 @@ def test_a_store_with_no_refresh_token_is_never_erased_by_one_401(tmp_path: Path
     store_credential(HOST, 'alice', 'good', cwd=tmp_path, env=env)
     assert refresh_credential(HOST, ('alice', 'good'), cwd=tmp_path, env=env) == ('alice', 'good')
     assert credential_for(HOST, cwd=tmp_path, env=env) == ('alice', 'good')
+
+
+def test_a_refresh_fills_again_as_the_refused_username_never_another_identity(tmp_path: Path) -> None:
+    """A refreshed serve credential stays the bot's: the second fill names the refused username."""
+    config = tmp_path / 'gitconfig'
+    config.write_text(f'[credential]\n\thelper = "store --file={(tmp_path / "creds").as_posix()}"\n', encoding='utf-8')
+    env = {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+    store_credential(HOST, 'dev', 'D', cwd=tmp_path, env=env)
+    store_credential(HOST, 'OAUTH_USER', 'stale', cwd=tmp_path, env=env)
+    with pytest.raises(NoCredential, match='OAUTH_USER'):  # never the developer's 'dev'
+        refresh_credential(HOST, ('OAUTH_USER', 'stale'), cwd=tmp_path, env=env)

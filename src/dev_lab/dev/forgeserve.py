@@ -158,7 +158,7 @@ from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
-__all__ = ['POLL_LEASE_TICKS', 'ServeReport', 'main', 'polls', 'serve', 'work_root']
+__all__ = ['POLL_LEASE_TICKS', 'ServeReport', 'forge_user', 'main', 'polls', 'serve', 'work_root']
 
 
 @dataclass(frozen=True)
@@ -389,6 +389,21 @@ def _host_failure(root: Path, failure: BaseException) -> None:
     )
 
 
+
+def forge_user(table: Mapping[str, Any]) -> str | None:
+    """The machine file's ``[serve] forge_user``: the forge login serve posts as (D11); ``None`` is the default fill.
+
+    On Gitea only a ``tests/review`` success created by the repo's declared ``forge_bot`` counts, so serve must
+    present that identity's credential rather than whichever the store fills first.
+    """
+    user = table.get('forge_user')
+    if user is None:
+        return None
+    if not isinstance(user, str) or not user:
+        msg = f'[{SERVE_TABLE}] forge_user must be a non-empty login, got {user!r}'
+        raise ValueError(msg)
+    return user
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -406,8 +421,12 @@ def main(
     if cwd is None:
         os.chdir(work_root(root))  # the serve reads its venv, never this tree (work_root)
 
+    user = forge_user(section(SERVE_TABLE))
+
     def build(here: Path) -> Client:
-        return client_for(here, env=env, transport=transport) if env is not None else unprompted_client(here)
+        if env is not None:
+            return client_for(here, env=env, transport=transport, username=user)
+        return unprompted_client(here, user)
 
     seat = seat_of()
     machine = this_machine()

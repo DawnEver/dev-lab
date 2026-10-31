@@ -485,3 +485,18 @@ def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_pa
     monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: '')
     assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
     assert 'NOTICE-LINE' not in capsys.readouterr().err
+
+
+def test_a_named_forge_user_selects_its_own_credential_and_the_default_fill_is_unchanged(tmp_path) -> None:
+    """D11: forge serve posts as the declared ``[serve] forge_user``; a developer session keeps the default fill."""
+    config = tmp_path / 'gitconfig'
+    config.write_text(f'[credential]\n\thelper = "store --file={(tmp_path / "creds").as_posix()}"\n', encoding='utf-8')
+    env = {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+    from lab_commons.credentials import store_credential  # noqa: PLC0415 -- this test's store only
+
+    store_credential('f.example', 'forge-bot', 'B', cwd=tmp_path, env=env)
+    store_credential('f.example', 'dev', 'D', cwd=tmp_path, env=env)  # a plain store fills its LATEST first
+    repo = _repo(tmp_path, 'https://f.example/o/r.git')
+    assert client_for(repo, env=env).username == 'dev'
+    bot = client_for(repo, env=env, username='forge-bot')
+    assert (bot.username, bot.token) == ('forge-bot', 'B')

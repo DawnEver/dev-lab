@@ -165,13 +165,13 @@ def queued(root: Path) -> tuple[Post, ...]:
 _NO_PROMPT: Final = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
 
 
-def unprompted_client(root: Path) -> Client:
-    """The forge client for *root* whose credential lookup never opens a prompt nobody is watching."""
+def unprompted_client(root: Path, username: str | None = None) -> Client:
+    """The forge client for *root* (as *username* when given) whose credential lookup never opens a prompt."""
     # Set in THIS process rather than passed as ``env=``: an explicit env is the test seam, which
     # also blanks PATH for ``git credential`` -- and that hides the real helper from a real run.
     for name, value in _NO_PROMPT.items():
         os.environ.setdefault(name, value)
-    return client_for(root)
+    return client_for(root, username=username)
 
 
 def replay(journal: Journal, client: Client, *, now: float | None = None) -> list[str]:

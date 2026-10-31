@@ -1538,3 +1538,13 @@ def test_a_serve_that_served_logs_no_host_failure(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(forgeserve, 'serve', lambda *_a, **_k: forgeserve.ServeReport((), (), (), (), ()))
     assert forgeserve.main([], cwd=tmp_path, seat_of=lambda: None) == 0
     assert metrics.read(metrics.HOST_FAILURE, root=tmp_path) == []
+
+
+def test_serve_posts_as_the_declared_forge_user_and_a_bad_one_is_refused() -> None:
+    """D11: ``[serve] forge_user`` names the credential serve presents; absent, the default fill."""
+    from dev_lab.dev.forgeserve import forge_user  # noqa: PLC0415
+
+    assert forge_user({'forge_user': 'forge-bot'}) == 'forge-bot'
+    assert forge_user({}) is None
+    with pytest.raises(ValueError, match='forge_user'):
+        forge_user({'forge_user': ''})

@@ -102,7 +102,7 @@ def refresh_credential(
     if username != REFRESHABLE_USER:
         return refused
     _reject(host, username, secret, cwd=cwd, env=env)
-    return credential_for(host, cwd=cwd, env=env)
+    return credential_for(host, username=username, cwd=cwd, env=env)  # the same identity, never another
 
 
 def _reject(host: str, username: str, secret: str, *, cwd: Path | None, env: Mapping[str, str] | None) -> None:
