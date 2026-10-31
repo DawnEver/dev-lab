@@ -1159,6 +1159,26 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     assert behind(repo, lane, schedule, _history(**{lane_old: [_pending(BOB, 1)]}), NOW) == ''
 
 
+def test_two_unstarted_integration_tips_collapse_to_the_newest(tmp_path: Path) -> None:
+    """D111: at most ONE queued-but-not-started integration run -- the newest tip's.
+
+    Two tips pushed behind a held run: the newest waits behind the held run, never behind the unclaimed tip
+    between them, which is no candidate at all. PLANTED CONTROL: once the held run settles, the newest is free.
+    """
+    repo, tips = _origin(tmp_path)
+    held_sha = tips['integrate/main']
+    middle = _push(repo, tips, 'integrate/main')
+    newest = _push(repo, tips, 'integrate/main')
+    schedule = load_schedule(repo)
+    tip = _candidate('integrate/main', newest, INTEGRATION)
+    held = _history(**{held_sha: [_pending(BOB, 1)]})
+    waits = behind(repo, tip, schedule, held, NOW)
+    assert waits == f'{WAITING_BEHIND} {held_sha[:12]} {_INTEGRATION_HELD}'
+    assert middle[:12] not in waits, 'the unstarted middle tip collapsed away'
+    settled = _history(**{held_sha: [_pending(BOB, 1), CommitStatus('tests/base', 'success', 'ok', '', 2, 'bob')]})
+    assert behind(repo, tip, schedule, settled, NOW) == ''
+
+
 def test_a_pr_tip_waits_behind_its_own_earlier_run_never_behind_the_integration_run_it_branched_from(
     tmp_path: Path,
 ) -> None:
