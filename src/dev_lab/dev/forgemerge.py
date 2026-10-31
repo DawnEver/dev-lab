@@ -17,12 +17,10 @@ is green. The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
-* its review is not HELD: a pending ``tests/review-hold`` waits until the integrator's takeover review releases it
-  (``forge review takeover <sha>``, :mod:`dev_lab.dev.forgetakeover`; :func:`review_hold`);
-* its review does not BLOCK it (:func:`review_blocks`, user ruling 2026-10-26): with a review declared, the head's
-  ``tests/review`` must be posted -- absent or a claim still reviewing waits -- and not ``failure``, which says an
-  open HIGH or security finding is neither fixed nor disposed (:mod:`dev_lab.dev.forgereview_rounds`). An
-  ``error`` (a review that could not run) stays advisory;
+* its head is REVIEWED (:func:`dev_lab.dev.reviewgate.review_missing`, user ruling 2026-10-31): the latest
+  ``tests/review`` is ``success`` and no ``tests/review-hold`` is pending. Absent, reviewing, takeover pending,
+  ``error`` and ``failure`` all wait -- nothing is advisory; a review that cannot run is taken over
+  (``forge review takeover <sha>``, :mod:`dev_lab.dev.forgetakeover`);
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
@@ -58,7 +56,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
-from dev_lab.dev.forgereview import TAKEOVER_PENDING, load_review
+from dev_lab.dev.forgereview import load_review
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA, GITHUB, ForgeCallFailed, client_for
@@ -67,7 +65,7 @@ from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.reviewgate import review_missing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -77,19 +75,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
-    'FORGE_PULL',
-    'READY',
-    'Decision',
-    'auto_merge',
-    'decide',
-    'judged',
-    'main',
-    'merge',
-    'merge_message',
-    'message_wait',
-    'ready',
-    'review_blocks',
-    'review_hold',
+    'FORGE_PULL', 'READY', 'Decision', 'auto_merge', 'decide', 'judged', 'main', 'merge', 'merge_message',
+    'message_wait', 'ready',
 ]  # fmt: skip
 
 #: The trailer naming the pull request a forge merge closed.
@@ -103,28 +90,6 @@ _AUTO_MERGE: Final = (
     'mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) '
     '{ clientMutationId } }'
 )
-
-
-def review_hold(statuses: Sequence[CommitStatus]) -> str | None:
-    """Why a merge of the commit waits on its review, or ``None``: a latest :data:`HOLD_CONTEXT` not yet released."""
-    latest = next((one for one in statuses if one.context == HOLD_CONTEXT), None)
-    if latest is None or latest.state == 'success':
-        return None
-    return f'{HOLD_CONTEXT} is {latest.state}: {latest.description}'
-
-
-def review_blocks(statuses: Sequence[CommitStatus]) -> str | None:
-    """Why a merge of the commit waits on a DECLARED review, or ``None``: its ``tests/review`` absent, pending, failed.
-
-    ``pending`` is a claim still reviewing or a head held over the cap; ``error`` and :data:`TAKEOVER_PENDING` (no
-    reviewer could run) stay advisory, as before the ruling: no finding exists to block on.
-    """
-    latest = next((one for one in statuses if one.context == REVIEW_CONTEXT), None)
-    if latest is None:
-        return f'{REVIEW_CONTEXT} is not posted yet: the head is not reviewed'
-    if latest.state == 'failure' or (latest.state == 'pending' and not latest.description.startswith(TAKEOVER_PENDING)):
-        return f'{REVIEW_CONTEXT} is {latest.state}: {latest.description}'
-    return None
 
 
 #: The shipped script judging commit messages over a range; the repo's pre-push row running it is the declaration.
@@ -193,10 +158,12 @@ def decide(
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
-    if (held := review_hold(statuses)) is not None:
-        missing.append(f'its review: {held}')
-    if load_review(root).command and (blocks := review_blocks(statuses)) is not None:
-        missing.append(f'its review: {blocks}')
+    try:
+        load_review(root)  # a review config that cannot review is named here, never silently mergeable
+    except ValueError as config:
+        missing.append(f'its review config: {config}')
+    if (unreviewed := review_missing(statuses)) is not None:
+        missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
     tried = trial(root, base, head)

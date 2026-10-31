@@ -145,8 +145,9 @@ method reads the registry at load and keeps no list of its own. Its id is `F-<12
 line): the same finding in every round, never a line number.
 
 **Blocking.** `tests/review` is `failure` while any open finding is `HIGH` or `security` and not disposed, else
-`success`. The auto-merge waits on that `failure`, and on a head not yet reviewed (`forgemerge.review_blocks`);
-an `error` or `takeover pending` (no finding exists) stays advisory. A finding CLOSES when a later round finds its
+`success`. The merge waits on EVERY state but `success` with no pending hold (`reviewgate.review_missing`, user
+ruling 2026-10-31): absent, reviewing, `takeover pending`, `error` and `failure` all wait, nothing is advisory, and a
+review that could not run is taken over (`forge review takeover <sha>`). A finding CLOSES when a later round finds its
 anchor line gone from its file, or when the integrator disposes of it through the door
 `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"` (refused without a reason, or for
 an id not open; recorded as one keyed comment). The forge prompts the integrator for every blocked head (an

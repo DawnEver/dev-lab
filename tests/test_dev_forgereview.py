@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 import socket
 import sys
 from collections.abc import Sequence
@@ -25,6 +26,8 @@ from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import (
     DEFAULT_CLAIM_STALE,
+    EMPTY_COMMAND_FIX,
+    FAMILY_COMMAND,
     NEEDS_MAINTAINER,
     RANGE_FIELD,
     RETIRED_KEYS,
@@ -138,18 +141,31 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert [s.state for s in status_list(medium, head) if s.context == REVIEW_CONTEXT] == ['success']
 
 
-def test_an_empty_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
-    """A repo opts out with ``command = []`` (undeclared is the family's). PLANTED control: declared, it reviews."""
+def test_an_empty_command_is_a_loud_config_error_naming_the_one_fix() -> None:
+    """Every PR is reviewed (user ruling 2026-10-31): `command = []` is refused, never an opt-out.
+
+    PLANTED control: with `command` omitted, a repo gets the family's.
+    """
+    with pytest.raises(ValueError, match=re.escape(EMPTY_COMMAND_FIX)):
+        review_from('[tool.dev_lab.review]\ncommand = []\n', 'pyproject.toml')
+    assert review_from('[tool.dev_lab.review]\n', 'pyproject.toml').command == FAMILY_COMMAND
+
+
+def test_an_empty_command_names_the_fix_at_the_merge_and_at_the_takeover(tmp_path: Path) -> None:
+    """A green head in such a repo is not mergeable, and every door names the SAME fix -- never an unsatisfiable one."""
     work, head = _work(tmp_path)
-    forge, number = _forge(head)
-    command = FakeCommand()
-    said: list[str] = []
+    forge, _ = _forge(head)
     opted_out = _MANIFEST.split('[tool.dev_lab.review]', maxsplit=1)[0] + '[tool.dev_lab.review]\ncommand = []\n'
     (work / 'pyproject.toml').write_text(opted_out, encoding='utf-8')
-    step(work, forge, policy=_LANE_POLICY, say=said.append, host='box', run=command, ready=_can)
-    assert command.ran == []
-    assert forge.comments[number] == []
-    assert any('command is not declared' in line for line in said)
+    policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
+    green = (_status('tests/base', 'success', 'scope=full'), _status('tests/security', 'success', 'nothing found'),
+             _status(REVIEW_CONTEXT, 'success', 'reviewed'))  # fmt: skip
+    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=green)
+    assert not found.ready
+    assert any(EMPTY_COMMAND_FIX in line for line in found.missing), found.missing
+    said: list[str] = []
+    step(work, forge, policy=_LANE_POLICY, say=said.append, host='box', run=FakeCommand(), ready=_can)
+    assert any(EMPTY_COMMAND_FIX in line for line in said)
 
 
 def test_a_usage_error_is_the_hosts_command_not_speaking_this_interface(tmp_path: Path) -> None:
@@ -537,8 +553,8 @@ def _status(context: str, state: str, description: str) -> CommitStatus:
 def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_path: Path) -> None:
     """``failure`` (an open blocking finding), an unposted review and a live claim wait; the rest merge.
 
-    PLANTED controls: a FAIL in a real part context does fail the standing; a repo that declares no review
-    (``command = []``) never waits on one.
+    PLANTED controls: a FAIL in a real part context does fail the standing; every review state but ``success``
+    waits the merge, even in a repo that declares no review command (user ruling 2026-10-31).
     """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
@@ -558,12 +574,8 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     assert not ready()
     assert not ready(('pending', f'{CLAIMED} A at 2026-10-26T09:00:00+00:00, reviewing'))
     assert ready(('success', 'review round 1: no blocking finding open'))
-    assert ready(('error', 'the review command failed (OSError)'))
-    assert ready(('pending', f'{TAKEOVER_PENDING}: no reviewer could run'))
-    manifest = work / 'pyproject.toml'
-    manifest.write_text(manifest.read_text(encoding='utf-8').replace("command = ['reviewer', '--range', '{range}', "
-                        "'--model', 'm']", 'command = []'), encoding='utf-8')  # fmt: skip
-    assert ready()
+    assert not ready(('error', 'the review command failed (OSError)')), 'nothing is advisory (2026-10-31)'
+    assert not ready(('pending', f'{TAKEOVER_PENDING}: no reviewer could run'))
 
 
 def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> None:
