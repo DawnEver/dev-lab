@@ -27,11 +27,12 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integrati
   re-checked, and the non-blocking ones move to ONE follow-up issue;
 * a :data:`REVIEW_CONTEXT` status on the head: ``failure`` while an open ``HIGH`` or security finding is neither
   fixed nor disposed (``forge review dispose``, :mod:`dev_lab.dev.forgereview_dispose`), else ``success`` -- the
-  auto-merge waits on a ``failure`` and on a head not yet reviewed (:func:`dev_lab.dev.forgemerge.review_blocks`);
+  auto-merge waits on every state but ``success`` (:func:`dev_lab.dev.reviewgate.review_missing`);
   ``pending`` saying
   :data:`TAKEOVER_PENDING` when every reviewer was ``exhausted`` or ``auth`` (nothing is commented; the integrator
   session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
-  when the command failed or printed no known findings version (those two stay advisory: no finding exists).
+  when the command failed or printed no known findings version. NONE of these is advisory: each waits the merge
+  until a review posts ``success`` (the takeover door reviews a head the program review could not).
   It is not a PART (:func:`dev_lab.dev.platformparts.parts_of` skips it): promotion and push admission never wait
   on it, the merge does;
 * a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` beside a ``pending`` :data:`REVIEW_CONTEXT` ONLY
@@ -129,6 +130,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
+    'EMPTY_COMMAND_FIX',
     'FAMILY_COMMAND',
     'FAMILY_MODEL',
     'FAMILY_RUNTIMES',
@@ -209,6 +211,12 @@ RETIRED_KEYS: Final = {
 
 _TABLE: Final = 'review'
 
+#: What an empty ``command`` is refused with (user ruling 2026-10-31, every PR is reviewed): no repo opts out, and
+#: an omitted ``command`` is the family's, so the one fix is to delete the empty declaration.
+EMPTY_COMMAND_FIX: Final = (
+    'command = [] opts out of the review, and every PR is reviewed: delete it (the family command applies)'
+)
+
 
 class HostCannot(OSError):
     """The host cannot fill or start the review command: a fact about the HOST, checked before any claim.
@@ -263,6 +271,9 @@ def review_from(text: str, origin: str) -> Review:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+    if 'command' in declared and not review.command:
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {EMPTY_COMMAND_FIX}'
+        raise ValueError(msg)
     if 'command' in declared and review.command == FAMILY_COMMAND:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
@@ -334,12 +345,12 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
-        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); advisory, never blocks'[:DESCRIPTION]
+        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); waits for forge review takeover'[:DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
-        why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:DESCRIPTION]
+        why = f'not reviewed: no reviewer returned findings ({kinds}); waits for a takeover'[:DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
@@ -407,7 +418,7 @@ def _command_round(
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
-        why = f'the review command failed ({type(failed).__name__}); advisory, not retried on this head'
+        why = f'the review command failed ({type(failed).__name__}); not retried here, waits for a takeover'
         status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}: {failed}'
     authored = trailed(root, f'origin/{pull.base}', head)
@@ -456,9 +467,6 @@ def step(
     """
     try:
         review = load_review(root)
-        if not review.command:
-            say(f'[serve] review: not run -- [tool.dev_lab.{_TABLE}] command is not declared')
-            return
         here = host_runtimes()
         try:  # any range, any slice: can this host run the command at all
             cannot = ready(command_for(review, '', here), root)

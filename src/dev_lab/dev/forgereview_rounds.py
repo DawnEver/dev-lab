@@ -18,7 +18,7 @@ head's findings comment (a hidden ``review-ledger`` line); the next round starts
 
 A finding BLOCKS while open when it is ``HIGH`` or a security finding (:attr:`Finding.blocking`). The head's
 :data:`~dev_lab.dev.platformparts.REVIEW_CONTEXT` is ``failure`` while any blocking finding is open and not
-DISPOSED, else ``success``; the auto-merge waits on that failure (:func:`dev_lab.dev.forgemerge.review_blocks`).
+DISPOSED, else ``success``; the auto-merge waits on that failure (:func:`dev_lab.dev.reviewgate.review_missing`).
 A disposition is the integrator's, posted through ``forge review dispose`` (:mod:`dev_lab.dev.forgereview_dispose`)
 as a keyed comment (``Marker.DISPOSITION``) carrying its reason; the engine is handed those alone and the ids it
 drops are listed as "disposed earlier". A branch commit's ``Review-Disposed: <F-id> -- <reason>`` trailer
@@ -283,8 +283,8 @@ def context_summary(root: Path, reviewed: str, pr_body: str = '') -> str:
 
 
 def _repo_url(pull_url: str) -> str:
-    """The web root of the repository a PR page *pull_url* is in (gitea ``/pulls/N``, github ``/pull/N``)."""
-    return pull_url.rsplit('/pulls/', 1)[0].rsplit('/pull/', 1)[0]
+    """The web root of the repository a PR or ledger-issue page is in (``/pulls/N``, ``/pull/N``, ``/issues/N``)."""
+    return pull_url.rsplit('/pulls/', 1)[0].rsplit('/pull/', 1)[0].rsplit('/issues/', 1)[0]
 
 
 def _cite(cite: str, repo: str, head: str, backend: Backend) -> str:

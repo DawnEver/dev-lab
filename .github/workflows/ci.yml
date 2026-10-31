@@ -183,7 +183,14 @@
         },
         {
           "name": "Install the review method",
-          "run": "uv venv \"$RUNNER_TEMP/ai-lab\" && uv pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git\""
+          "run": "uv venv \"$RUNNER_TEMP/ai-lab\" && uv pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\""
+        },
+        {
+          "name": "Store the review key",
+          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper 'cache --timeout=3600' && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -m ai_lab.auth login anthropic --task pr-review; fi",
+          "env": {
+            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
+          }
         },
         {
           "name": "tests/review",
@@ -193,6 +200,9 @@
           }
         }
       ],
+      "env": {
+        "AI_LAB_REF": "12f22cc920fba83eabdd1764594231df1a5eac60"
+      },
       "permissions": {
         "contents": "read",
         "statuses": "write",
