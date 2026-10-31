@@ -43,9 +43,9 @@ from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 from dev_lab.dev.forgereview_findings import SEVERITIES, Finding, Findings
 from dev_lab.dev.forgereview_judge import CLOSING, adjudication_text, claims, pending, ruling, self_review, upheld
-from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB
-from dev_lab.dev.platformparts import REVIEW_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -391,8 +391,9 @@ def post_round(
     be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the changed
     files that are not code, said in the comment. *authored* is the author's trailer dispositions.
 
-    Only the forge posts a round (:func:`ruling`), unless *emergency* (the takeover door): then the comment says
-    so, and no finding its own session claimed is re-judged -- it stays open for the forge.
+    Only the forge posts a round (:func:`ruling`) and moves :data:`REVIEW_CONTEXT`; its round releases a pending
+    hold. An *emergency* round (the takeover door) is ADVISORY (D11): its comment says so, it posts no status,
+    and it re-judges no finding its own session claimed.
     """
     if not emergency:
         ruling(reviewer, f'reviewing #{pull.number}')
@@ -419,12 +420,19 @@ def post_round(
                   backend=client.backend, authored=authored)  # fmt: skip
     if emergency:
         text += (
-            f"\n\n**Emergency takeover** by {reviewer.text()}: a session's review, not the forge's; "
+            f"\n\n**Emergency takeover** by {reviewer.text()}: ADVISORY, a session's review, not the forge's -- "
+            'it posts no status and satisfies no merge; '
             f'it re-judged no finding its own session claimed ({", ".join(sorted(own)) or "none"}).'
         )
     _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=text)
-    _follow_up(client, pull, ledger)
     state, said = verdict(ledger, gone, pull.number)
+    if emergency:
+        return f'#{pull.number} {head[:12]}: {by} round {ledger.round}, advisory (no status): {said}'
+    _follow_up(client, pull, ledger)
+    hold = next((one for one in status_list(client, head) if one.context == HOLD_CONTEXT), None)
+    if hold is not None and hold.state == 'pending':
+        status_post(client, head, context=HOLD_CONTEXT, state='success',
+                    description=f'released: {by} reviewed this head'[:_DESCRIPTION])  # fmt: skip
     status_post(client, head, context=REVIEW_CONTEXT, state=state, target_url=comment.url if comment else '',
                 description=f'{by}: {said}'[:_DESCRIPTION])  # fmt: skip
     return f'#{pull.number} {head[:12]}: {by} round {ledger.round}, {state}: {said}'

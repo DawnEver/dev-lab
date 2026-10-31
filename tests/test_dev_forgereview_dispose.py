@@ -249,30 +249,35 @@ def test_an_adjudication_recomputes_merge_ready_in_the_same_step(tmp_path: Path)
     _rule(work, forge, number, 'present')
     ready = next(one for one in status_list(forge, head) if one.context == MERGE_READY_CONTEXT)
     assert ready.state == 'failure'
-    assert review_missing(status_list(forge, head)) is not None
+    assert review_missing(status_list(forge, head), frozenset({forge.login})) is not None
     assert REVIEW_CONTEXT in ready.description
     dispose(forge, number, 'F-x', _WHY + ' and b.py', by=_AUTHOR)
     _rule(work, forge, number, 'false-positive')
     ready = next(one for one in status_list(forge, head) if one.context == MERGE_READY_CONTEXT)
-    assert review_missing(status_list(forge, head)) is None
+    assert review_missing(status_list(forge, head), frozenset({forge.login})) is None
     assert REVIEW_CONTEXT not in ready.description, 'the review no longer waits the merge'
 
 
-@pytest.mark.parametrize(('claimant', 'state'), [('S-integrator', 'failure'), ('S-claimant', 'success')])
-def test_a_takeover_never_clears_a_finding_its_own_session_claimed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, claimant: str, state: str
+def test_an_author_claiming_as_fake1_and_taking_over_as_fake2_never_reaches_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#11 round 2: the emergency door is marked, and its own claim stays for the forge.
+    """D11, F-4eee841cf16c: LAB_SESSION is the author's to set, so the takeover moves no status at all.
 
-    PLANTED CONTROL: another session's claim on the same finding is ruled on by the same takeover.
+    PLANTED CONTROL: the forge's own round on the same head, judging the same claim, does reach success.
     """
     work, forge, number, _ = _blocked(tmp_path)
-    dispose(forge, number, 'F-x', _WHY, by=Identity('a', 'box', claimant))
+    monkeypatch.setenv(SESSION_ENV, 'fake1')
+    assert main(['dispose', str(number), 'F-x', '--why', _WHY], cwd=work, client=forge) == 0
     after = advance(work, 'pr/x', 'y.py', 'y = 1\n', message='feat: y\n\nLab-Session: S-author')
     forge.pulls[number]['head']['sha'] = after
-    monkeypatch.setenv(SESSION_ENV, 'S-integrator')
+    monkeypatch.setenv(SESSION_ENV, 'fake2')
     judge = FakeCommand(_doc(), rulings={'F-x': ('false-positive', 'a.py:3 asserts the guard')})
     takeover(work, forge, _REVIEW, after, pull=pull_for(forge, after), base='integrate/main', host='box', run=judge)
-    assert _state(forge, after)[0] == state
+    assert all(one.context != REVIEW_CONTEXT for one in status_list(forge, after)), 'advisory: no status'
+    assert review_missing(status_list(forge, after), frozenset({forge.login})) is not None
     (review,) = [c['body'] for c in forge.comments[number] if marker(Marker.REVIEW, after) in c['body']]
     assert 'Emergency takeover' in review
+    monkeypatch.delenv(SESSION_ENV)
+    _tick(work, forge, judge, _REVIEW)  # the forge serve round
+    assert _state(forge, after)[0] == 'success'
+    assert review_missing(status_list(forge, after), frozenset({forge.login})) is None

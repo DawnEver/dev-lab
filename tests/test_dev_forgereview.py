@@ -47,6 +47,7 @@ from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_finding
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
 from dev_lab.dev.forgereview_scope import FINDINGS_FIELD
 from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 
@@ -60,6 +61,7 @@ _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
     "judge = ['judge', '--range', '{range}', '--findings', '{findings}']\n"
+    "forge_bot = 'a'\n"  # the login forge serve posts as: StateForge writes as 'a' (D11)
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
 
@@ -192,7 +194,7 @@ def test_an_empty_command_names_the_fix_at_the_merge_and_at_the_takeover(tmp_pat
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     green = (_status('tests/base', 'success', 'scope=full'), _status('tests/security', 'success', 'nothing found'),
              _status(REVIEW_CONTEXT, 'success', 'reviewed'))  # fmt: skip
-    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=green)
+    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=green, github=True)
     assert not found.ready
     assert any(EMPTY_COMMAND_FIX in line for line in found.missing), found.missing
     said: list[str] = []
@@ -520,7 +522,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     assert {field.name for field in dataclasses.fields(Review)} == {
         'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code',
-        'claim_stale', 'max_rounds',
+        'claim_stale', 'max_rounds', 'forge_bot',
     }  # fmt: skip
 
 
@@ -581,7 +583,7 @@ def test_a_failed_command_posts_an_error_once(tmp_path: Path) -> None:
 
 
 def _status(context: str, state: str, description: str) -> CommitStatus:
-    return CommitStatus(context, state, description, '', 1)
+    return CommitStatus(context, state, description, '', 1, ACTIONS_BOT)  # the forge posted it (D11)
 
 
 def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_path: Path) -> None:
@@ -602,7 +604,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
 
     def ready(*review: tuple[str, str]) -> bool:
         statuses = (passed, secured, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
-        return decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses).ready
+        return decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses, github=True).ready
 
     assert not ready(('failure', 'review round 1: 1 blocking finding(s) open'))
     assert not ready()
@@ -622,7 +624,7 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     over = NEEDS_MAINTAINER
     held = (_status(HOLD_CONTEXT, 'pending', over), _status(REVIEW_CONTEXT, 'success', 'reviewed'), passed)
-    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
+    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held, github=True)
     assert not found.ready
     assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
@@ -633,9 +635,9 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
         passed,
         secured,
     )
-    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
+    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released, github=True).ready
     worded = (_status(REVIEW_CONTEXT, 'success', NEEDS_MAINTAINER), passed, secured)
-    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded).ready
+    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded, github=True).ready
 
 
 # --- the declaration ---------------------------------------------------------------------------------

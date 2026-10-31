@@ -22,26 +22,38 @@ from dev_lab.dev.forgeintegration import Ticked, tick
 from dev_lab.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
-_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+_MANIFEST = (
+    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+    "[tool.dev_lab.review]\nforge_bot = 'a'\n"  # the login forge serve posts as: StateForge writes as 'a' (D11)
+)
 
 
 def _green() -> list[dict[str, object]]:
     """Every part PASS and the review posted with no blocking finding open (the family declares a review)."""
     return [
         {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=3 hands=-'},
-        {'id': 2, 'context': 'tests/review', 'status': 'success', 'description': 'review round 1: no blocking'},
+        {
+            'id': 2,
+            'context': 'tests/review',
+            'status': 'success',
+            'description': 'review round 1: no blocking',
+            'creator': {'login': 'a'},
+        },  # forge serve's login, the declared forge_bot (D11)
         {'id': 3, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
     ]
 
 
 def _statuses(raw: list[dict[str, object]]) -> tuple[CommitStatus, ...]:
-    return tuple(CommitStatus(str(r['context']), str(r['status']), str(r['description']), '', 1) for r in raw)
+    return tuple(
+        CommitStatus(str(r['context']), str(r['status']), str(r['description']), '', 1, ACTIONS_BOT) for r in raw
+    )
 
 
 def _tested(tmp_path: Path) -> Path:
@@ -66,7 +78,7 @@ def _work(tmp_path: Path) -> tuple[Path, str]:
 
 def test_a_green_clean_pr_is_ready_and_its_message_names_branch_and_pull(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
-    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()), github=True)
     assert found.ready, found.missing
     assert merged_branch(found.message) == 'pr/x'
     assert f'{FORGE_PULL}: 4' in found.message
@@ -84,7 +96,7 @@ def test_a_pr_whose_parts_are_not_all_pass_is_still_ready(tmp_path: Path) -> Non
         raw = gates + (
             [{'id': 9, 'context': 'tests/base', 'status': part, 'description': 'scope=full'}] if part else []
         )
-        found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(raw))
+        found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(raw), github=True)
         assert found.ready, (part, found.missing)
 
 
@@ -94,7 +106,7 @@ def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_p
     advance(work, 'integrate/main', 'c.txt', 'ours\n')
     run_git(work, 'checkout', '-q', '-B', 'pr/x', 'origin/main')
     head = commit(work, 'c.txt', 'theirs\n')
-    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()), github=True)
     assert not found.ready
     (why,) = found.missing
     assert '`c.txt`' in why
@@ -102,7 +114,7 @@ def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_p
     declared = 'merge integration\n\nc.txt: simpler-side -- the branch holds the live value\n'
     run_git(work, 'merge', '-q', '-X', 'ours', '-m', declared, 'origin/integrate/main')
     synced = git_out(work, 'rev-parse', 'HEAD')
-    assert decide(work, POLICY, branch='pr/x', number=4, head=synced, statuses=_statuses(_green())).ready
+    assert decide(work, POLICY, branch='pr/x', number=4, head=synced, statuses=_statuses(_green()), github=True).ready
 
 
 def test_a_pr_whose_head_holds_an_undeclared_conflicted_merge_waits_naming_it(tmp_path: Path) -> None:
@@ -116,7 +128,7 @@ def test_a_pr_whose_head_holds_an_undeclared_conflicted_merge_waits_naming_it(tm
     commit(work, 'c.txt', 'theirs\n')
     run_git(work, 'merge', '-q', '-X', 'ours', '--no-edit', 'origin/integrate/main')
     synced = git_out(work, 'rev-parse', 'HEAD')
-    found = decide(work, POLICY, branch='pr/x', number=4, head=synced, statuses=_statuses(_green()))
+    found = decide(work, POLICY, branch='pr/x', number=4, head=synced, statuses=_statuses(_green()), github=True)
     (why,) = found.missing
     assert f'merge {synced[:12]}' in why
     assert 'c.txt: not declared' in why
@@ -245,7 +257,7 @@ def test_a_pr_whose_commit_message_is_off_format_is_NOT_mergeable(
     (work / 'pyproject.toml').write_text(_MANIFEST + _CZ_ROW, encoding='utf-8')
     head = advance(work, 'pr/x', 'y.txt', 'y\n', message)
     _plant_judging_commitizen(work, tmp_path)
-    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()), github=True)
     assert found.ready is mergeable, found.missing
     if not mergeable:
         assert any(one.startswith('conventional commit messages') for one in found.missing), found.missing
@@ -254,5 +266,5 @@ def test_a_pr_whose_commit_message_is_off_format_is_NOT_mergeable(
 def test_a_repo_declaring_no_message_row_is_not_judged_on_messages(tmp_path: Path) -> None:
     work, _ = _work(tmp_path)
     head = advance(work, 'pr/x', 'y.txt', 'y\n', 'data(x): y')
-    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()), github=True)
     assert found.ready, found.missing

@@ -5,8 +5,8 @@ TRIGGERS it differs. On Gitea the ``forge serve`` tick runs :func:`step` over ev
 job runs ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgetakeover.review_run`) for the one PR its event
 names. Both run the same round (:func:`review_pull`). A job whose review secret is absent -- a fork PR, which
 GitHub never hands a secret -- holds
-the head (:data:`NEEDS_MAINTAINER`) on the same hold the over-cap takeover uses, so a maintainer reviews it through
-``forge review takeover <sha>``; nothing new is stored.
+the head (:data:`NEEDS_MAINTAINER`) until a maintainer re-runs the forge's review with the secret; nothing new is
+stored.
 
 THE FORGE ONLY ORCHESTRATES. The review itself -- profiles, prompts, providers, models, keys, merging -- is
 the method's, run by the command the repo declares (``[tool.dev_lab.review] command``); this module runs
@@ -32,15 +32,14 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integrati
   :data:`TAKEOVER_PENDING` when every reviewer was ``exhausted`` or ``auth`` (nothing is commented; the integrator
   session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
   when the command failed or printed no known findings version. NONE of these is advisory: each waits the merge
-  until a review posts ``success`` (the takeover door reviews a head the program review could not).
+  until the FORGE posts ``success`` (D11: :mod:`dev_lab.dev.reviewgate` reads the status's recorded creator).
   It is not a PART (:func:`dev_lab.dev.platformparts.parts_of` skips it): promotion and push admission never wait
   on it, the merge does;
 * a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` beside a ``pending`` :data:`REVIEW_CONTEXT` ONLY
   when the review could not run for this PR: its job has no review secret (:data:`NEEDS_MAINTAINER`) or its host
-  cannot run the command (:class:`HostCannot`, on a workflow job). The integrator session runs ``python -m
-  dev_lab.dev.forge review takeover <sha>`` (:mod:`dev_lab.dev.forgetakeover`): the SAME method, then the findings
-  comment, :data:`REVIEW_CONTEXT` and the release. A head is never held for its SIZE (D123, user ruling 2026-10-31,
-  superseding 2026-10-26): an oversize head is one structure-level review of the whole range.
+  cannot run the command (:class:`HostCannot`, on a workflow job). The forge's review is re-run, and its round
+  releases the hold; a session's ``forge review takeover <sha>`` is advisory only (D11). A head is never held for
+  its SIZE (D123, user ruling 2026-10-31, superseding 2026-10-26): an oversize head is one structure-level review.
 
 WHAT IS READ is :mod:`dev_lab.dev.forgereview_scope`'s: the branch's own change since its last reviewed head,
 minus generated files, in slices of at most ``max_diff_bytes`` under one lens each -- or, past the bounds, ONE
@@ -221,7 +220,7 @@ TAKEOVER_PENDING: Final = 'takeover pending'
 DEFAULT_CLAIM_STALE: Final = '1 h'
 
 #: What :data:`REVIEW_CONTEXT` and the hold say (``pending``) when the job running the review has no review secret:
-#: a fork PR. The head is held; a maintainer's ``forge review takeover <sha>`` reviews it and releases the hold.
+#: a fork PR. The head is held until a maintainer re-runs the forge's review with the secret present.
 NEEDS_MAINTAINER: Final = 'review needs a maintainer: the review secret is absent (a fork PR)'
 
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
@@ -264,6 +263,7 @@ class Review:
     code: tuple[str, ...] = forgereview_scope.CODE
     not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
+    forge_bot: str = ''  # Gitea: the login forge serve posts as; only its tests/review success counts (D11)
 
     def __post_init__(self) -> None:
         """Refuse a ``claim_stale`` that is not a duration, naming it."""
@@ -387,7 +387,9 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
-        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); waits for forge review takeover'[:DESCRIPTION]
+        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); waits for the forge review to be re-run'[
+            :DESCRIPTION
+        ]
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):

@@ -1,20 +1,16 @@
-"""REVIEW TAKEOVER: a head whose review could not run is the INTEGRATOR AGENT's to review; its door is the only release.
+"""REVIEW TAKEOVER: an ADVISORY review by the integrator session of a head the forge's review has not reached.
 
-A head is HELD on :data:`HOLD_CONTEXT` only when the review could not run for it -- its job had no review secret
-(:data:`~dev_lab.dev.forgereview.NEEDS_MAINTAINER`) or its host could not run the command
-(:class:`~dev_lab.dev.forgereview.HostCannot`) -- never for its size (D123, user ruling 2026-10-31, superseding the
-2026-10-26 hold-on-oversize). The integrator session reviews it through the SAME method and scope the program
-review reads, and the auto-merge waits on the hold until then. It is also the Break-Glass path's review
-(:mod:`dev_lab.dev.breakglass`). A human is asked only for a decision the review surfaces.
+D11 (#11 round 3, F-4eee841cf16c): every identity a local session asserts is forgeable by a same-user agent, so a
+session's review is never the gate. The gate is :func:`dev_lab.dev.reviewgate.review_missing`, which counts only a
+``tests/review`` success the FORGE recorded as written by its own identity. The remedy for "the forge could not run
+the review" is :data:`~dev_lab.dev.reviewgate.RERUN` -- the forge's review run again; its round releases any hold.
 
 * :func:`held` -- the open PR heads into integration whose latest :data:`HOLD_CONTEXT` is ``pending``; the forge
   prompts the integrator with each (:func:`alarms`, one ``integration`` issue per head, and
-  ``forge notices --integrator``), naming the door.
-* ``python -m dev_lab.dev.forge review takeover <sha>`` (:func:`takeover`) runs the review, posts the findings
-  comment and :data:`REVIEW_CONTEXT`, and releases the hold. ``review plan <sha>`` prints the slices only.
-* :func:`release` REFUSES without a findings comment for that sha on its PR: the release is the record that a
-  review happened. The raw ``forge status post --context tests/review-hold`` is refused to agents
-  (``STATUS-VIA-DOORS``), so this door is the one release.
+  ``forge notices --integrator``), naming the remedy.
+* ``python -m dev_lab.dev.forge review takeover <sha>`` (:func:`takeover`) runs the SAME method and scope and posts
+  the findings comment marked as an emergency, ADVISORY review: no status, no release, no merge.
+  ``review plan <sha>`` prints the slices only.
 """
 
 from __future__ import annotations
@@ -33,7 +29,7 @@ from lab_commons.log import emit
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeintegration import _fetch_pull
-from dev_lab.dev.forgepulls import Marker, comment_list, marker, pages, pr_list
+from dev_lab.dev.forgepulls import comment_list, pages, pr_list
 from dev_lab.dev.forgereview import (
     PATHS_FIELD,
     HostCannot,
@@ -45,7 +41,7 @@ from dev_lab.dev.forgereview import (
     review_pull,
 )  # fmt: skip
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
-from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, merge_ready_after
+from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
@@ -53,26 +49,20 @@ from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
-from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB, ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
-from dev_lab.dev.reviewgate import review_missing
+from dev_lab.dev.reviewgate import RERUN, ForgeBotUndeclared, forge_bots, review_missing
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'DOOR', 'LEDGER_TITLE', 'RELEASED', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
-    'release', 'review_run', 'runtimes_with', 'scope_of', 'takeover',
+    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
+    'review_run', 'runtimes_with', 'scope_of', 'takeover',
 ]  # fmt: skip
-
-#: The door the integrator runs on a held head; ``{sha}`` is the head.
-DOOR: Final = 'python -m dev_lab.dev.forge review takeover {sha}'
-
-#: What a released :data:`HOLD_CONTEXT` says (``success``), followed by who and the findings comment.
-RELEASED: Final = 'released after the integrator review'
 
 
 class TakeoverRefused(ValueError):
@@ -93,7 +83,7 @@ def held(client: Client, base: str) -> tuple[PullRequest, ...]:
 
 def line(pull: PullRequest) -> str:
     """The prompt line for a held *pull*: what it is and the exact door."""
-    return f'#{pull.number} {pull.head_sha[:12]}: review held -- run {DOOR.format(sha=pull.head_sha)}'
+    return f'#{pull.number} {pull.head_sha[:12]}: review held -- {RERUN}'
 
 
 def alarms(client: Client, base: str, repo: str) -> list[Alarm]:
@@ -103,8 +93,8 @@ def alarms(client: Client, base: str, repo: str) -> list[Alarm]:
             INTEGRATION,
             repo,
             f'review held {pull.head_sha[:12]} (#{pull.number})',
-            f'{line(pull)}. The integrator reviews it over every slice and the door releases tests/review-hold; '
-            'a human is asked only for a decision the review surfaces.',
+            f"{line(pull)}. Only the forge's own review releases tests/review-hold and counts; a session's "
+            '`forge review takeover` is advisory. A human is asked only for a decision the review surfaces.',
         )
         for pull in held(client, base)
     ]
@@ -160,23 +150,6 @@ def _commit(root: Path, sha: str) -> str:
         raise TakeoverRefused(msg) from missing
 
 
-def _comment_for(client: Client, number: int, sha: str) -> str | None:
-    """The url of PR *number*'s findings comment for *sha*, else ``None``."""
-    key = marker(Marker.REVIEW, sha)
-    return next((one.url for one in comment_list(client, number) if key in one.body), None)
-
-
-def release(client: Client, pull: PullRequest, *, host: str) -> str:
-    """Release *pull*'s head hold; REFUSED unless it carries the findings comment for that head. The line said."""
-    url = _comment_for(client, pull.number, pull.head_sha)
-    if url is None:
-        msg = f'no findings comment for {pull.head_sha[:12]} on #{pull.number}: the release records a review, run one'
-        raise TakeoverRefused(msg)
-    status_post(client, pull.head_sha, context=HOLD_CONTEXT, state='success', description=f'{RELEASED} by {host}',
-                target_url=url)  # fmt: skip
-    return f'#{pull.number} {pull.head_sha[:12]}: {RELEASED} by {host}'
-
-
 def scope_of(root: Path, client: Client, review: Review, head: str, *, base: str, pull: PullRequest | None) -> Scope:
     """What the takeover reads: the head's own change (``landed_base``), cut as the program review cuts it."""
     done = () if pull is None else reviewed_heads(comment.body for comment in comment_list(client, pull.number))
@@ -189,14 +162,18 @@ def takeover(
     run: Callable[[Sequence[str], Path], str] = run_command,
     runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),
 ) -> tuple[str, ...]:  # fmt: skip
-    """Review *head* where its review is missing -- an open, closed or merged *pull*, or a plain commit -- and post it.
+    """Review *head* where the forge's review is missing and post the findings as an ADVISORY emergency review.
 
-    The emergency door of :mod:`dev_lab.dev.breakglass` and of a merge that waits on a review that could not run: it
-    must always be satisfiable, so it refuses only a head already reviewed. A head with no PR keeps its ledger in its
-    own issue (:func:`ledger_of`), where a blocking finding is disposed of as on a PR (``dispose <issue> <id>``).
+    D11: it posts no status and releases nothing, so it never satisfies a merge or Break-Glass; the remedy that
+    does is :data:`~dev_lab.dev.reviewgate.RERUN`. It refuses a head the forge already reviewed. A head with no PR
+    keeps its ledger in its own issue (:func:`ledger_of`).
     """
-    if review_missing(status_list(client, head)) is None:
-        msg = f'{head[:12]} is already reviewed: nothing to take over'
+    try:
+        bots = forge_bots(github=client.backend is GITHUB, declared=review.forge_bot)
+    except ForgeBotUndeclared:
+        bots = frozenset()  # no forge identity declared: no success counts, so the review is missing
+    if review_missing(status_list(client, head), bots) is None:
+        msg = f'{head[:12]} is already reviewed by the forge: nothing to take over'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, head, base=base, pull=pull)
     since = landed_base(root, base, head)
@@ -214,13 +191,10 @@ def takeover(
         outside=scope.outside, authored=trailed(root, since, head), judged=judge_for(root, review, scope.range, run,
         runtimes), reviewer=identity(client, host), authors=sessions(root, since, head), emergency=True,
     )  # fmt: skip
-    pending = next((one for one in status_list(client, head) if one.context == HOLD_CONTEXT), None)
-    released = (release(client, pull, host=host),) if pull and pending and pending.state == 'pending' else ()
-    after = () if pull is None else tuple(merge_ready_after(root, client, pull.number))
-    return (f'{said} ({len(scope.slices)} slice(s))', *released, *after)
+    return (f'{said} ({len(scope.slices)} slice(s)); {RERUN} for a review that counts',)
 
 
-#: What the hold says when the job's host cannot run the review command: the takeover door reviews the head.
+#: What the hold says when the job's host cannot run the review command: the forge's review is re-run.
 HOST_CANNOT: Final = 'the review job cannot run the review command'
 
 
@@ -228,7 +202,7 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     """:func:`review_pull` on PR *number* alone -- what a GitHub workflow job runs for its event's PR; the line.
 
     The job is the ONLY reviewer of its PR, so a host that cannot run the command is never silent: the head is held
-    for ``forge review takeover <sha>`` and :class:`~dev_lab.dev.forgereview.HostCannot` is raised (the job fails).
+    until the forge's review is re-run, and :class:`~dev_lab.dev.forgereview.HostCannot` is raised (the job fails).
     """
     pull = client.pr_view(number)
     if pull.base != base or pull.draft or not pull.head_sha:

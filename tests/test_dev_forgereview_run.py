@@ -58,7 +58,7 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     assert _latest(forge, head, REVIEW_CONTEXT) == ('pending', NEEDS_MAINTAINER)
     assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
     statuses = status_list(forge, head)
-    assert review_missing(statuses) is not None, 'a held head is never skipped into a merge'
+    assert review_missing(statuses, frozenset({ACTIONS_BOT})) is not None, 'a held head is never skipped into a merge'
     assert [pull.number for pull in held(forge, 'integrate/main')] == [number], 'the takeover door lists it'
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
