@@ -18,7 +18,7 @@ from dev_lab.dev import breakglass
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import review_missing, reviewed
+from dev_lab.dev.reviewgate import review_missing
 
 _SECURED = ('tests/security', 'success', 'nothing found')
 
@@ -39,13 +39,13 @@ def test_every_review_state_but_success_blocks_the_merge_and_names_itself(tmp_pa
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     rest = (_status(*_SECURED),)
     statuses = ((_status(REVIEW_CONTEXT, *review),) if review else ()) + rest
-    assert not reviewed(statuses)
+    assert review_missing(statuses) is not None
     found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses)
     assert not found.ready
     (line,) = [one for one in found.missing if REVIEW_CONTEXT in one]
     assert (review[1] if review else 'not posted') in line
     ok = (_status(REVIEW_CONTEXT, 'success', 'review round 1: no blocking finding open'), *rest)
-    assert reviewed(ok)
+    assert review_missing(ok) is None
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=ok).ready
 
 

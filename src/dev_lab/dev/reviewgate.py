@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from dev_lab.dev.forgestatus import CommitStatus
 
-__all__ = ['review_missing', 'reviewed']
+__all__ = ['review_missing']
 
 
 def review_missing(statuses: Sequence[CommitStatus]) -> str | None:
@@ -36,8 +36,3 @@ def review_missing(statuses: Sequence[CommitStatus]) -> str | None:
     if hold is not None and hold.state != 'success':
         return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
     return None
-
-
-def reviewed(statuses: Sequence[CommitStatus]) -> bool:
-    """Whether the head *statuses* describe carries a posted, successful review and no pending hold."""
-    return review_missing(statuses) is None

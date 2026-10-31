@@ -32,6 +32,14 @@ RETIRED_SPELLINGS: Final = {
         'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY',
         'user ruling 2026-10-26 (review redesign): an open HIGH or security finding blocks the merge',
     ),
+    **dict.fromkeys(
+        ('review_blocks', 'review_hold'),
+        (
+            'reviewgate.review_missing',
+            'user ruling 2026-10-31 (every PR must get a review): one predicate, nothing advisory',
+        ),
+    ),
+    'OVER_CAP_TAKEOVER': ('Scope.structure', 'D123 2026-10-31: an oversize head is one structure-level review'),
     **{
         f'tool.lab_commons.{table}': (
             f'tool.dev_lab.{table}',

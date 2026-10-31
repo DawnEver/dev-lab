@@ -19,8 +19,8 @@ CONTEXT_PREFIX: Final = 'tests/'
 #: (:func:`dev_lab.dev.reviewgate.review_missing`).
 REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
-#: The review HOLD's context: posted ``pending`` on a head the review slices cannot hold, released by a
-#: ``success`` a session posts once it reviewed the head. Never a part; the ONE review context a merge waits on
+#: The review HOLD's context: posted ``pending`` on a head whose review could not run, released by a ``success`` a
+#: session posts once it reviewed the head. Never a part; the merge reads it together with :data:`REVIEW_CONTEXT`
 #: (:func:`dev_lab.dev.reviewgate.review_missing`), so an unreviewable head is never skipped into an auto-merge.
 HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
 
