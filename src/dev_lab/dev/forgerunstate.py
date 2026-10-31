@@ -22,7 +22,7 @@ import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 from lab_commons.compute.durable import durable_write
 from lab_commons.compute.model import Supply
@@ -168,6 +168,9 @@ class Cluster(Protocol):
     def progress(self, run: Run) -> str:
         """Where *run*'s jobs stand, one short phrase (:func:`dev_lab.dev.forgeslurm.progress_text`)."""
 
+    def rounds(self, run: Run) -> list[dict[str, Any]]:
+        """*run*'s rounds as its cluster state holds them; a folded one carries ``lost`` (what it failed or lost)."""
+
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every job of *run*, started or not; the ids cancelled. Never for supersession."""
 
@@ -209,6 +212,8 @@ class Run:
     job_aliases: tuple[str, ...] = ()
     #: When the run was first found superseded, on the cluster's clock; ``0.0`` while it is not.
     superseded_at: float = 0.0
+    #: How many folded rounds this run has published to the forge (:mod:`dev_lab.dev.forgerunshow`).
+    rounds_posted: int = 0
 
     @property
     def claim(self) -> Claim:

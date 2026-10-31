@@ -2,7 +2,8 @@
 
 ``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
 state and comment reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for
-run records, ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
+run records, ``run show <sha>`` for what a cluster run published (each round's losses, the final
+failing ids), ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
 for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` to drop a host card,
 ``request <producer> --sha <sha>`` to publish a request,
@@ -44,6 +45,7 @@ from dev_lab.dev import (
     forgequeue,
     forgerecords,
     forgeroute,
+    forgerunshow,
     forgesecurity,
     forgeserve,
     forgestatus,
@@ -75,6 +77,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'status': forgestatus.main,
     'publish': forgeoutbox.main,
     'records': forgerecords.main,
+    'run': forgerunshow.main,
     'route': forgeroute.main,
     'serve': lambda argv: servelock.locked(argv, forgeserve.main),
     'tick': forgetick.main,

@@ -98,7 +98,7 @@ from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.tree import NotSubmitted
 
-from dev_lab.dev import forgerunpost, forgeship
+from dev_lab.dev import forgerunpost, forgerunshow, forgeship
 from dev_lab.dev.artefacts import MissingOutput, run_id
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgecarry import data_only, equivalent, publish
@@ -227,10 +227,35 @@ def _gather(
         # 2026-10-12: the submit's r0 id was still shown while r2 ran).
         run = forgerunpost.step(run, job_ids=tuple(cluster.submitted(run)) or ids or run.job_ids)
         say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
-        return forgerunpost.report(client, run, cluster.progress(run), lease, say)
+        run, lost = _publish_rounds(client, run, cluster, say, tag)
+        progress = cluster.progress(run)
+        return forgerunpost.report(
+            client, run, f'{progress}; lost {lost}: forge run show' if lost else progress, lease, say
+        )
     forgerunpost.killed(client, run, cluster.killed(run, record), say, tag)
     run = forgerunpost.step(run, phase=GATHERED, record=str(record))
     return forgerunpost.report(client, run, PUBLISHING, lease, say)
+
+
+def _publish_rounds(
+    client: Client, run: Run, cluster: Cluster, say: Callable[[str], None], tag: str
+) -> tuple[Run, int]:
+    """Post the run's folded rounds as its ledger once a new one folds (user ruling 2026-10-31: readable without ssh).
+
+    Returns the run and how many ids its rounds lost so far. A failed post is retried next tick, never fatal.
+    """
+    rounds = cluster.rounds(run)
+    folded = forgerunshow.posted_rounds(rounds)
+    lost = sum(len(one['lost']) for one in folded)
+    if len(folded) <= run.rounds_posted:
+        return run, lost
+    try:
+        forgerunshow.ledger(client, run.sha, run.platform, rounds)
+    except ForgeCallFailed as failed:
+        say(f'{tag}: could not publish round {len(folded) - 1}: {failed}')
+        return run, lost
+    say(f'{tag}: published round {len(folded) - 1} ({lost} id(s) lost so far)')
+    return forgerunpost.step(run, rounds_posted=len(folded)), lost
 
 
 def _superseding_tip(root: Path, run: Run) -> str:
