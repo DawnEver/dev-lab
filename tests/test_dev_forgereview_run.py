@@ -9,7 +9,6 @@ from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
 
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgemerge import review_blocks, review_hold
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_rounds import trusted_bodies
@@ -17,6 +16,7 @@ from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgetakeover import held, main, review_run, runtimes_with
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.platformparts import HOLD_CONTEXT
+from dev_lab.dev.reviewgate import review_missing
 
 _RUNNER = Runner('runner-1', ready=_can)
 
@@ -56,8 +56,7 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     assert _latest(forge, head, REVIEW_CONTEXT) == ('pending', NEEDS_MAINTAINER)
     assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
     statuses = status_list(forge, head)
-    assert review_hold(statuses) is not None
-    assert review_blocks(statuses) is not None, 'a held head is never skipped into a merge'
+    assert review_missing(statuses) is not None, 'a held head is never skipped into a merge'
     assert [pull.number for pull in held(forge, 'integrate/main')] == [number], 'the takeover door lists it'
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')

@@ -537,8 +537,8 @@ def _status(context: str, state: str, description: str) -> CommitStatus:
 def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_path: Path) -> None:
     """``failure`` (an open blocking finding), an unposted review and a live claim wait; the rest merge.
 
-    PLANTED controls: a FAIL in a real part context does fail the standing; a repo that declares no review
-    (``command = []``) never waits on one.
+    PLANTED controls: a FAIL in a real part context does fail the standing; every review state but ``success``
+    waits the merge, even in a repo that declares no review command (user ruling 2026-10-31).
     """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
@@ -558,12 +558,12 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     assert not ready()
     assert not ready(('pending', f'{CLAIMED} A at 2026-10-26T09:00:00+00:00, reviewing'))
     assert ready(('success', 'review round 1: no blocking finding open'))
-    assert ready(('error', 'the review command failed (OSError)'))
-    assert ready(('pending', f'{TAKEOVER_PENDING}: no reviewer could run'))
+    assert not ready(('error', 'the review command failed (OSError)')), 'nothing is advisory (2026-10-31)'
+    assert not ready(('pending', f'{TAKEOVER_PENDING}: no reviewer could run'))
     manifest = work / 'pyproject.toml'
     manifest.write_text(manifest.read_text(encoding='utf-8').replace("command = ['reviewer', '--range', '{range}', "
                         "'--model', 'm']", 'command = []'), encoding='utf-8')  # fmt: skip
-    assert ready()
+    assert not ready(), 'a repo declaring no review command still needs a review: the takeover door'
 
 
 def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> None:
