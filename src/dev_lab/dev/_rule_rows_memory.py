@@ -9,11 +9,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MEMORY-SHAPE',
         (
-            'Memory keeps as much as possible and removes redundancy by MERGING, never deleting -- an entry leaves '
-            'only by being folded into a live entry that names it in `merged_from`, keeping its measurements and '
-            'refuted hypotheses -- and each entry lives under a dated YYYY/MM/DD path with frontmatter, the index '
-            'is generated from what is there rather than curated beside it, and a task lands its state file with '
-            'the commit that completes it.'
+            'Each memory entry lives under a dated YYYY/MM/DD path with frontmatter and is written once; it leaves '
+            'only when a live entry names it in `merged_from` -- folded verbatim, superseded by a successor that '
+            'restates the current truth, or distilled into the rule a crystallize ledger points at -- and is then '
+            'deleted, git keeping its text; nothing records reads, the index is generated from what is there '
+            'rather than curated beside it, and a task lands its state file with the commit that completes it.'
         ),
         (
             'tests/architecture/repo/test_memory_lives_in_dated_directories.py',

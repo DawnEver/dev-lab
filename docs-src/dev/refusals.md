@@ -131,7 +131,7 @@ HINT: the hazard is minutes, not harm.
 ## REPORTS-LIVE-IN-MEMORY
 
 - **Why it is refused.** User ruling 2026-10-11: `output/` holds only what a program can regenerate (run logs, run records, measurements, charts, caches). A report a person or agent writes -- audit, analysis, design, plan, findings, workflow write-up -- cannot be regenerated, so under `output/` it is aged out, swept, and never indexed. Refused: a Write/Edit of a `*.md` under any `output/` segment (`dev_lab.dev.reportplace`, via the `codeplace` write hook) and a shell redirect, `tee`, `Out-File` or `Set-Content` creating one. A program writing its own Markdown is unaffected: it writes through no agent tool.
-- **The exit.** Write it as a dated memory entry: `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` with the MEMORY-SHAPE frontmatter (name, description, created, accessed, tags, metadata).
+- **The exit.** Write it as a dated memory entry: `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` with the MEMORY-SHAPE frontmatter (name, description, created, tags, metadata).
 
 ## STATUS-VIA-DOORS
 
