@@ -9,11 +9,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MEMORY-SHAPE',
         (
-            'Memory keeps as much as possible and removes redundancy by MERGING, never deleting -- an entry leaves '
-            'only by being folded into a live entry that names it in `merged_from`, keeping its measurements and '
-            'refuted hypotheses -- and each entry lives under a dated YYYY/MM/DD path with frontmatter, the index '
-            'is generated from what is there rather than curated beside it, and a task lands its state file with '
-            'the commit that completes it.'
+            'Knowledge lives in four layers: rules (hard constraints), docs (mechanism), memory (dated, '
+            'immutable entries) and tasks (`.claude/tasks/<slug>/TASK.md` + `JOURNAL.md`, opened only by the '
+            'user). A memory entry sits under a dated YYYY/MM/DD path with frontmatter (`name`, `description`) '
+            'and is never edited, deleted or moved once written -- a correction is a new entry naming it in '
+            '`corrects:`, a consolidation a new entry naming its same-scope sources in `merged_from:` with a '
+            'cited source file in every paragraph -- so a change under `**/.claude/memory/**` may only ADD a '
+            'file, the one move being a task archived into memory; no per-read field (`accessed`) is kept, and '
+            'the index `<scope>/.claude/memory-index.md` is derived, gitignored and never under `rules/`.'
         ),
         (
             'tests/architecture/repo/test_memory_lives_in_dated_directories.py',

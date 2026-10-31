@@ -29,6 +29,7 @@ output/
 **/.claude/**
 !**/.claude/settings.json
 !**/.claude/sharp-review.json
+!**/.claude/rem.json
 !**/.claude/hooks/
 !**/.claude/hooks/**
 !**/.claude/agents/
@@ -43,6 +44,8 @@ output/
 !**/.claude/rules/**
 !**/.claude/memory/
 !**/.claude/memory/**
+!**/.claude/tasks/
+!**/.claude/tasks/**
 !**/.claude/output-styles/
 !**/.claude/output-styles/**
 !**/.claude/docs/

@@ -28,6 +28,10 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 * the merge commit the forge will write passes the merge audit
   (:func:`dev_lab.dev.mergeaudit.judge`, the same judgement the commit-msg hook makes) -- its message
   names the branch (``Merged-Branch:``), so INTEGRATION-IS-MERGES-ONLY holds of it too;
+* every commit its head adds over integration passes the repo's OWN declared message row -- the pre-push row
+  running ``cz-push-range``, run here on the range ``origin/<integration>..<head>`` with that row's env, its named
+  exemptions included (:func:`message_wait`). A worktree with no venv skips that row at commit and push, so the
+  merge is the one place no client can skip it; a repo declaring no such row is not judged on messages;
 * every merge commit its head adds over integration declares each file its parents conflict on
   (:func:`dev_lab.dev.mergeresolution.unresolved`, MERGE-RESOLUTION-DECLARED) -- the one place no client and no
   web-UI merge can skip it.
@@ -41,12 +45,14 @@ namespace is deleted by the forge with the merge.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
@@ -54,6 +60,8 @@ from dev_lab.dev.forgereview import load_review
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA, GITHUB, ForgeCallFailed, client_for
+from dev_lab.dev.githooks import PYTHON_ENV, bash_executable, hook_path
+from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
@@ -67,7 +75,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
-    'FORGE_PULL', 'READY', 'Decision', 'auto_merge', 'decide', 'judged', 'main', 'merge', 'merge_message', 'ready',
+    'FORGE_PULL', 'READY', 'Decision', 'auto_merge', 'decide', 'judged', 'main', 'merge', 'merge_message',
+    'message_wait', 'ready',
 ]  # fmt: skip
 
 #: The trailer naming the pull request a forge merge closed.
@@ -81,6 +90,37 @@ _AUTO_MERGE: Final = (
     'mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) '
     '{ clientMutationId } }'
 )
+
+
+#: The shipped script judging commit messages over a range; the repo's pre-push row running it is the declaration.
+_MESSAGE_SCRIPT: Final = 'cz-push-range'
+
+
+def message_wait(root: Path, base: str, head: str) -> str | None:
+    """Why *head*'s commits over *base* fail the repo's declared message row, or ``None`` (passed, or none declared).
+
+    The SAME script and env the pre-push row runs, handed git's pre-push line for ``<base sha>..<head>``.
+    """
+    row = next((one for one in hook_table(root).get('pre-push', ()) if _MESSAGE_SCRIPT in one.run), None)
+    if row is None:
+        return None
+    base_sha = _door.run(['git', 'rev-parse', base], cwd=str(root), capture_output=True, text=True, check=True)
+    line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
+    done = _door.run(
+        [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix()],
+        cwd=str(root),
+        input=line,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=False,
+        env={**os.environ, PYTHON_ENV: sys.executable, **row.env},
+    )
+    if done.returncode == 0:
+        return None
+    said = [one for one in (done.stdout + done.stderr).splitlines() if one.strip()]
+    return f'{row.id} refuses a message over {base}..{head[:12]}: {said[-1] if said else done.returncode}'
 
 
 @dataclass(frozen=True)
@@ -139,6 +179,8 @@ def decide(
         except MergeAuditError as error:
             problems = (str(error),)
         missing += [f'a merge the audit passes: {problem}' for problem in problems]
+    if (off := message_wait(root, base, head)) is not None:
+        missing.append(f'conventional commit messages: {off}')
     try:
         undeclared = unresolved(root, base, head)
     except MergeAuditError as error:
