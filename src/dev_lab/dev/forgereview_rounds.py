@@ -283,8 +283,8 @@ def context_summary(root: Path, reviewed: str, pr_body: str = '') -> str:
 
 
 def _repo_url(pull_url: str) -> str:
-    """The web root of the repository a PR page *pull_url* is in (gitea ``/pulls/N``, github ``/pull/N``)."""
-    return pull_url.rsplit('/pulls/', 1)[0].rsplit('/pull/', 1)[0]
+    """The web root of the repository a PR or ledger-issue page is in (``/pulls/N``, ``/pull/N``, ``/issues/N``)."""
+    return pull_url.rsplit('/pulls/', 1)[0].rsplit('/pull/', 1)[0].rsplit('/issues/', 1)[0]
 
 
 def _cite(cite: str, repo: str, head: str, backend: Backend) -> str:

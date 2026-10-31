@@ -135,7 +135,7 @@ class Scope:
     moved: tuple[str, ...] = ()  # pure moves (new paths): read for their path change, cost ~0
 
 
-def _git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
+def git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
     done = _door.run(
         ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
         timeout=_GIT_TIMEOUT_S, check=False,
@@ -147,7 +147,7 @@ def _git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
 
 
 def _ancestor(root: Path, older: str, newer: str) -> bool:
-    return _git(root, 'merge-base', '--is-ancestor', older, newer, ok=(0, 1))[0] == 0
+    return git(root, 'merge-base', '--is-ancestor', older, newer, ok=(0, 1))[0] == 0
 
 
 def own_base(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str:
@@ -155,7 +155,7 @@ def own_base(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str
 
     *reviewed* is oldest first. Without such a head, the merge base with *target*.
     """
-    base = _git(root, 'merge-base', target, head)[1].strip()
+    base = git(root, 'merge-base', target, head)[1].strip()
     for earlier in reversed(reviewed):
         if earlier != head and _ancestor(root, base, earlier) and _ancestor(root, earlier, head):
             return earlier
@@ -201,7 +201,7 @@ def _diff(root: Path, reviewed: str) -> tuple[dict[str, int], dict[str, str], tu
     path, and its old path costs 0 (it stays, so the slice holding the move reads it as one): a 33-branch merge with
     859 moves read as deletes plus adds measured 30 MB of code. A pure move (``R100``) is listed in the third item.
     """
-    text = _git(root, 'diff', f'-M{_SIMILAR}', '-l0', '-z', '--patch-with-raw', reviewed)[1]
+    text = git(root, 'diff', f'-M{_SIMILAR}', '-l0', '-z', '--patch-with-raw', reviewed)[1]
     raw, _, patch = text.partition(_NUL * 2)
     fields = raw.split(_NUL)
     entries: list[tuple[str, ...]] = []

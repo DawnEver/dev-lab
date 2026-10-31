@@ -28,34 +28,33 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeintegration import _fetch_pull
-from dev_lab.dev.forgepulls import Marker, comment_list, marker, pr_list
+from dev_lab.dev.forgepulls import Marker, comment_list, marker, pages, pr_list
 from dev_lab.dev.forgereview import PATHS_FIELD, HostCannot, Review, command_for, hold, load_review, review_pull
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
 from dev_lab.dev.forgereview_dispose import DisposeRefused, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
-from dev_lab.dev.forgereview_findings import Findings, parse_findings
+from dev_lab.dev.forgereview_findings import parse_findings
 from dev_lab.dev.forgereview_rounds import disposed, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
-from dev_lab.dev.forgereview_scope import Scope, gather, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import Scope, gather, git, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.forgework import ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewgate import review_missing
 
 if TYPE_CHECKING:
-    from dev_lab.dev.forgework import Client, PullRequest
+    from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'DOOR', 'RELEASED', 'TakeoverRefused', 'alarms', 'held', 'main', 'release', 'review_run', 'runtimes_with',
-    'scope_of', 'takeover',
+    'DOOR', 'LEDGER_TITLE', 'RELEASED', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
+    'release', 'review_run', 'runtimes_with', 'scope_of', 'takeover',
 ]  # fmt: skip
 
 #: The door the integrator runs on a held head; ``{sha}`` is the head.
@@ -67,15 +66,6 @@ RELEASED: Final = 'released after the integrator review'
 
 class TakeoverRefused(ValueError):
     """The door will not review or release this head, and says why."""
-
-
-def git(root: Path, *args: str, ok: Sequence[int] = (0,)) -> tuple[int, str]:
-    """``git *args`` in *root*: its exit code (one of *ok*) and stdout; :class:`OSError` naming any other."""
-    done = _door.run(['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
-    if done.returncode not in ok:
-        msg = f'git {" ".join(args)} failed: {done.stderr.strip()[:300]}'
-        raise OSError(msg)
-    return done.returncode, done.stdout
 
 
 def held(client: Client, base: str) -> tuple[PullRequest, ...]:
@@ -109,10 +99,37 @@ def alarms(client: Client, base: str, repo: str) -> list[Alarm]:
     ]
 
 
-def _pull_of(client: Client, sha: str) -> PullRequest | None:
-    """The PR whose head is *sha*, open or not (the newest when several), else ``None``: a plain commit."""
-    found = [pull for pull in pr_list(client, state='all') if pull.head_sha and pull.head_sha.startswith(sha)]
-    return found[-1] if found else None
+def pull_for(client: Client, sha: str) -> PullRequest | None:
+    """The PR whose head starts with *sha*: an open one first, else the highest-numbered; ``None``: a plain commit.
+
+    Open PRs are listed first; the whole history only when no open PR carries it.
+    """
+    for state in ('open', 'all'):
+        found = [pull for pull in pr_list(client, state=state) if pull.head_sha and pull.head_sha.startswith(sha)]
+        if found:
+            return max(found, key=lambda pull: pull.number)
+    return None
+
+
+#: The title of the issue that holds a PR-less head's review ledger; ``{sha}`` is the full head.
+LEDGER_TITLE: Final = 'review of commit {sha}'
+
+
+def ledger_of(client: Client, head: str, base: str) -> PullRequest:
+    """Where a PR-less *head*'s review ledger lives: its one issue (made on first use), as the thread a PR would be.
+
+    A Break-Glass commit has no PR, so its findings comment and every ``dispose <number> <id>`` go to this issue:
+    the round, the dispositions and the verdict are the SAME code a PR's are, keyed by the issue number.
+    """
+    title = LEDGER_TITLE.format(sha=head)
+    found = [one for one in pages(client, f'{client.repo}/issues', {'state': 'all'}) if one.get('title') == title]
+    number, url = (found[0]['number'], found[0].get('html_url', '')) if found else _opened(client, title, head)
+    return PullRequest(number, title, 'open', '', url, '', '', base, head_sha=head)
+
+
+def _opened(client: Client, title: str, head: str) -> tuple[int, str]:
+    issue = client.issue_create(title, f'The review of {head}, a commit with no pull request: its ledger lives here.')
+    return issue.number, issue.url
 
 
 def _commit(root: Path, sha: str) -> str:
@@ -148,12 +165,11 @@ def _comment_for(client: Client, number: int, sha: str) -> str | None:
     return next((one.url for one in comment_list(client, number) if key in one.body), None)
 
 
-def release(client: Client, sha: str, *, host: str) -> str:
-    """Release *sha*'s hold; REFUSED unless its PR carries the findings comment for *sha*. The line said."""
-    pull = _pull_of(client, sha)
-    url = None if pull is None else _comment_for(client, pull.number, pull.head_sha)
-    if pull is None or url is None:
-        msg = f'no findings comment for {sha[:12]} on a PR: the release records a review, run one'
+def release(client: Client, pull: PullRequest, *, host: str) -> str:
+    """Release *pull*'s head hold; REFUSED unless it carries the findings comment for that head. The line said."""
+    url = _comment_for(client, pull.number, pull.head_sha)
+    if url is None:
+        msg = f'no findings comment for {pull.head_sha[:12]} on #{pull.number}: the release records a review, run one'
         raise TakeoverRefused(msg)
     status_post(client, pull.head_sha, context=HOLD_CONTEXT, state='success', description=f'{RELEASED} by {host}',
                 target_url=url)  # fmt: skip
@@ -167,53 +183,37 @@ def scope_of(root: Path, client: Client, review: Review, head: str, *, base: str
     return plan(root, _target(root, base, head), head, review.budget, done, sliceable=sliceable)
 
 
-def _post_bare(client: Client, head: str, found: Findings, reviewed: str, host: str) -> tuple[str, ...]:
-    """A head with no PR (a plain Break-Glass commit): the review is its status; each finding is said."""
-    blocking = [one for one in found.findings if one.blocking]
-    state = 'failure' if blocking else 'success'
-    why = (
-        f'integrator takeover by {host} (no PR, {reviewed}): {len(found.findings)} finding(s), {len(blocking)} blocking'
-    )
-    status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:140])
-    said = [f'{head[:12]}: {why}']
-    said += [f'  {one.id} {one.severity} {one.rule} {one.file}: {one.summary}' for one in found.findings]
-    return tuple(said)
-
-
 def takeover(
-    root: Path, client: Client, review: Review, sha: str, *, base: str, host: str,
+    root: Path, client: Client, review: Review, head: str, *, pull: PullRequest | None, base: str, host: str,
     run: Callable[[Sequence[str], Path], str] = run_command,
     runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),
 ) -> tuple[str, ...]:  # fmt: skip
-    """Review *sha* where its review is missing -- open, closed or merged PR, or a plain commit -- and post it.
+    """Review *head* where its review is missing -- an open, closed or merged *pull*, or a plain commit -- and post it.
 
     The emergency door of :mod:`dev_lab.dev.breakglass` and of a merge that waits on a review that could not run: it
-    must always be satisfiable, so it refuses only a head already reviewed or a checkout that lacks it.
+    must always be satisfiable, so it refuses only a head already reviewed. A head with no PR keeps its ledger in its
+    own issue (:func:`ledger_of`), where a blocking finding is disposed of as on a PR (``dispose <issue> <id>``).
     """
-    head = _commit(root, sha)
     if review_missing(status_list(client, head)) is None:
         msg = f'{head[:12]} is already reviewed: nothing to take over'
         raise TakeoverRefused(msg)
-    pull = _pull_of(client, head)
     scope = scope_of(root, client, review, head, base=base, pull=pull)
+    thread = pull if pull is not None else ledger_of(client, head, base)
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
     synth = command_for(review, scope.range, runtimes, synthesis=True)
-    gone = () if pull is None else disposed(trusted_bodies(client, pull.number))
-    body = '' if pull is None else pull.body
-    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=body, disposed=dict(gone)))
+    gone = disposed(trusted_bodies(client, thread.number))  # the forge's own: a trailer never reaches the engine
+    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=thread.body, disposed=gone))
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         msg = f'no reviewer returned findings ({kinds}); nothing is posted'
         raise TakeoverRefused(msg)
-    if pull is None:
-        return _post_bare(client, head, found, scope.range, host)
     said = post_round(
-        root, client, pull, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover',
+        root, client, thread, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover',
         outside=scope.outside, authored=trailed(root, _target(root, base, head), head),
     )  # fmt: skip
     pending = next((one for one in status_list(client, head) if one.context == HOLD_CONTEXT), None)
-    if pending is not None and pending.state == 'pending':
-        return f'{said} ({len(scope.slices)} slice(s))', release(client, head, host=host)
+    if pull is not None and pending is not None and pending.state == 'pending':
+        return f'{said} ({len(scope.slices)} slice(s))', release(client, pull, host=host)
     return (f'{said} ({len(scope.slices)} slice(s))',)
 
 
@@ -309,10 +309,10 @@ def main(
         if args.verb == 'dispose':
             emit(f'[review] {dispose(origin, args.pr, args.finding, args.why, host=this_machine())}')
             return 0
-        review, head = load_review(root), _commit(root, args.sha)
-        pull = _pull_of(origin, head)
+        review, pull = load_review(root), pull_for(origin, args.sha)  # the forge first: the PR brings its head
         if pull is not None:
             pull_in(root, pull.number)
+        head = _commit(root, pull.head_sha if pull is not None else args.sha)
         if args.verb == 'plan':
             scope = scope_of(root, origin, review, head, base=base, pull=pull)
             emit(
@@ -326,7 +326,8 @@ def main(
                 emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
             return 0
         here = host_runtimes()
-        for said in takeover(root, origin, review, head, base=base, host=this_machine(), run=run, runtimes=here):
+        for said in takeover(root, origin, review, head, pull=pull, base=base, host=this_machine(), run=run,
+                             runtimes=here):  # fmt: skip
             emit(f'[review] {said}')
     except (
         TakeoverRefused,
