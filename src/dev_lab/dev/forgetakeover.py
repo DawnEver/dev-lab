@@ -44,7 +44,7 @@ from dev_lab.dev.forgereview_rounds import disposed, post_round, trailed, truste
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import ForgeCallFailed, PullRequest, client_for
+from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB, ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewgate import review_missing
@@ -120,9 +120,17 @@ def ledger_of(client: Client, head: str, base: str) -> PullRequest:
 
     A Break-Glass commit has no PR, so its findings comment and every ``dispose <number> <id>`` go to this issue:
     the round, the dispositions and the verdict are the SAME code a PR's are, keyed by the issue number.
+
+    Only an issue the FORGE opened is the ledger (F-7fbe6eafaadf, security): its own login, or the workflow bot on
+    GitHub -- never a squatter's issue of the same title, and never a PR (GitHub's issues API lists PRs too).
     """
     title = LEDGER_TITLE.format(sha=head)
-    found = [one for one in pages(client, f'{client.repo}/issues', {'state': 'all'}) if one.get('title') == title]
+    mine = {client.whoami(), *((ACTIONS_BOT,) if client.backend is GITHUB else ())}
+    found = [
+        one
+        for one in pages(client, f'{client.repo}/issues', {'state': 'all'})
+        if one.get('title') == title and not one.get('pull_request') and (one.get('user') or {}).get('login') in mine
+    ]
     number, url = (found[0]['number'], found[0].get('html_url', '')) if found else _opened(client, title, head)
     return PullRequest(number, title, 'open', '', url, '', '', base, head_sha=head)
 
