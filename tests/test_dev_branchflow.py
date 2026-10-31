@@ -16,7 +16,7 @@ from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, se
 
 from dev_lab.dev import forgesync
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgeintegration import CONTEXT, retarget_note, tick
+from dev_lab.dev.forgeintegration import CONTEXT, OWNER_CLOSED, open_lanes, retarget_note, tick
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgerecords import RECORDS_TAG, attach, listing
 from dev_lab.dev.lanepolicy import Policy, load_policy
@@ -209,3 +209,50 @@ def test_the_policy_declares_integration_and_trunk(tmp_path: Path) -> None:
         '[tool.dev_lab.integrator]\nintegration = "stage"\ntrunk = "stable"\n', encoding='utf-8'
     )
     assert load_policy(tmp_path) == Policy(integration='stage', trunk='stable')
+
+
+# --- a pushed lane gets its PR --------------------------------------------------------------------
+
+
+def _closed(number: int, head: str, *, merged: bool) -> dict[str, object]:
+    return _pr(number, head, 'integrate/main', 'f' * 40) | {'state': 'closed', 'merged': merged}
+
+
+@pytest.mark.parametrize(('forge', 'api'), [(GITEA, GAPI), (GITHUB, HAPI)])
+def test_only_a_pushed_unlanded_lane_without_a_pr_gets_one(server, tmp_path: Path, forge: Forge, api: str) -> None:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'pr/new', 'n.txt', 'n\n', 'feat(n): the newest subject')
+    landed = advance(work, 'pr/landed', 'l.txt', 'l\n')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'{landed}:refs/heads/integrate/main')
+    advance(work, 'pr/open', 'o.txt', 'o\n')
+    advance(work, 'pr/refused', 'r.txt', 'r\n')
+    advance(work, 'feat/mine', 'm.txt', 'm\n')
+    advance(work, 'pr/relock-1', 'k.txt', 'k\n')
+    run_git(work, 'fetch', '-q', 'origin')
+    declared = (work / 'pyproject.toml').read_text(encoding='utf-8')
+    (work / 'pyproject.toml').write_text(f"{declared}[tool.dev_lab.branchset]\ntrunk = 'main'\n", encoding='utf-8')
+    closed = [_closed(7, 'pr/refused', merged=False), _closed(8, 'pr/new', merged=True)]
+    answer('GET', f'{api}/pulls', (200, closed))
+    answer('POST', f'{api}/pulls', (201, _pr(9, 'pr/new', 'integrate/main', '')))
+    answer('GET', f'{api}/pulls/9', (200, _pr(9, 'pr/new', 'integrate/main', '') | {'node_id': 'N9'}))
+    answer('POST', '/graphql', (200, {'data': {}}))
+    built = client(forge, Loopback(server))
+    lines, opened = open_lanes(work, built, POLICY, {'pr/open'})
+    creates = [r['body'] for r in Recorder.received if (r['method'], r['path']) == ('POST', f'{api}/pulls')]
+    assert [(c['head'], c['base'], c['title']) for c in creates] == [
+        ('pr/new', 'integrate/main', 'feat(n): the newest subject')
+    ], 'landed, open-PR, owner-closed, relock and non-ephemeral lanes get none; a MERGED closed PR blocks nothing'
+    assert 'Opened by the forge' in creates[0]['body']
+    assert [(c.branch, c.pr) for c in opened] == [('pr/new', 9)]
+    assert OWNER_CLOSED.format(branch='pr/refused', number=7) in lines
+    graphql = [r for r in Recorder.received if r['path'] == '/graphql']
+    assert len(graphql) == (1 if forge is GITHUB else 0), 'GitHub puts the opened PR on auto-merge'
+    assert any('auto-merge enabled' in line for line in lines) is (forge is GITHUB)
+
+
+def test_a_repo_without_ephemeral_lanes_lists_no_closed_pr(server, tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'pr/new', 'n.txt', 'n\n')
+    built = client(GITEA, Loopback(server))
+    assert open_lanes(work, built, POLICY, set()) == ([], []), 'no branch set declared: no namespace to open from'
+    assert Recorder.received == []

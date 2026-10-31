@@ -64,6 +64,8 @@ class PullRequest:
     labels: tuple[str, ...] = ()
     #: Whether the forge holds it as a draft (gitea: ``draft``, or a ``WIP:``/``[WIP]`` title prefix).
     draft: bool = False
+    #: Whether the forge merged it (gitea ``merged``, GitHub ``merged_at``): a CLOSED one without it was refused.
+    merged: bool = False
 
 
 #: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
@@ -86,6 +88,7 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
         raw['head'].get('sha') or '',
         tuple(str(label['name']) for label in raw.get('labels') or ()),
         bool(raw.get('draft')) or issue.title.upper().startswith(_WIP_PREFIXES),
+        bool(raw.get('merged') or raw.get('merged_at')),
     )
 
 

@@ -15,6 +15,10 @@ checkout (:mod:`dev_lab.dev.trialmerge`):
 * the head's ``tests/<part>`` states, with the open ``area:*`` issues that cite the head;
 * promoted to the trunk at <sha>, once the trunk holds it.
 
+A LANE GETS ITS PR (:func:`open_lanes`). A pushed branch in a declared ephemeral namespace (``pr/*``) holding
+content integration lacks, with no open PR, gets ONE opened -- titled by its newest subject, on auto-merge where
+GitHub merges -- unless its owner closed one unmerged: that is "do not land", said and never reopened.
+
 WHERE IT IS SAID. On a PR, as ONE comment found by a hidden marker and updated in place
 (:func:`dev_lab.dev.forgepulls.comment_upsert`) -- a second tick changes nothing. Without a PR, as
 a commit status in context :data:`CONTEXT` on the head, posted only when it differs. A PR opened
@@ -34,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import fnmatch
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -48,12 +53,13 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgeautosync, forgeheadgate, forgenotice
+from dev_lab.dev.branchdelete import landed
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
-from dev_lab.dev.forgemerge import judged, merge
+from dev_lab.dev.forgemerge import auto_merge, judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -72,10 +78,25 @@ from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
+from dev_lab.dev.relock import PREFIX as RELOCK_PREFIX
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
 from dev_lab.dev.unproduced import unproduced_waived
 
-__all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'settle', 'tick']
+__all__ = [
+    'CONTEXT',
+    'OPENED',
+    'OWNER_CLOSED',
+    'Child',
+    'Feedback',
+    'Ticked',
+    'alarms',
+    'feedback',
+    'main',
+    'open_lanes',
+    'retarget_note',
+    'settle',
+    'tick',
+]
 
 #: The commit-status context a child branch without a PR carries its integration line in.
 CONTEXT: Final = 'integration'
@@ -245,6 +266,55 @@ def _lanes(root: Path, policy: Policy, schedule: Schedule) -> list[tuple[str, st
     return found
 
 
+#: The body of a PR the tick opens for a pushed lane.
+OPENED: Final = (
+    'Opened by the forge (`forge integration`): `{branch}` is a pushed `{glob}` lane holding content '
+    '`{integration}` lacks, and no pull request carried it. A lane lands by its PR; close this one unmerged '
+    'and the forge never opens another for `{branch}`.'
+)
+#: What the tick says of a lane whose PR its owner closed unmerged: the owner's "do not land".
+OWNER_CLOSED: Final = '{branch}: no PR opened -- #{number} was closed unmerged by its owner: do not land'
+
+
+def open_lanes(root: Path, client: Client, policy: Policy, open_heads: set[str]) -> tuple[list[str], list[Child]]:
+    """Open the one PR each pushed ephemeral lane lands by; the lines said and the children opened.
+
+    A lane is an origin branch in a declared ephemeral namespace (``[tool.dev_lab.branchset] ephemeral``) holding
+    content integration lacks (:func:`dev_lab.dev.branchdelete.landed`), with no open PR (*open_heads*). A relock
+    branch opens its own (:func:`dev_lab.dev.relock.carry`), and a lane whose PR was closed UNMERGED is its
+    owner's "do not land": never reopened, only said. The title is the head's newest subject; on GitHub the PR
+    is put on auto-merge (:func:`dev_lab.dev.forgemerge.auto_merge`), as ``forge pr create`` does.
+    """
+    try:
+        declared = declared_branchset(root)
+    except BranchSetNotDeclared:
+        return [], []
+    lanes = []
+    for ref in _git(root, 'for-each-ref', '--format=%(refname) %(objectname)', _TRACKING).splitlines():
+        name, sha = ref.split(' ')
+        branch = name.removeprefix(_TRACKING)
+        if branch in open_heads or branch.startswith(f'{RELOCK_PREFIX}-') or not declared.is_ephemeral(branch):
+            continue
+        if landed(root, policy, name).lost:
+            lanes.append((branch, sha))
+    if not lanes:
+        return [], []
+    refused = {pr.head: pr.number for pr in pr_list(client, state='closed') if not pr.merged}
+    lines: list[str] = []
+    opened: list[Child] = []
+    for branch, sha in lanes:
+        if branch in refused:
+            lines.append(OWNER_CLOSED.format(branch=branch, number=refused[branch]))
+            continue
+        title = _git(root, 'log', '-1', '--format=%s', sha).strip() or branch
+        glob = next(g for g in declared.ephemeral if fnmatch.fnmatchcase(branch, g))
+        body = OPENED.format(branch=branch, glob=glob, integration=policy.integration)
+        pr = client.pr_create(title, body, head=branch, base=policy.integration)
+        lines.append(f'{branch}: opened #{pr.number} -- {auto_merge(client, pr.number)}')
+        opened.append(Child(branch, sha, client, pr.number))
+    return lines, opened
+
+
 def _publish(child: Child, said: Feedback) -> str:
     if child.pr is not None:
         action, _ = comment_upsert(child.client, child.pr, kind=Marker.INTEGRATION, text=said.text)
@@ -296,13 +366,17 @@ def tick(
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
     children: list[Child] = []
-    for listed in pr_list(origin):
+    listed_open = pr_list(origin)
+    for listed in listed_open:
         pr = _retarget(origin, listed, policy) if listed.base == policy.trunk else listed
         if pr is not listed:
             lines.append(f'#{pr.number} retargeted {policy.trunk} -> {policy.integration}')
         if pr.base != policy.integration:
             continue
         children.append(Child(pr.head, fetch_pull(root, 'origin', pr.number), origin, pr.number))
+    opening, opened = open_lanes(root, origin, policy, {pr.head for pr in listed_open})
+    lines += opening
+    children += opened
     with_pr = {child.branch for child in children}
     children += [Child(b, sha, origin) for b, sha in _lanes(root, policy, load_schedule(root)) if b not in with_pr]
     pulls = [forgeautosync.Open(c.pr, c.branch, c.head) for c in children if c.pr is not None]

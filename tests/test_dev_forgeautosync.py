@@ -131,7 +131,7 @@ def test_one_sync_per_integration_tip(tmp_path: Path) -> None:
 
 def test_a_textual_conflict_is_said_once_and_never_resolved(tmp_path: Path) -> None:
     """PLANTED control: the clean PR of the first test is synced."""
-    work, _, _ = _world(tmp_path)
+    work, _, _ = _world(tmp_path, 'feat/x')  # a PR-less pr/x would get its PR opened (open_lanes)
     head = advance(work, 'pr/c', 'i.txt', 'theirs\n')
     forge = StateForge()
     number = forge.add_pull('pr/c', 'integrate/main', sha=head)
