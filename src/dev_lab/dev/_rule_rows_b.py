@@ -13,7 +13,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'REPORTS-LIVE-IN-MEMORY',
         (
             'A report a person or agent WRITES -- an audit, analysis, design, plan, findings or workflow write-up '
-            '-- is a dated memory entry under `.claude/memory/<yyyy>/<mm>/<dd>/` in the MEMORY-SHAPE, never a file '
+            '-- is a dated memory entry under `.claude/memory/<yyyy>/<mm>/<dd>/` in the MEMORY-SHAPE (or, while '
+            'its work is live, the journal of a user-opened task under `.claude/tasks/<slug>/`), never a file '
             'under `output/`, which holds only what a program can regenerate (run logs, run records, '
             'measurements, charts, caches), and the agent guard refuses a Write/Edit or a shell redirect creating '
             'a Markdown file under any `output/`.'

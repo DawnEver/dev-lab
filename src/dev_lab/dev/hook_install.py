@@ -43,6 +43,7 @@ from typing import IO, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import remconfig
 from dev_lab.dev.githooks.runner import FOREIGN_INTERPRETER_ENV
 from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.principles import write_page
@@ -271,6 +272,7 @@ def install(repo: Path) -> InstallReport:
     _scope_linked_worktree(repo)
     _publish_under_own_name(repo)
     write_page(repo)  # the family principles reach every agent here, on the same one act
+    remconfig.write(repo)  # and the backlog is the issue tracker (rem reads it)
     before = hook_installation(repo)
     if before.verdict != UNPROTECTED:
         return before

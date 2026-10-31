@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import memoryadds
 from dev_lab.dev.breakglass import BREAK_GLASS, empty_reason
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.lanepolicy import policy_at
@@ -319,8 +320,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         if empty_reason(message):
             emit(f'merge-audit: commit REFUSED -- a {BREAK_GLASS}: trailer must name its reason', err=True)
             return 1
+        memory = memoryadds.pending(root)
+        if memory:
+            lines = [
+                'merge-audit: commit REFUSED -- this merge edits, deletes or moves memory (MEMORY-SHAPE).',
+                *(f'merge-audit:   {line}' for line in memory),
+                'merge-audit: Remedy: restore each entry as it was; a correction is a NEW entry with `corrects:`.',
+            ]
+            emit('\n'.join(lines), err=True)
+            return 1
         problems = pending(root, message)
-    except (MergeAuditError, OSError) as error:
+    except (MergeAuditError, memoryadds.MemoryAddsError, OSError) as error:
         problems = (str(error),)
     if not problems:
         return 0

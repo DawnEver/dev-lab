@@ -91,11 +91,18 @@ def test_the_hatch_vcs_version_file_stays_ignored() -> None:
 #: generated index the same base must keep ignoring outside an archive.
 _TRACKED: Final = (
     '.claude/sharp-review.json',
+    '.claude/rem.json',
+    '.claude/tasks/integrator/JOURNAL.md',
     'attic/old/.claude/rules/MEMORY.md',
     'attic/old/.claude/meta/MEMORY.full.md',
     'attic/old/.claude/memory/2026/06/01/_meta.json',
 )
-_IGNORED: Final = ('.claude/rules/MEMORY.md', '.claude/memory/2026/06/01/_meta.json', 'attic/old/__pycache__/x.pyc')
+_IGNORED: Final = (
+    '.claude/memory-index.md',
+    '.claude/rules/MEMORY.md',
+    '.claude/memory/2026/06/01/_meta.json',
+    'attic/old/__pycache__/x.pyc',
+)
 
 
 def _ignored(path: str) -> bool:
