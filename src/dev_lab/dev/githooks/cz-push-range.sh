@@ -36,6 +36,14 @@
 # The fallback fires when there is no increment to read -- a run with no ref lines on stdin, or a
 # brand-new branch whose remote side is the all-zero sha -- and in both of those a
 # lane's full history against the base IS the right question, because none of it has been published.
+#
+# A NAMED EXEMPTION, never a new type -- an optional second repo fact with no default (absent = empty):
+#
+#   LAB_CZ_EXEMPT     one `<full sha> <reason>` per line: a commit already on a shared branch with an
+#                     off-format message, which no one may rewrite. Each line must name a FULL 40-hex sha
+#                     this checkout holds, with a reason, or the hook refuses before judging anything. A
+#                     range holding no exempt sha is judged exactly as without it; a range holding one is
+#                     judged commit by commit, skipping only the named shas.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,6 +58,24 @@ if [ -z "${BASE_REF}" ]; then
   echo "[cz-push-range]   judged against a ref that does not exist, and read as a clean lane." >&2
   exit 1
 fi
+
+EXEMPT=' '
+bad=0
+while IFS= read -r entry || [ -n "${entry}" ]; do
+  entry="${entry%$''}"
+  read -r sha reason <<< "${entry}" || true
+  [ -n "${sha:-}" ] || continue
+  if ! [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "[cz-push-range] LAB_CZ_EXEMPT: '${sha}' is not a full 40-hex sha" >&2; bad=1
+  elif ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+    echo "[cz-push-range] LAB_CZ_EXEMPT: ${sha} names no commit this checkout holds" >&2; bad=1
+  elif [ -z "${reason:-}" ]; then
+    echo "[cz-push-range] LAB_CZ_EXEMPT: ${sha} carries no reason" >&2; bad=1
+  else
+    EXEMPT="${EXEMPT}${sha} "
+  fi
+done <<< "${LAB_CZ_EXEMPT-}"
+[ "${bad}" -eq 0 ] || exit 1
 
 ZERO='0000000000000000000000000000000000000000'
 RANGES=()
@@ -89,6 +115,19 @@ for i in "${!RANGES[@]}"; do
     echo "[cz-push-range] the range holds no commit -- nothing to check"
     continue
   fi
-  bash "${HERE}/with-venv.sh" commitizen check --rev-range "${RANGE}" || status=1
+  HELD=()
+  while read -r sha; do
+    case "${EXEMPT}" in *" ${sha} "*) HELD+=("${sha}") ;; esac
+  done < <(git rev-list "${RANGE}")
+  if [ "${#HELD[@]}" -eq 0 ]; then
+    bash "${HERE}/with-venv.sh" commitizen check --rev-range "${RANGE}" || status=1
+    continue
+  fi
+  while read -r sha; do
+    case "${EXEMPT}" in
+      *" ${sha} "*) echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)" ;;
+      *) bash "${HERE}/with-venv.sh" commitizen check --message "$(git log -1 --format=%B "${sha}")" || status=1 ;;
+    esac
+  done < <(git rev-list --reverse "${RANGE}")
 done
 exit "${status}"
