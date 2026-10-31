@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -74,10 +75,13 @@ from dev_lab.dev.trialmerge import trial
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
+    from dev_lab.dev.githooks.table import Hook
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
     'FORGE_PULL',
+    'MESSAGES_NOT_DECLARED',
+    'MESSAGE_TIMEOUT_S',
     'READY',
     'Decision',
     'auto_merge',
@@ -86,6 +90,7 @@ __all__ = [
     'main',
     'merge',
     'merge_message',
+    'message_row',
     'message_wait',
     'ready',
     'review_blocks',
@@ -130,28 +135,47 @@ def review_blocks(statuses: Sequence[CommitStatus]) -> str | None:
 #: The shipped script judging commit messages over a range; the repo's pre-push row running it is the declaration.
 _MESSAGE_SCRIPT: Final = 'cz-push-range'
 
+#: Seconds the message row may run inside one merge decision before it is a named wait, never a hung tick.
+MESSAGE_TIMEOUT_S: Final[float] = 300.0
+
+#: What a decision notes when the repo declares no message row: nothing judged the messages.
+MESSAGES_NOT_DECLARED: Final = 'messages: not declared'
+
+
+def message_row(root: Path) -> Hook | None:
+    """The repo's pre-push row running ``cz-push-range``, or ``None`` when it declares none."""
+    return next((one for one in hook_table(root).get('pre-push', ()) if _MESSAGE_SCRIPT in one.run), None)
+
 
 def message_wait(root: Path, base: str, head: str) -> str | None:
     """Why *head*'s commits over *base* fail the repo's declared message row, or ``None`` (passed, or none declared).
 
     The SAME script and env the pre-push row runs, handed git's pre-push line for ``<base sha>..<head>``.
     """
-    row = next((one for one in hook_table(root).get('pre-push', ()) if _MESSAGE_SCRIPT in one.run), None)
+    row = message_row(root)
     if row is None:
         return None
-    base_sha = _door.run(['git', 'rev-parse', base], cwd=str(root), capture_output=True, text=True, check=True)
-    line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
-    done = _door.run(
-        [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix()],
-        cwd=str(root),
-        input=line,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        check=False,
-        env={**os.environ, PYTHON_ENV: sys.executable, **row.env},
+    base_sha = _door.run(
+        ['git', 'rev-parse', '--verify', '--quiet', base], cwd=str(root), capture_output=True, text=True, check=False
     )
+    if base_sha.returncode != 0:
+        return f'{row.id}: {base} does not resolve in this checkout -- fetch origin, then judge again'
+    line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
+    try:
+        done = _door.run(
+            [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix()],
+            cwd=str(root),
+            input=line,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+            env={**os.environ, PYTHON_ENV: sys.executable, **row.env},
+            timeout=MESSAGE_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return f'{row.id} timed out after {MESSAGE_TIMEOUT_S} s over {base}..{head[:12]}'
     if done.returncode == 0:
         return None
     said = [one for one in (done.stdout + done.stderr).splitlines() if one.strip()]
@@ -164,6 +188,7 @@ class Decision:
 
     missing: tuple[str, ...]
     message: str
+    notes: tuple[str, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -224,7 +249,8 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    return Decision(tuple(missing), message)
+    notes = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
+    return Decision(tuple(missing), message, notes)
 
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
@@ -242,9 +268,12 @@ def ready(root: Path, client: Client, number: int) -> str:
     policy, pull = load_policy(root), client.pr_view(number)
     if pull.base != policy.integration:
         missing: tuple[str, ...] = (f'a PR into {policy.integration}, not {pull.base}',)
+        notes: tuple[str, ...] = ()
     else:
-        missing = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha).missing
-    state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)
+        found = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
+        missing, notes = found.missing, found.notes
+    suffix = f' ({"; ".join(notes)})' if notes else ''
+    state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY + suffix)
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
     return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
 

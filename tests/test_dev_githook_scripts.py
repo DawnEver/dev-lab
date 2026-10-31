@@ -471,7 +471,7 @@ def test_an_EXEMPT_sha_passes_and_every_other_commit_is_judged_unchanged(repo: P
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=exempt)
     assert done.returncode == 0, done.stdout + done.stderr
     assert f'exempt {off}' in done.stdout, done.stdout
-    assert argv_log.read_text(encoding='utf-8').splitlines() == ['check --message feat: after it']
+    assert argv_log.read_text(encoding='utf-8').splitlines() == [f'check --rev-range {off}..{head}']
 
 
 def test_a_data_message_NOT_declared_still_fails_beside_an_exempt_one(repo: Path, tmp_path: Path) -> None:
@@ -511,3 +511,24 @@ def test_a_declaration_naming_no_full_existing_sha_with_a_reason_is_REFUSED(
     assert done.returncode == 1, done.stdout + done.stderr
     assert said in done.stderr, done.stderr
     assert not argv_log.is_file(), 'the checker ran under a refused declaration'
+
+
+def test_an_exempt_sha_in_the_MIDDLE_judges_its_sub_ranges_not_each_commit(repo: Path, tmp_path: Path) -> None:
+    """One checker call per sub-range between exempt shas, never one per commit."""
+    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    first = _git(repo, 'rev-parse', 'HEAD')
+    before = [_commit(repo, f'feat: before {n}') for n in range(3)]
+    off = _commit(repo, 'data(femm): exempt')
+    head = [_commit(repo, f'feat: after {n}') for n in range(3)][-1]
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{off} named')
+    assert done.returncode == 0, done.stdout + done.stderr
+    calls = argv_log.read_text(encoding='utf-8').splitlines()
+    assert calls == [f'check --rev-range {first}..{before[-1]}', f'check --rev-range {off}..{head}'], calls
+
+
+def test_a_CRLF_reasonless_line_says_it_carries_no_reason(repo: Path, tmp_path: Path) -> None:
+    _plant_judging_commitizen(repo, tmp_path)
+    head = _git(repo, 'rev-parse', 'HEAD')
+    done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{head}\r\n')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'carries no reason' in done.stderr, done.stderr

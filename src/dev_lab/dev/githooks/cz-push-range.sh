@@ -62,7 +62,7 @@ fi
 EXEMPT=' '
 bad=0
 while IFS= read -r entry || [ -n "${entry}" ]; do
-  entry="${entry%$''}"
+  entry="${entry%$'\r'}"
   read -r sha reason <<< "${entry}" || true
   [ -n "${sha:-}" ] || continue
   if ! [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
@@ -123,11 +123,23 @@ for i in "${!RANGES[@]}"; do
     bash "${HERE}/with-venv.sh" commitizen check --rev-range "${RANGE}" || status=1
     continue
   fi
+  # Judge the sub-ranges BETWEEN exempt shas, one checker call each, never one per commit.
+  LEFT="${RANGE%%..*}"
+  RIGHT="${RANGE#*..}"
+  start="${LEFT}"
   while read -r sha; do
     case "${EXEMPT}" in
-      *" ${sha} "*) echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)" ;;
-      *) bash "${HERE}/with-venv.sh" commitizen check --message "$(git log -1 --format=%B "${sha}")" || status=1 ;;
+      *" ${sha} "*)
+        echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)"
+        if [ "$(git rev-list --count "${start}..${sha}^")" -gt 0 ]; then
+          bash "${HERE}/with-venv.sh" commitizen check --rev-range "${start}..$(git rev-parse "${sha}^")" || status=1
+        fi
+        start="${sha}"
+        ;;
     esac
   done < <(git rev-list --reverse "${RANGE}")
+  if [ "$(git rev-list --count "${start}..${RIGHT}")" -gt 0 ]; then
+    bash "${HERE}/with-venv.sh" commitizen check --rev-range "${start}..${RIGHT}" || status=1
+  fi
 done
 exit "${status}"
