@@ -14,11 +14,13 @@ THE RULE. A merge commit whose parents conflict lists every conflicted file ONCE
 with the class one of :data:`CLASSES` and EVERY class with its why: a resolution is derived from what the code
 must do now (first principles), and the why is that derivation.
 
-THE CLASSES ARE THE RESOLUTION PRINCIPLES (user rulings 2026-10-25). Take the newer structure only where it is
-also the simpler one; keep the simpler correct side even when it is older; collapse two copies of one fact into
-one; delete obsolete structure, compat layers, aliases and upgrade-on-read paths (no backward compatibility);
-rename to what a thing is. Layered decoupling is not a class: a resolution never adds an upward import, and each
-repo's layering tests refuse one. The conflicted set is RECOMPUTED from
+THE CLASSES ARE THE RESOLUTION PRINCIPLES (user rulings 2026-10-25, 2026-10-31), and the map is DATA:
+:data:`GROUNDS` names the family principle (:data:`dev_lab.dev.principles.PRINCIPLES`) each class applies, and
+:data:`UNCLASSED` says where each remaining principle is enforced instead; :func:`ungrounded` refuses a principle
+placed nowhere, so a principle added to the family cannot be silently missing from merge resolution. No class
+is privileged: newer-structure is one of seven, and the why is the first-principles derivation. The 2026-10-31
+audit found the integrator citing newer-structure as "the" rule (924 of 1501 class lines in 400 merges) while
+dropping the others, because the injected page stated it alone. The conflicted set is RECOMPUTED from
 the parents' trees (``git merge-tree --write-tree --name-only``), never read from the message, so a line naming
 a file the parents do not conflict on is refused too. A clean merge needs no line.
 
@@ -48,22 +50,38 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.mergeaudit import MergeAuditError, pending_parents
+from dev_lab.dev.principles import PRINCIPLES, Principle
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
-__all__ = ['CLASSES', 'conflicted', 'judge', 'main', 'pending', 'undeclared', 'unresolved']
+__all__ = ['CLASSES', 'GROUNDS', 'UNCLASSED', 'conflicted', 'judge', 'main', 'pending', 'undeclared', 'ungrounded', 'unresolved']
 
-#: How a conflicted file may be resolved -- one class per resolution principle:
+#: How a conflicted file may be resolved, each class -> the principle(s) that decide it:
 #: ``newer-structure`` the newer structure, the other side's content re-expressed inside it;
-#: ``simpler-side`` the simpler correct side kept, older or not (Occam);
+#: ``simpler-side`` the simpler correct side kept, older or not;
 #: ``one-source`` two copies of one fact made one, the rest derived from it;
 #: ``deleted-as-baggage`` obsolete structure, a compat layer, an alias or an upgrade path deleted;
 #: ``renamed-to-reality`` a name changed to what the thing is;
-#: ``both-needed`` both sides' content is live.
-CLASSES: Final = frozenset(
-    {'newer-structure', 'simpler-side', 'one-source', 'deleted-as-baggage', 'renamed-to-reality', 'both-needed'}
-)
+#: ``both-needed`` both sides' content is live, composed from what the code must do now;
+#: ``kept-capability`` a parameter or option one side dropped is kept because a case uses or needs it.
+GROUNDS: Final[dict[str, tuple[str, ...]]] = {
+    'newer-structure': ('no-backward-compatibility', 'single-source-of-truth'),
+    'simpler-side': ('occams-razor',),
+    'one-source': ('single-source-of-truth',),
+    'deleted-as-baggage': ('no-historical-baggage', 'no-backward-compatibility'),
+    'renamed-to-reality': ('names-match-behaviour',),
+    'both-needed': ('first-principles',),
+    'kept-capability': ('keep-valuable-options',),
+}
+
+#: The principles that decide no choice between two sides, and what enforces each in a merge instead.
+UNCLASSED: Final[dict[str, str]] = {
+    'layered-decoupling': "a resolution never adds an upward import; each repo's layering tests refuse one",
+    'progressive-disclosure': 'a property of a page, not a side; INJECTED-TEXT-IS-PROGRESSIVE budgets the pages',
+}
+
+CLASSES: Final = frozenset(GROUNDS)
 
 _LINE: Final = re.compile(
     r'^(?P<path>[^\s:][^:\n]*?):[ \t]+(?P<cls>\S+)(?:[ \t]+--[ \t]*(?P<why>\S.*?))?[ \t]*$', re.MULTILINE
@@ -96,7 +114,7 @@ def undeclared(conflicts: Sequence[str], message: str) -> tuple[str, ...]:
     wanted = set(conflicts)
     lines = [m for m in _LINE.finditer(message) if m['path'] in wanted or m['cls'] in CLASSES]
     counts = Counter(m['path'] for m in lines)
-    classes = ', '.join(sorted(CLASSES))
+    classes = ', '.join(f'{cls} ({"/".join(GROUNDS[cls])})' for cls in sorted(CLASSES))
     problems = [
         f'{path}: not declared -- add `{path}: <class> -- <why>` (class one of {classes})'
         for path in sorted(wanted - set(counts))
@@ -109,6 +127,30 @@ def undeclared(conflicts: Sequence[str], message: str) -> tuple[str, ...]:
             problems.append(f'{m["path"]}: {m["cls"]!r} is not a resolution class -- use one of {classes}')
         elif not m['why']:
             problems.append(f'{m["path"]}: {m["cls"]} needs its why -- `{m["path"]}: {m["cls"]} -- <why>`')
+    return tuple(problems)
+
+
+def ungrounded(
+    *,
+    principles: Sequence[Principle] = PRINCIPLES,
+    grounds: Mapping[str, Sequence[str]] = GROUNDS,
+    unclassed: Mapping[str, str] = UNCLASSED,
+) -> tuple[str, ...]:
+    """What is wrong with the class->principle map; empty when every principle is placed exactly once."""
+    ids = {one.id for one in principles}
+    used = {pid for pids in grounds.values() for pid in pids}
+    problems = [
+        f'{cls}: grounded in unknown principle {pid}' for cls, pids in grounds.items() for pid in pids if pid not in ids
+    ]
+    problems += [f'{cls}: grounded in no principle' for cls, pids in grounds.items() if not pids]
+    problems += [f'{pid}: placed in UNCLASSED with no reason' for pid, why in unclassed.items() if not why.strip()]
+    problems += [f'{pid}: both grounds a class and is UNCLASSED -- pick one' for pid in sorted(used & set(unclassed))]
+    problems += [f'{pid}: in UNCLASSED but not a family principle' for pid in sorted(set(unclassed) - ids)]
+    problems += [
+        f'{one.id}: no resolution class is grounded in it and UNCLASSED gives no reason'
+        for one in principles
+        if one.id not in used and one.id not in unclassed
+    ]
     return tuple(problems)
 
 

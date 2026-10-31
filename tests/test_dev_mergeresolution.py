@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import mergeresolution
-from dev_lab.dev.mergeresolution import CLASSES, conflicted, undeclared
+from dev_lab.dev.mergeresolution import CLASSES, GROUNDS, UNCLASSED, conflicted, undeclared, ungrounded
+from dev_lab.dev.principles import PRINCIPLES, Principle
 
 _GIT = shutil.which('git') or 'git'
 
@@ -17,10 +18,44 @@ _GIT = shutil.which('git') or 'git'
 def test_the_classes_are_the_resolution_principles() -> None:
     assert (
         frozenset(
-            {'newer-structure', 'simpler-side', 'one-source', 'deleted-as-baggage', 'renamed-to-reality', 'both-needed'}
+            {
+                'newer-structure',
+                'simpler-side',
+                'one-source',
+                'deleted-as-baggage',
+                'renamed-to-reality',
+                'both-needed',
+                'kept-capability',
+            }
         )
         == CLASSES
     )
+
+
+def test_every_class_is_grounded_in_a_principle_and_every_principle_is_placed() -> None:
+    """The class->principle map is DATA: every grounded id is a family principle, every principle is placed."""
+    assert set(GROUNDS) == CLASSES
+    assert ungrounded() == ()
+
+
+def test_a_principle_no_class_or_reason_places_is_refused() -> None:
+    """PLANTED CONTROLS: an unplaced principle, a ground naming no principle, a placement with no reason."""
+    planted = (*PRINCIPLES, Principle('planted-principle', 'Planted', 'A principle nobody maps.'))
+    assert ungrounded(principles=planted) == (
+        'planted-principle: no resolution class is grounded in it and UNCLASSED gives no reason',
+    )
+    bad = {**GROUNDS, 'newer-structure': ('no-such-principle',)}
+    assert 'newer-structure: grounded in unknown principle no-such-principle' in ungrounded(grounds=bad)
+    empty = {**UNCLASSED, 'layered-decoupling': ' '}
+    assert 'layered-decoupling: placed in UNCLASSED with no reason' in ungrounded(unclassed=empty)
+    both = {**UNCLASSED, 'occams-razor': 'claimed twice'}
+    assert 'occams-razor: both grounds a class and is UNCLASSED -- pick one' in ungrounded(unclassed=both)
+
+
+def test_the_refusal_names_each_class_with_the_principle_that_decides_it() -> None:
+    (line,) = undeclared(('src/a.py',), 'src/a.py: mine -- y\n')
+    assert 'kept-capability (keep-valuable-options)' in line
+    assert 'one-source (single-source-of-truth)' in line
 
 
 def test_every_conflicted_file_declared_once_with_a_class_passes() -> None:

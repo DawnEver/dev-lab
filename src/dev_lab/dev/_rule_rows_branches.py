@@ -55,8 +55,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'MERGE-RESOLUTION-DECLARED',
         (
             'A conflicted merge commit lists every conflicted file once as `<path>: <class> -- <why>`, the class '
-            'one of newer-structure, simpler-side, one-source, deleted-as-baggage, renamed-to-reality or '
-            'both-needed (the resolution principles), every class with its why; the conflicted set is recomputed '
+            'one of newer-structure, simpler-side, one-source, deleted-as-baggage, renamed-to-reality, '
+            'both-needed or kept-capability, each grounded in a principle, every principle placed '
+            '(`mergeresolution.GROUNDS`), every class with its why; the conflicted set is recomputed '
             'from the parents` trees, never trusted from the message; the FORGE enforces it, refusing to merge a PR '
             'whose head adds a merge commit that leaves one undeclared or declares one the parents do not '
             'conflict on (remedy: redo that merge, a message cannot be amended), and the commit-msg '

@@ -352,10 +352,12 @@ push admission row checks the same standing when the holder pushes it.
 
 ## Resolving a conflict
 
-- Take the newer STRUCTURE, then re-express your own content inside it. When upstream extracted or split a
-  file, your edits go to the new home.
+- Every resolution is decided by the family principles (`.claude/rules/principles.md`), not by one rule.
+  Each class applies one: `mergeresolution.GROUNDS` is the map, and `ungrounded()` refuses a principle placed
+  nowhere. newer-structure is one class of seven, not the default; when upstream extracted or split a file,
+  your edits go to the new home, and when the newer side is not the simpler one, `simpler-side` wins.
 - `MERGE-RESOLUTION-DECLARED` (`dev_lab.dev.mergeresolution`): a merge whose parents conflict lists each
-  conflicted file once, `<path>: <class> -- <why>`. The forge enforces it: a PR is not merged while a merge
+  conflicted file once, `<path>: <class> -- <why>`, the why being the first-principles derivation. The forge enforces it: a PR is not merged while a merge
   commit its head adds over integration leaves one undeclared (`forgemerge.decide`), whoever made that merge,
   client or web UI. A message cannot be amended, so the remedy is to redo that merge with the declaration. The
   `merge-resolution` commit-msg hook makes the same judgement early, on the merge being committed.
