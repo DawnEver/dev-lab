@@ -212,7 +212,7 @@ def takeover(
     said = post_round(
         root, client, thread, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover',
         outside=scope.outside, authored=trailed(root, since, head), judged=judge_for(root, review, scope.range, run,
-        runtimes), reviewer=identity(client, host), authors=sessions(root, since, head),
+        runtimes), reviewer=identity(client, host), authors=sessions(root, since, head), emergency=True,
     )  # fmt: skip
     pending = next((one for one in status_list(client, head) if one.context == HOLD_CONTEXT), None)
     released = (release(client, pull, host=host),) if pull and pending and pending.state == 'pending' else ()
@@ -255,6 +255,7 @@ def _parser() -> argparse.ArgumentParser:
     disposal.add_argument('--why', required=True, help='the claim: why it is not a defect (cite code or tests)')
     ruling = verbs.add_parser('adjudicate', help='rule on every pending claim of a thread (the forge runs this)')
     ruling.add_argument('number', type=int, help="the PR, or a PR-less head's ledger issue")
+    ruling.add_argument('--dry-run', action='store_true', help='print the verdicts, post nothing (any session)')
     ruling.add_argument(
         '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
         help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
@@ -296,7 +297,7 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
     if args.verb == 'dispose':
         return [f'[review] {dispose(origin, args.pr, args.finding, args.why, by=me)}']
     ruled = adjudicate_thread(
-        root, origin, load_review(root), args.number, base=base, adjudicator=me, run=run,
+        root, origin, load_review(root), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
         runtimes=runtimes_with(host_runtimes(), args.runtime),
     )  # fmt: skip
     return [f'[review] {one}' for one in ruled]

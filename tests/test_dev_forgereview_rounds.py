@@ -112,13 +112,13 @@ def test_an_upheld_blocking_finding_no_longer_blocks() -> None:
 def test_an_upheld_adjudication_counts_only_under_its_own_keyed_marker() -> None:
     """PLANTED control: the same words quoted without the marker, under another id's, or REJECTED, close nothing."""
     ask = Claim('F-1', 'the guard is upstream', Identity('author', 'box', 'S-a'))
-    text = adjudication_text(ask, Verdict('F-1', 'false-positive', 'guarded in a.py'), Identity('forge', 'ci'))
+    text = adjudication_text(ask, Verdict('F-1', 'false-positive', 'guarded in a.py'), Identity('forge', 'ci', ci=True))
     assert upheld([f'{marker(Marker.ADJUDICATION, "F-1")}\n{text}']) == {
         'F-1': 'false-positive: guarded in a.py (claimed by author@box session S-a)'
     }
     assert upheld([text]) == {}
     assert upheld([f'{marker(Marker.ADJUDICATION, "F-2")}\n{text}']) == {}
-    rejected = adjudication_text(ask, Verdict('F-1', 'present', 'not guarded'), Identity('forge', 'ci'))
+    rejected = adjudication_text(ask, Verdict('F-1', 'present', 'not guarded'), Identity('forge', 'ci', ci=True))
     assert upheld([f'{marker(Marker.ADJUDICATION, "F-1")}\n{rejected}']) == {}
 
 
@@ -289,7 +289,7 @@ def test_the_comment_opens_with_what_the_pr_does_and_lists_what_was_disposed_ear
     head = advance(work, 'pr/x', 'x.py', 'x\nw\n', message=trailer)
     forge, number = _forge(head, body='This PR adds x.')
     ask = Claim('F-led', 'up', Identity('author', 'box', 'S-a'))
-    ruled = adjudication_text(ask, Verdict('F-led', 'false-positive', 'up'), Identity('forge', 'ci'))
+    ruled = adjudication_text(ask, Verdict('F-led', 'false-positive', 'up'), Identity('forge', 'ci', ci=True))
     comment_upsert(forge, number, kind=Marker.ADJUDICATION, key='F-led', text=ruled)
     memory = '.claude/memory/2026/10/29/x.md'
     summary = {'changes': [{'claim': 'adds x', 'cites': [head, memory]}], 'tests_altered': [], 'resolutions': [],

@@ -42,7 +42,7 @@ import lab_commons.launch as _door
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 from dev_lab.dev.forgereview_findings import SEVERITIES, Finding, Findings
-from dev_lab.dev.forgereview_judge import CLOSING, adjudication_text, pending, self_review, upheld
+from dev_lab.dev.forgereview_judge import CLOSING, adjudication_text, claims, pending, ruling, self_review, upheld
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
@@ -382,7 +382,7 @@ def _follow_up(client: Client, pull: PullRequest, ledger: Ledger) -> None:
 def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings | None, max_rounds: int,
     judged: Judge, reviewer: Identity, authors: frozenset[str], by: str = 'review', outside: int = 0,
-    authored: Mapping[str, str] | None = None,
+    authored: Mapping[str, str] | None = None, emergency: bool = False,
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment, :data:`REVIEW_CONTEXT`, any follow-up issue; the line said.
 
@@ -390,7 +390,12 @@ def post_round(
     pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and may not
     be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the changed
     files that are not code, said in the comment. *authored* is the author's trailer dispositions.
+
+    Only the forge posts a round (:func:`ruling`), unless *emergency* (the takeover door): then the comment says
+    so, and no finding its own session claimed is re-judged -- it stays open for the forge.
     """
+    if not emergency:
+        ruling(reviewer, f'reviewing #{pull.number}')
     self_review(reviewer, authors, f'reviewing #{pull.number}')
     head = pull.head_sha
     bodies = trusted_bodies(client, pull.number)
@@ -398,7 +403,9 @@ def post_round(
     prior = None if prior is not None and prior.head == head else prior  # a head re-posted is not a new round
     mine = reviewer.session
     asked = {fid: one for fid, one in pending(bodies).items() if not (mine and one.by.session == mine)}
-    verdicts = judged([(one, asked[one.id].why if one.id in asked else '') for one in prior.open]) if prior else {}
+    own = {fid for fid, one in claims(bodies).items() if mine and one.by.session == mine}
+    rejudged = [one for one in prior.open if one.id not in own] if prior else []
+    verdicts = judged([(one, asked[one.id].why if one.id in asked else '') for one in rejudged]) if prior else {}
     for fid, one in asked.items():
         if fid in verdicts:
             text = adjudication_text(one, verdicts[fid], reviewer)
@@ -410,6 +417,11 @@ def post_round(
     text = render(ledger, gone, number=pull.number, reviewed=reviewed, max_rounds=max_rounds,
                   found=found, summary=summary, outside=outside, repo=_repo_url(pull.url),
                   backend=client.backend, authored=authored)  # fmt: skip
+    if emergency:
+        text += (
+            f"\n\n**Emergency takeover** by {reviewer.text()}: a session's review, not the forge's; "
+            f'it re-judged no finding its own session claimed ({", ".join(sorted(own)) or "none"}).'
+        )
     _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=text)
     _follow_up(client, pull, ledger)
     state, said = verdict(ledger, gone, pull.number)

@@ -37,9 +37,16 @@ from dev_lab.dev.forgetakeover import (
     review_run,
     takeover,
 )
+from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 
 _SLICED = Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD, '--paths', PATHS_FIELD), max_diff_bytes=10)
+
+
+@pytest.fixture(autouse=True)
+def _integrator_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The takeover is a SESSION's emergency review: it names its session, never an unset one (#11 round 2)."""
+    monkeypatch.setenv(SESSION_ENV, 'S-integrator')
 
 
 def _latest(forge: object, sha: str, context: str) -> object:
@@ -274,7 +281,7 @@ def test_a_bare_commits_blocking_finding_is_disposed_in_its_ledger_issue(tmp_pat
     dispose(forge, issue, 'F-0123456789ab', 'a false positive: x is the documented escape', by=claimant)
     assert _latest(forge, sha, REVIEW_CONTEXT).state == 'failure', 'a claim moves no status'
     judge = FakeCommand(rulings={'F-0123456789ab': ('false-positive', 'x.py documents the escape')})
-    adjudicate_thread(work, forge, review, issue, base='integrate/main', adjudicator=Identity('forge', 'ci'),
+    adjudicate_thread(work, forge, review, issue, base='integrate/main', adjudicator=Identity('forge', 'ci', ci=True),
                       run=judge, runtimes={})  # fmt: skip
     assert _latest(forge, sha, REVIEW_CONTEXT).state == 'success'
     # the same issue is reused, never a second one

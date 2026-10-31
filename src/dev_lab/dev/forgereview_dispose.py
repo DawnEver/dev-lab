@@ -87,7 +87,7 @@ def dispose(client: Client, number: int, finding_id: str, why: str, *, by: Ident
 
 def adjudicate_thread(
     root: Path, client: Client, review: Review, number: int, *, base: str, adjudicator: Identity,
-    run: Callable[[Sequence[str], Path], str], runtimes: Mapping[str, Mapping[str, Any]],
+    run: Callable[[Sequence[str], Path], str], runtimes: Mapping[str, Mapping[str, Any]], dry_run: bool = False,
 ) -> list[str]:  # fmt: skip
     """Adjudicate every pending claim on thread *number* and re-post its head's verdict; the lines said."""
     bodies = trusted_bodies(client, number)
@@ -97,7 +97,10 @@ def adjudicate_thread(
     since = landed_base(root, base, ledger.head)
     judged = judge_for(root, review, f'{since}..{ledger.head}', run, runtimes)
     authors = sessions(root, since, ledger.head)
-    said = adjudicate(client, number, ledger.open, bodies, judged=judged, adjudicator=adjudicator, authors=authors)
+    said = adjudicate(client, number, ledger.open, bodies, judged=judged, adjudicator=adjudicator, authors=authors,
+                      dry_run=dry_run)  # fmt: skip
+    if dry_run:
+        return said
     state, why = verdict(ledger, upheld(trusted_bodies(client, number)), number)
     status_post(client, ledger.head, context=REVIEW_CONTEXT, state=state, description=f'adjudicated: {why}'[:240])
     return [*said, f'#{number} {ledger.head[:12]}: tests/review {state}', *merge_ready_after(root, client, number)]

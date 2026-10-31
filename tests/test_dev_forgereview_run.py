@@ -29,6 +29,7 @@ def _latest(forge: StateForge, sha: str, context: str) -> tuple[str, str] | None
 def test_a_job_reviews_its_one_pr_through_the_round_the_tick_runs(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT  # a workflow job writes as the Actions bot: the forge itself
     command = FakeCommand()
     said = review_run(
         work, forge, _DECLARED, number, base='integrate/main', runner=Runner('runner-1', run=command, ready=_can)
@@ -49,6 +50,7 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     """PLANTED CONTROL: the same PR with the secret present runs the command and holds nothing."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
     command = FakeCommand()
     secretless = Runner('runner-1', run=command, ready=_can, secret=False)
     review_run(work, forge, _DECLARED, number, base='integrate/main', runner=secretless)
@@ -61,6 +63,7 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
     control, other = _forge(other_head)
+    control.login = ACTIONS_BOT
     review_run(
         other_work, control, _DECLARED, other, base='integrate/main', runner=Runner('r', run=command, ready=_can)
     )
@@ -71,6 +74,7 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
 def test_the_cli_reads_the_secret_from_the_named_variable(tmp_path: Path, monkeypatch) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
     monkeypatch.delenv('REVIEW_KEY', raising=False)
     assert main(['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY'], cwd=work, client=forge) == 0
     assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
@@ -111,6 +115,7 @@ def test_a_job_whose_host_cannot_run_the_command_holds_the_head_and_fails(tmp_pa
     """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
     command = FakeCommand()
     assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_cannot) == 2
     assert command.ran == []
@@ -122,6 +127,7 @@ def test_a_job_whose_host_cannot_run_the_command_holds_the_head_and_fails(tmp_pa
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
     control, other = _forge(other_head)
+    control.login = ACTIONS_BOT
     assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=command, ready=_can) == 0
     assert _latest(control, other_head, HOLD_CONTEXT) is None
     assert _latest(control, other_head, REVIEW_CONTEXT)[0] == 'success'

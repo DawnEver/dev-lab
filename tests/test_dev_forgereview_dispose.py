@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
+from _forge_state import StateForge
 from test_dev_forgereview import FakeCommand, _forge, _tick, _work
 from test_dev_forgereview_rounds import _REVIEW, _doc, _finding, _state
 
@@ -17,16 +18,17 @@ from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, alarms, blocked, dispose
-from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, identity
+from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, identity, self_review
 from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgetakeover import main
+from dev_lab.dev.forgetakeover import main, pull_for, takeover
+from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import review_missing
 
 _AUTHOR = Identity('a', 'box', 'S-author')
-_FORGE = Identity('forge', 'ci')  # the forge's own reviewer: no session
+_FORGE = Identity('forge', 'ci', ci=True)  # the forge's own reviewer: no session
 _WHY = 'a false positive: the guard is upstream in a.py'
 
 
@@ -74,24 +76,65 @@ def test_an_upheld_claim_closes_the_finding_and_names_both_parties(tmp_path: Pat
     assert 'claimed by a@box session S-author' in ruling
 
 
-def test_the_head_author_session_may_not_adjudicate(tmp_path: Path) -> None:
-    """Separation of duties. PLANTED CONTROL: another session adjudicates the same claim."""
+@pytest.mark.parametrize(
+    'who', [_AUTHOR, Identity('b', 'ws2', 'S-third'), Identity('a', 'box', 'S-claimant'), Identity('a', 'box')]
+)
+def test_no_session_rules_only_the_forge_does(tmp_path: Path, who: Identity) -> None:
+    """#11 round 2 (F-e97824b7b801): the author, a third session, the claimant, an unset LAB_SESSION -- all refused.
+
+    PLANTED CONTROL: the forge's CI identity rules on the same claim.
+    """
     work, forge, number, head = _blocked(tmp_path)
-    dispose(forge, number, 'F-x', _WHY, by=Identity('a', 'box', 'S-other'))
-    with pytest.raises(AdjudicationRefused, match='S-author authored this head'):
-        _rule(work, forge, number, 'false-positive', by=_AUTHOR)
+    dispose(forge, number, 'F-x', _WHY, by=Identity('a', 'box', 'S-claimant'))
+    with pytest.raises(AdjudicationRefused, match='a ruling comes only from the forge'):
+        _rule(work, forge, number, 'false-positive', by=who)
+    assert not any(marker(Marker.ADJUDICATION, 'F-x') in c['body'] for c in forge.comments[number])
     assert _state(forge, head)[0] == 'failure'
-    _rule(work, forge, number, 'false-positive', by=Identity('b', 'ws2', 'S-third'))
+    _rule(work, forge, number, 'false-positive')
     assert _state(forge, head)[0] == 'success'
 
 
-def test_the_claimant_session_may_not_adjudicate_its_own_claim(tmp_path: Path) -> None:
-    """PLANTED CONTROL: the forge's own reviewer adjudicates the same claim."""
+def test_the_ci_identity_is_the_tokens_login_never_a_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Actions bot login is CI whatever the env says. PLANTED CONTROL: a developer login with a CI-looking env."""
+    forge = StateForge()
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.delenv(SESSION_ENV, raising=False)
+    assert not identity(forge, 'box').ci, 'a variable never makes a developer the forge'
+    forge.login = ACTIONS_BOT
+    assert identity(forge, 'runner').ci
+    forge.login = 'a'
+    assert identity(forge, 'box', serving=True).ci, 'the serve process passes it from its own code path'
+
+
+def test_an_unset_session_may_not_self_review_and_the_ci_identity_may() -> None:
+    """Fail closed: '' is no identity, never one 'different' from the author's. PLANTED CONTROL: the CI identity."""
+    authors = frozenset({'S-author'})
+    with pytest.raises(AdjudicationRefused, match='names no session'):
+        self_review(Identity('a', 'box'), authors, 'reviewing #1')
+    with pytest.raises(AdjudicationRefused, match='names no session'):
+        self_review(Identity('a', 'box', '   '.strip()), authors, 'reviewing #1')
+    self_review(Identity(ACTIONS_BOT, 'runner', ci=True), authors, 'reviewing #1')
+    self_review(Identity('b', 'ws2', 'S-other'), authors, 'reviewing #1')
+
+
+@pytest.mark.parametrize('by', [Identity('a', 'box'), Identity('', 'box', 'S-x')])
+def test_a_claim_without_a_session_or_login_is_refused(tmp_path: Path, by: Identity) -> None:
+    """PLANTED CONTROL: the same claim with a session and login is recorded (the first test)."""
+    _, forge, number, _ = _blocked(tmp_path)
+    with pytest.raises(AdjudicationRefused, match='names its claimant'):
+        dispose(forge, number, 'F-x', _WHY, by=by)
+    assert not any(marker(Marker.CLAIM, 'F-x') in c['body'] for c in forge.comments[number])
+
+
+def test_a_dry_run_adjudication_prints_the_verdict_and_posts_nothing(tmp_path: Path) -> None:
+    """Any session may dry-run. PLANTED CONTROL: the forge's run of the same claim posts and rules."""
     work, forge, number, head = _blocked(tmp_path)
-    claimant = Identity('a', 'box', 'S-claimant')
-    dispose(forge, number, 'F-x', _WHY, by=claimant)
-    lines = _rule(work, forge, number, 'false-positive', by=claimant)
-    assert any('may not adjudicate it' in one for one in lines)
+    dispose(forge, number, 'F-x', _WHY, by=Identity('a', 'box', 'S-claimant'))
+    judge = FakeCommand(rulings={'F-x': ('false-positive', 'a.py:3 asserts the guard')})
+    lines = adjudicate_thread(work, forge, _REVIEW, number, base='integrate/main', adjudicator=_AUTHOR, run=judge,
+                              runtimes={}, dry_run=True)  # fmt: skip
+    assert any('dry run, not posted' in one and 'upheld' in one for one in lines)
+    assert not any(marker(Marker.ADJUDICATION, 'F-x') in c['body'] for c in forge.comments[number])
     assert _state(forge, head)[0] == 'failure'
     _rule(work, forge, number, 'false-positive')
     assert _state(forge, head)[0] == 'success'
@@ -157,10 +200,17 @@ def test_the_doors_are_forge_review_verbs(tmp_path: Path, monkeypatch: pytest.Mo
     assert main(['blocked'], cwd=work, client=forge) == 1
     with pytest.raises(SystemExit):
         main(['dispose', str(number), 'F-x'], cwd=work, client=forge)
+    assert main(['dispose', str(number), 'F-x', '--why', _WHY], cwd=work, client=forge) == 2, 'no session: refused'
+    monkeypatch.setenv(SESSION_ENV, 'S-claimant')
     assert main(['dispose', str(number), 'F-x', '--why', 'short'], cwd=work, client=forge) == 2
     assert main(['dispose', str(number), 'F-x', '--why', _WHY], cwd=work, client=forge) == 0
     assert _state(forge, head)[0] == 'failure'
     judge = FakeCommand(rulings={'F-x': ('false-positive', 'a.py:3 asserts the guard')})
+    assert main(['adjudicate', str(number)], cwd=work, client=forge, run=judge) == 2, 'a session never rules'
+    assert main(['adjudicate', str(number), '--dry-run'], cwd=work, client=forge, run=judge) == 0
+    assert _state(forge, head)[0] == 'failure'
+    monkeypatch.setattr('dev_lab.dev.forgereview_judge.CI_LOGINS', frozenset({forge.login}))  # the forge's token
+    monkeypatch.delenv(SESSION_ENV)  # the forge's job runs in no session
     assert main(['adjudicate', str(number)], cwd=work, client=forge, run=judge) == 0
     assert _state(forge, head)[0] == 'success'
     assert main(['blocked'], cwd=work, client=forge) == 0
@@ -206,3 +256,23 @@ def test_an_adjudication_recomputes_merge_ready_in_the_same_step(tmp_path: Path)
     ready = next(one for one in status_list(forge, head) if one.context == MERGE_READY_CONTEXT)
     assert review_missing(status_list(forge, head)) is None
     assert REVIEW_CONTEXT not in ready.description, 'the review no longer waits the merge'
+
+
+@pytest.mark.parametrize(('claimant', 'state'), [('S-integrator', 'failure'), ('S-claimant', 'success')])
+def test_a_takeover_never_clears_a_finding_its_own_session_claimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, claimant: str, state: str
+) -> None:
+    """#11 round 2: the emergency door is marked, and its own claim stays for the forge.
+
+    PLANTED CONTROL: another session's claim on the same finding is ruled on by the same takeover.
+    """
+    work, forge, number, _ = _blocked(tmp_path)
+    dispose(forge, number, 'F-x', _WHY, by=Identity('a', 'box', claimant))
+    after = advance(work, 'pr/x', 'y.py', 'y = 1\n', message='feat: y\n\nLab-Session: S-author')
+    forge.pulls[number]['head']['sha'] = after
+    monkeypatch.setenv(SESSION_ENV, 'S-integrator')
+    judge = FakeCommand(_doc(), rulings={'F-x': ('false-positive', 'a.py:3 asserts the guard')})
+    takeover(work, forge, _REVIEW, after, pull=pull_for(forge, after), base='integrate/main', host='box', run=judge)
+    assert _state(forge, after)[0] == state
+    (review,) = [c['body'] for c in forge.comments[number] if marker(Marker.REVIEW, after) in c['body']]
+    assert 'Emergency takeover' in review

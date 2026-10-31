@@ -110,7 +110,16 @@ from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
 from dev_lab.dev.forgereview_claim import CLAIMED, DESCRIPTION, passed, unable
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
 from dev_lab.dev.forgereview_findings import Finding, Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_judge import AdjudicationRefused, Judge, Verdict, identity, judge, self_review, upheld
+from dev_lab.dev.forgereview_judge import (
+    AdjudicationRefused,
+    Judge,
+    Verdict,
+    identity,
+    judge,
+    ruling,
+    self_review,
+    upheld,
+)
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import (
     HOST_FIELD,
@@ -400,7 +409,7 @@ def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, r
     since = forgereview_scope.git(root, 'merge-base', f'origin/{pull.base}', pull.head_sha)[1].strip()
     return {
         'judged': judge_for(root, review, f'{since}..{pull.head_sha}', runner.run, runner.runtimes),
-        'reviewer': identity(client, runner.host),
+        'reviewer': identity(client, runner.host, serving=runner.serving),
         'authors': sessions(root, f'origin/{pull.base}', pull.head_sha),
     }
 
@@ -457,7 +466,9 @@ def _command_round(
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
         raise HostCannot(cannot)
     # checked before the claim too: a session that authored the head posts nothing on it
-    self_review(identity(client, runner.host), sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
+    me = identity(client, runner.host, serving=runner.serving)
+    ruling(me, f'reviewing #{pull.number}')
+    self_review(me, sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
     claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
     status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
     try:
@@ -491,7 +502,7 @@ def review_tick(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said."""
-    runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock)
+    runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True)
 
     def said(pull: PullRequest) -> str | None:
         try:
