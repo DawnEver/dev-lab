@@ -30,6 +30,7 @@ from dev_lab.dev.forgetakeover import (
     TakeoverRefused,
     alarms,
     held,
+    ledger_of,
     main,
     pull_for,
     release,
@@ -280,3 +281,22 @@ def test_a_bare_commits_blocking_finding_is_disposed_in_its_ledger_issue(tmp_pat
     status_post(forge, sha, context=REVIEW_CONTEXT, state='error', description='re-run')
     takeover(work, forge, review, sha, pull=None, base='integrate/main', host='box', run=FakeCommand())
     assert forge.titled(LEDGER_TITLE.format(sha=sha)) == [issue]
+
+
+def test_a_ledger_issue_is_only_one_the_forge_itself_opened(tmp_path: Path) -> None:
+    """F-7fbe6eafaadf (security): a squatter's issue, or a PR, titled like the ledger is never the ledger.
+
+    Else anyone could open "review of commit <sha>" first and post a fake round or ruling there. PLANTED CONTROL:
+    the forge's own issue of that title is found and reused.
+    """
+    work, _ = _work(tmp_path)
+    forge = StateForge()
+    sha = advance(work, 'integrate/main', 'hot.py', 'x = 1\n', 'fix: hot\n\nBreak-Glass: forge down')
+    title = LEDGER_TITLE.format(sha=sha)
+    squatter = forge.add_issue(title, 'fake ledger', user={'login': 'mallory'})
+    pull = forge.add_issue(title, 'a PR, as the GitHub issues API lists one', user={'login': forge.login},
+                           pull_request={'url': 'https://forge.example.org/o/r/pulls/1'})  # fmt: skip
+    ledger = ledger_of(forge, sha, 'integrate/main')
+    assert ledger.number not in {squatter, pull}
+    assert forge.issues_by_number[ledger.number]['user']['login'] == forge.login
+    assert ledger_of(forge, sha, 'integrate/main').number == ledger.number, 'the forge own issue is reused'

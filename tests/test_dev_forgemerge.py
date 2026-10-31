@@ -14,6 +14,7 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
+from test_dev_githook_scripts import _plant_judging_commitizen
 
 from dev_lab.dev import forgeintegration
 from dev_lab.dev.forge import Forge
@@ -221,3 +222,37 @@ def test_the_integration_verb_prints_the_tick_lines_before_the_branch_rows(
     monkeypatch.setattr(forgeintegration, 'listing', lambda *_a, **_k: ())
     assert forgeintegration.main([], cwd=root, fetch=lambda _root: None) == 0
     assert capsys.readouterr().out.strip() == '[integration] no open child branch'
+
+
+# --- the commit messages, judged at the merge by the repo's own declared row ----------------------
+
+_CZ_ROW = (
+    '[tool.dev_lab.hooks]\npre-push = [{ id = "commitizen-branch", run = ["python", "-m", "dev_lab.dev.githooks", '
+    '"script", "cz-push-range"], always_run = true, refs = "^refs/heads/", env = { LAB_CZ_BASE_REF = '
+    '"origin/integrate/main" } }]\n'
+)
+
+
+@pytest.mark.parametrize(('message', 'mergeable'), [('data(x): y', False), ('feat(x): y', True)])
+def test_a_pr_whose_commit_message_is_off_format_is_NOT_mergeable(
+    tmp_path: Path, message: str, *, mergeable: bool
+) -> None:
+    """A worktree without hooks (no venv: every commitizen row skipped) cannot land ``data(x): y``.
+
+    PLANTED CONTROL: the same PR with a conventional subject is ready.
+    """
+    work, _ = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + _CZ_ROW, encoding='utf-8')
+    head = advance(work, 'pr/x', 'y.txt', 'y\n', message)
+    _plant_judging_commitizen(work, tmp_path)
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    assert found.ready is mergeable, found.missing
+    if not mergeable:
+        assert any(one.startswith('conventional commit messages') for one in found.missing), found.missing
+
+
+def test_a_repo_declaring_no_message_row_is_not_judged_on_messages(tmp_path: Path) -> None:
+    work, _ = _work(tmp_path)
+    head = advance(work, 'pr/x', 'y.txt', 'y\n', 'data(x): y')
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    assert found.ready, found.missing
