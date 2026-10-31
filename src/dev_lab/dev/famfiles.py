@@ -94,6 +94,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
         _g('.claude/rules/principles.md', 'principles.render via hook_install --install: the family principles'),
+        _g('.claude/rem.json', 'remconfig.write via hook_install --install: the backlog is the issue tracker'),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
         _g('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.dev_lab.ci]'),
         _g('uv.lock', 'famtests.lockpin pins it on the forge; the forge relock keeps it newest (PIN + FRESHNESS)'),

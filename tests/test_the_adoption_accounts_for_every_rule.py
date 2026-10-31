@@ -130,6 +130,7 @@ _ENFORCED = {
     'MEMORY-SHAPE': (
         guard('tests/test_arch_memory_lives_in_a_dated_directory.py'),
         guard('tests/_arch_corpus.py'),
+        guard('tests/test_dev_memoryadds.py'),
     ),
     'MODULE-SIZE-ALARM': (guard('tests/test_arch_module_size_alarm.py'),),
     'RETIRED-NAMES-REGISTERED': (guard('tests/test_arch_retired_spellings.py'), guard('tests/_arch_corpus.py')),

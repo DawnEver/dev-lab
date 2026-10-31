@@ -23,7 +23,7 @@ REPORTS_LIVE_IN_MEMORY: dict[str, object] = {
     'hazard': 'a written report (audit, analysis, design, plan, findings) is not regenerable, '
     'and output/ holds only what a program can regenerate.',
     'remedy': 'Write it as a dated memory entry: .claude/memory/<yyyy>/<mm>/<dd>/<slug>.md with the '
-    'MEMORY-SHAPE frontmatter (name, description, created, accessed, tags, metadata).',
+    'MEMORY-SHAPE frontmatter (name, description, created; never accessed).',
     'needs': None,
     'refuses': (
         'echo x > output/logs/26/10/10/audit/test-suite-audit.md',

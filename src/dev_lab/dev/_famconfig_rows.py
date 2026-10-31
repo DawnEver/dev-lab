@@ -146,6 +146,8 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     '**/.claude/**',
     '!**/.claude/settings.json',
     '!**/.claude/sharp-review.json',
+    # rem's committed config (dev_lab.dev.remconfig); the tasks layer is committed state like memory.
+    '!**/.claude/rem.json',
     *(
         line
         for directory in (
@@ -156,6 +158,7 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
             'workflows',
             'rules',
             'memory',
+            'tasks',
             'output-styles',
             'docs',
         )
