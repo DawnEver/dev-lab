@@ -161,6 +161,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   record's shape.
 * :mod:`dev_lab.dev.jobparts` -- the same parts produced by workflow jobs: the matrix of parts and runners,
   one producer per part, and ``absent`` for every part no job settled.
+* :mod:`dev_lab.dev.commandpart` -- a repo whose tests are not pytest (``npm test``) posts its part as ONE
+  cell, the command, judged by its exit code.
 * :mod:`dev_lab.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`dev_lab.dev.test_outcomes` -- the pytest plugin writing a Record of per-test cells
