@@ -14,14 +14,14 @@ __all__ = ['CONTEXT_PREFIX', 'HOLD_CONTEXT', 'MERGE_READY_CONTEXT', 'NOT_PARTS',
 #: Every part's status context starts with this; the rest is the part's name (its need-set).
 CONTEXT_PREFIX: Final = 'tests/'
 
-#: The ADVISORY review's context (:mod:`dev_lab.dev.forgereview`): under the prefix so it reads beside the
-#: parts, and never a part -- :data:`NOT_PARTS` holds it, so no promotion or push admission waits on it; the one
-#: review state a merge waits on is :func:`dev_lab.dev.forgemerge.review_hold`'s.
+#: The review's context (:mod:`dev_lab.dev.forgereview`): under the prefix so it reads beside the parts, and never a
+#: part -- :data:`NOT_PARTS` holds it, so no promotion waits on it; every merge requires it ``success``
+#: (:func:`dev_lab.dev.reviewgate.review_missing`).
 REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
 #: The review HOLD's context: posted ``pending`` on a head the review slices cannot hold, released by a
 #: ``success`` a session posts once it reviewed the head. Never a part; the ONE review context a merge waits on
-#: (:func:`dev_lab.dev.forgemerge.review_hold`), so an unreviewable head is never skipped into an auto-merge.
+#: (:func:`dev_lab.dev.reviewgate.review_missing`), so an unreviewable head is never skipped into an auto-merge.
 HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
 
 #: The SECURITY check's context (:mod:`dev_lab.dev.forgesecurity`): one status per head posted by a serve step,

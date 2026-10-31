@@ -14,7 +14,8 @@ flag -- so every use is in the history it bypassed:
 BREAK-GLASS BYPASSES THE FORGE'S MERGE, NEVER THE REVIEW (user ruling 2026-10-31, every PR must get a review,
 after lab-commons #11 and dev-lab #3 landed by Break-Glass with none). Every head a Break-Glass push lands -- a
 merge's PR head, else the commit itself -- needs a POSTED review (:func:`unreviewed`): its latest
-:data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no hold is pending. The emergency path for a
+:data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no hold is pending -- the ONE predicate the
+merge reads too (:mod:`dev_lab.dev.reviewgate`). The emergency path for a
 head the forge's own review never reached is :data:`TAKEOVER_DOOR`: the same method run by the session, which posts
 the review and releases the hold. A forge that cannot be read refuses: a push needs the forge, so a forge down for
 reads is down for the push too.
@@ -30,12 +31,11 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
-from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.reviewgate import review_missing
 
 if TYPE_CHECKING:
-    from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
 
@@ -95,18 +95,8 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
 
 
 def unreviewed(client: Client, head: str) -> str | None:
-    """Why *head* carries no posted review on *client*'s forge, or ``None``: latest review ``success``, no hold."""
-    latest: dict[str, CommitStatus] = {}
-    for one in status_list(client, head):  # newest first: the first of each context is its latest
-        latest.setdefault(one.context, one)
-    review, hold = latest.get(REVIEW_CONTEXT), latest.get(HOLD_CONTEXT)
-    if review is None:
-        return f'{REVIEW_CONTEXT} is not posted'
-    if review.state != 'success':
-        return f'{REVIEW_CONTEXT} is {review.state}: {review.description}'
-    if hold is not None and hold.state != 'success':
-        return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
-    return None
+    """Why *head* carries no posted review on *client*'s forge, or ``None``: the one predicate (reviewgate)."""
+    return review_missing(status_list(client, head))
 
 
 def forge_unreviewed(root: Path, head: str) -> str | None:
