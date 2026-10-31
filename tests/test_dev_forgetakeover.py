@@ -11,7 +11,14 @@ from _forge_state import StateForge
 from test_dev_forgereview import FakeCommand, _forge, _output, _work
 
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
-from dev_lab.dev.forgereview import NEEDS_MAINTAINER, PATHS_FIELD, RANGE_FIELD, REVIEW_CONTEXT, Review
+from dev_lab.dev.forgereview import (
+    EMPTY_COMMAND_FIX,
+    NEEDS_MAINTAINER,
+    PATHS_FIELD,
+    RANGE_FIELD,
+    REVIEW_CONTEXT,
+    Review,
+)
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import DOOR, RELEASED, TakeoverRefused, alarms, held, main, release, review_run, takeover
@@ -172,3 +179,13 @@ def test_the_door_reads_the_repo_it_is_told_and_refuses_a_sha_it_lacks(tmp_path:
     assert main(argv, cwd=elsewhere, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 0
     assert _latest(forge, head, REVIEW_CONTEXT).state == 'success'
     assert main(['takeover', 'f' * 40, '--repo', str(work)], cwd=elsewhere, client=forge, run=FakeCommand()) == 2
+
+
+def test_the_takeover_in_a_repo_with_an_empty_command_names_the_same_fix(tmp_path: Path, capsys) -> None:
+    work, forge, _, head = _merged(tmp_path)
+    manifest = work / 'pyproject.toml'
+    text = manifest.read_text(encoding='utf-8')
+    manifest.write_text(text.replace("command = ['reviewer', '--range', '{range}', '--model', 'm']", 'command = []'),
+                        encoding='utf-8')  # fmt: skip
+    assert main(['takeover', head], cwd=work, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 2
+    assert EMPTY_COMMAND_FIX in capsys.readouterr().err

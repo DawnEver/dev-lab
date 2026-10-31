@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
+from dev_lab.dev.forgereview import load_review
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA, GITHUB, ForgeCallFailed, client_for
@@ -117,6 +118,10 @@ def decide(
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
+    try:
+        load_review(root)  # a review config that cannot review is named here, never silently mergeable
+    except ValueError as config:
+        missing.append(f'its review config: {config}')
     if (unreviewed := review_missing(statuses)) is not None:
         missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:

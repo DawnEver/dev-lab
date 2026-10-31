@@ -194,9 +194,6 @@ def takeover(
     if review_missing(status_list(client, head)) is None:
         msg = f'{head[:12]} is already reviewed: nothing to take over'
         raise TakeoverRefused(msg)
-    if not review.command:
-        msg = '[tool.dev_lab.review] command is not declared: there is no method to review with'
-        raise TakeoverRefused(msg)
     pull = _pull_of(client, head)
     scope = scope_of(root, client, review, head, base=base, pull=pull)
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]

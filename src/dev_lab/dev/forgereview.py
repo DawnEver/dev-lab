@@ -130,6 +130,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
+    'EMPTY_COMMAND_FIX',
     'FAMILY_COMMAND',
     'FAMILY_MODEL',
     'FAMILY_RUNTIMES',
@@ -210,6 +211,12 @@ RETIRED_KEYS: Final = {
 
 _TABLE: Final = 'review'
 
+#: What an empty ``command`` is refused with (user ruling 2026-10-31, every PR is reviewed): no repo opts out, and
+#: an omitted ``command`` is the family's, so the one fix is to delete the empty declaration.
+EMPTY_COMMAND_FIX: Final = (
+    'command = [] opts out of the review, and every PR is reviewed: delete it (the family command applies)'
+)
+
 
 class HostCannot(OSError):
     """The host cannot fill or start the review command: a fact about the HOST, checked before any claim.
@@ -264,6 +271,9 @@ def review_from(text: str, origin: str) -> Review:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+    if 'command' in declared and not review.command:
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {EMPTY_COMMAND_FIX}'
+        raise ValueError(msg)
     if 'command' in declared and review.command == FAMILY_COMMAND:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
@@ -457,9 +467,6 @@ def step(
     """
     try:
         review = load_review(root)
-        if not review.command:
-            say(f'[serve] review: not run -- [tool.dev_lab.{_TABLE}] command is not declared')
-            return
         here = host_runtimes()
         try:  # any range, any slice: can this host run the command at all
             cannot = ready(command_for(review, '', here), root)
