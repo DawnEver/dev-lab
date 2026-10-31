@@ -117,10 +117,11 @@ Each tick, and nothing else:
    `python -m dev_lab.dev.forge review takeover <sha>`, which reviews it, posts the findings and releases the hold
    ([the PR reviewer](#the-pr-reviewer-blocks-on-high-or-security)). Ask the user only for a decision a finding
    raises.
-8. A head a blocking finding holds (`python -m dev_lab.dev.forge review blocked`) is yours to judge: the author
-   fixes it (the next round confirms), or you dispose of it, with its reason:
-   `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"`. Ask the user only when you
-   and the author disagree.
+8. A head a blocking finding holds (`python -m dev_lab.dev.forge review blocked`) is never yours to clear: the
+   author fixes it (the next round re-judges it), or claims it is not a defect --
+   `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<claim>"` -- and an independent reviewer
+   adjudicates the claim (`forge review adjudicate <pr>`, run by the forge). Humans take no part (user ruling
+   2026-10-31).
 9. A head whose `tests/security` failure says its findings are "all covered by the head's new exemptions" changes
    `[tool.dev_lab.security]`; the table that judges a head is integration's, never its own, so the release is
    explicit and recorded (nothing checks who runs it; the record is what makes it auditable): `python -m dev_lab.dev.forge security release <pr> --why "<reason>"` re-judges the head under ITS
@@ -147,12 +148,13 @@ line): the same finding in every round, never a line number.
 **Blocking.** `tests/review` is `failure` while any open finding is `HIGH` or `security` and not disposed, else
 `success`. The merge waits on EVERY state but `success` with no pending hold (`reviewgate.review_missing`, user
 ruling 2026-10-31): absent, reviewing, `takeover pending`, `error` and `failure` all wait, nothing is advisory, and a
-review that could not run is taken over (`forge review takeover <sha>`). A finding CLOSES when a later round finds its
-anchor line gone from its file, or when the integrator disposes of it through the door
-`python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<reason>"` (refused without a reason, or for
-an id not open; recorded as one keyed comment). The forge prompts the integrator for every blocked head (an
-`integration` issue each, `forge notices`, `forge review blocked`); a human is asked only when the integrator and
-the author disagree. A raw `status post` on `tests/review` is refused like the hold's.
+review that could not run is taken over (`forge review takeover <sha>`). A finding CLOSES when a later round's
+judge (`forgereview_judge.judge`, re-run on every open finding each round) calls it `fixed` or `false-positive`,
+evidence recorded, or when a CLAIM against it (`python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why
+"<claim>"`, which moves no status) is UPHELD by an independent adjudicator (`forge review adjudicate <pr>`, run by
+the `review-claims.yml` workflow a claim comment triggers). Every claim and ruling names its claimant and
+adjudicator; the claimant's session may not adjudicate its claim, and no session reviews or rules on a head it
+authored. A PR-less head's ledger is its `review of commit <sha>` issue, numbered like a PR. A raw `status post` on `tests/review` is refused like the hold's.
 
 **Rounds** (`dev_lab.dev.forgereview_rounds`). Round 1 reads the whole branch change and opens its comment with a
 summary -- what changed, why (the commit subjects), which layers. Round k > 1 reads only what the branch added

@@ -10,7 +10,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+import shutil
 import socket
+import subprocess
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -43,17 +45,23 @@ from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE
 from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
+from dev_lab.dev.forgereview_scope import FINDINGS_FIELD
 from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 
 _LANE_POLICY = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
-_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
+#: The judge every test review declares: :class:`FakeCommand` answers it.
+JUDGE = ('judge', '--range', RANGE_FIELD, '--findings', FINDINGS_FIELD)
+_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'), judge=JUDGE)
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
+    "judge = ['judge', '--range', '{range}', '--findings', '{findings}']\n"
+    "forge_bot = 'a'\n"  # the login forge serve posts as: StateForge writes as 'a' (D11)
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
 
@@ -79,14 +87,40 @@ def _output(
 
 
 class FakeCommand:
-    """Prints one findings document, and records every argv it was run with and where."""
+    """Prints one findings document, and records every argv it was run with and where.
 
-    def __init__(self, out: str | None = None) -> None:
-        """No run yet; *out* is what it prints (default :func:`_output`)."""
+    Run as the JUDGE (:data:`JUDGE`, argv ``judge ...``) it answers a verdict per finding instead: a *rulings* entry
+    when one names the id, else ``present`` while the finding's anchor line is still in its file at the head and
+    ``fixed`` once it is gone -- what a real judge would see. Its runs are recorded in ``judged``, never ``ran``.
+    """
+
+    def __init__(self, out: str | None = None, rulings: dict[str, tuple[str, str]] | None = None) -> None:
+        """No run yet; *out* is what it prints (default :func:`_output`); *rulings* scripts the judge."""
         self.ran: list[tuple[list[str], Path]] = []
+        self.judged: list[list[dict]] = []
         self.out = _output() if out is None else out
+        self.rulings = rulings or {}
+
+    def _judge(self, argv: Sequence[str], root: Path) -> str:
+        head = argv[argv.index('--range') + 1].rsplit('..', 1)[-1]
+        rows = json.loads(Path(argv[argv.index('--findings') + 1]).read_text(encoding='utf-8'))['findings']
+        self.judged.append(rows)
+        verdicts = []
+        for row in rows:
+            if row['id'] in self.rulings:
+                outcome, evidence = self.rulings[row['id']]
+            else:
+                git = shutil.which('git') or 'git'
+                shown = subprocess.run([git, 'show', f'{head}:{row["file"]}'], cwd=root, capture_output=True,
+                                       text=True, encoding='utf-8', check=False).stdout  # fmt: skip
+                there = ' '.join(row['anchor'].split()) in {' '.join(line.split()) for line in shown.splitlines()}
+                outcome, evidence = ('present', 'still there') if there else ('fixed', f'gone from {row["file"]}')
+            verdicts.append({'id': row['id'], 'outcome': outcome, 'evidence': evidence})
+        return json.dumps({'schema_version': 1, 'verdicts': verdicts})
 
     def __call__(self, argv: Sequence[str], root: Path) -> str:
+        if argv and argv[0] == 'judge':
+            return self._judge(argv, root)
         self.ran.append((list(argv), root))
         return self.out
 
@@ -121,7 +155,7 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     forge, number = _forge(head)
     command = FakeCommand(_output(severity='HIGH'))
     base = git_out(work, 'merge-base', 'origin/integrate/main', head)
-    _tick(work, forge, command, Review(command=('reviewer', '--range', RANGE_FIELD)))
+    _tick(work, forge, command, Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD)))
     ((argv, where),) = command.ran
     assert argv == ['reviewer', '--range', f'{base}..{head}']
     assert where == work
@@ -137,7 +171,7 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert status.state == 'failure'
     assert '1 blocking finding(s) open (F-0123456789ab)' in status.description
     medium, _ = _forge(head)
-    _tick(work, medium, FakeCommand(), Review(command=('reviewer', '--range', RANGE_FIELD)))
+    _tick(work, medium, FakeCommand(), Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD)))
     assert [s.state for s in status_list(medium, head) if s.context == REVIEW_CONTEXT] == ['success']
 
 
@@ -160,7 +194,7 @@ def test_an_empty_command_names_the_fix_at_the_merge_and_at_the_takeover(tmp_pat
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     green = (_status('tests/base', 'success', 'scope=full'), _status('tests/security', 'success', 'nothing found'),
              _status(REVIEW_CONTEXT, 'success', 'reviewed'))  # fmt: skip
-    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=green)
+    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=green, github=True)
     assert not found.ready
     assert any(EMPTY_COMMAND_FIX in line for line in found.missing), found.missing
     said: list[str] = []
@@ -271,7 +305,9 @@ def test_the_declared_command_is_the_ai_lab_review_module_on_the_hosts_python() 
 
 def test_a_host_value_field_is_replaced_by_the_hosts_declared_runtime() -> None:
     """The repo declares WHAT, the host WHERE: ``{runtimes.<name>.<key>}`` reads this host's machine file."""
-    declared = Review(command=('{runtimes.ai_lab.python}', '--data', '{runtimes.corpus.path}', RANGE_FIELD))
+    declared = Review(
+        judge=JUDGE, command=('{runtimes.ai_lab.python}', '--data', '{runtimes.corpus.path}', RANGE_FIELD)
+    )
     host = {'ai_lab': {'python': 'C:/rt/python.exe'}, 'corpus': {'path': '~/corpus'}}
     argv = command_for(declared, 'a..b', host)
     assert argv == ['C:/rt/python.exe', '--data', str(Path('~/corpus').expanduser()), 'a..b']
@@ -280,7 +316,7 @@ def test_a_host_value_field_is_replaced_by_the_hosts_declared_runtime() -> None:
 @pytest.mark.parametrize('host', [{}, {'ai_lab': {}}], ids=['no capability', 'no key'])
 def test_a_host_value_this_host_does_not_declare_is_skipped_unposted(tmp_path: Path, host) -> None:
     """Checked BEFORE the claim: the line names the capability, nothing is posted. PLANTED: a declaring host runs it."""
-    declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
+    declared = Review(judge=JUDGE, command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
     with pytest.raises(ReviewUnsupported, match=r'\[runtimes\.ai_lab\] python'):
         command_for(declared, 'a..b', host)
     work, head = _work(tmp_path)
@@ -319,7 +355,7 @@ def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp
     """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
+    declared = Review(judge=JUDGE, command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
     command = FakeCommand()
     kw = {'base': 'integrate/main', 'run': command}
     review_tick(work, forge, declared, ready=_can, host='A', **kw)
@@ -387,7 +423,7 @@ def test_a_stale_claim_is_re_claimable_after_the_declared_age(tmp_path: Path) ->
             work, forge, _DECLARED, base='integrate/main', run=lambda *_: _die(), ready=_can, host='A', clock=lambda: t0
         )
     assert status_list(forge, head)[0].description.startswith(f'{CLAIMED} A at 2026-10-20T09:00:00')
-    declared = Review(command=_DECLARED.command, claim_stale='30 min')
+    declared = Review(judge=JUDGE, command=_DECLARED.command, claim_stale='30 min')
     for minutes, runs in ((29, 0), (30, 1)):
         at = t0 + timedelta(minutes=minutes)
         review_tick(
@@ -484,9 +520,9 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     That the retired reviewer's names are gone is the retired-spelling scan's (``lab_commons.hpc.retired``).
     """
     assert {field.name for field in dataclasses.fields(Review)} == {
-        'command', 'model', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light', 'code',
-        'not_code',
-        'claim_stale', 'max_rounds',
+        'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
+        'code', 'not_code',
+        'claim_stale', 'max_rounds', 'forge_bot',
     }  # fmt: skip
 
 
@@ -509,12 +545,12 @@ def test_a_diff_over_the_cap_is_reviewed_once_over_the_whole_range_never_held(tm
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = FakeCommand()
-    _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
+    _tick(work, forge, command, Review(judge=JUDGE, command=_DECLARED.command, max_diff_bytes=10))
     assert len(command.ran) == 1
     statuses = status_list(forge, head)
     assert HOLD_CONTEXT not in {s.context for s in statuses}
     assert next(s for s in statuses if s.context == REVIEW_CONTEXT).state == 'success'
-    _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
+    _tick(work, forge, command, Review(judge=JUDGE, command=_DECLARED.command, max_diff_bytes=10))
     assert len(command.ran) == 1
 
 
@@ -547,7 +583,7 @@ def test_a_failed_command_posts_an_error_once(tmp_path: Path) -> None:
 
 
 def _status(context: str, state: str, description: str) -> CommitStatus:
-    return CommitStatus(context, state, description, '', 1)
+    return CommitStatus(context, state, description, '', 1, ACTIONS_BOT)  # the forge posted it (D11)
 
 
 def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_path: Path) -> None:
@@ -568,7 +604,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
 
     def ready(*review: tuple[str, str]) -> bool:
         statuses = (passed, secured, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
-        return decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses).ready
+        return decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses, github=True).ready
 
     assert not ready(('failure', 'review round 1: 1 blocking finding(s) open'))
     assert not ready()
@@ -588,7 +624,7 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     over = NEEDS_MAINTAINER
     held = (_status(HOLD_CONTEXT, 'pending', over), _status(REVIEW_CONTEXT, 'success', 'reviewed'), passed)
-    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
+    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held, github=True)
     assert not found.ready
     assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
@@ -599,9 +635,9 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
         passed,
         secured,
     )
-    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
+    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released, github=True).ready
     worded = (_status(REVIEW_CONTEXT, 'success', NEEDS_MAINTAINER), passed, secured)
-    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded).ready
+    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded, github=True).ready
 
 
 # --- the declaration ---------------------------------------------------------------------------------

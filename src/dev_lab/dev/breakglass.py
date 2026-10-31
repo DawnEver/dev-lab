@@ -15,10 +15,9 @@ BREAK-GLASS BYPASSES THE FORGE'S MERGE, NEVER THE REVIEW (user ruling 2026-10-31
 after lab-commons #11 and dev-lab #3 landed by Break-Glass with none). Every head a Break-Glass push lands -- a
 merge's PR head, else the commit itself -- needs a POSTED review (:func:`unreviewed`): its latest
 :data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no hold is pending -- the ONE predicate the
-merge reads too (:mod:`dev_lab.dev.reviewgate`). The emergency path for a
-head the forge's own review never reached is :data:`TAKEOVER_DOOR`: the same method run by the session, which posts
-the review and releases the hold. A forge that cannot be read refuses: a push needs the forge, so a forge down for
-reads is down for the push too.
+merge reads too (:mod:`dev_lab.dev.reviewgate`), and only a success the FORGE wrote counts (D11): a head the forge's
+review never reached waits for :data:`~dev_lab.dev.reviewgate.RERUN`. A forge that cannot be read refuses: a push
+needs the forge, so a forge down for reads is down for the push too.
 """
 
 from __future__ import annotations
@@ -31,18 +30,16 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgereview import load_review
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import ForgeCallFailed, client_for
-from dev_lab.dev.reviewgate import review_missing
+from dev_lab.dev.forgework import GITHUB, ForgeCallFailed, client_for
+from dev_lab.dev.reviewgate import ForgeBotUndeclared, forge_bots, review_missing
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['BREAK_GLASS', 'TAKEOVER_DOOR', 'empty_reason', 'forge_unreviewed', 'notices', 'reason', 'unreviewed']
-
-#: The door that reviews a head no forge review reached: the same method, run by the session, posted as the status.
-TAKEOVER_DOOR: Final = 'python -m dev_lab.dev.forge review takeover'
+__all__ = ['BREAK_GLASS', 'empty_reason', 'forge_unreviewed', 'notices', 'reason', 'unreviewed']
 
 #: The trailer that admits a direct push to the integration branch, with its reason as the value.
 BREAK_GLASS: Final = 'Break-Glass'
@@ -94,14 +91,21 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
     return found
 
 
-def unreviewed(client: Client, head: str) -> str | None:
-    """Why *head* carries no posted review on *client*'s forge, or ``None``: the one predicate (reviewgate)."""
-    return review_missing(status_list(client, head))
+def unreviewed(client: Client, head: str, forge_bot: str) -> str | None:
+    """Why *head* carries no FORGE-posted review on *client*'s forge, or ``None``: the one predicate (reviewgate).
+
+    *forge_bot* is the repo's declared Gitea identity (:func:`~dev_lab.dev.reviewgate.forge_bots`).
+    """
+    try:
+        bots = forge_bots(github=client.backend is GITHUB, declared=forge_bot)
+    except ForgeBotUndeclared as undeclared:
+        return str(undeclared)
+    return review_missing(status_list(client, head), bots)
 
 
 def forge_unreviewed(root: Path, head: str) -> str | None:
     """:func:`unreviewed` on *root*'s origin forge; a forge that cannot be read is a reason, never a pass."""
     try:
-        return unreviewed(client_for(root), head)
+        return unreviewed(client_for(root), head, load_review(root).forge_bot)
     except (ForgeCallFailed, OSError, ValueError) as failed:
         return f'the forge cannot be read ({type(failed).__name__}: {failed})'

@@ -29,7 +29,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    assert set(workflows(_ROOT)) == {'ci.yml'}, 'a floor: an empty table drifts from nothing'
+    assert set(workflows(_ROOT)) == {'ci.yml', 'review-claims.yml'}, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 
@@ -229,10 +229,10 @@ def test_a_hosted_part_renders_its_own_push_only_job_and_only_its_setup_step_see
 def test_the_ai_lab_ref_is_declared_once_and_the_install_reads_it(tmp_path: Path) -> None:
     """Round 1 F-581fef0aab0b: one declared value, rendered as the job's env; the install names no sha itself."""
     review = _base_ci(tmp_path)['jobs']['review']
-    assert review['env'] == {AI_LAB_REF_VAR: ai_lab_ref()}
-    install = next(s for s in review['steps'] if s.get('name') == 'Install the review method')['run']
-    assert f'/ai-lab.git@${AI_LAB_REF_VAR}"' in install
-    assert ai_lab_ref() not in install
+    step = next(s for s in review['steps'] if s.get('name') == 'Install the review method')
+    assert step['env'] == {AI_LAB_REF_VAR: ai_lab_ref()}
+    assert f'/ai-lab.git@${AI_LAB_REF_VAR}"' in step['run']
+    assert ai_lab_ref() not in step['run']
 
 
 def test_the_pin_check_names_a_stale_ref_and_the_bump() -> None:

@@ -15,6 +15,7 @@ from pathlib import Path
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
+from test_dev_forgereview import JUDGE
 
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, comment_upsert
@@ -142,7 +143,9 @@ def test_a_head_of_only_generated_files_is_posted_as_nothing_to_review(tmp_path:
     forge = StateForge()
     forge.add_pull('pr/x', 'integrate/main', sha=head)
     command = Recorder()
-    review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=command, ready=_can, host='box')
+    review_tick(
+        work, forge, Review(judge=JUDGE, command=_SLICED), base='integrate/main', run=command, ready=_can, host='box'
+    )
     assert command.ran == []
     found = {(s.context, s.state, s.description) for s in status_list(forge, head)}
     assert found == {(REVIEW_CONTEXT, 'success', ONLY_GENERATED)}, 'nothing to read is no hold to release'
@@ -178,7 +181,7 @@ def test_a_head_past_one_slice_is_read_in_slices_each_under_one_lens(tmp_path: P
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     command = Recorder()
-    review = Review(command=_SLICED, max_diff_bytes=400)
+    review = Review(judge=JUDGE, command=_SLICED, max_diff_bytes=400)
     review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
     assert [argv[4] for argv in command.ran] == ['strict', 'standard', 'standard', 'standard']
     read = sorted(path for argv in command.ran for path in argv[6:])
@@ -195,7 +198,7 @@ def test_a_synthesis_reads_the_merged_slices_once(tmp_path: Path) -> None:
         forge = StateForge()
         forge.add_pull('pr/x', 'integrate/main', sha=head)
         command = Recorder()
-        review = Review(command=_SLICED, synthesis=synthesis, max_diff_bytes=400)
+        review = Review(judge=JUDGE, command=_SLICED, synthesis=synthesis, max_diff_bytes=400)
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
         assert len(command.ran) == runs
     assert command.ran[-1][0] == 'synth'
@@ -213,9 +216,9 @@ def test_an_oversize_head_gets_one_structure_level_review_over_the_whole_range(t
     """
     work, head = _many(tmp_path)
     for review in (
-        Review(command=_SLICED, max_diff_bytes=400, max_total_bytes=500),
-        Review(command=_SLICED, max_diff_bytes=100),
-        Review(command=('reviewer', '--range', RANGE_FIELD), max_diff_bytes=400),
+        Review(judge=JUDGE, command=_SLICED, max_diff_bytes=400, max_total_bytes=500),
+        Review(judge=JUDGE, command=_SLICED, max_diff_bytes=100),
+        Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD), max_diff_bytes=400),
     ):
         forge = StateForge()
         forge.add_pull('pr/x', 'integrate/main', sha=head)
@@ -330,7 +333,9 @@ def test_the_review_comment_names_the_files_outside_scope(tmp_path: Path) -> Non
     work, head = _mixed(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=Recorder(), ready=_can, host='box')
+    review_tick(
+        work, forge, Review(judge=JUDGE, command=_SLICED), base='integrate/main', run=Recorder(), ready=_can, host='box'
+    )
     (comment,) = forge.comments[number]
     assert f'{len(_NOT_CODE)} non-code file(s) outside the review scope' in comment['body']
 

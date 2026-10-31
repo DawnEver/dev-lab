@@ -18,9 +18,9 @@ is green. The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
 * its head is REVIEWED (:func:`dev_lab.dev.reviewgate.review_missing`, user ruling 2026-10-31): the latest
-  ``tests/review`` is ``success`` and no ``tests/review-hold`` is pending. Absent, reviewing, takeover pending,
-  ``error`` and ``failure`` all wait -- nothing is advisory; a review that cannot run is taken over
-  (``forge review takeover <sha>``, :mod:`dev_lab.dev.forgetakeover`);
+  ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold`` is
+  pending. Absent, reviewing, ``error``, ``failure`` and a success any other login posted all wait -- nothing is
+  advisory; a review that cannot run is re-run by the forge;
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
@@ -65,7 +65,7 @@ from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.reviewgate import review_missing
+from dev_lab.dev.reviewgate import forge_bots, review_missing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -152,17 +152,19 @@ def decide(
     number: int,
     head: str,
     statuses: Sequence[CommitStatus],
+    github: bool,
 ) -> Decision:
     """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing."""
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
-    try:
-        load_review(root)  # a review config that cannot review is named here, never silently mergeable
+    bots: frozenset[str] = frozenset()
+    try:  # a review config that cannot review is named here, never silently mergeable
+        bots = forge_bots(github=github, declared=load_review(root).forge_bot)
     except ValueError as config:
         missing.append(f'its review config: {config}')
-    if (unreviewed := review_missing(statuses)) is not None:
+    if (unreviewed := review_missing(statuses, bots)) is not None:
         missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
@@ -197,7 +199,8 @@ def decide(
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
-    return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses)
+    return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses,
+                  github=client.backend is GITHUB)  # fmt: skip
 
 
 def ready(root: Path, client: Client, number: int) -> str:

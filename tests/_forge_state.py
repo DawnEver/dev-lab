@@ -107,6 +107,8 @@ class StateForge(Client):
             return fixed[route], ''
         if route.startswith(f'{api}/statuses/'):
             return 'statuses', route.removeprefix(f'{api}/statuses/')
+        if route.startswith(f'{api}/commits/') and route.endswith('/statuses'):  # GitHub's list, with creators
+            return 'statuses', route.removeprefix(f'{api}/commits/').removesuffix('/statuses')
         if route.startswith(f'{api}/pulls/'):
             number, _, tail = route.removeprefix(f'{api}/pulls/').partition('/')
             return ('merge' if tail == 'merge' else 'pull'), number

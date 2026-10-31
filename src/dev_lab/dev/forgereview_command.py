@@ -93,3 +93,5 @@ class Runner:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     #: Whether the review command's secret is present; absent (a fork PR's job) holds the head for a maintainer.
     secret: bool = True
+    #: Whether this is the ``forge serve`` process: its rounds are the forge's ruling (:func:`identity`).
+    serving: bool = False

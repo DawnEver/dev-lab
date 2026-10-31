@@ -1,9 +1,8 @@
 """The agent deny registry, STATUS-VIA-DOORS row -- pure DATA.
 
-USER RULING 2026-10-26: a head held over the review cap is the INTEGRATOR AGENT's to review, and the release
-of ``tests/review-hold`` is the RECORD that a review happened. A raw ``forge status post`` on that context
-releases with no review behind it, so it is refused; the door (:mod:`dev_lab.dev.forgetakeover`) reviews the
-head over every slice, posts the findings, and refuses to release without them.
+The release of ``tests/review-hold`` is the RECORD that the forge reviewed the head: only the forge's own round
+releases it (D11). A raw ``forge status post`` on that context releases with no review behind it, so it is
+refused -- and a session's post never counts anyway, since the gate reads the status's forge-recorded creator.
 
 The same ruling made ``tests/review`` a merge condition: its ``failure`` is an open blocking finding, cleared only
 by a later round or a disposition WITH ITS REASON (:mod:`dev_lab.dev.forgereview_dispose`). A raw post on
@@ -29,7 +28,7 @@ STATUS_VIA_DOORS: dict[str, object] = {
     'matches': 'argument',
     'hazard': 'a raw post on tests/review-hold, tests/review or tests/security releases a head with no review or '
     'reason behind it.',
-    'remedy': 'Use the door that records why: {python} -m dev_lab.dev.forge review takeover <sha>; '
+    'remedy': "Use the door that records why: re-run the forge's review of the head; "
     'forge review dispose <pr> <finding-id> --why "<reason>"; forge security release <pr> --why "<reason>".',
     'needs': None,
     'refuses': (

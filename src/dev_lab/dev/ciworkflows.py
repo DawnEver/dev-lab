@@ -65,7 +65,7 @@ USE_STEPS: Final = 'use-steps'
 WORKFLOW_DIR: Final = Path('.github') / 'workflows'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 
-#: The review job's env naming the ai-lab commit it installs: declared ONCE, in ``ci_base.toml``.
+#: The env naming the ai-lab commit the shared ``method`` steps install: declared ONCE, in ``ci_base.toml``.
 AI_LAB_REF_VAR: Final = 'AI_LAB_REF'
 
 #: The ai-lab branch the pin is compared with: where ai-lab's reviewed changes land.
@@ -73,8 +73,9 @@ _AI_LAB_BRANCH: Final = 'refs/heads/integrate/main'
 
 
 def ai_lab_ref() -> str:
-    """The ai-lab commit the family's review job installs (``ci_base.toml``'s review-job ``AI_LAB_REF``)."""
-    return tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))['ci.yml']['jobs']['review']['env'][AI_LAB_REF_VAR]
+    """The ai-lab commit every review job installs: the ``method`` steps' install ``AI_LAB_REF`` in ``ci_base.toml``."""
+    (install, *_) = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[SHARED]['method']
+    return install['env'][AI_LAB_REF_VAR]
 
 
 def pin_drift(declared: str, head: str) -> str | None:

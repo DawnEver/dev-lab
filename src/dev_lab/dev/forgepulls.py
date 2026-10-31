@@ -165,7 +165,10 @@ class Marker(StrEnum):
     INTEGRATION = 'integration'  #: a child PR's one integration comment (:mod:`dev_lab.dev.forgeintegration`)
     TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`dev_lab.dev.forgetidy`)
     REVIEW = 'review'  #: one review round per PR head, keyed by the sha (:mod:`dev_lab.dev.forgereview`)
-    DISPOSITION = 'review-disposition'  #: the integrator's disposition of a finding, keyed by its id (``forge review``)
+    CLAIM = (
+        'review-claim'  #: an author's claim against a finding, keyed by its id (:mod:`dev_lab.dev.forgereview_judge`)
+    )
+    ADJUDICATION = 'review-adjudication'  #: an independent ruling on a claim, keyed by the finding id
     SECURITY_RELEASE = 'security-release'  #: the integrator's release of new exemptions (``forge security``)
     LANDED = 'landed'  #: a landed PR's one closing comment, keyed by the head sha (:mod:`dev_lab.dev.prlanded`)
     POLLER = 'poller'  #: the hosts issue's one poller lease (:mod:`dev_lab.dev.forgepoller`)

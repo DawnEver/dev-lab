@@ -60,9 +60,10 @@ from lab_commons.log import emit
 
 from dev_lab.dev import metrics
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, branchset_at
-from dev_lab.dev.breakglass import BREAK_GLASS, TAKEOVER_DOOR, forge_unreviewed, reason
+from dev_lab.dev.breakglass import BREAK_GLASS, forge_unreviewed, reason
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
+from dev_lab.dev.reviewgate import RERUN
 
 __all__ = [
     'HOOK_ID',
@@ -161,7 +162,7 @@ def _unreviewed_glass(root: Path, added: Sequence[str], reviewed: Reviewed) -> l
         if (why := reviewed(root, head)) is not None:
             found.append(
                 f'{P5}: Break-Glass {sha[:12]} lands {head[:12]} with no posted review ({why}); Break-Glass bypasses '
-                f'the forge merge, never the review -- run `{TAKEOVER_DOOR} {head}` and push again'
+                f'the forge merge, never the review -- {RERUN} for {head}, then push again'
             )
     return found
 
