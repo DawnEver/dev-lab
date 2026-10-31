@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from dev_lab.dev import remconfig
 from dev_lab.dev.famfiles import PROJECT_FILES
 
@@ -19,11 +21,12 @@ def test_write_writes_once_then_is_a_no_op(tmp_path: Path) -> None:
     assert remconfig.write(tmp_path) is False
 
 
-def test_a_drifted_config_is_rewritten(tmp_path: Path) -> None:
+def test_a_repos_own_differing_config_is_refused_and_kept(tmp_path: Path) -> None:
     (tmp_path / '.claude').mkdir()
     (tmp_path / remconfig.REL).write_text('{"backlog": "files"}\n', encoding='utf-8')
-    assert remconfig.write(tmp_path) is True
-    assert json.loads((tmp_path / remconfig.REL).read_text(encoding='utf-8')) == {'backlog': 'issues'}
+    with pytest.raises(remconfig.RemConfigConflictError, match='left untouched'):
+        remconfig.write(tmp_path)
+    assert json.loads((tmp_path / remconfig.REL).read_text(encoding='utf-8')) == {'backlog': 'files'}
 
 
 def test_it_is_a_generated_family_file() -> None:

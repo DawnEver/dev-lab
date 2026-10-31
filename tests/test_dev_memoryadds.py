@@ -5,16 +5,18 @@ Driven over real temporary git repos (the planted controls) and over the pure cl
 
 from __future__ import annotations
 
+import io
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import memoryadds, mergeaudit
+from dev_lab.dev import memoryadds
 
 _GIT = shutil.which('git') or 'git'
 ENTRY = '.claude/memory/2026/10/01/an-entry.md'
+SOURCES = ('.claude/memory/2026/10/01/a.md', '.claude/memory/2026/10/02/b.md')
 
 
 def _git(root: Path, *args: str) -> str:
@@ -40,7 +42,11 @@ def repo(tmp_path: Path) -> Path:
     _git(tmp_path, 'config', 'user.email', 't@t')
     _git(tmp_path, 'config', 'user.name', 't')
     _write(tmp_path, ENTRY, '---\nname: an-entry\ndescription: d\naccessed: 2026-10-02\n---\n\nBody.\n')
-    _commit(tmp_path, 'base', ENTRY)
+    _write(tmp_path, 'pyproject.toml', "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n")
+    for rel in SOURCES:
+        _write(tmp_path, rel, '---\nname: s\ndescription: d\n---\n\nS.\n')
+    _commit(tmp_path, 'base', ENTRY, 'pyproject.toml', *SOURCES)
+    _git(tmp_path, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
     return tmp_path
 
 
@@ -113,7 +119,7 @@ def test_a_clean_merge_of_an_adding_lane_passes(repo: Path) -> None:
     assert memoryadds.pending(repo) == ()
 
 
-def test_no_merge_in_progress_judges_nothing(repo: Path) -> None:
+def test_nothing_staged_judges_nothing(repo: Path) -> None:
     assert memoryadds.pending(repo) == ()
 
 
@@ -159,7 +165,60 @@ def test_the_commit_msg_hook_refuses_the_planted_merge(repo: Path, monkeypatch: 
     _git(repo, 'merge', '-q', '--no-ff', '--no-commit', 'lane')
     _write(repo, ENTRY, 'rewritten\n')
     _git(repo, 'add', '--', ENTRY)
-    message = repo / 'MSG'
-    message.write_text('chore(merge): lane\n', encoding='utf-8')
     monkeypatch.chdir(repo)
-    assert mergeaudit.main([str(message)]) == 1
+    assert memoryadds.main(['commit', 'MSG']) == 1
+
+
+def test_planted_a_plain_commit_editing_an_entry_is_refused(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL: no merge at all -- the commit-msg row still reds an edited entry."""
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nQuietly rewritten.\n')
+    _git(repo, 'add', '--', ENTRY)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
+    monkeypatch.chdir(repo)
+    assert memoryadds.main(['commit', 'MSG']) == 1
+
+
+def test_planted_a_pushed_range_holding_an_edit_is_refused(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL: the edit was committed past the hook; the pre-push row reds the pushed range."""
+    _lane(repo)
+    _write(repo, ENTRY, 'rewritten\n')
+    _commit(repo, 'edit past the hook', ENTRY)
+    _write(repo, '.claude/memory/2026/10/31/later.md', '---\nname: later\ndescription: d\n---\n\nL.\n')
+    head = _commit(repo, 'a clean commit on top', '.claude/memory/2026/10/31/later.md')
+    lines = f'refs/heads/lane {head} refs/heads/lane {"0" * 40}\n'
+    found = memoryadds.pushed(repo, lines)
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr('sys.stdin', io.StringIO(lines))
+    assert memoryadds.main(['push']) == 1
+
+
+def test_a_crlf_entry_stripped_to_lf_is_still_only_the_strip(repo: Path) -> None:
+    _lane(repo)
+    (repo / ENTRY).write_bytes(b'---\r\nname: an-entry\r\ndescription: d\r\naccessed: x\r\n---\r\n\r\nBody.\r\n')
+    base = _commit(repo, 'crlf', ENTRY)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nBody.\n')
+    _commit(repo, 'strip', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+def test_a_merged_source_missing_at_the_base_is_refused() -> None:
+    found = memoryadds.merged_entry_problems('.claude/memory/2026/10/31/m.md', CITED, exists=lambda p: 'a.md' in p)
+    assert found == (
+        (
+            '.claude/memory/2026/10/31/m.md: merged_from 2026/10/02/b.md does not exist at the base '
+            '(.claude/memory/2026/10/02/b.md)'
+        ),
+    )
+
+
+def test_a_copied_entry_is_judged_like_an_added_one(repo: Path) -> None:
+    """A ``C`` row is an addition: a copy carrying an uncited merge reds like a new file would."""
+    rel = '.claude/memory/2026/10/31/m.md'
+    _write(repo, rel, CITED + '\nUncited.\n')
+    head = _commit(repo, 'm', rel)
+    found = memoryadds._judge(repo, f'{head}~1', head, [('C', ENTRY, rel)])
+    assert any('Uncited' in line for line in found), found

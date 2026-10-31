@@ -272,7 +272,10 @@ def install(repo: Path) -> InstallReport:
     _scope_linked_worktree(repo)
     _publish_under_own_name(repo)
     write_page(repo)  # the family principles reach every agent here, on the same one act
-    remconfig.write(repo)  # and the backlog is the issue tracker (rem reads it)
+    try:
+        remconfig.write(repo)  # and the backlog is the issue tracker (rem reads it); a repo's own choice is kept
+    except remconfig.RemConfigConflictError as error:
+        raise HookInstallError(str(error)) from error
     before = hook_installation(repo)
     if before.verdict != UNPROTECTED:
         return before
