@@ -32,7 +32,7 @@ A STATUS CONTEXT IS REPORTED AND, WHEN DECLARED EMPTY, NEVER WRITTEN -- ``status
 declared absence :func:`protection_body` honours, because a branch protected against a status nobody
 publishes is indistinguishable from a broken gate.
 
-THE TRANSPORT IS HTTPS BY CONSTRUCTION. :func:`forge_transport` speaks HTTPS to every host but a loopback one
+THE TRANSPORT IS HTTPS TO EVERY NON-LOOPBACK HOST. :func:`forge_transport` speaks HTTPS to every host but a loopback one
 (a Gitea Actions job's own forge), chosen by the host alone, so no URL here can be redirected onto another scheme
 and no comment has to assert that a URL is fine -- an assertion no checker can verify is the declaration that lies.
 """
@@ -154,8 +154,8 @@ def user_agent(forge: Forge) -> str:
     return f'dev-lab ({login}@{machine}; {forge.owner}/{forge.repo})'
 
 
-#: The hosts a request to never leaves the machine: the only ones plain HTTP is spoken to.
-LOOPBACK_HOSTS: Final = frozenset({'127.0.0.1', 'localhost', '[::1]'})
+#: Loopback host names: a request to one never leaves the machine, so they are the only hosts spoken plain HTTP.
+_LOOPBACK_HOSTS: Final = frozenset({'127.0.0.1', 'localhost', '[::1]'})
 
 
 def forge_transport(host: str, timeout: float) -> http.client.HTTPConnection:
@@ -165,7 +165,7 @@ def forge_transport(host: str, timeout: float) -> http.client.HTTPConnection:
     name is refused from inside the host's network. A loopback request never crosses a wire, so it carries the
     token no further than the forge process beside it; every other host is HTTPS, structurally.
     """
-    if host.rpartition(':')[0] in LOOPBACK_HOSTS or host in LOOPBACK_HOSTS:
+    if host.rpartition(':')[0] in _LOOPBACK_HOSTS or host in _LOOPBACK_HOSTS:
         return http.client.HTTPConnection(host, timeout=timeout)
     return http.client.HTTPSConnection(host, timeout=timeout)
 

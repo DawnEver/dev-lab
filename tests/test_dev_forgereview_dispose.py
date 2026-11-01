@@ -25,7 +25,7 @@ from dev_lab.dev.forgetakeover import main, pull_for, takeover
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import forge_creators, review_missing
+from dev_lab.dev.reviewgate import forge_posted, review_missing
 
 _AUTHOR = Identity('a', 'box', 'S-author')
 _FORGE = Identity('forge', 'ci', ci=True)  # the forge's own reviewer: no session
@@ -237,13 +237,18 @@ def test_a_ruling_another_login_pastes_rules_nothing(tmp_path: Path) -> None:
     assert [ids for _, ids in blocked(forge, 'integrate/main')] == [('F-x',)]
 
 
-def test_an_adjudication_recomputes_merge_ready_in_the_same_step(tmp_path: Path) -> None:
+def test_an_adjudication_recomputes_merge_ready_in_the_same_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """#7 (2026-10-31): a ruling moved tests/review and merge-ready stayed stale for 30 minutes.
 
     The door re-posts merge-ready through forgemerge.ready, so it always agrees with review_missing. PLANTED CONTROL:
     a rejected ruling leaves the review unreviewed and merge-ready names it.
     """
     work, forge, number, head = _blocked(tmp_path, login=GITEA_ACTIONS_LOGIN)  # the forge's round is its job's
+    run_id, _ = forge.add_run(head)
+    monkeypatch.setenv('GITEA_ACTIONS', 'true')  # the rulings run as that job: tests/review names its run
+    monkeypatch.setenv('GITHUB_RUN_ID', str(run_id))
     for context in ('tests/base', 'tests/security'):
         status_post(forge, head, context=context, state='success', description='scope=full')
     forge.login = 'a'  # the claimant
@@ -252,14 +257,14 @@ def test_an_adjudication_recomputes_merge_ready_in_the_same_step(tmp_path: Path)
     _rule(work, forge, number, 'present')
     ready = next(one for one in status_list(forge, head) if one.context == MERGE_READY_CONTEXT)
     assert ready.state == 'failure'
-    assert review_missing(status_list(forge, head), forge_creators(github=False)) is not None
+    assert review_missing(status_list(forge, head), forge_posted(forge, head)) is not None
     assert REVIEW_CONTEXT in ready.description
     forge.login = 'a'
     dispose(forge, number, 'F-x', _WHY + ' and b.py', by=_AUTHOR)
     forge.login = GITEA_ACTIONS_LOGIN
     _rule(work, forge, number, 'false-positive')
     ready = next(one for one in status_list(forge, head) if one.context == MERGE_READY_CONTEXT)
-    assert review_missing(status_list(forge, head), forge_creators(github=False)) is None
+    assert review_missing(status_list(forge, head), forge_posted(forge, head)) is None
     assert REVIEW_CONTEXT not in ready.description, 'the review no longer waits the merge'
 
 
@@ -279,10 +284,10 @@ def test_an_author_claiming_as_fake1_and_taking_over_as_fake2_never_reaches_succ
     judge = FakeCommand(_doc(), rulings={'F-x': ('false-positive', 'a.py:3 asserts the guard')})
     takeover(work, forge, _REVIEW, after, pull=pull_for(forge, after), base='integrate/main', host='box', run=judge)
     assert all(one.context != REVIEW_CONTEXT for one in status_list(forge, after)), 'advisory: no status'
-    assert review_missing(status_list(forge, after), frozenset({forge.login})) is not None
+    assert review_missing(status_list(forge, after), lambda status: status.creator == forge.login) is not None
     (review,) = [c['body'] for c in forge.comments[number] if marker(Marker.REVIEW, after) in c['body']]
     assert 'Emergency takeover' in review
     monkeypatch.delenv(SESSION_ENV)
     _tick(work, forge, judge, _REVIEW)  # the forge serve round
     assert _state(forge, after)[0] == 'success'
-    assert review_missing(status_list(forge, after), frozenset({forge.login})) is None
+    assert review_missing(status_list(forge, after), lambda status: status.creator == forge.login) is None

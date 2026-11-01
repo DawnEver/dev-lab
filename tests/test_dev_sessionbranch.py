@@ -586,12 +586,13 @@ def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pend
     forge = StateForge()
     forge.login = GITEA_ACTIONS_LOGIN  # the job token: Gitea records its Actions ghost as the creator
     head = 'a' * 40
+    _, run = forge.add_run(head)
     assert 'not posted' in unreviewed(forge, head)
     for state, description in (('pending', 'claimed by h, reviewing'), ('error', 'the review command failed')):
         status_post(forge, head, context=REVIEW_CONTEXT, state=state, description=description)
         assert description in unreviewed(forge, head)
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='over the cap')
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings')
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings', target_url=run)
     assert 'over the cap' in unreviewed(forge, head), 'a hold not yet released is not a review'
     status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released: review reviewed this head')
     assert unreviewed(forge, head) is None

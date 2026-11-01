@@ -190,8 +190,9 @@ def test_a_head_the_forge_reviewed_is_refused_and_a_users_success_is_not_that(tm
         work, forge, _SLICED, head, pull=pull_for(forge, head), base='integrate/main', host='box', run=FakeCommand()
     )
     assert 'advisory' in said[0]
-    forge.login = GITEA_ACTIONS_LOGIN  # Gitea's Actions ghost: the review job posted it
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed')
+    forge.login = GITEA_ACTIONS_LOGIN  # the review job: null creator, naming its run at this head
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed',
+                target_url=forge.add_run(head)[1])  # fmt: skip
     with pytest.raises(TakeoverRefused, match='already reviewed by the forge'):
         takeover(
             work, forge, _SLICED, head, pull=pull_for(forge, head), base='integrate/main', host='box', run=FakeCommand()

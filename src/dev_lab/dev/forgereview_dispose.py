@@ -30,10 +30,11 @@ from dev_lab.dev.forgereview import Review, judge_for
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, adjudicate, claim, upheld
 from dev_lab.dev.forgereview_rounds import DISPOSE_DOOR, blocking, ledger_of, trusted_bodies, verdict
 from dev_lab.dev.forgereview_scope import landed_base
-from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Raised, raise_line
+from dev_lab.dev.reviewgate import post_review
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -125,7 +126,7 @@ def adjudicate_thread(
     if dry_run:
         return said
     state, why = verdict(ledger, upheld(trusted_bodies(client, number)), number)
-    status_post(client, ledger.head, context=REVIEW_CONTEXT, state=state, description=f'adjudicated: {why}'[:240])
+    post_review(client, ledger.head, state=state, description=f'adjudicated: {why}'[:240])
     return [*said, f'#{number} {ledger.head[:12]}: tests/review {state}', *merge_ready_after(root, client, number)]
 
 

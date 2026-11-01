@@ -65,11 +65,13 @@ from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.reviewgate import forge_creators, review_missing
+from dev_lab.dev.reviewgate import forge_posted, review_missing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
@@ -152,7 +154,7 @@ def decide(
     number: int,
     head: str,
     statuses: Sequence[CommitStatus],
-    github: bool,
+    posted: Callable[[CommitStatus], bool],
 ) -> Decision:
     """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing."""
     into = policy.integration
@@ -163,7 +165,7 @@ def decide(
         load_review(root)
     except ValueError as config:
         missing.append(f'its review config: {config}')
-    if (unreviewed := review_missing(statuses, forge_creators(github=github))) is not None:
+    if (unreviewed := review_missing(statuses, posted)) is not None:
         missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
@@ -199,7 +201,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses,
-                  github=client.backend is GITHUB)  # fmt: skip
+                  posted=forge_posted(client, head))  # fmt: skip
 
 
 def ready(root: Path, client: Client, number: int) -> str:

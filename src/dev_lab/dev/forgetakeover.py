@@ -50,12 +50,12 @@ from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import GITHUB, ForgeCallFailed, PullRequest, client_for
+from dev_lab.dev.forgework import ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
-from dev_lab.dev.reviewgate import RERUN, forge_creators, review_missing
+from dev_lab.dev.reviewgate import RERUN, forge_posted, review_missing
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -169,7 +169,7 @@ def takeover(
     does is :data:`~dev_lab.dev.reviewgate.RERUN`. It refuses a head the forge already reviewed. A head with no PR
     keeps its ledger in its own issue (:func:`ledger_of`).
     """
-    if review_missing(status_list(client, head), forge_creators(github=client.backend is GITHUB)) is None:
+    if review_missing(status_list(client, head), forge_posted(client, head)) is None:
         msg = f'{head[:12]} is already reviewed by the forge: nothing to take over'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, head, base=base, pull=pull)

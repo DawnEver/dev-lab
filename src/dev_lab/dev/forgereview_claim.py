@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Final
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
+from dev_lab.dev.reviewgate import post_review
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -87,8 +88,7 @@ def passed(root: Path, client: Client, head: str, now: datetime, stale: timedelt
     carry = docs_only(root, head, standing(client, now, stale), data_waits=False)
     if carry is not None and carry.verdict is not None:
         why = f'{carry.hold}: the review of {carry.source[:12]} stands'[:DESCRIPTION]
-        status_post(client, head, context=REVIEW_CONTEXT, state=carry.verdict.state, description=why,
-                    target_url=carry.verdict.url)  # fmt: skip
+        post_review(client, head, state=carry.verdict.state, description=why, target_url=carry.verdict.url)
     return None if carry is None else carry.hold
 
 

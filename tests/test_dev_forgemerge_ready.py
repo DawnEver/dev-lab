@@ -32,11 +32,13 @@ def _pr(
     (work / 'pyproject.toml').write_text(manifest, encoding='utf-8')
     forge = StateForge()
     number = forge.add_pull('pr/x', base, sha=head)
+    _, run = forge.add_run(head)
     for context, description in _GREEN if green else _GREEN[:2]:
-        forge.login = (
-            GITEA_ACTIONS_LOGIN if context == 'tests/review' else 'a'
-        )  # the review job: Gitea's Actions ghost (D11)
-        status_post(forge, head, context=context, state='success', description=description)
+        job = context == 'tests/review'  # the review job: null creator, naming its run at this head (D11)
+        forge.login = GITEA_ACTIONS_LOGIN if job else 'a'
+        status_post(
+            forge, head, context=context, state='success', description=description, target_url=run if job else ''
+        )
     forge.login = 'a'
     return work, forge, number, head
 

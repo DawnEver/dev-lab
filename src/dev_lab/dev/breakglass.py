@@ -31,8 +31,8 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import GITHUB, ForgeCallFailed, client_for
-from dev_lab.dev.reviewgate import forge_creators, review_missing
+from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.reviewgate import forge_posted, review_missing
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -92,7 +92,7 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
 
 def unreviewed(client: Client, head: str) -> str | None:
     """Why *head* carries no FORGE-posted review on *client*'s forge, or ``None``: the one predicate (reviewgate)."""
-    return review_missing(status_list(client, head), forge_creators(github=client.backend is GITHUB))
+    return review_missing(status_list(client, head), forge_posted(client, head))
 
 
 def forge_unreviewed(root: Path, head: str) -> str | None:

@@ -53,7 +53,8 @@ from dev_lab.dev.forgereview_judge import (
     upheld,
 )
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT
+from dev_lab.dev.reviewgate import post_review
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -429,6 +430,6 @@ def post_round(
     if hold is not None and hold.state == 'pending':
         status_post(client, head, context=HOLD_CONTEXT, state='success',
                     description=f'released: {by} reviewed this head'[:_DESCRIPTION])  # fmt: skip
-    status_post(client, head, context=REVIEW_CONTEXT, state=state, target_url=comment.url if comment else '',
+    post_review(client, head, state=state, target_url=comment.url if comment else '',
                 description=f'{by}: {said}'[:_DESCRIPTION])  # fmt: skip
     return f'#{pull.number} {head[:12]}: {by} round {ledger.round}, {state}: {said}'
