@@ -84,11 +84,13 @@ def hook(stdin: TextIO, *, now: datetime | None = None, state_path: Path | None 
         payload = {}
     payload = payload if isinstance(payload, dict) else {}
     path = state_path or hostalarms.state_path()
+    now = now or datetime.now(UTC)
     state = hostalarms.read(path)
-    if not state.get('alarms'):
+    state = {**state, 'alarms': hostalarms.current(state, now)}  # a stopped writer's rows are stale: told to nobody
+    if not state['alarms']:
         return 0
     remembered = path.with_name(REMINDED_NAME)
-    kinds, reminded = due(state, str(payload.get('session_id', '')), read_table(remembered), now or datetime.now(UTC))
+    kinds, reminded = due(state, str(payload.get('session_id', '')), read_table(remembered), now)
     if not kinds:
         return 0
     try:
@@ -117,16 +119,19 @@ def step(
     owner = str(table.get('owner', hostalarms.AGENTS))
     measured = measuring(declared, previous, now=time.time(), psutil=psutil_module)
     state = hostalarms.record(measured, host=who, owner=owner, source=hostalarms.FORGE)
-    if state is None:  # supervision is writing this instant; the next tick records and sounds
-        return {}
-    for kind, one in sorted(state['alarms'].items()):
-        if one.get('source') != hostalarms.FORGE:
-            continue  # supervision's rows are sounded by supervision's own notifier
+    # A LOCK MISS LOSES NOTHING: the findings are sounded from the reading itself, and the memo (the cgroup
+    # baseline) did not advance, so the next tick sees the same delta again.
+    mine = (
+        hostalarms.rows(measured, source=hostalarms.FORGE, stamp=datetime.now(UTC).isoformat())
+        if state is None
+        else {k: v for k, v in state['alarms'].items() if v.get('source') == hostalarms.FORGE}
+    )
+    for kind, one in sorted(mine.items()):
         subject = f'{who} is pressed: {one["measurement"]}' + (
             ' (integrator)' if owner == hostalarms.INTEGRATOR else ''
         )
         alarm(Alarm(PRESSURE, repo, subject, hostalarms.render(one, host=who, owner=owner), about=kind))
-    return state
+    return state or {}
 
 
 #: What a message id may look like (an int, a UUID): anything else is not printed.
@@ -187,6 +192,21 @@ def _message_id(detail: str) -> str:
     return str(found) if isinstance(found, (int, str)) and _ID.fullmatch(str(found)) else '-'
 
 
+def _measure_now(root: Path) -> int:
+    """READ-ONLY: measure ``[pressure]`` now and print it; nothing is recorded, so no tick's baseline moves."""
+    table = section('pressure')
+    declared = Declared.of({'paths': [str(root)], **table})
+    measured = measure(declared, hostalarms.memo(hostalarms.FORGE), now=time.time(), psutil=psutil_module)
+    state = {
+        'host': socket.gethostname(),
+        'owner': str(table.get('owner', hostalarms.AGENTS)),
+        'alarms': hostalarms.rows(measured, source='measure', stamp=datetime.now(UTC).isoformat()),
+    }
+    for line in hostalarms.lines(state) or ['host-pressure: not pressed']:
+        emit(line)
+    return 0
+
+
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """``hook`` (the agent hook; default), ``check`` (post-commit lines), ``measure`` (read now), ``test`` (D55)."""
     args = list(sys.argv[1:] if argv is None else argv)
@@ -194,14 +214,11 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     if arm == 'hook':
         return hook(stdin or sys.stdin)
     if arm == 'check':
-        for line in hostalarms.lines(hostalarms.read()):
+        for line in hostalarms.lines(hostalarms.read(), now=datetime.now(UTC)):
             emit(line)
         return 0
     if arm == 'measure':
-        step(Path.cwd(), '', who=socket.gethostname(), alarm=lambda _one: None)
-        for line in hostalarms.lines(hostalarms.read()) or ['host-pressure: not pressed']:
-            emit(line)
-        return 0
+        return _measure_now(Path.cwd())
     if arm == 'test':
         return channel_test(_alerts(args[1:]))
     emit('usage: python -m dev_lab.dev.hostalarm [hook|check|measure|test [--supervise-config PATH]]', err=True)

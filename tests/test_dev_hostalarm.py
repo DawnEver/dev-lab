@@ -132,9 +132,25 @@ def test_a_writer_that_finds_the_lock_held_records_nothing(monkeypatch: pytest.M
 
 def test_post_commit_prints_the_hook_s_own_lines(capsys) -> None:
     """One reader, one formatter: post-commit's text is the hook's text."""
-    state = _pressed()
+    state = _pressed(datetime.now(UTC))
     assert hostalarm.main(['check']) == 0
     assert capsys.readouterr().out.strip() == '\n'.join(hostalarms.lines(state))
+
+
+def test_a_stopped_writer_cannot_pin_an_alarm(capsys) -> None:
+    """F-2d0545f27c1a, F-023bf77d03a6: a row not re-seen within STALE_AFTER is told to nobody; fresh speaks."""
+    _pressed(NOW)
+    assert _hook('s9', NOW + hostalarms.STALE_AFTER + timedelta(seconds=1), capsys) == ''
+    assert _hook('s9', NOW + hostalarms.STALE_AFTER, capsys) != ''
+    assert hostalarms.lines(hostalarms.read(), now=NOW + timedelta(days=2)) == []
+
+
+def test_measure_is_read_only(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    """F-bf41b6816cae: a manual reading prints, and writes no state, so no tick's baseline moves."""
+    monkeypatch.setattr(hostalarm, 'measure', lambda *_a, **_k: PRESSED)
+    assert hostalarm.main(['measure']) == 0
+    assert 'HOST-PRESSURE CRITICAL' in capsys.readouterr().out
+    assert not hostalarms.state_path().exists()
 
 
 def test_the_forge_tick_sounds_each_of_its_alarms_as_a_pressure_alarm(tmp_path: Path) -> None:
@@ -222,3 +238,44 @@ def test_supervision_convicts_and_records_only_its_own_alarm(monkeypatch: pytest
     assert anomaly.signature == 'pressure:cgroup:gitea-runner.service:high'
     state = hostalarms.read()
     assert anomaly.message == hostalarms.lines(state, {'cgroup:gitea-runner.service:high'})[0]
+
+
+class _Held:
+    """The other writer holds the lock."""
+
+    def __enter__(self) -> bool:
+        return False
+
+    def __exit__(self, *_a: object) -> None:
+        return None
+
+
+def test_a_lock_miss_still_convicts_and_does_not_advance_the_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F-1a881e1982a0 (HIGH): a rise read while the tick holds the lock is convicted; the baseline holds.
+
+    An oom_kill rise reaches the notifier, and the
+    SUPERVISE memo stays where it was, so the next cycle sees the same delta. Control: a won lock advances it.
+    """
+    before = Measured(memo={'cgroup': {'gitea-runner.service': {'oom_kill': 0}}})
+    hostalarms.record(before, host='gitea', source=hostalarms.SUPERVISE, now=NOW)
+    risen = Measured(
+        findings=[Finding('cgroup:gitea-runner.service:oom_kill', 'critical', 'oom_kill rose by 1')],
+        memo={'cgroup': {'gitea-runner.service': {'oom_kill': 1}}},
+    )
+    monkeypatch.setattr(component, 'measure', lambda *_a, **_k: risen)
+    ctx = CheckContext(config={}, shared={}, state={}, project=Path(), manager=cast('ProcessManager', None))
+    with monkeypatch.context() as held:
+        held.setattr(hostalarms, 'held', lambda _p: _Held())
+        (anomaly,) = HostPressure().check(ctx).anomalies
+    assert (anomaly.severity, anomaly.signature) == (Severity.CRITICAL, 'pressure:cgroup:gitea-runner.service:oom_kill')
+    assert hostalarms.memo(hostalarms.SUPERVISE) == before.memo
+    HostPressure().check(ctx)
+    assert hostalarms.memo(hostalarms.SUPERVISE) == risen.memo
+
+
+def test_a_forge_tick_that_misses_the_lock_still_sounds(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(hostalarms, 'held', lambda _p: _Held())
+    raised: list[Alarm] = []
+    hostalarm.step(tmp_path, 'r', who='g', alarm=raised.append, table={}, measuring=lambda *_a, **_k: PRESSED)
+    assert [a.about for a in raised] == ['disk:/']
+    assert hostalarms.memo(hostalarms.FORGE) == {}

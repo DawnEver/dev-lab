@@ -34,6 +34,7 @@ __all__ = [
     'DOORS',
     'OWNED',
     'RAM_CRITICAL',
+    'SLOPE_SPAN_FLOOR_S',
     'THRESHOLDS',
     'WALK_BUDGET',
     'Consumer',
@@ -77,8 +78,9 @@ PSI: Final[Mapping[str, Path]] = {'memory': Path('/proc/pressure/memory'), 'cpu'
 #: How many disk readings the days-to-full slope is taken over.
 HISTORY_KEPT: Final = 12
 
-#: A slope needs two readings.
+#: A slope needs two readings, spanning at least this long before it is believed.
 _SLOPE_POINTS: Final = 2
+SLOPE_SPAN_FLOOR_S: Final = 3600.0
 
 #: How many directory entries one reading's consumer walk may visit: a pressed disk is not walked whole.
 WALK_BUDGET: Final = 200_000
@@ -213,7 +215,9 @@ def _days_to_full(history: Sequence[Sequence[float]], free: int) -> float | None
     if len(history) < _SLOPE_POINTS:
         return None
     (t0, used0), (t1, used1) = history[0], history[-1]
-    rate = (used1 - used0) / max(t1 - t0, 1.0)  # bytes per second
+    if t1 - t0 < SLOPE_SPAN_FLOOR_S:  # a burst seconds apart is not a trend
+        return None
+    rate = (used1 - used0) / (t1 - t0)  # bytes per second
     return free / rate / 86400 if rate > 0 else None
 
 
@@ -269,18 +273,14 @@ def _windowed(psutil: ModuleType | None, limits: Mapping[str, float]) -> tuple[l
     return findings, {'cpu:percent': round(cpu, 1), 'memory:percent': round(memory, 1)}
 
 
-def tree_bytes(path: Path, budget: list[int]) -> int:
-    """The bytes under *path* on ITS OWN filesystem, symlinks not followed, spending one *budget* entry per entry.
+def tree_bytes(path: Path, budget: list[int], device: int) -> int:
+    """The bytes under *path* on the DECLARED ROOT'S filesystem *device*, symlinks not followed, within *budget*.
 
     Bounded twice, because it runs when a disk is ALREADY pressed and on every tick while it stays so: it never
-    crosses a mount (``/proc``, ``/sys``, another disk are not this disk), and it stops when the shared *budget*
-    (:data:`WALK_BUDGET` entries per reading) is spent -- the sizes then read as lower bounds. An entry that
-    cannot be read is skipped, never raised.
+    descends into another mount (``/proc``, ``/sys``, another disk are not this disk), and it stops when the
+    shared *budget* (:data:`WALK_BUDGET` entries per reading) is spent -- the sizes then read as lower bounds. An
+    entry that cannot be read is skipped, never raised.
     """
-    try:
-        device = path.lstat().st_dev
-    except OSError:
-        return 0
     total, stack = 0, [path]
     while stack and budget[0] > 0:
         try:
@@ -301,27 +301,42 @@ def tree_bytes(path: Path, budget: list[int]) -> int:
     return total
 
 
-def consumers(roots: Sequence[Path], *, top: int = TOP_CONSUMERS) -> tuple[Consumer, ...]:
+def _device(path: Path) -> int | None:
+    try:
+        return path.lstat().st_dev
+    except OSError:
+        return None
+
+
+def consumers(
+    roots: Sequence[Path], *, top: int = TOP_CONSUMERS, device: Callable[[Path], int | None] = _device
+) -> tuple[Consumer, ...]:
     """The *top* directories under *roots* by bytes, each marked owned (an :data:`OWNED` glob) or not.
 
     An owned tree is named per child (one worktree, one log day), any other directory as one entry holding
     what is NOT owned under it -- so no byte is counted twice, and the agent sees what it may clean. A root
-    that cannot be listed names nothing: the alarm stands without its consumers, never vanishes.
+    that cannot be listed names nothing: the alarm stands without its consumers, never vanishes. A directory on
+    ANOTHER device than its declared root (``/proc``, ``/sys``, ``/dev``, ``/run`` under ``/``) is not a consumer
+    of this disk and is never walked.
     """
     seen: dict[Path, bool] = {}
+    devices: dict[Path, int] = {}
     for root in roots:
+        home = device(root)
+        if home is None:
+            continue
         try:
             for pattern in OWNED:
                 for hit in (*root.glob(pattern), *root.glob(f'*/{pattern}')):
-                    if hit.is_dir() and not hit.is_symlink():
-                        seen[hit] = True
+                    if hit.is_dir() and not hit.is_symlink() and device(hit) == home:
+                        seen[hit], devices[hit] = True, home
             for child in sorted(root.iterdir()) if root.is_dir() else ():
-                if child.is_dir() and not child.is_symlink():
-                    seen.setdefault(child, False)
+                if child.is_dir() and not child.is_symlink() and device(child) == home and child not in seen:
+                    seen[child], devices[child] = False, home
         except OSError:
             continue
     budget = [WALK_BUDGET]
-    sizes = {p: tree_bytes(p, budget) for p in seen}
+    sizes = {p: tree_bytes(p, budget, devices[p]) for p in seen}
     rest = {p: n - sum(sizes[o] for o, mine in seen.items() if mine and p in o.parents) for p, n in sizes.items()}
     ranked = sorted(seen, key=lambda p: -rest[p])[:top]
     return tuple(Consumer(p.as_posix(), max(rest[p], 0), seen[p]) for p in ranked)

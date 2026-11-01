@@ -161,5 +161,27 @@ def test_the_consumer_walk_is_bounded_by_its_budget(tmp_path: Path) -> None:
     """Control: an unspent budget sizes the whole tree; a spent one stops and reads a lower bound."""
     for name in range(20):
         (tmp_path / f'f{name}').write_bytes(b'x' * 100)
-    assert tree_bytes(tmp_path, [10_000]) == 2000
-    assert tree_bytes(tmp_path, [5]) < 2000
+    device = tmp_path.lstat().st_dev
+    assert tree_bytes(tmp_path, [10_000], device) == 2000
+    assert tree_bytes(tmp_path, [5], device) < 2000
+
+
+def test_a_child_on_another_device_than_its_declared_root_is_never_a_consumer(tmp_path: Path) -> None:
+    """F-45930ad71de2: /proc under / (kcore ~128 TiB) is not this disk. PLANTED CONTROL: the same child, same device."""
+    _tree(tmp_path)
+    proc = tmp_path / 'proc'
+    proc.mkdir()
+    (proc / 'kcore').write_bytes(b'x' * 1_000_000)
+    home = tmp_path.lstat().st_dev
+    elsewhere = consumers([tmp_path], device=lambda p: home + 1 if p == proc else home)
+    assert all(not c.path.endswith('/proc') for c in elsewhere)
+    assert consumers([tmp_path])[0].path.endswith('/proc')
+
+
+def test_two_readings_seconds_apart_are_not_a_trend(tmp_path: Path) -> None:
+    """F-3829b028dda5: 100 MB written in 5 s on a half-empty disk is a burst, not 'full in 0.0 days'."""
+    burst = {'disk': {tmp_path.as_posix(): [[0.0, 100e9]]}}
+    half = measure(Declared(paths=(tmp_path,)), burst, now=5.0, usage=lambda _p: Disk(200 * GB, int(100.1e9), 50 * GB),
+                   linux=False, psutil=lambda: None)  # fmt: skip
+    assert half.findings == []
+    assert half.readings[f'disk:{tmp_path.as_posix()}:days_to_full'] is None

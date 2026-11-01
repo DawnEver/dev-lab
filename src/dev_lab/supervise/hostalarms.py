@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -38,14 +38,17 @@ __all__ = [
     'DATUM_KEPT',
     'FORGE',
     'INTEGRATOR',
+    'STALE_AFTER',
     'STATE_NAME',
     'SUPERVISE',
+    'current',
     'datum',
     'lines',
     'memo',
     'read',
     'record',
     'render',
+    'rows',
     'state_path',
     'test_notice',
 ]
@@ -61,6 +64,9 @@ INTEGRATOR: Final = 'integrator'
 #: The writers, each owning its own rows (module docstring).
 FORGE: Final = 'forge'
 SUPERVISE: Final = 'supervise'
+
+#: An alarm row its writer has not re-seen within this long is STALE and told to nobody: twelve 5-minute ticks.
+STALE_AFTER: Final = timedelta(hours=1)
 
 #: How many characters of one untrusted name are kept.
 DATUM_KEPT: Final = 120
@@ -105,19 +111,7 @@ def record(
         before = read(path)
         old = before.get('alarms', {})
         kept = {k: v for k, v in old.items() if v.get('source') != source}
-        fresh = {
-            one.kind: {
-                'kind': one.kind,
-                'source': source,
-                'severity': one.severity,
-                'first_seen': old.get(one.kind, {}).get('first_seen', stamp),
-                'last_seen': stamp,
-                'measurement': one.measurement,
-                'consumers': [[c.path, c.bytes, c.owned] for c in one.consumers],
-                'doors': list(DOORS),
-            }
-            for one in measured.findings
-        }
+        fresh = rows(measured, source=source, stamp=stamp, before=old)
         state = {
             'host': host,
             'owner': owner,
@@ -128,6 +122,39 @@ def record(
         }
         durable_text(path, json.dumps(state, indent=1, sort_keys=True))
     return state
+
+
+def rows(
+    measured: Measured, *, source: str, stamp: str, before: Mapping[str, Any] | None = None
+) -> dict[str, dict[str, Any]]:
+    """*measured*'s findings as alarm rows -- what :func:`record` stores and what a writer renders when it cannot."""
+    before = before or {}
+    return {
+        one.kind: {
+            'kind': one.kind,
+            'source': source,
+            'severity': one.severity,
+            'first_seen': before.get(one.kind, {}).get('first_seen', stamp),
+            'last_seen': stamp,
+            'measurement': one.measurement,
+            'consumers': [[c.path, c.bytes, c.owned] for c in one.consumers],
+            'doors': list(DOORS),
+        }
+        for one in measured.findings
+    }
+
+
+def current(state: Mapping[str, Any], now: datetime) -> dict[str, Any]:
+    """*state*'s alarms whose writer saw them within :data:`STALE_AFTER` of *now*; a stopped writer pins nothing."""
+    alarms = state.get('alarms', {})
+    return {kind: row for kind, row in alarms.items() if _recent(row.get('last_seen'), now)}
+
+
+def _recent(stamp: object, now: datetime) -> bool:
+    try:
+        return now - datetime.fromisoformat(str(stamp)) <= STALE_AFTER
+    except (TypeError, ValueError):
+        return False
 
 
 def datum(text: object) -> str:
@@ -159,10 +186,10 @@ def _consumer(row: Sequence[Any]) -> str:
     return f'  - {datum(path)}  {int(size) / 1024**3:.2f} GB  {"owned" if owned else "not owned, never touched"}'
 
 
-def lines(state: Mapping[str, Any], kinds: set[str] | None = None) -> list[str]:
-    """Every alarm of *state* (only *kinds* when given), rendered; ``[]`` when the host is not pressed."""
+def lines(state: Mapping[str, Any], kinds: set[str] | None = None, *, now: datetime | None = None) -> list[str]:
+    """Every alarm of *state* (only *kinds*; only :func:`current` ones at *now*), rendered; ``[]`` when not pressed."""
     host, owner = str(state.get('host', '?')), str(state.get('owner', AGENTS))
-    alarms = state.get('alarms', {})
+    alarms = state.get('alarms', {}) if now is None else current(state, now)
     return [render(alarms[k], host=host, owner=owner) for k in sorted(alarms) if kinds is None or k in kinds]
 
 
