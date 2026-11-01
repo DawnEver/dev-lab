@@ -534,3 +534,15 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
 def test_the_gitea_review_declares_one_permissions_block(tmp_path: Path) -> None:
     """F-a9d56327e726: a workflow-level ``contents: read`` above the job's ``contents: write`` is two grants."""
     assert 'permissions' not in _gitea_review(tmp_path)
+
+
+def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None:
+    """The review reads the head through git and only ``pyproject.toml`` from the tree (``forgereview.load_review``).
+
+    Measured 2026-11-01, motronics #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
+    the head tree -- a ``pack-objects`` on the 1.6 GB forge host running 10+ minutes at 314 MiB. A cone sparse
+    checkout with no directories materialises the root files alone.
+    """
+    steps = _gitea_review(tmp_path)['jobs']['review']['steps']
+    run = next(s for s in steps if s.get('name') == 'Fetch the head')['run']
+    assert run.index('git sparse-checkout set') < run.index('git checkout')
