@@ -19,17 +19,28 @@ same-user agent, the forge's record of who wrote is not.
   an Actions run of this repository that the forge's API lists at this very head (:func:`job_run_url` is how the
   job names its own run). A deleted user's status carries no such run; a live user's token is never null.
 
+ON GITEA THE REPO'S DECLARATION AT THE JUDGED HEAD SAYS WHICH IDENTITY IS THE FORGE (:func:`adopts_actions_review`).
+A repo that declares ``[tool.dev_lab.ci."review.yml"]`` (it renders ``.gitea/workflows/review.yml``) is judged by
+the Actions rule above. One that does not has no review job: its review is posted by ``forge serve``, and the forge
+is the login the judging client authenticates as (:meth:`~dev_lab.dev.forgework.Client.whoami`) -- the serve's own
+account, which no developer or agent token is (the pre-#14 rule, ``forge_bots`` with ``[tool.dev_lab.review]
+forge_bot``, be39f7a6). Judging by the HEAD's declaration means a PR adopting the workflow lands only once Actions
+really reviews it.
+
 The remedy for a head whose review could not run is :data:`RERUN`: the forge's own review, run again.
 """
 
 from __future__ import annotations
 
+import base64
 import os
 import re
+import tomllib
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlsplit
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.forgestatus import status_post
 
@@ -39,10 +50,22 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
 
-__all__ = ['RERUN', 'forge_posted', 'github_posted', 'job_run_url', 'post_review', 'review_missing']
+__all__ = [
+    'ACTIONS_REVIEW',
+    'RERUN',
+    'adopts_actions_review',
+    'forge_posted',
+    'github_posted',
+    'job_run_url',
+    'post_review',
+    'review_missing',
+]
 
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
 RERUN: Final = "re-run the forge's review of the head (the PR's review job)"
+
+#: The ``[tool.dev_lab.ci]`` workflow whose declaration adopts Gitea Actions as the forge's reviewer.
+ACTIONS_REVIEW: Final = 'review.yml'
 
 #: How many of the repository's runs at a head are read: a head is re-run a handful of times, never this many.
 _RUNS_READ: Final = 50
@@ -61,13 +84,24 @@ def _run_path(url: str, owner: str, repo: str) -> str:
     return found.group(0).lower() if found else ''
 
 
-def forge_posted(client: Client, head: str) -> Callable[[CommitStatus], bool]:
-    """The test of whether a status on *head* was posted by *client*'s forge's own review job (module docstring).
+def adopts_actions_review(client: Client, head: str) -> bool:
+    """Whether the repo's ``pyproject.toml`` at *head*, as the forge holds it, declares :data:`ACTIONS_REVIEW`."""
+    answer: Any = client.call('GET', f'{client.repo}/contents/pyproject.toml?ref={head}')
+    text = base64.b64decode((answer or {}).get('content') or '').decode()
+    return ACTIONS_REVIEW in declared_table(tomllib.loads(text), 'ci', {})
 
-    On Gitea the runs at *head* are read once, on the first null-creator status asked about.
+
+def forge_posted(client: Client, head: str) -> Callable[[CommitStatus], bool]:
+    """The test of whether a status on *head* was posted by *client*'s forge's own review (module docstring).
+
+    On Gitea the runs at *head* are read once, on the first null-creator status asked about; a repo that has not
+    adopted the Actions review (:func:`adopts_actions_review`) is reviewed by the serve, the client's own login.
     """
     if client.backend is GITHUB:
         return github_posted
+    if not adopts_actions_review(client, head):
+        serve = client.whoami()
+        return lambda status: bool(serve) and status.creator == serve
     owner, repo = client.forge.owner, client.forge.repo
     runs: list[str] = []
 

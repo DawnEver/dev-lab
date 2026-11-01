@@ -176,3 +176,37 @@ def test_break_glass_and_the_merge_read_the_one_predicate() -> None:
     forge, head = StateForge(), 'a' * 40
     status_post(forge, head, context=REVIEW_CONTEXT, state='error', description='the review command failed')
     assert breakglass.unreviewed(forge, head) == review_missing(status_list(forge, head), forge_posted(forge, head))
+
+
+_UNADOPTED = '[tool.dev_lab.ci."ci.yml"]\n'
+
+
+@pytest.mark.parametrize('third', ['DawnEver', ACTIONS_BOT, GITEA_ACTIONS_LOGIN])
+def test_on_a_gitea_repo_without_the_actions_review_the_serves_own_login_is_the_forge(third: str) -> None:
+    """No ``[tool.dev_lab.ci."review.yml"]`` at the head: no Actions job reviews, ``forge serve`` does (2026-11-01).
+
+    PLANTED CONTROL: a third login's success -- or a null one naming this head's run -- is still refused.
+    """
+    forge, head = StateForge(), 'f' * 40
+    forge.pyproject_at[head] = _UNADOPTED
+    _, run = forge.add_run(head)
+    _gitea_review(forge, head, login=third, url=run)
+    forge.login = 'MingyangBao'  # the serve judges with its own token
+    said = breakglass.unreviewed(forge, head)
+    assert said is not None
+    assert 'not by the forge' in said
+    assert _gitea_review(forge, head, login='MingyangBao', url='') is None
+
+
+def test_a_gitea_repo_adopting_the_actions_review_refuses_the_serves_login_at_the_adopting_head() -> None:
+    """The HEAD's declaration decides: a PR adopting review.yml lands only once Actions really reviews it.
+
+    PLANTED CONTROL: the Actions job's success naming this head's run counts.
+    """
+    forge, head = StateForge(), 'f' * 40
+    forge.pyproject_at['b' * 40] = _UNADOPTED  # the base has not adopted it
+    _, run = forge.add_run(head)
+    said = _gitea_review(forge, head, login='MingyangBao', url=run)
+    assert said is not None
+    assert 'MingyangBao' in said
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=run) is None
