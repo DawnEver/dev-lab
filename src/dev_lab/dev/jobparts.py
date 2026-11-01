@@ -15,9 +15,7 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
 * an ``if: always()`` job runs ``absent <sha>`` over the SAME event's matrix: ABSENT IS A STATE, NOT A FAILURE
   (ruling D50-1, optimi-lab #124: a full Windows run read red only because no job took the row). Every row the
   checkout derives that no job settled is posted ``pending`` saying :data:`ABSENT` and since when, so every reader
-  sees its age. A run of the verb past :data:`ABSENT_DEADLINE` re-posts it naming the escalation and sounds an
-  ``integration`` alarm -- but NOTHING SCHEDULES that later run today: the workflow runs the verb once per event,
-  so the escalation fires only when a workflow re-run, the integrator or a person runs ``absent <sha>`` again.
+  sees its age; a row already absent keeps its first time.
   It is never a settled part (:func:`dev_lab.dev.platformparts.parts_of`), so merge-ready and promote still
   refuse until every row stands PASS -- and any producer, a declared workstation included
   (:mod:`dev_lab.dev.workstationverdict`), may still settle it.
@@ -42,7 +40,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -53,7 +51,6 @@ from lab_commons.hpc.shell import parse_ids
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_in
-from dev_lab.dev.forgealarm import INTEGRATION, Alarm, sound
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.partrows import ROW_SEPARATOR
@@ -68,8 +65,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ABSENT',
-    'ABSENT_DEADLINE',
-    'ESCALATED',
     'HOSTED_RUNNERS',
     'Hosted',
     'absent',
@@ -92,13 +87,6 @@ PULL_REQUEST_SYSTEMS: Final = ('linux', 'windows')
 #: What an expected part no job settled says (``pending``): never a part's own description, so never a part.
 ABSENT: Final = 'absent: no job settled this part'
 
-#: How long a row may stand absent before the integrator is told.
-ABSENT_DEADLINE: Final = timedelta(hours=24)
-
-#: What an absent row past :data:`ABSENT_DEADLINE` adds to its description.
-ESCALATED: Final = 'escalated to the integrator'
-
-_ABSENT_SINCE: Final = re.compile(rf'^{re.escape(ABSENT)} since (?P<since>\d{{4}}-\d\d-\d\dT\d\d:\d\d:\d\dZ)')
 _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 
 #: A secret's name: all that ``${{ secrets.<NAME> }}`` and ``"$<NAME>"`` carry into a rendered workflow.
@@ -246,44 +234,23 @@ def matrix(
     return {'include': generic if hosted else rows}
 
 
-def _since(description: str) -> datetime | None:
-    """When an absent row's description says it went absent; ``None`` for any other description."""
-    found = _ABSENT_SINCE.match(description)
-    return datetime.strptime(found['since'], _STAMP).replace(tzinfo=UTC) if found else None
-
-
-def absent(
-    client: Client,
-    sha: str,
-    expected: Mapping[str, Any],
-    *,
-    now: datetime | None = None,
-    alarm: Callable[[Alarm], object] = sound,
-) -> list[str]:
+def absent(client: Client, sha: str, expected: Mapping[str, Any], *, now: datetime | None = None) -> list[str]:
     """Post each part of *expected* (a :func:`matrix`) no job settled ``pending`` saying :data:`ABSENT`; the lines.
 
     Settled is a latest ``success`` or ``failure``: a ``pending`` claim left behind is a job that died -- absent.
-    A row absent past :data:`ABSENT_DEADLINE` is re-posted naming :data:`ESCALATED`, once, and *alarm* sounds.
+    A row already absent is left as it is, keeping when it went absent.
     """
-    now = now or datetime.now(UTC)
+    stamp = (now or datetime.now(UTC)).strftime(_STAMP)
     latest = {status.context: status for status in status_list(client, sha)}
     lines = []
     for context in sorted(part_context(one['part']) for one in expected['include']):
         status = latest.get(context)
-        said = status.description if status is not None else ''
         if status is not None and status.state in _SETTLED:
             continue
-        since = _since(said)
-        if since is not None and (now - since < ABSENT_DEADLINE or ESCALATED in said):
-            lines.append(f'{context}: {said}')
+        if status is not None and status.description.startswith(ABSENT):
+            lines.append(f'{context}: {status.description}')
             continue
-        description = f'{ABSENT} since {now.strftime(_STAMP)}'
-        if since is not None:
-            hours = ABSENT_DEADLINE.total_seconds() / 3600
-            description = f'{ABSENT} since {since.strftime(_STAMP)}; past {hours:.0f} h, {ESCALATED}'
-            subject = f'{context} absent on {sha[:12]} since {since.strftime(_STAMP)}'
-            body = f'No job settled {context} on {sha}. Produce it (a declared producer may), or decide it.'
-            alarm(Alarm(INTEGRATION, client.forge.repo, subject, body, about=f'{context}@{sha}'))
+        description = f'{ABSENT} since {stamp}'
         status_post(client, sha, context=context, state='pending', description=description)
         lines.append(f'{context}: {description}')
     return lines
@@ -314,9 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help='hosted: only the parts a GitHub-hosted runner produces (absent names the rest)',
     )  # fmt: skip
     verbs.add_parser('produce', help='run the declared producer of one part at HEAD').add_argument('part')
-    verbs.add_parser(
-        'absent', help='post pending (absent) on every derived part no job settled; escalate one past its deadline'
-    ).add_argument('sha')
+    verbs.add_parser('absent', help='post pending (absent) on every derived part no job settled').add_argument('sha')
     for sub in (listing, verbs.choices['absent']):
         sub.add_argument(
             '--event', default='push', help='the GitHub event whose OSes the rows span (default push: every OS)'

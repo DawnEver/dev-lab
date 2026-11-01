@@ -126,17 +126,17 @@ def _refusal(tmp_path: Path, store: Store) -> str:
     return str(workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=store.client))
 
 
-def test_an_unreadable_or_malformed_revocation_list_refuses_the_post(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_an_unreadable_store_refuses_the_post_and_a_malformed_strike_is_ignored_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """FAIL CLOSED: a box whose revocation cannot be read -- down, not JSON, not a list -- is refused, never a crash."""
+    """FAIL CLOSED on a store that cannot be read; ONE bad strike file never locks out, or revokes, the fleet."""
     _declared_box(monkeypatch)
     store = Store(monkeypatch)
     assert workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=store.client) is None
-    store.files[STRIKE_FILE] = b'not json'
-    assert 'revocation list could not be read' in _refusal(tmp_path, store)
-    store.files[STRIKE_FILE] = b'{"a": 1}'
-    assert 'revocation list could not be read' in _refusal(tmp_path, store)
+    for bad in (b'not json', b'{"a": 1}'):
+        store.files[STRIKE_FILE] = bad
+        assert workstationverdict.workstation_refusal(tmp_path, 'base', full=True, client=store.client) is None
+        assert f'{STRIKE_FILE} is not a strike text -- ignored' in capsys.readouterr().err
 
     def down(_client: object) -> tuple[Attachment, ...]:
         message = 'forge down'
@@ -296,29 +296,59 @@ def test_one_contradiction_is_a_strike_and_the_limit_revokes(monkeypatch: pytest
     assert 'names no box' in workstationverdict.after_run(store.client, _found(''), Conclusion.FAIL)
 
 
-def test_two_strikes_written_at_once_both_count_and_clear_lifts_them(monkeypatch: pytest.MonkeyPatch) -> None:
-    """F-24463108d1a9: a strike is a new file, never a read-modify-write, so racing strikes never lose one."""
+def test_two_strikes_that_interleave_both_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F-0536583aca76: writer B strikes the box WHILE writer A's upload is in flight; both strikes stand.
+
+    A read-modify-write of one file per box fails this: A read no strikes, B wrote one, A's write replaced it.
+    """
     store = Store(monkeypatch)
-    real = workstationrevoke._strikes
-    monkeypatch.setattr(workstationrevoke, '_strikes', lambda _client: [])  # both writers read "no strikes yet"
-    workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'one')
-    workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'two')
-    monkeypatch.setattr(workstationrevoke, '_strikes', real)
+    plain = store.replace
+    interleaved: list[str] = []
+
+    def upload_with_b_in_between(client: object, name: str, data: bytes) -> Attachment:
+        if not interleaved:
+            interleaved.append('B started')
+            interleaved.append(workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'B'))
+        return plain(client, name, data)
+
+    monkeypatch.setattr(workstationrevoke, 'replace_named', upload_with_b_in_between)
+    said = workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'A')
+    assert interleaved, 'PLANTED CONTROL: B really ran inside A'
+    assert 'strike 2/2' in said
     assert workstationrevoke.revoked(store.client) == {'DUIPEZZTZ'}
+
+
+def test_clear_removes_by_name_even_a_malformed_strike_and_fails_when_it_removed_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(monkeypatch)
     monkeypatch.setattr(workstationrevoke, 'client_for', lambda _root: store.client)
+    for why in ('one', 'two'):
+        workstationrevoke.strike(store.client, 'DUIPEZZTZ', why)
+    store.files[STRIKE_FILE] = b'not json'
     assert workstationrevoke.main(['clear', 'DUIPEZZTZ']) == 0
-    assert workstationrevoke.revoked(store.client) == frozenset()
+    assert store.files == {}
+    assert workstationrevoke.main(['clear', 'DUIPEZZTZ']) == 1, 'nothing removed is no success'
+    assert workstationrevoke.main(['clear', 'DUIPEZZTZX']) == 1, 'a mistyped box removes nothing'
 
 
-def test_a_revoked_box_is_refused_naming_the_remedy(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """F-464f9b2fb0f8: the refusal names who lifts it and how."""
+def test_box_names_are_injective() -> None:
+    """``a-b`` and ``a_b`` are two boxes: one's strikes never count against the other."""
+    assert workstationrevoke.box_of('a-b') != workstationrevoke.box_of('a_b')
+    assert workstationrevoke.box_of('DUIPEZZTZ') == 'DUIPEZZTZ'
+
+
+def test_a_revoked_box_is_refused_naming_the_remedy_with_its_real_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """F-464f9b2fb0f8, F-aea3076e4d37: the refusal names the command to lift it, copy-pasteable."""
     _declared_box(monkeypatch)
     store = Store(monkeypatch)
     for why in ('one', 'two'):
         workstationrevoke.strike(store.client, 'DUIPEZZTZ', why)
     refused = _refusal(tmp_path, store)
     assert 'reached the limit' in refused
-    assert 'python -m dev_lab.dev.workstationrevoke clear <box>' in refused
+    assert 'python -m dev_lab.dev.workstationrevoke clear DUIPEZZTZ,' in refused
 
 
 def test_lookup_takes_the_newest_record_by_the_forges_id_not_the_listing_order(
