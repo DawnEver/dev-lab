@@ -250,13 +250,20 @@ def runtime_of(tree: Path, runtimes: Mapping[str, Mapping[str, Any]]) -> str:
 
     Issue dev-lab#26 (2026-11-01): ``branchset --apply`` reclaimed the detached, landed tree whose ``.venv`` the
     machine file's ``[runtimes.ai_lab] python`` names -- the forge serve's review interpreter. A tree holding
-    any path a ``[runtimes.<name>]`` value declares is that host's runtime, never a finished lease.
+    any path a ``[runtimes.<name>]`` value declares is that host's runtime, never a finished lease. A value is
+    judged by where it LIVES, never where its leaf points: a POSIX venv's ``bin/python`` links outside the tree.
     """
+    home = tree.resolve()
+
+    def lives_in_tree(value: str) -> bool:
+        path = Path(value).expanduser()
+        return (path.parent.resolve() / path.name).is_relative_to(home)
+
     names = sorted(
         name
         for name, row in runtimes.items()
         for value in row.values()
-        if isinstance(value, str) and value and Path(value).expanduser().resolve().is_relative_to(tree.resolve())
+        if isinstance(value, str) and value and lives_in_tree(value)
     )
     return (
         f'runtime of {", ".join(dict.fromkeys(names))} -- the host config [runtimes] names a path in it'
