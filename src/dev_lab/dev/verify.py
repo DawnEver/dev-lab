@@ -59,8 +59,10 @@ from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev.content import content_address
 from dev_lab.dev.envseat import EnvironmentSeat
+from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgerequest import offer_line
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
+from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
 from dev_lab.dev.localpart import part_selection, post_cited, post_part
@@ -92,6 +94,15 @@ from dev_lab.dev.verifybox import (
     ended_in_the_box,
     learn_ended,
     serial_width,
+)
+from dev_lab.dev.workstationverdict import (
+    ContentKey,
+    Found,
+    after_run,
+    before_run,
+    head_tree,
+    workstation_fields,
+    workstation_refusal,
 )
 
 __all__ = [
@@ -477,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     root = project_root()
     arguments = tuple(parsed.pytest_args)
     targeted = is_targeted(root, arguments)
-    outside = full_suite_refusal('verify', os.environ, part_context(parsed.part or BASE))
+    outside, workstation = _outside(root, parsed.part, arguments, targeted=targeted)
     refused = None if targeted else outside
     try:
         posted, arguments = arguments, (*part_selection(root, parsed.part), *arguments)
@@ -502,8 +513,24 @@ def main(argv: list[str] | None = None) -> int:
         _post_cited(root, cited.log, posted, part=parsed.part, producer=outside is None)
         return EXIT_CODES[Conclusion(cited.result.lower())]
 
+    post = None
+    if outside is None:
+        post = functools.partial(post_part, root, arguments=posted, part=parsed.part, extra=workstation)
+    stored, check = _stored(root, parsed.part, key, producer=post is not None and not posted)
+    if stored is not None and check is None:
+        return EXIT_CODES[stored.result]
+    code = _lead(root, arguments, key, cache, wait_s=wait_s, post=post)
+    if stored is not None and check is not None:
+        emit(after_run(check, stored, _CONCLUSION_OF.get(code, Conclusion.INCONCLUSIVE)))
+    return code
+
+
+def _lead(
+    root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, post: Callable[..., str] | None
+) -> int:
+    """Run *key* once across the box -- leading it, or attaching to the run in flight; the exit code."""
+
     def lead() -> str:
-        post = None if outside is not None else functools.partial(post_part, root, arguments=posted, part=parsed.part)
         code, lines = _judge(root, arguments, key, cache, wait_s=wait_s, post=post)
         return json.dumps({'code': code, 'lines': lines})
 
@@ -514,6 +541,44 @@ def main(argv: list[str] | None = None) -> int:
         for line in shared['lines']:
             emit(line)
     return int(shared['code'])
+
+
+def _outside(root: Path, part: str, arguments: tuple[str, ...], *, targeted: bool) -> tuple[str | None, dict[str, str]]:
+    """``(the full-suite refusal or None, a declared workstation's record keys)`` for this run.
+
+    THE ONE EXCEPTION (ruling D50-1): outside a producer, a ``--part`` run is admitted when this box is a declared
+    workstation posting the full part of a clean pushed tree (:mod:`dev_lab.dev.workstationverdict`); else the
+    refusal names why it is not, beside the remedy.
+    """
+    outside = full_suite_refusal('verify', os.environ, part_context(part or BASE))
+    if outside is None or not part or targeted:
+        return outside, {}
+    why = workstation_refusal(root, part, full=not arguments)
+    return (None, workstation_fields(root)) if why is None else (f'{outside} Or: {why}.', {})
+
+
+#: The conclusion an exit code says (the inverse of :data:`EXIT_CODES`).
+_CONCLUSION_OF: Final = {code: conclusion for conclusion, code in EXIT_CODES.items()}
+
+
+def _stored(root: Path, part: str, key: RunKey, *, producer: bool) -> tuple[Found | None, Client | None]:
+    """A *producer*'s dedupe of its full *part* by content key (:mod:`dev_lab.dev.workstationverdict`).
+
+    ``(found, None)``: *found* was CITED on HEAD -- nothing runs. ``(found, client)``: a spot check -- run, then
+    compare. ``(None, None)``: no producer of a full part, no hit, or the forge or HEAD unreadable -- run.
+    """
+    sha, tree = (head_sha(root), head_tree(root)) if producer and part else ('', '')
+    if not sha or not tree:
+        return None, None
+    try:
+        client = client_for(root)
+    except OSError:
+        return None, None
+    found, line = before_run(root, sha, ContentKey(tree, key.env, part), me=this_machine(), client=client)
+    if line:
+        emit(line)
+        return found, None
+    return found, (client if found is not None else None)
 
 
 def _post_cited(root: Path, log: str, posted: tuple[str, ...], *, part: str, producer: bool) -> None:

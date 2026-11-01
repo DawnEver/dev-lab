@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN, client_for
 from dev_lab.dev.producer import full_suite_refusal
 
 SHA = 'b' * 40
+T0 = datetime(2026, 11, 1, tzinfo=UTC)
 
 PYPROJECT = """
 [tool.lab_commons.tests]
@@ -96,7 +98,8 @@ def test_the_matrix_command_prints_json_a_workflow_reads_with_fromjson(tmp_path:
     }
 
 
-def test_every_expected_part_with_no_settled_status_is_posted_a_failure_and_a_settled_one_is_left() -> None:
+def test_every_expected_part_with_no_settled_status_is_posted_pending_absent_and_a_settled_one_is_left() -> None:
+    """ABSENT IS A STATE, NOT A FAILURE (D50-1, optimi-lab #124) -- and promote still refuses: absent is not PASS."""
     forge = StateForge()
     for context, state in (('tests/base', 'success'), ('tests/windows', 'pending')):
         forge.call(
@@ -110,21 +113,42 @@ def test_every_expected_part_with_no_settled_status_is_posted_a_failure_and_a_se
         {'context': 'tests/base@macos', 'state': 'success', 'description': 'scope=full ran=1 hands=-'},
     )
     rows = ('base', 'base@macos', 'base@windows', 'windows', 'femm+windows')
-    said = jobparts.absent(forge, SHA, {'include': [{'part': name, 'runs-on': 'x'} for name in rows]})
+    said = jobparts.absent(forge, SHA, {'include': [{'part': name, 'runs-on': 'x'} for name in rows]}, now=T0)
     latest = {status.context: status.state for status in status_list(forge, SHA)}
     assert latest == {
         'tests/base': 'success',
         'tests/base@macos': 'success',
-        'tests/base@windows': 'failure',
-        'tests/windows': 'failure',
-        'tests/femm+windows': 'failure',
+        'tests/base@windows': 'pending',
+        'tests/windows': 'pending',
+        'tests/femm+windows': 'pending',
     }
+    assert 'failure' not in latest.values(), 'no test failed, so nothing reads red'
     assert [line.split(':')[0] for line in said] == ['tests/base@windows', 'tests/femm+windows', 'tests/windows']
     parts, problems = platformparts.parts_of(status_list(forge, SHA))
     assert set(parts) == {'base', 'base@macos'}, 'an absent row is never read as a settled part; a settled one is'
     assert len(problems) == 3
     judged = platformparts.standing(status_list(forge, SHA), head=SHA)
-    assert judged.result.name == 'INCONCLUSIVE', 'promote reads every row absent judged'
+    assert judged.result.name == 'INCONCLUSIVE', 'promote reads every row absent judged, and refuses'
+
+
+def test_an_absent_row_past_its_deadline_is_escalated_to_the_integrator_once() -> None:
+    """Before the deadline nothing new is said; past it, one escalation and one alarm; never a second."""
+    forge = StateForge()
+    expected = {'include': [{'part': 'base@windows', 'runs-on': 'x'}]}
+    alarms: list[object] = []
+    jobparts.absent(forge, SHA, expected, now=T0, alarm=alarms.append)
+    jobparts.absent(forge, SHA, expected, now=T0 + jobparts.ABSENT_DEADLINE / 2, alarm=alarms.append)
+    assert alarms == [], 'PLANTED CONTROL: inside the deadline it waits'
+    late = T0 + jobparts.ABSENT_DEADLINE
+    jobparts.absent(forge, SHA, expected, now=late, alarm=alarms.append)
+    (status,) = status_list(forge, SHA)
+    assert status.state == 'pending'
+    assert jobparts.ESCALATED in status.description
+    assert '2026-11-01T00:00:00Z' in status.description, 'the row still says since when'
+    assert len(alarms) == 1
+    assert 'tests/base@windows' in alarms[0].subject
+    jobparts.absent(forge, SHA, expected, now=late + jobparts.ABSENT_DEADLINE, alarm=alarms.append)
+    assert len(alarms) == 1, 'escalated once'
 
 
 def test_inside_github_actions_the_job_token_is_the_credential_on_github_only(tmp_path: Path) -> None:

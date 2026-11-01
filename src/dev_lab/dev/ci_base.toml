@@ -15,7 +15,7 @@
 #                 matrix is the COMMAND's output, never a list typed here)
 #   part          one job per row: `jobparts produce <row>`, the declared producer, posts tests/<row>
 #                 (tests/<part>, or tests/<part>@<os> off its own runner)
-#   absent-parts  always: `jobparts absent --event` posts failure on every expected row no job settled
+#   absent-parts  always: `jobparts absent --event` posts pending (absent) on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
 #   review        `forge review run --pr N`: tests/review (pull_request ONLY -- never pull_request_target,
 #                 which would run a fork's code with this repository's secrets; Gitea's review.yml below is the

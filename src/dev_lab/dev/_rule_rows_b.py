@@ -147,12 +147,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'VERDICTS-FROM-THE-FORGE',
         (
-            'A verdict is a fact about a sha, produced ONCE after the push by the forge serve host that claims its '
-            '`tests/<part>` part and read from the forge, so nobody runs a full suite to push (admission reads '
-            'forge parts and no pre-push hook runs a test), a full tier (verify naming no path, a runner`s gate or '
-            'heavy) refuses to run outside the producer serve spawned and names the remedy -- push, then read the '
-            'part -- and a developer`s targeted measure needs no claim and refuses fast rather than queue behind '
-            'a run, a duplicate attaching to the run in flight and a judged key being cited.'
+            'A verdict is a fact about (tree, env key, part), produced ONCE after the push by the forge serve host '
+            'that claims its `tests/<part>` part and read from the forge: no pre-push hook runs a test, a full '
+            'tier refuses outside the producer naming the remedy (push, then read the part), a targeted measure '
+            'needs no claim, and a producer cites a stored record of its key rather than re-run. ONE EXCEPTION '
+            '(ruling D50-1): a box its machine file `[serve]` declares a producer of the part, not revoked, posts '
+            'it after a FULL run of a clean tree at a pushed sha on a fresh lock; a sampled share of its records '
+            'is re-run elsewhere, and a contradiction revokes the box.'
         ),
         (
             'tests/test_dev_producer.py',
@@ -161,6 +162,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'tests/test_dev_pushgate.py',
             'tests/test_dev_inflight.py',
             'tests/test_dev_runcache.py',
+            'tests/test_dev_workstationverdict.py',
         ),
     ),
     (
