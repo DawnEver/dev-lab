@@ -37,8 +37,6 @@ from dataclasses import asdict, dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Final
 
-import lab_commons.launch as _door
-
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 from dev_lab.dev.forgereview_findings import SEVERITIES, Finding, Findings
@@ -52,6 +50,7 @@ from dev_lab.dev.forgereview_judge import (
     self_review,
     upheld,
 )
+from dev_lab.dev.forgereview_scope import git
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import raise_record
@@ -97,7 +96,7 @@ LEDGER_VERSION: Final = 1
 DISPOSE_DOOR: Final = 'python -m dev_lab.dev.forge review dispose {pr} {id} --why "<claim>" (adjudicated)'
 
 _LEDGER: Final = re.compile(r'<!-- review-ledger (?P<json>\{.*?\}) -->', re.DOTALL)
-_GIT_TIMEOUT_S: Final = 120
+_ANY_EXIT: Final = range(256)  # a read whose failure reads as empty: the summary and trailers degrade, never stop
 _SUBJECTS: Final = 20  # commit subjects (memory paths, merges) the summary lists
 _TRAILER: Final = 'Review-Disposed'
 _TRAILED: Final = re.compile(r'^(?P<id>\S+)\s+--\s+(?P<why>.+)$')
@@ -172,7 +171,9 @@ def ledger_of(bodies: Iterable[str]) -> Ledger | None:
 
 def trailed(root: Path, target: str, head: str) -> dict[str, str]:
     """``{finding id: why}`` of the author's ``Review-Disposed`` trailers on the commits *target*..*head*."""
-    _, text = _git(root, 'log', f'--format=%(trailers:key={_TRAILER},valueonly,unfold)', f'{target}..{head}')
+    _, text = git(
+        root, 'log', f'--format=%(trailers:key={_TRAILER},valueonly,unfold)', f'{target}..{head}', ok=_ANY_EXIT
+    )
     return {m['id']: m['why'].strip() for line in text.splitlines() if (m := _TRAILED.match(line.strip()))}
 
 
@@ -192,24 +193,13 @@ def verdict(ledger: Ledger, gone: Mapping[str, str], number: int) -> tuple[str, 
     return 'success', f'review round {ledger.round}: no blocking finding open ({rest} open, non-blocking)'
 
 
-def _git(root: Path, *args: str) -> tuple[int, str]:
-    done = _door.run(
-        ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-        timeout=_GIT_TIMEOUT_S, check=False,
-    )  # fmt: skip
-    return done.returncode, done.stdout
-
-
 def _norm(line: str) -> str:
     return ' '.join(line.split())
 
 
 def _added(root: Path, reviewed: str) -> dict[str, set[str]]:
     """``{path: the lines the range *reviewed* added}``, whitespace-normalized."""
-    code, text = _git(root, 'diff', '--no-renames', '--unified=0', reviewed)
-    if code != 0:
-        msg = f'git diff {reviewed} failed in {root}'
-        raise OSError(msg)
+    _, text = git(root, 'diff', '--no-renames', '--unified=0', reviewed)
     out: dict[str, set[str]] = {}
     path = ''
     for line in text.splitlines():
@@ -259,7 +249,7 @@ def _bullets(rows: list[str]) -> str:
 
 def context_summary(root: Path, reviewed: str, pr_body: str = '') -> str:
     """What changed over *reviewed*, in which layers, and WHY -- cited from each of :data:`SUMMARY_CITES` in order."""
-    _, numstat = _git(root, 'diff', '--no-renames', '--numstat', reviewed)
+    _, numstat = git(root, 'diff', '--no-renames', '--numstat', reviewed, ok=_ANY_EXIT)
     layers: dict[str, list[int]] = {}
     for row in numstat.splitlines():
         added, removed, path = [*row.split('\t'), '', '', ''][:3]
@@ -271,9 +261,11 @@ def context_summary(root: Path, reviewed: str, pr_body: str = '') -> str:
     files = sum(t[0] for t in layers.values())
     plus, minus = sum(t[1] for t in layers.values()), sum(t[2] for t in layers.values())
     where = ', '.join(f'`{name}` ({t[0]})' for name, t in sorted(layers.items(), key=lambda kv: -kv[1][0]))
-    _, log = _git(root, 'log', '--no-merges', '--format=%s', reviewed)
-    _, merges = _git(root, 'log', '--merges', '--format=%s', reviewed)
-    _, landed = _git(root, 'diff', '--no-renames', '--diff-filter=A', '--name-only', reviewed, '--', _MEMORY)
+    _, log = git(root, 'log', '--no-merges', '--format=%s', reviewed, ok=_ANY_EXIT)
+    _, merges = git(root, 'log', '--merges', '--format=%s', reviewed, ok=_ANY_EXIT)
+    _, landed = git(
+        root, 'diff', '--no-renames', '--diff-filter=A', '--name-only', reviewed, '--', _MEMORY, ok=_ANY_EXIT
+    )
     lead = pr_body.strip().split('\n\n', 1)[0]
     cited = {
         'commits': '**Why** (the commits):\n' + (_bullets([one for one in log.splitlines() if one.strip()])

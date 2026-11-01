@@ -18,11 +18,13 @@
     "contents": "read"
   },
   "env": {
-    "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
-    "GITHUB_TOKEN": "${{ github.token }}"
+    "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}"
   },
   "jobs": {
     "parts": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -54,6 +56,9 @@
       }
     },
     "part": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": "parts",
       "name": "tests/${{ matrix.part }}",
       "runs-on": "${{ matrix.runs-on }}",
@@ -91,6 +96,9 @@
       }
     },
     "absent-parts": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": [
         "parts",
         "part"
@@ -127,6 +135,9 @@
       }
     },
     "security": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "if": "${{ github.event_name == 'pull_request' }}",
       "runs-on": "ubuntu-latest",
       "steps": [
@@ -179,9 +190,9 @@
         },
         {
           "name": "Install the review door",
-          "run": "cd \"$RUNNER_TEMP\"\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git\" \"$RUNNER_TEMP/dev-lab\"\ngit -C \"$RUNNER_TEMP/dev-lab\" checkout -q --detach \"$DEV_LAB_REF\"\npython3 -I -m venv \"$RUNNER_TEMP/review\" && \"$RUNNER_TEMP/review/bin/python\" -I -m pip install -q uv\n\"$RUNNER_TEMP/review/bin/uv\" export --no-config --project \"$RUNNER_TEMP/dev-lab\" --frozen --no-hashes --no-header --no-annotate --no-emit-project > \"$RUNNER_TEMP/review.txt\"\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" -r \"$RUNNER_TEMP/review.txt\"\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" --no-deps \"$RUNNER_TEMP/dev-lab\"\necho \"REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python\" >> \"$GITHUB_ENV\"\n",
+          "run": "cd \"$RUNNER_TEMP\"\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git\" \"$RUNNER_TEMP/dev-lab\"\ngit -C \"$RUNNER_TEMP/dev-lab\" fetch -q --no-tags origin \"$DEV_LAB_REF\"\ngit -C \"$RUNNER_TEMP/dev-lab\" checkout -q --detach \"$DEV_LAB_REF\"\npython3 -I -m venv \"$RUNNER_TEMP/review\" && \"$RUNNER_TEMP/review/bin/python\" -I -m pip install -q uv\n\"$RUNNER_TEMP/review/bin/uv\" export --no-config --project \"$RUNNER_TEMP/dev-lab\" --frozen --no-hashes --no-header --no-annotate --no-emit-project > \"$RUNNER_TEMP/review.txt\"\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" -r \"$RUNNER_TEMP/review.txt\"\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" --no-deps \"$RUNNER_TEMP/dev-lab\"\necho \"REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python\" >> \"$GITHUB_ENV\"\n",
           "env": {
-            "DEV_LAB_REF": "bba8677ba4f10c677ab06e6b300eec05d9f18edd",
+            "DEV_LAB_REF": "b8c9d363c67ec9040778400a74ac67c4b24fa64a",
             "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}",
             "GITHUB_TOKEN": "${{ github.token }}"
           }
@@ -203,12 +214,18 @@
           }
         },
         {
-          "name": "tests/review",
-          "run": "trap \"git credential-cache exit\" EXIT\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "name": "Hand the forge tokens to the door",
+          "run": "umask 077\nmkdir -p \"$RUNNER_TEMP/forge-secrets\"\nprintf '%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" > \"$RUNNER_TEMP/forge-secrets/read\"\nprintf '%s' \"$GITHUB_TOKEN\" > \"$RUNNER_TEMP/forge-secrets/api\"\n",
           "env": {
-            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
             "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}",
             "GITHUB_TOKEN": "${{ github.token }}"
+          }
+        },
+        {
+          "name": "tests/review",
+          "run": "trap \"git credential-cache exit\" EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "env": {
+            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
           }
         }
       ],
@@ -220,6 +237,9 @@
       }
     },
     "merge-ready": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": [
         "security",
         "review"
@@ -267,6 +287,9 @@
       }
     },
     "promote": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": [
         "absent-parts"
       ],

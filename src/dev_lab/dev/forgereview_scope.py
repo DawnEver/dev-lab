@@ -42,6 +42,7 @@ from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
+from dev_lab.dev.reviewgitauth import git_env
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -141,7 +142,7 @@ def git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
     """``git *args`` in *root*: its exit code (one of *ok*) and stdout; :class:`OSError` naming any other."""
     done = _door.run(
         ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-        timeout=_GIT_TIMEOUT_S, check=False,
+        timeout=_GIT_TIMEOUT_S, check=False, env=git_env(),
     )  # fmt: skip
     if done.returncode not in tuple(ok):
         msg = f'git {" ".join(args)} failed: {done.stderr.strip()[:300]}'

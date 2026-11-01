@@ -455,11 +455,17 @@ def client_for(
     transport: Transport = forge_transport,
     remote: str = 'origin',
     url: str = '',
+    token: str = '',
 ) -> Client:
-    """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp."""
+    """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp.
+
+    A *token* given is the job token a workflow handed over by file (the review door, :mod:`reviewgitauth`).
+    """
     forge = forge_of_url(url) if url else forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
-    built = stored_client(forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root))
+    built = stored_client(
+        forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root), token=token
+    )
     built.cache_dir = outbox_dir(root)
     return built
 
@@ -472,17 +478,18 @@ def stored_client(
     transport: Transport = forge_transport,
     stamp: str | None = None,
     journal: Journal | None = None,
+    token: str = '',
 ) -> Client:
     """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
 
-    Inside a workflow job on the forge's own Actions the job token is the credential (:func:`actions_token`),
-    never refreshed.
+    Inside a workflow job on the forge's own Actions the job token is the credential, never refreshed: the
+    *token* given, else the job's env (:func:`actions_token`).
 
     Raises:
         NoCredential: the store holds no credential for the host.
 
     """
-    if job := actions_token(forge, os.environ if env is None else env):
+    if job := token or actions_token(forge, os.environ if env is None else env):
         return Client(
             forge, job, transport=transport, username=backend_for(forge).actions_login, stamp=stamp, journal=journal
         )

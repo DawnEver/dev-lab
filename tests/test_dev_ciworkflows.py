@@ -325,17 +325,54 @@ def test_no_credential_outlives_the_step_that_uses_it(tmp_path: Path) -> None:
         assert not _config_held_token(text), text
         steps = workflow['jobs']['review']['steps']
         for step in steps:
-            if 'FAMILY_READ_TOKEN' in step.get('run', ''):
+            if 'FAMILY_READ_TOKEN' in step.get('run', '') and step.get('name') != _HAND_OVER:
                 assert 'GIT_CONFIG_VALUE_0=' in step['run'], f'{step.get("name")}: process-scoped, never config'
                 # GitHub's git server takes only Basic (x-access-token:<token>); a `token` scheme prompts and dies
                 # (dev-lab #17's own review, 2026-11-01: "could not read Username").
                 assert 'Authorization: basic $(' in step['run'], step.get('name')
         review = next(s for s in steps if s.get('name') == 'tests/review')
         assert review['run'].startswith('trap "git credential-cache exit" EXIT')
-        # F-ca1dda52c2ef: the blobless checkout fetches base blobs while the diff runs, so the step carries the header.
-        assert 'GIT_CONFIG_VALUE_0="Authorization: basic' in review['run'], 'the review step reads its lazy blobs'
+        # F-ca1dda52c2ef: the door carries the lazy-blob header itself, read from the hand-over file.
+        assert 'GIT_CONFIG' not in review['run'], 'the review step derives no header in shell'
+        assert '--git-token-file "$RUNNER_TEMP/forge-secrets/read"' in review['run']
+        assert '--api-token-file "$RUNNER_TEMP/forge-secrets/api"' in review['run']
     planted = 'git config --global http."$FORGE_URL/".extraHeader "Authorization: token ${FAMILY_READ_TOKEN}"'
     assert _config_held_token(planted), 'PLANTED CONTROL'
+
+
+_HAND_OVER = 'Hand the forge tokens to the door'
+_FORGE_TOKENS = {'GITHUB_TOKEN', 'FAMILY_READ_TOKEN'}
+
+
+def _token_envs(workflow: dict[str, Any]) -> list[str]:
+    """Where a forge token is env of the review job outside the hand-over step: workflow, job or step level."""
+    job = workflow['jobs']['review']
+    found = [f'workflow {k}' for k in workflow.get('env', {}) if k in _FORGE_TOKENS]
+    found += [f'job {k}' for k in job.get('env', {}) if k in _FORGE_TOKENS]
+    steps, names = job['steps'], [step.get('name') for step in job['steps']]
+    after = steps[names.index(_HAND_OVER) + 1 :] if _HAND_OVER in names else steps
+    return found + [f'{step.get("name")} {k}' for step in after for k in step.get('env', {}) if k in _FORGE_TOKENS]
+
+
+def test_no_forge_token_is_env_of_the_review_or_anything_after_the_hand_over(tmp_path: Path) -> None:
+    """F-d61706393b50: /proc/<pid>/environ keeps an unset variable, so the review's tokens reach it by file only.
+
+    Steps BEFORE the hand-over (the installs) keep their own process-scoped token. PLANTED CONTROL: the job token
+    at workflow level, as ci.yml had it, is what the scan refuses.
+    """
+    (tmp_path / 'hub').mkdir()
+    for workflow in (_base_ci(tmp_path / 'hub'), _gitea_review(tmp_path)):
+        assert not _token_envs(workflow), _token_envs(workflow)
+        names = [s.get('name') for s in workflow['jobs']['review']['steps']]
+        assert names.index(_HAND_OVER) == names.index('tests/review') - 1
+        review = workflow['jobs']['review']['steps'][names.index('tests/review')]
+        for word in (*_FORGE_TOKENS, 'GIT_CONFIG'):
+            assert word not in review['run'], word
+            assert word not in str(review.get('env', {})), word
+        hand = workflow['jobs']['review']['steps'][names.index(_HAND_OVER)]
+        assert hand['run'].startswith('umask 077'), 'the token files are private'
+    planted = {**_base_ci(tmp_path / 'hub'), 'env': {'GITHUB_TOKEN': '${{ github.token }}'}}
+    assert _token_envs(planted) == ['workflow GITHUB_TOKEN'], 'PLANTED CONTROL'
 
 
 def _config_held_token(text: str) -> bool:
