@@ -171,6 +171,13 @@
           }
         },
         {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": false
+          }
+        },
+        {
           "name": "Install the review door",
           "run": "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\"\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git\" \"$RUNNER_TEMP/dev-lab\"\ngit -C \"$RUNNER_TEMP/dev-lab\" checkout -q --detach \"$DEV_LAB_REF\"\npython3 -m venv \"$RUNNER_TEMP/review\" && \"$RUNNER_TEMP/review/bin/python\" -m pip install -q uv\n\"$RUNNER_TEMP/review/bin/uv\" export --project \"$RUNNER_TEMP/dev-lab\" --frozen --no-hashes --no-header --no-annotate --no-emit-project | grep -E '^lab-commons @ ' > \"$RUNNER_TEMP/review.txt\"\n\"$RUNNER_TEMP/review/bin/uv\" pip install --python \"$RUNNER_TEMP/review/bin/python\" \"$RUNNER_TEMP/dev-lab\" -r \"$RUNNER_TEMP/review.txt\"\necho \"REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python\" >> \"$GITHUB_ENV\"\n",
           "env": {

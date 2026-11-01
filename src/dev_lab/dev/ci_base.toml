@@ -121,6 +121,8 @@ if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
+    # The door and method install with uv; no cache, so nothing a PR run saved is restored into this job.
+    { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = false } },
     { use-steps = "door" },
     { use-steps = "method" },
     { use-steps = "review" },
