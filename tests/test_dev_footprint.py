@@ -275,3 +275,33 @@ def test_import_names_reads_the_installed_metadata_and_refuses_the_runner() -> N
     assert footprint.import_names('Pluggy') == frozenset({'pluggy'}), 'pytest depends on it, so it is installed'
     assert footprint.import_names('pytest') is None
     assert footprint.import_names('no-such-distribution-d48') is None
+
+
+def test_a_from_import_does_not_hide_a_later_read_by_path() -> None:
+    """F-003477da3cde: a from-import's module name once clobbered the tracked-names set ``_reads_by_path`` reads.
+
+    PLANTED CONTROL: the same read with no from-import before it was already caught; both must be.
+    """
+    read = "open('data/x.csv').read()\n"
+    for text in (read, 'from os import path\n' + read):
+        prints = _synthetic({'tests/test_r.py': text})
+        assert prints.reaches('tests/test_r.py', ('data/x.csv',)), text
+
+
+def test_the_repos_own_project_entry_does_not_carry_a_pin_move_to_everything() -> None:
+    """F-759cb56e8a22: the root's editable entry depends on everything, so a pin move reached it and then all.
+
+    In-repo code reaches its third-party imports through its own ``import:<name>`` paths, so the lock's
+    in-repo entries (editable / virtual INSIDE the repo) are no door. CONTROL: an editable path OUTSIDE the
+    repo is third-party code the footprint cannot read, so it stays one, and unmapped reaches everything.
+    """
+
+    def lock(pin: str, source: str) -> str:
+        return _lock(pin=pin, extra=f'\n[[package]]\nname = "app"\nversion = "0"\nsource = {{ {source} }}\n'
+                     'dependencies = [{ name = "dev-lab" }, { name = "numpy" }]\n')  # fmt: skip
+
+    for source in ('editable = "."', 'virtual = "."', 'editable = "packages/sub"'):
+        assert footprint.lock_reach(lock('aaa', source), lock('bbb', source), MAPPED.get) == {'dev_lab'}, source
+    assert (
+        footprint.lock_reach(lock('aaa', 'editable = "../app"'), lock('bbb', 'editable = "../app"'), MAPPED.get) is None
+    )

@@ -212,9 +212,9 @@ def _parse(path: str, text: str, top: frozenset[str]) -> _Parsed:
                 by_path = by_path or alias.name.split('.')[0] in _PATH_MODULES
         elif isinstance(node, ast.ImportFrom):
             found |= _from(path, node, roots)
-            top = (node.module or '').split('.')[0]
-            found |= {IMPORT + top} if node.level == 0 and top else set()
-            by_path = by_path or (node.level == 0 and top in _PATH_MODULES)
+            imported = (node.module or '').split('.')[0] if node.level == 0 else ''
+            found |= {IMPORT + imported} if imported else set()
+            by_path = by_path or imported in _PATH_MODULES
         elif isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == 'pytest_plugins' for t in node.targets
         ):
@@ -462,14 +462,34 @@ def _graphs(old: str, new: str) -> tuple[set[str], dict[str, set[str]]] | None:
         was, now = _packages(before), _packages(after)
         if was is None or now is None:
             return None
+        local = {package for graph in (was, now) for package, entries in graph.items() if _in_repo(entries)}
         dependents: dict[str, set[str]] = {}
         for graph in (was, now):
             for package, entries in graph.items():
-                for dep in _depends(entries):
+                for dep in _depends(entries) if package not in local else ():
                     dependents.setdefault(dep, set()).add(package)
     except (tomllib.TOMLDecodeError, AttributeError, TypeError, KeyError):
         return None
-    return {package for package in was.keys() | now.keys() if was.get(package) != now.get(package)}, dependents
+    changed = {package for package in was.keys() | now.keys() if was.get(package) != now.get(package)}
+    return changed - local, dependents
+
+
+def _in_repo(entries: Iterable[Mapping[str, Any]]) -> bool:
+    """Whether a package is the repo's OWN code: an editable or virtual source at a relative path inside it.
+
+    Its importers reach their third-party imports through their own ``import:<name>`` paths, and its change
+    is a change to tracked files, so it is no door (F-759cb56e8a22: the root's entry depends on everything,
+    and walking through it made a dev-lab pin move reach every test again). A path outside the repo is
+    third-party code the footprint cannot read, so it stays a package like any other.
+    """
+    for entry in entries:
+        source = entry.get('source', {})
+        path = source.get('editable', source.get('virtual'))
+        if not isinstance(path, str) or ':' in path or path.startswith(('/', '\\')):
+            return False
+        if '..' in PurePosixPath(path.replace('\\', '/')).parts:
+            return False
+    return True
 
 
 def lock_reach(
