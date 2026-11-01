@@ -195,14 +195,17 @@ _TOKEN = 'tok-secret-123'  # noqa: S105 -- a planted value the scan looks for
 _HEADER = 'Authorization: basic ' + base64.b64encode(f'x-access-token:{_TOKEN}'.encode()).decode()
 
 
-def _forge_env(monkeypatch) -> None:
+def _token_files(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """The workflow's writing step: the tokens in private files, the env holding only the server."""
     monkeypatch.setattr(reviewgitauth, '_held', {})
-    monkeypatch.setenv('FAMILY_READ_TOKEN', _TOKEN)
-    monkeypatch.setenv('GITHUB_TOKEN', 'job-token')
+    for name in (*reviewgitauth.FORGE_TOKEN_ENVS, 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv('GITHUB_SERVER_URL', 'https://forge.example')
-    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
-    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'http.https://forge.example/.extraHeader')
-    monkeypatch.setenv('GIT_CONFIG_VALUE_0', _HEADER)
+    secrets = tmp_path / 'forge-secrets'
+    secrets.mkdir(exist_ok=True)
+    (secrets / 'read').write_text(_TOKEN, encoding='utf-8')
+    (secrets / 'api').write_text('job-token', encoding='utf-8')
+    return secrets / 'read', secrets / 'api'
 
 
 def _leaks(env: dict[str, str]) -> list[str]:
@@ -211,12 +214,35 @@ def _leaks(env: dict[str, str]) -> list[str]:
     return [k for k, v in env.items() if _TOKEN in v or v == 'job-token' or slot.fullmatch(k)]
 
 
+def test_take_reads_each_token_file_once_and_leaves_no_token_on_disk_or_in_env(tmp_path: Path, monkeypatch) -> None:
+    """F-d61706393b50: the tokens never enter an environment, so no /proc/<pid>/environ holds them."""
+    read, api = _token_files(tmp_path, monkeypatch)
+    assert reviewgitauth.take(read, api) == 'job-token'
+    assert not read.exists()
+    assert not api.exists()
+    assert not _leaks(dict(os.environ))
+    assert reviewgitauth.git_env()['GIT_CONFIG_VALUE_0'] == _HEADER
+
+
+@pytest.mark.parametrize('name', ['GITHUB_TOKEN', 'FAMILY_READ_TOKEN', 'GIT_CONFIG_COUNT'])
+def test_a_token_left_in_the_env_is_refused_and_the_files_are_still_removed(
+    tmp_path: Path, monkeypatch, name: str
+) -> None:
+    """PLANTED CONTROL: a template that still sets a token in the step env is flagged, not silently scrubbed."""
+    read, api = _token_files(tmp_path, monkeypatch)
+    monkeypatch.setenv(name, _TOKEN)
+    with pytest.raises(reviewgitauth.TokenInEnvironment, match=name):
+        reviewgitauth.take(read, api)
+    assert not read.exists()
+    assert not api.exists()
+
+
 def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_path: Path, monkeypatch) -> None:
-    """F-5a82981c5f22. PLANTED CONTROL: without --git-token-env (the old door) the reviewer inherits every one."""
+    """F-5a82981c5f22. PLANTED CONTROL: a token in the step env (the old template) refuses the run."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = ACTIONS_BOT
-    _forge_env(monkeypatch)
+    read, api = _token_files(tmp_path, monkeypatch)
     monkeypatch.setenv('REVIEW_KEY', 'k')
     gits: list[dict[str, str] | None] = []
     real = forgereview_scope._door.run
@@ -229,7 +255,7 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
     monkeypatch.setattr(forgereview_scope._door, 'run', spy)
     command = _EnvCommand()
     argv = ['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY']
-    assert main([*argv, '--git-token-env', 'FAMILY_READ_TOKEN', '--git-token-env', 'GITHUB_TOKEN'],
+    assert main([*argv, '--git-token-file', str(read), '--api-token-file', str(api)],
                 cwd=work, client=forge, run=command, ready=_can) == 0  # fmt: skip
     assert command.envs, 'the reviewer ran'
     assert all(not _leaks(env) for env in command.envs), [_leaks(env) for env in command.envs]
@@ -241,17 +267,15 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
     other_work, other_head = _work(tmp_path / 'control')
     control, other = _forge(other_head)
     control.login = ACTIONS_BOT
-    _forge_env(monkeypatch)
+    read, api = _token_files(tmp_path, monkeypatch)
+    monkeypatch.setenv('GITHUB_TOKEN', 'job-token')
     leaky = _EnvCommand()
-    assert main(['run', '--pr', str(other), '--secret-env', 'REVIEW_KEY'],
-                cwd=other_work, client=control, run=leaky, ready=_can) == 0  # fmt: skip
-    assert leaky.envs
-    assert all(_leaks(env) for env in leaky.envs), 'PLANTED CONTROL: the old door leaks the token'
+    assert main([*argv[:1], '--pr', str(other), '--git-token-file', str(read), '--api-token-file', str(api)],
+                cwd=other_work, client=control, run=leaky, ready=_can) == 2  # fmt: skip
+    assert not leaky.envs, 'PLANTED CONTROL: a token in the env never reaches a reviewer'
 
 
-def test_no_token_holds_no_header_and_git_inherits(monkeypatch) -> None:
+def test_no_token_file_holds_no_header_and_git_inherits(monkeypatch) -> None:
     monkeypatch.setattr(reviewgitauth, '_held', {})
-    env = {'GITHUB_SERVER_URL': 'https://forge.example', 'GIT_CONFIG_COUNT': '1'}
-    assert reviewgitauth.take(['FAMILY_READ_TOKEN'], env) is False
-    assert env == {'GITHUB_SERVER_URL': 'https://forge.example'}
+    assert reviewgitauth.take(None, None, {'GITHUB_SERVER_URL': 'https://forge.example'}) == ''
     assert reviewgitauth.git_env() is None

@@ -256,8 +256,12 @@ def _parser() -> argparse.ArgumentParser:
         help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer',
     )  # fmt: skip
     running.add_argument(
-        '--git-token-env', action='append', default=[], metavar='NAME',
-        help="a forge token variable, first set one wins: read once, removed from the env, sent only to the door's git",
+        '--git-token-file', type=Path, metavar='PATH',
+        help="a file holding the forge read token: read once, removed, sent only to the door's git",
+    )  # fmt: skip
+    running.add_argument(
+        '--api-token-file', type=Path, metavar='PATH',
+        help="a file holding the job's forge API token: read once, removed, held by the door's forge client",
     )  # fmt: skip
     running.add_argument(
         '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
@@ -311,9 +315,11 @@ def main(
     root = args.repo or (Path.cwd() if cwd is None else cwd)
     pull_in = fetch or (lambda where, number: _fetch_pull(where, 'origin', number))
     try:
-        origin, base = client or client_for(root), load_policy(root).integration
+        # run: the tokens arrive by file, never env, before any subprocess (F-5a82981c5f22, F-d61706393b50);
+        # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.
+        api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
+        origin, base = client or client_for(root, token=api), load_policy(root).integration
         if args.verb == 'run':
-            take(args.git_token_env)  # before any subprocess: the reviewer inherits no forge token (F-5a82981c5f22)
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(
                 this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready, secret=secret

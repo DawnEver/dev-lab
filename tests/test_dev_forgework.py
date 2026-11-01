@@ -244,6 +244,16 @@ def _stored_client(server, tmp_path: Path, fresh: str = 'fresh') -> Client:
     return client
 
 
+def test_a_token_handed_over_by_file_is_the_clients_credential_not_the_env(tmp_path) -> None:
+    """F-d61706393b50: the review door's client takes its job token from the file, with no env token at all."""
+    repo = _repo(tmp_path, 'https://f.example/o/r.git')
+    env = {'GITHUB_ACTIONS': 'true', 'GITEA_ACTIONS': 'true'}  # a job, but no GITHUB_TOKEN in its env
+    handed = 'from-file'
+    assert client_for(repo, env=env, token=handed).token == handed
+    planted = client_for(repo, env={**env, 'GITHUB_TOKEN': 'from-env'}, token=handed)
+    assert planted.token == handed, 'PLANTED CONTROL: an env token never outranks the handed-over one'
+
+
 def test_an_expired_oauth_token_is_refreshed_as_git_does_and_the_call_answers(server, tmp_path) -> None:
     """THE 2026-10-21 ROOT CAUSE: an expired OAuth access token is refreshed, not reported as a bad credential.
 
