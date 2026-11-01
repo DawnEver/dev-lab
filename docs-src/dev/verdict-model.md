@@ -16,10 +16,15 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - The family entry is `python -m dev_lab.dev.verify -- <paths>`; a repo may add its own driver (consumer-a:
   `python scripts/gate/runner.py measure <paths>`). Exit codes: `0` pass, `1` fail, `2` refused argv,
   `3` inconclusive.
-- **A full tier refuses outside the producer** (`VERDICTS-FROM-THE-FORGE`) and names the remedy: push.
+- **A full tier refuses outside the producer** (`VERDICTS-FROM-THE-FORGE`) and names the remedy: push. Its one
+  exception -- a declared workstation posting its full part, deduped by (tree, env key, part) -- is stated in
+  that rule's row and built in `dev_lab.dev.workstationverdict`.
 - **A measurement runs on a dirty tree** and answers "where am I"; it never decides whether anything may land.
-- **Only the producer posts.** A `verify` that `forge serve` spawned for a part posts that part on a clean,
-  unmoved HEAD; any other `verify` is a local measure and posts nothing. A dirty tree posts nothing.
+- **Only the producer posts.** A `verify` that `forge serve` spawned for a part -- or a declared workstation's
+  `verify --part <part>` (the exception above) -- posts that part on a clean, unmoved HEAD; any other `verify`
+  is a local measure and posts nothing. A dirty tree posts nothing.
+- **An unproduced part is absent, not red**: `jobparts absent` posts it `pending` and escalates it to the
+  integrator past its deadline; `main` still needs it PASS.
 - **An engine is enabled by the tier, never by the shell**: the heavy tier sets the live-engine environment
   itself. A skip says which fact stopped it: not installed on this box, or installed but not enabled.
 - A resource on another host is never part of a verdict about this tree.
