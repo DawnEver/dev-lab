@@ -54,7 +54,10 @@ def take(git_file: Path | None, api_file: Path | None, environ: Mapping[str, str
 
     """
     env = os.environ if environ is None else environ
-    git_token, api_token = _read_once(git_file), _read_once(api_file)
+    try:
+        git_token = _read_once(git_file)
+    finally:  # a failed first read still removes the second file (F-2b82f946ff0d)
+        api_token = _read_once(api_file)
     headers = [
         f'GIT_CONFIG_KEY_{n}' for n in range(_slots(env)) if _EXTRA_HEADER.fullmatch(env.get(f'GIT_CONFIG_KEY_{n}', ''))
     ]

@@ -237,6 +237,16 @@ def test_a_token_left_in_the_env_is_refused_and_the_files_are_still_removed(
     assert not api.exists()
 
 
+def test_a_failed_first_read_still_removes_the_second_file(tmp_path: Path, monkeypatch) -> None:
+    """F-2b82f946ff0d: an unreadable read-token file must not leave the API token on disk."""
+    read, api = _token_files(tmp_path, monkeypatch)
+    read.write_bytes(b'\xff\xfe not utf-8')
+    with pytest.raises(UnicodeDecodeError):
+        reviewgitauth.take(read, api)
+    assert not read.exists()
+    assert not api.exists()
+
+
 def test_the_jobs_own_git_config_slots_survive_and_the_header_takes_the_next(tmp_path: Path, monkeypatch) -> None:
     """F-83b4c0e6a277: safe.directory (or a proxy, sslCAInfo) is the job's; only an auth header slot is refused."""
     read, api = _token_files(tmp_path, monkeypatch)
