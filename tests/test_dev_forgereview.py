@@ -165,7 +165,7 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert 'F-0123456789ab' in comment['body']
     assert 'correctness@anthropic' in comment['body']
     assert 'rule `NEVER-DO-X`' in comment['body']
-    assert '**Review round 1/3**' in comment['body']
+    assert '**Review round 1/5**' in comment['body']
     assert '**What changed**: 1 file(s)' in comment['body'], 'round 1 opens with the context summary'
     (status,) = [s for s in status_list(forge, head) if s.context == REVIEW_CONTEXT]
     assert status.state == 'failure'
