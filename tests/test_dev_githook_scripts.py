@@ -511,3 +511,44 @@ def test_a_declaration_naming_no_full_existing_sha_with_a_reason_is_REFUSED(
     assert done.returncode == 1, done.stdout + done.stderr
     assert said in done.stderr, done.stderr
     assert not argv_log.is_file(), 'the checker ran under a refused declaration'
+
+
+# ------------------------------------------------------- cz-push-range.sh: a sync re-judges nothing upstream
+
+
+def _sync_with_an_off_format_upstream_commit(repo: Path) -> tuple[str, str]:
+    """The lane pushed at *first*; upstream (``base-for-test``) then took a ``data(...)`` commit; the lane merges it."""
+    first = _git(repo, 'rev-parse', 'HEAD')
+    _git(repo, 'branch', 'base-for-test')
+    _git(repo, 'switch', '-q', 'base-for-test')
+    (repo / 'up.txt').write_text('u', encoding='utf-8')
+    _git(repo, 'add', '-A')
+    _git(repo, 'commit', '-m', 'data(femm): landed on the integration line by its integrator')
+    _git(repo, 'switch', '-q', '-')
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'chore(merge): base-for-test into the lane', 'base-for-test')
+    return first, _git(repo, 'rev-parse', 'HEAD')
+
+
+def test_a_sync_increment_does_not_re_judge_what_the_base_already_holds(repo: Path, tmp_path: Path) -> None:
+    """A commit reachable from LAB_CZ_BASE_REF was judged where it landed; only the lane's own are judged here.
+
+    MEASURED 2026-11-01: a motronics lane's sync push was refused for two ``data(femm)`` commits integrate/main
+    already held.
+    """
+    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    first, head = _sync_with_an_off_format_upstream_commit(repo)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
+    assert done.returncode == 0, done.stdout + done.stderr
+    judged = argv_log.read_text(encoding='utf-8')
+    assert 'data(femm)' not in judged, judged
+    assert 'chore(merge)' in judged, judged
+
+
+def test_planted_a_lanes_own_off_format_commit_in_a_sync_push_is_still_refused(repo: Path, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same sync, plus a ``data(...)`` commit the LANE wrote -- refused."""
+    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    first, _ = _sync_with_an_off_format_upstream_commit(repo)
+    head = _commit(repo, 'data(lane): written on the lane')
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'data(lane)' in argv_log.read_text(encoding='utf-8')

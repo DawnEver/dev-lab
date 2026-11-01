@@ -163,20 +163,30 @@ def pending(root: Path) -> tuple[str, ...]:
     if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
         return ()
     tree = _git(root, 'write-tree').strip()
-    return _judge(root, 'HEAD', tree, _not_taken_from_merge_head(root, tree, _changes(root, 'HEAD', tree)))
+    return _judge(root, 'HEAD', tree, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
 
 
-def _not_taken_from_merge_head(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
-    """*rows* without the paths a merge stages EXACTLY as ``MERGE_HEAD`` holds them -- not a merge: *rows* unchanged.
+def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """*rows* without the paths staged EXACTLY as ``MERGE_HEAD`` or ``origin/<integration>`` holds them.
 
-    A sync of a lane with its integration line carries that line's history; an entry staged byte-for-byte as the
-    merged side has it (or absent where that side deleted it) is a change judged where it was made, not an edit by
-    this merge. Reverting it to the lane's text -- what the refusal's remedy asked -- would undo the integration line
-    inside the merge. A path the resolution stages as NEITHER side is still this commit's, and is judged.
+    Such a path is a change judged where it was made, not an edit by this commit -- two shapes, both measured
+    2026-11-01 on a motronics lane:
+
+    * a SYNC carries the integration line's history: an entry staged byte-for-byte as the merged side has it (or
+      absent where that side deleted it). Reverting it to the lane's text would undo upstream inside the merge.
+    * a RESTORE is the refusal's own remedy: an entry the lane once edited in place, put back to the integration
+      line's text. Refusing it left the remedy uncommittable.
+
+    A path staged as neither is still this commit's, and is judged.
     """
-    if _run(root, 'rev-parse', '--verify', '-q', 'MERGE_HEAD')[0] != 0:
+    differs: set[str] | None = None
+    for ref in ('MERGE_HEAD', f'origin/{policy_at(root, "HEAD").integration}'):
+        if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
+            continue
+        against = set(_git(root, 'diff', '--no-renames', '--name-only', '-z', ref, tree).split('\0')) - {''}
+        differs = against if differs is None else differs & against
+    if differs is None:
         return rows
-    differs = set(_git(root, 'diff', '--no-renames', '--name-only', '-z', 'MERGE_HEAD', tree).split('\0')) - {''}
     return [(status, old, new) for status, old, new in rows if old in differs or new in differs]
 
 

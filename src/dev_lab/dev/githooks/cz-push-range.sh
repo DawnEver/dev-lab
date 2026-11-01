@@ -115,11 +115,22 @@ for i in "${!RANGES[@]}"; do
     echo "[cz-push-range] the range holds no commit -- nothing to check"
     continue
   fi
+  # A SYNC'S INCREMENT HOLDS THE BASE'S OWN COMMITS (measured 2026-11-01: a lane merging integrate/main was refused
+  # for two off-format commits integrate/main already held). A commit reachable from the base was judged where it
+  # landed; only what the lane wrote is judged here.
+  OWN=("${RANGE}")
+  if git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null; then
+    OWN+=("^${BASE_REF}")
+  fi
+  upstream=$(( $(git rev-list --count "${RANGE}") - $(git rev-list --count "${OWN[@]}") ))
+  if [ "${upstream}" -gt 0 ]; then
+    echo "[cz-push-range] ${upstream} commit(s) ${BASE_REF} already holds -- judged where they landed"
+  fi
   HELD=()
   while read -r sha; do
     case "${EXEMPT}" in *" ${sha} "*) HELD+=("${sha}") ;; esac
-  done < <(git rev-list "${RANGE}")
-  if [ "${#HELD[@]}" -eq 0 ]; then
+  done < <(git rev-list "${OWN[@]}")
+  if [ "${#HELD[@]}" -eq 0 ] && [ "${upstream}" -eq 0 ]; then
     bash "${HERE}/with-venv.sh" commitizen check --rev-range "${RANGE}" || status=1
     continue
   fi
@@ -128,6 +139,6 @@ for i in "${!RANGES[@]}"; do
       *" ${sha} "*) echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)" ;;
       *) bash "${HERE}/with-venv.sh" commitizen check --message "$(git log -1 --format=%B "${sha}")" || status=1 ;;
     esac
-  done < <(git rev-list --reverse "${RANGE}")
+  done < <(git rev-list --reverse "${OWN[@]}")
 done
 exit "${status}"
