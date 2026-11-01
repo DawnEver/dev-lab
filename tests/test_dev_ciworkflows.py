@@ -397,3 +397,25 @@ def test_the_gitea_review_reaches_its_forge_on_the_runner_s_loopback_instance(tm
     text = render(_gitea_review(tmp_path))
     assert '${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}' in text
     assert 'GIT_CONFIG_GLOBAL' in text, "the job token never lands in the host user's global git config"
+
+
+def test_no_python_in_the_review_job_imports_from_the_checkout(tmp_path: Path) -> None:
+    """F-7b2f4bd210de: `python -m` puts the cwd -- the PR's checkout -- first on sys.path, so a planted module runs.
+
+    Every interpreter the review job starts is isolated (`-I`) or runs in a step that left the checkout first.
+    PLANTED CONTROL: the key store as it was, `-m ai_lab.auth` from the checkout.
+    """
+    (tmp_path / 'hub').mkdir()
+    for workflow in (_base_ci(tmp_path / 'hub'), _gitea_review(tmp_path)):
+        assert not _imports_from_the_checkout(workflow['jobs']['review']['steps']), render(workflow)
+    planted = {'name': 'k', 'run': 'printf x | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login anthropic'}
+    assert _imports_from_the_checkout([planted]) == ['k'], 'PLANTED CONTROL'
+
+
+def _imports_from_the_checkout(steps: list[dict[str, Any]]) -> list[str | None]:
+    calls = re.compile(r'python[0-9.]*"?\s+-m\b')
+    return [
+        step.get('name')
+        for step in steps
+        if calls.search(run := step.get('run', '')) and not run.lstrip().startswith('cd "$RUNNER_TEMP"')
+    ]
