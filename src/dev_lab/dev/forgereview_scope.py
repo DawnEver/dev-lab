@@ -67,6 +67,7 @@ __all__ = [
     'lens_of',
     'own_base',
     'plan',
+    'prefetch',
     'reviewable',
     'reviewed_heads',
 ]  # fmt: skip
@@ -148,6 +149,38 @@ def git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
         msg = f'git {" ".join(args)} failed: {done.stderr.strip()[:300]}'
         raise OSError(msg)
     return done.returncode, done.stdout
+
+
+#: Blob modes a ``--raw`` line carries for file content (regular, executable, symlink); a gitlink is a commit.
+_BLOB_MODES: Final = frozenset({'100644', '100755', '120000'})
+_NO_OBJECT: Final = re.compile(r'0+')
+_FETCH_CHUNK: Final = 500  # object ids per fetch argv, under every platform's command-line limit
+
+
+def prefetch(root: Path, *ranges: str) -> int:
+    """Fetch every blob *ranges* change into a partial clone, in one request per chunk; how many were asked for.
+
+    The reviewer reads the range with git and holds no forge token (:mod:`dev_lab.dev.reviewgitauth`): in a
+    blobless checkout -- the Gitea review job's -- its ``git diff`` would fetch each blob lazily and fail
+    unauthenticated (motronics #5397, 2026-11-01). The door holds the header, so it asks first. ``--raw`` compares
+    trees only and fetches nothing. A clone that is not partial (no ``remote.origin.promisor``) asks for nothing.
+    """
+    if git(root, 'config', '--get', 'remote.origin.promisor', ok=(0, 1))[1].strip() != 'true':
+        return 0
+    wanted: set[str] = set()
+    for range_ in ranges:
+        raw = git(root, 'diff', '--raw', '--no-renames', '--abbrev=40', '-z', '--end-of-options', range_)[1]
+        for meta in raw.split('\0')[::2]:
+            if not meta.startswith(':'):
+                continue
+            old_mode, new_mode, old, new, *_ = meta[1:].split()
+            wanted |= {oid for mode, oid in ((old_mode, old), (new_mode, new))
+                       if mode in _BLOB_MODES and not _NO_OBJECT.fullmatch(oid)}  # fmt: skip
+    ordered = sorted(wanted)
+    for start in range(0, len(ordered), _FETCH_CHUNK):
+        git(root, '-c', 'fetch.negotiationAlgorithm=noop', 'fetch', '-q', '--no-tags', '--no-write-fetch-head',
+            '--recurse-submodules=no', 'origin', *ordered[start:start + _FETCH_CHUNK])  # fmt: skip
+    return len(ordered)
 
 
 def _ancestor(root: Path, older: str, newer: str) -> bool:
