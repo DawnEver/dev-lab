@@ -263,6 +263,8 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # (read on the family repos the job installs) when that secret is set, else the job token, as its own process env.
 # Every origin branch is fetched (the merge decision trial-merges against one) as a blobless clone, one pack thread:
 # a full history's index-pack is what would break the memory cap, and the review reads only its range's blobs.
+# The checkout is sparse, root files only: the review reads the head through git and only pyproject.toml from
+# the tree, and a full checkout would lazily fetch every blob of the head (motronics: 10+ minutes on the host).
 lean = [
     { name = "Reach the forge on the runner's instance", run = '''
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
@@ -274,6 +276,7 @@ git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global pack.threads 1
 git clone -q --no-tags --filter=blob:none --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
 git fetch -q origin "+refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/origin/pull/${{ github.event.pull_request.number }}"
+git sparse-checkout set --cone
 git checkout -q --detach "$HEAD_SHA"
 ''' },
 ]
