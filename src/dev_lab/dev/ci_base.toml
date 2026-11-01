@@ -38,7 +38,9 @@ name = "CI"
 ["ci.yml".on.push]
 branches = ["integrate/main"]
 
+# ready_for_review (D52/D53): a draft is never reviewed, so marking it ready is what reviews it.
 ["ci.yml".on.pull_request]
+types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
 ["ci.yml".on.workflow_dispatch]
 
@@ -336,13 +338,14 @@ git checkout -q --detach "$HEAD_SHA"
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (DEV_LAB_REF, AI_LAB_REF) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
-# The types are pull_request's defaults, so the job runs on the events it ran on before.
+# The types are pull_request's defaults plus ready_for_review (D52/D53): a draft is never reviewed, so marking it
+# ready is what reviews it.
 ["review.yml"]
 forge = "gitea"
 name = "Review"
 
 ["review.yml".on.pull_request_target]
-types = ["opened", "synchronize", "reopened"]
+types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
 ["review.yml".concurrency]
 group = "review-${{ github.event.pull_request.number }}"

@@ -3,6 +3,10 @@
 :mod:`dev_lab.dev.forgereview` claims a head (:data:`CLAIMED`) before it runs the command; every other host skips
 it until the claim is released, goes stale, or the host posts :data:`HOST_UNABLE` -- a fact about the host, so the
 head stays claimable.
+
+A PURE SYNC carries its reviewed head's verdict (D52, user ruling 2026-11-01; :func:`synced`): only a success the
+gate itself counts at that head (:func:`counted_success`, the gate's own :func:`~dev_lab.dev.reviewgate.forge_posted`)
+is carried, so no planted or self-posted status can be inherited.
 """
 
 from __future__ import annotations
@@ -12,9 +16,9 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.forgecarry import RUNNING, docs_only
-from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgestatus import CARRIED_FROM, status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import post_review
+from dev_lab.dev.reviewgate import forge_posted, post_review
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,7 +27,10 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['CAPPED', 'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'RELEASED', 'claimable', 'passed', 'standing', 'unable']
+__all__ = [
+    'CAPPED', 'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'PURE_SYNC', 'RELEASED', 'claimable', 'counted_success',
+    'passed', 'standing', 'synced', 'unable',
+]  # fmt: skip
 
 #: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
 CLAIMED: Final = 'claimed by'
@@ -40,6 +47,9 @@ HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 CAPPED: Final = 'review capped, merge waits:'
 
 _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
+
+#: Why a pure sync's status carries (D52): ``carried from <sha12>: pure sync``, as a docs-only carry names its source.
+PURE_SYNC: Final = 'pure sync'
 
 #: A commit-status description is short: every one posted is cut to this.
 DESCRIPTION: Final = 240
@@ -109,3 +119,33 @@ def unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     if latest is None or (latest.state, latest.description) != ('error', said):
         post_review(client, head, state='error', description=said)
     return f'#{pull.number} {head[:12]}: {said}'
+
+
+def counted_success(client: Client, sha: str, *, base: str) -> CommitStatus | None:
+    """*sha*'s latest review status when it is a ``success`` the merge gate counts there, else ``None``.
+
+    The gate's own test (:func:`~dev_lab.dev.reviewgate.forge_posted`): on Gitea a null-creator success counts
+    only beside the base's review run at *sha* that concluded success, so a PR-head workflow's planted status
+    never stands for a review.
+    """
+    latest = next((one for one in status_list(client, sha) if one.context == REVIEW_CONTEXT), None)
+    if latest is None or latest.state != 'success' or not forge_posted(client, sha, base=base)(latest):
+        return None
+    return latest
+
+
+def synced(client: Client, head: str, source: str, *, base: str) -> str | None:
+    """A PURE SYNC (D52): post *source*'s counted success on *head*, naming it; the description, else ``None``.
+
+    *source* is :func:`dev_lab.dev.forgereview_scope.synced_from`'s: *head*'s tree is its reviewed content plus
+    integration's. Nothing runs and no round is spent. Posted through the one review door
+    (:func:`~dev_lab.dev.reviewgate.post_review`), so inside the review job it names the job's own run and counts
+    only when that run concludes success. A *source* without a counted success -- a ``failure``, an ``error``, a
+    planted status -- carries nothing: the head is reviewed.
+    """
+    stood = counted_success(client, source, base=base)
+    if stood is None:
+        return None
+    why = f'{CARRIED_FROM} {source[:12]}: {PURE_SYNC}'
+    post_review(client, head, state='success', description=why, target_url=stood.url)
+    return why

@@ -35,6 +35,7 @@ from lab_commons.log import emit
 from dev_lab.dev import (
     branchnotices,
     forgeauth,
+    forgedraft,
     forgehosts,
     forgeintegration,
     forgeissue,
@@ -97,7 +98,12 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
 }
 
 #: The ``pr`` verbs owned by a door module of their own; every other ``pr`` verb is the issue/PR door's.
-PR_VERBS: dict[str, Callable[[list[str]], int]] = {'close-landed': prlanded.main, 'close-superseded': prsuperseded.main}
+PR_VERBS: dict[str, Callable[[list[str]], int]] = {
+    'close-landed': prlanded.main,
+    'close-superseded': prsuperseded.main,
+    'ready': lambda argv: forgedraft.main(['ready', *argv]),
+    'draft': lambda argv: forgedraft.main(['draft', *argv]),
+}
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
 ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
@@ -162,6 +168,10 @@ def _parser() -> argparse.ArgumentParser:
     opened.add_argument('--body', default='')
     opened.add_argument('--head', required=True)
     opened.add_argument('--base', required=True)
+    opened.add_argument(
+        '--ready', action='store_true',
+        help='open it ready for review; the default is a DRAFT, marked ready by `forge pr ready N` (D53)',
+    )  # fmt: skip
     return parser
 
 
@@ -172,7 +182,9 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ('issue', 'create'): lambda: client.issue_create(args.title, args.body),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
-        ('pr', 'create'): lambda: client.pr_create(args.title, args.body, head=args.head, base=args.base),
+        ('pr', 'create'): lambda: client.pr_create(
+            args.title, args.body, head=args.head, base=args.base, draft=not args.ready
+        ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
     }
     return verbs[args.noun, args.verb]()
@@ -218,6 +230,8 @@ def issue_and_pr(
     else:
         for item in items:
             emit(_render(item))
+    if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
+        emit(forgedraft.opened_line(result))  # the exact next step for a draft, on stdout (D53)
     if (args.noun, args.verb) == ('pr', 'create') and (
         said := branchnotices.report(
             root, [args.head], (os.environ if env is None else env).get(ENV, ''), client=client

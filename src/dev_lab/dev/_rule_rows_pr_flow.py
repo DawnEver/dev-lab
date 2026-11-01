@@ -24,6 +24,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_pradmit.py',),
     ),
     (
+        'DRAFT-UNTIL-READY',
+        (
+            'A PR is opened as a draft (`forge pr create`; `--ready` only for finished work) and its author marks it '
+            'ready with `forge pr ready <N>` when its own work is done; only a ready PR is reviewed or merged, and a '
+            'push after ready keeps it ready (D53, user ruling 2026-11-01; `forgedraft`).'
+        ),
+        ('tests/test_dev_forgedraft.py', 'tests/test_dev_forgework.py'),
+    ),
+    (
         'DOCS-ONLY-CARRIES',
         (
             'A head whose diff from its nearest tested ancestor reaches no test footprint runs nothing: its parts and '

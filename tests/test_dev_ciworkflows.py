@@ -441,7 +441,10 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     """
     review = _gitea_review(tmp_path)
     assert set(review['on']) == {'pull_request_target'}
-    assert review['on']['pull_request_target']['types'] == ['opened', 'synchronize', 'reopened'], "pull_request's"
+    assert review['on']['pull_request_target']['types'] == ['opened', 'synchronize', 'reopened', 'ready_for_review']
+    (tmp_path / 'gh').mkdir()
+    github = _base_ci(tmp_path / 'gh')
+    assert 'ready_for_review' in github['on']['pull_request']['types'], 'D52/D53: marking ready reviews a draft'
     (tmp_path / 'ci').mkdir()
     assert 'pull_request_target' not in render(_base_ci(tmp_path / 'ci'))
     job = review['jobs']['review']

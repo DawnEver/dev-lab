@@ -71,6 +71,22 @@ class PullRequest:
 #: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
 _WIP_PREFIXES: Final = ('WIP:', '[WIP]')
 
+#: Gitea's draft, as a PR is opened or moved back to one (D53, :mod:`dev_lab.dev.forgedraft`).
+DRAFT_PREFIX: Final = 'WIP: '
+
+
+def draft_title(title: str) -> str:
+    """*title* as Gitea reads a draft: :data:`DRAFT_PREFIX` once."""
+    return title if title.upper().startswith(_WIP_PREFIXES) else DRAFT_PREFIX + title
+
+
+def ready_title(title: str) -> str:
+    """*title* with its work-in-progress prefix removed."""
+    for prefix in _WIP_PREFIXES:
+        if title.upper().startswith(prefix):
+            return title[len(prefix) :].lstrip()
+    return title
+
 
 def _issue(raw: Mapping[str, Any]) -> Issue:
     return Issue(

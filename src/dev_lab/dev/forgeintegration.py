@@ -309,7 +309,7 @@ def open_lanes(root: Path, client: Client, policy: Policy, open_heads: set[str])
         title = _git(root, 'log', '-1', '--format=%s', sha).strip() or branch
         glob = next(g for g in declared.ephemeral if fnmatch.fnmatchcase(branch, g))
         body = OPENED.format(branch=branch, glob=glob, integration=policy.integration)
-        pr = client.pr_create(title, body, head=branch, base=policy.integration)
+        pr = client.pr_create(title, body, head=branch, base=policy.integration, draft=False)  # a lane is done work
         lines.append(f'{branch}: opened #{pr.number} -- {auto_merge(client, pr.number)}')
         opened.append(Child(branch, sha, client, pr.number))
     return lines, opened

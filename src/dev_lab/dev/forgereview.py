@@ -50,6 +50,22 @@ once; their outputs merge into one document, and a declared ``synthesis`` comman
 THE COST IS BOUNDED: one review per head sha (the status is the record; a second tick on the same head runs
 nothing and posts nothing), drafts skipped, generated files never read, ``max_total_bytes`` per head.
 
+A ROUND IS SPENT ONLY ON NEW WORK (D52, user ruling 2026-11-01): every push was a round and every forge sync of
+integration into a PR restarted its review at the merge base (motronics #5397, twice in a day), against a cap of
+:data:`~dev_lab.dev.forgereview_rounds.FAMILY_MAX_ROUNDS`.
+
+* A PURE SYNC carries: a head whose tree is git's clean automatic merge of its last reviewed head with integration
+  posts that head's counted success (:func:`~dev_lab.dev.forgereview_claim.synced`), and runs nothing. Any other
+  head since a reviewed one is read from that merge (:func:`~dev_lab.dev.forgereview_scope.own_base`): its own new
+  work only. An increment with no code to read stands on its reviewed head only when that head's success is
+  counted; otherwise the PR is read whole again -- an empty push never turns a ``failure`` into a ``success``.
+* DEBOUNCE, on the serve tick: a head committed inside ``quiet`` (:data:`DEFAULT_QUIET`) is not reviewed yet --
+  nothing is posted, no round is spent -- and the next tick past it reviews it, so a burst of pushes costs one
+  round. The tick re-reads every PR anyway, so waiting holds no runner.
+* DRAFTS are never reviewed (skipped here and by the review job); marking one ready is a trigger
+  (``ready_for_review`` in the workflows' types; the serve's next tick). A push after ready does NOT turn the PR
+  back into a draft (D53): a fix push gets its round, and the debounce coalesces a burst of them.
+
 THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where it differs, every key optional::
 
     [tool.dev_lab.review]
@@ -70,6 +86,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     code = [...]               # globs of what executes (forgereview_scope.CODE): nothing else is read or capped
     not_code = [...]           # globs never code whatever their extension (forgereview_scope.NOT_CODE)
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
+    quiet = "10 min"           # the default (DEFAULT_QUIET): the serve reviews a head only once it is this old
 
 ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
 but this host's ``[runtimes]`` does not declare, or a command it cannot start (:func:`can_start`: a missing
@@ -105,8 +122,8 @@ from lab_commons.units import Q_
 
 from dev_lab.dev import forgereview_scope
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
-from dev_lab.dev.forgereview_claim import CAPPED, CLAIMED, DESCRIPTION, passed, unable
+from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
+from dev_lab.dev.forgereview_claim import CAPPED, CLAIMED, DESCRIPTION, counted_success, passed, synced, unable
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
 from dev_lab.dev.forgereview_findings import Finding, Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_judge import (
@@ -128,7 +145,16 @@ from dev_lab.dev.forgereview_runtimes import (
     retired_table,
     runtime_names,
 )
-from dev_lab.dev.forgereview_scope import ONLY_GENERATED, Budget, Scope, gather, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import (
+    ONLY_GENERATED,
+    Budget,
+    Scope,
+    gather,
+    plan,
+    reviewed_ancestor,
+    reviewed_heads,
+    synced_from,
+)
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.labsession import sessions
@@ -224,6 +250,10 @@ TAKEOVER_PENDING: Final = 'takeover pending'
 #: command's own timeout, so a live review is never taken over.
 DEFAULT_CLAIM_STALE: Final = '1 h'
 
+#: DEBOUNCE (D52): how long a head must have been committed before the serve reviews it. A burst of pushes inside
+#: it is ONE round, of its last head; a head older than it is reviewed on the first tick that sees it.
+DEFAULT_QUIET: Final = '10 min'
+
 #: What :data:`REVIEW_CONTEXT` and the hold say (``pending``) when the job running the review has no review secret:
 #: a fork PR. The head is held until a maintainer re-runs the forge's review with the secret present.
 NEEDS_MAINTAINER: Final = 'review needs a maintainer: the review secret is absent (a fork PR)'
@@ -268,10 +298,17 @@ class Review:
     code: tuple[str, ...] = forgereview_scope.CODE
     not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
+    quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
 
     def __post_init__(self) -> None:
-        """Refuse a ``claim_stale`` that is not a duration, naming it."""
+        """Refuse a ``claim_stale`` or ``quiet`` that is not a duration, naming it."""
         stale_after(self)
+        _duration('quiet', self.quiet)
+
+    @property
+    def quiet_for(self) -> timedelta:
+        """``quiet`` as a :class:`~datetime.timedelta`."""
+        return _duration('quiet', self.quiet)
 
     @property
     def stale(self) -> timedelta:
@@ -368,13 +405,18 @@ def review_at(root: Path, base: str) -> Review:
 
 def stale_after(review: Review) -> timedelta:
     """*review*'s ``claim_stale``; a bare number or a non-duration is refused naming it."""
+    return _duration('claim_stale', review.claim_stale)
+
+
+def _duration(key: str, value: str) -> timedelta:
+    """The declared *key*'s *value* as a :class:`~datetime.timedelta`; a bare number or a non-duration is refused."""
     try:
-        quantity = Q_(review.claim_stale)
+        quantity = Q_(value)
     except Exception as bad:
-        msg = f'claim_stale {review.claim_stale!r} is not a duration; write one such as "1 h"'
+        msg = f'{key} {value!r} is not a duration; write one such as "1 h"'
         raise ValueError(msg) from bad
     if not isinstance(quantity, Q_) or not quantity.check('[time]'):
-        msg = f'claim_stale {review.claim_stale!r} is not a duration (it needs a unit); write one such as "1 h"'
+        msg = f'{key} {value!r} is not a duration (it needs a unit); write one such as "1 h"'
         raise ValueError(msg)
     return timedelta(seconds=float(quantity.m_as('s')))
 
@@ -430,10 +472,30 @@ def judge_for(
     return judged
 
 
-def _scope(root: Path, client: Client, review: Review, pull: PullRequest, target: str) -> Scope:
-    """What *pull*'s head review reads; held when it needs slices the command cannot take."""
-    done = reviewed_heads(comment.body for comment in comment_list(client, pull.number))
-    return plan(root, target, pull.head_sha, review.budget, done, sliceable=PATHS_FIELD in review.command)
+def _scope(
+    root: Path, client: Client, review: Review, pull: PullRequest, target: str, *, done: Sequence[str]
+) -> Scope:  # fmt: skip
+    """What *pull*'s head review reads: its new work since the reviewed heads *done*, cut by *review*'s budget.
+
+    An increment with no code to read stands on its reviewed head only when that head's success is counted; else
+    the whole PR is read (D52, module docstring): an empty push after a ``failure`` is never "nothing to review".
+    """
+    sliceable = PATHS_FIELD in review.command
+    scope = plan(root, target, pull.head_sha, review.budget, done, sliceable=sliceable)
+    earlier = reviewed_ancestor(root, pull.head_sha, done)
+    if scope.slices or not earlier or counted_success(client, earlier, base=pull.base) is not None:
+        return scope
+    return plan(root, target, pull.head_sha, review.budget, (), sliceable=sliceable)
+
+
+def _young(root: Path, head: str, runner: Runner) -> str | None:
+    """Why *head* is not reviewed YET (D52 debounce): committed inside the runner's ``quiet``; ``None`` when old."""
+    if not runner.quiet:
+        return None
+    committed = datetime.fromisoformat(forgereview_scope.git(root, 'show', '-s', '--format=%cI', head)[1].strip())
+    if (age := runner.clock() - committed) >= runner.quiet:
+        return None
+    return f'not reviewed yet: committed {int(age.total_seconds())} s ago, inside quiet {runner.quiet}'
 
 
 def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
@@ -522,15 +584,21 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     a command that fails or prints anything but a known findings version posts ``error`` naming why, and is not
     retried on that head.
     """
-    head = pull.head_sha
+    head, target = pull.head_sha, f'origin/{pull.base}'
     counted = forge_posted(client, head, base=pull.base) if runner.verifies else None
     if (stands := passed(root, client, head, runner.clock(), review.stale, counted=counted)) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
+    # the forge's own rounds only: a pasted marker naming an unreviewed sha would shrink the range or seed a carry
+    done = reviewed_heads(trusted_bodies(client, pull.number))
+    if (source := synced_from(root, target, head, done)) and (why := synced(client, head, source, base=pull.base)):
+        return f'#{pull.number} {head[:12]}: {why}'
+    if (wait := _young(root, head, runner)) is not None:
+        return f'#{pull.number} {head[:12]}: {wait}'
     allowed, note = capped(root, client, review, pull, runner)
     if allowed is None:
         return note
     review = allowed
-    scope = _scope(root, client, review, pull, f'origin/{pull.base}')
+    scope = _scope(root, client, review, pull, target, done=done)
     said = _without_command(client, pull, scope)
     if said is None and not runner.secret:
         said = hold(client, pull, NEEDS_MAINTAINER)
@@ -591,9 +659,15 @@ def review_tick(
     runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),  # this host's: none by default
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend,
+    quiet: timedelta = timedelta(0),
 ) -> tuple[str, ...]:
-    """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said."""
-    runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True, spend=spend)
+    """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
+
+    *quiet* is the debounce (D52): :func:`step` passes the declared ``quiet``; zero reviews every head now.
+    """
+    runner = Runner(
+        host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True, spend=spend, quiet=quiet
+    )
 
     def said(pull: PullRequest) -> str | None:
         try:
@@ -633,8 +707,9 @@ def step(
             say(f'[serve] review: not run on this host -- {cannot}')
             return
         lines = review_tick(
-            root, built, review, base=policy.integration, run=run, ready=ready, host=host, runtimes=here
-        )
+            root, built, review, base=policy.integration, run=run, ready=ready, host=host, runtimes=here,
+            quiet=review.quiet_for,
+        )  # fmt: skip
         for line in lines:
             say(f'[serve] review: {line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:

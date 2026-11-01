@@ -18,6 +18,7 @@ from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
 from dev_lab.dev.forgeclaim import forge_now
+from dev_lab.dev.forgedraft import alarms as idle_drafts
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeintegration import alarms as sync_alarms
 from dev_lab.dev.forgeintegration import tick as integration_tick
@@ -121,6 +122,7 @@ def prompt(
                 *red,
                 *held_reviews(built, policy.integration, repo),  # an over-cap head: the integrator's takeover
                 *blocked_reviews(built, policy.integration, repo),  # a blocking finding: fixed, or a claim adjudicated
+                *idle_drafts(root, built, policy.integration, repo, now=forge_now(built)),  # D53: waits on its author
             ],
             alarm=alarm,
         )

@@ -60,6 +60,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.branchset import declared_branchset
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
+from dev_lab.dev.forgedraft import WAITING, waiting
 from dev_lab.dev.forgereview import load_review
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
@@ -204,8 +205,11 @@ def decide(
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
-    return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses,
-                  posted=forge_posted(client, head, base=policy.integration))  # fmt: skip
+    found = decide(root, policy, branch=branch, number=number, head=head, statuses=statuses,
+                   posted=forge_posted(client, head, base=policy.integration))  # fmt: skip
+    if client.pr_view(number).draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
+        return Decision((WAITING.format(n=number), *found.missing), found.message)
+    return found
 
 
 def ready(root: Path, client: Client, number: int) -> str:
@@ -219,6 +223,8 @@ def ready(root: Path, client: Client, number: int) -> str:
     policy, pull = load_policy(root), client.pr_view(number)
     if pull.base != policy.integration:
         decision = Decision((f'a PR into {policy.integration}, not {pull.base}',), '')
+    elif pull.draft:  # D53: pending, naming the ready door -- it waits on its author, not on a check
+        return waiting(client, pull) or f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: draft'
     else:
         decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
     missing = decision.missing
