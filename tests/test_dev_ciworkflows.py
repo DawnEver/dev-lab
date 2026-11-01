@@ -251,7 +251,7 @@ def test_each_pinned_ref_is_declared_once_and_both_review_workflows_install_it(t
         hub, tea = (next(s for s in job['steps'] if s.get('name') == name) for job in jobs)
         assert hub == tea, f'{name}: one source for both forges'
         assert hub['env'][var] == pinned_ref(repo)
-        assert f'/}}{repo}.git' in hub['run'], 'installed from the family source (FAMILY_SOURCE), else the forge owner'
+        assert f'${{FAMILY_SOURCE}}{repo}.git' in hub['run'], 'installed from the declared family source'
         assert f'${var}' in hub['run']
         assert pinned_ref(repo) not in hub['run'], 'the step names no sha itself'
 
@@ -503,9 +503,28 @@ def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -
 
 
 def test_the_gitea_review_job_token_can_read_its_own_run(tmp_path: Path) -> None:
-    """reviewgate reads the job's run (``GET .../actions/runs/{id}``, ``reqRepoReader(unit.TypeActions)``, 1.27).
+    """The job reads its own run for reviewgate: ``GET .../actions/runs/{id}``, Actions read on Gitea 1.27.
 
     Measured 2026-11-01 on motronics #5397 and wdg-lab #427 (runs 5, 6): with no ``actions`` scope the GET was
     refused right after the status POST that ``contents: write`` had unblocked.
     """
     assert _gitea_review(tmp_path)['jobs']['review']['permissions']['actions'] == 'read'
+
+
+def test_each_workflow_declares_its_family_source_once_and_its_steps_read_only_that(tmp_path: Path) -> None:
+    """ONE family source per workflow, and one permissions block on the Gitea review.
+
+    F-1f2d0da331a7: a step falling back to ``github.server_url`` when FAMILY_SOURCE is unset is a second source,
+    dead on Gitea (whose env always sets it) and live on GitHub (whose env never did).
+
+    And ONE permissions block on the Gitea review (F-a9d56327e726): a workflow-level ``contents: read`` above a job's
+    ``contents: write`` declares two grants for one token.
+    """
+    review = _gitea_review(tmp_path)
+    (tmp_path / 'hub').mkdir()
+    hub = _base_ci(tmp_path / 'hub')
+    assert review['env']['FAMILY_SOURCE'] == 'https://github.com/DawnEver/'
+    assert hub['env']['FAMILY_SOURCE'] == '${{ github.server_url }}/${{ github.repository_owner }}/'
+    for workflow in (review, hub):
+        assert 'FAMILY_SOURCE:-' not in render(workflow)
+    assert 'permissions' not in review

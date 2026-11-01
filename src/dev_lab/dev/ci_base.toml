@@ -53,6 +53,7 @@ contents = "read"
 # environment at all (F-d61706393b50, the `review` steps).
 ["ci.yml".env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha || github.sha }}"
+FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # the family repos sit beside this one
 
 ["ci.yml".jobs.parts]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
@@ -202,7 +203,7 @@ method = [
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I -m pip install -q uv
-"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE:-${{ github.server_url }}/${{ github.repository_owner }}/}ai-lab.git@$AI_LAB_REF"
+"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REF"
 ''', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
@@ -240,7 +241,7 @@ door = [
     { name = "Install the review door", run = '''
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
-git clone -q --no-tags --filter=blob:none --no-checkout "${FAMILY_SOURCE:-${{ github.server_url }}/${{ github.repository_owner }}/}dev-lab.git" "$RUNNER_TEMP/dev-lab"
+git clone -q --no-tags --filter=blob:none --no-checkout "${FAMILY_SOURCE}dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" fetch -q --no-tags origin "$DEV_LAB_REF"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I -m pip install -q uv
@@ -290,12 +291,12 @@ name = "Review"
 group = "review-${{ github.event.pull_request.number }}"
 cancel-in-progress = true
 
-["review.yml".permissions]
-contents = "read"
-
 ["review.yml".env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
-FAMILY_SOURCE = "https://github.com/DawnEver/"  # where the review tools come from: the toolchain lives on GitHub (ruling 2026-10-29)
+# Where the review tools come from: the toolchain lives on GitHub (ruling 2026-10-29), public and unauthenticated;
+# the forge's own copy is not readable by the job token (D37). The host cannot substitute content: DEV_LAB_REF and
+# AI_LAB_REF are full commit SHAs. A runner that cannot reach GitHub cannot run this job, and says so.
+FAMILY_SOURCE = "https://github.com/DawnEver/"
 UV_PYTHON = "python3"  # the host's interpreter: a host runner behind the ACL downloads none
 UV_PYTHON_DOWNLOADS = "never"
 UV_CONCURRENT_INSTALLS = "1"  # one at a time: the runner is memory-capped
@@ -339,6 +340,7 @@ contents = "read"
 
 ["review-claims.yml".env]
 HEAD_SHA = "${{ github.sha }}"
+FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # the family repos sit beside this one
 GITHUB_TOKEN = "${{ github.token }}"
 
 ["review-claims.yml".jobs.adjudicate]
