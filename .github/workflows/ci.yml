@@ -240,21 +240,31 @@
           "run": "uv sync --frozen --all-extras"
         },
         {
+          "id": "ready",
           "name": "tests/merge-ready",
-          "run": "uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }}"
+          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})\"; echo \"$said\"; case \"$said\" in *\"; merged\") echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
+        },
+        {
+          "name": "Run CI on the merged integration",
+          "if": "${{ steps.ready.outputs.merged == 'true' }}",
+          "run": "gh workflow run ci.yml --repo \"$GITHUB_REPOSITORY\" --ref integrate/main",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          }
         }
       ],
       "permissions": {
-        "contents": "read",
+        "contents": "write",
         "statuses": "write",
-        "pull-requests": "read"
+        "pull-requests": "write",
+        "actions": "write"
       }
     },
     "promote": {
       "needs": [
         "absent-parts"
       ],
-      "if": "${{ github.event_name == 'push' && github.ref == 'refs/heads/integrate/main' }}",
+      "if": "${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/integrate/main' }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
