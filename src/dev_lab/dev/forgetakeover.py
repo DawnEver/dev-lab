@@ -50,11 +50,11 @@ from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB, ForgeCallFailed, PullRequest, client_for
+from dev_lab.dev.forgework import GITHUB, ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
-from dev_lab.dev.reviewgate import RERUN, ForgeBotUndeclared, forge_bots, review_missing
+from dev_lab.dev.reviewgate import RERUN, forge_creators, review_missing
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -122,11 +122,11 @@ def ledger_of(client: Client, head: str, base: str) -> PullRequest:
     A Break-Glass commit has no PR, so its findings comment and every ``dispose <number> <id>`` go to this issue:
     the round, the dispositions and the verdict are the SAME code a PR's are, keyed by the issue number.
 
-    Only an issue the FORGE opened is the ledger (F-7fbe6eafaadf, security): its own login, or the workflow bot on
-    GitHub -- never a squatter's issue of the same title, and never a PR (GitHub's issues API lists PRs too).
+    Only an issue the FORGE opened is the ledger (F-7fbe6eafaadf, security): its own login, or its workflow job's
+    Actions login -- never a squatter's issue of the same title, and never a PR (GitHub's issues API lists PRs too).
     """
     title = LEDGER_TITLE.format(sha=head)
-    mine = {client.whoami(), *((ACTIONS_BOT,) if client.backend is GITHUB else ())}
+    mine = {client.whoami(), client.backend.actions_login}
     found = [
         one
         for one in pages(client, f'{client.repo}/issues', {'state': 'all'})
@@ -168,11 +168,7 @@ def takeover(
     does is :data:`~dev_lab.dev.reviewgate.RERUN`. It refuses a head the forge already reviewed. A head with no PR
     keeps its ledger in its own issue (:func:`ledger_of`).
     """
-    try:
-        bots = forge_bots(github=client.backend is GITHUB, declared=review.forge_bot)
-    except ForgeBotUndeclared:
-        bots = frozenset()  # no forge identity declared: no success counts, so the review is missing
-    if review_missing(status_list(client, head), bots) is None:
+    if review_missing(status_list(client, head), forge_creators(github=client.backend is GITHUB)) is None:
         msg = f'{head[:12]} is already reviewed by the forge: nothing to take over'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, head, base=base, pull=pull)

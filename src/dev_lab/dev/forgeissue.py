@@ -38,7 +38,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, client_for
 from dev_lab.dev.integrator import lane_ready
@@ -306,7 +306,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
 ) -> int:
     """``python -m dev_lab.dev.forge issue claim|status|comments <N>`` | ``comments-since <ISO>``.
 

@@ -53,7 +53,6 @@ from dev_lab.dev.forgereview_judge import (
     upheld,
 )
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 
 if TYPE_CHECKING:
@@ -131,14 +130,14 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
 
     A ledger or a disposition is state the forge and the integrator write; a comment anyone else writes that
     merely LOOKS like one (an author pasting a disposition) is never read as one. On GitHub the review's own
-    rounds are written by the workflow job token, so :data:`~dev_lab.dev.forgework.ACTIONS_BOT` is trusted too.
+    rounds are written by the workflow job token, so the forge's ``actions_login`` is trusted too.
 
     A CLAIM is written by its claimant, never by the forge: any other author's comment contributes only its claim
     record (:func:`~dev_lab.dev.forgereview_judge.claim_record`), and only when the login it names is the login the
     forge records as its author. Without this the forge's own job never sees a claim (#11: the claim was DawnEver's,
     the job is the Actions bot).
     """
-    trusted = {client.whoami(), *((ACTIONS_BOT,) if client.backend is GITHUB else ())}
+    trusted = {client.whoami(), client.backend.actions_login}
     out = []
     for comment in comment_list(client, number):
         if comment.author in trusted:

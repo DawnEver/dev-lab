@@ -131,7 +131,7 @@ from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerun, forgerunstate, metrics, retention
-from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, https_transport
+from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgeaffinity import declared
 from dev_lab.dev.forgealarm import (
     AUTH,
@@ -394,7 +394,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     seat_of: Callable[[], ClusterAccount | None] = this_seat,
 ) -> int:
     """``serve [--json]``: 0 served, 1 forge or run state failed, 2 contract broke."""

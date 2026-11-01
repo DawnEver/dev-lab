@@ -61,7 +61,6 @@ _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
     "judge = ['judge', '--range', '{range}', '--findings', '{findings}']\n"
-    "forge_bot = 'a'\n"  # the login forge serve posts as: StateForge writes as 'a' (D11)
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
 
@@ -522,7 +521,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     assert {field.name for field in dataclasses.fields(Review)} == {
         'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code',
-        'claim_stale', 'max_rounds', 'forge_bot',
+        'claim_stale', 'max_rounds',
     }  # fmt: skip
 
 

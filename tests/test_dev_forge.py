@@ -418,5 +418,16 @@ def test_the_shipped_transport_cannot_speak_another_scheme() -> None:
     The connection class cannot open ``file://`` or ``ftp://`` because it speaks exactly one protocol.
     """
     default = inspect.signature(module.read_rule).parameters['transport'].default
-    assert default is module.https_transport
-    assert isinstance(module.https_transport('127.0.0.1:1', 0.1), http.client.HTTPSConnection)
+    assert default is module.forge_transport
+    assert isinstance(module.forge_transport('forge.example.org', 0.1), http.client.HTTPSConnection)
+    assert isinstance(module.forge_transport('127.0.0.1.example.org:9000', 0.1), http.client.HTTPSConnection)
+
+
+@pytest.mark.parametrize('host', ['127.0.0.1:9000', 'localhost:9000', '127.0.0.1', '[::1]:9000'])
+def test_plain_http_is_spoken_only_to_a_loopback_host(host: str) -> None:
+    """A Gitea Actions job reaches its forge at the runner's loopback instance (the public name is refused there).
+
+    PLANTED CONTROL: a public host, and one that merely STARTS with a loopback address, stay HTTPS (above).
+    """
+    made = module.forge_transport(host, 0.1)
+    assert type(made) is http.client.HTTPConnection

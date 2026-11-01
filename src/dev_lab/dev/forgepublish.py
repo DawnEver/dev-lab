@@ -19,7 +19,7 @@ from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
+from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
 from dev_lab.dev.forgelabels import add_label, ensure_labels
 from dev_lab.dev.forgerequest import (
     DONE_LABEL,
@@ -75,7 +75,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> int:
     """``request <producer> --sha <sha>``; exit 2 refused (nothing published), 1 the forge failed."""

@@ -12,13 +12,25 @@ from typing import Final
 
 from dev_lab.dev.forge import Forge
 
-__all__ = ['ACTIONS_BOT', 'GITEA', 'GITHUB', 'GITHUB_HOST', 'Backend', 'actions_token', 'backend_for']
+__all__ = [
+    'ACTIONS_BOT',
+    'GITEA',
+    'GITEA_ACTIONS_LOGIN',
+    'GITHUB',
+    'GITHUB_HOST',
+    'Backend',
+    'actions_token',
+    'backend_for',
+]
 
 #: The one host that is GitHub. Every other host is treated as the Gitea-shaped forge.
 GITHUB_HOST: Final = 'github.com'
 
 #: The login GitHub records for every write a workflow's job token makes: the author a GitHub ledger is trusted by.
 ACTIONS_BOT: Final = 'github-actions[bot]'
+
+#: The login Gitea records for every comment or issue a workflow job token writes (its Actions user).
+GITEA_ACTIONS_LOGIN: Final = 'gitea-actions'
 
 
 @dataclass(frozen=True)
@@ -36,6 +48,12 @@ class Backend:
     branch_delete: str = 'branches/{name}'
     #: Where the web UI shows a file at a commit, relative to the repository's web root.
     file_at: str = 'src/commit/{sha}/{path}'
+    #: The login a workflow job token writes comments and issues as: the forge's own Actions identity.
+    actions_login: str = GITEA_ACTIONS_LOGIN
+    #: The ``creator`` login the status LIST records for a status the job token posted (D11). Gitea stores it as
+    #: its Actions ghost (user id -2) and answers ``"creator": null`` -- read as ``''`` -- where a user token's
+    #: post names that user (measured 2026-11-01, Gitea 1.27.1); GitHub names its Actions bot.
+    actions_status_creator: str = ''
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -70,6 +88,8 @@ GITHUB: Final = Backend(
     page_param='per_page',
     branch_delete='git/refs/heads/{name}',
     file_at='blob/{sha}/{path}',
+    actions_login=ACTIONS_BOT,
+    actions_status_creator=ACTIONS_BOT,
     headers=(
         ('Accept', 'application/vnd.github+json'),
         ('X-GitHub-Api-Version', '2022-11-28'),
@@ -83,12 +103,15 @@ def backend_for(forge: Forge) -> Backend:
 
 
 def actions_token(forge: Forge, env: Mapping[str, str]) -> str:
-    """The job's ``GITHUB_TOKEN`` when this process runs inside GitHub Actions against GitHub, else ``''``.
+    """The job's ``GITHUB_TOKEN`` when this process runs as a workflow job ON *forge*'s own Actions, else ``''``.
 
-    WHO PRODUCES differs between the forges, never what is produced: on GitHub the parts, the review and the merge
-    decision run as workflow jobs, where no git credential store exists and the job token is the credential. Read
-    ONLY there (``GITHUB_ACTIONS=true`` and a ``github.com`` remote): anywhere else the store is the one source.
+    WHO PRODUCES differs between the forges, never what is produced: the parts, the review and the merge decision
+    may run as workflow jobs, where no git credential store exists and the job token is the credential. Read ONLY
+    there: GitHub Actions (``GITHUB_ACTIONS=true``) against a ``github.com`` remote, or Gitea Actions (its runner
+    sets ``GITEA_ACTIONS=true`` as well) against a Gitea remote. Anywhere else the store is the one source.
     """
-    if backend_for(forge) is not GITHUB or env.get('GITHUB_ACTIONS') != 'true':
+    if env.get('GITHUB_ACTIONS') != 'true':
+        return ''
+    if (env.get('GITEA_ACTIONS') == 'true') != (backend_for(forge) is GITEA):
         return ''
     return env.get('GITHUB_TOKEN', '')

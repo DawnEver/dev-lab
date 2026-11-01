@@ -41,7 +41,7 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion, Status
 
 from dev_lab.dev._forge_journal import Durable, Probe
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
 
 __all__ = [
@@ -258,7 +258,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
 ) -> int:
     """``python -m dev_lab.dev.forge status post|list <sha> ...``; exit 1 with netverb's remedy on failure."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))

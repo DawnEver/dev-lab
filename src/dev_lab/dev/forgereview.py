@@ -263,7 +263,6 @@ class Review:
     code: tuple[str, ...] = forgereview_scope.CODE
     not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
-    forge_bot: str = ''  # Gitea: the login forge serve posts as; only its tests/review success counts (D11)
 
     def __post_init__(self) -> None:
         """Refuse a ``claim_stale`` that is not a duration, naming it."""

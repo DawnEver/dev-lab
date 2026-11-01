@@ -29,10 +29,7 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
-_MANIFEST = (
-    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
-    "[tool.dev_lab.review]\nforge_bot = 'a'\n"  # the login forge serve posts as: StateForge writes as 'a' (D11)
-)
+_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 
 
 def _green() -> list[dict[str, object]]:
@@ -44,8 +41,8 @@ def _green() -> list[dict[str, object]]:
             'context': 'tests/review',
             'status': 'success',
             'description': 'review round 1: no blocking',
-            'creator': {'login': 'a'},
-        },  # forge serve's login, the declared forge_bot (D11)
+            'creator': None,
+        },  # Gitea's Actions ghost: the review job posted it (D11)
         {'id': 3, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
     ]
 

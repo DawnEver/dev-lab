@@ -14,7 +14,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgemerge import READY, ready
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import Client
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client
 
 _INTEGRATOR = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
 
@@ -33,7 +33,11 @@ def _pr(
     forge = StateForge()
     number = forge.add_pull('pr/x', base, sha=head)
     for context, description in _GREEN if green else _GREEN[:2]:
+        forge.login = (
+            GITEA_ACTIONS_LOGIN if context == 'tests/review' else 'a'
+        )  # the review job: Gitea's Actions ghost (D11)
         status_post(forge, head, context=context, state='success', description=description)
+    forge.login = 'a'
     return work, forge, number, head
 
 

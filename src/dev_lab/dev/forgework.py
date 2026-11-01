@@ -61,7 +61,16 @@ from dev_lab.dev._forge_journal import (
     write_key,
 )
 from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, is_pull, pull_of
-from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB, GITHUB_HOST, Backend, actions_token, backend_for
+from dev_lab.dev._forgebackends import (
+    ACTIONS_BOT,
+    GITEA,
+    GITEA_ACTIONS_LOGIN,
+    GITHUB,
+    GITHUB_HOST,
+    Backend,
+    actions_token,
+    backend_for,
+)
 from dev_lab.dev.forge import (
     _GIT,
     _GIT_TIMEOUT_S,
@@ -69,13 +78,14 @@ from dev_lab.dev.forge import (
     Transport,
     forge_from_remote,
     forge_of_url,
-    https_transport,
+    forge_transport,
 )
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 
 __all__ = [
     'ACTIONS_BOT',
     'GITEA',
+    'GITEA_ACTIONS_LOGIN',
     'GITHUB',
     'GITHUB_HOST',
     'Backend',
@@ -188,7 +198,7 @@ class Client:
 
     forge: Forge
     token: str
-    transport: Transport = https_transport
+    transport: Transport = forge_transport
     username: str = ''
     stamp: str | None = None
     sleep: Callable[[float], None] = time.sleep
@@ -430,7 +440,7 @@ def client_for(
     root: Path,
     *,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     remote: str = 'origin',
     url: str = '',
 ) -> Client:
@@ -447,20 +457,23 @@ def stored_client(
     *,
     cwd: Path,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     stamp: str | None = None,
     journal: Journal | None = None,
 ) -> Client:
     """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
 
-    Inside GitHub Actions against GitHub the job token is the credential (:func:`actions_token`), never refreshed.
+    Inside a workflow job on the forge's own Actions the job token is the credential (:func:`actions_token`),
+    never refreshed.
 
     Raises:
         NoCredential: the store holds no credential for the host.
 
     """
     if job := actions_token(forge, os.environ if env is None else env):
-        return Client(forge, job, transport=transport, username=ACTIONS_BOT, stamp=stamp, journal=journal)
+        return Client(
+            forge, job, transport=transport, username=backend_for(forge).actions_login, stamp=stamp, journal=journal
+        )
     username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
 
     def refresh(refused_user: str, refused: str) -> tuple[str, str]:

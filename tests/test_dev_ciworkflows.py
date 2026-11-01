@@ -248,3 +248,57 @@ def test_the_pin_verb_reads_ai_labs_head_through_its_seam(capsys) -> None:
     assert main(['pin'], head=ai_lab_ref) == 0
     assert main(['pin'], head=lambda: 'f' * 40) == 1
     assert 'f' * 12 in capsys.readouterr().out
+
+
+def _gitea_review(tmp_path: Path) -> dict[str, Any]:
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."review.yml"]\n', encoding='utf-8')
+    return workflows(tmp_path)['review.yml']
+
+
+def test_a_gitea_workflow_renders_under_dot_gitea_and_its_forge_key_is_not_rendered(tmp_path: Path, capsys) -> None:
+    """Gitea runs ``.gitea/workflows`` (and ignores ``.github/workflows`` once it exists): the forge key places it.
+
+    PLANTED CONTROL: a hand edit of the Gitea render, and a hand-written Gitea workflow, are refused like GitHub's.
+    """
+    review = _gitea_review(tmp_path)
+    assert 'forge' not in review, 'a placement key, never a workflow key'
+    (path,) = write(tmp_path)
+    assert path == tmp_path / '.gitea' / 'workflows' / 'review.yml'
+    assert not (tmp_path / '.github').exists()
+    assert drift(tmp_path) == []
+    path.write_text(path.read_text(encoding='utf-8').replace('"review"', '"ubuntu-latest"'), encoding='utf-8')
+    (path.parent / 'extra.yml').write_text('name: x\n', encoding='utf-8')
+    assert main(['check', '--root', str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert 'review.yml: differs' in out
+    assert 'extra.yml: a workflow no' in out
+
+
+def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_review_step(tmp_path: Path) -> None:
+    """ONE review step: the Gitea job runs the very step GitHub's ci.yml review job runs, on the ``review`` runner.
+
+    Lean: no ``uses`` action (a host-mode runner behind an ACL fetches none), no ``uv sync`` of the repo's deps.
+    """
+    review = _gitea_review(tmp_path)
+    assert set(review['on']) == {'pull_request'}
+    assert 'pull_request_target' not in render(review)
+    job = review['jobs']['review']
+    assert job['runs-on'] == 'review'
+    assert not [step for step in job['steps'] if 'uses' in step]
+    assert 'uv sync' not in render(review)
+    (tmp_path / 'hub').mkdir()
+    hub = _base_ci(tmp_path / 'hub')['jobs']['review']
+    assert job['steps'][-1] == hub['steps'][-1], 'the review step is one source'
+    install = next(s for s in job['steps'] if s.get('name') == 'Install the review method')
+    assert install == next(s for s in hub['steps'] if s.get('name') == 'Install the review method')
+    assert '"GITHUB_TOKEN": "${{ github.token }}"' in render(review), 'the job token posts: the forge is its creator'
+
+
+def test_the_gitea_review_reaches_its_forge_on_the_runner_s_loopback_instance(tmp_path: Path) -> None:
+    """``github.server_url`` is Gitea's ROOT_URL (refused from the host); the runner's instance is the address.
+
+    act_runner sets ``ACTIONS_RUNTIME_URL`` to its registered instance + ``/api/actions_pipeline/``.
+    """
+    text = render(_gitea_review(tmp_path))
+    assert '${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}' in text
+    assert 'GIT_CONFIG_GLOBAL' in text, "the job token never lands in the host user's global git config"

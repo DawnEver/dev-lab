@@ -65,7 +65,7 @@ from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.reviewgate import forge_bots, review_missing
+from dev_lab.dev.reviewgate import forge_creators, review_missing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -159,12 +159,11 @@ def decide(
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
-    bots: frozenset[str] = frozenset()
     try:  # a review config that cannot review is named here, never silently mergeable
-        bots = forge_bots(github=github, declared=load_review(root).forge_bot)
+        load_review(root)
     except ValueError as config:
         missing.append(f'its review config: {config}')
-    if (unreviewed := review_missing(statuses, bots)) is not None:
+    if (unreviewed := review_missing(statuses, forge_creators(github=github))) is not None:
         missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')

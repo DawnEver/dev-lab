@@ -19,9 +19,9 @@ from dev_lab.dev import breakglass
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
-from dev_lab.dev.forgework import ACTIONS_BOT
+from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import FORGE_BOT_FIX, ForgeBotUndeclared, forge_bots, review_missing
+from dev_lab.dev.reviewgate import forge_creators, review_missing
 
 _BOTS = frozenset({ACTIONS_BOT})
 _SECURED = ('tests/security', 'success', 'nothing found')
@@ -79,23 +79,35 @@ def test_github_status_list_reads_the_creator_the_forge_recorded() -> None:
     forge, head = StateForge(Forge('github.com', 'o', 'r')), 'c' * 40
     forge.login = 'maintainer'
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='looks fine to me')
-    assert breakglass.unreviewed(forge, head, '') is not None
+    assert breakglass.unreviewed(forge, head) is not None
     forge.login = ACTIONS_BOT
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
-    assert breakglass.unreviewed(forge, head, '') is None
+    assert breakglass.unreviewed(forge, head) is None
 
 
-def test_gitea_without_a_declared_distinct_forge_bot_refuses_every_success_with_the_fix() -> None:
-    """PLANTED CONTROL: the same Gitea success counts once the serve login is declared as the forge bot."""
-    with pytest.raises(ForgeBotUndeclared, match='forge_bot'):
-        forge_bots(github=False, declared='')
-    with pytest.raises(ForgeBotUndeclared):
-        forge_bots(github=False, declared=ACTIONS_BOT)
+@pytest.mark.parametrize('creator', ['DawnEver', 'a', ACTIONS_BOT])
+def test_on_gitea_only_the_actions_ghost_counts_and_a_named_user_never_does(creator: str) -> None:
+    """Gitea records a job-token status as its Actions ghost and answers ``"creator": null`` (measured 2026-11-01).
+
+    PLANTED CONTROL: DawnEver's success on the same head refuses; the null-creator success is the forge's.
+    """
+    assert forge_creators(github=False) == frozenset({''})
     forge, head = StateForge(), 'd' * 40
+    forge.login = creator
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
-    assert breakglass.unreviewed(forge, head, '') == FORGE_BOT_FIX
-    assert breakglass.unreviewed(forge, head, 'a') is None, 'a is the serve login that posted it'
-    assert breakglass.unreviewed(forge, head, 'forge-bot') is not None, 'a developer login is not the forge'
+    said = breakglass.unreviewed(forge, head)
+    assert said is not None
+    assert creator in said
+    forge.login = GITEA_ACTIONS_LOGIN  # the job token: Gitea records the status as its Actions ghost
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
+    assert breakglass.unreviewed(forge, head) is None
+
+
+def test_on_github_a_null_creator_is_not_the_forge() -> None:
+    """GitHub always names the creator: an unrecorded one is no forge identity there. PLANTED CONTROL: the bot."""
+    assert forge_creators(github=True) == frozenset({ACTIONS_BOT})
+    assert review_missing((_status(REVIEW_CONTEXT, 'success', 'clean', ''),), forge_creators(github=True)) is not None
+    assert review_missing((_status(REVIEW_CONTEXT, 'success', 'clean'),), forge_creators(github=True)) is None
 
 
 def test_a_pending_hold_blocks_a_successful_review_until_released() -> None:
@@ -109,4 +121,4 @@ def test_break_glass_and_the_merge_read_the_one_predicate() -> None:
     """Single source: neither module keeps a review rule of its own."""
     forge, head = StateForge(), 'a' * 40
     status_post(forge, head, context=REVIEW_CONTEXT, state='error', description='the review command failed')
-    assert breakglass.unreviewed(forge, head, 'a') == review_missing(status_list(forge, head), frozenset({'a'}))
+    assert breakglass.unreviewed(forge, head) == review_missing(status_list(forge, head), forge_creators(github=False))

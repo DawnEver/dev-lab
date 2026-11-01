@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 
 import pytest
@@ -35,6 +34,7 @@ from dev_lab.dev.forgetakeover import (
     review_run,
     takeover,
 )
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewgate import RERUN
@@ -186,23 +186,16 @@ def test_a_head_the_forge_reviewed_is_refused_and_a_users_success_is_not_that(tm
     """PLANTED CONTROL for the two above: the door runs only where the FORGE's review is missing (D11)."""
     work, forge, _, head = _merged(tmp_path)
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed')  # written by login a
-    as_forge = dataclasses.replace(_SLICED, forge_bot='a')
-    with pytest.raises(TakeoverRefused, match='already reviewed by the forge'):
-        takeover(
-            work,
-            forge,
-            as_forge,
-            head,
-            pull=pull_for(forge, head),
-            base='integrate/main',
-            host='box',
-            run=FakeCommand(),
-        )
-    elsewhere = dataclasses.replace(_SLICED, forge_bot='forge-bot')  # a's success is a user's, not the forge's
-    said = takeover(
-        work, forge, elsewhere, head, pull=pull_for(forge, head), base='integrate/main', host='box', run=FakeCommand()
+    said = takeover(  # a's success is a user's, not the forge's
+        work, forge, _SLICED, head, pull=pull_for(forge, head), base='integrate/main', host='box', run=FakeCommand()
     )
     assert 'advisory' in said[0]
+    forge.login = GITEA_ACTIONS_LOGIN  # Gitea's Actions ghost: the review job posted it
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed')
+    with pytest.raises(TakeoverRefused, match='already reviewed by the forge'):
+        takeover(
+            work, forge, _SLICED, head, pull=pull_for(forge, head), base='integrate/main', host='box', run=FakeCommand()
+        )
 
 
 def test_the_door_reads_the_repo_it_is_told_and_refuses_a_sha_it_lacks(tmp_path: Path) -> None:

@@ -16,7 +16,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 API = '/api/v1/repos/o/r'
@@ -166,7 +166,10 @@ class StateForge(Client):
     def _post_status(self, sha: str, body: dict[str, Any]) -> dict[str, Any]:
         """Gitea keeps every post, answering the state as ``status``; ids ascend across the forge."""
         self._next_comment += 1
-        made = {'id': self._next_comment, 'status': body['state'], 'creator': {'login': self.login}} | body
+        # Gitea records a job token's status as its Actions ghost (user -2) and answers ``"creator": null``, while
+        # the same token's comments name its Actions user (D11, measured 2026-11-01).
+        creator = None if self.login == GITEA_ACTIONS_LOGIN else {'login': self.login}
+        made = {'id': self._next_comment, 'status': body['state'], 'creator': creator} | body
         self.statuses.setdefault(sha, []).append(made)
         return made
 
