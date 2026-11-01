@@ -196,7 +196,7 @@ def test_a_pr_over_its_round_cap_waits_named_and_runs_nothing(tmp_path: Path) ->
     state, why = _state(forge, after)
     assert state == 'pending'
     assert why.startswith(f'{CAPPED} round cap reached: 1/1 rounds; split the PR, or forge review cap {number}')
-    assert FAMILY_MAX_ROUNDS == Review().max_rounds == 3, 'the family re-reviews each push: three rounds a PR'
+    assert FAMILY_MAX_ROUNDS == Review().max_rounds == 5, 'user ruling 2026-11-01: five rounds a PR (security PRs needed four)'
 
 
 def _raised_as_seen_by(forge: object, number: int, job: str) -> Raised | None:

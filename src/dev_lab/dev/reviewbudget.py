@@ -74,7 +74,7 @@ TAG_ENV: Final = 'AI_LAB_SPEND_TAG'
 SPEND_SCHEMA: Final = 1
 
 #: INITIAL, until :data:`MIN_FITTED_PRS` PRs are measured: about 100 reviewed PRs a month across the family's six
-#: repos (each push re-reviewed, up to three rounds), so a PR's initial cap is 1000/100 = 10 USD -- several full
+#: repos (each push re-reviewed, up to five rounds), so a PR's initial cap is 1000/100 = 10 USD -- several full
 #: rounds of a 200 kB slice on the family model, and a hard stop on a runaway one.
 INITIAL_PRS_PER_MONTH: Final = 100
 

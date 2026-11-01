@@ -62,7 +62,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
-    max_rounds = 3             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, the head waits
+    max_rounds = 5             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, the head waits
     max_diff_bytes = 200000    # one slice: what one reviewer reads
     max_total_bytes = 4000000  # one head: past it, held for a session
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
