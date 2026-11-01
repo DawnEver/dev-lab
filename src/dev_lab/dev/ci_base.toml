@@ -315,6 +315,7 @@ steps = [
 # same-repo PR may rewrite it -- and its author already holds Code write by pushing that branch. The ceiling is the
 # repo/org MaxTokenPermissions; a fork PR's token is read-only regardless.
 ["review.yml".jobs.review.permissions]
+actions = "read"  # reviewgate reads the job's own run: GET actions/runs/{id} is reqRepoReader(unit.TypeActions)
 contents = "write"
 pull-requests = "write"
 issues = "write"
