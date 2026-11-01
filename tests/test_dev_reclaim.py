@@ -17,11 +17,12 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 from lab_commons.census import Process
 
 from dev_lab.dev.branchset import BranchSet, apply_local
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
-from dev_lab.dev.reclaim import occupancy, reclaim, reclaimable
+from dev_lab.dev.reclaim import occupancy, reclaim, reclaimable, runtime_of
 
 _GIT = shutil.which('git') or 'git'
 _HOLDERS = ('origin/main',)
@@ -226,3 +227,41 @@ def test_a_tree_held_past_the_census_is_refused_before_anything_is_deleted(tmp_p
         return
     assert (held / 'landed.txt').is_file(), 'a held tree lost a tracked file'
     assert any(line.startswith('kept') and 'in use' in line and 'landed' in line for line in lines), lines
+
+
+def _runtime_tree(tmp_path: Path) -> tuple[Path, Path]:
+    """A planted checkout plus a detached, landed, settled tree holding an ignored ``.venv`` interpreter."""
+    work = _planted(tmp_path)
+    tree = work / '.claude' / 'worktrees' / 'runtime-2'
+    _run(work, 'worktree', 'add', '-q', '--detach', str(tree), 'origin/main')
+    _plant(tree / '.venv' / 'Scripts' / 'python.exe', '')
+    _settled(work)
+    return work, tree
+
+
+def test_a_tree_the_host_config_names_as_a_runtime_is_kept_with_the_reason(tmp_path: Path) -> None:
+    work, tree = _runtime_tree(tmp_path)
+    runtimes = {'ai_lab': {'python': str(tree / '.venv' / 'Scripts' / 'python.exe')}}
+    lines = reclaim(work, _HOLDERS, occupied=_occupied, runtimes=runtimes) or ()
+    assert tree.is_dir()
+    assert any(line.startswith('kept') and 'runtime-2' in line and 'runtime of ai_lab' in line for line in lines), lines
+
+
+def test_the_same_tree_without_the_runtime_entry_is_reclaimed(tmp_path: Path) -> None:
+    work, tree = _runtime_tree(tmp_path)
+    lines = reclaim(work, _HOLDERS, occupied=_occupied, runtimes={'other': {'python': str(tmp_path / 'py')}}) or ()
+    assert not tree.exists()
+    assert any(line.startswith('removed') and 'runtime-2' in line for line in lines), lines
+
+
+def test_a_runtime_whose_interpreter_links_outside_the_tree_still_keeps_it(tmp_path: Path) -> None:
+    """A POSIX venv's ``bin/python`` is a symlink to the base interpreter; it lives in the tree, not its target."""
+    tree, base = tmp_path / 'runtime-2', tmp_path / 'base-python'
+    _plant(base, '')
+    (tree / '.venv' / 'bin').mkdir(parents=True)
+    leaf = tree / '.venv' / 'bin' / 'python'
+    try:
+        leaf.symlink_to(base)
+    except OSError as exc:  # Windows without the symlink privilege cannot plant the case
+        pytest.skip(f'cannot create a symlink here: {exc}')
+    assert runtime_of(tree, {'ai_lab': {'python': str(leaf)}}).startswith('runtime of ai_lab')

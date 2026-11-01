@@ -17,10 +17,10 @@ import fnmatch
 import subprocess
 import time
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.census import processes
@@ -37,6 +37,7 @@ from dev_lab.dev.checkout import (
 )
 from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
 from dev_lab.dev.worktree_archive import home_outputs
 
@@ -50,6 +51,7 @@ __all__ = [
     'reclaimable',
     'remove_tree',
     'repository_at',
+    'runtime_of',
     'untracked',
 ]
 
@@ -243,6 +245,33 @@ def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str
 _SEVERED: Final = 'a severed worktree (its .git points nowhere) -- its files may be the only copy; salvage them first'
 
 
+def runtime_of(tree: Path, runtimes: Mapping[str, Mapping[str, Any]]) -> str:
+    """Why *tree* stays because the host runs from it: ``runtime of <name>``; ``''`` when no runtime lives there.
+
+    Issue dev-lab#26 (2026-11-01): ``branchset --apply`` reclaimed the detached, landed tree whose ``.venv`` the
+    machine file's ``[runtimes.ai_lab] python`` names -- the forge serve's review interpreter. A tree holding
+    any path a ``[runtimes.<name>]`` value declares is that host's runtime, never a finished lease. A value is
+    judged by where it LIVES, never where its leaf points: a POSIX venv's ``bin/python`` links outside the tree.
+    """
+    home = tree.resolve()
+
+    def lives_in_tree(value: str) -> bool:
+        path = Path(value).expanduser()
+        return (path.parent.resolve() / path.name).is_relative_to(home)
+
+    names = sorted(
+        name
+        for name, row in runtimes.items()
+        for value in row.values()
+        if isinstance(value, str) and value and lives_in_tree(value)
+    )
+    return (
+        f'runtime of {", ".join(dict.fromkeys(names))} -- the host config [runtimes] names a path in it'
+        if names
+        else ''
+    )
+
+
 def orphan_reason(orphan: Path, is_occupied: Callable[[Path], bool]) -> str:
     """Why *orphan* stays: occupied, or SEVERED -- it still has a ``.git`` file (incident 2026-10-27).
 
@@ -261,6 +290,7 @@ def reclaimable(
     home: Path = DEFAULT_WORKTREE_HOME,
     occupied: Callable[[Path], bool] | None = None,
     quiet_s: float = QUIET_S,
+    runtimes: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[Lease, ...] | None:
     """Every LINKED worktree and orphan directory of *root*, judged; ``None`` when git could not answer.
 
@@ -273,11 +303,13 @@ def reclaimable(
     * QUIET: its index unchanged for *quiet_s* seconds (a session that stages, commits or checks out is live);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
+    * NOT A RUNTIME: no ``[runtimes.<name>]`` value of *runtimes* (default this host's machine file,
+      :func:`dev_lab.dev.forgereview_runtimes.host_runtimes`) names a path inside it (:func:`runtime_of`);
     * UNOCCUPIED: no process works in, executes from or reads it -- the sweep's own ancestors included
       (:func:`occupancy` by default).
 
     An orphan directory under *home* is reclaimable iff nothing occupies it and it is not SEVERED (a ``.git``
-    file). *holders* are the refs whose content counts
+    file) and holds no runtime. *holders* are the refs whose content counts
     as landed: the trunk's authority and every declared session (``dev_lab.dev.branchset.holders``).
     """
     trees = worktrees(root)
@@ -287,12 +319,15 @@ def reclaimable(
         return None
     is_occupied = occupied or occupancy()
     judge = _Judge(holders, declared_generated(root), quiet_s)
+    declared = host_runtimes() if runtimes is None else runtimes
     leases: list[Lease] = []
     for path, branch in trees[1:]:
         tree = path.resolve()
-        reason = _tree_reason(tree, branch, judge, locked=tree in locked)
+        reason = _tree_reason(tree, branch, judge, locked=tree in locked) or runtime_of(tree, declared)
         leases.append(Lease(tree, branch, reason or (_LIVE if is_occupied(tree) else '')))
-    leases += [Lease(orphan, '', orphan_reason(orphan, is_occupied)) for orphan in orphans]
+    leases += [
+        Lease(orphan, '', runtime_of(orphan, declared) or orphan_reason(orphan, is_occupied)) for orphan in orphans
+    ]
     return tuple(leases)
 
 
@@ -338,6 +373,7 @@ def reclaim(
     apply: bool = True,
     limit: int | None = None,
     quiet_s: float = QUIET_S,
+    runtimes: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[str, ...] | None:
     """Remove every reclaimable lease; one line per lease, a kept one with its reason. ``None``: unreadable.
 
@@ -345,9 +381,10 @@ def reclaim(
     the copy verified; only then is the tree deleted by :func:`remove_tree` (its untracked and ignored content
     is declared disposable) and git's registration pruned. An unverified archive keeps the lease, with the
     reason. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``, which deletes it pinned
-    to its sha. Without *apply* nothing is touched; past *limit* removals the rest are ``deferred`` to a later run.
+    to its sha. *runtimes* is :func:`reclaimable`'s. Without *apply* nothing is touched; past *limit*
+    removals the rest are ``deferred`` to a later run.
     """
-    leases = reclaimable(root, holders, home=home, occupied=occupied, quiet_s=quiet_s)
+    leases = reclaimable(root, holders, home=home, occupied=occupied, quiet_s=quiet_s, runtimes=runtimes)
     if leases is None:
         return None
     out: list[str] = []
