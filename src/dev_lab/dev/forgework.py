@@ -60,7 +60,7 @@ from dev_lab.dev._forge_journal import (
     since,
     write_key,
 )
-from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, is_pull, pull_of
+from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, draft_title, is_pull, pull_of
 from dev_lab.dev._forgebackends import (
     ACTIONS_BOT,
     GITEA,
@@ -437,9 +437,16 @@ class Client:
         """Close an issue; nothing is written but the state."""
         return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'state': 'closed'}))
 
-    def pr_create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
-        """A new pull request from *head* into *base*."""
-        payload = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
+    def pr_create(self, title: str, body: str, *, head: str, base: str, draft: bool) -> PullRequest:
+        """A new pull request from *head* into *base*; a *draft* in the forge's own way (:mod:`dev_lab.dev.forgedraft`).
+
+        GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one.
+        """
+        if draft and self.backend is not GITHUB:
+            title = draft_title(title)
+        payload: dict[str, Any] = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
+        if draft and self.backend is GITHUB:
+            payload['draft'] = True
         probe = Probe(self._recent('pulls'), {'title': title, 'body': payload['body']})
         return pull_of(self.call('POST', f'{self.repo}/pulls', payload, Durable(probe=probe)))
 
