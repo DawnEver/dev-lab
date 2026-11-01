@@ -132,9 +132,10 @@ from dev_lab.dev.forgereview_scope import ONLY_GENERATED, Budget, Scope, gather,
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.labsession import sessions
+from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
-from dev_lab.dev.reviewgate import post_review
+from dev_lab.dev.reviewgate import DeclarationUnread, forge_posted, post_review
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
@@ -161,10 +162,12 @@ __all__ = [
     'hold',
     'judge_for',
     'load_review',
+    'review_at',
     'review_from',
     'review_pull',
     'review_tick',
     'step',
+    'trusted_integration',
 ]  # fmt: skip
 
 #: The placeholder the declared command carries; the reviewed ``<base>..<head>`` range replaces it.
@@ -307,9 +310,60 @@ def review_from(text: str, origin: str) -> Review:
 
 
 def load_review(root: Path) -> Review:
-    """*root*'s working-tree ``[tool.dev_lab.review]``; defaults when it has no manifest."""
+    """*root*'s working-tree ``[tool.dev_lab.review]``; defaults when it has no manifest.
+
+    A LOCAL check of a checkout's own declaration (the family test, the policy page, merge-ready's config line);
+    never what a PR's review acts on -- that is the base's, :func:`review_at`.
+    """
     manifest = root / 'pyproject.toml'
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
+
+
+def trusted_integration(root: Path, client: Client) -> str:
+    """The integration branch a PR review trusts: the one the repository's DEFAULT branch declares.
+
+    THE TRUST CHAIN (dev-lab #38 rounds 2-4): the forge's ``default_branch`` (main, which moves only by
+    ``integrate promote``) -> its ``[tool.dev_lab.integrator] integration`` (``git show origin/<default>``) -> that
+    branch's review declaration (:func:`review_at`) -> the command that runs beside the review key. The PR head
+    enters only as the DIFF, read as data. F-169e99e6c68c: a name read from the working tree -- the head's --
+    let a PR opened against a branch it controls name that branch the integration, and its declaration ran.
+    A default branch the forge does not name, or whose manifest cannot be read, refuses
+    (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back to the head.
+    """
+    repo: Any = client.call('GET', client.repo)
+    default = repo.get('default_branch') if isinstance(repo, dict) else None
+    if not default:
+        msg = 'the forge names no default branch: which integration branch a review trusts is undecided'
+        raise DeclarationUnread(msg)
+    try:
+        return policy_at(root, f'origin/{default}').integration
+    except (ValueError, OSError) as failed:
+        msg = f'origin/{default}:pyproject.toml declares no readable integration branch: {failed}'
+        raise DeclarationUnread(msg) from failed
+
+
+def review_at(root: Path, base: str) -> Review:
+    """The ``[tool.dev_lab.review]`` ``origin/<base>`` declares in *root* -- what a PR's review acts on.
+
+    F-46e412ee799d, F-ef3a6c8b86b2 (dev-lab #38 round 2): the review job checks out the PR head, and the declared
+    ``command`` runs beside the review key, so a head's own declaration would choose the code that runs -- under
+    ``pull_request_target`` too, whose WORKFLOW alone is the base's. *base* is the integration branch
+    :func:`trusted_integration` names (the job, a takeover, an adjudication) or the serve's own policy, read from
+    the operator's checkout, never a PR head. A PR changing its review declaration is reviewed under the base's
+    until it lands, like the Actions adoption (:mod:`dev_lab.dev.reviewgate`). Read from git (``git show``, never
+    the working tree), so the serve's tick reads no forge before it knows its host can run the command. An
+    unreadable base declaration refuses (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back.
+    """
+    where = f'origin/{base}:pyproject.toml'
+    try:
+        text = forgereview_scope.git(root, 'show', where)[1]
+    except OSError as failed:
+        msg = f'{where} cannot be read: {failed}'
+        raise DeclarationUnread(msg) from failed
+    if not text.strip():
+        msg = f'{where} is empty'
+        raise DeclarationUnread(msg)
+    return review_from(text, where)
 
 
 def stale_after(review: Review) -> timedelta:
@@ -391,12 +445,12 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
         why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); waits for the forge review to be re-run'[
             :DESCRIPTION
         ]
-        status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
+        post_review(client, head, state='pending', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         why = f'not reviewed: no reviewer returned findings ({kinds}); waits for a takeover'[:DESCRIPTION]
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
                       outside=scope.outside, authored=authored, **_judging(root, client, review, pull,
@@ -449,14 +503,14 @@ def capped(
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
     if latest is not None and (latest.state, latest.description) == ('pending', said):
         return None, None
-    status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=said)
+    post_review(client, head, state='pending', description=said)
     return None, f'#{pull.number} {head[:12]}: {said}'
 
 
 def hold(client: Client, pull: PullRequest, why: str) -> str:
     """Hold *pull*'s head for the takeover door: :data:`REVIEW_CONTEXT` and the hold both ``pending`` *why*."""
-    for context in (REVIEW_CONTEXT, HOLD_CONTEXT):
-        status_post(client, pull.head_sha, context=context, state='pending', description=why[:DESCRIPTION])
+    post_review(client, pull.head_sha, state='pending', description=why[:DESCRIPTION])
+    status_post(client, pull.head_sha, context=HOLD_CONTEXT, state='pending', description=why[:DESCRIPTION])
     return f'#{pull.number} {pull.head_sha[:12]}: {why}'
 
 
@@ -469,7 +523,8 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     retried on that head.
     """
     head = pull.head_sha
-    if (stands := passed(root, client, head, runner.clock(), review.stale)) is not None:
+    counted = forge_posted(client, head, base=pull.base) if runner.verifies else None
+    if (stands := passed(root, client, head, runner.clock(), review.stale, counted=counted)) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     allowed, note = capped(root, client, review, pull, runner)
     if allowed is None:
@@ -505,7 +560,7 @@ def _command_round(
     ruling(me, f'reviewing #{pull.number}')
     self_review(me, sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
     claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
-    status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
+    post_review(client, head, state='pending', description=claim)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
         found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body,
@@ -514,11 +569,11 @@ def _command_round(
         return unable(client, pull, runner.host, str(unsupported))
     except (UnknownSchemaVersion, ReviewRefused) as named:
         why = f'not reviewed: {named}'[:DESCRIPTION]
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
         why = f'the review command failed ({type(failed).__name__}); not retried here, waits for a takeover'
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}: {failed}'
     authored = trailed(root, f'origin/{pull.base}', head)
     return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner)
@@ -568,7 +623,7 @@ def step(
     A host that cannot fill or start the command says so once and reads no PR.
     """
     try:
-        review = load_review(root)
+        review = review_at(root, policy.integration)
         here = host_runtimes()
         try:  # any range, any slice: can this host run the command at all
             cannot = ready(command_for(review, '', here), root)

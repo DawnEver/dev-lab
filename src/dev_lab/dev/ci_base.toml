@@ -18,7 +18,8 @@
 #   absent-parts  always: `jobparts absent --event` posts failure on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
 #   review        `forge review run --pr N`: tests/review (pull_request ONLY -- never pull_request_target,
-#                 which would run a fork's code with this repository's secrets)
+#                 which would run a fork's code with this repository's secrets; Gitea's review.yml below is the
+#                 one pull_request_target workflow: it acts on nothing the head declares, below)
 #   merge-ready   last, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready and, when it is success, merges that head into integrate/main itself
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
@@ -119,9 +120,12 @@ pull-requests = "read"
 # into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
 # the head and fails (forgetakeover.review_run), never exits green with no review.
 # The method's install and key are the shared `method` steps (below, with `setup`): the review job and the claims
-# workflow use the same ones. The job holds the review key and a write token, so it runs NO code of the PR's
-# (F-76c85dbc4b77): the head is checked out as DATA only -- never `setup`'s `uv sync`, whose lock and project
-# are the PR's -- and the dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
+# workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
+# supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
+# whose lock and project are the PR's, and never a module path (forgereview_command.SAFE_PATH). THE TRUST CHAIN:
+# the forge's default branch -> its integration name (forgereview.trusted_integration, F-169e99e6c68c) -> that
+# branch's review declaration (forgereview.review_at) -> the command; a PR into any other base is not reviewed.
+# The dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
 ["ci.yml".jobs.review]
 if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
@@ -187,6 +191,12 @@ setup = [
     { name = "Sync the environment", run = "uv sync --frozen --all-extras" },
 ]
 
+# A FORK PR HOLDS SECRET-FREE (F-dd353e505b47, dev-lab #38): under Gitea's pull_request_target a fork PR's run is
+# handed the repository's secrets, so every secret these shared steps read is withheld when the PR's head repo is not
+# this one -- no review key is stored (the review then holds the head for a maintainer, NEEDS_MAINTAINER) and no
+# FAMILY_READ_TOKEN is handed out. Outside a PR event (review-claims' issue_comment) the guard is open. Gitea's
+# proxy forbids forks today (D44), but the template is family-wide. GitHub gives a fork PR no secret regardless.
+#
 # THE REVIEW METHOD, installed and keyed once for every job that reviews or judges (ci.yml review, review-claims.yml).
 # The method is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3, 2026-10-31:
 # "cannot import 'ai_lab.review'", nothing posted): ai-lab is installed from this owner's forge into an environment of
@@ -206,8 +216,8 @@ cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REF"
-''', env = { AI_LAB_REF = "3f8c7c5b25188b40673602682ce9df61157a16f6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
-    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+''', env = { AI_LAB_REF = "3f8c7c5b25188b40673602682ce9df61157a16f6", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
+    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
 ]
 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
@@ -225,10 +235,10 @@ review = [
 mkdir -p "$RUNNER_TEMP/forge-secrets"
 printf '%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" > "$RUNNER_TEMP/forge-secrets/read"
 printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
-''', env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
+''', env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "tests/review", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
 "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
-''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
 ]
 
 # THE REVIEW DOOR, installed for both forges' review jobs from the ONE pinned dev-lab commit (DEV_LAB_REF,
@@ -251,7 +261,7 @@ python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I 
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
-''', env = { DEV_LAB_REF = "ebb813b9b46c3d8945fde9c2feb84b96a81cec88", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
+''', env = { DEV_LAB_REF = "ebb813b9b46c3d8945fde9c2feb84b96a81cec88", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, behind a campus ACL). No `uses`
@@ -273,7 +283,7 @@ lean = [
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
 ''' },
-    { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+    { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global pack.threads 1
@@ -285,13 +295,23 @@ git checkout -q --detach "$HEAD_SHA"
 ]
 
 # GITEA'S REVIEW JOB (2026-11-01): tests/review on a Gitea-hosted repo is posted by its Actions job, so the status's
-# recorded creator is the forge's Actions ghost -- the only creator reviewgate counts there (D11). Same trigger as
-# ci.yml's review (pull_request, never pull_request_target), the same `method` and `review` steps.
+# recorded creator is the forge's Actions ghost (D11) -- but so is EVERY Actions job's, a PR-head workflow's too.
+# TRIGGERED BY pull_request_target (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a pull_request
+# workflow from the PR HEAD, so a same-repo PR could rewrite this file to post success itself or print the review
+# key; a pull_request_target workflow is detected from the BASE commit (notifier_helper.go, 1.27), so the BASE's
+# workflow runs -- the PR can neither change what runs nor read the secret -- and reviewgate counts a success only
+# when that run concluded success (the job fails unless it posted success, forgetakeover.job_exit). Safe ONLY because
+# what the job takes from the head is the DIFF, read as data; what it acts on is the base's -- the workflow,
+# the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
+# ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (DEV_LAB_REF, AI_LAB_REF) (test_the_review_job_runs_no_code_the_pr_supplies).
+# GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
+# The types are pull_request's defaults, so the job runs on the events it ran on before.
 ["review.yml"]
 forge = "gitea"
 name = "Review"
 
-["review.yml".on.pull_request]
+["review.yml".on.pull_request_target]
+types = ["opened", "synchronize", "reopened"]
 
 ["review.yml".concurrency]
 group = "review-${{ github.event.pull_request.number }}"
@@ -318,9 +338,8 @@ steps = [
 ]
 
 # Gitea has no `statuses` scope: POST /statuses/{sha} asks Code write (reqRepoWriter(unit.TypeCode), 1.27), so the
-# job takes contents: write. This block is NOT a ceiling: Gitea runs a pull_request workflow from the PR head, so a
-# same-repo PR may rewrite it -- and its author already holds Code write by pushing that branch. The ceiling is the
-# repo/org MaxTokenPermissions; a fork PR's token is read-only regardless.
+# job takes contents: write. Under pull_request_target the base's block is the one that runs, so a PR cannot widen
+# it; the ceiling is still the repo/org MaxTokenPermissions.
 ["review.yml".jobs.review.permissions]
 actions = "read"  # reviewgate reads the job's own run: GET actions/runs/{id} is reqRepoReader(unit.TypeActions)
 contents = "write"

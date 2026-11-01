@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -58,12 +59,21 @@ def can_start(argv: Sequence[str], root: Path) -> str | None:
     return None
 
 
+#: The command runs in the PR's checkout, and ``python -m`` puts the cwd first on ``sys.path``: a head-planted
+#: ``ai_lab/`` would shadow the method beside the review key (dev-lab #38 round 4, the F-7b2f4bd210de class).
+#: ``PYTHONSAFEPATH`` (3.11+) prepends nothing; every Python the command starts inherits it.
+SAFE_PATH: Final = {'PYTHONSAFEPATH': '1'}
+
+
 def run_command(argv: Sequence[str], root: Path) -> str:
-    """The stdout of the declared command run in *root*; :class:`ReviewRefused` or :class:`OSError` on a failure."""
+    """The stdout of the declared command run in *root*; :class:`ReviewRefused` or :class:`OSError` on a failure.
+
+    *root* is the PR's checkout -- data the reviewer reads, never a module path (:data:`SAFE_PATH`).
+    """
     try:
         done = _door.run(
             list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=_COMMAND_TIMEOUT_S, check=False,
+            timeout=_COMMAND_TIMEOUT_S, check=False, env={**os.environ, **SAFE_PATH},
         )  # fmt: skip
     except FileNotFoundError:
         msg = f'unsupported: the review command {argv[0]!r} is not installed on this host'
@@ -99,3 +109,7 @@ class Runner:
     serving: bool = False
     #: This host's ai-lab spend report (:func:`dev_lab.dev.reviewbudget.read_spend`); ``None``: rounds cap only.
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend
+    #: Whether a standing success the gate does not count is reviewed afresh rather than stood on -- the review JOB
+    #: (dev-lab #38): Gitea re-runs a run in place, its conclusion reset, so a re-run cannot verify the success its
+    #: earlier attempt posted from one a PR-head workflow planted, and reviews the head again.
+    verifies: bool = False

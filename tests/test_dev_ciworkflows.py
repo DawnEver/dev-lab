@@ -119,7 +119,11 @@ def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_
     """
     steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
     login = steps['Store the review key']
-    assert login['env'] == {'ANTHROPIC_API_KEY': '${{ secrets.ANTHROPIC_API_KEY }}'}
+    (key,) = login['env'].values()
+    assert set(login['env']) == {'ANTHROPIC_API_KEY'}
+    assert key.endswith("&& secrets.ANTHROPIC_API_KEY || '' }}"), (
+        'a fork PR is withheld it (test_a_fork_pr_s_review_job_holds_secret_free)'
+    )
     helper = 'credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket"'
     assert helper in login['run'], 'in memory, one review long, the job its own'
     assert '-m ai_lab.auth login anthropic --task pr-review' in login['run']
@@ -428,10 +432,18 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     """ONE review step: the Gitea job runs the very step GitHub's ci.yml review job runs, on the ``review`` runner.
 
     Lean: no ``uses`` action (a host-mode runner behind an ACL fetches none), no ``uv sync`` of the repo's deps.
+    TRIGGERED BY ``pull_request_target`` ALONE (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a
+    ``pull_request`` workflow from the PR head, which could rewrite it to post success or print the key; the
+    ``pull_request_target`` workflow is the BASE's. Safe only because the job acts on nothing the head declares:
+    the diff is data, the review declaration is the base's (``forgereview.review_at``, F-46e412ee799d) and the tools
+    are pinned by SHA (:func:`test_the_review_job_runs_no_code_the_pr_supplies`).
+    PLANTED CONTROL: GitHub's ci.yml never takes it.
     """
     review = _gitea_review(tmp_path)
-    assert set(review['on']) == {'pull_request'}
-    assert 'pull_request_target' not in render(review)
+    assert set(review['on']) == {'pull_request_target'}
+    assert review['on']['pull_request_target']['types'] == ['opened', 'synchronize', 'reopened'], "pull_request's"
+    (tmp_path / 'ci').mkdir()
+    assert 'pull_request_target' not in render(_base_ci(tmp_path / 'ci'))
     job = review['jobs']['review']
     assert job['runs-on'] == 'review'
     assert not [step for step in job['steps'] if 'uses' in step]
@@ -582,3 +594,44 @@ def test_the_gitea_job_refuses_to_run_without_its_forge(tmp_path: Path) -> None:
     assert 'exit 1' in reach
     fetch = next(s for s in lean if s.get('name') == 'Fetch the head')['run']
     assert 'FORGE_URL:-' not in fetch
+
+
+def _expression(text: str, event: dict[str, Any]) -> bool:
+    """A ``(term || term ...)`` workflow guard over *event*, each term ``!name`` or ``name == name``."""
+    names = {'github': {'repository': 'o/r', 'event': event}}
+
+    def value(dotted: str) -> object:
+        found: object = names
+        for part in dotted.strip().split('.'):
+            found = found.get(part) if isinstance(found, dict) else None
+        return found
+
+    def term(one: str) -> bool:
+        if one.startswith('!'):
+            return not value(one[1:])
+        left, equals, right = one.partition(' == ')
+        assert equals, f'{one!r}: outside the guard grammar this test reads'
+        return value(left) == value(right)
+
+    return any(term(one.strip()) for one in text.strip().removeprefix('(').removesuffix(')').split(' || '))
+
+
+def test_a_fork_pr_s_review_job_holds_secret_free(tmp_path: Path) -> None:
+    """F-dd353e505b47 (dev-lab #38): under Gitea's pull_request_target a fork PR's run is handed the secrets.
+
+    Every secret the rendered review.yml reads is guarded by the PR's head repo being this one: a fork stores no
+    review key (the job then holds the head, NEEDS_MAINTAINER) and hands out no FAMILY_READ_TOKEN.
+    PLANTED CONTROL: a same-repo PR, and an event with no PR (review-claims' issue_comment), get them.
+    """
+    text = render(_gitea_review(tmp_path))
+    secrets = [one for one in re.findall(r'\$\{\{ (.*?) \}\}', text) if 'secrets.' in one]
+    named = {found.group(1) for one in secrets if (found := re.search(r'secrets\.(\w+)', one))}
+    assert named >= {'ANTHROPIC_API_KEY', 'FAMILY_READ_TOKEN'}
+    fork = {'pull_request': {'head': {'repo': {'full_name': 'fork/r'}}}}
+    same = {'pull_request': {'head': {'repo': {'full_name': 'o/r'}}}}
+    for one in secrets:
+        guard, _, rest = one.rpartition(' && ')
+        assert rest.endswith(" || ''"), f'{one}: a withheld secret is the empty string'
+        assert not _expression(guard, fork), f'{one}: a fork PR is handed it'
+        assert _expression(guard, same), f'{one}: a same-repo PR is not'
+        assert _expression(guard, {}), f'{one}: an event with no PR is not'

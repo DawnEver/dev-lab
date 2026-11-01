@@ -37,8 +37,9 @@ from dev_lab.dev.forgereview import (
     command_for,
     hold,
     judge_for,
-    load_review,
+    review_at,
     review_pull,
+    trusted_integration,
 )  # fmt: skip
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_cap
@@ -52,17 +53,16 @@ from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan,
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
-from dev_lab.dev.reviewgate import RERUN, forge_posted, review_missing
+from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
+    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'job_exit', 'ledger_of', 'main', 'pull_for',
     'review_run', 'runtimes_with', 'scope_of', 'takeover',
 ]  # fmt: skip
 
@@ -222,6 +222,24 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     return '; '.join([said, *ruled])
 
 
+def job_exit(client: Client, number: int, posted: Sequence[str], *, base: str) -> int:
+    """The review job's exit: ``0`` only when the PR's head is reviewed by what this job did (dev-lab #30).
+
+    Gitea's gate counts a review only when the base's ``pull_request_target`` run concluded success
+    (:mod:`dev_lab.dev.reviewgate`), so a run must FAIL unless it posted success. *posted* is what this job's
+    :func:`~dev_lab.dev.reviewgate.post_review` calls posted, in order
+    (:func:`~dev_lab.dev.reviewgate.posted_verdicts`): its LAST state decides. A job that posted none (a head whose
+    counted review stands, a PR it does not review) exits ``0`` only when the gate itself counts the head's review.
+    """
+    pull = client.pr_view(number)
+    if pull.base != base:  # not a PR into the trusted integration: never reviewed, so never a success
+        return 1
+    if posted:
+        return 0 if posted[-1] == 'success' else 1
+    head = pull.head_sha
+    return 0 if head and review_missing(status_list(client, head), forge_posted(client, head, base=base)) is None else 1
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge review', description=__doc__.splitlines()[0])
     parser.set_defaults(repo=None)
@@ -295,7 +313,7 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
     if args.verb == 'cap':
         return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
     ruled = adjudicate_thread(
-        root, origin, load_review(root), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
+        root, origin, review_at(root, base), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
         runtimes=runtimes_with(host_runtimes(), args.runtime),
     )  # fmt: skip
     return [f'[review] {one}' for one in ruled]
@@ -309,7 +327,7 @@ def main(
 ) -> int:  # fmt: skip
     """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``, ``cap <pr>``, ``run``.
 
-    Exit 0 done, 1 held or blocked heads listed, 2 refused.
+    Exit 0 done, 1 held or blocked heads listed (``run``: the head not reviewed by it, :func:`job_exit`), 2 refused.
     """
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = args.repo or (Path.cwd() if cwd is None else cwd)
@@ -318,20 +336,27 @@ def main(
         # run: the tokens arrive by file, never env, before any subprocess (F-5a82981c5f22, F-d61706393b50);
         # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.
         api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
-        origin, base = client or client_for(root, token=api), load_policy(root).integration
+        origin = client or client_for(root, token=api)
+        base = trusted_integration(root, origin)  # never the working tree's: the head's (F-169e99e6c68c)
         if args.verb == 'run':
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(
-                this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready, secret=secret
+                this_machine(),
+                runtimes_with(host_runtimes(), args.runtime),
+                run=run,
+                ready=ready,
+                secret=secret,
+                verifies=True,
             )
-            emit(f'[review] {review_run(root, origin, load_review(root), args.pr, base=base, runner=runner)}')
-            return 0
+            with posted_verdicts() as said:
+                emit(f'[review] {review_run(root, origin, review_at(root, base), args.pr, base=base, runner=runner)}')
+            return job_exit(origin, args.pr, said, base=base)
         if args.verb in {'held', 'blocked', 'dispose', 'cap', 'adjudicate'}:
             said = _listed(args, root, origin, base, run)
             for one in said:
                 emit(one)
             return 1 if said and args.verb in {'held', 'blocked'} else 0
-        review, pull = load_review(root), pull_for(origin, args.sha)  # the forge first: the PR brings its head
+        review, pull = review_at(root, base), pull_for(origin, args.sha)  # the forge first: the PR brings its head
         if pull is not None:
             pull_in(root, pull.number)
         head = _commit(root, pull.head_sha if pull is not None else args.sha)
