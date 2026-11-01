@@ -202,9 +202,14 @@ python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I 
 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
 # interpreter the `door` steps put the dev_lab door in (REVIEW_PYTHON), ISOLATED (-I): its cwd is the PR's checkout,
-# and a PR-planted `dev_lab/` there would otherwise shadow the pinned door.
+# and a PR-planted `dev_lab/` there would otherwise shadow the pinned door. The checkout is blobless, so the diff
+# fetches base blobs on demand: the step carries the same process-scoped forge header as the install steps
+# (F-ca1dda52c2ef, wdg-lab #427 -- on a private forge the lazy fetch otherwise answers 401).
 review = [
-    { name = "tests/review", run = 'trap "git credential-cache exit" EXIT; "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+    { name = "tests/review", run = '''trap "git credential-cache exit" EXIT
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
 # THE REVIEW DOOR, installed for both forges' review jobs from the ONE pinned dev-lab commit (DEV_LAB_REF,

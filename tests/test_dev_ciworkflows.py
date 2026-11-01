@@ -331,7 +331,9 @@ def test_no_credential_outlives_the_step_that_uses_it(tmp_path: Path) -> None:
                 # (dev-lab #17's own review, 2026-11-01: "could not read Username").
                 assert 'Authorization: basic $(' in step['run'], step.get('name')
         review = next(s for s in steps if s.get('name') == 'tests/review')
-        assert review['run'].startswith('trap "git credential-cache exit" EXIT;')
+        assert review['run'].startswith('trap "git credential-cache exit" EXIT')
+        # F-ca1dda52c2ef: the blobless checkout fetches base blobs while the diff runs, so the step carries the header.
+        assert 'GIT_CONFIG_VALUE_0="Authorization: basic' in review['run'], 'the review step reads its lazy blobs'
     planted = 'git config --global http."$FORGE_URL/".extraHeader "Authorization: token ${FAMILY_READ_TOKEN}"'
     assert _config_held_token(planted), 'PLANTED CONTROL'
 
