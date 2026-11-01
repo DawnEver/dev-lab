@@ -162,9 +162,6 @@
     "review": {
       "if": "${{ github.event_name == 'pull_request' }}",
       "runs-on": "ubuntu-latest",
-      "env": {
-        "REVIEW_PYTHON": ".venv/bin/python"
-      },
       "steps": [
         {
           "uses": "actions/checkout@v4",
@@ -174,33 +171,31 @@
           }
         },
         {
-          "name": "Install uv",
-          "uses": "astral-sh/setup-uv@v5",
-          "with": {
-            "enable-cache": true
+          "name": "Install the review door",
+          "run": "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\"\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git\" \"$RUNNER_TEMP/dev-lab\"\ngit -C \"$RUNNER_TEMP/dev-lab\" checkout -q --detach \"$DEV_LAB_REF\"\npython3 -m venv \"$RUNNER_TEMP/review\" && \"$RUNNER_TEMP/review/bin/python\" -m pip install -q uv\n\"$RUNNER_TEMP/review/bin/uv\" export --project \"$RUNNER_TEMP/dev-lab\" --frozen --no-hashes --no-header --no-annotate --no-emit-project | grep -E '^lab-commons @ ' > \"$RUNNER_TEMP/review.txt\"\n\"$RUNNER_TEMP/review/bin/uv\" pip install --python \"$RUNNER_TEMP/review/bin/python\" \"$RUNNER_TEMP/dev-lab\" -r \"$RUNNER_TEMP/review.txt\"\necho \"REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python\" >> \"$GITHUB_ENV\"\n",
+          "env": {
+            "DEV_LAB_REF": "1af31d23541153523a472e0e2048604196cabea6",
+            "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}"
           }
         },
         {
-          "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
-        },
-        {
           "name": "Install the review method",
-          "run": "uv venv \"$RUNNER_TEMP/ai-lab\" && uv pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\"",
+          "run": "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\"\npython3 -m venv \"$RUNNER_TEMP/ai-lab\" && \"$RUNNER_TEMP/ai-lab/bin/python\" -m pip install -q uv\n\"$RUNNER_TEMP/ai-lab/bin/uv\" pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\"\n",
           "env": {
-            "AI_LAB_REF": "ad0a0ace14846f633d4a42f153948062ce0b4164"
+            "AI_LAB_REF": "ad0a0ace14846f633d4a42f153948062ce0b4164",
+            "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}"
           }
         },
         {
           "name": "Store the review key",
-          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper 'cache --timeout=3600' && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -m ai_lab.auth login anthropic --task pr-review; fi",
+          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -m ai_lab.auth login anthropic --task pr-review; fi",
           "env": {
             "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
           }
         },
         {
           "name": "tests/review",
-          "run": "\"$REVIEW_PYTHON\" -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"",
+          "run": "trap \"git credential-cache exit\" EXIT; \"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"",
           "env": {
             "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
           }

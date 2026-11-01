@@ -10,16 +10,16 @@ from pathlib import Path
 from typing import Any
 
 from dev_lab.dev.ciworkflows import (
-    AI_LAB_REF_VAR,
+    PINS,
     RENDER_COMMAND,
     STAMP,
     USE_STEPS,
-    ai_lab_ref,
     drift,
     expand,
     main,
     merge,
     pin_drift,
+    pinned_ref,
     render,
     workflows,
     write,
@@ -99,14 +99,16 @@ def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_
     """lab-commons #11, dev-lab #3: the repo's own .venv has no ai_lab, so the review never ran on GitHub."""
     steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
     install, review = steps['Install the review method']['run'], steps['tests/review']['run']
-    assert 'uv pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+' in install
+    assert 'uv" pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+' in install
     assert '--runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' in review
     assert '$GITHUB_WORKSPACE/.venv' not in review, "the repo's own environment does not carry the method"
+    assert 'uv run' not in review
 
 
 def test_the_review_method_is_pinned_to_the_commit_dev_lab_declares() -> None:
     """dev-lab #5 (2026-10-31) installed whatever ai-lab's default branch was that minute: a pin, never a float."""
-    assert re.fullmatch(r'[0-9a-f]{40}', ai_lab_ref()), ai_lab_ref()
+    for repo in PINS:
+        assert re.fullmatch(r'[0-9a-f]{40}', pinned_ref(repo)), (repo, pinned_ref(repo))
 
 
 def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_path: Path) -> None:
@@ -118,7 +120,7 @@ def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_
     steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
     login = steps['Store the review key']
     assert login['env'] == {'ANTHROPIC_API_KEY': '${{ secrets.ANTHROPIC_API_KEY }}'}
-    assert "credential.helper 'cache" in login['run'], 'in memory, never a file on the runner'
+    assert "credential.helper 'cache --timeout=1800'" in login['run'], 'in memory, never a file; one review long'
     assert '-m ai_lab.auth login anthropic --task pr-review' in login['run']
     assert '| "$RUNNER_TEMP/ai-lab/bin/python"' in login['run'], 'the key travels on stdin'
     assert 'if [ -n "$ANTHROPIC_API_KEY" ]' in login['run'], 'a fork PR has no secret: the review holds the head'
@@ -154,7 +156,8 @@ def test_after_promote_the_push_job_sweeps_every_branch_integration_now_contains
 
 def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path: Path) -> None:
     ci = _base_ci(tmp_path)
-    setups = [job['steps'][:3] for job in ci['jobs'].values()]
+    setups = [job['steps'][:3] for name, job in ci['jobs'].items() if name != 'review']
+    assert ci['jobs']['review']['steps'][0] == setups[0][0], 'the review checks the head out as DATA, no setup'
     assert all(steps == setups[0] for steps in setups)
     assert setups[0][0]['with'] == {'ref': '${{ env.HEAD_SHA }}', 'fetch-depth': 0}
     assert '_steps' not in workflows(tmp_path)
@@ -233,28 +236,91 @@ def test_a_hosted_part_renders_its_own_push_only_job_and_only_its_setup_step_see
     )
 
 
-def test_the_ai_lab_ref_is_declared_once_and_the_install_reads_it(tmp_path: Path) -> None:
-    """Round 1 F-581fef0aab0b: one declared value, rendered as the job's env; the install names no sha itself."""
-    review = _base_ci(tmp_path)['jobs']['review']
-    step = next(s for s in review['steps'] if s.get('name') == 'Install the review method')
-    assert step['env'] == {AI_LAB_REF_VAR: ai_lab_ref()}
-    assert f'/ai-lab.git@${AI_LAB_REF_VAR}"' in step['run']
-    assert ai_lab_ref() not in step['run']
+_INSTALLS = {'ai-lab': 'Install the review method', 'dev-lab': 'Install the review door'}
+
+
+def test_each_pinned_ref_is_declared_once_and_both_review_workflows_install_it(tmp_path: Path) -> None:
+    """Round 1 F-581fef0aab0b, F-76c85dbc4b77: one declared value per repo, rendered as its install step's env.
+
+    GitHub's ci.yml review and Gitea's review.yml run the very same install step.
+    """
+    (tmp_path / 'hub').mkdir()
+    jobs = (_base_ci(tmp_path / 'hub')['jobs']['review'], _gitea_review(tmp_path)['jobs']['review'])
+    for repo, name in _INSTALLS.items():
+        var = PINS[repo][1]
+        hub, tea = (next(s for s in job['steps'] if s.get('name') == name) for job in jobs)
+        assert hub == tea, f'{name}: one source for both forges'
+        assert hub['env'][var] == pinned_ref(repo)
+        assert f'/{repo}.git' in hub['run']
+        assert f'${var}' in hub['run']
+        assert pinned_ref(repo) not in hub['run'], 'the step names no sha itself'
+
+
+def test_the_review_job_runs_no_code_the_pr_supplies(tmp_path: Path) -> None:
+    """F-76c85dbc4b77: the job holds the review key and a write token, so the PR head is DATA only.
+
+    No install resolves from the checkout (its uv.lock / project), nothing is synced from it, and the door runs
+    isolated so a PR-planted ``dev_lab/`` in the cwd cannot shadow it. PLANTED CONTROL: the old install step reds.
+    """
+    (tmp_path / 'hub').mkdir()
+    for workflow in (_base_ci(tmp_path / 'hub'), _gitea_review(tmp_path)):
+        assert not _from_the_checkout(workflow['jobs']['review']['steps']), render(workflow)
+        review = next(s for s in workflow['jobs']['review']['steps'] if s.get('name') == 'tests/review')
+        assert '"$REVIEW_PYTHON" -I -m dev_lab' in review['run']
+    old = {
+        'name': 'Install the review door',
+        'run': (
+            'uv export --frozen --no-hashes --no-header --no-annotate --no-emit-project --all-extras | grep -E '
+            '\'^(dev-lab|lab-commons) @ \' > "$RUNNER_TEMP/review.txt"'
+        ),
+    }
+    assert _from_the_checkout([old]) == ['Install the review door'], 'PLANTED CONTROL: the PR-lock install'
+    assert _from_the_checkout([{'run': 'uv sync --frozen --all-extras'}]) == [None]
+
+
+def _from_the_checkout(steps: list[dict[str, Any]]) -> list[str | None]:
+    """Each step resolving or running code from the PR checkout: a uv verb without ``--project`` elsewhere."""
+    verbs = re.compile(r'\buv (sync|run|export|lock)\b(?![^\n]*--project "\$RUNNER_TEMP)')
+    return [step.get('name') for step in steps if verbs.search(step.get('run', ''))]
+
+
+def test_no_credential_outlives_the_step_that_uses_it(tmp_path: Path) -> None:
+    """F-00bc79a46330: no forge token in any git config file; the key's cache is stopped by the step reading it.
+
+    PLANTED CONTROL: the old global extraHeader line is what the scan refuses.
+    """
+    (tmp_path / 'hub').mkdir()
+    for workflow in (_base_ci(tmp_path / 'hub'), _gitea_review(tmp_path)):
+        text = render(workflow)
+        assert not _config_held_token(text), text
+        steps = workflow['jobs']['review']['steps']
+        for step in steps:
+            if 'FAMILY_READ_TOKEN' in step.get('run', ''):
+                assert 'GIT_CONFIG_VALUE_0=' in step['run'], f'{step.get("name")}: process-scoped, never config'
+        review = next(s for s in steps if s.get('name') == 'tests/review')
+        assert review['run'].startswith('trap "git credential-cache exit" EXIT;')
+    planted = 'git config --global http."$FORGE_URL/".extraHeader "Authorization: token ${FAMILY_READ_TOKEN}"'
+    assert _config_held_token(planted), 'PLANTED CONTROL'
+
+
+def _config_held_token(text: str) -> bool:
+    return re.search(r'git config [^\n]*extraHeader', text, flags=re.IGNORECASE) is not None
 
 
 def test_the_pin_check_names_a_stale_ref_and_the_bump() -> None:
-    """PLANTED control: the declared ref at ai-lab's head is no drift."""
-    assert pin_drift(ai_lab_ref(), ai_lab_ref()) is None
-    stale = pin_drift(ai_lab_ref(), 'f' * 40)
-    assert ai_lab_ref()[:12] in stale
-    assert 'f' * 12 in stale
-    assert AI_LAB_REF_VAR in stale
+    """PLANTED control: the declared ref at its repo's head is no drift."""
+    for repo, (_, var) in PINS.items():
+        assert pin_drift(repo, pinned_ref(repo), pinned_ref(repo)) is None
+        stale = pin_drift(repo, pinned_ref(repo), 'f' * 40)
+        assert pinned_ref(repo)[:12] in stale
+        assert 'f' * 12 in stale
+        assert var in stale
 
 
-def test_the_pin_verb_reads_ai_labs_head_through_its_seam(capsys) -> None:
-    assert main(['pin'], head=ai_lab_ref) == 0
-    assert main(['pin'], head=lambda: 'f' * 40) == 1
-    assert 'f' * 12 in capsys.readouterr().out
+def test_the_pin_verb_reads_each_repo_s_head_through_its_seam(capsys) -> None:
+    assert main(['pin'], head=pinned_ref) == 0
+    assert main(['pin'], head=lambda repo: 'f' * 40 if repo == 'dev-lab' else pinned_ref(repo)) == 1
+    assert 'DEV_LAB_REF pins dev-lab' in capsys.readouterr().out
 
 
 def _gitea_review(tmp_path: Path) -> dict[str, Any]:

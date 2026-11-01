@@ -113,13 +113,15 @@ pull-requests = "read"
 # into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
 # the head and fails (forgetakeover.review_run), never exits green with no review.
 # The method's install and key are the shared `method` steps (below, with `setup`): the review job and the claims
-# workflow use the same ones.
+# workflow use the same ones. The job holds the review key and a write token, so it runs NO code of the PR's
+# (F-76c85dbc4b77): the head is checked out as DATA only -- never `setup`'s `uv sync`, whose lock and project
+# are the PR's -- and the dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
 ["ci.yml".jobs.review]
 if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
-env = { REVIEW_PYTHON = ".venv/bin/python" }  # the synced environment: what `uv run --no-sync` runs
 steps = [
-    { use-steps = "setup" },
+    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
+    { use-steps = "door" },
     { use-steps = "method" },
     { use-steps = "review" },
 ]
@@ -179,51 +181,68 @@ setup = [
 # The method is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3, 2026-10-31:
 # "cannot import 'ai_lab.review'", nothing posted): ai-lab is installed from this owner's forge into an environment of
 # its own, whose interpreter the door is handed. The ai-lab COMMIT is the install step's AI_LAB_REF -- the ONE
-# declaration (ciworkflows.ai_lab_ref), never a floating branch (dev-lab #5 took whatever was current that minute);
+# declaration (ciworkflows.pinned_ref('ai-lab')), never a floating branch (dev-lab #5 took whatever was current that minute);
 # `python -m dev_lab.dev.ciworkflows pin` says when it falls behind ai-lab's head. ai-lab reads keys from the git
 # credential store ONLY (dev-lab #5: every reviewer `unsupported` with the secret set), so the key is stored for the
 # review task in an in-memory credential cache, on stdin; with no secret (a fork PR) nothing is stored.
+# NO CREDENTIAL OUTLIVES ITS USE (F-00bc79a46330): a forge token reaches git as process-scoped GIT_CONFIG_* env of
+# the one step that fetches, never a config file a later step reads; the key's cache lives as long as one review
+# (30 min) and the step that reads it stops the cache daemon on exit (`git credential-cache exit`).
 method = [
-    { name = "Install the review method", run = 'uv venv "$RUNNER_TEMP/ai-lab" && uv pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164" } },
-    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=3600' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+    { name = "Install the review method", run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}"
+python3 -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -m pip install -q uv
+"$RUNNER_TEMP/ai-lab/bin/uv" pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"
+''', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" } },
+    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
-# interpreter its own setup put the dev_lab door in (REVIEW_PYTHON).
+# interpreter the `door` steps put the dev_lab door in (REVIEW_PYTHON), ISOLATED (-I): its cwd is the PR's checkout,
+# and a PR-planted `dev_lab/` there would otherwise shadow the pinned door.
 review = [
-    { name = "tests/review", run = '"$REVIEW_PYTHON" -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+    { name = "tests/review", run = 'trap "git credential-cache exit" EXIT; "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+]
+
+# THE REVIEW DOOR, installed for both forges' review jobs from the ONE pinned dev-lab commit (DEV_LAB_REF,
+# ciworkflows.dev_lab_ref; `pin` says when it falls behind) -- never from the PR head (F-76c85dbc4b77): the head is
+# DATA, and its lock would let a PR choose the code that runs beside the review key. lab-commons is the one the
+# pinned commit's own lock names. The door lives in a venv of its own; REVIEW_PYTHON names it.
+door = [
+    { name = "Install the review door", run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}"
+git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git" "$RUNNER_TEMP/dev-lab"
+git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
+python3 -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -m pip install -q uv
+"$RUNNER_TEMP/review/bin/uv" export --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project | grep -E '^lab-commons @ ' > "$RUNNER_TEMP/review.txt"
+"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" "$RUNNER_TEMP/dev-lab" -r "$RUNNER_TEMP/review.txt"
+echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
+''', env = { DEV_LAB_REF = "1af31d23541153523a472e0e2048604196cabea6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" } },
 ]
 
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, MemoryMax=300M, behind a campus ACL). No `uses`
-# action -- a host runner behind the ACL fetches none -- and no sync of the repo's own dependencies: one venv holding
-# the dev_lab door at the repo's LOCKED dev-lab and lab-commons pins, nothing else.
+# action -- a host runner behind the ACL fetches none -- and no sync of the repo's own dependencies: the `door` steps
+# install the review tooling from the pinned DEV_LAB_REF, never from the PR's lock.
 # The forge is the runner's registered instance, read off ACTIONS_RUNTIME_URL (act_runner sets it to the instance +
 # /api/actions_pipeline/): `github.server_url` is Gitea's ROOT_URL, the public name the host's ACL may refuse.
-# Git reads a job-scoped global config (GIT_CONFIG_GLOBAL under RUNNER_TEMP), so no credential outlives the job on
-# the shared host; it rewrites the public forge and the lock's family source onto the instance, and authenticates
-# with FAMILY_READ_TOKEN (read on the family repos the job installs) when that secret is set, else the job token.
+# Git reads a job-scoped global config (GIT_CONFIG_GLOBAL under RUNNER_TEMP) holding NO credential: it rewrites the
+# public forge and the lock's family source onto the instance; each fetching step authenticates with FAMILY_READ_TOKEN
+# (read on the family repos the job installs) when that secret is set, else the job token, as its own process env.
 # Every origin branch is fetched (the merge decision trial-merges against one) as a blobless clone, one pack thread:
 # a full history's index-pack is what would break the memory cap, and the review reads only its range's blobs.
 lean = [
     { name = "Reach the forge on the runner's instance", run = '''
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
-echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
-echo "$RUNNER_TEMP/review/bin" >> "$GITHUB_PATH"
 ''' },
     { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" }, run = '''
-git config --global http."$FORGE_URL/".extraHeader "Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global --add url."$FORGE_URL/${{ github.repository_owner }}/".insteadOf "$FAMILY_SOURCE"
 git config --global pack.threads 1
 git clone -q --no-tags --filter=blob:none --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
 git fetch -q origin "+refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/origin/pull/${{ github.event.pull_request.number }}"
 git checkout -q --detach "$HEAD_SHA"
-''' },
-    { name = "Install the review door", run = '''
-python3 -m venv "$RUNNER_TEMP/review" && "$REVIEW_PYTHON" -m pip install -q uv
-uv export --frozen --no-hashes --no-header --no-annotate --no-emit-project --all-extras | grep -E '^(dev-lab|lab-commons) @ ' > "$RUNNER_TEMP/review.txt"
-uv pip install --python "$REVIEW_PYTHON" -r "$RUNNER_TEMP/review.txt"
 ''' },
 ]
 
@@ -256,6 +275,7 @@ UV_CONCURRENT_BUILDS = "1"
 runs-on = "review"
 steps = [
     { use-steps = "lean" },
+    { use-steps = "door" },
     { use-steps = "method" },
     { use-steps = "review" },
 ]
@@ -293,7 +313,7 @@ runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
     { use-steps = "method" },
-    { name = "Adjudicate the claims", run = 'uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' },
+    { name = "Adjudicate the claims", run = 'trap "git credential-cache exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' },
 ]
 
 ["review-claims.yml".jobs.adjudicate.permissions]

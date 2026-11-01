@@ -20,11 +20,12 @@ so the setup every job repeats has one source. ``_steps`` is never a workflow an
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
-THE REVIEW METHOD IS PINNED ONCE: the review job's ``AI_LAB_REF`` env (:func:`ai_lab_ref`) is the ai-lab commit
-the job installs, never a floating branch; ``pin`` compares it with ai-lab's ``integrate/main`` head.
+THE REVIEW TOOLING IS PINNED ONCE (:data:`PINS`): the ``method`` steps' ``AI_LAB_REF`` is the ai-lab commit and the
+``door`` steps' ``DEV_LAB_REF`` the dev-lab commit every review job installs (:func:`pinned_ref`) -- never a floating
+branch, and never the PR head's own lock (F-76c85dbc4b77); ``pin`` compares each with its repo's ``integrate/main``.
 
 ``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift; ``pin`` exits 1 when
-the declared ai-lab ref is not ai-lab's head.
+a declared ref is not its repo's head.
 """
 
 from __future__ import annotations
@@ -43,19 +44,19 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 
 __all__ = [
-    'AI_LAB_REF_VAR',
     'BASE_PATH',
     'FORGE_KEY',
+    'PINS',
     'RENDER_COMMAND',
     'SHARED',
     'STAMP',
     'USE_STEPS',
     'WORKFLOW_DIRS',
-    'ai_lab_ref',
     'drift',
     'expand',
     'merge',
     'pin_drift',
+    'pinned_ref',
     'render',
     'workflows',
     'write',
@@ -75,35 +76,38 @@ WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('
 FORGE_KEY: Final = 'forge'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 
-#: The env naming the ai-lab commit the shared ``method`` steps install: declared ONCE, in ``ci_base.toml``.
-AI_LAB_REF_VAR: Final = 'AI_LAB_REF'
+#: Each pinned repo -> (the ``_steps`` list installing it, the env of its first step naming the commit). Declared ONCE,
+#: as that env in ``ci_base.toml``; every workflow reads it there.
+PINS: Final = {'ai-lab': ('method', 'AI_LAB_REF'), 'dev-lab': ('door', 'DEV_LAB_REF')}
 
-#: The ai-lab branch the pin is compared with: where ai-lab's reviewed changes land.
-_AI_LAB_BRANCH: Final = 'refs/heads/integrate/main'
-
-
-def ai_lab_ref() -> str:
-    """The ai-lab commit every review job installs: the ``method`` steps' install ``AI_LAB_REF`` in ``ci_base.toml``."""
-    (install, *_) = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[SHARED]['method']
-    return install['env'][AI_LAB_REF_VAR]
+#: The branch a pin is compared with: where a repo's reviewed changes land.
+_PIN_BRANCH: Final = 'refs/heads/integrate/main'
 
 
-def pin_drift(declared: str, head: str) -> str | None:
-    """Why the *declared* ai-lab ref is stale against ai-lab's *head*, naming the bump; ``None`` when it is the head."""
+def pinned_ref(repo: str) -> str:
+    """The *repo* commit every review job installs: its install step's env in ``ci_base.toml`` (:data:`PINS`)."""
+    steps, var = PINS[repo]
+    (install, *_) = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[SHARED][steps]
+    return install['env'][var]
+
+
+def pin_drift(repo: str, declared: str, head: str) -> str | None:
+    """Why *repo*'s *declared* ref is stale against its *head*, naming the bump; ``None`` when it is the head."""
     if declared == head:
         return None
+    var = PINS[repo][1]
     return (
-        f'{AI_LAB_REF_VAR} pins ai-lab {declared[:12]}, its head is {head[:12]}: set {AI_LAB_REF_VAR} = "{head}" in '
+        f'{var} pins {repo} {declared[:12]}, its head is {head[:12]}: set {var} = "{head}" in '
         f'dev_lab/dev/ci_base.toml, then `{RENDER_COMMAND}` in every repo'
     )
 
 
-def _ai_lab_head(root: Path) -> str:
-    """ai-lab's head, read from the forge that holds *root*'s origin (ai-lab beside it)."""
+def _head(root: Path, repo: str) -> str:
+    """*repo*'s head, read from the forge that holds *root*'s origin (*repo* beside it)."""
     origin = _door.run(['git', '-C', str(root), 'remote', 'get-url', 'origin'], capture_output=True, text=True,
                             encoding='utf-8', check=True).stdout.strip()  # fmt: skip
-    url = origin.rsplit('/', 1)[0] + '/ai-lab.git'
-    listed = _door.run(['git', 'ls-remote', url, _AI_LAB_BRANCH], capture_output=True, text=True,
+    url = origin.rsplit('/', 1)[0] + f'/{repo}.git'
+    listed = _door.run(['git', 'ls-remote', url, _PIN_BRANCH], capture_output=True, text=True,
                             encoding='utf-8', check=True).stdout.split()  # fmt: skip
     return listed[0] if listed else ''
 
@@ -200,16 +204,18 @@ def write(root: Path) -> list[Path]:
     return written
 
 
-def main(argv: list[str] | None = None, *, head: Callable[[], str] | None = None) -> int:
-    """``render`` writes the workflows; ``check`` exits 1 naming each drift; ``pin`` exits 1 on a stale ai-lab ref."""
+def main(argv: list[str] | None = None, *, head: Callable[[str], str] | None = None) -> int:
+    """``render`` writes the workflows; ``check`` exits 1 naming each drift; ``pin`` exits 1 on any stale pin."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.ciworkflows', description=__doc__.splitlines()[0])
     parser.add_argument('verb', choices=('render', 'check', 'pin'))
     parser.add_argument('--root', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     if args.verb == 'pin':
-        stale = pin_drift(ai_lab_ref(), head() if head is not None else _ai_lab_head(args.root))
-        emit(f'[ciworkflows] {stale or f"{AI_LAB_REF_VAR} is ai-lab head {ai_lab_ref()[:12]}"}')
-        return 1 if stale else 0
+        read = head if head is not None else (lambda repo: _head(args.root, repo))
+        verdicts = [(repo, pin_drift(repo, pinned_ref(repo), read(repo))) for repo in PINS]
+        for repo, stale in verdicts:
+            emit(f'[ciworkflows] {stale or f"{PINS[repo][1]} is {repo} head {pinned_ref(repo)[:12]}"}')
+        return 1 if any(stale for _, stale in verdicts) else 0
     if args.verb == 'render':
         for path in write(args.root):
             emit(f'[ciworkflows] rendered {path}')

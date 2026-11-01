@@ -45,21 +45,22 @@
         },
         {
           "name": "Install the review method",
-          "run": "uv venv \"$RUNNER_TEMP/ai-lab\" && uv pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\"",
+          "run": "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\"\npython3 -m venv \"$RUNNER_TEMP/ai-lab\" && \"$RUNNER_TEMP/ai-lab/bin/python\" -m pip install -q uv\n\"$RUNNER_TEMP/ai-lab/bin/uv\" pip install --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF\"\n",
           "env": {
-            "AI_LAB_REF": "ad0a0ace14846f633d4a42f153948062ce0b4164"
+            "AI_LAB_REF": "ad0a0ace14846f633d4a42f153948062ce0b4164",
+            "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}"
           }
         },
         {
           "name": "Store the review key",
-          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper 'cache --timeout=3600' && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -m ai_lab.auth login anthropic --task pr-review; fi",
+          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -m ai_lab.auth login anthropic --task pr-review; fi",
           "env": {
             "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
           }
         },
         {
           "name": "Adjudicate the claims",
-          "run": "uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\""
+          "run": "trap \"git credential-cache exit\" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\""
         }
       ],
       "permissions": {
