@@ -44,6 +44,7 @@ from dev_lab.dev.forgereview import (
 from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE
 from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
 from dev_lab.dev.forgereview_scope import FINDINGS_FIELD
 from dev_lab.dev.forgestatus import CommitStatus, status_list
@@ -165,7 +166,7 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert 'F-0123456789ab' in comment['body']
     assert 'correctness@anthropic' in comment['body']
     assert 'rule `NEVER-DO-X`' in comment['body']
-    assert '**Review round 1/3**' in comment['body']
+    assert f'**Review round 1/{FAMILY_MAX_ROUNDS}**' in comment['body']
     assert '**What changed**: 1 file(s)' in comment['body'], 'round 1 opens with the context summary'
     (status,) = [s for s in status_list(forge, head) if s.context == REVIEW_CONTEXT]
     assert status.state == 'failure'

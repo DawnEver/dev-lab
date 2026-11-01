@@ -498,6 +498,8 @@ def _command_round(
         cannot = str(unsupported)
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
         raise HostCannot(cannot)
+    # the reviewer and the judge read these ranges with no forge token: a partial clone holds their blobs first
+    forgereview_scope.prefetch(root, scope.range, f'origin/{pull.base}...{head}')
     # checked before the claim too: a session that authored the head posts nothing on it
     me = identity(client, runner.host, serving=runner.serving)
     ruling(me, f'reviewing #{pull.number}')
