@@ -18,17 +18,14 @@ from types import ModuleType
 from typing import Any, Final
 
 from dev_lab.supervise.component import CheckContext, Component
+from dev_lab.supervise.pressure import RAM_CRITICAL
 from dev_lab.supervise.verdict import Anomaly, CheckResult, Severity, condition_digest
 
-__all__ = ['DiskUsage', 'LogScanner', 'ProcessMonitor']
+__all__ = ['RAM_CRITICAL', 'DiskUsage', 'LogScanner', 'ProcessMonitor', 'psutil_module']
 
 #: How much of a matched log line is kept. A line long enough to be interesting is usually JSON,
 #: and the first two hundred characters of it name the failure.
 LINE_KEPT: Final = 200
-
-#: Where the box counts as full. Named because a bare 95 in a comparison is a number, and a
-#: ceiling someone can find and change is a policy.
-RAM_CRITICAL: Final = 95
 
 #: The default patterns a log scan convicts on. Deliberately few and blunt: a scanner tuned to
 #: somebody's log format is a scanner that stops matching the day the format changes.
@@ -143,9 +140,8 @@ class ProcessMonitor(Component):
 
         """
         result = CheckResult()
-        try:
-            import psutil  # noqa: PLC0415
-        except ImportError:
+        psutil = psutil_module()
+        if psutil is None:
             result.anomalies.append(
                 Anomaly(
                     kind='no_psutil',
@@ -159,6 +155,15 @@ class ProcessMonitor(Component):
         for wanted in ctx.config.get('processes', []):
             result.anomalies.extend(_one_process(wanted, found))
         return result if not ctx.config.get('track_system') else _with_system(psutil, result)
+
+
+def psutil_module() -> ModuleType | None:
+    """The ``psutil`` module, or ``None`` where the optional extra is not installed -- the one lazy import."""
+    try:
+        import psutil  # noqa: PLC0415
+    except ImportError:
+        return None
+    return psutil
 
 
 def _running(psutil: ModuleType) -> dict[str, tuple[int, float]]:

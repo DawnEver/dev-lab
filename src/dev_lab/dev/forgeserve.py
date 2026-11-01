@@ -150,7 +150,7 @@ from dev_lab.dev.forgeproduce import Produced, demote_unreachable, produce
 from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
-from dev_lab.dev.forgeservesteps import repo_wide, retain_storage, review, tidy_runs
+from dev_lab.dev.forgeservesteps import pressed, repo_wide, retain_storage, review, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
@@ -283,6 +283,7 @@ def serve(
     )  # fmt: skip
     tidy_runs(root, client, repo, seat=seat, say=say, alarm=alarm)
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
+    pressed(root, repo, who=name, say=say, alarm=alarm)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)

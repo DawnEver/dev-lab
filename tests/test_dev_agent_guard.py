@@ -289,6 +289,8 @@ def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: P
 #: PUSHED-HEAD-IS-WATCHED: the advisory reminder after every shell call, beside the stray census.
 _PUSHWATCH = {'type': 'command', 'command': agent_guard.PUSHWATCH_COMMAND}
 _SWEEP = {'type': 'command', 'command': agent_guard.SWEEP_COMMAND}
+#: A PRESSED HOST TELLS ITS AGENTS (D54): after every shell call, and on each prompt.
+_PRESSURE = {'type': 'command', 'command': agent_guard.PRESSURE_COMMAND}
 
 
 def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop() -> None:
@@ -296,8 +298,11 @@ def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop()
     after = agent_guard.wire_settings({})
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray, _PUSHWATCH, _SWEEP]}]
+    assert after['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [stray, _PUSHWATCH, _SWEEP, _PRESSURE]}
+    ]
     assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
+    assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
     assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
     assert agent_guard.PUSHWATCH_COMMAND.startswith('node ')
     assert 'dev_lab.dev.pushwatch' in agent_guard.PUSHWATCH_COMMAND
@@ -317,7 +322,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
     assert once['hooks']['PostToolUse'] == [
         {
             'matcher': 'Bash|PowerShell',
-            'hooks': [{'type': 'command', 'command': 'node log.js'}, stray, _PUSHWATCH, _SWEEP],
+            'hooks': [{'type': 'command', 'command': 'node log.js'}, stray, _PUSHWATCH, _SWEEP, _PRESSURE],
         }
     ]
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
@@ -332,7 +337,9 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     after = agent_guard.wire_settings(old)
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray, _PUSHWATCH, _SWEEP]}]
+    assert after['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [stray, _PUSHWATCH, _SWEEP, _PRESSURE]}
+    ]
     assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
 
 

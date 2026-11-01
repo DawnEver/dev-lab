@@ -57,7 +57,7 @@ class _Recorder:
 def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     table = merge(base_rows(), {})
     assert set(table) == {'pre-commit', 'commit-msg', 'pre-push', 'post-commit'}
-    assert {hook.id for hook in table['post-commit']} == {'pr-notices', 'stray-files'}
+    assert {hook.id for hook in table['post-commit']} == {'host-pressure', 'pr-notices', 'stray-files'}
     # LOCAL KEEPS IRREVERSIBLE HARM AND SECOND-SCALE CHECKS (toolchain plan P3): history that only grows,
     # the published ref. The lock pin and freshness, the branch set and PR admission are the forge's.
     assert {hook.id for hook in table['pre-push']} == {'session-branch', 'pr-notices'}

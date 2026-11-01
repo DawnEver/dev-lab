@@ -17,7 +17,8 @@ branches it deleted, or a prune that failed (``pruned``), and unmerged branches 
 the retention pass (``storage``), and jobs on a cluster account that carry no session tag
 (``untagged``), and a served repo's declared tool that no longer runs on its account (``needs``),
 and a fleet gone dark -- every host of a platform stale, or a tick serving nothing
-(``fleet``, :mod:`dev_lab.dev.forgefleet`).
+(``fleet``, :mod:`dev_lab.dev.forgefleet`), and a host PRESSED for disk, memory or CPU (``pressure``,
+:mod:`dev_lab.dev.hostalarm`, ruling D54), keyed by which pressure so each repeats on its own.
 And one is a fact about a UNIT, not a host: the same commit and context gave
 two different results (``nondeterminism``, :func:`dev_lab.dev.forgeoutbox.flush`) -- the first stands.
 
@@ -67,6 +68,7 @@ __all__ = [
     'LEASE',
     'NEEDS',
     'NONDETERMINISM',
+    'PRESSURE',
     'PRUNED',
     'RUN',
     'STALE_BRANCH',
@@ -109,6 +111,8 @@ UNTAGGED: Final = 'untagged'
 NEEDS: Final = 'needs'
 #: Every host of a platform is stale, or a tick serves nothing: once per episode (:mod:`dev_lab.dev.forgefleet`).
 FLEET: Final = 'fleet'
+#: A host pressed for disk, memory or CPU; *about* names which (:mod:`dev_lab.dev.hostalarm`, ruling D54).
+PRESSURE: Final = 'pressure'
 
 
 #: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.

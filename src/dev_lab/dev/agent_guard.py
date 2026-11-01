@@ -140,6 +140,10 @@ SWEEP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.de
 #: MAIN checkout detaches a bounded, locked reclaim of landed worktrees and their branches, and returns at once.
 RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.reclaimrun --session-start'
 
+#: A PRESSED HOST TELLS ITS AGENTS (:mod:`dev_lab.dev.hostalarm`, ruling D54): the host's disk/memory/CPU alarms as
+#: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
+PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
+
 
 @dataclass(frozen=True, slots=True)
 class Wire:
@@ -156,13 +160,16 @@ class Wire:
 
 #: THE WIRING, ONE TABLE: what :func:`wire_settings` writes is what :func:`guard_installation` reads.
 #: The engine before every shell call; the STRAY-FILE-REFUSED census, the pushed-head reminder and the landed
-#: sweep after every one, the census at stop too; the hand-back check at every stop, the main session's and each
-#: subagent's; the background reclaim at session start.
+#: sweep and the host-pressure reminder after every one (the reminder on each prompt too), the census at stop
+#: too; the hand-back check at every stop, the main session's and each subagent's; the background reclaim at
+#: session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
     Wire('PostToolUse', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=True),
     Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True),
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
+    Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
+    Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
