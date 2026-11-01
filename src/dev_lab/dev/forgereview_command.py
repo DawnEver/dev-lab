@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
@@ -113,3 +113,6 @@ class Runner:
     #: (dev-lab #38): Gitea re-runs a run in place, its conclusion reset, so a re-run cannot verify the success its
     #: earlier attempt posted from one a PR-head workflow planted, and reviews the head again.
     verifies: bool = False
+    #: The DEBOUNCE (D52): a head committed this recently is not reviewed yet; zero reviews at once. The serve tick
+    #: sets it (it re-reads every PR each tick); a review job, triggered once per push, reviews at once.
+    quiet: timedelta = timedelta(0)
