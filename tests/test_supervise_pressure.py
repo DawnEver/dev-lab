@@ -7,7 +7,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
-from dev_lab.supervise.pressure import CGROUP_ROOT, PSI, THRESHOLDS, Declared, Measured, consumers, measure, parse_psi
+from dev_lab.supervise.pressure import (
+    CGROUP_ROOT,
+    PSI,
+    THRESHOLDS,
+    Declared,
+    Measured,
+    consumers,
+    measure,
+    parse_psi,
+    tree_bytes,
+)
 
 GB = 1024**3
 
@@ -79,9 +89,11 @@ def test_a_disk_under_its_free_floor_alarms_naming_the_biggest_consumer_and_abov
                   psutil=lambda: None)  # fmt: skip
     (alarm,) = low.findings
     assert (alarm.kind, alarm.severity) == (f'disk:{tmp_path.as_posix()}', 'critical')
-    assert alarm.consumers[0].startswith((tmp_path / '.claude/worktrees/stale-lane').as_posix())
-    assert alarm.consumers[0].endswith('owned')
-    assert any('notes' in c and 'not owned' in c for c in alarm.consumers)
+    assert (alarm.consumers[0].path, alarm.consumers[0].owned) == (
+        (tmp_path / '.claude/worktrees/stale-lane').as_posix(),
+        True,
+    )
+    assert any(c.path.endswith('notes') and not c.owned for c in alarm.consumers)
     roomy = measure(declared, {}, now=0.0, usage=lambda _p: Disk(100 * GB, 50 * GB, 50 * GB), linux=False,
                     psutil=lambda: None)  # fmt: skip
     assert roomy.findings == []
@@ -130,5 +142,24 @@ def test_every_threshold_is_overridable_by_its_name_in_the_machine_file() -> Non
 
 def test_consumers_name_an_owned_tree_per_child(tmp_path: Path) -> None:
     _tree(tmp_path)
-    named = consumers([tmp_path])
-    assert any('.claude/worktrees/stale-lane' in c for c in named)
+    assert any(c.path.endswith('.claude/worktrees/stale-lane') and c.owned for c in consumers([tmp_path]))
+
+
+def test_a_disk_alarm_stands_when_its_consumers_cannot_be_read(tmp_path: Path) -> None:
+    """A pressed disk whose consumer walk fails keeps its alarm, with no consumers -- never a vanished alarm."""
+
+    def unreadable(_roots: object) -> tuple:
+        why = 'permission denied'
+        raise OSError(why)
+
+    low = measure(Declared(paths=(tmp_path,)), {}, now=0.0, usage=lambda _p: Disk(100 * GB, 98 * GB, 2 * GB),
+                  linux=False, psutil=lambda: None, sizes=unreadable)  # fmt: skip
+    assert [(f.severity, f.consumers) for f in low.findings] == [('critical', ())]
+
+
+def test_the_consumer_walk_is_bounded_by_its_budget(tmp_path: Path) -> None:
+    """Control: an unspent budget sizes the whole tree; a spent one stops and reads a lower bound."""
+    for name in range(20):
+        (tmp_path / f'f{name}').write_bytes(b'x' * 100)
+    assert tree_bytes(tmp_path, [10_000]) == 2000
+    assert tree_bytes(tmp_path, [5]) < 2000

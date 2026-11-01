@@ -20,6 +20,7 @@ resources` rules that) -- the remedy it carries is the biggest consumers and the
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -28,14 +29,14 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
-from dev_lab.dev.diskusage import measure as tree_measure
-
 __all__ = [
     'CGROUP_ROOT',
     'DOORS',
     'OWNED',
     'RAM_CRITICAL',
     'THRESHOLDS',
+    'WALK_BUDGET',
+    'Consumer',
     'Declared',
     'Finding',
     'Measured',
@@ -44,6 +45,7 @@ __all__ = [
     'parse_events',
     'parse_psi',
     'thresholds',
+    'tree_bytes',
 ]
 
 #: Where the box's RAM counts as full -- supervision's ``ProcessMonitor`` ceiling and a workstation's, one source.
@@ -77,6 +79,9 @@ HISTORY_KEPT: Final = 12
 
 #: A slope needs two readings.
 _SLOPE_POINTS: Final = 2
+
+#: How many directory entries one reading's consumer walk may visit: a pressed disk is not walked whole.
+WALK_BUDGET: Final = 200_000
 
 #: How many consumers a disk alarm names.
 TOP_CONSUMERS: Final = 5
@@ -121,17 +126,26 @@ class Declared:
 
 
 @dataclass(frozen=True)
+class Consumer:
+    """One directory holding a pressed disk: its path AS READ FROM DISK (untrusted text), bytes, and ownership."""
+
+    path: str
+    bytes: int
+    owned: bool
+
+
+@dataclass(frozen=True)
 class Finding:
     """One alarm: which pressure, how severe, what was read, and who holds the resource.
 
     *kind* names WHICH pressure (``disk:/``, ``cgroup:gitea-runner.service:high``); *consumers* are the biggest
-    owners of the resource (``path  size  owned|not owned``).
+    owners of the resource.
     """
 
     kind: str
     severity: str
     measurement: str
-    consumers: tuple[str, ...] = ()
+    consumers: tuple[Consumer, ...] = ()
 
 
 @dataclass
@@ -255,28 +269,62 @@ def _windowed(psutil: ModuleType | None, limits: Mapping[str, float]) -> tuple[l
     return findings, {'cpu:percent': round(cpu, 1), 'memory:percent': round(memory, 1)}
 
 
-def consumers(
-    roots: Sequence[Path], *, size: Callable[[Path], int] = lambda p: tree_measure(p)[0], top: int = TOP_CONSUMERS
-) -> tuple[str, ...]:
-    """The *top* directories under *roots* by bytes, each marked ``owned`` (an :data:`OWNED` glob) or not.
+def tree_bytes(path: Path, budget: list[int]) -> int:
+    """The bytes under *path* on ITS OWN filesystem, symlinks not followed, spending one *budget* entry per entry.
+
+    Bounded twice, because it runs when a disk is ALREADY pressed and on every tick while it stays so: it never
+    crosses a mount (``/proc``, ``/sys``, another disk are not this disk), and it stops when the shared *budget*
+    (:data:`WALK_BUDGET` entries per reading) is spent -- the sizes then read as lower bounds. An entry that
+    cannot be read is skipped, never raised.
+    """
+    try:
+        device = path.lstat().st_dev
+    except OSError:
+        return 0
+    total, stack = 0, [path]
+    while stack and budget[0] > 0:
+        try:
+            entries = list(os.scandir(stack.pop()))
+        except OSError:
+            continue
+        for entry in entries:
+            if budget[0] <= 0:
+                break
+            budget[0] -= 1
+            try:
+                info = entry.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            total += info.st_size
+            if entry.is_dir(follow_symlinks=False) and info.st_dev == device:
+                stack.append(Path(entry.path))
+    return total
+
+
+def consumers(roots: Sequence[Path], *, top: int = TOP_CONSUMERS) -> tuple[Consumer, ...]:
+    """The *top* directories under *roots* by bytes, each marked owned (an :data:`OWNED` glob) or not.
 
     An owned tree is named per child (one worktree, one log day), any other directory as one entry holding
-    what is NOT owned under it -- so no byte is counted twice, and the agent sees what it may clean.
+    what is NOT owned under it -- so no byte is counted twice, and the agent sees what it may clean. A root
+    that cannot be listed names nothing: the alarm stands without its consumers, never vanishes.
     """
     seen: dict[Path, bool] = {}
     for root in roots:
-        for pattern in OWNED:
-            for hit in (*root.glob(pattern), *root.glob(f'*/{pattern}')):
-                if hit.is_dir() and not hit.is_symlink():
-                    seen[hit] = True
-        for child in sorted(root.iterdir()) if root.is_dir() else ():
-            if child.is_dir() and not child.is_symlink():
-                seen.setdefault(child, False)
-    sizes = {p: size(p) for p in seen}
+        try:
+            for pattern in OWNED:
+                for hit in (*root.glob(pattern), *root.glob(f'*/{pattern}')):
+                    if hit.is_dir() and not hit.is_symlink():
+                        seen[hit] = True
+            for child in sorted(root.iterdir()) if root.is_dir() else ():
+                if child.is_dir() and not child.is_symlink():
+                    seen.setdefault(child, False)
+        except OSError:
+            continue
+    budget = [WALK_BUDGET]
+    sizes = {p: tree_bytes(p, budget) for p in seen}
     rest = {p: n - sum(sizes[o] for o, mine in seen.items() if mine and p in o.parents) for p, n in sizes.items()}
-    sized = sorted(((rest[p], p, mine) for p, mine in seen.items()), key=lambda row: -row[0])[:top]
-    return tuple(f'{p.as_posix()}  {n / 1024**3:.2f} GB  {"owned" if mine else "not owned, never touched"}'
-                 for n, p, mine in sized)  # fmt: skip
+    ranked = sorted(seen, key=lambda p: -rest[p])[:top]
+    return tuple(Consumer(p.as_posix(), max(rest[p], 0), seen[p]) for p in ranked)
 
 
 def measure(
@@ -288,7 +336,7 @@ def measure(
     usage: Callable[..., Any] = shutil.disk_usage,
     psutil: Callable[[], ModuleType | None] = lambda: None,
     linux: bool = sys.platform.startswith('linux'),
-    sizes: Callable[[Sequence[Path]], tuple[str, ...]] = consumers,
+    sizes: Callable[[Sequence[Path]], tuple[Consumer, ...]] = consumers,
 ) -> Measured:
     """One reading of everything *declared*, judged against its limits and the *previous* memo.
 
@@ -302,7 +350,10 @@ def measure(
         found, readings, kept = _disk(path, declared.limits, histories.get(path.as_posix(), []), now, usage)
         done.memo.setdefault('disk', {})[path.as_posix()] = kept
         done.readings.update(readings)
-        named = sizes([path]) if found else ()
+        try:
+            named = sizes([path]) if found else ()
+        except OSError:
+            named = ()  # the alarm stands without its consumers
         done.findings += [Finding(f.kind, f.severity, f.measurement, named) for f in found]
     if linux:
         found, readings = _psi(declared.limits, read)

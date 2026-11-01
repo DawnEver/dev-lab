@@ -31,7 +31,8 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def _a_serve_tick_measures_no_real_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """A ``forge serve`` test never reads THIS host's pressure: a workstation's reading averages psutil over seconds.
 
-    The step itself is pinned in test_dev_hostalarm (its call from serve, and every measurement on fixtures).
+    The call from serve is pinned in test_dev_forgeserve (which re-stubs it with a recorder); the step itself, on
+    fixtures, in test_dev_hostalarm.
     """
     monkeypatch.setattr(forgeserve, 'pressed', lambda *_a, **_k: None)
 

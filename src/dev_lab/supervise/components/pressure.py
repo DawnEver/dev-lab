@@ -12,7 +12,7 @@ import time
 
 from dev_lab.supervise.component import CheckContext, Component
 from dev_lab.supervise.components.resources import psutil_module
-from dev_lab.supervise.hostalarms import AGENTS, record, render
+from dev_lab.supervise.hostalarms import AGENTS, SUPERVISE, record, render
 from dev_lab.supervise.pressure import Declared, measure
 from dev_lab.supervise.verdict import Anomaly, CheckResult, Severity
 
@@ -42,9 +42,11 @@ class HostPressure(Component):
         measured = measure(Declared.of(ctx.config), ctx.state.get('memo', {}), now=time.time(), psutil=psutil_module)
         ctx.state['memo'] = measured.memo
         owner = str(ctx.config.get('owner', AGENTS))
-        state = record(measured, host=socket.gethostname(), owner=owner)
+        state = record(measured, host=socket.gethostname(), owner=owner, source=SUPERVISE) or {'alarms': {}}
         result.metrics.update({k: v for k, v in measured.readings.items() if v is not None})
         for kind, alarm in state['alarms'].items():
+            if alarm.get('source') != SUPERVISE:
+                continue  # the forge tick's rows are sounded by the tick
             result.anomalies.append(
                 Anomaly(
                     kind=f'pressure_{kind}',

@@ -9,7 +9,10 @@ reaches three readers, all through :func:`~dev_lab.supervise.hostalarms.lines` -
 * the COMMIT (``check``): the ``host-pressure`` post-commit row prints the same lines -- a secondary channel;
 * THE HUMANS (:func:`step`, each ``forge serve`` tick): the host is measured and each alarm is sounded as a
   ``pressure`` alarm (:mod:`dev_lab.dev.forgealarm`) -- the structured line, the host card ``forge queue``
-  prints, and the existing :class:`~dev_lab.supervise.alert.Notifier` over the machine file's ``[alerts]``.
+  prints, and the existing :class:`~dev_lab.supervise.alert.Notifier` over the machine file's ``[alerts]``;
+* THE CHANNEL TEST (``test``, user ruling D55): one INFO notice, rendered by the same formatter, through the real
+  Notifier (the machine file's ``[alerts]``, or ``--supervise-config PATH``'s for supervision's channels); it
+  prints only each channel's result and message id, never a reply body or a credential.
 
 OWNERSHIP (``[pressure] owner``): a workstation's alarms are for its agents; the Gitea host declares
 ``integrator``, and its alarms name the integrator, who reads them on the host card. An account's QUOTA stays
@@ -18,7 +21,9 @@ the ``storage`` alarm (:mod:`dev_lab.dev.retention`): this measures disks, never
 
 from __future__ import annotations
 
+import getpass
 import json
+import re
 import socket
 import sys
 import time
@@ -33,10 +38,16 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import PRESSURE, Alarm
 from dev_lab.supervise import hostalarms
+from dev_lab.supervise.alert import Delivery, Notice, Notifier
 from dev_lab.supervise.components.resources import psutil_module
+from dev_lab.supervise.config import load_config
 from dev_lab.supervise.pressure import Declared, Measured, measure
+from dev_lab.supervise.verdict import Severity
 
-__all__ = ['REMINDED_NAME', 'REMIND_EVERY', 'due', 'hook', 'main', 'step']
+__all__ = ['CHANNELS', 'REMINDED_NAME', 'REMIND_EVERY', 'TEST_AGAIN', 'channel_test', 'due', 'hook', 'main', 'step']
+
+#: The channels :class:`~dev_lab.supervise.alert.Notifier` delivers through, as ``[alerts]`` names them.
+CHANNELS: Final = ('email', 'telegram', 'webhook')
 
 #: One reminder per alarm per agent session within this window (D54).
 REMIND_EVERY: Final = timedelta(minutes=30)
@@ -52,9 +63,17 @@ def due(
 
     A reminder older than the window is dropped, so the table never outgrows the alarms of the last half hour.
     """
-    kept = {k: v for k, v in reminded.items() if now - datetime.fromisoformat(v) < REMIND_EVERY}
+    kept = {k: v for k, v in reminded.items() if _fresh(v, now)}
     kinds = {kind for kind in state.get('alarms', {}) if f'{session}|{kind}' not in kept}
     return kinds, {**kept, **{f'{session}|{kind}': now.isoformat() for kind in kinds}}
+
+
+def _fresh(stamp: object, now: datetime) -> bool:
+    """Whether *stamp* is a reminder inside the window; an unreadable or naive one is not (it is dropped)."""
+    try:
+        return now - datetime.fromisoformat(str(stamp)) < REMIND_EVERY
+    except (TypeError, ValueError):
+        return False
 
 
 def hook(stdin: TextIO, *, now: datetime | None = None, state_path: Path | None = None) -> int:
@@ -94,12 +113,15 @@ def step(
     """One tick's reading: measure ``[pressure]`` (default: *root*'s disk), record the state, sound each alarm."""
     table = section('pressure') if table is None else table
     declared = Declared.of({'paths': [str(root)], **table})
-    previous = hostalarms.read().get('memo', {})
+    previous = hostalarms.memo(hostalarms.FORGE)
     owner = str(table.get('owner', hostalarms.AGENTS))
-    state = hostalarms.record(
-        measuring(declared, previous, now=time.time(), psutil=psutil_module), host=who, owner=owner
-    )
+    measured = measuring(declared, previous, now=time.time(), psutil=psutil_module)
+    state = hostalarms.record(measured, host=who, owner=owner, source=hostalarms.FORGE)
+    if state is None:  # supervision is writing this instant; the next tick records and sounds
+        return {}
     for kind, one in sorted(state['alarms'].items()):
+        if one.get('source') != hostalarms.FORGE:
+            continue  # supervision's rows are sounded by supervision's own notifier
         subject = f'{who} is pressed: {one["measurement"]}' + (
             ' (integrator)' if owner == hostalarms.INTEGRATOR else ''
         )
@@ -107,8 +129,66 @@ def step(
     return state
 
 
+#: What a message id may look like (an int, a UUID): anything else is not printed.
+_ID: Final = re.compile(r'[A-Za-z0-9-]{1,64}')
+
+#: How the test notice is sent again -- printed in its own body.
+TEST_AGAIN: Final = 'python -m dev_lab.dev.hostalarm test'
+
+
+def _alerts(args: list[str]) -> Mapping[str, Any]:
+    """The ``[alerts]`` table: the machine file's, or a supervise config's (``--supervise-config PATH``)."""
+    if args[:1] == ['--supervise-config'] and len(args) > 1:
+        return load_config(Path(args[1])).get('alerts', {})
+    return section('alerts')
+
+
+def channel_test(
+    alerts: Mapping[str, Any],
+    *,
+    send: Callable[[Notice], list[Delivery]] | None = None,
+    now: datetime | None = None,
+    host: str | None = None,
+    sender: str | None = None,
+) -> int:
+    """THE ALERT TEST DOOR (user ruling D55): ONE info notice through the real Notifier; per-channel results only.
+
+    Prints ``<channel> ok|FAILED id=<message id>`` per channel -- the message id parsed out of the reply, never the
+    reply itself (Telegram echoes the chat id) and never a credential. Exit 0 when every enabled channel took it.
+    """
+    here = host or socket.gethostname()
+    channels = [name for name in CHANNELS if alerts.get(name, {}).get('enabled')]
+    subject, body = hostalarms.test_notice(
+        host=here,
+        sender=sender or f'{getpass.getuser()}@{here} via {TEST_AGAIN}',
+        channels=channels,
+        again=TEST_AGAIN,
+        now=now or datetime.now(UTC),
+    )
+    results = (send or Notifier({'alerts': alerts}).send)(Notice(subject, body, Severity.INFO))
+    if not results:
+        emit('host-alarm test: no channel is enabled in [alerts]; nothing was sent')
+        return 1
+    for one in results:
+        emit(f'{one.channel} {"ok" if one.ok else "FAILED"} id={_message_id(one.detail) if one.ok else "-"}')
+    return 0 if all(one.ok for one in results) else 1
+
+
+def _message_id(detail: str) -> str:
+    """The id a channel's reply names (Telegram ``result.message_id``, Resend ``id``), else ``-``."""
+    try:
+        reply = json.loads(detail)
+    except ValueError:
+        return '-'
+    if not isinstance(reply, dict):
+        return '-'
+    result = reply.get('result')
+    found = result.get('message_id') if isinstance(result, dict) else reply.get('id')
+    return str(found) if isinstance(found, (int, str)) and _ID.fullmatch(str(found)) else '-'
+
+
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``hook`` (the agent hook; the default), ``check`` (post-commit: the lines; 0), ``measure`` (read now)."""
+    """``hook`` (the agent hook; default), ``check`` (post-commit lines), ``measure`` (read now), ``test`` (D55)."""
     args = list(sys.argv[1:] if argv is None else argv)
     arm = args[0] if args else 'hook'
     if arm == 'hook':
@@ -118,11 +198,13 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
             emit(line)
         return 0
     if arm == 'measure':
-        state = step(Path.cwd(), '', who=socket.gethostname(), alarm=lambda _one: None)
-        for line in hostalarms.lines(state) or ['host-pressure: not pressed']:
+        step(Path.cwd(), '', who=socket.gethostname(), alarm=lambda _one: None)
+        for line in hostalarms.lines(hostalarms.read()) or ['host-pressure: not pressed']:
             emit(line)
         return 0
-    emit('usage: python -m dev_lab.dev.hostalarm [hook|check|measure]', err=True)
+    if arm == 'test':
+        return channel_test(_alerts(args[1:]))
+    emit('usage: python -m dev_lab.dev.hostalarm [hook|check|measure|test [--supervise-config PATH]]', err=True)
     return 2
 
 

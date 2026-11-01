@@ -1539,3 +1539,11 @@ def test_a_serve_that_served_logs_no_host_failure(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(forgeserve, 'serve', lambda *_a, **_k: forgeserve.ServeReport((), (), (), (), ()))
     assert forgeserve.main([], cwd=tmp_path, seat_of=lambda: None) == 0
     assert metrics.read(metrics.HOST_FAILURE, root=tmp_path) == []
+
+
+def test_every_tick_reads_the_host_pressure_as_its_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """D54: the humans' channel is the tick. PLANTED CONTROL for conftest's stub: deleting serve's call reds this."""
+    called: list[dict[str, object]] = []
+    monkeypatch.setattr(forgeserve, 'pressed', lambda root, _repo, **kw: called.append({'root': root, **kw}))
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()))
+    assert [(one['root'], one['who']) for one in called] == [(tmp_path, 'G')]
