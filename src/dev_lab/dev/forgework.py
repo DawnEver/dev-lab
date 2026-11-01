@@ -93,6 +93,9 @@ __all__ = [
     'stored_client',
 ]
 
+#: What GitHub answers a workflow job token asking `/user`: only this answer, from GitHub, names the Actions bot.
+_INTEGRATION: Final = 'Resource not accessible by integration'
+
 #: Statuses below this are answers; at or above it the call failed.
 _HTTP_ERROR_FLOOR: Final = 400
 
@@ -371,11 +374,16 @@ class Client:
     def whoami(self) -> str:
         """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub.
 
-        A workflow job token cannot read ``/user``; it writes as :data:`ACTIONS_BOT` (:func:`stored_client`).
+        ALWAYS ASKED OF THE FORGE (D11): a GitHub workflow job token is refused ``/user`` as an integration, and
+        only that answer FROM GITHUB makes it :data:`ACTIONS_BOT` -- never the username this process was built with.
         """
-        if self.username == ACTIONS_BOT:
-            return ACTIONS_BOT
-        return self.call('GET', f'{self.backend.api_root}/user')['login']
+        try:
+            return self.call('GET', f'{self.backend.api_root}/user')['login']
+        except ForgeCallFailed as refused:
+            said = refused.report.attempts[-1].output if refused.report.attempts else ''
+            if self.backend is GITHUB and _INTEGRATION in said:
+                return ACTIONS_BOT
+            raise
 
     def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
         """Issues in *state*, pull requests excluded (GitHub lists both under ``issues``)."""

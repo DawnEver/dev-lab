@@ -433,8 +433,8 @@ def _glass_merge(repo: Path) -> str:
 def test_break_glass_refuses_to_land_a_pr_head_with_no_posted_review(repo: Path) -> None:
     """User ruling 2026-10-31 "every PR must get a review": #11 and #3 landed by Break-Glass unreviewed.
 
-    The emergency is the forge's MERGE, never the review: the head needs a posted review (``forge review takeover``
-    runs it locally and posts it). PLANTED CONTROL: the same merge, its head reviewed, is admitted.
+    The emergency is the forge's MERGE, never the review: the head needs a review the FORGE posted (D11: a session's
+    takeover is advisory). PLANTED CONTROL: the same merge, its head reviewed, is admitted.
     """
     _forge_merges_declared(repo)
     head = _glass_merge(repo)
@@ -448,7 +448,7 @@ def test_break_glass_refuses_to_land_a_pr_head_with_no_posted_review(repo: Path)
     assert asked == [head], 'the reviewed head of a merge is the PR head it lands'
     assert P5 in found
     assert head[:12] in found
-    assert 'forge review takeover' in found
+    assert "re-run the forge's review" in found
     assert read(BYPASS, root=repo) == [], 'a refused push records no bypass'
     assert _judged(repo, _reviewed) == []
 
@@ -581,15 +581,15 @@ def test_every_admitted_break_glass_commit_is_one_hand_action_naming_branch_sha_
 
 
 def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pending() -> None:
-    """``error``, ``takeover pending`` and a claim are not a review; a takeover's ``success`` is."""
+    """``error``, ``takeover pending`` and a claim are not a review; the forge's (login a, declared) ``success`` is."""
     forge = StateForge()
     head = 'a' * 40
-    assert 'not posted' in unreviewed(forge, head)
+    assert 'not posted' in unreviewed(forge, head, 'a')
     for state, description in (('pending', 'claimed by h, reviewing'), ('error', 'the review command failed')):
         status_post(forge, head, context=REVIEW_CONTEXT, state=state, description=description)
-        assert description in unreviewed(forge, head)
+        assert description in unreviewed(forge, head, 'a')
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='over the cap')
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings')
-    assert 'over the cap' in unreviewed(forge, head), 'a hold not yet released is not a review'
-    status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released by takeover')
-    assert unreviewed(forge, head) is None
+    assert 'over the cap' in unreviewed(forge, head, 'a'), 'a hold not yet released is not a review'
+    status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released: review reviewed this head')
+    assert unreviewed(forge, head, 'a') is None

@@ -34,6 +34,7 @@ from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr
 from dev_lab.dev.forgework import (
+    ACTIONS_BOT,
     GITEA,
     GITHUB,
     Client,
@@ -485,3 +486,22 @@ def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_pa
     monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: '')
     assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
     assert 'NOTICE-LINE' not in capsys.readouterr().err
+
+
+def test_whoami_always_asks_the_forge_and_only_github_names_the_actions_bot(server) -> None:
+    """D11, F-e4d5c529db40: a client BUILT as the bot (a PAT in GITHUB_TOKEN) is whoever the forge says it is.
+
+    PLANTED CONTROL: GitHub's own integration refusal of ``/user`` -- a real job token -- is the Actions bot.
+    """
+    sleep = lambda _s: None  # noqa: E731
+    _answer('GET', '/api/v1/user', (200, {'login': 'maintainer'}))
+    pat = Client(
+        Forge('forge.example.org', 'o', 'r'), 'T', transport=_Loopback(server), username=ACTIONS_BOT, sleep=sleep
+    )
+    assert pat.whoami() == 'maintainer'
+    refused = (403, {'message': 'Resource not accessible by integration'})
+    _answer('GET', '/user', *([refused] * 5))
+    job = Client(Forge('github.com', 'o', 'r'), 'T', transport=_Loopback(server), sleep=sleep)
+    assert job.whoami() == ACTIONS_BOT
+    _answer('GET', '/user', (200, {'login': 'maintainer'}))
+    assert job.whoami() == 'maintainer', 'a PAT can read /user, so it is its user'

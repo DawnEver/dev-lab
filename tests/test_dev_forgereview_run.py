@@ -29,6 +29,7 @@ def _latest(forge: StateForge, sha: str, context: str) -> tuple[str, str] | None
 def test_a_job_reviews_its_one_pr_through_the_round_the_tick_runs(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT  # a workflow job writes as the Actions bot: the forge itself
     command = FakeCommand()
     said = review_run(
         work, forge, _DECLARED, number, base='integrate/main', runner=Runner('runner-1', run=command, ready=_can)
@@ -49,6 +50,7 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     """PLANTED CONTROL: the same PR with the secret present runs the command and holds nothing."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
     command = FakeCommand()
     secretless = Runner('runner-1', run=command, ready=_can, secret=False)
     review_run(work, forge, _DECLARED, number, base='integrate/main', runner=secretless)
@@ -56,11 +58,12 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     assert _latest(forge, head, REVIEW_CONTEXT) == ('pending', NEEDS_MAINTAINER)
     assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
     statuses = status_list(forge, head)
-    assert review_missing(statuses) is not None, 'a held head is never skipped into a merge'
+    assert review_missing(statuses, frozenset({ACTIONS_BOT})) is not None, 'a held head is never skipped into a merge'
     assert [pull.number for pull in held(forge, 'integrate/main')] == [number], 'the takeover door lists it'
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
     control, other = _forge(other_head)
+    control.login = ACTIONS_BOT
     review_run(
         other_work, control, _DECLARED, other, base='integrate/main', runner=Runner('r', run=command, ready=_can)
     )
@@ -71,6 +74,7 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
 def test_the_cli_reads_the_secret_from_the_named_variable(tmp_path: Path, monkeypatch) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
     monkeypatch.delenv('REVIEW_KEY', raising=False)
     assert main(['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY'], cwd=work, client=forge) == 0
     assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
@@ -111,6 +115,7 @@ def test_a_job_whose_host_cannot_run_the_command_holds_the_head_and_fails(tmp_pa
     """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
     command = FakeCommand()
     assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_cannot) == 2
     assert command.ran == []
@@ -122,6 +127,49 @@ def test_a_job_whose_host_cannot_run_the_command_holds_the_head_and_fails(tmp_pa
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
     control, other = _forge(other_head)
+    control.login = ACTIONS_BOT
     assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=command, ready=_can) == 0
     assert _latest(control, other_head, HOLD_CONTEXT) is None
     assert _latest(control, other_head, REVIEW_CONTEXT)[0] == 'success'
+
+
+@pytest.mark.parametrize(('job_session', 'state'), [('', 'success'), ('S-claimant', 'failure')])
+def test_the_pull_request_job_rules_on_every_pending_claim_of_its_pr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, job_session: str, state: str
+) -> None:
+    """#11 deadlock: an issue_comment workflow runs only from the default branch, so a PR's own job must rule.
+
+    The next pull_request run adjudicates the pending claim through the same judge, as the Actions bot.
+    PLANTED CONTROL: a run carrying the claimant's own session still refuses to rule on its claim.
+    """
+    from test_dev_forgereview_rounds import _REVIEW, _doc, _finding  # noqa: PLC0415
+
+    from dev_lab.dev.forgereview_dispose import dispose  # noqa: PLC0415
+    from dev_lab.dev.forgereview_judge import Identity  # noqa: PLC0415
+    from dev_lab.dev.labsession import ENV as SESSION_ENV  # noqa: PLC0415
+
+    work, head = _work(tmp_path)
+    forge = StateForge(Forge('github.com', 'o', 'r'))  # as #11: the job writes as the Actions bot
+    number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    forge.login = ACTIONS_BOT
+    monkeypatch.delenv(SESSION_ENV, raising=False)
+    found = FakeCommand(_doc(_finding('F-x', severity='HIGH', file='x.py', anchor='x')))
+    review_run(work, forge, _REVIEW, number, base='integrate/main', runner=Runner('r', run=found, ready=_can))
+    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'failure'
+    forge.login = 'mallory'  # PLANTED: a claim whose named login is not its forge-recorded author is never read
+    dispose(forge, number, 'F-x', 'a false positive: the guard is upstream', by=Identity('a', 'box', 'S-claimant'))
+    forge.login = ACTIONS_BOT
+    assert 'refused' not in review_run(
+        work, forge, _REVIEW, number, base='integrate/main', runner=Runner('r', run=found, ready=_can)
+    )
+    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'failure', 'nothing pending to rule on'
+    forge.comments[number] = [c for c in forge.comments[number] if c['user']['login'] != 'mallory']
+    forge.login = 'a'  # the claimant writes its own claim: the forge records it as a's
+    dispose(forge, number, 'F-x', 'a false positive: the guard is upstream', by=Identity('a', 'box', 'S-claimant'))
+    forge.login = ACTIONS_BOT
+    if job_session:
+        monkeypatch.setenv(SESSION_ENV, job_session)
+    judge = FakeCommand(rulings={'F-x': ('false-positive', 'x.py:1 is guarded upstream')})
+    said = review_run(work, forge, _REVIEW, number, base='integrate/main', runner=Runner('r', run=judge, ready=_can))
+    assert _latest(forge, head, REVIEW_CONTEXT)[0] == state
+    assert ('may not adjudicate it' in said) is bool(job_session)

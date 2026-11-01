@@ -359,11 +359,13 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-checked, capped.
-* :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose``: the integrator closes a blocking finding.
-* :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: the integrator reviews a head held over the cap.
+* :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose`` records a claim; ``adjudicate`` rules on it.
+* :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
+  by an independent reviewer, never the head's author session.
+* :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
+* :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: an ADVISORY session review; never the gate (D11).
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
-* :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: an over-cap head is the integrator's; the door releases
 * :mod:`dev_lab.dev.metrics` -- the toolchain's baseline: refusals and hand actions, one JSONL per kind (record).
 * :mod:`dev_lab.dev.metrics_compute` -- the plan's figures from the recorded lines, forge pulls and git landings.
 * :mod:`dev_lab.dev.metrics_report` -- the family's metrics over one window, and the metrics CLI.

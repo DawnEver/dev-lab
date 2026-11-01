@@ -103,11 +103,28 @@ def test_gitea_list_keeps_the_newest_status_per_context_and_reads_status_as_stat
     )
 
 
-def test_github_list_reads_the_combined_status(server) -> None:
-    combined = {'state': 'success', 'statuses': [{'context': 'tests/linux', 'state': 'success', 'description': 'd'}]}
-    answer('GET', f'/repos/o/r/commits/{_SHA}/status', (200, combined))
-    listed = status_list(client(Forge('github.com', 'o', 'r'), Loopback(server)), _SHA)
-    assert listed == (CommitStatus('tests/linux', 'success', 'd', ''),)
+def test_github_reads_the_status_list_with_its_creator_newest_per_context(server) -> None:
+    """D11: the combined endpoint carries no creator, so the LIST is read. PLANTED: the older post is superseded."""
+    listed = [
+        {
+            'id': 2,
+            'context': 'tests/linux',
+            'state': 'success',
+            'description': 'd',
+            'creator': {'login': 'github-actions[bot]'},
+        },
+        {
+            'id': 1,
+            'context': 'tests/linux',
+            'state': 'failure',
+            'description': 'old',
+            'creator': {'login': 'maintainer'},
+        },
+    ]
+    answer('GET', f'/repos/o/r/commits/{_SHA}/statuses', (200, listed))
+    (one,) = status_list(client(Forge('github.com', 'o', 'r'), Loopback(server)), _SHA)
+    assert one == CommitStatus('tests/linux', 'success', 'd', '')
+    assert one.creator == 'github-actions[bot]'
 
 
 # --------------------------------------------------------------------------------------------

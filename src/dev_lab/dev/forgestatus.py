@@ -145,18 +145,15 @@ def status_post(
 def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """The LATEST status per context on *sha*, sorted by context.
 
-    GitHub's combined endpoint already answers latest-per-context; Gitea's list carries every post,
-    so the newest (highest ``id``) per context is kept.
+    Both forges' LIST endpoint, never GitHub's combined one: only the list records each status's ``creator``,
+    which the review gate verifies (D11). The newest (highest ``id``) per context is kept.
     """
     _commit(sha)
-    if client.backend is GITHUB:
-        raw = client.call('GET', f'{client.repo}/commits/{sha}/status')['statuses']
-    else:
-        listed = client.call('GET', f'{client.repo}/statuses/{sha}')
-        newest: dict[str, Mapping[str, Any]] = {}
-        for item in sorted(listed, key=lambda item: item.get('id') or 0):
-            newest[item.get('context') or ''] = item
-        raw = list(newest.values())
+    path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
+    newest: dict[str, Mapping[str, Any]] = {}
+    for item in sorted(client.call('GET', path), key=lambda item: item.get('id') or 0):
+        newest[item.get('context') or ''] = item
+    raw = list(newest.values())
     return tuple(sorted((_status(item) for item in raw), key=lambda status: status.context))
 
 
