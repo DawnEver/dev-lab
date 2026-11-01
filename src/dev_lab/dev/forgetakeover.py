@@ -56,6 +56,7 @@ from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, review_missing
+from dev_lab.dev.reviewgitauth import take
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -255,6 +256,10 @@ def _parser() -> argparse.ArgumentParser:
         help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer',
     )  # fmt: skip
     running.add_argument(
+        '--git-token-env', action='append', default=[], metavar='NAME',
+        help="a forge token variable, first set one wins: read once, removed from the env, sent only to the door's git",
+    )  # fmt: skip
+    running.add_argument(
         '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
         help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
     )  # fmt: skip
@@ -308,6 +313,7 @@ def main(
     try:
         origin, base = client or client_for(root), load_policy(root).integration
         if args.verb == 'run':
+            take(args.git_token_env)  # before any subprocess: the reviewer inherits no forge token (F-5a82981c5f22)
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(
                 this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready, secret=secret

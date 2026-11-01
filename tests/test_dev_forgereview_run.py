@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import base64
+import os
+import re
 from pathlib import Path
 
 import pytest
 from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
 
+from dev_lab.dev import forgereview_scope, reviewgitauth
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import Runner
@@ -173,3 +177,81 @@ def test_the_pull_request_job_rules_on_every_pending_claim_of_its_pr(
     said = review_run(work, forge, _REVIEW, number, base='integrate/main', runner=Runner('r', run=judge, ready=_can))
     assert _latest(forge, head, REVIEW_CONTEXT)[0] == state
     assert ('may not adjudicate it' in said) is bool(job_session)
+
+
+class _EnvCommand(FakeCommand):
+    """A FakeCommand recording the environment a real reviewer subprocess would inherit at each run."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.envs: list[dict[str, str]] = []
+
+    def __call__(self, argv, root):  # noqa: ANN204 -- FakeCommand's own signature
+        self.envs.append(dict(os.environ))
+        return super().__call__(argv, root)
+
+
+_TOKEN = 'tok-secret-123'  # noqa: S105 -- a planted value the scan looks for
+_HEADER = 'Authorization: basic ' + base64.b64encode(f'x-access-token:{_TOKEN}'.encode()).decode()
+
+
+def _forge_env(monkeypatch) -> None:
+    monkeypatch.setattr(reviewgitauth, '_held', {})
+    monkeypatch.setenv('FAMILY_READ_TOKEN', _TOKEN)
+    monkeypatch.setenv('GITHUB_TOKEN', 'job-token')
+    monkeypatch.setenv('GITHUB_SERVER_URL', 'https://forge.example')
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'http.https://forge.example/.extraHeader')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', _HEADER)
+
+
+def _leaks(env: dict[str, str]) -> list[str]:
+    """The variables carrying the planted token, the job token or a GIT_CONFIG_* header slot."""
+    slot = re.compile(r'GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)')
+    return [k for k, v in env.items() if _TOKEN in v or v == 'job-token' or slot.fullmatch(k)]
+
+
+def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_path: Path, monkeypatch) -> None:
+    """F-5a82981c5f22. PLANTED CONTROL: without --git-token-env (the old door) the reviewer inherits every one."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
+    _forge_env(monkeypatch)
+    monkeypatch.setenv('REVIEW_KEY', 'k')
+    gits: list[dict[str, str] | None] = []
+    real = forgereview_scope._door.run
+
+    def spy(argv, **kw):  # noqa: ANN202, ANN003
+        if argv[0] == 'git':
+            gits.append(kw.get('env'))
+        return real(argv, **kw)
+
+    monkeypatch.setattr(forgereview_scope._door, 'run', spy)
+    command = _EnvCommand()
+    argv = ['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY']
+    assert main([*argv, '--git-token-env', 'FAMILY_READ_TOKEN', '--git-token-env', 'GITHUB_TOKEN'],
+                cwd=work, client=forge, run=command, ready=_can) == 0  # fmt: skip
+    assert command.envs, 'the reviewer ran'
+    assert all(not _leaks(env) for env in command.envs), [_leaks(env) for env in command.envs]
+    assert gits, 'the door ran git'
+    assert all(env is not None and env['GIT_CONFIG_VALUE_0'] == _HEADER for env in gits), 'the git calls carry it'
+    assert all(env['GIT_CONFIG_KEY_0'] == 'http.https://forge.example/.extraHeader' for env in gits)
+
+    (tmp_path / 'control').mkdir()
+    other_work, other_head = _work(tmp_path / 'control')
+    control, other = _forge(other_head)
+    control.login = ACTIONS_BOT
+    _forge_env(monkeypatch)
+    leaky = _EnvCommand()
+    assert main(['run', '--pr', str(other), '--secret-env', 'REVIEW_KEY'],
+                cwd=other_work, client=control, run=leaky, ready=_can) == 0  # fmt: skip
+    assert leaky.envs
+    assert all(_leaks(env) for env in leaky.envs), 'PLANTED CONTROL: the old door leaks the token'
+
+
+def test_no_token_holds_no_header_and_git_inherits(monkeypatch) -> None:
+    monkeypatch.setattr(reviewgitauth, '_held', {})
+    env = {'GITHUB_SERVER_URL': 'https://forge.example', 'GIT_CONFIG_COUNT': '1'}
+    assert reviewgitauth.take(['FAMILY_READ_TOKEN'], env) is False
+    assert env == {'GITHUB_SERVER_URL': 'https://forge.example'}
+    assert reviewgitauth.git_env() is None

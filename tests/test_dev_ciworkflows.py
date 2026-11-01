@@ -325,15 +325,17 @@ def test_no_credential_outlives_the_step_that_uses_it(tmp_path: Path) -> None:
         assert not _config_held_token(text), text
         steps = workflow['jobs']['review']['steps']
         for step in steps:
-            if 'FAMILY_READ_TOKEN' in step.get('run', ''):
+            if 'FAMILY_READ_TOKEN' in step.get('run', '') and step.get('name') != 'tests/review':
                 assert 'GIT_CONFIG_VALUE_0=' in step['run'], f'{step.get("name")}: process-scoped, never config'
                 # GitHub's git server takes only Basic (x-access-token:<token>); a `token` scheme prompts and dies
                 # (dev-lab #17's own review, 2026-11-01: "could not read Username").
                 assert 'Authorization: basic $(' in step['run'], step.get('name')
         review = next(s for s in steps if s.get('name') == 'tests/review')
         assert review['run'].startswith('trap "git credential-cache exit" EXIT')
-        # F-ca1dda52c2ef: the blobless checkout fetches base blobs while the diff runs, so the step carries the header.
-        assert 'GIT_CONFIG_VALUE_0="Authorization: basic' in review['run'], 'the review step reads its lazy blobs'
+        # F-5a82981c5f22: the door owns the lazy-blob auth (F-ca1dda52c2ef); the shell derives no header the
+        # reviewer would inherit, and names the token variables the door reads and removes.
+        assert 'GIT_CONFIG' not in review['run'], 'the review step derives no header in shell'
+        assert '--git-token-env FAMILY_READ_TOKEN --git-token-env GITHUB_TOKEN' in review['run']
     planted = 'git config --global http."$FORGE_URL/".extraHeader "Authorization: token ${FAMILY_READ_TOKEN}"'
     assert _config_held_token(planted), 'PLANTED CONTROL'
 

@@ -56,6 +56,7 @@ from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import raise_record
 from dev_lab.dev.reviewgate import post_review
+from dev_lab.dev.reviewgitauth import git_env
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -195,7 +196,7 @@ def verdict(ledger: Ledger, gone: Mapping[str, str], number: int) -> tuple[str, 
 def _git(root: Path, *args: str) -> tuple[int, str]:
     done = _door.run(
         ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-        timeout=_GIT_TIMEOUT_S, check=False,
+        timeout=_GIT_TIMEOUT_S, check=False, env=git_env(),
     )  # fmt: skip
     return done.returncode, done.stdout
 
