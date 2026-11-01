@@ -132,6 +132,7 @@ from dev_lab.dev.forgereview_scope import ONLY_GENERATED, Budget, Scope, gather,
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.labsession import sessions
+from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
 from dev_lab.dev.reviewgate import DeclarationUnread, forge_posted, post_review
@@ -166,6 +167,7 @@ __all__ = [
     'review_pull',
     'review_tick',
     'step',
+    'trusted_integration',
 ]  # fmt: skip
 
 #: The placeholder the declared command carries; the reviewed ``<base>..<head>`` range replaces it.
@@ -317,17 +319,40 @@ def load_review(root: Path) -> Review:
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
 
 
+def trusted_integration(root: Path, client: Client) -> str:
+    """The integration branch a PR review trusts: the one the repository's DEFAULT branch declares.
+
+    THE TRUST CHAIN (dev-lab #38 rounds 2-4): the forge's ``default_branch`` (main, which moves only by
+    ``integrate promote``) -> its ``[tool.dev_lab.integrator] integration`` (``git show origin/<default>``) -> that
+    branch's review declaration (:func:`review_at`) -> the command that runs beside the review key. The PR head
+    enters only as the DIFF, read as data. F-169e99e6c68c: a name read from the working tree -- the head's --
+    let a PR opened against a branch it controls name that branch the integration, and its declaration ran.
+    A default branch the forge does not name, or whose manifest cannot be read, refuses
+    (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back to the head.
+    """
+    repo: Any = client.call('GET', client.repo)
+    default = repo.get('default_branch') if isinstance(repo, dict) else None
+    if not default:
+        msg = 'the forge names no default branch: which integration branch a review trusts is undecided'
+        raise DeclarationUnread(msg)
+    try:
+        return policy_at(root, f'origin/{default}').integration
+    except (ValueError, OSError) as failed:
+        msg = f'origin/{default}:pyproject.toml declares no readable integration branch: {failed}'
+        raise DeclarationUnread(msg) from failed
+
+
 def review_at(root: Path, base: str) -> Review:
     """The ``[tool.dev_lab.review]`` ``origin/<base>`` declares in *root* -- what a PR's review acts on.
 
     F-46e412ee799d, F-ef3a6c8b86b2 (dev-lab #38 round 2): the review job checks out the PR head, and the declared
     ``command`` runs beside the review key, so a head's own declaration would choose the code that runs -- under
-    ``pull_request_target`` too, whose WORKFLOW alone is the base's. Every PR review path (the job, the serve, a
-    takeover, an adjudication) reads the declaration here, at the base only: a PR changing its review declaration
-    is reviewed under the base's until it lands, like the Actions adoption (:mod:`dev_lab.dev.reviewgate`).
-    Read from git (``git show``, never the working tree, which is the head's), so the serve's tick reads no forge
-    before it knows its host can run the command. An unreadable base declaration refuses
-    (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back to the head.
+    ``pull_request_target`` too, whose WORKFLOW alone is the base's. *base* is the integration branch
+    :func:`trusted_integration` names (the job, a takeover, an adjudication) or the serve's own policy, read from
+    the operator's checkout, never a PR head. A PR changing its review declaration is reviewed under the base's
+    until it lands, like the Actions adoption (:mod:`dev_lab.dev.reviewgate`). Read from git (``git show``, never
+    the working tree), so the serve's tick reads no forge before it knows its host can run the command. An
+    unreadable base declaration refuses (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back.
     """
     where = f'origin/{base}:pyproject.toml'
     try:

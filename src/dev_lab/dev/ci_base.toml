@@ -122,8 +122,10 @@ pull-requests = "read"
 # The method's install and key are the shared `method` steps (below, with `setup`): the review job and the claims
 # workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
 # supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
-# whose lock and project are the PR's -- the review declaration (its command) is read at the BASE
-# (forgereview.review_at), and the dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
+# whose lock and project are the PR's, and never a module path (forgereview_command.SAFE_PATH). THE TRUST CHAIN:
+# the forge's default branch -> its integration name (forgereview.trusted_integration, F-169e99e6c68c) -> that
+# branch's review declaration (forgereview.review_at) -> the command; a PR into any other base is not reviewed.
+# The dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
 ["ci.yml".jobs.review]
 if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
@@ -300,8 +302,8 @@ git checkout -q --detach "$HEAD_SHA"
 # workflow runs -- the PR can neither change what runs nor read the secret -- and reviewgate counts a success only
 # when that run concluded success (the job fails unless it posted success, forgetakeover.job_exit). Safe ONLY because
 # what the job takes from the head is the DIFF, read as data; what it acts on is the base's -- the workflow,
-# the [tool.dev_lab.review] declaration (forgereview.review_at: the command, budget, rounds, globs; F-46e412ee799d)
-# and the tools, pinned by SHA (DEV_LAB_REF, AI_LAB_REF) (test_the_review_job_runs_no_code_the_pr_supplies).
+# the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
+# ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (DEV_LAB_REF, AI_LAB_REF) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
 # The types are pull_request's defaults, so the job runs on the events it ran on before.
 ["review.yml"]

@@ -5,18 +5,19 @@ from __future__ import annotations
 import base64
 import os
 import re
+import sys
 from pathlib import Path
 
 import pytest
 from _branch_repos import advance
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _output, _work
+from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _output, _work
 
 from dev_lab.dev import forgereview_scope, reviewgitauth
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, review_at
-from dev_lab.dev.forgereview_command import Runner
+from dev_lab.dev.forgereview_command import ReviewUnsupported, Runner, run_command
 from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import held, main, review_run, runtimes_with
@@ -458,3 +459,57 @@ def test_an_unreadable_base_declaration_refuses_the_job_never_reads_the_head(tmp
     assert command.ran == []
     run_git(work, 'update-ref', 'refs/remotes/origin/integrate/main', declared)
     assert review_at(work, 'integrate/main').command[0] == 'reviewer'
+
+
+def test_a_pr_against_a_branch_it_controls_naming_it_the_integration_is_never_reviewed(tmp_path: Path) -> None:
+    """F-169e99e6c68c (dev-lab #38 round 4): the integration name a review trusts is the DEFAULT branch's.
+
+    The attack: a PR opened against ``evil``, a branch the attacker controls, whose manifest declares an
+    exfiltrating command, while the head's working tree names ``evil`` the integration. The forge's base equals that
+    name, so a working-tree read would run it. PLANTED CONTROL: the same head into the trusted integration branch is
+    reviewed by the base's ``reviewer``.
+    """
+    work, head = _work(tmp_path)
+    evil = _MANIFEST.replace(_COMMAND, _EVIL).replace("integration = 'integrate/main'", "integration = 'evil'")
+    advance(work, 'evil', 'pyproject.toml', evil)
+    (work / 'pyproject.toml').write_text(evil, encoding='utf-8')  # the head's working tree names it too
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'evil', title='add x', sha=head)
+    forge.login = GITEA_ACTIONS_LOGIN
+    command = FakeCommand()
+    assert main(['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY'], cwd=work, client=forge, run=command) == 1
+    assert command.ran == [], 'no command runs, so the key is never handed to one'
+    assert _latest(forge, head, REVIEW_CONTEXT) is None, 'nothing is posted for a PR the job does not review'
+    trusted = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    assert main(['run', '--pr', str(trusted)], cwd=work, client=forge, run=command, ready=_can) == 0
+    assert [argv[0] for argv, _ in command.ran] == ['reviewer']
+
+
+@pytest.mark.parametrize('default', ['', 'gone'])
+def test_an_unreadable_default_branch_refuses_never_reads_the_head(tmp_path: Path, default: str) -> None:
+    """A forge naming no default branch, or one the checkout cannot read, refuses (exit 2): nothing runs.
+
+    The head's working tree declares a usable integration throughout. PLANTED CONTROL: ``main`` restored, reviewed.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = GITEA_ACTIONS_LOGIN
+    forge.default_branch = default
+    command = FakeCommand()
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 2
+    assert command.ran == []
+    forge.default_branch = 'main'
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 0
+    assert len(command.ran) == 1
+
+
+def test_the_review_command_never_imports_from_the_pr_checkout(tmp_path: Path) -> None:
+    """``python -m`` puts the cwd -- the PR's checkout -- first on sys.path: a planted module would run beside the key.
+
+    PLANTED CONTROL: the same module the interpreter can import from elsewhere runs.
+    """
+    (tmp_path / 'planted').mkdir()
+    (tmp_path / 'planted' / '__main__.py').write_text("print('PLANTED')\n", encoding='utf-8')
+    with pytest.raises(ReviewUnsupported):
+        run_command([sys.executable, '-m', 'planted'], tmp_path)
+    assert run_command([sys.executable, '-m', 'json.tool', '--help'], tmp_path)

@@ -38,6 +38,8 @@ class StateForge(Client):
         self.comments: dict[int, list[dict[str, Any]]] = {}
         #: The repository's Actions runs, as Gitea's ``GET .../actions/runs`` lists them.
         self.runs: list[dict[str, Any]] = []
+        #: The repository's default branch, as ``GET /repos/{o}/{r}`` names it.
+        self.default_branch = 'main'
         self.fail_lists = False
         self.deny_delete = False
         #: Every branch the forge was asked to delete by ref (GitHub's ``DELETE .../git/refs/heads/<b>``).
@@ -268,6 +270,7 @@ class StateForge(Client):
                 'open_pr_counter': 0,
                 'has_pull_requests': True,
                 'private': self.private,
+                'default_branch': self.default_branch,
             },
             ('GET', 'issues'): lambda: self._listed(query),
             ('POST', 'issues'): lambda: self.issues_by_number[self.add_issue(sent['title'], sent['body'])],

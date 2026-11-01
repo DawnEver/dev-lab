@@ -39,6 +39,7 @@ from dev_lab.dev.forgereview import (
     judge_for,
     review_at,
     review_pull,
+    trusted_integration,
 )  # fmt: skip
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_cap
@@ -52,7 +53,6 @@ from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan,
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
@@ -231,9 +231,12 @@ def job_exit(client: Client, number: int, posted: Sequence[str], *, base: str) -
     (:func:`~dev_lab.dev.reviewgate.posted_verdicts`): its LAST state decides. A job that posted none (a head whose
     counted review stands, a PR it does not review) exits ``0`` only when the gate itself counts the head's review.
     """
+    pull = client.pr_view(number)
+    if pull.base != base:  # not a PR into the trusted integration: never reviewed, so never a success
+        return 1
     if posted:
         return 0 if posted[-1] == 'success' else 1
-    head = client.pr_view(number).head_sha
+    head = pull.head_sha
     return 0 if head and review_missing(status_list(client, head), forge_posted(client, head, base=base)) is None else 1
 
 
@@ -333,7 +336,8 @@ def main(
         # run: the tokens arrive by file, never env, before any subprocess (F-5a82981c5f22, F-d61706393b50);
         # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.
         api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
-        origin, base = client or client_for(root, token=api), load_policy(root).integration
+        origin = client or client_for(root, token=api)
+        base = trusted_integration(root, origin)  # never the working tree's: the head's (F-169e99e6c68c)
         if args.verb == 'run':
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(
