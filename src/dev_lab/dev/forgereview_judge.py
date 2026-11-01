@@ -54,6 +54,7 @@ __all__ = [
     'Verdict',
     'adjudication_text',
     'claim',
+    'claim_record',
     'claims',
     'identity',
     'judge',
@@ -191,6 +192,18 @@ class Claim:
     def digest(self) -> str:
         """The claim's identity in its adjudication: a re-worded claim is a new claim, adjudicated anew."""
         return hashlib.sha256(f'{self.id}\n{self.why}'.encode()).hexdigest()[:12]
+
+
+def claim_record(body: str, author: str) -> str | None:
+    """The claim record alone in *body*, when the login it names is its forge-recorded *author*; else ``None``.
+
+    Only the matched claim is returned, so nothing else a non-forge comment carries (a pasted ruling or ledger) is
+    ever read as forge state.
+    """
+    found = _CLAIM.search(body)
+    if found is None or found['key'] != found['id'] or found['login'] != author:
+        return None
+    return found.group(0)
 
 
 def claims(bodies: Sequence[str]) -> dict[str, Claim]:

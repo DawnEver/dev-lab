@@ -45,7 +45,7 @@ from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
-from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
+from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, pending, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
@@ -203,14 +203,25 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
 
     The job is the ONLY reviewer of its PR, so a host that cannot run the command is never silent: the head is held
     until the forge's review is re-run, and :class:`~dev_lab.dev.forgereview.HostCannot` is raised (the job fails).
+
+    The same run then RULES on every claim still pending on the PR (:func:`adjudicate_thread`, as the job's own
+    identity): GitHub runs an ``issue_comment`` workflow only from the default branch, so ``review-claims.yml``
+    cannot rule on a PR whose fix it carries (#11) -- the PR's own ``pull_request`` job can.
     """
     pull = client.pr_view(number)
     if pull.base != base or pull.draft or not pull.head_sha:
         return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
     try:
-        return review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
+        said = review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
     except HostCannot as cannot:
         raise HostCannot(hold(client, pull, f'{HOST_CANNOT}: {cannot}')) from cannot
+    if not pending(trusted_bodies(client, number)):
+        return said
+    ruled = adjudicate_thread(
+        root, client, review, number, base=base, adjudicator=identity(client, runner.host, serving=runner.serving),
+        run=runner.run, runtimes=runner.runtimes,
+    )  # fmt: skip
+    return '; '.join([said, *ruled])
 
 
 def _parser() -> argparse.ArgumentParser:
