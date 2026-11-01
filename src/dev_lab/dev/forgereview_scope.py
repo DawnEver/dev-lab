@@ -11,8 +11,15 @@ says why): the method hands the reviewer the change map at the directory level, 
 
 * THE RANGE is ``<base>..<head>`` where *base* is the merge base with the integration branch -- a merge of
   ``integrate/main`` moves the merge base with it, so the branch's own change is what is read -- or, when an
-  earlier head of the same PR was reviewed and no merge of the integration branch came after it, that head:
-  a push is reviewed for what it added (:func:`own_base`).
+  earlier head R of the same PR was reviewed and *head* descends from it, R: a push is reviewed for what it added
+  (:func:`own_base`). When integration was merged in since R, *base* is the AUTOMATIC merge of R with the
+  integration commit *head* holds (:func:`_automerge`, ``git merge-tree --write-tree``, committed locally and
+  never pushed): what the head holds beyond it is R's own new content -- a hand resolution, an evil merge, a
+  commit before or after the sync -- and upstream content is never read again (D52, user ruling 2026-11-01:
+  motronics #5397 took two forge syncs in a day, and each restarted its review at the merge base).
+* A PURE SYNC IS NO NEW WORK (D52): a head whose tree IS that clean automatic merge (:func:`synced_from`) holds
+  R's reviewed content plus integration's, and nothing else, so R's verdict carries
+  (:func:`dev_lab.dev.forgereview_claim.synced`); no round is spent.
 * GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev.famfiles.GENERATED`) and
   the globs the repo declares (``derived``). Their generator is reviewed, not its output.
 * CODE ONLY (user ruling 2026-10-29): a review reads what executes -- source, tests, scripts, and the build and
@@ -69,7 +76,9 @@ __all__ = [
     'plan',
     'prefetch',
     'reviewable',
+    'reviewed_ancestor',
     'reviewed_heads',
+    'synced_from',
 ]  # fmt: skip
 
 #: The lens of the ONE slice an oversize head is reviewed as: no paths, so the method maps the whole range at the
@@ -86,7 +95,7 @@ CODE: Final = (
     '**/*.yaml', '**/*.cfg', '**/*.ini', '**/Makefile', '**/Dockerfile', '**/justfile',
 )  # fmt: skip
 
-#: Never code though its extension says so: agent memory, archived code, and golden reference data (a motronics
+#: Never code though its extension says so: agent memory, archived code, and golden reference data (a consumer repo
 #: golden is a TOML of measured values, 15 MB each). Each glob is narrow -- a hook under ``.claude/``, a ``logs``
 #: package or a ``golden_*.py`` module executes and is read.
 NOT_CODE: Final = ('**/.claude/memory/**', 'attic/**', '**/golden*.toml')
@@ -114,7 +123,7 @@ _GIT_TIMEOUT_S: Final = 120
 
 #: ``git diff -M``'s similarity threshold: a delete and an add this alike are one move, sized by its hunks. The
 #: call passes ``-l0``: past git's default rename limit (1000) inexact detection is SKIPPED with a warning, and
-#: the motronics 33-branch merge (1504 adds) read 318 edited moves as deletes plus adds.
+#: a consumer repo's 33-branch merge (1504 adds) read 318 edited moves as deletes plus adds.
 _SIMILAR: Final = '50%'
 _NUL: Final = chr(0)
 
@@ -162,7 +171,7 @@ def prefetch(root: Path, *ranges: str) -> int:
 
     The reviewer reads the range with git and holds no forge token (:mod:`dev_lab.dev.reviewgitauth`): in a
     blobless checkout -- the Gitea review job's -- its ``git diff`` would fetch each blob lazily and fail
-    unauthenticated (motronics #5397, 2026-11-01). The door holds the header, so it asks first. ``--raw`` compares
+    unauthenticated (a consumer repo, 2026-11-01). The door holds the header, so it asks first. ``--raw`` compares
     trees only and fetches nothing. A clone that is not partial (no ``remote.origin.promisor``) asks for nothing.
     """
     if git(root, 'config', '--get', 'remote.origin.promisor', ok=(0, 1))[1].strip() != 'true':
@@ -187,16 +196,66 @@ def _ancestor(root: Path, older: str, newer: str) -> bool:
     return git(root, 'merge-base', '--is-ancestor', older, newer, ok=(0, 1))[0] == 0
 
 
-def own_base(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str:
-    """Where *head*'s review starts: the newest *reviewed* head it descends from with no later integration merge.
+def reviewed_ancestor(root: Path, head: str, reviewed: Sequence[str]) -> str:
+    """The newest of *reviewed* (oldest first) that *head* descends from, other than *head*; ``''`` when none."""
+    return next((one for one in reversed(reviewed) if one != head and _ancestor(root, one, head)), '')
 
-    *reviewed* is oldest first. Without such a head, the merge base with *target*.
+
+#: Who commits the local automatic merge :func:`own_base` measures from: it is never pushed, and git refuses a
+#: commit without an identity (a review job's runner has none).
+_AUTOMERGE_IDENTITY: Final = ('-c', 'user.name=dev-lab review', '-c', 'user.email=review@dev-lab.invalid')
+
+
+def _automerge(root: Path, reviewed: str, integration: str) -> tuple[str, bool]:
+    """The tree git's automatic merge of *reviewed* and *integration* writes, and whether it merged clean.
+
+    ``git merge-tree --write-tree`` exits 1 on a conflict and still writes the tree, conflict markers in it.
     """
+    code, out = git(root, 'merge-tree', '--write-tree', '--no-messages', reviewed, integration, ok=(0, 1))
+    return out.splitlines()[0].strip(), code == 0
+
+
+def _since(root: Path, target: str, head: str, reviewed: Sequence[str]) -> tuple[str, str, bool]:
+    """``(merge base, R, whether integration was merged since R)``; R is :func:`reviewed_ancestor`, or ``''``."""
     base = git(root, 'merge-base', target, head)[1].strip()
-    for earlier in reversed(reviewed):
-        if earlier != head and _ancestor(root, base, earlier) and _ancestor(root, earlier, head):
-            return earlier
-    return base
+    earlier = reviewed_ancestor(root, head, reviewed)
+    return base, earlier, bool(earlier) and not _ancestor(root, base, earlier)
+
+
+def own_base(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str:
+    """Where *head*'s review starts (module docstring, THE RANGE); *reviewed* is oldest first.
+
+    No reviewed ancestor: the merge base with *target*. One, R, with no integration merged since: R. Integration
+    merged since: a local commit of the automatic merge of R and the integration *head* holds, parents R and it --
+    so ``<it>..<head>`` diffs only what *head* holds beyond that merge and logs only *head*'s own commits.
+    """
+    base, earlier, merged = _since(root, target, head, reviewed)
+    if not merged:
+        return earlier or base
+    tree, _ = _automerge(root, earlier, base)
+    message = f'the automatic merge of {base[:12]} into the reviewed {earlier[:12]} (D52, never pushed)'
+    made = git(root, *_AUTOMERGE_IDENTITY, 'commit-tree', tree, '-p', earlier, '-p', base, '-m', message)[1]
+    return made.strip()
+
+
+def synced_from(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str:
+    """The reviewed head R whose verdict *head* carries as a PURE SYNC (D52), ``''`` when *head* holds new work.
+
+    *head* carries when its tree is exactly what R plus the integration it holds makes -- git's CLEAN automatic
+    merge of the two, or R's own tree when nothing was merged since (an empty commit). Content, not history,
+    decides: a hand-resolved conflict, a hand edit inside a clean merge, or any commit that changes a byte makes
+    the trees differ, and the head is reviewed. The integration commit is the merge base with *target* -- an
+    ancestor of the trusted integration branch -- so a carry can never admit content no review read.
+    """
+    base, earlier, merged = _since(root, target, head, reviewed)
+    if not earlier:
+        return ''
+    tree, clean = _automerge(root, earlier, base) if merged else (_tree(root, earlier), True)
+    return earlier if clean and tree == _tree(root, head) else ''
+
+
+def _tree(root: Path, commit: str) -> str:
+    return git(root, 'rev-parse', f'{commit}^{{tree}}')[1].strip()
 
 
 def _whole(parts: Sequence[str], pattern: Sequence[str]) -> bool:

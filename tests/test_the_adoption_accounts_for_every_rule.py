@@ -174,6 +174,8 @@ _ENFORCED = {
     # Incident 2026-10-21: 28 open consumer-a PRs, one session spread over several, one stalled base holding a dozen.
     'ONE-SESSION-ONE-PR': (guard('tests/test_dev_labsession.py'), guard('tests/test_dev_pradmit.py')),
     'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),
+    # User ruling 2026-11-01 (D53): an author's unfinished heads each spent a review round.
+    'DRAFT-UNTIL-READY': (guard('tests/test_dev_forgedraft.py'),),
     # Incident 2026-10-27: a hand-rolled Remove-Item -Recurse over a worktree list deleted a main checkout.
     'RECURSIVE-DELETE': (guard('tests/test_dev_delete_row.py'),),
     'DOCS-ONLY-CARRIES': (guard('tests/test_dev_forgecarry.py'), guard('tests/test_dev_forgetick.py')),

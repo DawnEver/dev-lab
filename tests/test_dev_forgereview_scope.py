@@ -9,6 +9,8 @@ every refusal has its planted control.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -41,6 +43,7 @@ from dev_lab.dev.forgereview_scope import (
     plan,
     reviewable,
     reviewed_heads,
+    synced_from,
 )
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import HOLD_CONTEXT
@@ -103,7 +106,7 @@ def test_a_merge_of_the_integration_branch_is_not_the_branchs_own_change(tmp_pat
 
 
 def test_a_push_after_a_review_is_read_from_the_reviewed_head(tmp_path: Path) -> None:
-    """Incremental; PLANTED control: an integration merge after the review reads the whole own change again."""
+    """Incremental. PLANTED control: an integration merge after the review reads NOTHING of upstream (D52)."""
     _, work = clone_pair(tmp_path)
     first = advance(work, 'pr/x', 'one.py', '1\n')
     second = advance(work, 'pr/x', 'two.py', '2\n')
@@ -111,8 +114,75 @@ def test_a_push_after_a_review_is_read_from_the_reviewed_head(tmp_path: Path) ->
     assert _paths(work, plan(work, 'origin/integrate/main', second, _WIDE, (first,)).range) == ['two.py']
     advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
     merged = _merge_integration(work, 'pr/x')
-    base = git_out(work, 'merge-base', 'origin/integrate/main', merged)
-    assert own_base(work, 'origin/integrate/main', merged, (first,)) == base
+    assert _paths(work, plan(work, 'origin/integrate/main', merged, _WIDE, (first,)).range) == ['two.py']
+
+
+_TARGET = 'origin/integrate/main'
+
+
+def _synced_pair(work: Path) -> str:
+    """A reviewed head on ``pr/x`` (own.py) and an integration commit since (theirs.py, and shared.py); R."""
+    reviewed = advance(work, 'pr/x', 'own.py', 'mine\n')
+    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
+    advance(work, 'integrate/main', 'shared.py', 'upstream\n')
+    return reviewed
+
+
+def test_a_pure_sync_carries_its_reviewed_head_and_reads_nothing(tmp_path: Path) -> None:
+    """D52: a clean merge of integration into a reviewed head is no new work.
+
+    PLANTED CONTROLS: the same sync with a hand edit inside the merge is new work, read alone; a head with no
+    reviewed ancestor carries nothing.
+    """
+    _, work = clone_pair(tmp_path)
+    reviewed = _synced_pair(work)
+    merged = _merge_integration(work, 'pr/x')
+    assert synced_from(work, _TARGET, merged, (reviewed,)) == reviewed
+    assert _paths(work, plan(work, _TARGET, merged, _WIDE, (reviewed,)).range) == []
+    assert synced_from(work, _TARGET, merged, ()) == ''
+    run_git(work, 'checkout', '-q', '-B', 'evil', f'{reviewed}')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', '--no-commit', _TARGET)
+    (work / 'evil.py').write_text('slipped in\n', encoding='utf-8')
+    run_git(work, 'add', 'evil.py')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'sync')
+    evil = git_out(work, 'rev-parse', 'HEAD')
+    assert synced_from(work, _TARGET, evil, (reviewed,)) == ''
+    assert _paths(work, plan(work, _TARGET, evil, _WIDE, (reviewed,)).range) == ['evil.py']
+
+
+def test_a_sync_with_a_hand_resolved_conflict_reads_the_resolution_alone(tmp_path: Path) -> None:
+    """D52: the range starts at git's automatic merge, so upstream's theirs.py is never read again.
+
+    PLANTED CONTROL: the conflicted file, resolved by hand, is read -- the resolution is the author's work.
+    """
+    _, work = clone_pair(tmp_path)
+    reviewed = advance(work, 'pr/x', 'shared.py', 'mine\n')
+    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
+    advance(work, 'integrate/main', 'shared.py', 'upstream\n')
+    run_git(work, 'checkout', '-q', '-B', 'resolve', reviewed)
+    subprocess.run(
+        [shutil.which('git') or 'git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', _TARGET],
+        cwd=work,
+        check=False,
+        capture_output=True,
+    )  # conflicts: exits 1
+    (work / 'shared.py').write_text('mine and upstream\n', encoding='utf-8')
+    run_git(work, 'add', 'shared.py')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-edit')
+    resolved = git_out(work, 'rev-parse', 'HEAD')
+    assert synced_from(work, _TARGET, resolved, (reviewed,)) == ''
+    assert _paths(work, plan(work, _TARGET, resolved, _WIDE, (reviewed,)).range) == ['shared.py']
+
+
+def test_a_sync_plus_one_own_commit_reads_the_own_commit_alone(tmp_path: Path) -> None:
+    """D52. PLANTED CONTROL: the sync alone carries; the commit after it is new work, read without upstream's."""
+    _, work = clone_pair(tmp_path)
+    reviewed = _synced_pair(work)
+    merged = _merge_integration(work, 'pr/x')
+    assert synced_from(work, _TARGET, merged, (reviewed,)) == reviewed
+    after = advance(work, 'pr/x', 'next.py', 'next\n')
+    assert synced_from(work, _TARGET, after, (reviewed,)) == ''
+    assert _paths(work, plan(work, _TARGET, after, _WIDE, (reviewed,)).range) == ['next.py']
 
 
 def test_the_reviewed_heads_are_read_from_the_review_comments() -> None:

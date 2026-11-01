@@ -38,7 +38,9 @@ name = "CI"
 ["ci.yml".on.push]
 branches = ["integrate/main"]
 
+# ready_for_review (D52/D53): a draft is never reviewed, so marking it ready is what reviews it.
 ["ci.yml".on.pull_request]
+types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
 ["ci.yml".on.workflow_dispatch]
 
@@ -223,7 +225,7 @@ python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
 # interpreter the `door` steps put the dev_lab door in (REVIEW_PYTHON), ISOLATED (-I): its cwd is the PR's checkout,
 # and a PR-planted `dev_lab/` there would otherwise shadow the pinned door. The checkout is blobless, so the diff
-# fetches base blobs on demand (F-ca1dda52c2ef, wdg-lab #427 -- on a private forge the lazy fetch otherwise answers
+# fetches base blobs on demand (F-ca1dda52c2ef, a consumer issue -- on a private forge the lazy fetch otherwise answers
 # 401), and the door posts with the job token. NO FORGE TOKEN IS IN ANY ENVIRONMENT of the review (F-5a82981c5f22,
 # F-d61706393b50): an unset variable still sits in /proc/<pid>/environ, readable by the reviewer it launches. So
 # the hand-over step alone holds the tokens, writes each to a private file (umask 077), and the door reads each
@@ -288,7 +290,7 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # PR's pending run is dropped for another's): the flock serialises their mirror updates, and a --prune'd branch's
 # objects stay in the mirror's packs until a gc's prune expiry (two weeks), far beyond a job.
 # The checkout is sparse, root files only: the review reads the head through git and only pyproject.toml from
-# the tree, and a full checkout would lazily fetch every blob of the head (motronics: 10+ minutes on the host).
+# the tree, and a full checkout would lazily fetch every blob of the head (a large consumer: 10+ minutes on the host).
 lean = [
     { name = "Reach the forge on the runner's instance", run = '''
 [ -n "$ACTIONS_RUNTIME_URL" ] || { echo "ACTIONS_RUNTIME_URL is unset: the runner names no forge to fetch from"; exit 1; }
@@ -336,13 +338,14 @@ git checkout -q --detach "$HEAD_SHA"
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (DEV_LAB_REF, AI_LAB_REF) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
-# The types are pull_request's defaults, so the job runs on the events it ran on before.
+# The types are pull_request's defaults plus ready_for_review (D52/D53): a draft is never reviewed, so marking it
+# ready is what reviews it.
 ["review.yml"]
 forge = "gitea"
 name = "Review"
 
 ["review.yml".on.pull_request_target]
-types = ["opened", "synchronize", "reopened"]
+types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
 ["review.yml".concurrency]
 group = "review-${{ github.event.pull_request.number }}"

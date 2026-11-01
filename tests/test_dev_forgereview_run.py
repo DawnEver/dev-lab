@@ -5,23 +5,30 @@ from __future__ import annotations
 import base64
 import os
 import re
+import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _branch_repos import advance
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _output, _work
+from test_dev_forgereview_rounds import _REVIEW, _doc, _finding
 
-from dev_lab.dev import forgereview_scope, reviewgitauth
+from dev_lab.dev import forgereview_rounds, forgereview_scope, reviewgitauth
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, review_at
 from dev_lab.dev.forgereview_command import ReviewUnsupported, Runner, run_command
+from dev_lab.dev.forgereview_dispose import dispose
+from dev_lab.dev.forgereview_judge import Identity
 from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import held, main, review_run, runtimes_with
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
+from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewgate import DeclarationUnread, review_missing
 
@@ -217,12 +224,6 @@ def test_the_pull_request_job_rules_on_every_pending_claim_of_its_pr(
     The next pull_request run adjudicates the pending claim through the same judge, as the Actions bot.
     PLANTED CONTROL: a run carrying the claimant's own session still refuses to rule on its claim.
     """
-    from test_dev_forgereview_rounds import _REVIEW, _doc, _finding  # noqa: PLC0415
-
-    from dev_lab.dev.forgereview_dispose import dispose  # noqa: PLC0415
-    from dev_lab.dev.forgereview_judge import Identity  # noqa: PLC0415
-    from dev_lab.dev.labsession import ENV as SESSION_ENV  # noqa: PLC0415
-
     work, head = _work(tmp_path)
     forge = StateForge(Forge('github.com', 'o', 'r'))  # as #11: the job writes as the Actions bot
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
@@ -257,13 +258,13 @@ class _EnvCommand(FakeCommand):
         super().__init__()
         self.envs: list[dict[str, str]] = []
 
-    def __call__(self, argv, root):  # noqa: ANN204 -- FakeCommand's own signature
+    def __call__(self, argv: Sequence[str], root: Path) -> str:
         self.envs.append(dict(os.environ))
         return super().__call__(argv, root)
 
 
-_TOKEN = 'tok-secret-123'  # noqa: S105 -- a planted value the scan looks for
-_HEADER = 'Authorization: basic ' + base64.b64encode(f'x-access-token:{_TOKEN}'.encode()).decode()
+_PLANTED = 'tok-secret-123'  # the credential value the leak scan must never find in a reviewer's env
+_HEADER = 'Authorization: basic ' + base64.b64encode(f'x-access-token:{_PLANTED}'.encode()).decode()
 
 
 def _token_files(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
@@ -274,7 +275,7 @@ def _token_files(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
     monkeypatch.setenv('GITHUB_SERVER_URL', 'https://forge.example')
     secrets = tmp_path / 'forge-secrets'
     secrets.mkdir(exist_ok=True)
-    (secrets / 'read').write_text(_TOKEN, encoding='utf-8')
+    (secrets / 'read').write_text(_PLANTED, encoding='utf-8')
     (secrets / 'api').write_text('job-token', encoding='utf-8')
     return secrets / 'read', secrets / 'api'
 
@@ -282,7 +283,7 @@ def _token_files(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
 def _leaks(env: dict[str, str]) -> list[str]:
     """The variables carrying the planted token, the job token or a GIT_CONFIG_* header slot."""
     slot = re.compile(r'GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)')
-    return [k for k, v in env.items() if _TOKEN in v or v == 'job-token' or slot.fullmatch(k)]
+    return [k for k, v in env.items() if _PLANTED in v or v == 'job-token' or slot.fullmatch(k)]
 
 
 def test_take_reads_each_token_file_once_and_leaves_no_token_on_disk_or_in_env(tmp_path: Path, monkeypatch) -> None:
@@ -301,7 +302,7 @@ def test_a_token_left_in_the_env_is_refused_and_the_files_are_still_removed(
 ) -> None:
     """PLANTED CONTROL: a template that still sets a token in the step env is flagged, not silently scrubbed."""
     read, api = _token_files(tmp_path, monkeypatch)
-    monkeypatch.setenv(name, _TOKEN)
+    monkeypatch.setenv(name, _PLANTED)
     with pytest.raises(reviewgitauth.TokenInEnvironment, match=name):
         reviewgitauth.take(read, api)
     assert not read.exists()
@@ -352,7 +353,7 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
     gits: list[dict[str, str] | None] = []
     real = forgereview_scope._door.run
 
-    def spy(argv, **kw):  # noqa: ANN202, ANN003
+    def spy(argv: Sequence[str], **kw: object) -> subprocess.CompletedProcess[Any]:
         if argv[0] == 'git':
             gits.append(kw.get('env'))
         return real(argv, **kw)
@@ -382,12 +383,10 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
 
 def test_every_door_git_call_goes_through_the_one_helper() -> None:
     """F-dd15a25cb5ca: the auth env is set in one place -- forgereview_scope.git -- for the scope and the rounds."""
-    from dev_lab.dev import forgereview_rounds  # noqa: PLC0415
-
     for module, launches in ((forgereview_rounds, 0), (forgereview_scope, 1)):
         assert Path(module.__file__).read_text(encoding='utf-8').count("['git',") == launches, module.__name__
     assert forgereview_rounds.git is forgereview_scope.git
-    assert not hasattr(forgereview_rounds, '_git')
+    assert '_git' not in Path(forgereview_rounds.__file__).read_text(encoding='utf-8'), 'the private copy is gone'
 
 
 def test_no_token_file_holds_no_header_and_git_inherits(monkeypatch) -> None:
