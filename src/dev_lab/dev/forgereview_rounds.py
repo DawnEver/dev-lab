@@ -15,8 +15,8 @@ head's findings comment (a hidden ``review-ledger`` line); the next round starts
   GOALPOSTS: a new finding below ``HIGH`` whose
   anchor is not a line the round added is dropped -- a later round may not raise a non-HIGH finding on a line
   the earlier rounds already read.
-* PAST ``max_rounds`` no command runs: the open BLOCKING findings are re-checked alone, and the open non-blocking
-  ones leave the ledger for ONE follow-up issue.
+* PAST ``max_rounds`` -- or past the PR's dollar cap -- nothing runs: the head WAITS, named, for a split or a raised
+  cap (:mod:`dev_lab.dev.reviewbudget`, user ruling 2026-10-31).
 
 A finding BLOCKS while open when it is ``HIGH`` or a security finding (:attr:`Finding.blocking`). The head's
 :data:`~dev_lab.dev.platformparts.REVIEW_CONTEXT` is ``failure`` while any blocking finding is open and not
@@ -63,7 +63,6 @@ __all__ = [
     'Ledger',
     'advance',
     'blocking',
-    'capped',
     'context_summary',
     'ledger_of',
     'post_round',
@@ -105,7 +104,6 @@ class Ledger:
     round: int
     open: tuple[Finding, ...] = ()
     closed: tuple[tuple[str, str], ...] = ()  # (id, how) closed THIS round
-    deferred: tuple[Finding, ...] = ()  # non-blocking, moved to the follow-up issue THIS round
 
     def line(self) -> str:
         """The hidden comment line that records this ledger (``>`` escaped, so the JSON cannot close the comment)."""
@@ -201,14 +199,14 @@ def advance(
     head: str,
     reviewed: str,
     prior: Ledger | None,
-    found: Findings | None,
+    found: Findings,
     *,
     judged: Mapping[str, Verdict],
 ) -> Ledger:
     """The ledger of *head*'s round: *prior*'s open findings RE-JUDGED (*judged*), *found*'s merged in by id.
 
     A prior finding the judge calls ``fixed`` or ``false-positive`` closes with its evidence; one it did not judge
-    stays open. *found* is ``None`` past the cap (no command ran): only blocking findings stay, the rest deferred.
+    stays open.
     """
     number = 1 if prior is None else prior.round + 1
     kept: dict[str, Finding] = {}
@@ -219,10 +217,6 @@ def advance(
             closed.append((one.id, f'{verdict_.outcome}: {verdict_.evidence}'))
         else:
             kept[one.id] = one
-    if found is None:
-        deferred = tuple(one for one in kept.values() if not one.blocking)
-        stays = tuple(one for one in kept.values() if one.blocking)
-        return Ledger(head, number, stays, tuple(closed), deferred)
     added = _added(root, reviewed) if number > 1 else {}
     for one in found.findings:
         if one.id in kept or number == 1 or one.severity == SEVERITIES[0]:
@@ -322,7 +316,7 @@ def _row(one: Finding, number: int, authored: Mapping[str, str]) -> str:
 
 def render(
     ledger: Ledger, gone: Mapping[str, str], *, number: int, reviewed: str, max_rounds: int,
-    found: Findings | None, summary: str = '', outside: int = 0, repo: str = '', backend: Backend = GITEA,
+    found: Findings, summary: str = '', outside: int = 0, repo: str = '', backend: Backend = GITEA,
     authored: Mapping[str, str] | None = None,
 ) -> str:  # fmt: skip
     """The round's one PR comment: what the PR does, the verdict, (round 1) the context, the findings, the ledger.
@@ -333,9 +327,8 @@ def render(
     """
     authored = authored or {}
     state, said = verdict(ledger, gone, number)
-    capped = ' -- past the cap: blocking findings re-checked only, no reviewer ran' if found is None else ''
-    head = f'**Review round {ledger.round}/{max_rounds}** of `{ledger.head[:12]}` over `{reviewed}`{capped}'
-    does = what_it_does(None if found is None else found.summary, repo, ledger.head, backend)
+    head = f'**Review round {ledger.round}/{max_rounds}** of `{ledger.head[:12]}` over `{reviewed}`'
+    does = what_it_does(found.summary, repo, ledger.head, backend)
     parts = [*([does] if does else []), f'{head}\n\n`tests/review` {state}: {said}']
     if summary:
         parts.append(summary)
@@ -354,8 +347,7 @@ def render(
         ('Open, not blocking', rest),
         ('Closed this round', [f'- `{fid}` {how}' for fid, how in ledger.closed]),
         ('Disposed', [f'- `{fid}`: {why}' for fid, why in gone.items() if any(one.id == fid for one in ledger.open)]),
-        ('Moved to the follow-up issue', [f'- `{one.id}` {one.summary}' for one in ledger.deferred]),
-        ('Disposed earlier', [f'- `{fid}`: {why}' for fid, why in (() if found is None else found.disposed)]),
+        ('Disposed earlier', [f'- `{fid}`: {why}' for fid, why in found.disposed]),
         ('Disposed earlier (by the author)', by_author),
     )
     parts += [f'### {title}\n' + '\n'.join(rows) for title, rows in sections if rows]
@@ -365,28 +357,14 @@ def render(
     return '\n\n'.join(parts)
 
 
-def _follow_up(client: Client, pull: PullRequest, ledger: Ledger) -> None:
-    """ONE follow-up issue for the non-blocking findings *ledger* moved out at the cap (none: nothing written)."""
-    if not ledger.deferred:
-        return
-    rows = '\n'.join(
-        f'- `{one.id}` {one.severity} `{one.file}` -- {one.summary} (rule `{one.rule}`)' for one in ledger.deferred
-    )
-    body = (
-        f'Non-blocking review findings of #{pull.number} ({pull.head}) still open past the round cap: they no '
-        f'longer hold the PR, and are tracked here.\n\n{rows}'
-    )
-    client.issue_create(f'review follow-up: #{pull.number} {pull.head}', body)
-
-
 def post_round(
-    root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings | None, max_rounds: int,
+    root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings, max_rounds: int,
     judged: Judge, reviewer: Identity, authors: frozenset[str], by: str = 'review', outside: int = 0,
     authored: Mapping[str, str] | None = None, emergency: bool = False,
 ) -> str:  # fmt: skip
-    """Post *pull*'s head review round: its comment, :data:`REVIEW_CONTEXT`, any follow-up issue; the line said.
+    """Post *pull*'s head review round: its comment and :data:`REVIEW_CONTEXT`; the line said.
 
-    *found* is ``None`` past the cap (no command ran). *judged* re-judges the prior open findings, each with its
+    *judged* re-judges the prior open findings, each with its
     pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and may not
     be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the changed
     files that are not code, said in the comment. *authored* is the author's trailer dispositions.
@@ -428,7 +406,6 @@ def post_round(
     state, said = verdict(ledger, gone, pull.number)
     if emergency:
         return f'#{pull.number} {head[:12]}: {by} round {ledger.round}, advisory (no status): {said}'
-    _follow_up(client, pull, ledger)
     hold = next((one for one in status_list(client, head) if one.context == HOLD_CONTEXT), None)
     if hold is not None and hold.state == 'pending':
         status_post(client, head, context=HOLD_CONTEXT, state='success',
@@ -436,9 +413,3 @@ def post_round(
     status_post(client, head, context=REVIEW_CONTEXT, state=state, target_url=comment.url if comment else '',
                 description=f'{by}: {said}'[:_DESCRIPTION])  # fmt: skip
     return f'#{pull.number} {head[:12]}: {by} round {ledger.round}, {state}: {said}'
-
-
-def capped(client: Client, pull: PullRequest, max_rounds: int) -> bool:
-    """Whether *pull* has had its ``max_rounds`` full rounds: its next head is re-checked only."""
-    prior = ledger_of(trusted_bodies(client, pull.number))
-    return prior is not None and prior.head != pull.head_sha and prior.round >= max_rounds

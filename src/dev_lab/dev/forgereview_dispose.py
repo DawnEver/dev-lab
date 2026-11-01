@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgemerge import ready
-from dev_lab.dev.forgepulls import pr_list
+from dev_lab.dev.forgepulls import Marker, comment_upsert, pr_list
 from dev_lab.dev.forgereview import Review, judge_for
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, adjudicate, claim, upheld
 from dev_lab.dev.forgereview_rounds import DISPOSE_DOOR, blocking, ledger_of, trusted_bodies, verdict
@@ -33,11 +33,12 @@ from dev_lab.dev.forgereview_scope import landed_base
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
+from dev_lab.dev.reviewbudget import Raised, raise_line
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['adjudicate_thread', 'alarms', 'blocked', 'dispose', 'line', 'merge_ready_after']
+__all__ = ['adjudicate_thread', 'alarms', 'blocked', 'dispose', 'line', 'merge_ready_after', 'raise_cap']
 
 
 def blocked(client: Client, base: str) -> tuple[tuple[PullRequest, tuple[str, ...]], ...]:
@@ -83,6 +84,28 @@ def dispose(client: Client, number: int, finding_id: str, why: str, *, by: Ident
         msg = f'#{number} carries no review round: there is no finding to claim against'
         raise AdjudicationRefused(msg)
     return claim(client, number, finding_id, why, by=by, open_ids=[one.id for one in ledger.open])
+
+
+def raise_cap(client: Client, number: int, raised: Raised, *, by: Identity) -> str:
+    """Record the integrator's raise of PR *number*'s review caps, with its reason; the line said.
+
+    Only the forge's own login is trusted to raise (:func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`), so the
+    integrator's session posts it through the forge client; the month's remainder still bounds the raised cap.
+    """
+    if raised.usd is None and raised.rounds is None:
+        msg = 'a raise names --usd, --rounds or both'
+        raise ValueError(msg)
+    if not raised.why.strip():
+        msg = 'a raise records its reason: --why "<reason>"'
+        raise ValueError(msg)
+    text = (
+        f'Review cap of #{number} raised by {by.text()}: '
+        f'{"" if raised.usd is None else f"{raised.usd:.2f} USD "}'
+        f'{"" if raised.rounds is None else f"{raised.rounds} rounds"}'
+        f' -- {raised.why}\n\n{raise_line(raised)}'
+    )
+    comment_upsert(client, number, kind=Marker.REVIEW_CAP, text=text)
+    return f'#{number}: review cap raised ({raised.why})'
 
 
 def adjudicate_thread(

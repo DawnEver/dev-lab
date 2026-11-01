@@ -20,7 +20,6 @@ from dev_lab.dev.forgereview import RANGE_FIELD, REVIEW_CONTEXT, Review
 from dev_lab.dev.forgereview_findings import Finding, Findings
 from dev_lab.dev.forgereview_judge import Claim, Identity, Verdict, adjudication_text, claim, upheld
 from dev_lab.dev.forgereview_rounds import (
-    FAMILY_MAX_ROUNDS,
     SUMMARY_CITES,
     Ledger,
     context_summary,
@@ -184,14 +183,6 @@ def test_a_later_round_raises_no_new_non_high_finding_on_a_line_it_did_not_add(t
     assert [one.id for one in first_round.open] == ['F-old'], 'round 1 reads the whole change'
 
 
-def test_past_the_cap_blocking_findings_stay_and_the_rest_are_deferred(tmp_path: Path) -> None:
-    work, first, second = _repo(tmp_path)
-    high, medium = _finding('F-h', severity='HIGH', anchor='y'), _finding('F-m', anchor='y')
-    ledger = advance_round(work, second, f'{first}..{second}', Ledger(first, 3, (high, medium)), None, judged={})
-    assert [one.id for one in ledger.open] == ['F-h']
-    assert [one.id for one in ledger.deferred] == ['F-m']
-
-
 def test_the_context_summary_names_what_changed_why_and_where(tmp_path: Path) -> None:
     work, _ = _work(tmp_path)
     (work / 'src' / 'pkg' / 'layer').mkdir(parents=True)
@@ -258,24 +249,6 @@ def test_a_claim_is_adjudicated_by_the_next_round_and_only_an_upheld_one_unblock
         assert _state(forge, after)[0] == state
         (ruling,) = [c['body'] for c in forge.comments[number] if marker(Marker.ADJUDICATION, 'F-x') in c['body']]
         assert 'claimed by a@box session S-author' in ruling
-
-
-def test_past_max_rounds_no_command_runs_and_one_follow_up_issue_takes_the_rest(tmp_path: Path) -> None:
-    work, head = _work(tmp_path)
-    forge, number = _forge(head)
-    review = Review(judge=JUDGE, command=_REVIEW.command, max_rounds=1)
-    high, medium = _finding('F-h', severity='HIGH', file='x.py', anchor='x'), _finding('F-m', file='x.py', anchor='x')
-    _tick(work, forge, FakeCommand(_doc(high, medium)), review)
-    after = advance(work, 'pr/x', 'y.txt', 'y\n')
-    forge.pulls[number]['head']['sha'] = after
-    command = FakeCommand(_doc())
-    _tick(work, forge, command, review)
-    assert command.ran == [], 'past the cap, no reviewer runs'
-    assert _state(forge, after)[0] == 'failure', 'the blocking finding is re-checked and still open'
-    (issue,) = [one for one in forge.issues_by_number.values() if one['title'].startswith('review follow-up')]
-    assert 'F-m' in issue['body']
-    assert 'F-h' not in issue['body']
-    assert FAMILY_MAX_ROUNDS == Review().max_rounds == 3
 
 
 def test_the_comment_opens_with_what_the_pr_does_and_lists_what_was_disposed_earlier(tmp_path: Path) -> None:

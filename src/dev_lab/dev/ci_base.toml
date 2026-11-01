@@ -121,7 +121,7 @@ steps = [
     { name = "tests/review", run = 'uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
 
-# Findings are PR comments (the issues API) and a capped round's follow-up is an issue.
+# Findings are PR comments (the issues API).
 ["ci.yml".jobs.review.permissions]
 contents = "read"
 statuses = "write"
