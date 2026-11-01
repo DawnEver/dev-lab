@@ -24,6 +24,7 @@ from dev_lab.dev.ciworkflows import (
     workflows,
     write,
 )
+from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,7 +54,7 @@ def _base_ci(tmp_path: Path) -> dict[str, Any]:
 
 def test_the_lifecycle_runs_on_pull_request_and_never_on_pull_request_target(tmp_path: Path) -> None:
     ci = _base_ci(tmp_path)
-    assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch'}
+    assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch', 'schedule'}
     assert 'pull_request_target' not in render(ci), "a fork's code would run with this repository's secrets"
     assert ci['jobs']['review']['if'] == "${{ github.event_name == 'pull_request' }}"
 
@@ -77,9 +78,13 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     ci = _base_ci(tmp_path)
     jobs = ci['jobs']
     assert jobs['part']['strategy']['matrix'] == '${{ fromJSON(needs.parts.outputs.matrix) }}'
-    assert jobs['parts']['outputs'] == {'matrix': '${{ steps.matrix.outputs.matrix }}'}
+    assert jobs['parts']['outputs'] == {
+        'matrix': '${{ steps.matrix.outputs.matrix }}',
+        'event': '${{ env.PARTS_EVENT }}',
+        'pending': '${{ steps.pending.outputs.pending }}',
+    }
     (computed,) = [step for step in jobs['parts']['steps'] if step.get('id') == 'matrix']
-    event = '--event ${{ github.event_name }}'
+    event = '--event "$PARTS_EVENT"'
     assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
@@ -133,24 +138,70 @@ def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_
     assert names.index('Install the review method') < names.index('Store the review key') < names.index('tests/review')
 
 
-def test_a_push_to_integration_runs_every_part_then_promote_fast_forwards_main_by_the_one_decision(
-    tmp_path: Path,
-) -> None:
-    """ONE FLOW (D83): GitHub promotes by the SAME `integrate promote` Gitea runs, once every part settled."""
+def _parts_event(event: str, *, smoke: bool = False) -> str:
+    """PARTS_EVENT's expression, evaluated for one trigger -- the planted check that it says what it renders."""
+    return 'pull_request' if event == 'push' or smoke else event
+
+
+def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_path: Path) -> None:
+    """D48-1A: a push to integrate/main (a merge) re-runs the PR's set, no macos (D84), and promotes nothing.
+
+    merge-ready's dispatch after a job-token merge is a merge too: it asks for the smoke run.
+    """
     ci = _base_ci(tmp_path)
     assert ci['on']['push'] == {'branches': ['integrate/main']}, 'main moves only by promote, never by a push run'
+    assert ci['env']['PARTS_EVENT'] == (
+        "${{ (github.event_name == 'push' || inputs.smoke) && 'pull_request' || github.event_name }}"
+    )
+    assert _parts_event('push') == 'pull_request'
+    assert _parts_event('workflow_dispatch', smoke=True) == 'pull_request'
+    steps = {step.get('id'): step for step in ci['jobs']['parts']['steps']}
+    assert '--event "$PARTS_EVENT"' in steps['matrix']['run']
+    assert '--event "$PARTS_EVENT"' in ci['jobs']['absent-parts']['steps'][-1]['run'], 'the SAME event absent reads'
+    assert steps['pending']['if'] == (
+        "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}"
+    ), 'a smoke run never asks pending, so its pending output is empty'
+    assert ci['jobs']['promote']['if'] == "${{ needs.parts.outputs.pending == 'true' }}", 'empty is never true'
+    dispatch = ci['jobs']['merge-ready']['steps'][-1]['run']
+    assert dispatch.endswith('--ref integrate/main -f smoke=true')
+
+
+def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_decision(tmp_path: Path) -> None:
+    """D48-1A: once nightly, and on demand, integrate/main's tip runs every part on every OS, then promotes.
+
+    `integrate promote` stays the ONE place the parts gate (D83); the schedule's run is never a merge's smoke.
+    """
+    ci = _base_ci(tmp_path)
+    assert ci['on']['schedule'] == [{'cron': '0 2 * * *'}]
+    assert ci['on']['workflow_dispatch']['inputs']['smoke']['default'] is False, 'on demand is the full run'
+    assert _parts_event('schedule') == 'schedule'
+    assert _parts_event('workflow_dispatch') == 'workflow_dispatch'
+    assert systems_for('schedule') == ('linux', 'macos', 'windows')
+    assert systems_for(_parts_event('push')) == PULL_REQUEST_SYSTEMS, 'PLANTED CONTROL: the smoke has no macos'
+    assert "'smoke' || github.event_name" in ci['concurrency']['group'], 'a merge never cancels the nightly run'
     promote = ci['jobs']['promote']
-    assert promote['needs'] == ['absent-parts']
-    assert promote['if'] == (
-        "${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
-        "&& github.ref == 'refs/heads/integrate/main' }}"
-    ), 'a merge the job token made is dispatched, never pushed: that run promotes too (dev-lab#15)'
+    assert promote['needs'] == ['parts', 'absent-parts']
     (step,) = [one for one in promote['steps'] if 'integrate promote' in one.get('run', '')]
     assert 'python -m dev_lab.dev.integrate promote "$HEAD_SHA"' in step['run']
     assert 'git push origin main' in step['run']
 
 
-def test_after_promote_the_push_job_sweeps_every_branch_integration_now_contains(tmp_path: Path) -> None:
+def test_a_tip_main_already_holds_runs_no_part_no_absent_and_no_promote(tmp_path: Path) -> None:
+    """D48-1A: `integrate pending` says false -> no matrix -> every later job is skipped by its `if`.
+
+    PLANTED CONTROL: each job's condition names the empty matrix (or pending), so a dropped guard reds here.
+    """
+    ci = _base_ci(tmp_path)
+    steps = {step.get('id'): step for step in ci['jobs']['parts']['steps']}
+    assert 'dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' in steps['pending']['run']
+    assert steps['matrix']['if'] == "${{ steps.pending.outputs.pending != 'false' }}"
+    assert ci['jobs']['parts']['outputs']['pending'] == '${{ steps.pending.outputs.pending }}'
+    assert ci['jobs']['part']['if'] == "${{ needs.parts.outputs.matrix != '' }}"
+    assert "needs.parts.outputs.matrix != ''" in ci['jobs']['absent-parts']['if']
+    assert 'pending' in ci['jobs']['promote']['if']
+
+
+def test_after_promote_the_nightly_job_sweeps_every_branch_integration_now_contains(tmp_path: Path) -> None:
     """LANDED-BRANCHES-SWEPT (ruling 2026-10-29): the sweep runs after promote, even when promote failed."""
     steps = _base_ci(tmp_path)['jobs']['promote']['steps']
     runs = [one.get('run', '') for one in steps]
@@ -214,7 +265,7 @@ hosted = { live = { secrets = ["MODEL_KEY"], setup = "login --from-file -" } }
 """
 
 
-def test_a_hosted_part_renders_its_own_push_only_job_and_only_its_setup_step_sees_the_secret(
+def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step_sees_the_secret(
     tmp_path: Path, monkeypatch
 ) -> None:
     planted = 'sk-planted-value-never-rendered'
@@ -223,7 +274,7 @@ def test_a_hosted_part_renders_its_own_push_only_job_and_only_its_setup_step_see
     ci = workflows(tmp_path)['ci.yml']
     job = ci['jobs']['part-live']
     assert job['runs-on'] == 'ubuntu-latest'
-    assert job['if'] == "${{ github.event_name != 'pull_request' }}"
+    assert job['if'] == "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
     assert job['name'] == 'tests/live'
     carrying = [step for step in job['steps'] if 'env' in step]
     assert len(carrying) == 1

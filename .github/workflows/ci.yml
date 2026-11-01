@@ -15,10 +15,23 @@
         "ready_for_review"
       ]
     },
-    "workflow_dispatch": {}
+    "schedule": [
+      {
+        "cron": "0 2 * * *"
+      }
+    ],
+    "workflow_dispatch": {
+      "inputs": {
+        "smoke": {
+          "description": "a merge's smoke run: the PR's part set, no promote",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
   },
   "concurrency": {
-    "group": "ci-${{ github.ref }}",
+    "group": "ci-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.smoke) && 'smoke' || github.event_name }}",
     "cancel-in-progress": true
   },
   "permissions": {
@@ -26,7 +39,8 @@
   },
   "env": {
     "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
-    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/"
+    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
+    "PARTS_EVENT": "${{ (github.event_name == 'push' || inputs.smoke) && 'pull_request' || github.event_name }}"
   },
   "jobs": {
     "parts": {
@@ -54,13 +68,22 @@
           "run": "uv sync --frozen --all-extras"
         },
         {
+          "id": "pending",
+          "name": "Whether main still lacks the tip",
+          "if": "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}",
+          "run": "uv run --no-sync python -m dev_lab.dev.integrate pending \"$HEAD_SHA\" >> \"$GITHUB_OUTPUT\""
+        },
+        {
           "id": "matrix",
           "name": "The parts and their runners",
-          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event ${{ github.event_name }})\" >> \"$GITHUB_OUTPUT\""
+          "if": "${{ steps.pending.outputs.pending != 'false' }}",
+          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event \"$PARTS_EVENT\")\" >> \"$GITHUB_OUTPUT\""
         }
       ],
       "outputs": {
-        "matrix": "${{ steps.matrix.outputs.matrix }}"
+        "matrix": "${{ steps.matrix.outputs.matrix }}",
+        "event": "${{ env.PARTS_EVENT }}",
+        "pending": "${{ steps.pending.outputs.pending }}"
       }
     },
     "part": {
@@ -68,6 +91,7 @@
         "GITHUB_TOKEN": "${{ github.token }}"
       },
       "needs": "parts",
+      "if": "${{ needs.parts.outputs.matrix != '' }}",
       "name": "tests/${{ matrix.part }}",
       "runs-on": "${{ matrix.runs-on }}",
       "steps": [
@@ -111,7 +135,7 @@
         "parts",
         "part"
       ],
-      "if": "${{ always() && needs.parts.result == 'success' }}",
+      "if": "${{ always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '' }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -134,7 +158,7 @@
         },
         {
           "name": "Post every part no job settled",
-          "run": "uv run --no-sync python -m dev_lab.dev.jobparts absent \"$HEAD_SHA\" --event ${{ github.event_name }}"
+          "run": "uv run --no-sync python -m dev_lab.dev.jobparts absent \"$HEAD_SHA\" --event \"$PARTS_EVENT\""
         }
       ],
       "permissions": {
@@ -281,7 +305,7 @@
         {
           "name": "Run CI on the merged integration",
           "if": "${{ steps.ready.outputs.merged == 'true' }}",
-          "run": "gh workflow run ci.yml --repo \"$GITHUB_REPOSITORY\" --ref integrate/main",
+          "run": "gh workflow run ci.yml --repo \"$GITHUB_REPOSITORY\" --ref integrate/main -f smoke=true",
           "env": {
             "GH_TOKEN": "${{ github.token }}"
           }
@@ -299,9 +323,10 @@
         "GITHUB_TOKEN": "${{ github.token }}"
       },
       "needs": [
+        "parts",
         "absent-parts"
       ],
-      "if": "${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/integrate/main' }}",
+      "if": "${{ needs.parts.outputs.pending == 'true' }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
