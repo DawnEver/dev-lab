@@ -494,8 +494,8 @@ def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -
     """Gitea has no ``statuses`` scope: ``POST /statuses/{sha}`` is ``reqRepoWriter(unit.TypeCode)`` (1.27).
 
     Measured 2026-11-01 on motronics #5397: with ``contents: read`` the job's ``tests/review`` POST was refused
-    while ``GET /user`` answered. ``contents: write`` is the Code-write the route asks for; the job runs no PR
-    code (the review step reads the head, never executes it), so the write stays with the pinned family tools.
+    while ``GET /user`` answered. ``contents: write`` is the Code-write the route asks for. Not a ceiling: Gitea
+    takes a pull_request workflow from the PR head, whose author already holds Code write (see ci_base.toml).
     """
     permissions = _gitea_review(tmp_path)['jobs']['review']['permissions']
     assert permissions['contents'] == 'write'
