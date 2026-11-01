@@ -13,7 +13,7 @@ from _forge_state import StateForge
 from dev_lab.dev import jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN, client_for
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, client_for
 from dev_lab.dev.producer import full_suite_refusal
 
 SHA = 'b' * 40
@@ -138,7 +138,7 @@ def test_inside_github_actions_the_job_token_is_the_credential_on_github_only(tm
     hub = make_repo(tmp_path / 'hub', 'https://github.com/o/r.git')
     client = client_for(hub, env=actions)
     assert (client.token, client.refresh) == ('job-token', None)
-    assert client.whoami() == ACTIONS_BOT, 'an installation token cannot read /user; the bot is who it writes as'
+    # who the job writes as is asked of the forge (D11): test_dev_forgework's whoami test, over a loopback
     with pytest.raises(NoCredential):
         client_for(hub, env={**store, 'GITHUB_TOKEN': 'job-token'})
     with pytest.raises(NoCredential):

@@ -7,6 +7,7 @@ reader that reached for ssh (or any shell) would fail.
 
 from __future__ import annotations
 
+import dataclasses
 import gzip
 import json
 import subprocess
@@ -77,7 +78,7 @@ def _run() -> forgerunstate.Run:
 
 
 def _publish(home: _Home, monkeypatch: pytest.MonkeyPatch, rounds: list[dict[str, Any]]) -> tuple[Any, int]:
-    monkeypatch.setattr(forgerunpost, 'step', lambda run, **changes: forgerunstate.Run(**{**run.__dict__, **changes}))
+    monkeypatch.setattr(forgerunpost, 'step', dataclasses.replace)
     return forgerun._publish_rounds(home.client(), _run(), _Cluster(rounds), lambda _l: None, 'tag')
 
 

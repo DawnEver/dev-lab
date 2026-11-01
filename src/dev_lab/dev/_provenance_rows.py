@@ -571,6 +571,14 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'metrics_report': ('original',),
     'reviewcommand': ('original',),
     'reviewbudget': ('original',),  # the review's round and dollar caps, new here
+    'commandpart': ('original',),  # a non-pytest repo's one command part, new here
+    'forgeaffinity': ('original',),  # HPC account affinity of verify parts, new here
+    'forgereview_judge': ('original',),  # independent re-judging and claim adjudication, new here
+    'forgerunshow': ('original',),  # a cluster run's findings published on the forge, new here
+    'memoryadds': ('original',),  # memory is added to, never edited, new here
+    'remconfig': ('original',),  # the family's rem.json, new here
+    'reviewgate': ('original',),  # the one reviewed-head predicate, new here
+    'reviewgitauth': ('original',),  # the review door's file-held tokens, new here
     'reviewpolicy': ('original',),  # the review policy exported for every trigger, new here
     'security': ('original',),
 }

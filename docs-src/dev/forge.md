@@ -171,7 +171,7 @@ What every host still reads, kept small:
 
 The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, and the complete runbook for a JMAG
 workstation: run once per box, in PowerShell, as the user who serves. A workstation that serves parts but never
-heavy compute (WS1, WS2) deploys the `light` role instead: [adding a forge workstation](adding-a-workstation.md). A JMAG workstation does a
+heavy compute deploys the `light` role instead: [adding a forge workstation](adding-a-workstation.md). A JMAG workstation does a
 person's heavy JMAG work FIRST: the person declares it (step 8), and the forge takes only what lies outside it.
 
 **1. Prerequisites.**

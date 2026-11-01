@@ -110,7 +110,9 @@ def message_wait(root: Path, base: str, head: str) -> str | None:
     row = next((one for one in hook_table(root).get('pre-push', ()) if _MESSAGE_SCRIPT in one.run), None)
     if row is None:
         return None
-    base_sha = _door.run(['git', 'rev-parse', base], cwd=str(root), capture_output=True, text=True, check=True)
+    base_sha = _door.run(
+        ['git', 'rev-parse', base], cwd=str(root), capture_output=True, text=True, encoding='utf-8', check=True
+    )
     line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
     done = _door.run(
         [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix()],

@@ -164,7 +164,7 @@ def declared_worker_gb(root: Path) -> float:
 
     D101: a hosted runner holds no learned table (it lives beside the machine config, never in a checkout,
     and no CI step carries it), so every worker there was priced at :class:`~lab_commons.hpc.config.Cost`'s
-    1 GB floor and the width filled the runner -- optimi-lab's windows row ran 2 workers, stalled ~400 tests
+    1 GB floor and the width filled the runner -- a consumer repo's windows row ran 2 workers, stalled ~400 tests
     in and died ``0xC0000017`` (out of memory) at 3600 s. The repository is the one place a CI run can read,
     so it declares the peak its last run measured, and :func:`selection_mem_gb` prices each worker at it.
 

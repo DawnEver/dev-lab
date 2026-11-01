@@ -364,6 +364,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
   by an independent reviewer, never the head's author session.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
+* :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
+* :mod:`dev_lab.dev.forgerunshow` -- what a cluster run learned, published on the forge for ``forge run show``.
+* :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
+* :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: an ADVISORY session review; never the gate (D11).
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).

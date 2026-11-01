@@ -386,7 +386,7 @@ def test_every_door_git_call_goes_through_the_one_helper() -> None:
     for module, launches in ((forgereview_rounds, 0), (forgereview_scope, 1)):
         assert Path(module.__file__).read_text(encoding='utf-8').count("['git',") == launches, module.__name__
     assert forgereview_rounds.git is forgereview_scope.git
-    assert not hasattr(forgereview_rounds, '_git')
+    assert '_git' not in Path(forgereview_rounds.__file__).read_text(encoding='utf-8'), 'the private copy is gone'
 
 
 def test_no_token_file_holds_no_header_and_git_inherits(monkeypatch) -> None:

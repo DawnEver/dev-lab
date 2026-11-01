@@ -86,7 +86,7 @@ CODE: Final = (
     '**/*.yaml', '**/*.cfg', '**/*.ini', '**/Makefile', '**/Dockerfile', '**/justfile',
 )  # fmt: skip
 
-#: Never code though its extension says so: agent memory, archived code, and golden reference data (a motronics
+#: Never code though its extension says so: agent memory, archived code, and golden reference data (a consumer repo
 #: golden is a TOML of measured values, 15 MB each). Each glob is narrow -- a hook under ``.claude/``, a ``logs``
 #: package or a ``golden_*.py`` module executes and is read.
 NOT_CODE: Final = ('**/.claude/memory/**', 'attic/**', '**/golden*.toml')
@@ -114,7 +114,7 @@ _GIT_TIMEOUT_S: Final = 120
 
 #: ``git diff -M``'s similarity threshold: a delete and an add this alike are one move, sized by its hunks. The
 #: call passes ``-l0``: past git's default rename limit (1000) inexact detection is SKIPPED with a warning, and
-#: the motronics 33-branch merge (1504 adds) read 318 edited moves as deletes plus adds.
+#: a consumer repo's 33-branch merge (1504 adds) read 318 edited moves as deletes plus adds.
 _SIMILAR: Final = '50%'
 _NUL: Final = chr(0)
 
@@ -162,7 +162,7 @@ def prefetch(root: Path, *ranges: str) -> int:
 
     The reviewer reads the range with git and holds no forge token (:mod:`dev_lab.dev.reviewgitauth`): in a
     blobless checkout -- the Gitea review job's -- its ``git diff`` would fetch each blob lazily and fail
-    unauthenticated (motronics #5397, 2026-11-01). The door holds the header, so it asks first. ``--raw`` compares
+    unauthenticated (a consumer repo, 2026-11-01). The door holds the header, so it asks first. ``--raw`` compares
     trees only and fetches nothing. A clone that is not partial (no ``remote.origin.promisor``) asks for nothing.
     """
     if git(root, 'config', '--get', 'remote.origin.promisor', ok=(0, 1))[1].strip() != 'true':
