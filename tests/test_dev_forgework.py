@@ -156,11 +156,18 @@ def test_pr_create_and_view(server, forge, host, root, auth) -> None:
     transport = _Loopback(server)
     client = _client(forge, transport)
     expected = PullRequest(9, 'a fix', 'open', 'fixes it', 'https://x/o/r/pulls/9', 'alice', 'feature', 'main')
-    assert client.pr_create('a fix', 'fixes it', head='feature', base='main') == expected
+    assert client.pr_create('a fix', 'fixes it', head='feature', base='main', draft=False) == expected
     assert client.pr_view(9) == expected
     assert _Recorder.received[0]['body'] == {'title': 'a fix', 'body': 'fixes it', 'head': 'feature', 'base': 'main'}
     assert set(transport.asked) == {host}
     assert _Recorder.received[1]['headers']['Authorization'] == auth
+    _answer('POST', f'{root}/pulls', (201, _PR))
+    client.pr_create('a fix', 'fixes it', head='feature', base='main', draft=True)  # D53: each forge's own draft
+    drafted = _Recorder.received[-1]['body']
+    if forge.host == 'github.com':
+        assert (drafted['title'], drafted['draft']) == ('a fix', True)
+    else:
+        assert (drafted['title'], 'draft' in drafted) == ('WIP: a fix', False), 'Gitea 1.27 has no draft field'
 
 
 def test_github_requests_carry_the_headers_its_api_demands(server) -> None:
@@ -326,7 +333,7 @@ def test_a_comment_and_a_pr_that_landed_are_returned_not_recreated(server) -> No
     _answer('GET', f'{root}/pulls', (200, [{**_PR, 'body': '[m · a]\n\nfixes it', 'created_at': _ago(5)}]))
     client = _client(Forge('f.example', 'o', 'r'), _Loopback(server), stamp='[m · a]')
     assert client.issue_comment(7, 'hi').id == 3
-    assert client.pr_create('a fix', 'fixes it', head='feature', base='main').number == 9
+    assert client.pr_create('a fix', 'fixes it', head='feature', base='main', draft=False).number == 9
     assert _posts(f'{root}/issues/7/comments') == 1
     assert _posts(f'{root}/pulls') == 1
 
@@ -386,7 +393,7 @@ def test_the_stamp_prefixes_every_created_body_and_comment_and_nothing_else(serv
     client = _client(Forge('f.example', 'o', 'r'), _Loopback(server), stamp='[m · a · b]')
     client.issue_create('t', 'body')
     client.issue_comment(7, 'note')
-    client.pr_create('t', 'desc', head='b', base='main')
+    client.pr_create('t', 'desc', head='b', base='main', draft=False)
     client.issue_close(7)
     bodies = [r['body'] for r in _Recorder.received]
     assert bodies[0]['body'] == '[m · a · b]\n\nbody'
@@ -498,12 +505,32 @@ def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_pa
     assert 'NOTICE-LINE' not in capsys.readouterr().err
 
 
+def test_pr_create_opens_a_draft_by_default_and_prints_the_ready_door(
+    server, tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """DRAFT-UNTIL-READY (D53): the DOOR sets the default. PLANTED CONTROL: ``--ready`` opens it ready."""
+    repo = _repo(tmp_path, 'https://f.example/o/r.git')
+    argv = ['pr', 'create', '--title', 't', '--head', 'pr/b', '--base', 'integrate/main']
+    monkeypatch.setattr(pradmit, 'create_advice', lambda *_a, **_k: ())
+    monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: '')
+    for extra, title in (([], 'WIP: t'), (['--ready'], 't')):
+        _answer('POST', '/api/v1/repos/o/r/pulls', (201, {**_PR, 'title': title}))
+        assert issue_and_pr([*argv, *extra], cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 0
+        assert _Recorder.received[-1]['body']['title'] == title
+        out = capsys.readouterr().out
+        drafted = 'as a DRAFT: nothing reviews or merges it until `python -m dev_lab.dev.forge pr ready 9`'
+        assert (drafted in out) is (not extra)
+
+
 def test_whoami_always_asks_the_forge_and_only_github_names_the_actions_bot(server) -> None:
     """D11, F-e4d5c529db40: a client BUILT as the bot (a PAT in GITHUB_TOKEN) is whoever the forge says it is.
 
     PLANTED CONTROL: GitHub's own integration refusal of ``/user`` -- a real job token -- is the Actions bot.
     """
-    sleep = lambda _s: None  # noqa: E731
+
+    def sleep(_s: float) -> None:
+        return None
+
     _answer('GET', '/api/v1/user', (200, {'login': 'maintainer'}))
     pat = Client(
         Forge('forge.example.org', 'o', 'r'), 'T', transport=_Loopback(server), username=ACTIONS_BOT, sleep=sleep

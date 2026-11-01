@@ -17,12 +17,14 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
 from lab_commons.census import Process
 
 from dev_lab.dev.branchset import BranchSet, apply_local
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 from dev_lab.dev.reclaim import occupancy, reclaim, reclaimable, runtime_of
+
+if sys.platform == 'win32':
+    import _winapi  # a junction needs no symlink privilege
 
 _GIT = shutil.which('git') or 'git'
 _HOLDERS = ('origin/main',)
@@ -254,14 +256,22 @@ def test_the_same_tree_without_the_runtime_entry_is_reclaimed(tmp_path: Path) ->
     assert any(line.startswith('removed') and 'runtime-2' in line for line in lines), lines
 
 
-def test_a_runtime_whose_interpreter_links_outside_the_tree_still_keeps_it(tmp_path: Path) -> None:
-    """A POSIX venv's ``bin/python`` is a symlink to the base interpreter; it lives in the tree, not its target."""
+def test_a_runtime_whose_leaf_links_outside_the_tree_still_keeps_it(tmp_path: Path) -> None:
+    """A venv path may be a link to the base interpreter's tree; the value lives in the tree, not its target.
+
+    The link is a directory one, so every host can plant it: a symlink on POSIX, a junction (no privilege) on Windows.
+    """
     tree, base = tmp_path / 'runtime-2', tmp_path / 'base-python'
-    _plant(base, '')
-    (tree / '.venv' / 'bin').mkdir(parents=True)
-    leaf = tree / '.venv' / 'bin' / 'python'
-    try:
-        leaf.symlink_to(base)
-    except OSError as exc:  # Windows without the symlink privilege cannot plant the case
-        pytest.skip(f'cannot create a symlink here: {exc}')
+    base.mkdir()
+    tree.mkdir()
+    leaf = tree / '.venv'
+    _link_dir(leaf, base)
+    assert leaf.resolve() == base.resolve(), 'the planted leaf points outside the tree'
     assert runtime_of(tree, {'ai_lab': {'python': str(leaf)}}).startswith('runtime of ai_lab')
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    if sys.platform == 'win32':
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        link.symlink_to(target, target_is_directory=True)

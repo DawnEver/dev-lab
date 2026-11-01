@@ -34,13 +34,16 @@ import re
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
+from dev_lab.dev.forgereview_runtimes import host_runtimes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
-    from pathlib import Path
 
 __all__ = [
     'CAP_QUANTILE',
@@ -306,16 +309,12 @@ def read_spend(runtimes: Mapping[str, Mapping[str, Any]], root: Path) -> Spend |
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Print the host's month and the per-PR cap it fits: one line each, or ``--json``."""
-    from pathlib import Path  # noqa: PLC0415 -- typing-only at module level
-
-    from dev_lab.dev.forgereview_runtimes import host_runtimes  # noqa: PLC0415 -- the CLI alone reads the machine file
-
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.reviewbudget', description=__doc__.splitlines()[0])
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     spend = read_spend(host_runtimes(), Path.cwd())
     if spend is None:
-        sys.stderr.write('this host has no ai-lab spend report ([runtimes.ai_lab] python, ai_lab.spend)\n')
+        emit('this host has no ai-lab spend report ([runtimes.ai_lab] python, ai_lab.spend)', err=True)
         return 2
     got = fit(spend)
     doc = {
@@ -324,11 +323,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         'samples': got.samples, 'source': got.source,
     }  # fmt: skip
     if args.json:
-        sys.stdout.write(json.dumps(doc, indent=1) + '\n')
+        emit(json.dumps(doc, indent=1))
     else:
-        sys.stdout.write(
+        emit(
             f'month: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD spent ({spend.unpriced_calls} unpriced calls)\n'
-            f'per-PR cap: {got.cap_usd:.2f} USD ({got.source}, {got.samples} PRs, {got.prs_per_month:.0f} PRs/month)\n'
+            f'per-PR cap: {got.cap_usd:.2f} USD ({got.source}, {got.samples} PRs, {got.prs_per_month:.0f} PRs/month)'
         )
     return 0
 

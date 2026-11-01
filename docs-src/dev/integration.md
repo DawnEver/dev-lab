@@ -301,6 +301,9 @@ head it names that head's branch, on stderr and as an `Admission:` line in the P
 `NO-STACKED-PRS`: `forge pr create` tells a head holding a commit of another open PR's head that integration does
 not hold (`trialmerge.shares_unmerged`) that it is stacked and lands only after that PR, and opens it anyway.
 
+`DRAFT-UNTIL-READY` (D53): the rule row states it; the mechanism -- each forge's draft, the `pr ready`/`pr draft`
+doors, the pending `tests/merge-ready` and the idle-draft alarm -- is `dev_lab.dev.forgedraft`'s docstring.
+
 ## The integration tick
 
 ```

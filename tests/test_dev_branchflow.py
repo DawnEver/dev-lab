@@ -145,10 +145,9 @@ def test_the_tick_retargets_a_trunk_pr_and_reports_each_child_once(
     advance(work, 'integrate/main', 'i.txt', 'i\n')
     pr_head = advance(work, 'feat/pr', 'p.txt', 'p\n')
     lane = advance(work, 'feat/lane', 'l.txt', 'l\n')
-    statuses = f'{api}/commits/{{}}/status' if forge is GITHUB else f'{api}/statuses/{{}}'
+    statuses = f'{api}/commits/{{}}/statuses' if forge is GITHUB else f'{api}/statuses/{{}}'  # both LIST endpoints
     for sha in (pr_head, lane):
-        payload = {'statuses': [], 'state': 'pending'} if forge is GITHUB else []
-        answer('GET', statuses.format(sha), (200, payload))
+        answer('GET', statuses.format(sha), (200, []))
     answer('GET', f'{api}/pulls', (200, [_pr(4, 'feat/pr', 'main', pr_head)]))
     answer('PATCH', f'{api}/pulls/4', (200, _pr(4, 'feat/pr', 'integrate/main', pr_head)))
     answer('POST', f'{api}/issues/4/comments', (201, {'id': 2, 'body': 'x', 'html_url': 'c/2'}))

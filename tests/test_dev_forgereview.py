@@ -63,6 +63,7 @@ _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
     "judge = ['judge', '--range', '{range}', '--findings', '{findings}']\n"
+    "quiet = '0 s'\n"  # the step reviews at once; the debounce has its own test
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
 
@@ -525,7 +526,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     assert {field.name for field in dataclasses.fields(Review)} == {
         'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code',
-        'claim_stale', 'max_rounds',
+        'claim_stale', 'max_rounds', 'quiet',
     }  # fmt: skip
 
 
@@ -751,3 +752,98 @@ def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> No
     )
     assert retired_table(command, {'ai_lab': {'python': 'x'}}, {'ai_lab': {}}) is None, 'PLANTED: a declared runtime'
     assert retired_table(command, {}, {'jmag': {}}) is None
+
+
+# --- D52: a round is spent only on new work ------------------------------------------------------------
+
+#: A repo whose review is the serve's (not the Actions job's): the serve's own login is what the gate counts.
+_SERVED = '[tool.dev_lab.ci]\n'
+
+
+def _reviewed_then_synced(tmp_path: Path) -> tuple[Path, StateForge, int, str, str]:
+    """A PR whose head was reviewed (success), then integration moved and was merged in clean; ``R`` and the sync."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.pyproject = _SERVED
+    _tick(work, forge, FakeCommand())
+    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
+    run_git(work, 'checkout', '-q', '-B', 'sync', 'origin/pr/x')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', '--no-edit', 'origin/integrate/main')
+    synced = git_out(work, 'rev-parse', 'HEAD')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
+    run_git(work, 'fetch', '-q', 'origin')
+    forge.pulls[number]['head']['sha'] = synced
+    return work, forge, number, head, synced
+
+
+def test_a_pure_sync_carries_the_reviewed_heads_success_and_runs_nothing(tmp_path: Path) -> None:
+    """D52 (user ruling 2026-11-01): a forge sync of integration into a reviewed PR spends no round.
+
+    PLANTED CONTROL: the same sync, where the reviewed head's success is one the gate does not count (an
+    Actions-review repo, no review run at that head), carries nothing -- the head is reviewed.
+    """
+    work, forge, number, head, synced = _reviewed_then_synced(tmp_path)
+    command = FakeCommand()
+    lines = _tick(work, forge, command)
+    assert command.ran == []
+    assert lines == (f'#{number} {synced[:12]}: carried from {head[:12]}: pure sync',)
+    (status,) = [s for s in status_list(forge, synced) if s.context == REVIEW_CONTEXT]
+    assert status.state == 'success'
+    assert len(forge.comments[number]) == 1, 'no round is posted'
+
+    work, forge, number, head, synced = _reviewed_then_synced(tmp_path / 'control')
+    forge.pyproject = '[tool.dev_lab.ci."review.yml"]\n'
+    command = FakeCommand()
+    _tick(work, forge, command)
+    assert len(command.ran) == 1
+
+
+def test_an_empty_push_after_a_failure_is_reviewed_never_nothing_to_review(tmp_path: Path) -> None:
+    """D52: content equal to a FAILED head carries nothing and is no empty increment: the PR is read whole.
+
+    PLANTED CONTROL: an empty push after a counted success stands on it, carried, with nothing run.
+    """
+    for severity, runs in (('HIGH', 1), ('MEDIUM', 0)):
+        (tmp_path / severity).mkdir()
+        work, head = _work(tmp_path / severity)
+        forge, number = _forge(head)
+        forge.pyproject = _SERVED
+        _tick(work, forge, FakeCommand(_output(severity=severity)))
+        run_git(work, 'checkout', '-q', '-B', 'empty', 'origin/pr/x')
+        run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'nudge')
+        empty = git_out(work, 'rev-parse', 'HEAD')
+        run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
+        run_git(work, 'fetch', '-q', 'origin')
+        forge.pulls[number]['head']['sha'] = empty
+        command = FakeCommand(_output(severity=severity))
+        _tick(work, forge, command)
+        assert len(command.ran) == runs, severity
+        if runs:
+            assert command.ran[0][0][command.ran[0][0].index('--range') + 1].startswith(
+                git_out(work, 'merge-base', 'origin/integrate/main', empty)
+            )
+
+
+def test_a_head_inside_the_quiet_period_waits_and_spends_nothing(tmp_path: Path) -> None:
+    """D52 DEBOUNCE: the serve reviews a head only once it is ``quiet`` old; nothing is posted before.
+
+    PLANTED CONTROL: the same head, a tick past the quiet period, is reviewed.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    committed = datetime.fromisoformat(git_out(work, 'show', '-s', '--format=%cI', head))
+    command = FakeCommand()
+    quiet = Review().quiet_for
+    assert quiet == timedelta(minutes=10)
+    lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=_can, host='box',
+                        clock=lambda: committed + timedelta(minutes=3), quiet=quiet)  # fmt: skip
+    assert command.ran == []
+    assert forge.statuses.get(head, []) == []
+    assert forge.comments[number] == []
+    assert lines[0].startswith(f'#{number} {head[:12]}: not reviewed yet')
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=_can, host='box',
+                clock=lambda: committed + timedelta(minutes=11), quiet=quiet)  # fmt: skip
+    assert len(command.ran) == 1
+    with pytest.raises(ValueError, match='quiet'):
+        Review(quiet='10')
