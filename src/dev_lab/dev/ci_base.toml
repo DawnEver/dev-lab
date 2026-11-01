@@ -49,11 +49,13 @@ cancel-in-progress = true
 contents = "read"
 
 # The commit every status is posted on: a PR's HEAD (never the synthetic merge commit), else the pushed sha.
+# The job token (GITHUB_TOKEN) is each job's own env, never the workflow's: the review job holds it in no
+# environment at all (F-d61706393b50, the `review` steps).
 ["ci.yml".env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha || github.sha }}"
-GITHUB_TOKEN = "${{ github.token }}"
 
 ["ci.yml".jobs.parts]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
@@ -64,6 +66,7 @@ steps = [
 matrix = "${{ steps.matrix.outputs.matrix }}"
 
 ["ci.yml".jobs.part]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = "parts"
 name = "tests/${{ matrix.part }}"
 runs-on = "${{ matrix.runs-on }}"
@@ -82,6 +85,7 @@ fail-fast = false
 matrix = "${{ fromJSON(needs.parts.outputs.matrix) }}"
 
 ["ci.yml".jobs.absent-parts]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["parts", "part"]
 if = "${{ always() && needs.parts.result == 'success' }}"
 runs-on = "ubuntu-latest"
@@ -95,6 +99,7 @@ contents = "read"
 statuses = "write"
 
 ["ci.yml".jobs.security]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
 steps = [
@@ -136,6 +141,7 @@ pull-requests = "write"
 issues = "write"
 
 ["ci.yml".jobs.merge-ready]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["security", "review"]
 if = "${{ always() && github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
@@ -156,6 +162,7 @@ actions = "write"
 # Pushes the fast-forwarded main and deletes every branch integration now contains (LANDED-BRANCHES-SWEPT,
 # closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
 ["ci.yml".jobs.promote]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["absent-parts"]
 if = "${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/integrate/main' }}"
 runs-on = "ubuntu-latest"
@@ -203,13 +210,21 @@ python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
 # interpreter the `door` steps put the dev_lab door in (REVIEW_PYTHON), ISOLATED (-I): its cwd is the PR's checkout,
 # and a PR-planted `dev_lab/` there would otherwise shadow the pinned door. The checkout is blobless, so the diff
-# fetches base blobs on demand: the step carries the same process-scoped forge header as the install steps
-# (F-ca1dda52c2ef, wdg-lab #427 -- on a private forge the lazy fetch otherwise answers 401).
+# fetches base blobs on demand (F-ca1dda52c2ef, wdg-lab #427 -- on a private forge the lazy fetch otherwise answers
+# 401), and the door posts with the job token. NO FORGE TOKEN IS IN ANY ENVIRONMENT of the review (F-5a82981c5f22,
+# F-d61706393b50): an unset variable still sits in /proc/<pid>/environ, readable by the reviewer it launches. So
+# the hand-over step alone holds the tokens, writes each to a private file (umask 077), and the door reads each
+# once and removes it before any subprocess: the read token is its git header, the job token its forge client's.
+# The review key (ANTHROPIC_API_KEY) stays in the tests/review env: the reviewer needs it, a separate concern.
 review = [
+    { name = "Hand the forge tokens to the door", run = '''umask 077
+mkdir -p "$RUNNER_TEMP/forge-secrets"
+printf '%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" > "$RUNNER_TEMP/forge-secrets/read"
+printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
+''', env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "tests/review", run = '''trap "git credential-cache exit" EXIT
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
-"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
-''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
 
 # THE REVIEW DOOR, installed for both forges' review jobs from the ONE pinned dev-lab commit (DEV_LAB_REF,
@@ -247,7 +262,7 @@ lean = [
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
 ''' },
-    { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" }, run = '''
+    { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global --add url."$FORGE_URL/${{ github.repository_owner }}/".insteadOf "$FAMILY_SOURCE"
@@ -276,7 +291,6 @@ contents = "read"
 
 ["review.yml".env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
-GITHUB_TOKEN = "${{ github.token }}"
 FAMILY_SOURCE = "https://github.com/DawnEver/"  # the lock's family git source, which the instance also serves
 UV_PYTHON = "python3"  # the host's interpreter: a host runner behind the ACL downloads none
 UV_PYTHON_DOWNLOADS = "never"

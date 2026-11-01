@@ -18,11 +18,13 @@
     "contents": "read"
   },
   "env": {
-    "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
-    "GITHUB_TOKEN": "${{ github.token }}"
+    "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}"
   },
   "jobs": {
     "parts": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -54,6 +56,9 @@
       }
     },
     "part": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": "parts",
       "name": "tests/${{ matrix.part }}",
       "runs-on": "${{ matrix.runs-on }}",
@@ -91,6 +96,9 @@
       }
     },
     "absent-parts": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": [
         "parts",
         "part"
@@ -127,6 +135,9 @@
       }
     },
     "security": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "if": "${{ github.event_name == 'pull_request' }}",
       "runs-on": "ubuntu-latest",
       "steps": [
@@ -203,12 +214,18 @@
           }
         },
         {
-          "name": "tests/review",
-          "run": "trap \"git credential-cache exit\" EXIT\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "name": "Hand the forge tokens to the door",
+          "run": "umask 077\nmkdir -p \"$RUNNER_TEMP/forge-secrets\"\nprintf '%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" > \"$RUNNER_TEMP/forge-secrets/read\"\nprintf '%s' \"$GITHUB_TOKEN\" > \"$RUNNER_TEMP/forge-secrets/api\"\n",
           "env": {
-            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
             "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}",
             "GITHUB_TOKEN": "${{ github.token }}"
+          }
+        },
+        {
+          "name": "tests/review",
+          "run": "trap \"git credential-cache exit\" EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "env": {
+            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
           }
         }
       ],
@@ -220,6 +237,9 @@
       }
     },
     "merge-ready": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": [
         "security",
         "review"
@@ -267,6 +287,9 @@
       }
     },
     "promote": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
       "needs": [
         "absent-parts"
       ],
