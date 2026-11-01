@@ -37,6 +37,9 @@
 # Permissions are least per job; the workflow grants only `contents: read`.
 ["ci.yml"]
 name = "CI"
+# THE NIGHTLY PROMOTION (D48-1A): integrate/main is GitHub's default branch, so the schedule (ciworkflows'
+# NIGHTLY_CRON) runs on its tip.
+nightly = true
 
 # ONE FLOW (user ruling 2026-10-29, D83): PRs land on integrate/main; main moves only by `promote` below.
 ["ci.yml".on.push]
@@ -46,9 +49,6 @@ branches = ["integrate/main"]
 ["ci.yml".on.pull_request]
 types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
-# THE NIGHTLY PROMOTION (D48-1A): integrate/main is GitHub's default branch, so the schedule runs on its tip.
-[["ci.yml".on.schedule]]
-cron = "0 2 * * *"
 
 # On demand the full run (the nightly one); merge-ready dispatches a merge's run with smoke = true.
 ["ci.yml".on.workflow_dispatch.inputs.smoke]
@@ -450,13 +450,13 @@ issues = "write"
 # on Gitea the serve produces them per integration push; a tip whose run has not finished is refused tonight and
 # promoted the first night it stands PASS. The checkout is commits only (--filter=tree:0, the MIRROR RULE's
 # spirit: never the history's blobs); promote reads ancestry and the declaration at the tip, fetched on demand.
+# Gitea's default branch is main, so the clone's HEAD would hold main and promote would refuse to move it: HEAD is
+# detached onto integration's tip, and no worktree holds a branch.
 # The door is the pinned DEV_LAB_REF (`door` steps).
 ["promote.yml"]
 forge = "gitea"
 name = "Promote"
-
-[["promote.yml".on.schedule]]
-cron = "0 2 * * *"
+nightly = true
 
 ["promote.yml".on.workflow_dispatch]
 
@@ -480,6 +480,7 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CO
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global core.hooksPath /dev/null
 git clone -q --no-tags --filter=tree:0 --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
+git update-ref --no-deref HEAD "$(git rev-parse origin/integrate/main)"
 echo "HEAD_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"
 ''' },
     { use-steps = "door" },

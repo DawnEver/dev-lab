@@ -5,11 +5,18 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
+from _branch_repos import clone_pair
+
+from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.ciworkflows import (
+    NIGHTLY_CRON,
     PINS,
     RENDER_COMMAND,
     STAMP,
@@ -138,9 +145,15 @@ def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_
     assert names.index('Install the review method') < names.index('Store the review key') < names.index('tests/review')
 
 
-def _parts_event(event: str, *, smoke: bool = False) -> str:
-    """PARTS_EVENT's expression, evaluated for one trigger -- the planted check that it says what it renders."""
-    return 'pull_request' if event == 'push' or smoke else event
+def _parts_event(ci: dict[str, Any], event: str, *, smoke: bool | None = None) -> str:
+    """The RENDERED PARTS_EVENT expression, evaluated for one trigger (``inputs.smoke`` is null off a dispatch).
+
+    Actions' ``&&``/``||`` return an operand, as Python's ``and``/``or`` do, so the expression is evaluated as one.
+    """
+    expression = ci['env']['PARTS_EVENT'].removeprefix('${{').removesuffix('}}')
+    python = expression.replace('&&', ' and ').replace('||', ' or ')
+    python = python.replace('github.event_name', 'event_name').replace('inputs.smoke', 'smoke')
+    return eval(python, {'__builtins__': {}}, {'event_name': event, 'smoke': smoke})  # noqa: S307 -- our own text
 
 
 def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_path: Path) -> None:
@@ -150,11 +163,8 @@ def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_p
     """
     ci = _base_ci(tmp_path)
     assert ci['on']['push'] == {'branches': ['integrate/main']}, 'main moves only by promote, never by a push run'
-    assert ci['env']['PARTS_EVENT'] == (
-        "${{ (github.event_name == 'push' || inputs.smoke) && 'pull_request' || github.event_name }}"
-    )
-    assert _parts_event('push') == 'pull_request'
-    assert _parts_event('workflow_dispatch', smoke=True) == 'pull_request'
+    assert _parts_event(ci, 'push') == 'pull_request'
+    assert _parts_event(ci, 'workflow_dispatch', smoke=True) == 'pull_request'
     steps = {step.get('id'): step for step in ci['jobs']['parts']['steps']}
     assert '--event "$PARTS_EVENT"' in steps['matrix']['run']
     assert '--event "$PARTS_EVENT"' in ci['jobs']['absent-parts']['steps'][-1]['run'], 'the SAME event absent reads'
@@ -172,12 +182,12 @@ def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_deci
     `integrate promote` stays the ONE place the parts gate (D83); the schedule's run is never a merge's smoke.
     """
     ci = _base_ci(tmp_path)
-    assert ci['on']['schedule'] == [{'cron': '0 2 * * *'}]
+    assert ci['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
     assert ci['on']['workflow_dispatch']['inputs']['smoke']['default'] is False, 'on demand is the full run'
-    assert _parts_event('schedule') == 'schedule'
-    assert _parts_event('workflow_dispatch') == 'workflow_dispatch'
+    assert _parts_event(ci, 'schedule') == 'schedule'
+    assert _parts_event(ci, 'workflow_dispatch', smoke=False) == 'workflow_dispatch'
     assert systems_for('schedule') == ('linux', 'macos', 'windows')
-    assert systems_for(_parts_event('push')) == PULL_REQUEST_SYSTEMS, 'PLANTED CONTROL: the smoke has no macos'
+    assert systems_for(_parts_event(ci, 'push')) == PULL_REQUEST_SYSTEMS, 'PLANTED CONTROL: the smoke has no macos'
     assert "'smoke' || github.event_name" in ci['concurrency']['group'], 'a merge never cancels the nightly run'
     promote = ci['jobs']['promote']
     assert promote['needs'] == ['parts', 'absent-parts']
@@ -744,7 +754,7 @@ def test_gitea_promotes_nightly_by_the_same_decision_and_asks_ada_nothing(tmp_pa
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
     found = workflows(tmp_path)['promote.yml']
     assert set(found['on']) == {'schedule', 'workflow_dispatch'}
-    assert found['on']['schedule'] == [{'cron': '0 2 * * *'}]
+    assert found['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
     runs = [step.get('run', '') for step in found['jobs']['promote']['steps']]
     promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$HEAD_SHA"' in run)
     assert 'git push origin main' in runs[promoted]
@@ -754,3 +764,26 @@ def test_gitea_promotes_nightly_by_the_same_decision_and_asks_ada_nothing(tmp_pa
         assert door not in text, door
     assert 'origin/integrate/main' in text, 'the tip of integration, never a pushed sha'
     assert tmp_path / '.gitea' / 'workflows' / 'promote.yml' in write(tmp_path)
+
+
+def test_gitea_s_promote_checkout_holds_no_branch_so_main_can_move(tmp_path: Path) -> None:
+    """F-1f940a53bf61: Gitea's default branch is main, so a plain clone holds main and promote refuses every night.
+
+    The rendered clone step runs against a bare origin whose HEAD is main; no worktree may then hold a branch.
+    PLANTED CONTROL: the same clone without its detach holds refs/heads/main.
+    """
+    bare, _ = clone_pair(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
+    steps = workflows(tmp_path)['promote.yml']['jobs']['promote']['steps']
+    (fetch,) = [step['run'] for step in steps if step.get('name') == "Fetch integration's commits"]
+    lines = fetch.splitlines()
+    script = '\n'.join(lines[next(i for i, line in enumerate(lines) if line.startswith('git clone')) :])
+    script = script.replace('"$FORGE_URL/${{ github.repository }}.git"', f'"{bare.as_posix()}"')
+    bash = shutil.which('bash')
+    assert bash, 'the job step is a bash script'
+    for name, text in (('job', script), ('plain', script.splitlines()[0])):
+        (tmp_path / name).mkdir()
+        env = {**os.environ, 'GITHUB_ENV': str(tmp_path / f'{name}.env')}
+        subprocess.run([bash, '-c', text], cwd=tmp_path / name, env=env, check=True)
+    assert [name for _, name in worktrees(tmp_path / 'plain') or ()] == ['main'], 'PLANTED CONTROL: it holds main'
+    assert [name for _, name in worktrees(tmp_path / 'job') or ()] == ['detached'], 'main stays free to move'

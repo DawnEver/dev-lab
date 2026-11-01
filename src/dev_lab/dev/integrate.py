@@ -148,7 +148,10 @@ def main(
     client: Client | None = None,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> int:
-    """``promote <sha>``: exit 0 done, 2 refused, 1 on a failure; ``pending <sha>``: exit 0, 1 on a failure."""
+    """``promote <sha>``: exit 0 done, 2 refused, 1 on a failure.
+
+    ``pending <sha>``: exit 0 answered, 2 refused (no declaration at *sha*), 1 on a failure.
+    """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.integrate', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('promote').add_argument('sha')

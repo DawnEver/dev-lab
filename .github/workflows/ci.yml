@@ -15,11 +15,6 @@
         "ready_for_review"
       ]
     },
-    "schedule": [
-      {
-        "cron": "0 2 * * *"
-      }
-    ],
     "workflow_dispatch": {
       "inputs": {
         "smoke": {
@@ -28,7 +23,12 @@
           "default": false
         }
       }
-    }
+    },
+    "schedule": [
+      {
+        "cron": "0 2 * * *"
+      }
+    ]
   },
   "concurrency": {
     "group": "ci-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.smoke) && 'smoke' || github.event_name }}",
