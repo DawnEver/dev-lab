@@ -202,7 +202,7 @@ method = [
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I -m pip install -q uv
-"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"
+"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE:-${{ github.server_url }}/${{ github.repository_owner }}/}ai-lab.git@$AI_LAB_REF"
 ''', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
@@ -240,7 +240,7 @@ door = [
     { name = "Install the review door", run = '''
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
-git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git" "$RUNNER_TEMP/dev-lab"
+git clone -q --no-tags --filter=blob:none --no-checkout "${FAMILY_SOURCE:-${{ github.server_url }}/${{ github.repository_owner }}/}dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" fetch -q --no-tags origin "$DEV_LAB_REF"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I -m pip install -q uv
@@ -257,7 +257,8 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # The forge is the runner's registered instance, read off ACTIONS_RUNTIME_URL (act_runner sets it to the instance +
 # /api/actions_pipeline/): `github.server_url` is Gitea's ROOT_URL, the public name the host's ACL may refuse.
 # Git reads a job-scoped global config (GIT_CONFIG_GLOBAL under RUNNER_TEMP) holding NO credential: it rewrites the
-# public forge and the lock's family source onto the instance; each fetching step authenticates with FAMILY_READ_TOKEN
+# public forge onto the instance; the review tools come from FAMILY_SOURCE (public, unauthenticated). Each fetching
+# step authenticates with FAMILY_READ_TOKEN
 # (read on the family repos the job installs) when that secret is set, else the job token, as its own process env.
 # Every origin branch is fetched (the merge decision trial-merges against one) as a blobless clone, one pack thread:
 # a full history's index-pack is what would break the memory cap, and the review reads only its range's blobs.
@@ -269,7 +270,6 @@ echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
     { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
-git config --global --add url."$FORGE_URL/${{ github.repository_owner }}/".insteadOf "$FAMILY_SOURCE"
 git config --global pack.threads 1
 git clone -q --no-tags --filter=blob:none --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
 git fetch -q origin "+refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/origin/pull/${{ github.event.pull_request.number }}"
@@ -295,7 +295,7 @@ contents = "read"
 
 ["review.yml".env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
-FAMILY_SOURCE = "https://github.com/DawnEver/"  # the lock's family git source, which the instance also serves
+FAMILY_SOURCE = "https://github.com/DawnEver/"  # where the review tools come from: the toolchain lives on GitHub (ruling 2026-10-29)
 UV_PYTHON = "python3"  # the host's interpreter: a host runner behind the ACL downloads none
 UV_PYTHON_DOWNLOADS = "never"
 UV_CONCURRENT_INSTALLS = "1"  # MemoryMax=300M
