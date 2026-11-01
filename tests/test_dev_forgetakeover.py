@@ -105,7 +105,7 @@ def test_no_reviewer_returning_findings_posts_nothing_and_the_hold_stands(tmp_pa
 
 
 def test_every_held_head_is_an_integrator_prompt_naming_the_rerun(tmp_path: Path) -> None:
-    """A takeover clears no prompt. PLANTED control: once the forge releases the hold, the prompt is gone."""
+    """A takeover clears no prompt. PLANTED control: once the forge lifts the hold, the prompt is gone."""
     work, forge, _, head = _held(tmp_path)
     (alarm,) = alarms(forge, 'integrate/main', 'o/r')
     assert alarm.kind == 'integration'

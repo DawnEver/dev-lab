@@ -2,7 +2,7 @@
 
 A Windows workstation serves forge parts through one Scheduled Task, deployed in one command. This page is the
 runbook for a LIGHT workstation: one that serves parts and requests but never heavy compute -- no JMAG, FEMM,
-MATLAB or SIMBA run, even when the tool is installed (user ruling 2026-10-28, WS1 and WS2). A JMAG box is the
+MATLAB or SIMBA run, even when the tool is installed (user ruling 2026-10-28, both heavy boxes). A JMAG box is the
 same deploy with `--capabilities workstation,jmag:<N>` instead of a role ([the forge](forge.md#deploy-a-windows-workstation)).
 
 ## What the light role writes

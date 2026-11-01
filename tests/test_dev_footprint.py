@@ -201,3 +201,107 @@ def test_reaches_judges_a_repo_of_shared_closures_in_one_pass_not_one_per_test()
     slow = time.perf_counter() - start
     assert judged[: size // 10] == walked
     assert fast < slow, f'all {size} judged in {fast:.2f} s; a tenth walked in {slow:.2f} s'
+
+
+LOCK_HEAD = 'version = 1\nrequires-python = ">=3.12"\n'
+MAPPED = {'dev-lab': frozenset({'dev_lab'}), 'numpy': frozenset({'numpy'}), 'scipy': frozenset({'scipy'})}
+LOCK_TESTS = {
+    'tests/test_dl.py': 'import dev_lab\n\ndef test_d():\n    pass\n',
+    'tests/test_np.py': 'import numpy\n\ndef test_n():\n    pass\n',
+    'tests/test_sp.py': 'from scipy import linalg\n\ndef test_s():\n    pass\n',
+    'tests/test_js.py': 'import json\n\ndef test_j():\n    pass\n',
+}
+LOCK_NODES = tuple(f'{path}::test_{path[11]}' for path in LOCK_TESTS)
+
+
+def _lock(*, pin: str = 'aaa', numpy: str = '2.0.0', head: str = LOCK_HEAD, extra: str = '') -> str:
+    return (
+        f'{head}\n[[package]]\nname = "dev-lab"\nversion = "0.1.0"\n'
+        f'source = {{ git = "https://example/dev-lab?rev=main#{pin}" }}\n'
+        f'\n[[package]]\nname = "numpy"\nversion = "{numpy}"\nsource = {{ registry = "https://pypi.org/simple" }}\n'
+        '\n[[package]]\nname = "scipy"\nversion = "1.14.0"\nsource = { registry = "https://pypi.org/simple" }\n'
+        'dependencies = [{ name = "numpy" }]\n'
+        f'{extra}'
+    )
+
+
+def _lock_carried(tmp_path: Path, monkeypatch: object, new_lock: str) -> set[str]:
+    """Which of :data:`LOCK_TESTS` carry across a commit changing ONLY ``uv.lock`` to *new_lock*."""
+    monkeypatch.setattr(footprint, 'import_names', MAPPED.get)  # type: ignore[attr-defined]
+    a = _repo(tmp_path, **LOCK_TESTS, **{'uv.lock': _lock()})
+    b = _commit(tmp_path, {'uv.lock': new_lock})
+    return {node.split('::')[0] for node in forgecarry.carried(tmp_path, a, b, LOCK_NODES)}
+
+
+def test_a_relock_moving_only_the_dev_lab_pin_reaches_only_dev_lab_importers(tmp_path: Path, monkeypatch) -> None:
+    """D48-2 (2026-11-01): a dev-lab pin move re-ran a consumer's whole suite (``ran=5471``) per push.
+
+    PLANTED CONTROL: the dev_lab importer must NOT carry; the numpy, scipy and json importers carry.
+    """
+    carried = _lock_carried(tmp_path, monkeypatch, _lock(pin='bbb'))
+    assert carried == {'tests/test_np.py', 'tests/test_sp.py', 'tests/test_js.py'}
+
+
+def test_a_numpy_bump_reaches_its_reverse_dependents_importers(tmp_path: Path, monkeypatch) -> None:
+    """SciPy depends on numpy, so a test importing only scipy is reached. CONTROL: json and dev_lab carry."""
+    carried = _lock_carried(tmp_path, monkeypatch, _lock(numpy='2.1.0'))
+    assert carried == {'tests/test_dl.py', 'tests/test_js.py'}
+
+
+def test_a_lock_header_or_marker_change_reaches_every_test(tmp_path: Path, monkeypatch) -> None:
+    """A change outside ``[[package]]`` is doubt. CONTROL: the same packages under the old header carry all."""
+    assert _lock_carried(tmp_path, monkeypatch, _lock(head=LOCK_HEAD + 'resolution-markers = ["x"]\n')) == set()
+    assert footprint.lock_reach(_lock(), _lock(), MAPPED.get) == frozenset()
+
+
+def test_an_unmappable_changed_package_reaches_every_test(tmp_path: Path, monkeypatch) -> None:
+    """A package the metadata cannot map is doubt. CONTROL: the mapped dev-lab move alone reaches dev_lab only."""
+    extra = '\n[[package]]\nname = "mystery"\nversion = "1"\nsource = { registry = "https://pypi.org/simple" }\n'
+    assert _lock_carried(tmp_path, monkeypatch, _lock(extra=extra)) == set()
+    assert footprint.lock_reach(_lock(), _lock(pin='bbb'), MAPPED.get) == frozenset({'dev_lab'})
+
+
+def test_an_unresolved_lock_still_reaches_every_footprint() -> None:
+    """Called without :func:`footprint.resolve_lock`, ``uv.lock`` stays in every footprint: doubt is wide."""
+    prints = _synthetic({'tests/test_a.py': 'import json\n'})
+    assert prints.reaches('tests/test_a.py', (footprint.LOCK,))
+    assert prints.of('tests/test_a.py').reaches(footprint.LOCK)
+    assert prints.of('tests/test_a.py').reaches(footprint.IMPORT + 'json')
+    assert not prints.reaches('tests/test_a.py', (footprint.IMPORT + 'numpy',))
+
+
+def test_import_names_reads_the_installed_metadata_and_refuses_the_runner() -> None:
+    """One mapping: a library maps to its top-level names; pytest and an unknown distribution reach everything."""
+    assert footprint.import_names('Pluggy') == frozenset({'pluggy'}), 'pytest depends on it, so it is installed'
+    assert footprint.import_names('pytest') is None
+    assert footprint.import_names('no-such-distribution-d48') is None
+
+
+def test_a_from_import_does_not_hide_a_later_read_by_path() -> None:
+    """F-003477da3cde: a from-import's module name once clobbered the tracked-names set ``_reads_by_path`` reads.
+
+    PLANTED CONTROL: the same read with no from-import before it was already caught; both must be.
+    """
+    read = "open('data/x.csv').read()\n"
+    for text in (read, 'from os import path\n' + read):
+        prints = _synthetic({'tests/test_r.py': text})
+        assert prints.reaches('tests/test_r.py', ('data/x.csv',)), text
+
+
+def test_the_repos_own_project_entry_does_not_carry_a_pin_move_to_everything() -> None:
+    """F-759cb56e8a22: the root's editable entry depends on everything, so a pin move reached it and then all.
+
+    In-repo code reaches its third-party imports through its own ``import:<name>`` paths, so the lock's
+    in-repo entries (editable / virtual INSIDE the repo) are no door. CONTROL: an editable path OUTSIDE the
+    repo is third-party code the footprint cannot read, so it stays one, and unmapped reaches everything.
+    """
+
+    def lock(pin: str, source: str) -> str:
+        return _lock(pin=pin, extra=f'\n[[package]]\nname = "app"\nversion = "0"\nsource = {{ {source} }}\n'
+                     'dependencies = [{ name = "dev-lab" }, { name = "numpy" }]\n')  # fmt: skip
+
+    for source in ('editable = "."', 'virtual = "."', 'editable = "packages/sub"'):
+        assert footprint.lock_reach(lock('aaa', source), lock('bbb', source), MAPPED.get) == {'dev_lab'}, source
+    assert (
+        footprint.lock_reach(lock('aaa', 'editable = "../app"'), lock('bbb', 'editable = "../app"'), MAPPED.get) is None
+    )

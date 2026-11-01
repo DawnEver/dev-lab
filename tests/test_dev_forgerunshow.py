@@ -7,6 +7,7 @@ reader that reached for ssh (or any shell) would fail.
 
 from __future__ import annotations
 
+import dataclasses
 import gzip
 import json
 import subprocess
@@ -40,7 +41,7 @@ class _Home:
     def listing(self, _client: object) -> tuple[Attachment, ...]:
         return tuple(Attachment(n, name, name) for n, name in enumerate(self.files))
 
-    def client(self) -> Any:  # noqa: ANN401 -- a duck-typed forge client
+    def client(self) -> SimpleNamespace:  # a duck-typed forge client
         return SimpleNamespace(download=self.files.__getitem__)
 
 
@@ -77,7 +78,7 @@ def _run() -> forgerunstate.Run:
 
 
 def _publish(home: _Home, monkeypatch: pytest.MonkeyPatch, rounds: list[dict[str, Any]]) -> tuple[Any, int]:
-    monkeypatch.setattr(forgerunpost, 'step', lambda run, **changes: forgerunstate.Run(**{**run.__dict__, **changes}))
+    monkeypatch.setattr(forgerunpost, 'step', dataclasses.replace)
     return forgerun._publish_rounds(home.client(), _run(), _Cluster(rounds), lambda _l: None, 'tag')
 
 

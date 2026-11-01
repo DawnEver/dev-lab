@@ -412,6 +412,11 @@ def _kit_at(git: Sequence[str], kit: Path) -> tuple[str, str]:
     return head, stamp.read_text(encoding='utf-8') if stamp.is_file() else ''
 
 
+def _skipping(done: str, refresh: Callable[[str], int]) -> Callable[[str], int]:
+    """*refresh* for every lane but *done*, which this tick has already refreshed."""
+    return lambda name: 0 if name == done else refresh(name)
+
+
 def serve(
     *,
     run: Callable[..., Any] = _door.run,
@@ -479,8 +484,7 @@ def serve(
             emit(f'[serve] {KIT} moved; this process is the old kit, so the next Task run serves', flush=True)
             return kit_rc
         lanes = [name for name in repos if not (name == KIT and kit_rc)]
-        fresh = lambda name: 0 if name == KIT else refreshed(name)  # noqa: E731
-        return max(kit_rc, serve_lanes(lanes, fresh, serving(root, run, out), period_s=period_s))
+        return max(kit_rc, serve_lanes(lanes, _skipping(KIT, refreshed), serving(root, run, out), period_s=period_s))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

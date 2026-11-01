@@ -77,6 +77,7 @@ def local_record(
     owned: Mapping[str, str],
     flaky: Collection[str] = (),
     tools: Mapping[str, str] | None = None,
+    extra: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """The run record of *part* from a LOCAL run, in the cluster record's shape.
 
@@ -85,7 +86,8 @@ def local_record(
     It states the environment it ran against
     (:func:`lab_commons.envkey.env_record`) and the vendor tool versions this host's presence probe READ
     (*tools*, default :func:`lab_commons.compute.presence.measured` over the cached reading): nothing is
-    pinned, so the record is the reproducibility.
+    pinned, so the record is the reproducibility. *extra* adds keys -- a declared workstation's name and tree
+    (:mod:`dev_lab.dev.workstationverdict`).
     """
     need = row_part(part)
     mine = [node for node, owner in owned.items() if owner == need and node in cells]
@@ -100,6 +102,7 @@ def local_record(
         'handed': handed,
         **env_record(),
         'tools': dict(measured(cached()) if tools is None else tools),
+        **(extra or {}),
     }
 
 
@@ -138,6 +141,7 @@ def post_part(
     settled: bool,
     part: str = '',
     present: Callable[[], frozenset[str]] | None = None,
+    extra: Mapping[str, str] | None = None,
 ) -> str:
     """Post the run judged in *log* as *part* of *commit*, or every part this host has the needs of; one line each.
 
@@ -167,7 +171,9 @@ def post_part(
     return '\n'.join(
         post_local(
             root,
-            local_record(sha=commit, part=name, scope=scope, req=log.stem, cells=cells, owned=owned, flaky=flaky),
+            local_record(
+                sha=commit, part=name, scope=scope, req=log.stem, cells=cells, owned=owned, flaky=flaky, extra=extra
+            ),
             directory,
         )
         for name in chosen

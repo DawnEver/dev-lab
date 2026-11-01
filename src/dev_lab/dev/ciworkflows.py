@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
@@ -42,6 +43,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
+from dev_lab.dev.netverb import run_network_verb
 
 __all__ = [
     'BASE_PATH',
@@ -102,14 +104,20 @@ def pin_drift(repo: str, declared: str, head: str) -> str | None:
     )
 
 
+_LS_REMOTE_FIELDS: Final = 2  # git ls-remote: <sha> TAB <ref>
+
+
 def _head(root: Path, repo: str) -> str:
     """*repo*'s head, read from the forge that holds *root*'s origin (*repo* beside it)."""
     origin = _door.run(['git', '-C', str(root), 'remote', 'get-url', 'origin'], capture_output=True, text=True,
                             encoding='utf-8', check=True).stdout.strip()  # fmt: skip
     url = origin.rsplit('/', 1)[0] + f'/{repo}.git'
-    listed = _door.run(['git', 'ls-remote', url, _PIN_BRANCH], capture_output=True, text=True,
-                            encoding='utf-8', check=True).stdout.split()  # fmt: skip
-    return listed[0] if listed else ''
+    argv = ['git', 'ls-remote', url, _PIN_BRANCH]
+    report = run_network_verb(argv)  # a transient is retried, a refusal is not
+    if not report.ok:
+        raise subprocess.CalledProcessError(report.returncode, argv, report.remedy)
+    rows = (line.split() for line in report.attempts[-1].output.splitlines())
+    return next((row[0] for row in rows if len(row) == _LS_REMOTE_FIELDS and row[1].endswith(_PIN_BRANCH)), '')
 
 
 #: The first line of every rendered workflow -- a YAML comment, so the JSON body below stays valid YAML.
