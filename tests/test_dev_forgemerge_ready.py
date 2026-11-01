@@ -14,7 +14,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgemerge import READY, ready
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
 
 _INTEGRATOR = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
 
@@ -112,3 +112,59 @@ def test_on_github_a_created_pr_asks_for_native_auto_merge_as_a_merge_commit_and
 def test_the_merge_door_needs_a_pr(verb: str) -> None:
     with pytest.raises(SystemExit):
         forgemerge.main([verb])
+
+
+_HUB = Forge('github.com', 'o', 'r')
+
+
+def _hub_pr(tmp_path: Path, *, green: bool = True) -> tuple[Path, StateForge, int, str]:
+    work, head = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + _INTEGRATOR, encoding='utf-8')
+    forge = StateForge(_HUB)
+    number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    for context, description in _GREEN if green else _GREEN[:2]:
+        forge.login = 'github-actions[bot]' if context == 'tests/review' else 'a'
+        status_post(forge, head, context=context, state='success', description=description)
+    forge.login = 'github-actions[bot]'
+    return work, forge, number, head
+
+
+def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_judged_head(tmp_path: Path) -> None:
+    """Issue #15: GitHub refuses auto-merge on an already-mergeable PR, so the job that posts ready merges it."""
+    work, forge, number, head = _hub_pr(tmp_path)
+    hub = _Asked(_HUB, {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'},
+                        'POST /graphql': {'errors': [{'message': 'Pull request is in unstable status'}]}})  # fmt: skip
+    assert 'NOT enabled -- Pull request is in unstable status' in forgemerge.auto_merge(hub, 7)
+    said = ready(work, forge, number)
+    assert _merge_ready(forge, head) == ('success', READY)
+    [(merged, body)] = forge.merges
+    assert merged == number
+    assert (body['sha'], body['merge_method']) == (head, 'merge')
+    assert body['commit_title'] == f'chore(merge): pr/x into integrate/main (#{number})'
+    assert 'Merged-Branch: pr/x' in body['commit_message']
+    assert forge.deleted_refs == ['pr/x']
+    assert 'merged' in said
+
+
+def test_on_github_a_red_decision_is_never_merged(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same PR with tests/security green is merged (the test above)."""
+    work, forge, number, _head = _hub_pr(tmp_path, green=False)
+    ready(work, forge, number)
+    assert forge.merges == []
+
+
+def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_said(tmp_path: Path) -> None:
+    work, forge, number, head = _hub_pr(tmp_path)
+    original = forge.pr_view
+
+    def moved(n: int) -> PullRequest:
+        found = original(n)
+        forge.pulls[n]['head']['sha'] = 'f' * 40  # a push lands between the judgement and the merge
+        return found
+
+    forge.pr_view = moved  # type: ignore[method-assign]
+    said = ready(work, forge, number)
+    assert forge.merges == []
+    assert forge.deleted_refs == []
+    assert 'NOT merged' in said
+    assert _merge_ready(forge, head)[0] == 'success'

@@ -39,6 +39,8 @@ class StateForge(Client):
         self.runs: list[dict[str, Any]] = []
         self.fail_lists = False
         self.deny_delete = False
+        #: Every branch the forge was asked to delete by ref (GitHub's ``DELETE .../git/refs/heads/<b>``).
+        self.deleted_refs: list[str] = []
         self.private: bool | None = True  # the repository's visibility, as the forge's `private` flag answers it
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         self._next_comment = 1000
@@ -120,7 +122,11 @@ class StateForge(Client):
         }
         if route in fixed:
             return fixed[route], ''
-        for prefix, kind in ((f'{api}/actions/runs/', 'run'), (f'{api}/statuses/', 'statuses')):
+        for prefix, kind in (
+            (f'{api}/actions/runs/', 'run'),
+            (f'{api}/statuses/', 'statuses'),
+            (f'{api}/git/refs/heads/', 'ref'),
+        ):
             if route.startswith(prefix):
                 return kind, route.removeprefix(prefix)
         if route.startswith(f'{api}/commits/') and route.endswith('/statuses'):  # GitHub's list, with creators
@@ -178,6 +184,16 @@ class StateForge(Client):
     def _merge(self, number: int, body: dict[str, Any]) -> None:
         self.merges.append((number, body))
         self.pulls[number] |= {'state': 'closed', 'merged': True}
+
+    def _merge_github(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
+        """GitHub refuses a merge pinned to a sha that is no longer the PR head (409)."""
+        if body.get('sha') != self.pulls[number]['head']['sha']:
+            moved = Attempt(
+                1, 409, 'Head branch was modified. Review and try the merge again.', Diagnosis.FORGE_REFUSED
+            )
+            raise ForgeCallFailed(Report(('PUT', 'merge'), (moved,), 1))
+        self._merge(number, body)
+        return {'merged': True}
 
     def _post_status(self, sha: str, body: dict[str, Any]) -> dict[str, Any]:
         """Gitea keeps every post, answering the state as ``status``; ids ascend across the forge."""
@@ -238,6 +254,8 @@ class StateForge(Client):
             ('GET', 'pull'): lambda: self.pulls[number],
             ('PATCH', 'pull'): lambda: self._edit_pull(number, sent),
             ('POST', 'merge'): lambda: self._merge(number, sent),
+            ('PUT', 'merge'): lambda: self._merge_github(number, sent),
+            ('DELETE', 'ref'): lambda: self.deleted_refs.append(key),
             ('GET', 'statuses'): lambda: self.statuses.get(key, []),
             ('POST', 'statuses'): lambda: self._post_status(key, sent),
         }

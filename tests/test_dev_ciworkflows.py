@@ -68,7 +68,7 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
         'absent-parts': {'contents': 'read', 'statuses': 'write'},
         'security': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
-        'merge-ready': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
+        'merge-ready': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write', 'actions': 'write'},
         'promote': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write'},
     }
 
@@ -86,7 +86,11 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert jobs['absent-parts']['if'].startswith('${{ always()')
     assert set(jobs['merge-ready']['needs']) == {'security', 'review'}, 'the parts gate promote, never the merge'
     assert jobs['merge-ready']['if'].startswith('${{ always()')
-    assert 'forge merge ready --pr' in jobs['merge-ready']['steps'][-1]['run']
+    ready, dispatch = jobs['merge-ready']['steps'][-2:]
+    assert 'forge merge ready --pr' in ready['run']
+    assert '"; merged") echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
+    assert dispatch['if'] == "${{ steps.ready.outputs.merged == 'true' }}", 'only a merge it made is dispatched'
+    assert 'gh workflow run ci.yml' in dispatch['run'], 'a job-token merge starts no workflow (dev-lab#15)'
     assert 'forge review run --pr' in jobs['review']['steps'][-1]['run']
     assert 'workflow_run' not in ci['on'], 'no cross-workflow trigger'
 
@@ -130,7 +134,10 @@ def test_a_push_to_integration_runs_every_part_then_promote_fast_forwards_main_b
     assert ci['on']['push'] == {'branches': ['integrate/main']}, 'main moves only by promote, never by a push run'
     promote = ci['jobs']['promote']
     assert promote['needs'] == ['absent-parts']
-    assert promote['if'] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/integrate/main' }}"
+    assert promote['if'] == (
+        "${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
+        "&& github.ref == 'refs/heads/integrate/main' }}"
+    ), 'a merge the job token made is dispatched, never pushed: that run promotes too (dev-lab#15)'
     (step,) = [one for one in promote['steps'] if 'integrate promote' in one.get('run', '')]
     assert 'python -m dev_lab.dev.integrate promote "$HEAD_SHA"' in step['run']
     assert 'git push origin main' in step['run']

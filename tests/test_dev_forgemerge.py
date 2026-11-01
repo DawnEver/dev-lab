@@ -150,10 +150,14 @@ def test_the_merge_door_is_a_merge_commit_pinned_to_the_judged_head() -> None:
     assert f'{MERGED_BRANCH}: pr/x' in body['MergeMessageField']
 
 
-def test_the_merge_door_refuses_a_forge_it_was_not_built_for() -> None:
+def test_on_github_the_merge_door_puts_a_merge_commit_pinned_to_the_head() -> None:
     github = StateForge(Forge('github.com', 'o', 'r'))
-    with pytest.raises(ValueError, match='gitea only'):
-        merge(github, 1, head='a' * 40, message='m', delete_branch=False)
+    number = github.add_pull('pr/x', 'integrate/main', sha='a' * 40)
+    merge(github, number, head='a' * 40, message='subject\n\nbody', delete_branch=False)
+    assert github.merges == [
+        (number, {'commit_title': 'subject', 'commit_message': 'body', 'sha': 'a' * 40, 'merge_method': 'merge'})
+    ]
+    assert github.deleted_refs == []
 
 
 # --- the tick -------------------------------------------------------------------------------------

@@ -12,8 +12,11 @@ branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).
 ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :func:`judged` reads a PR's head and
 decides; on Gitea the serve tick merges on it, and on GitHub a workflow job runs ``forge merge ready --pr <N>``
 (:func:`ready`), which posts the decision as ONE status, :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and
-GitHub's native auto-merge -- enabled on every PR ``forge pr create`` opens there -- merges once that required check
-is green. The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
+on ``success`` asks GitHub to merge that head itself (:func:`merge`, as the job's own token). GitHub still enforces
+the branch's required checks on that merge; one still pending refuses it, and the native auto-merge ``forge pr
+create`` enabled merges once they are green. GitHub refuses to enable auto-merge on a PR that is already mergeable
+(dev-lab#15), which is why the job that posts ready merges rather than waiting on it. The PR base is
+:attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
@@ -55,11 +58,12 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.branchset import declared_branchset
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgereview import load_review
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import GITEA, GITHUB, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import GITHUB, ForgeCallFailed, client_for
 from dev_lab.dev.githooks import PYTHON_ENV, bash_executable, hook_path
 from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
@@ -209,15 +213,26 @@ def ready(root: Path, client: Client, number: int) -> str:
 
     ``success`` when nothing is missing, else ``failure`` naming what is (cut to the forge's description limit; the
     workflow log carries the whole line). A PR into another branch than the PR base is ``failure`` saying so.
+    On GitHub a ``success`` is followed by the merge of that judged head (:func:`merge`); a refusal -- the head
+    moved, a required check still pending -- is said, never raised: the decision stands posted either way.
     """
     policy, pull = load_policy(root), client.pr_view(number)
     if pull.base != policy.integration:
-        missing: tuple[str, ...] = (f'a PR into {policy.integration}, not {pull.base}',)
+        decision = Decision((f'a PR into {policy.integration}, not {pull.base}',), '')
     else:
-        missing = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha).missing
+        decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
+    missing = decision.missing
     state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
-    return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
+    said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
+    if missing or client.backend is not GITHUB:
+        return said
+    ephemeral = declared_branchset(root).is_ephemeral(pull.head)
+    try:
+        merge(client, number, head=pull.head_sha, message=decision.message, delete_branch=ephemeral)
+    except ForgeCallFailed as refused:
+        return f'{said}; NOT merged -- {refused}'
+    return f'{said}; merged'
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
@@ -242,7 +257,8 @@ def auto_merge(client: Client, number: int) -> str:
 
     Gitea: nothing to ask -- the serve tick merges on the decision (:func:`judged`). GitHub: its native auto-merge,
     a merge commit, which waits on the branch's required checks (:data:`MERGE_READY_CONTEXT` among them). A refusal
-    GitHub answers (auto-merge off for the repository, a PR already mergeable) is said, never raised.
+    GitHub answers (auto-merge off for the repository, a PR already mergeable) is said, never raised: the job that
+    posts the decision merges a ready PR itself (:func:`ready`).
     """
     if client.backend is not GITHUB:
         return f'#{number}: the forge serve tick merges it once its merge decision is green'
@@ -256,14 +272,19 @@ def auto_merge(client: Client, number: int) -> str:
 def merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool) -> None:
     """Ask the forge to merge PR *number* at *head* with a merge commit saying *message*.
 
-    Raises:
-        ValueError: the forge is not gitea-shaped -- the one merge door built (UNSUPPORTED-RAISES).
-
+    Both forges refuse a *head* that is no longer the PR's (Gitea ``head_commit_id``, GitHub ``sha``). On GitHub,
+    which deletes no branch with a merge, *delete_branch* deletes the PR's head branch after it.
     """
-    if client.backend is not GITEA:
-        msg = f'a server-side PR merge is built for gitea only; {client.forge.host} is {client.backend.name}'
-        raise ValueError(msg)
     title, _, body = message.partition('\n\n')
+    if client.backend is GITHUB:
+        client.call(
+            'PUT',
+            f'{client.repo}/pulls/{number}/merge',
+            {'commit_title': title, 'commit_message': body, 'sha': head, 'merge_method': 'merge'},
+        )
+        if delete_branch:
+            client.call('DELETE', f'{client.repo}/git/refs/heads/{client.pr_view(number).head}')
+        return
     client.call(
         'POST',
         f'{client.repo}/pulls/{number}/merge',
