@@ -500,3 +500,12 @@ def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -
     permissions = _gitea_review(tmp_path)['jobs']['review']['permissions']
     assert permissions['contents'] == 'write'
     assert 'statuses' not in permissions, 'a GitHub scope Gitea ignores reads as a grant it never makes'
+
+
+def test_the_gitea_review_job_token_can_read_its_own_run(tmp_path: Path) -> None:
+    """reviewgate reads the job's run (``GET .../actions/runs/{id}``, ``reqRepoReader(unit.TypeActions)``, 1.27).
+
+    Measured 2026-11-01 on motronics #5397 and wdg-lab #427 (runs 5, 6): with no ``actions`` scope the GET was
+    refused right after the status POST that ``contents: write`` had unblocked.
+    """
+    assert _gitea_review(tmp_path)['jobs']['review']['permissions']['actions'] == 'read'
