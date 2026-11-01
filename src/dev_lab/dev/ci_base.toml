@@ -209,15 +209,16 @@ review = [
 # THE REVIEW DOOR, installed for both forges' review jobs from the ONE pinned dev-lab commit (DEV_LAB_REF,
 # ciworkflows.dev_lab_ref; `pin` says when it falls behind) -- never from the PR head (F-76c85dbc4b77): the head is
 # DATA, and its lock would let a PR choose the code that runs beside the review key. lab-commons is the one the
-# pinned commit's own lock names. The door lives in a venv of its own; REVIEW_PYTHON names it.
+# pinned commit's own lock pins every dependency (installed as locked, the door itself --no-deps). The door lives in a venv of its own; REVIEW_PYTHON names it.
 door = [
     { name = "Install the review door", run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -m pip install -q uv
-"$RUNNER_TEMP/review/bin/uv" export --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project | grep -E '^lab-commons @ ' > "$RUNNER_TEMP/review.txt"
-"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" "$RUNNER_TEMP/dev-lab" --override "$RUNNER_TEMP/review.txt"
+"$RUNNER_TEMP/review/bin/uv" export --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/review.txt"
+"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
+"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 ''', env = { DEV_LAB_REF = "1af31d23541153523a472e0e2048604196cabea6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" } },
 ]
