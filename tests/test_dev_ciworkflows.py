@@ -733,3 +733,24 @@ def test_no_credential_or_pr_influence_persists_in_the_mirror(tmp_path: Path) ->
     mirror_fetches = [line for line in run.splitlines() if '-C "$MIRROR" fetch' in line]
     assert mirror_fetches
     assert all('refs/pull' not in line for line in mirror_fetches)
+
+
+def test_gitea_promotes_nightly_by_the_same_decision_and_asks_ada_nothing(tmp_path: Path) -> None:
+    """D48-1A on Gitea: a scheduled promote.yml runs `integrate promote` on integration's tip, then sweeps.
+
+    The decision reads git and the forge's statuses alone, so the Gitea host (which cannot reach Ada) runs it.
+    PLANTED CONTROLS: no push or pull_request trigger (never per merge), and no serve/cluster door in any step.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
+    found = workflows(tmp_path)['promote.yml']
+    assert set(found['on']) == {'schedule', 'workflow_dispatch'}
+    assert found['on']['schedule'] == [{'cron': '0 2 * * *'}]
+    runs = [step.get('run', '') for step in found['jobs']['promote']['steps']]
+    promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$HEAD_SHA"' in run)
+    assert 'git push origin main' in runs[promoted]
+    assert next(i for i, run in enumerate(runs) if 'dev_lab.dev.branchprune sweep' in run) > promoted
+    text = render(found)
+    for door in ('forge serve', 'forgeserve', 'slurm', 'jobparts'):
+        assert door not in text, door
+    assert 'origin/integrate/main' in text, 'the tip of integration, never a pushed sha'
+    assert tmp_path / '.gitea' / 'workflows' / 'promote.yml' in write(tmp_path)

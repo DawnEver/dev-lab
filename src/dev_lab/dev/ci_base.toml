@@ -311,12 +311,16 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # objects stay in the mirror's packs until a gc's prune expiry (two weeks), far beyond a job.
 # The checkout is sparse, root files only: the review reads the head through git and only pyproject.toml from
 # the tree, and a full checkout would lazily fetch every blob of the head (motronics: 10+ minutes on the host).
-lean = [
+# `reach` is its own list: every Gitea host-runner job (review.yml, promote.yml) takes it before its own fetch.
+reach = [
     { name = "Reach the forge on the runner's instance", run = '''
 [ -n "$ACTIONS_RUNTIME_URL" ] || { echo "ACTIONS_RUNTIME_URL is unset: the runner names no forge to fetch from"; exit 1; }
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
 ''' },
+]
+
+lean = [
     { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
@@ -385,6 +389,7 @@ UV_CONCURRENT_BUILDS = "1"
 ["review.yml".jobs.review]
 runs-on = "review"
 steps = [
+    { use-steps = "reach" },
     { use-steps = "lean" },
     { use-steps = "door" },
     { use-steps = "method" },
@@ -436,3 +441,60 @@ contents = "read"
 statuses = "write"
 pull-requests = "write"
 issues = "write"
+
+# GITEA'S NIGHTLY PROMOTION (D48-1A, user ruling 2026-11-01): Gitea promotes integrate/main's tip once a night by the
+# SAME decision as ci.yml's promote job -- `integrate promote`, the ONE place the parts gate -- then `branchprune
+# sweep`. The decision reads only git and the forge's statuses (the parts Ada's `forge serve` already posted on the
+# tip, D111), so the Gitea host, which cannot reach Ada, runs it: Ada pulls its work and pushes its verdicts, and the
+# promotion asks Ada nothing. A tip main already holds is `current`: nothing moves. The parts are NOT re-run here --
+# on Gitea the serve produces them per integration push; a tip whose run has not finished is refused tonight and
+# promoted the first night it stands PASS. The checkout is commits only (--filter=tree:0, the MIRROR RULE's
+# spirit: never the history's blobs); promote reads ancestry and the declaration at the tip, fetched on demand.
+# The door is the pinned DEV_LAB_REF (`door` steps).
+["promote.yml"]
+forge = "gitea"
+name = "Promote"
+
+[["promote.yml".on.schedule]]
+cron = "0 2 * * *"
+
+["promote.yml".on.workflow_dispatch]
+
+["promote.yml".concurrency]
+group = "promote"
+cancel-in-progress = false
+
+["promote.yml".env]
+FAMILY_SOURCE = "https://github.com/DawnEver/"
+UV_PYTHON = "python3"
+UV_PYTHON_DOWNLOADS = "never"
+UV_CONCURRENT_INSTALLS = "1"
+UV_CONCURRENT_BUILDS = "1"
+
+["promote.yml".jobs.promote]
+runs-on = "review"
+steps = [
+    { use-steps = "reach" },
+    { name = "Fetch integration's commits", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
+git config --global core.hooksPath /dev/null
+git clone -q --no-tags --filter=tree:0 --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
+echo "HEAD_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"
+''' },
+    { use-steps = "door" },
+    { name = "Promote main", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.integrate promote "$HEAD_SHA" && git push origin main
+''' },
+    { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.branchprune sweep
+''' },
+]
+
+# Promote posts no status: contents: write pushes main and deletes landed branches, pull-requests: write closes a
+# landed PR before its branch goes.
+["promote.yml".jobs.promote.permissions]
+contents = "write"
+pull-requests = "write"
