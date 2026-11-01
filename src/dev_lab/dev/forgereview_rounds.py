@@ -83,7 +83,7 @@ __all__ = [
 ]  # fmt: skip
 
 #: The family's cap on full review rounds per PR; a repo declares ``max_rounds`` only to differ.
-FAMILY_MAX_ROUNDS: Final = 3
+FAMILY_MAX_ROUNDS: Final = 5
 
 #: What a review's context summary cites as the change's WHY, in order: its commits, the memory entries it lands,
 #: the merge audit of its merges, and the PR body. Exported by :mod:`dev_lab.dev.reviewpolicy` for every trigger.
