@@ -251,7 +251,7 @@ def test_each_pinned_ref_is_declared_once_and_both_review_workflows_install_it(t
         hub, tea = (next(s for s in job['steps'] if s.get('name') == name) for job in jobs)
         assert hub == tea, f'{name}: one source for both forges'
         assert hub['env'][var] == pinned_ref(repo)
-        assert f'/{repo}.git' in hub['run']
+        assert f'/}}{repo}.git' in hub['run'], 'installed from the family source (FAMILY_SOURCE), else the forge owner'
         assert f'${var}' in hub['run']
         assert pinned_ref(repo) not in hub['run'], 'the step names no sha itself'
 
