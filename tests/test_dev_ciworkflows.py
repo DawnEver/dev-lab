@@ -488,3 +488,15 @@ _ISOLATED = re.compile(r'python[0-9.]*"?(?:\s+-(?!m\b|c\b)\S+)*\s+-I\b')
 def _commands(run: str) -> list[str]:
     """A step's shell text as single commands: continuations joined, split on newlines and operators."""
     return [part.strip() for part in re.split(r'\n|&&|\|\||;|\|', run.replace('\\\n', ' ')) if part.strip()]
+
+
+def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -> None:
+    """Gitea has no ``statuses`` scope: ``POST /statuses/{sha}`` is ``reqRepoWriter(unit.TypeCode)`` (1.27).
+
+    Measured 2026-11-01 on motronics #5397: with ``contents: read`` the job's ``tests/review`` POST was refused
+    while ``GET /user`` answered. ``contents: write`` is the Code-write the route asks for; the job runs no PR
+    code (the review step reads the head, never executes it), so the write stays with the pinned family tools.
+    """
+    permissions = _gitea_review(tmp_path)['jobs']['review']['permissions']
+    assert permissions['contents'] == 'write'
+    assert 'statuses' not in permissions, 'a GitHub scope Gitea ignores reads as a grant it never makes'
