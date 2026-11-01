@@ -192,10 +192,11 @@ setup = [
 # (30 min) and the step that reads it stops the cache daemon on exit (`git credential-cache exit`).
 method = [
     { name = "Install the review method", run = '''
+cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 python3 -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -m pip install -q uv
-"$RUNNER_TEMP/ai-lab/bin/uv" pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"
-''', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" } },
+"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"
+''', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
 
@@ -207,20 +208,23 @@ review = [
 ]
 
 # THE REVIEW DOOR, installed for both forges' review jobs from the ONE pinned dev-lab commit (DEV_LAB_REF,
-# ciworkflows.dev_lab_ref; `pin` says when it falls behind) -- never from the PR head (F-76c85dbc4b77): the head is
-# DATA, and its lock would let a PR choose the code that runs beside the review key. lab-commons is the one the
-# pinned commit's own lock pins every dependency (installed as locked, the door itself --no-deps). The door lives in a venv of its own; REVIEW_PYTHON names it.
+# ciworkflows.pinned_ref('dev-lab'); `pin` says when it falls behind) -- never from the PR head (F-76c85dbc4b77): the head is
+# DATA, and its lock would let a PR choose the code that runs beside the review key.
+# Every dependency installs as the pinned commit's lock names it, the door itself --no-deps; the door lives in a
+# venv of its own (REVIEW_PYTHON). Every uv call runs from $RUNNER_TEMP with --no-config (F-963500c5db57): a PR's
+# uv.toml or [tool.uv.pip] in the checkout would otherwise name the index the locked packages come from.
 door = [
     { name = "Install the review door", run = '''
+cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -m pip install -q uv
-"$RUNNER_TEMP/review/bin/uv" export --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/review.txt"
-"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
-"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
+"$RUNNER_TEMP/review/bin/uv" export --no-config --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/review.txt"
+"$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
+"$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
-''', env = { DEV_LAB_REF = "1af31d23541153523a472e0e2048604196cabea6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" } },
+''', env = { DEV_LAB_REF = "1af31d23541153523a472e0e2048604196cabea6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, MemoryMax=300M, behind a campus ACL). No `uses`

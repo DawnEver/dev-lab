@@ -99,7 +99,7 @@ def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_
     """lab-commons #11, dev-lab #3: the repo's own .venv has no ai_lab, so the review never ran on GitHub."""
     steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
     install, review = steps['Install the review method']['run'], steps['tests/review']['run']
-    assert 'uv" pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+' in install
+    assert 'uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+' in install
     assert '--runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' in review
     assert '$GITHUB_WORKSPACE/.venv' not in review, "the repo's own environment does not carry the method"
     assert 'uv run' not in review
@@ -276,11 +276,30 @@ def test_the_review_job_runs_no_code_the_pr_supplies(tmp_path: Path) -> None:
     }
     assert _from_the_checkout([old]) == ['Install the review door'], 'PLANTED CONTROL: the PR-lock install'
     assert _from_the_checkout([{'run': 'uv sync --frozen --all-extras'}]) == [None]
+    quoted = {'run': '"$RUNNER_TEMP/review/bin/uv" export --frozen > "$RUNNER_TEMP/review.txt"'}
+    assert _from_the_checkout([quoted]) == [None], 'PLANTED CONTROL: the quoted-binary form (F-040fa46aa691)'
+
+
+def test_no_uv_call_in_the_review_job_reads_the_checkouts_config(tmp_path: Path) -> None:
+    """F-963500c5db57: a PR's uv.toml / [tool.uv.pip] must not name the index the review's packages come from.
+
+    PLANTED CONTROL: a uv pip install without --no-config is what the scan refuses.
+    """
+    (tmp_path / 'hub').mkdir()
+    for workflow in (_base_ci(tmp_path / 'hub'), _gitea_review(tmp_path)):
+        assert not _reads_uv_config(workflow['jobs']['review']['steps']), render(workflow)
+    planted = {'name': 'p', 'run': '"$RUNNER_TEMP/review/bin/uv" pip install --python x -r y'}
+    assert _reads_uv_config([planted]) == ['p'], 'PLANTED CONTROL'
+
+
+def _reads_uv_config(steps: list[dict[str, Any]]) -> list[str | None]:
+    calls = re.compile(r'\buv"?\s+(pip|export|sync|run|lock)\b(?![^\n]*--no-config)')
+    return [step.get('name') for step in steps if calls.search(step.get('run', ''))]
 
 
 def _from_the_checkout(steps: list[dict[str, Any]]) -> list[str | None]:
     """Each step resolving or running code from the PR checkout: a uv verb without ``--project`` elsewhere."""
-    verbs = re.compile(r'\buv (sync|run|export|lock)\b(?![^\n]*--project "\$RUNNER_TEMP)')
+    verbs = re.compile(r'\buv"?\s+(sync|run|export|lock)\b(?![^\n]*--project "\$RUNNER_TEMP)')
     return [step.get('name') for step in steps if verbs.search(step.get('run', ''))]
 
 
