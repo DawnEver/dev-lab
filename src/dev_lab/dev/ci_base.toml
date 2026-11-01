@@ -192,7 +192,7 @@ setup = [
 # (30 min) and the step that reads it stops the cache daemon on exit (`git credential-cache exit`).
 method = [
     { name = "Install the review method", run = '''
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 python3 -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -m pip install -q uv
 "$RUNNER_TEMP/ai-lab/bin/uv" pip install --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"
 ''', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" } },
@@ -212,7 +212,7 @@ review = [
 # pinned commit's own lock names. The door lives in a venv of its own; REVIEW_PYTHON names it.
 door = [
     { name = "Install the review door", run = '''
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -m pip install -q uv
@@ -238,7 +238,7 @@ echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
 ''' },
     { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" }, run = '''
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: token ${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global --add url."$FORGE_URL/${{ github.repository_owner }}/".insteadOf "$FAMILY_SOURCE"
 git config --global pack.threads 1
