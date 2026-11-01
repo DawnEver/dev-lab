@@ -635,3 +635,47 @@ def test_a_fork_pr_s_review_job_holds_secret_free(tmp_path: Path) -> None:
         assert not _expression(guard, fork), f'{one}: a fork PR is handed it'
         assert _expression(guard, same), f'{one}: a same-repo PR is not'
         assert _expression(guard, {}), f'{one}: an event with no PR is not'
+
+
+def _fetch_the_head(tmp_path: Path) -> dict[str, Any]:
+    steps = _gitea_review(tmp_path)['jobs']['review']['steps']
+    return next(s for s in steps if s.get('name') == 'Fetch the head')
+
+
+def test_the_review_job_fetches_from_a_per_repository_mirror(tmp_path: Path) -> None:
+    """D53(b): a whole-history clone per job was most of the runner's 557 MiB peak (motronics, 1.6 GB host).
+
+    The job updates a persistent bare mirror under the runner's HOME, one per repository, under a kernel lock
+    (released when a killed job dies), and its checkout borrows the mirror's objects; no whole clone from the forge.
+    """
+    run = _fetch_the_head(tmp_path)['run']
+    assert 'MIRROR="$HOME/mirrors/${{ github.repository }}.git"' in run
+    assert 'flock' in run
+    assert '--shared' in run
+    assert 'clone -q --no-tags --filter=blob:none --no-checkout "$FORGE_URL/' not in run.replace('--bare ', '')
+    assert run.index('flock') < run.index('--shared') < run.index('git checkout')
+
+
+def test_no_credential_or_pr_influence_persists_in_the_mirror(tmp_path: Path) -> None:
+    """The header lives only in the step's GIT_CONFIG_* env; nothing written to a config carries it.
+
+    No hook runs (an empty template and ``core.hooksPath=/dev/null``), and the mirror stores only the forge's
+    branches -- the PR head is fetched into the disposable checkout, never into the shared mirror.
+    PLANTED CONTROL: a ``git config`` write of the header is caught by the same scan.
+    """
+    run = _fetch_the_head(tmp_path)['run']
+
+    def writes_header(text: str) -> list[str]:
+        return [
+            line
+            for line in text.splitlines()
+            if 'git' in line and 'config' in line.split('#')[0] and 'extraHeader' in line and 'GIT_CONFIG_' not in line
+        ]
+
+    assert writes_header(run) == []
+    assert writes_header(run + '\ngit -C "$MIRROR" config http.extraHeader "$H"') != []
+    assert 'core.hooksPath /dev/null' in run
+    assert '--template=' in run
+    mirror_fetches = [line for line in run.splitlines() if '-C "$MIRROR" fetch' in line]
+    assert mirror_fetches
+    assert all('refs/pull' not in line for line in mirror_fetches)
