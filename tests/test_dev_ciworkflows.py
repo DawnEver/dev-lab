@@ -511,20 +511,26 @@ def test_the_gitea_review_job_token_can_read_its_own_run(tmp_path: Path) -> None
     assert _gitea_review(tmp_path)['jobs']['review']['permissions']['actions'] == 'read'
 
 
-def test_each_workflow_declares_its_family_source_once_and_its_steps_read_only_that(tmp_path: Path) -> None:
-    """ONE family source per workflow, and one permissions block on the Gitea review.
+def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tmp_path: Path) -> None:
+    """ONE family source per workflow, declared in the env of every workflow whose steps read it.
 
-    F-1f2d0da331a7: a step falling back to ``github.server_url`` when FAMILY_SOURCE is unset is a second source,
-    dead on Gitea (whose env always sets it) and live on GitHub (whose env never did).
-
-    And ONE permissions block on the Gitea review (F-a9d56327e726): a workflow-level ``contents: read`` above a job's
-    ``contents: write`` declares two grants for one token.
+    F-1f2d0da331a7, F-8d90b59c0336: no step falls back to a second source. An undeclared one renders
+    ``git+ai-lab.git@...`` and the install fails; enumerating the renders, not naming the workflows, keeps a
+    fourth from slipping past.
     """
-    review = _gitea_review(tmp_path)
-    (tmp_path / 'hub').mkdir()
-    hub = _base_ci(tmp_path / 'hub')
-    assert review['env']['FAMILY_SOURCE'] == 'https://github.com/DawnEver/'
-    assert hub['env']['FAMILY_SOURCE'] == '${{ github.server_url }}/${{ github.repository_owner }}/'
-    for workflow in (review, hub):
-        assert 'FAMILY_SOURCE:-' not in render(workflow)
-    assert 'permissions' not in review
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
+        encoding='utf-8',
+    )
+    rendered = workflows(tmp_path)
+    readers = {name for name, workflow in rendered.items() if '${FAMILY_SOURCE}' in render(workflow)}
+    assert readers == {'ci.yml', 'review.yml', 'review-claims.yml'}
+    for name in readers:
+        assert rendered[name]['env'].get('FAMILY_SOURCE'), f'{name} reads FAMILY_SOURCE but declares none'
+        assert 'FAMILY_SOURCE:-' not in render(rendered[name]), f'{name}: a second source'
+    assert rendered['review.yml']['env']['FAMILY_SOURCE'] == 'https://github.com/DawnEver/'
+
+
+def test_the_gitea_review_declares_one_permissions_block(tmp_path: Path) -> None:
+    """F-a9d56327e726: a workflow-level ``contents: read`` above the job's ``contents: write`` is two grants."""
+    assert 'permissions' not in _gitea_review(tmp_path)
