@@ -8,8 +8,11 @@ THE RULE IS DERIVED PER TEST FILE, not declared per repo. Each test file has a F
 (:mod:`dev_lab.dev.footprint`): its conftest chain, its transitive in-repo imports, the env, declared
 reads -- EVERYTHING when it reads the repo by a path it cannot prove. An outcome of test file F at A is
 CARRIED to B (:func:`carried`) when B descends from A and no path in ``git diff --no-renames A B`` lies in
-F's footprint at A -- a rename counts both its sides. Any doubt (no ancestry, an unreadable declaration)
-carries nothing: the carry is an optimisation, refusing it only costs the run it would have saved.
+F's footprint at A -- a rename counts both its sides. A changed ``uv.lock`` is first resolved to the
+imports it reaches (:func:`~dev_lab.dev.footprint.resolve_lock`, user ruling D48-2, 2026-11-01: a relock
+moving only the dev-lab pin had re-run a consumer's whole suite, ``ran=5471``, per push). Any doubt (no
+ancestry, an unreadable declaration) carries nothing: the carry is an optimisation, refusing it only
+costs the run it would have saved.
 
 APPLIED AT TWO GRAINS, both from that one rule:
 
@@ -52,7 +55,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.footprint import ALWAYS, Footprints, declared, test_files
+from dev_lab.dev.footprint import ALWAYS, LOCK, Footprints, declared, resolve_lock, test_files
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgeclaim import CLAIMED, Claim, assess
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND, earlier_tips
@@ -118,7 +121,7 @@ def _judged(root: Path, a: str, b: str) -> tuple[tuple[str, ...], Footprints] | 
     if changed is None:
         return None
     try:
-        return changed, Footprints.at(root, a)
+        return resolve_lock(root, a, b, changed), Footprints.at(root, a)
     except (ValueError, subprocess.SubprocessError):
         return None
 
@@ -284,7 +287,7 @@ def data_only(root: Path, a: str, b: str) -> bool:
     except ValueError:
         return False
     return bool(changed) and not any(
-        path.endswith('.py') or path in ALWAYS or any(fnmatchcase(path, glob) for glob in everywhere)
+        path.endswith('.py') or path in ALWAYS or path == LOCK or any(fnmatchcase(path, glob) for glob in everywhere)
         for path in changed or ()
     )
 
