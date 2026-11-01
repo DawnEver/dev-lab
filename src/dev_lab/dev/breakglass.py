@@ -32,6 +32,7 @@ import lab_commons.launch as _door
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.reviewgate import forge_posted, review_missing
 
 if TYPE_CHECKING:
@@ -90,14 +91,17 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
     return found
 
 
-def unreviewed(client: Client, head: str) -> str | None:
-    """Why *head* carries no FORGE-posted review on *client*'s forge, or ``None``: the one predicate (reviewgate)."""
-    return review_missing(status_list(client, head), forge_posted(client, head))
+def unreviewed(client: Client, head: str, *, base: str) -> str | None:
+    """Why *head* carries no FORGE-posted review on *client*'s forge, or ``None``: the one predicate (reviewgate).
+
+    *base* is the integration branch whose declaration, with *head*'s, says who the forge is.
+    """
+    return review_missing(status_list(client, head), forge_posted(client, head, base=base))
 
 
 def forge_unreviewed(root: Path, head: str) -> str | None:
     """:func:`unreviewed` on *root*'s origin forge; a forge that cannot be read is a reason, never a pass."""
     try:
-        return unreviewed(client_for(root), head)
+        return unreviewed(client_for(root), head, base=load_policy(root).integration)
     except (ForgeCallFailed, OSError, ValueError) as failed:
         return f'the forge cannot be read ({type(failed).__name__}: {failed})'

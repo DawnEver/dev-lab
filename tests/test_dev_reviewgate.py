@@ -21,8 +21,9 @@ from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import forge_posted, github_posted, job_run_url, review_missing
+from dev_lab.dev.reviewgate import DeclarationUnread, forge_posted, github_posted, job_run_url, review_missing
 
+_BASE = 'integrate/main'
 _SECURED = ('tests/security', 'success', 'nothing found')
 
 
@@ -78,10 +79,10 @@ def test_github_status_list_reads_the_creator_the_forge_recorded() -> None:
     forge, head = StateForge(Forge('github.com', 'o', 'r')), 'c' * 40
     forge.login = 'maintainer'
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='looks fine to me')
-    assert breakglass.unreviewed(forge, head) is not None
+    assert breakglass.unreviewed(forge, head, base=_BASE) is not None
     forge.login = ACTIONS_BOT
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
-    assert breakglass.unreviewed(forge, head) is None
+    assert breakglass.unreviewed(forge, head, base=_BASE) is None
 
 
 def _gitea_review(forge: StateForge, head: str, *, login: str, url: str) -> str | None:
@@ -89,7 +90,7 @@ def _gitea_review(forge: StateForge, head: str, *, login: str, url: str) -> str 
     status_post(
         forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean', target_url=url
     )
-    return breakglass.unreviewed(forge, head)
+    return breakglass.unreviewed(forge, head, base=_BASE)
 
 
 @pytest.mark.parametrize('creator', ['DawnEver', 'a', ACTIONS_BOT])
@@ -159,7 +160,7 @@ def test_the_gitea_actions_login_is_the_one_gitea_reserves_for_its_actions_user(
 def test_on_github_a_null_creator_is_not_the_forge() -> None:
     """GitHub always names the creator: an unrecorded one is no forge identity there. PLANTED CONTROL: the bot."""
     github = StateForge(Forge('github.com', 'o', 'r'))
-    assert forge_posted(github, 'c' * 40) is github_posted
+    assert forge_posted(github, 'c' * 40, base=_BASE) is github_posted
     assert review_missing((_status(REVIEW_CONTEXT, 'success', 'clean', ''),), github_posted) is not None
     assert review_missing((_status(REVIEW_CONTEXT, 'success', 'clean'),), github_posted) is None
 
@@ -175,4 +176,71 @@ def test_break_glass_and_the_merge_read_the_one_predicate() -> None:
     """Single source: neither module keeps a review rule of its own."""
     forge, head = StateForge(), 'a' * 40
     status_post(forge, head, context=REVIEW_CONTEXT, state='error', description='the review command failed')
-    assert breakglass.unreviewed(forge, head) == review_missing(status_list(forge, head), forge_posted(forge, head))
+    assert breakglass.unreviewed(forge, head, base=_BASE) == review_missing(
+        status_list(forge, head), forge_posted(forge, head, base=_BASE)
+    )
+
+
+_UNADOPTED = '[tool.dev_lab.ci."ci.yml"]\n'
+_SERVE = 'MingyangBao'
+
+
+def _judged_by_serve(forge: StateForge, head: str, *, login: str, url: str) -> str | None:
+    """*login* posts the success; the serve judges it with its own token."""
+    _gitea_review(forge, head, login=login, url=url)
+    forge.login = _SERVE
+    return breakglass.unreviewed(forge, head, base=_BASE)
+
+
+@pytest.mark.parametrize('third', ['DawnEver', ACTIONS_BOT, GITEA_ACTIONS_LOGIN])
+def test_a_gitea_repo_adopting_the_actions_review_at_neither_base_nor_head_is_reviewed_by_the_serve(third) -> None:
+    """No ``[tool.dev_lab.ci."review.yml"]`` anywhere: no Actions job reviews, ``forge serve`` does (2026-11-01).
+
+    PLANTED CONTROL: a third login's success -- or a null one naming this head's run -- is still refused.
+    """
+    forge, head = StateForge(), 'f' * 40
+    forge.pyproject_at.update({head: _UNADOPTED, _BASE: _UNADOPTED})
+    _, run = forge.add_run(head)
+    said = _judged_by_serve(forge, head, login=third, url=run)
+    assert said is not None
+    assert 'not by the forge' in said
+    assert _judged_by_serve(forge, head, login=_SERVE, url='') is None
+
+
+@pytest.mark.parametrize(('at_base', 'at_head'), [(_UNADOPTED, None), (None, _UNADOPTED)])
+def test_adopted_at_base_or_head_the_serves_login_is_refused_a_pr_adopts_but_never_un_adopts(at_base, at_head) -> None:
+    """The STRICTER of base and head decides (F-e7e5368516ee): a PR adopts, never un-adopts.
+
+    A PR adopting review.yml lands only once Actions
+    reviews it, and a PR dropping it from an adopted base is still judged by the Actions rule.
+
+    PLANTED CONTROL: the Actions job's success naming this head's run counts.
+    """
+    forge, head = StateForge(), 'f' * 40
+    forge.pyproject_at.update({k: v for k, v in ((_BASE, at_base), (head, at_head)) if v is not None})
+    _, run = forge.add_run(head)
+    said = _judged_by_serve(forge, head, login=_SERVE, url=run)
+    assert said is not None
+    assert _SERVE in said
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=run) is None
+
+
+@pytest.mark.parametrize('answer', ['missing', 'empty'])
+def test_an_unreadable_declaration_refuses_never_reads_as_not_adopted(answer: str) -> None:
+    """F-16475f2b1121: an absent file or a contentless answer decides nothing, so no success counts.
+
+    PLANTED CONTROL: a parsed manifest without the table is "not adopted", and the serve's success counts.
+    """
+    forge, head = StateForge(), 'f' * 40
+    forge.pyproject_at.update({head: _UNADOPTED, _BASE: _UNADOPTED})
+    if answer == 'missing':
+        forge.pyproject_at[head] = None
+    else:
+        forge.pyproject_at[head] = ''
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
+    forge.login = _SERVE
+    with pytest.raises(DeclarationUnread):
+        breakglass.unreviewed(forge, head, base=_BASE)
+    forge.pyproject_at[head] = _UNADOPTED
+    _gitea_review(forge, head, login=_SERVE, url='')
+    assert breakglass.unreviewed(forge, head, base=_BASE) is None

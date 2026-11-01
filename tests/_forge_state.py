@@ -10,6 +10,7 @@ caused the 2026-10-12 flood: every plain issue carries ``"pull_request": null``.
 
 from __future__ import annotations
 
+import base64
 import urllib.parse
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -50,6 +51,9 @@ class StateForge(Client):
         self.now_http = NOW_HTTP
         #: Every call as ``METHOD path?query``, in order: what a test counts requests by.
         self.asked: list[str] = []
+        #: ``pyproject.toml`` at every ref (default: it adopts the Actions review), ``pyproject_at`` overriding one ref.
+        self.pyproject = '[tool.dev_lab.ci."review.yml"]\n'
+        self.pyproject_at: dict[str, str | None] = {}  # ``None``: the file is absent at that ref
 
     def add_run(self, head: str, *, repo: str = 'o/r') -> tuple[int, str]:
         """An Actions run of *repo* at *head*: its id (``GITHUB_RUN_ID``) and its web URL, as Gitea answers them."""
@@ -62,6 +66,13 @@ class StateForge(Client):
         mine = [r for r in self.runs if f'/{self.forge.owner}/{self.forge.repo}/' in r['html_url']]
         listed = [r for r in mine if r['head_sha'] == query.get('head_sha', r['head_sha'])]
         return {'workflow_runs': listed, 'total_count': len(listed)}
+
+    def _contents(self, ref: str) -> dict[str, Any]:
+        text = self.pyproject_at.get(ref, self.pyproject)
+        if text is None:
+            missing = Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED)
+            raise ForgeCallFailed(Report(('GET', 'contents'), (missing,), 1))
+        return {'content': base64.b64encode(text.encode()).decode()}
 
     def _number(self) -> int:
         """Issues and pulls share one number space, as on both forges."""
@@ -126,6 +137,7 @@ class StateForge(Client):
             return fixed[route], ''
         for prefix, kind in (
             (f'{api}/actions/runs/', 'run'),
+            (f'{api}/contents/', 'contents'),
             (f'{api}/statuses/', 'statuses'),
             (f'{api}/git/refs/heads/', 'ref'),
             (f'{api}/collaborators/', 'permission'),  # the key is ``<quoted login>/permission``
@@ -240,6 +252,7 @@ class StateForge(Client):
             ('GET', 'user'): lambda: {'login': self.login},
             ('GET', 'permission'): lambda: {'permission': self._permission(key)},
             ('GET', 'runs'): lambda: self._runs(query),
+            ('GET', 'contents'): lambda: self._contents(query['ref']),
             ('GET', 'run'): lambda: next(r for r in self.runs if r['id'] == number),
             ('GET', 'repo'): lambda: {
                 'open_issues_count': opened,

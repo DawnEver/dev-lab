@@ -205,7 +205,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     return decide(root, policy, branch=branch, number=number, head=head, statuses=statuses,
-                  posted=forge_posted(client, head))  # fmt: skip
+                  posted=forge_posted(client, head, base=policy.integration))  # fmt: skip
 
 
 def ready(root: Path, client: Client, number: int) -> str:

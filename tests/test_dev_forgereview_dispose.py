@@ -32,6 +32,9 @@ _FORGE = Identity('forge', 'ci', ci=True)  # the forge's own reviewer: no sessio
 _WHY = 'a false positive: the guard is upstream in a.py'
 
 
+_BASE = 'integrate/main'
+
+
 def _blocked(tmp_path: Path, *, login: str = 'a') -> tuple[Path, object, int, str]:
     """A PR whose head (authored by session ``S-author``) carries one open HIGH finding, reviewed as *login*."""
     work, _ = _work(tmp_path)
@@ -257,14 +260,14 @@ def test_an_adjudication_recomputes_merge_ready_in_the_same_step(
     _rule(work, forge, number, 'present')
     ready = next(one for one in status_list(forge, head) if one.context == MERGE_READY_CONTEXT)
     assert ready.state == 'failure'
-    assert review_missing(status_list(forge, head), forge_posted(forge, head)) is not None
+    assert review_missing(status_list(forge, head), forge_posted(forge, head, base=_BASE)) is not None
     assert REVIEW_CONTEXT in ready.description
     forge.login = 'a'
     dispose(forge, number, 'F-x', _WHY + ' and b.py', by=_AUTHOR)
     forge.login = GITEA_ACTIONS_LOGIN
     _rule(work, forge, number, 'false-positive')
     ready = next(one for one in status_list(forge, head) if one.context == MERGE_READY_CONTEXT)
-    assert review_missing(status_list(forge, head), forge_posted(forge, head)) is None
+    assert review_missing(status_list(forge, head), forge_posted(forge, head, base=_BASE)) is None
     assert REVIEW_CONTEXT not in ready.description, 'the review no longer waits the merge'
 
 
