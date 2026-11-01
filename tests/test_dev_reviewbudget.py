@@ -13,11 +13,12 @@ from _branch_repos import advance
 from test_dev_forgereview import JUDGE, FakeCommand, _forge, _work
 from test_dev_forgereview_rounds import _doc, _finding, _state
 
+from dev_lab.dev.forgepulls import Marker, comment_upsert
 from dev_lab.dev.forgereview import RANGE_FIELD, Review, review_tick
 from dev_lab.dev.forgereview_claim import CAPPED
 from dev_lab.dev.forgereview_dispose import raise_cap
 from dev_lab.dev.forgereview_judge import Identity
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, trusted_bodies
 from dev_lab.dev.reviewbudget import (
     CAP_QUANTILE,
     DEGRADED_MODEL,
@@ -196,3 +197,31 @@ def test_a_pr_over_its_round_cap_waits_named_and_runs_nothing(tmp_path: Path) ->
     assert state == 'pending'
     assert why.startswith(f'{CAPPED} round cap reached: 1/1 rounds; split the PR, or forge review cap {number}')
     assert FAMILY_MAX_ROUNDS == Review().max_rounds == 3, 'the family re-reviews each push: three rounds a PR'
+
+
+def _raised_as_seen_by(forge: object, number: int, job: str) -> Raised | None:
+    forge.login = job
+    return raised_of(trusted_bodies(forge, number))
+
+
+def test_a_raise_is_read_from_its_raiser_by_a_job_of_another_login(tmp_path: Path) -> None:
+    """#17: DawnEver's raise was never read by the GitHub Actions job. PLANTED control: a forged raiser is not."""
+    _, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = 'DawnEver'
+    raise_cap(forge, number, Raised(None, 5, 'one indivisible migration'), by=Identity('DawnEver', 'box', 'S-int'))
+    assert _raised_as_seen_by(forge, number, 'github-actions[bot]') == Raised(None, 5, 'one indivisible migration',
+                                                                               'DawnEver')  # fmt: skip
+    forge.login = 'mallory'
+    forged = raise_line(Raised(None, 99, 'forged', 'DawnEver'))
+    comment_upsert(forge, number, kind=Marker.REVIEW_CAP, key='own', text=f'raised: {forged}')
+    assert _raised_as_seen_by(forge, number, 'github-actions[bot]').rounds == 5, 'a raise naming another is ignored'
+
+
+def test_a_raise_line_pasted_into_another_authors_comment_is_ignored(tmp_path: Path) -> None:
+    _, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = 'mallory'
+    pasted = raise_line(Raised(None, 99, 'pasted', 'DawnEver'))
+    comment_upsert(forge, number, kind=Marker.CLAIM, key='F-x', text=f'see the raise\n\n{pasted}')
+    assert _raised_as_seen_by(forge, number, 'github-actions[bot]') is None

@@ -60,6 +60,7 @@ __all__ = [
     'fit',
     'gate',
     'raise_line',
+    'raise_record',
     'raised_of',
     'read_spend',
     'tag_of',
@@ -169,16 +170,17 @@ def fit(spend: Spend) -> Fit:
 
 @dataclass(frozen=True)
 class Raised:
-    """The integrator's raise of one PR's caps, with its reason."""
+    """The integrator's raise of one PR's caps, with its reason and the forge login of its raiser."""
 
     usd: float | None
     rounds: int | None
     why: str
+    by: str = ''
 
 
 def raise_line(raised: Raised) -> str:
-    """The hidden line a trusted ``review-cap`` comment records *raised* by (``>`` escaped)."""
-    doc = {'usd': raised.usd, 'rounds': raised.rounds, 'why': raised.why}
+    """The hidden line a ``review-cap`` comment records *raised* by (``>`` escaped)."""
+    doc = {'usd': raised.usd, 'rounds': raised.rounds, 'why': raised.why, 'by': raised.by}
     return f'<!-- review-cap {json.dumps(doc, ensure_ascii=False).replace(">", "\\u003e")} -->'
 
 
@@ -188,8 +190,20 @@ def raised_of(bodies: Iterable[str]) -> Raised | None:
     for body in bodies:
         for match in _RAISED.finditer(body):
             doc = json.loads(match['json'])
-            found = Raised(doc.get('usd'), doc.get('rounds'), doc.get('why', ''))
+            found = Raised(doc.get('usd'), doc.get('rounds'), doc.get('why', ''), doc.get('by', ''))
     return found
+
+
+def raise_record(body: str, author: str) -> str | None:
+    """The raise record alone in *body*, when the login it names (``by``) is its forge-recorded *author*; else ``None``.
+
+    The claim pattern (:func:`~dev_lab.dev.forgereview_judge.claim_record`): only the matched line is returned, so
+    nothing else the comment carries is read as forge state, and a raise naming anyone but its author is no raise.
+    """
+    for match in _RAISED.finditer(body):
+        if json.loads(match['json']).get('by') == author:
+            return match.group(0)
+    return None
 
 
 @dataclass(frozen=True)

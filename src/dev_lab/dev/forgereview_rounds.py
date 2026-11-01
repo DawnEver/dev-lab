@@ -54,6 +54,7 @@ from dev_lab.dev.forgereview_judge import (
 )
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.platformparts import HOLD_CONTEXT
+from dev_lab.dev.reviewbudget import raise_record
 from dev_lab.dev.reviewgate import post_review
 
 if TYPE_CHECKING:
@@ -134,14 +135,15 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
     A CLAIM is written by its claimant, never by the forge: any other author's comment contributes only its claim
     record (:func:`~dev_lab.dev.forgereview_judge.claim_record`), and only when the login it names is the login the
     forge records as its author. Without this the forge's own job never sees a claim (#11: the claim was DawnEver's,
-    the job is the Actions bot).
+    the job is the Actions bot). A cap RAISE is read the same way
+    (:func:`~dev_lab.dev.reviewbudget.raise_record`, #17: DawnEver's raise never reached the Actions job).
     """
     trusted = {client.whoami(), client.backend.actions_login}
     out = []
     for comment in comment_list(client, number):
         if comment.author in trusted:
             out.append(comment.body)
-        elif (record := claim_record(comment.body, comment.author)) is not None:
+        elif record := claim_record(comment.body, comment.author) or raise_record(comment.body, comment.author):
             out.append(record)
     return out
 
