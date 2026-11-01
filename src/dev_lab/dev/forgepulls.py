@@ -169,6 +169,7 @@ class Marker(StrEnum):
         'review-claim'  #: an author's claim against a finding, keyed by its id (:mod:`dev_lab.dev.forgereview_judge`)
     )
     ADJUDICATION = 'review-adjudication'  #: an independent ruling on a claim, keyed by the finding id
+    REVIEW_CAP = 'review-cap'  #: the integrator's raise of one PR's review caps (:mod:`dev_lab.dev.reviewbudget`)
     SECURITY_RELEASE = 'security-release'  #: the integrator's release of new exemptions (``forge security``)
     LANDED = 'landed'  #: a landed PR's one closing comment, keyed by the head sha (:mod:`dev_lab.dev.prlanded`)
     POLLER = 'poller'  #: the hosts issue's one poller lease (:mod:`dev_lab.dev.forgepoller`)

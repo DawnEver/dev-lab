@@ -23,8 +23,8 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integrati
 
 * the head's review ROUND as ONE comment keyed by the head sha (``Marker.REVIEW``): its tagged findings carried
   from the earlier rounds, re-checked, and recorded as a ledger (:mod:`dev_lab.dev.forgereview_rounds`; round 1
-  opens with the change's context summary). Past ``max_rounds`` no command runs: only the blocking findings are
-  re-checked, and the non-blocking ones move to ONE follow-up issue;
+  opens with the change's context summary). Past ``max_rounds`` or the PR's dollar cap nothing runs: the head
+  waits, named (:mod:`dev_lab.dev.reviewbudget`);
 * a :data:`REVIEW_CONTEXT` status on the head: ``failure`` while an open ``HIGH`` or security finding is neither
   fixed nor disposed (``forge review dispose``, :mod:`dev_lab.dev.forgereview_dispose`), else ``success`` -- the
   auto-merge waits on every state but ``success`` (:func:`dev_lab.dev.reviewgate.review_missing`);
@@ -62,7 +62,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
-    max_rounds = 3             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, blocking re-checks only
+    max_rounds = 3             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, the head waits
     max_diff_bytes = 200000    # one slice: what one reviewer reads
     max_total_bytes = 4000000  # one head: past it, held for a session
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
@@ -106,7 +106,7 @@ from lab_commons.units import Q_
 from dev_lab.dev import forgereview_scope
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgepulls import ListingIncomplete, comment_list, pr_list
-from dev_lab.dev.forgereview_claim import CLAIMED, DESCRIPTION, passed, unable
+from dev_lab.dev.forgereview_claim import CAPPED, CLAIMED, DESCRIPTION, passed, unable
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
 from dev_lab.dev.forgereview_findings import Finding, Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_judge import (
@@ -119,7 +119,7 @@ from dev_lab.dev.forgereview_judge import (
     self_review,
     upheld,
 )
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, capped, post_round, trailed, trusted_bodies
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, ledger_of, post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import (
     HOST_FIELD,
     RUNTIMES_TABLE,
@@ -129,10 +129,11 @@ from dev_lab.dev.forgereview_runtimes import (
     runtime_names,
 )
 from dev_lab.dev.forgereview_scope import ONLY_GENERATED, Budget, Scope, gather, plan, reviewed_heads
-from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
@@ -254,7 +255,7 @@ class Review:
     model: str = FAMILY_MODEL  # fills ``{model}``
     synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
     judge: tuple[str, ...] = FAMILY_JUDGE  # re-judges open findings and adjudicates claims, every round
-    max_rounds: int = FAMILY_MAX_ROUNDS  # full rounds per PR; past it, the open blocking findings are re-checked only
+    max_rounds: int = FAMILY_MAX_ROUNDS  # full rounds per PR; past it, the head waits (reviewbudget)
     max_diff_bytes: int = 200_000  # one slice
     max_total_bytes: int = 4_000_000  # one head
     derived: tuple[str, ...] = ()
@@ -415,18 +416,42 @@ def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, r
     }
 
 
-def _without_command(
-    root: Path, client: Client, review: Review, pull: PullRequest, scope: Scope, *, runner: Runner
-) -> str | None:
-    """The line said when *pull*'s head is settled with no command run (past the round cap, nothing to read)."""
-    head = pull.head_sha
-    if capped(client, pull, review.max_rounds):  # past max_rounds: the blocking findings re-checked only
-        return post_round(root, client, pull, scope.range, found=None, max_rounds=review.max_rounds, by='re-check',
-                          **_judging(root, client, review, pull, runner=runner))  # fmt: skip
+def _without_command(client: Client, pull: PullRequest, scope: Scope) -> str | None:
+    """The line said when *pull*'s head is settled with no command run (nothing but generated files to read)."""
     if scope.slices:
         return None
-    status_post(client, head, context=REVIEW_CONTEXT, state='success', description=ONLY_GENERATED[:DESCRIPTION])
-    return f'#{pull.number} {head[:12]}: {ONLY_GENERATED}'
+    status_post(
+        client, pull.head_sha, context=REVIEW_CONTEXT, state='success', description=ONLY_GENERATED[:DESCRIPTION]
+    )
+    return f'#{pull.number} {pull.head_sha[:12]}: {ONLY_GENERATED}'
+
+
+def capped(
+    root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner
+) -> tuple[Review | None, str | None]:
+    """*review* as *pull*'s next round may run it (:mod:`dev_lab.dev.reviewbudget`), and a note or the WAIT line.
+
+    A waiting head gets a ``pending`` :data:`~dev_lab.dev.forgereview_claim.CAPPED` status naming the cap and the
+    remedy, and the review is ``None`` -- posted and said once (``None, None`` after), and read again every tick,
+    so a raise or a new month releases it.
+    """
+    head, bodies = pull.head_sha, trusted_bodies(client, pull.number)
+    prior = ledger_of(bodies)
+    rounds_done = 0 if prior is None else prior.round - (prior.head == head)
+    spend = runner.spend(runner.runtimes, root)
+    tag = tag_of(pull.url, pull.number)
+    allowed = gate(number=pull.number, spent_usd=0.0 if spend is None else spend.of(tag), rounds_done=rounds_done,
+                   max_rounds=review.max_rounds, spend=spend, raised=raised_of(bodies))  # fmt: skip
+    if allowed.state == 'run':
+        model = review.model if allowed.model is None else allowed.model
+        unknown = '' if spend is not None else ' (no spend report on this host: the round cap alone holds)'
+        return dataclasses.replace(review, max_rounds=allowed.max_rounds, model=model), unknown
+    said = f'{CAPPED} {allowed.why}'[:DESCRIPTION]
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if latest is not None and (latest.state, latest.description) == ('pending', said):
+        return None, None
+    status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=said)
+    return None, f'#{pull.number} {head[:12]}: {said}'
 
 
 def hold(client: Client, pull: PullRequest, why: str) -> str:
@@ -447,11 +472,19 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     head = pull.head_sha
     if (stands := passed(root, client, head, runner.clock(), review.stale)) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
+    allowed, note = capped(root, client, review, pull, runner)
+    if allowed is None:
+        return note
+    review = allowed
     scope = _scope(root, client, review, pull, f'origin/{pull.base}')
-    said = _without_command(root, client, review, pull, scope, runner=runner)
+    said = _without_command(client, pull, scope)
     if said is None and not runner.secret:
         said = hold(client, pull, NEEDS_MAINTAINER)
-    return said if said is not None else _command_round(root, client, review, pull, scope=scope, runner=runner)
+    if said is not None:
+        return said
+    with charged_to(tag_of(pull.url, pull.number)):
+        said = _command_round(root, client, review, pull, scope=scope, runner=runner)
+    return said + (note or '')
 
 
 def _command_round(
@@ -501,9 +534,10 @@ def review_tick(
     host: str,
     runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),  # this host's: none by default
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend,
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said."""
-    runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True)
+    runner = Runner(host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True, spend=spend)
 
     def said(pull: PullRequest) -> str | None:
         try:

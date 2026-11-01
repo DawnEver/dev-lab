@@ -122,7 +122,7 @@ steps = [
     { use-steps = "review" },
 ]
 
-# Findings are PR comments (the issues API) and a capped round's follow-up is an issue.
+# Findings are PR comments (the issues API).
 ["ci.yml".jobs.review.permissions]
 contents = "read"
 statuses = "write"
