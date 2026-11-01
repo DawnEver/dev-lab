@@ -233,18 +233,21 @@ printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 # Every dependency installs as the pinned commit's lock names it, the door itself --no-deps; the door lives in a
 # venv of its own (REVIEW_PYTHON). Every uv call runs from $RUNNER_TEMP with --no-config (F-963500c5db57): a PR's
 # uv.toml or [tool.uv.pip] in the checkout would otherwise name the index the locked packages come from.
+# The pin is fetched by sha as well as cloned: a door commit not yet on a branch head the clone took (a PR's own
+# head, pinned so the template moves WITH the door) is still served by sha while it is reachable on the forge.
 door = [
     { name = "Install the review door", run = '''
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git" "$RUNNER_TEMP/dev-lab"
+git -C "$RUNNER_TEMP/dev-lab" fetch -q --no-tags origin "$DEV_LAB_REF"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/review/bin/uv" export --no-config --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/review.txt"
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
-''', env = { DEV_LAB_REF = "bba8677ba4f10c677ab06e6b300eec05d9f18edd", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
+''', env = { DEV_LAB_REF = "b8c9d363c67ec9040778400a74ac67c4b24fa64a", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, MemoryMax=300M, behind a campus ACL). No `uses`

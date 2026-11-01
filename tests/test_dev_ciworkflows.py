@@ -365,6 +365,10 @@ def test_no_forge_token_is_env_of_the_review_or_anything_after_the_hand_over(tmp
         assert not _token_envs(workflow), _token_envs(workflow)
         names = [s.get('name') for s in workflow['jobs']['review']['steps']]
         assert names.index(_HAND_OVER) == names.index('tests/review') - 1
+        review = workflow['jobs']['review']['steps'][names.index('tests/review')]
+        for word in (*_FORGE_TOKENS, 'GIT_CONFIG'):
+            assert word not in review['run'], word
+            assert word not in str(review.get('env', {})), word
         hand = workflow['jobs']['review']['steps'][names.index(_HAND_OVER)]
         assert hand['run'].startswith('umask 077'), 'the token files are private'
     planted = {**_base_ci(tmp_path / 'hub'), 'env': {'GITHUB_TOKEN': '${{ github.token }}'}}

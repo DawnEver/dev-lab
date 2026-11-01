@@ -198,7 +198,7 @@ _HEADER = 'Authorization: basic ' + base64.b64encode(f'x-access-token:{_TOKEN}'.
 def _token_files(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
     """The workflow's writing step: the tokens in private files, the env holding only the server."""
     monkeypatch.setattr(reviewgitauth, '_held', {})
-    for name in (*reviewgitauth.FORGE_TOKEN_ENVS, 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'):
+    for name in (*reviewgitauth.FORGE_TOKEN_ENVS, *(k for k in os.environ if k.startswith('GIT_CONFIG_'))):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv('GITHUB_SERVER_URL', 'https://forge.example')
     secrets = tmp_path / 'forge-secrets'
@@ -224,7 +224,7 @@ def test_take_reads_each_token_file_once_and_leaves_no_token_on_disk_or_in_env(t
     assert reviewgitauth.git_env()['GIT_CONFIG_VALUE_0'] == _HEADER
 
 
-@pytest.mark.parametrize('name', ['GITHUB_TOKEN', 'FAMILY_READ_TOKEN', 'GIT_CONFIG_COUNT'])
+@pytest.mark.parametrize('name', ['GITHUB_TOKEN', 'FAMILY_READ_TOKEN'])
 def test_a_token_left_in_the_env_is_refused_and_the_files_are_still_removed(
     tmp_path: Path, monkeypatch, name: str
 ) -> None:
@@ -235,6 +235,30 @@ def test_a_token_left_in_the_env_is_refused_and_the_files_are_still_removed(
         reviewgitauth.take(read, api)
     assert not read.exists()
     assert not api.exists()
+
+
+def test_the_jobs_own_git_config_slots_survive_and_the_header_takes_the_next(tmp_path: Path, monkeypatch) -> None:
+    """F-83b4c0e6a277: safe.directory (or a proxy, sslCAInfo) is the job's; only an auth header slot is refused."""
+    read, api = _token_files(tmp_path, monkeypatch)
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'safe.directory')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', '*')
+    reviewgitauth.take(read, api)
+    env = reviewgitauth.git_env()
+    assert (env['GIT_CONFIG_COUNT'], env['GIT_CONFIG_KEY_0'], env['GIT_CONFIG_VALUE_0']) == ('2', 'safe.directory', '*')
+    assert env['GIT_CONFIG_KEY_1'] == 'http.https://forge.example/.extraHeader'
+    assert env['GIT_CONFIG_VALUE_1'] == _HEADER
+
+
+def test_an_extraheader_slot_in_the_env_is_refused(tmp_path: Path, monkeypatch) -> None:
+    """PLANTED CONTROL: the old template's shell-derived header is an auth slot, refused by its key."""
+    read, api = _token_files(tmp_path, monkeypatch)
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '2')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'safe.directory')
+    monkeypatch.setenv('GIT_CONFIG_KEY_1', 'http.https://forge.example/.ExtraHeader')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_1', _HEADER)
+    with pytest.raises(reviewgitauth.TokenInEnvironment, match='GIT_CONFIG_KEY_1'):
+        reviewgitauth.take(read, api)
 
 
 def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_path: Path, monkeypatch) -> None:
@@ -273,6 +297,16 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
     assert main([*argv[:1], '--pr', str(other), '--git-token-file', str(read), '--api-token-file', str(api)],
                 cwd=other_work, client=control, run=leaky, ready=_can) == 2  # fmt: skip
     assert not leaky.envs, 'PLANTED CONTROL: a token in the env never reaches a reviewer'
+
+
+def test_every_door_git_call_goes_through_the_one_helper() -> None:
+    """F-dd15a25cb5ca: the auth env is set in one place -- forgereview_scope.git -- for the scope and the rounds."""
+    from dev_lab.dev import forgereview_rounds  # noqa: PLC0415
+
+    for module, launches in ((forgereview_rounds, 0), (forgereview_scope, 1)):
+        assert Path(module.__file__).read_text(encoding='utf-8').count("['git',") == launches, module.__name__
+    assert forgereview_rounds.git is forgereview_scope.git
+    assert not hasattr(forgereview_rounds, '_git')
 
 
 def test_no_token_file_holds_no_header_and_git_inherits(monkeypatch) -> None:
