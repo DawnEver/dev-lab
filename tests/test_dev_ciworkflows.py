@@ -290,11 +290,22 @@ def test_no_uv_call_in_the_review_job_reads_the_checkouts_config(tmp_path: Path)
         assert not _reads_uv_config(workflow['jobs']['review']['steps']), render(workflow)
     planted = {'name': 'p', 'run': '"$RUNNER_TEMP/review/bin/uv" pip install --python x -r y'}
     assert _reads_uv_config([planted]) == ['p'], 'PLANTED CONTROL'
+    for bypass in (
+        'uv pip install x && uv pip install y --no-config',  # the flag on a sibling command
+        'uv --quiet pip install x',  # a global flag before the verb
+        'uv venv x',  # a verb outside a fixed list
+    ):
+        assert _reads_uv_config([{'name': 'b', 'run': bypass}]) == ['b'], f'PLANTED CONTROL: {bypass}'
+    assert not _reads_uv_config([{'name': 'ok', 'run': 'uv pip install \\\n  --no-config x'}]), 'a continuation'
 
 
 def _reads_uv_config(steps: list[dict[str, Any]]) -> list[str | None]:
-    calls = re.compile(r'\buv"?\s+(pip|export|sync|run|lock)\b(?![^\n]*--no-config)')
-    return [step.get('name') for step in steps if calls.search(step.get('run', ''))]
+    """Each step with a uv command -- any verb, any global flag, any spelling of the binary -- lacking --no-config."""
+    return [
+        step.get('name')
+        for step in steps
+        if any(_UV.search(cmd) and '--no-config' not in cmd for cmd in _commands(step.get('run', '')))
+    ]
 
 
 def _from_the_checkout(steps: list[dict[str, Any]]) -> list[str | None]:
@@ -410,12 +421,28 @@ def test_no_python_in_the_review_job_imports_from_the_checkout(tmp_path: Path) -
         assert not _imports_from_the_checkout(workflow['jobs']['review']['steps']), render(workflow)
     planted = {'name': 'k', 'run': 'printf x | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login anthropic'}
     assert _imports_from_the_checkout([planted]) == ['k'], 'PLANTED CONTROL'
+    for bypass in (
+        'cd "$RUNNER_TEMP"\ncd "$GITHUB_WORKSPACE" && python -m x',  # a cd prefix excuses nothing
+        'python -u -m x',  # a flag between the binary and -m
+        'python -c "import x"',  # -c puts the cwd on sys.path too
+    ):
+        assert _imports_from_the_checkout([{'name': 'b', 'run': bypass}]) == ['b'], f'PLANTED CONTROL: {bypass}'
 
 
 def _imports_from_the_checkout(steps: list[dict[str, Any]]) -> list[str | None]:
-    calls = re.compile(r'python[0-9.]*"?\s+-m\b')
+    """Each step starting a python that is not isolated: no step is excused, every command is judged on its own."""
     return [
         step.get('name')
         for step in steps
-        if calls.search(run := step.get('run', '')) and not run.lstrip().startswith('cd "$RUNNER_TEMP"')
+        if any(_PYTHON.search(cmd) and not _ISOLATED.search(cmd) for cmd in _commands(step.get('run', '')))
     ]
+
+
+_UV = re.compile(r'^"?[^\s"]*\buv"?(?=\s)')  # the program a command runs, by its first word
+_PYTHON = re.compile(r'^"?[^\s"]*\bpython[0-9.]*"?(?=\s)')
+_ISOLATED = re.compile(r'python[0-9.]*"?(?:\s+-(?!m\b|c\b)\S+)*\s+-I\b')
+
+
+def _commands(run: str) -> list[str]:
+    """A step's shell text as single commands: continuations joined, split on newlines and operators."""
+    return [part.strip() for part in re.split(r'\n|&&|\|\||;|\|', run.replace('\\\n', ' ')) if part.strip()]

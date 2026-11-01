@@ -194,7 +194,7 @@ method = [
     { name = "Install the review method", run = '''
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
-python3 -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -m pip install -q uv
+python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${{ github.server_url }}/${{ github.repository_owner }}/ai-lab.git@$AI_LAB_REF"
 ''', env = { AI_LAB_REF = "ad0a0ace14846f633d4a42f153948062ce0b4164", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
@@ -219,7 +219,7 @@ cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }}/${{ github.repository_owner }}/dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
-python3 -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -m pip install -q uv
+python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/review/bin/uv" export --no-config --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/review.txt"
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
