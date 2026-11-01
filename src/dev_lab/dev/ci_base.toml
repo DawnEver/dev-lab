@@ -197,7 +197,9 @@ setup = [
 # review task in an in-memory credential cache, on stdin; with no secret (a fork PR) nothing is stored.
 # NO CREDENTIAL OUTLIVES ITS USE (F-00bc79a46330): a forge token reaches git as process-scoped GIT_CONFIG_* env of
 # the one step that fetches, never a config file a later step reads; the key's cache lives as long as one review
-# (30 min) and the step that reads it stops the cache daemon on exit (`git credential-cache exit`).
+# (30 min) and the step that reads it stops the cache daemon on exit (`git credential-cache exit`). The cache is
+# the JOB's own (F-83bc8b74b803): its socket lives under RUNNER_TEMP, so a job killed before its trap leaves a key
+# no later job on a persistent runner can reach -- the default socket is per HOME, shared by every job.
 method = [
     { name = "Install the review method", run = '''
 cd "$RUNNER_TEMP"
@@ -205,7 +207,7 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL
 python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REF"
 ''', env = { AI_LAB_REF = "3f8c7c5b25188b40673602682ce9df61157a16f6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
-    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
@@ -224,7 +226,7 @@ mkdir -p "$RUNNER_TEMP/forge-secrets"
 printf '%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" > "$RUNNER_TEMP/forge-secrets/read"
 printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 ''', env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
-    { name = "tests/review", run = '''trap 'git credential-cache exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
+    { name = "tests/review", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
 "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
 ''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
@@ -267,11 +269,12 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # the tree, and a full checkout would lazily fetch every blob of the head (motronics: 10+ minutes on the host).
 lean = [
     { name = "Reach the forge on the runner's instance", run = '''
+[ -n "$ACTIONS_RUNTIME_URL" ] || { echo "ACTIONS_RUNTIME_URL is unset: the runner names no forge to fetch from"; exit 1; }
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
 ''' },
     { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global pack.threads 1
 git clone -q --no-tags --filter=blob:none --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
@@ -352,7 +355,7 @@ runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
     { use-steps = "method" },
-    { name = "Adjudicate the claims", run = 'trap "git credential-cache exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' },
+    { name = "Adjudicate the claims", run = 'trap "git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' },
 ]
 
 ["review-claims.yml".jobs.adjudicate.permissions]
