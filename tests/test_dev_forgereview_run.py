@@ -109,26 +109,47 @@ def test_the_job_exits_non_zero_unless_it_posted_success(tmp_path: Path, host: s
     assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=FakeCommand(), ready=_can) == 0
 
 
-def test_a_success_a_pr_head_workflow_posted_first_never_passes_the_job(tmp_path: Path) -> None:
-    """dev-lab #30: a success a PR-head workflow planted before the job runs never concludes the job success.
+def test_a_success_a_pr_head_workflow_posted_first_is_no_review_the_job_reviews_the_head(tmp_path: Path) -> None:
+    """dev-lab #30/#38: a success a PR-head workflow planted before the job runs is neither stood on nor its exit.
 
-    The PR-head ``on: pull_request`` workflow posts a null-creator success first; the job finds the head "already
-    reviewed" and posts nothing, so the gate decides -- and the gate refuses it.
+    The PR-head ``on: pull_request`` workflow posts a null-creator success first; the gate does not count it
+    (``Runner.verifies``), so the job reviews the head and exits by ITS post. PLANTED CONTROL: the same planted
+    success over a clean head ends in the job's own success, exit 0.
+    """
+    for out, code, state in ((_output(severity='HIGH'), 1, 'failure'), (None, 0, 'success')):
+        (tmp_path / state).mkdir()
+        work, head = _work(tmp_path / state)
+        forge, number = _forge(head)
+        forge.login = GITEA_ACTIONS_LOGIN
+        _, planted = forge.add_run(head, event='pull_request')
+        status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean', target_url=planted)
+        command = FakeCommand(out)
+        assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == code
+        assert len(command.ran) == 1, 'the planted success is no review: the head is reviewed'
+        assert _latest(forge, head, REVIEW_CONTEXT)[0] == state
 
-    PLANTED CONTROL: the same head whose earlier base review run concluded success passes the re-run.
+
+def test_a_run_re_run_in_place_reviews_the_head_again_and_a_counted_review_stands(tmp_path: Path, monkeypatch) -> None:
+    """dev-lab #38: a run Gitea re-runs in place cannot verify its earlier attempt's success, so it reviews afresh.
+
+    Gitea keeps the run's id and resets its conclusion while it executes; the re-run exits by its own post.
+    PLANTED CONTROL: a head whose success names an EARLIER run that concluded success stands -- no command runs,
+    the job posts nothing, and the gate's count is its exit.
     """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = GITEA_ACTIONS_LOGIN
-    _, planted = forge.add_run(head, event='pull_request')
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean', target_url=planted)
+    run_id, run = forge.add_run(head, conclusion='')  # run N, re-running in place
+    monkeypatch.setenv('GITEA_ACTIONS', 'true')  # the job's posts name its own run (job_run_url)
+    monkeypatch.setenv('GITHUB_RUN_ID', str(run_id))
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean', target_url=run)
     command = FakeCommand()
-    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 1
-    assert command.ran == [], 'the planted success stands for the round: only the exit refuses it'
-    _, honest = forge.add_run(head)
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean', target_url=honest)
-    forge.add_run(head, conclusion='')  # this re-run, in progress
     assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 0
+    assert len(command.ran) == 1, 'the unverifiable success is reviewed again'
+    forge.runs[-1]['conclusion'] = 'success'
+    forge.add_run(head, conclusion='')  # a later run at the head, in progress
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 0
+    assert len(command.ran) == 1, 'a counted review stands: the head is not reviewed twice'
 
 
 def test_a_runtime_given_on_the_command_line_fills_the_host_value_a_runner_lacks() -> None:

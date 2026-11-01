@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.forgecarry import RUNNING, docs_only
-from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import post_review
 
@@ -77,12 +77,18 @@ def standing(client: Client, now: datetime, stale: timedelta) -> Callable[[str],
     return stood
 
 
-def passed(root: Path, client: Client, head: str, now: datetime, stale: timedelta) -> str | None:
+def passed(
+    root: Path, client: Client, head: str, now: datetime, stale: timedelta, *,
+    counted: Callable[[CommitStatus], bool] | None = None,
+) -> str | None:  # fmt: skip
     """Why *head* is not reviewed now: ``''`` its own review is posted or held, else what carries; ``None``: review it.
 
     DOCS-ONLY-CARRIES: an earlier head's review stands (posted on *head*, no command run) or is still running.
+    A ``success`` *counted* refuses (:func:`dev_lab.dev.reviewgate.forge_posted`) is no review: the head is reviewed.
     """
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if latest is not None and latest.state == 'success' and counted is not None and not counted(latest):
+        latest = None
     if not claimable(latest, now, stale):
         return ''
     carry = docs_only(root, head, standing(client, now, stale), data_waits=False)
@@ -101,5 +107,5 @@ def unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     said = f'{HOST_UNABLE} {host}: {why}'[:DESCRIPTION]
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
     if latest is None or (latest.state, latest.description) != ('error', said):
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=said)
+        post_review(client, head, state='error', description=said)
     return f'#{pull.number} {head[:12]}: {said}'

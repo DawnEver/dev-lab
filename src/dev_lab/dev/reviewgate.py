@@ -26,8 +26,13 @@ triggered by ``pull_request_target``, which Gitea detects from the BASE commit (
 PR can neither change what runs nor read the secret -- and a success counts only when, besides the status checks
 above, the latest CONCLUDED run at this head that is that workflow (``event == "pull_request_target"``, ``path``
 ``review.yml@<ref>``, :func:`review_runs`) concluded ``success``. A PR-head workflow can neither create nor alter
-such a run, and the job exits non-zero unless it posted success (:func:`dev_lab.dev.forgetakeover.review_run`). A run
-still in progress has no conclusion and decides nothing: a re-run at a reviewed head stands on the run before it.
+such a run, and the job exits non-zero unless it posted success (:func:`dev_lab.dev.forgetakeover.job_exit`, from
+what :func:`post_review` recorded in :func:`posted_verdicts`). A run with no conclusion -- queued, running, or
+RE-RUN IN PLACE (Gitea keeps its id and resets its conclusion while it executes) -- decides nothing, and the newest
+run that has one decides. A head whose only review run is being re-run therefore waits for it to conclude: its
+earlier conclusion is no longer observable, so a success naming it cannot be told from one a PR-head workflow
+planted during a first run. That re-run reviews the head afresh
+(:attr:`~dev_lab.dev.forgereview_command.Runner.verifies`) and concludes by its own post.
 
 ON GITEA THE BASE'S DECLARATION ALONE SAYS WHICH IDENTITY IS THE FORGE (:func:`adopts_actions_review`): a repo whose
 integration branch declares ``[tool.dev_lab.ci."review.yml"]`` (it renders ``.gitea/workflows/review.yml``) is judged
@@ -50,9 +55,11 @@ The remedy for a head whose review could not run is :data:`RERUN`: the forge's o
 from __future__ import annotations
 
 import base64
+import contextlib
 import os
 import re
 import tomllib
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlsplit
 
@@ -63,7 +70,7 @@ from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
@@ -78,6 +85,7 @@ __all__ = [
     'github_posted',
     'job_run_url',
     'post_review',
+    'posted_verdicts',
     'review_missing',
     'review_runs',
 ]
@@ -204,14 +212,35 @@ def job_run_url(client: Client, env: Mapping[str, str] | None = None) -> str:
     return str(client.call('GET', f'{client.repo}/actions/runs/{run_id}').get('html_url') or '')
 
 
+#: The states :func:`post_review` posted inside :func:`posted_verdicts`, in order; ``None`` outside it.
+_POSTED: ContextVar[list[str] | None] = ContextVar('posted_verdicts', default=None)
+
+
+@contextlib.contextmanager
+def posted_verdicts() -> Iterator[list[str]]:
+    """The states every :func:`post_review` inside the block posts, in order -- what THIS process said.
+
+    The review job's exit is read from it (:func:`dev_lab.dev.forgetakeover.job_exit`): the door that posts is the
+    one that knows, never a re-read of the head, where a PR-head workflow's null-creator status may stand.
+    """
+    said: list[str] = []
+    token = _POSTED.set(said)
+    try:
+        yield said
+    finally:
+        _POSTED.reset(token)
+
+
 def post_review(client: Client, head: str, *, state: str, description: str, target_url: str = '') -> None:
-    """Post *head*'s :data:`REVIEW_CONTEXT` -- the ONE door every review verdict is posted through.
+    """Post *head*'s :data:`REVIEW_CONTEXT` -- the ONE door every review status is posted through.
 
     Inside Gitea's review job the status names the job's own run (:func:`job_run_url`), which is what
     :func:`forge_posted` verifies; anywhere else it links *target_url* (the round's comment, a carried verdict).
     """
     status_post(client, head, context=REVIEW_CONTEXT, state=state, description=description,
                 target_url=job_run_url(client) or target_url)  # fmt: skip
+    if (said := _POSTED.get()) is not None:
+        said.append(state)
 
 
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:

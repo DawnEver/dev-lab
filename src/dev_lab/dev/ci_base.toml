@@ -188,6 +188,12 @@ setup = [
     { name = "Sync the environment", run = "uv sync --frozen --all-extras" },
 ]
 
+# A FORK PR HOLDS SECRET-FREE (F-dd353e505b47, dev-lab #38): under Gitea's pull_request_target a fork PR's run is
+# handed the repository's secrets, so every secret these shared steps read is withheld when the PR's head repo is not
+# this one -- no review key is stored (the review then holds the head for a maintainer, NEEDS_MAINTAINER) and no
+# FAMILY_READ_TOKEN is handed out. Outside a PR event (review-claims' issue_comment) the guard is open. Gitea's
+# proxy forbids forks today (D44), but the template is family-wide. GitHub gives a fork PR no secret regardless.
+#
 # THE REVIEW METHOD, installed and keyed once for every job that reviews or judges (ci.yml review, review-claims.yml).
 # The method is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3, 2026-10-31:
 # "cannot import 'ai_lab.review'", nothing posted): ai-lab is installed from this owner's forge into an environment of
@@ -207,8 +213,8 @@ cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REF"
-''', env = { AI_LAB_REF = "3f8c7c5b25188b40673602682ce9df61157a16f6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
-    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+''', env = { AI_LAB_REF = "3f8c7c5b25188b40673602682ce9df61157a16f6", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
+    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
 ]
 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
@@ -226,10 +232,10 @@ review = [
 mkdir -p "$RUNNER_TEMP/forge-secrets"
 printf '%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" > "$RUNNER_TEMP/forge-secrets/read"
 printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
-''', env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
+''', env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "tests/review", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
 "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
-''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
 ]
 
 # THE REVIEW DOOR, installed for both forges' review jobs from the ONE pinned dev-lab commit (DEV_LAB_REF,
@@ -252,7 +258,7 @@ python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I 
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
-''', env = { DEV_LAB_REF = "ebb813b9b46c3d8945fde9c2feb84b96a81cec88", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
+''', env = { DEV_LAB_REF = "ebb813b9b46c3d8945fde9c2feb84b96a81cec88", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, behind a campus ACL). No `uses`
@@ -274,7 +280,7 @@ lean = [
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
 ''' },
-    { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+    { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global pack.threads 1

@@ -53,9 +53,9 @@ from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ForgeCallFailed, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
-from dev_lab.dev.reviewgate import RERUN, forge_posted, review_missing
+from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
 
 if TYPE_CHECKING:
@@ -222,31 +222,14 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     return '; '.join([said, *ruled])
 
 
-class _Verdicts:
-    """*client*, recording the state of every :data:`REVIEW_CONTEXT` status posted through it: what THIS job said."""
-
-    def __init__(self, client: Client) -> None:
-        self._client, self.posted = client, []
-
-    def __getattr__(self, name: str) -> object:
-        return getattr(self._client, name)
-
-    def call(self, method: str, path: str, body: Mapping[str, Any] | None = None, durable: object = None) -> object:
-        answer = self._client.call(method, path, body, durable)
-        if method == 'POST' and '/statuses' in path and body is not None and body.get('context') == REVIEW_CONTEXT:
-            self.posted.append(str(body.get('state')))
-        return answer
-
-
 def job_exit(client: Client, number: int, posted: Sequence[str], *, base: str) -> int:
     """The review job's exit: ``0`` only when the PR's head is reviewed by what this job did (dev-lab #30).
 
     Gitea's gate counts a review only when the base's ``pull_request_target`` run concluded success
-    (:mod:`dev_lab.dev.reviewgate`), so a run must FAIL unless it posted success: every Actions job's status is
-    ``creator: null``, and a status a PR-head workflow posts -- before this job, which then finds the head
-    "already reviewed" -- is no verdict of this run. The job's LAST :data:`REVIEW_CONTEXT` post decides; a job that
-    posted none (a head another run already reviewed, a PR it does not review) exits ``0`` only when the gate
-    itself counts the head's review -- on Gitea, an earlier review run's concluded success.
+    (:mod:`dev_lab.dev.reviewgate`), so a run must FAIL unless it posted success. *posted* is what this job's
+    :func:`~dev_lab.dev.reviewgate.post_review` calls posted, in order
+    (:func:`~dev_lab.dev.reviewgate.posted_verdicts`): its LAST state decides. A job that posted none (a head whose
+    counted review stands, a PR it does not review) exits ``0`` only when the gate itself counts the head's review.
     """
     if posted:
         return 0 if posted[-1] == 'success' else 1
@@ -354,11 +337,16 @@ def main(
         if args.verb == 'run':
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(
-                this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready, secret=secret
+                this_machine(),
+                runtimes_with(host_runtimes(), args.runtime),
+                run=run,
+                ready=ready,
+                secret=secret,
+                verifies=True,
             )
-            seen = _Verdicts(origin)
-            emit(f'[review] {review_run(root, seen, load_review(root), args.pr, base=base, runner=runner)}')
-            return job_exit(origin, args.pr, seen.posted, base=base)
+            with posted_verdicts() as said:
+                emit(f'[review] {review_run(root, origin, load_review(root), args.pr, base=base, runner=runner)}')
+            return job_exit(origin, args.pr, said, base=base)
         if args.verb in {'held', 'blocked', 'dispose', 'cap', 'adjudicate'}:
             said = _listed(args, root, origin, base, run)
             for one in said:

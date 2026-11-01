@@ -134,7 +134,7 @@ from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
-from dev_lab.dev.reviewgate import post_review
+from dev_lab.dev.reviewgate import forge_posted, post_review
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
@@ -391,12 +391,12 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
         why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); waits for the forge review to be re-run'[
             :DESCRIPTION
         ]
-        status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
+        post_review(client, head, state='pending', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         why = f'not reviewed: no reviewer returned findings ({kinds}); waits for a takeover'[:DESCRIPTION]
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
                       outside=scope.outside, authored=authored, **_judging(root, client, review, pull,
@@ -449,14 +449,14 @@ def capped(
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
     if latest is not None and (latest.state, latest.description) == ('pending', said):
         return None, None
-    status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=said)
+    post_review(client, head, state='pending', description=said)
     return None, f'#{pull.number} {head[:12]}: {said}'
 
 
 def hold(client: Client, pull: PullRequest, why: str) -> str:
     """Hold *pull*'s head for the takeover door: :data:`REVIEW_CONTEXT` and the hold both ``pending`` *why*."""
-    for context in (REVIEW_CONTEXT, HOLD_CONTEXT):
-        status_post(client, pull.head_sha, context=context, state='pending', description=why[:DESCRIPTION])
+    post_review(client, pull.head_sha, state='pending', description=why[:DESCRIPTION])
+    status_post(client, pull.head_sha, context=HOLD_CONTEXT, state='pending', description=why[:DESCRIPTION])
     return f'#{pull.number} {pull.head_sha[:12]}: {why}'
 
 
@@ -469,7 +469,8 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     retried on that head.
     """
     head = pull.head_sha
-    if (stands := passed(root, client, head, runner.clock(), review.stale)) is not None:
+    counted = forge_posted(client, head, base=pull.base) if runner.verifies else None
+    if (stands := passed(root, client, head, runner.clock(), review.stale, counted=counted)) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     allowed, note = capped(root, client, review, pull, runner)
     if allowed is None:
@@ -505,7 +506,7 @@ def _command_round(
     ruling(me, f'reviewing #{pull.number}')
     self_review(me, sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
     claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
-    status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
+    post_review(client, head, state='pending', description=claim)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
         found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body,
@@ -514,11 +515,11 @@ def _command_round(
         return unable(client, pull, runner.host, str(unsupported))
     except (UnknownSchemaVersion, ReviewRefused) as named:
         why = f'not reviewed: {named}'[:DESCRIPTION]
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
         why = f'the review command failed ({type(failed).__name__}); not retried here, waits for a takeover'
-        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}: {failed}'
     authored = trailed(root, f'origin/{pull.base}', head)
     return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner)

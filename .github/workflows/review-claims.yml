@@ -49,7 +49,7 @@
           "run": "cd \"$RUNNER_TEMP\"\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\npython3 -I -m venv \"$RUNNER_TEMP/ai-lab\" && \"$RUNNER_TEMP/ai-lab/bin/python\" -I -m pip install -q uv\n\"$RUNNER_TEMP/ai-lab/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REF\"\n",
           "env": {
             "AI_LAB_REF": "3f8c7c5b25188b40673602682ce9df61157a16f6",
-            "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}",
+            "FAMILY_READ_TOKEN": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}",
             "GITHUB_TOKEN": "${{ github.token }}"
           }
         },
@@ -57,7 +57,7 @@
           "name": "Store the review key",
           "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper \"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket\" && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -I -m ai_lab.auth login anthropic --task pr-review; fi",
           "env": {
-            "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
+            "ANTHROPIC_API_KEY": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}"
           }
         },
         {

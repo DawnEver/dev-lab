@@ -27,6 +27,8 @@ from dev_lab.dev.reviewgate import (
     forge_posted,
     github_posted,
     job_run_url,
+    post_review,
+    posted_verdicts,
     review_missing,
 )
 
@@ -281,6 +283,37 @@ def test_a_review_run_that_did_not_conclude_success_refuses_a_success_naming_it(
     assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=honest) is None
     forge.add_run(head, conclusion='failure')
     assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=honest) is not None
+
+
+def test_a_run_re_run_in_place_decides_nothing_until_it_concludes_again() -> None:
+    """dev-lab #38: Gitea re-runs run N under the same id with its conclusion reset while it executes.
+
+    Its earlier conclusion is no longer observable, so a success naming it waits: during a FIRST run a PR-head
+    workflow may plant the very same status. PLANTED CONTROL: once the re-run concludes success the head counts.
+    """
+    forge, head = StateForge(), 'f' * 40
+    _, run = forge.add_run(head)
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=run) is None
+    forge.runs[-1]['conclusion'] = ''
+    said = breakglass.unreviewed(forge, head, base=_BASE)
+    assert said is not None
+    assert 'not by the forge' in said
+    forge.runs[-1]['conclusion'] = 'success'
+    assert breakglass.unreviewed(forge, head, base=_BASE) is None
+
+
+def test_the_door_records_what_this_process_posted_and_nothing_outside_the_block() -> None:
+    """dev-lab #38 F-9a36948d1771: the job's exit is read from the ONE posting door, never by sniffing the client.
+
+    PLANTED CONTROL: a status posted around the door, and a post outside the block, are not recorded.
+    """
+    forge, head = StateForge(), 'f' * 40
+    post_review(forge, head, state='success', description='outside')
+    with posted_verdicts() as said:
+        post_review(forge, head, state='pending', description='claimed')
+        status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='around the door')
+        post_review(forge, head, state='failure', description='round 1')
+    assert said == ['pending', 'failure']
 
 
 def test_a_runs_listing_without_a_list_refuses_never_passes() -> None:
