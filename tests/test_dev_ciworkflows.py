@@ -120,7 +120,8 @@ def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_
     steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
     login = steps['Store the review key']
     assert login['env'] == {'ANTHROPIC_API_KEY': '${{ secrets.ANTHROPIC_API_KEY }}'}
-    assert "credential.helper 'cache --timeout=1800'" in login['run'], 'in memory, never a file; one review long'
+    helper = 'credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket"'
+    assert helper in login['run'], 'in memory, one review long, the job its own'
     assert '-m ai_lab.auth login anthropic --task pr-review' in login['run']
     assert '| "$RUNNER_TEMP/ai-lab/bin/python"' in login['run'], 'the key travels on stdin'
     assert 'if [ -n "$ANTHROPIC_API_KEY" ]' in login['run'], 'a fork PR has no secret: the review holds the head'
@@ -333,7 +334,8 @@ def test_no_credential_outlives_the_step_that_uses_it(tmp_path: Path) -> None:
         review = next(s for s in steps if s.get('name') == 'tests/review')
         # F-5fd2611e79ea: the token files die with the step, whatever the door did (a self-hosted runner reuses temp).
         assert review['run'].startswith(
-            """trap 'git credential-cache exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT"""
+            "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; "
+            """rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT"""
         )
         # F-ca1dda52c2ef: the door carries the lazy-blob header itself, read from the hand-over file.
         assert 'GIT_CONFIG' not in review['run'], 'the review step derives no header in shell'
@@ -552,3 +554,37 @@ def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None
     steps = _gitea_review(tmp_path)['jobs']['review']['steps']
     run = next(s for s in steps if s.get('name') == 'Fetch the head')['run']
     assert run.index('git sparse-checkout set') < run.index('git checkout')
+
+
+def _full_adoption(tmp_path: Path) -> dict[str, Any]:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
+        encoding='utf-8',
+    )
+    return workflows(tmp_path)
+
+
+def test_the_review_key_cache_is_the_job_s_own(tmp_path: Path) -> None:
+    """Every helper set and every daemon stopped names a socket under RUNNER_TEMP, removed with the job.
+
+    F-83bc8b74b803 (motronics #5397 round 2): the default credential-cache socket is per HOME, shared by every job
+    on a persistent runner, and a SIGKILLed job never runs its EXIT trap -- the key then waits for the next job.
+    """
+    socket = '--socket=$RUNNER_TEMP/git-credential-cache/socket'
+    for name, workflow in _full_adoption(tmp_path).items():
+        text = render(workflow)
+        assert text.count('credential.helper') == text.count(f'cache --timeout=1800 {socket}'), f'{name}: shared'
+        assert text.count('git credential-cache') == text.count(f'git credential-cache {socket} exit'), name
+
+
+def test_the_gitea_job_refuses_to_run_without_its_forge(tmp_path: Path) -> None:
+    """F-ccbbe815af51: with ACTIONS_RUNTIME_URL unset FORGE_URL was empty and the clone read ``/<repo>.git``.
+
+    The lean steps are Gitea-only and use FORGE_URL alone; the first one fails loudly when it cannot derive it.
+    """
+    lean = _gitea_review(tmp_path)['jobs']['review']['steps']
+    reach = next(s for s in lean if s.get('name') == "Reach the forge on the runner's instance")['run']
+    assert 'ACTIONS_RUNTIME_URL' in reach
+    assert 'exit 1' in reach
+    fetch = next(s for s in lean if s.get('name') == 'Fetch the head')['run']
+    assert 'FORGE_URL:-' not in fetch
