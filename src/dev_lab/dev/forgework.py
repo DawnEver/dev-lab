@@ -381,6 +381,18 @@ class Client:
     def _stamped(self, text: str) -> str:
         return text if self.stamp is None else f'{self.stamp}\n\n{text}'
 
+    def can_write(self, login: str) -> bool:
+        """Whether the forge records *login* with write permission on this repository (refused or unknown: no).
+
+        ``GET .../collaborators/{login}/permission`` on both forges; the writing permissions are the backend's.
+        """
+        path = f'{self.repo}/collaborators/{urllib.parse.quote(login, safe="")}/permission'
+        try:
+            answer = self.call('GET', path)
+        except ForgeCallFailed:
+            return False
+        return isinstance(answer, dict) and answer.get('permission') in self.backend.writer_permissions
+
     def whoami(self) -> str:
         """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub.
 

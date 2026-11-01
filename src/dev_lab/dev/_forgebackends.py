@@ -53,6 +53,8 @@ class Backend:
     file_at: str = 'src/commit/{sha}/{path}'
     #: The login a workflow job token writes comments and issues as: the forge's own Actions identity.
     actions_login: str = GITEA_ACTIONS_LOGIN
+    #: The repository permissions ``GET .../collaborators/{login}/permission`` answers for a login that may WRITE.
+    writer_permissions: frozenset[str] = frozenset({'admin', 'owner', 'write'})
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -88,6 +90,7 @@ GITHUB: Final = Backend(
     branch_delete='git/refs/heads/{name}',
     file_at='blob/{sha}/{path}',
     actions_login=ACTIONS_BOT,
+    writer_permissions=frozenset({'admin', 'maintain', 'write'}),
     headers=(
         ('Accept', 'application/vnd.github+json'),
         ('X-GitHub-Api-Version', '2022-11-28'),

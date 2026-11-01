@@ -20,6 +20,7 @@ round's judge finds it fixed or a false positive, or when a CLAIM against it is 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -90,8 +91,8 @@ def dispose(client: Client, number: int, finding_id: str, why: str, *, by: Ident
 def raise_cap(client: Client, number: int, raised: Raised, *, by: Identity) -> str:
     """Record the integrator's raise of PR *number*'s review caps, with its reason; the line said.
 
-    Only the forge's own login is trusted to raise (:func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`), so the
-    integrator's session posts it through the forge client; the month's remainder still bounds the raised cap.
+    The record names its raiser's login (*by*), and is read only from a comment the forge records as that login's
+    (:func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`); the month's remainder still bounds the raised cap.
     """
     if raised.usd is None and raised.rounds is None:
         msg = 'a raise names --usd, --rounds or both'
@@ -103,7 +104,7 @@ def raise_cap(client: Client, number: int, raised: Raised, *, by: Identity) -> s
         f'Review cap of #{number} raised by {by.text()}: '
         f'{"" if raised.usd is None else f"{raised.usd:.2f} USD "}'
         f'{"" if raised.rounds is None else f"{raised.rounds} rounds"}'
-        f' -- {raised.why}\n\n{raise_line(raised)}'
+        f' -- {raised.why}\n\n{raise_line(replace(raised, by=by.login))}'
     )
     comment_upsert(client, number, kind=Marker.REVIEW_CAP, text=text)
     return f'#{number}: review cap raised ({raised.why})'

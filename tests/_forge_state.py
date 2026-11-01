@@ -43,6 +43,8 @@ class StateForge(Client):
         self.deleted_refs: list[str] = []
         self.private: bool | None = True  # the repository's visibility, as the forge's `private` flag answers it
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
+        #: ``{login: repository permission}`` as the forge records it; an absent login reads ``read``.
+        self.permissions: dict[str, str] = {}
         self._next_comment = 1000
         #: The forge's clock, the ``Date`` of every answer; an issue written is updated at it.
         self.now_http = NOW_HTTP
@@ -126,6 +128,7 @@ class StateForge(Client):
             (f'{api}/actions/runs/', 'run'),
             (f'{api}/statuses/', 'statuses'),
             (f'{api}/git/refs/heads/', 'ref'),
+            (f'{api}/collaborators/', 'permission'),  # the key is ``<quoted login>/permission``
         ):
             if route.startswith(prefix):
                 return kind, route.removeprefix(prefix)
@@ -205,6 +208,9 @@ class StateForge(Client):
         self.statuses.setdefault(sha, []).append(made)
         return made
 
+    def _permission(self, key: str) -> str:
+        return self.permissions.get(urllib.parse.unquote(key.removesuffix('/permission')), 'read')
+
     def _delete_comment(self, comment_id: int) -> None:
         for listed in self.comments.values():
             listed[:] = [c for c in listed if c['id'] != comment_id]
@@ -232,6 +238,7 @@ class StateForge(Client):
         opened = sum(i['state'] == 'open' for i in self.issues_by_number.values())
         handlers = {
             ('GET', 'user'): lambda: {'login': self.login},
+            ('GET', 'permission'): lambda: {'permission': self._permission(key)},
             ('GET', 'runs'): lambda: self._runs(query),
             ('GET', 'run'): lambda: next(r for r in self.runs if r['id'] == number),
             ('GET', 'repo'): lambda: {

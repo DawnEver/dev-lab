@@ -60,6 +60,7 @@ __all__ = [
     'fit',
     'gate',
     'raise_line',
+    'raise_record',
     'raised_of',
     'read_spend',
     'tag_of',
@@ -169,27 +170,65 @@ def fit(spend: Spend) -> Fit:
 
 @dataclass(frozen=True)
 class Raised:
-    """The integrator's raise of one PR's caps, with its reason."""
+    """The integrator's raise of one PR's caps, with its reason and the forge login of its raiser."""
 
     usd: float | None
     rounds: int | None
     why: str
+    by: str = ''
 
 
 def raise_line(raised: Raised) -> str:
-    """The hidden line a trusted ``review-cap`` comment records *raised* by (``>`` escaped)."""
-    doc = {'usd': raised.usd, 'rounds': raised.rounds, 'why': raised.why}
+    """The hidden line a ``review-cap`` comment records *raised* by (``>`` escaped)."""
+    doc = {'usd': raised.usd, 'rounds': raised.rounds, 'why': raised.why, 'by': raised.by}
     return f'<!-- review-cap {json.dumps(doc, ensure_ascii=False).replace(">", "\\u003e")} -->'
 
 
+def _number(value: object) -> bool:
+    return value is None or (isinstance(value, int | float) and not isinstance(value, bool))
+
+
+def _parsed(text: str) -> Raised | None:
+    """The raise one record's JSON spells, else ``None``: a malformed or ill-typed payload is no raise."""
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    usd, rounds, why, by = doc.get('usd'), doc.get('rounds'), doc.get('why', ''), doc.get('by', '')
+    if not (_number(usd) and (rounds is None or (isinstance(rounds, int) and not isinstance(rounds, bool)))):
+        return None
+    if not (isinstance(why, str) and isinstance(by, str)):
+        return None
+    return Raised(usd, rounds, why, by)
+
+
 def raised_of(bodies: Iterable[str]) -> Raised | None:
-    """The newest raise among *bodies* (trusted comment bodies only); ``None`` when the PR was never raised."""
+    """The newest raise among *bodies*; ``None`` when the PR was never raised.
+
+    Only AUTHORISED records arrive here: :func:`~dev_lab.dev.forgereview_rounds.trusted_bodies` admits a raise only
+    from the forge's own logins or from a raiser the forge records with write permission. Among those, newest wins.
+    """
     found = None
     for body in bodies:
         for match in _RAISED.finditer(body):
-            doc = json.loads(match['json'])
-            found = Raised(doc.get('usd'), doc.get('rounds'), doc.get('why', ''))
+            found = _parsed(match['json']) or found
     return found
+
+
+def raise_record(body: str, author: str) -> str | None:
+    """The raise record alone in *body*, when the login it names (``by``) is its forge-recorded *author*; else ``None``.
+
+    The claim pattern (:func:`~dev_lab.dev.forgereview_judge.claim_record`): only the matched line is returned, so
+    nothing else the comment carries is read as forge state, and a raise naming anyone but its author is no raise.
+    This binds the record to its author only; whether that author may RAISE is the forge's permission, asked by
+    :func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`. A malformed payload is no record.
+    """
+    for match in _RAISED.finditer(body):
+        if (raised := _parsed(match['json'])) is not None and raised.by == author:
+            return match.group(0)
+    return None
 
 
 @dataclass(frozen=True)
