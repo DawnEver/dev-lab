@@ -222,3 +222,36 @@ def test_a_copied_entry_is_judged_like_an_added_one(repo: Path) -> None:
     head = _commit(repo, 'm', rel)
     found = memoryadds._judge(repo, f'{head}~1', head, [('C', ENTRY, rel)])
     assert any('Uncited' in line for line in found), found
+
+
+def _downstream_merge_of_an_upstream_edit(repo: Path) -> None:
+    """integrate/main edits ENTRY after the lane branched; the LANE merges integrate/main in (a sync)."""
+    _lane(repo)
+    _write(repo, '.claude/memory/2026/10/31/lane.md', '---\nname: lane\ndescription: d\n---\n\nLane.\n')
+    _commit(repo, 'lane adds', '.claude/memory/2026/10/31/lane.md')
+    _git(repo, 'switch', '-q', 'integrate/main')
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nBody, redacted upstream.\n')
+    _commit(repo, 'upstream edits its entry', ENTRY)
+    _git(repo, 'switch', '-q', 'lane')
+    _git(repo, 'merge', '-q', '--no-ff', '--no-commit', 'integrate/main')
+
+
+def test_a_sync_taking_upstreams_own_memory_edit_verbatim_passes(repo: Path) -> None:
+    """A downstream merge staging an entry EXACTLY as MERGE_HEAD holds it is not an edit by this merge.
+
+    It is the integration line's own change, judged where it was made. MEASURED 2026-11-01: a motronics lane
+    syncing 2454 commits was refused on 255 such entries, and the hook's remedy (restore them) would have reverted
+    upstream inside the merge.
+    """
+    _downstream_merge_of_an_upstream_edit(repo)
+    assert memoryadds.pending(repo) == ()
+
+
+def test_planted_a_sync_whose_resolution_rewrites_an_upstream_edit_is_refused(repo: Path) -> None:
+    """PLANTED CONTROL: the same sync, but the resolution stages a THIRD text for the upstream-edited entry."""
+    _downstream_merge_of_an_upstream_edit(repo)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nNeither side wrote this.\n')
+    _git(repo, 'add', '--', ENTRY)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
