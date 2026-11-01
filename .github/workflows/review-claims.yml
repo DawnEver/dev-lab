@@ -55,14 +55,14 @@
         },
         {
           "name": "Store the review key",
-          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper 'cache --timeout=1800' && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -I -m ai_lab.auth login anthropic --task pr-review; fi",
+          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper \"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket\" && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -I -m ai_lab.auth login anthropic --task pr-review; fi",
           "env": {
             "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"
           }
         },
         {
           "name": "Adjudicate the claims",
-          "run": "trap \"git credential-cache exit\" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\""
+          "run": "trap \"git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit\" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\""
         }
       ],
       "permissions": {
