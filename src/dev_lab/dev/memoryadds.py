@@ -163,7 +163,21 @@ def pending(root: Path) -> tuple[str, ...]:
     if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
         return ()
     tree = _git(root, 'write-tree').strip()
-    return _judge(root, 'HEAD', tree, _changes(root, 'HEAD', tree))
+    return _judge(root, 'HEAD', tree, _not_taken_from_merge_head(root, tree, _changes(root, 'HEAD', tree)))
+
+
+def _not_taken_from_merge_head(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """*rows* without the paths a merge stages EXACTLY as ``MERGE_HEAD`` holds them -- not a merge: *rows* unchanged.
+
+    A sync of a lane with its integration line carries that line's history; an entry staged byte-for-byte as the
+    merged side has it (or absent where that side deleted it) is a change judged where it was made, not an edit by
+    this merge. Reverting it to the lane's text -- what the refusal's remedy asked -- would undo the integration line
+    inside the merge. A path the resolution stages as NEITHER side is still this commit's, and is judged.
+    """
+    if _run(root, 'rev-parse', '--verify', '-q', 'MERGE_HEAD')[0] != 0:
+        return rows
+    differs = set(_git(root, 'diff', '--no-renames', '--name-only', '-z', 'MERGE_HEAD', tree).split('\0')) - {''}
+    return [(status, old, new) for status, old, new in rows if old in differs or new in differs]
 
 
 def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
