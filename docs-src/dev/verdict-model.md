@@ -23,8 +23,8 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - **Only the producer posts.** A `verify` that `forge serve` spawned for a part -- or a declared workstation's
   `verify --part <part>` (the exception above) -- posts that part on a clean, unmoved HEAD; any other `verify`
   is a local measure and posts nothing. A dirty tree posts nothing.
-- **An unproduced part is absent, not red**: `jobparts absent` posts it `pending` and escalates it to the
-  integrator past its deadline; `main` still needs it PASS.
+- **An unproduced part is absent, not red**: `jobparts absent` posts it `pending`, saying since when;
+  `main` still needs it PASS.
 - **An engine is enabled by the tier, never by the shell**: the heavy tier sets the live-engine environment
   itself. A skip says which fact stopped it: not installed on this box, or installed but not enabled.
 - A resource on another host is never part of a verdict about this tree.

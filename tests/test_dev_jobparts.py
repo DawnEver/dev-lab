@@ -131,24 +131,15 @@ def test_every_expected_part_with_no_settled_status_is_posted_pending_absent_and
     assert judged.result.name == 'INCONCLUSIVE', 'promote reads every row absent judged, and refuses'
 
 
-def test_an_absent_row_past_its_deadline_is_escalated_to_the_integrator_once() -> None:
-    """Before the deadline nothing new is said; past it, one escalation and one alarm; never a second."""
+def test_an_absent_row_keeps_the_time_it_went_absent() -> None:
+    """A second ``absent`` run posts nothing new: the row still says since when it has stood absent."""
     forge = StateForge()
     expected = {'include': [{'part': 'base@windows', 'runs-on': 'x'}]}
-    alarms: list[object] = []
-    jobparts.absent(forge, SHA, expected, now=T0, alarm=alarms.append)
-    jobparts.absent(forge, SHA, expected, now=T0 + jobparts.ABSENT_DEADLINE / 2, alarm=alarms.append)
-    assert alarms == [], 'PLANTED CONTROL: inside the deadline it waits'
-    late = T0 + jobparts.ABSENT_DEADLINE
-    jobparts.absent(forge, SHA, expected, now=late, alarm=alarms.append)
+    jobparts.absent(forge, SHA, expected, now=T0)
+    jobparts.absent(forge, SHA, expected, now=datetime(2026, 11, 3, tzinfo=UTC))
     (status,) = status_list(forge, SHA)
     assert status.state == 'pending'
-    assert jobparts.ESCALATED in status.description
-    assert '2026-11-01T00:00:00Z' in status.description, 'the row still says since when'
-    assert len(alarms) == 1
-    assert 'tests/base@windows' in alarms[0].subject
-    jobparts.absent(forge, SHA, expected, now=late + jobparts.ABSENT_DEADLINE, alarm=alarms.append)
-    assert len(alarms) == 1, 'escalated once'
+    assert status.description == f'{jobparts.ABSENT} since 2026-11-01T00:00:00Z'
 
 
 def test_inside_github_actions_the_job_token_is_the_credential_on_github_only(tmp_path: Path) -> None:

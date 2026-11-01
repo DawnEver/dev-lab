@@ -160,7 +160,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.localpart` -- a local run as a ``tests/<part>`` part, in the cluster
   record's shape.
 * :mod:`dev_lab.dev.jobparts` -- the same parts produced by workflow jobs: the matrix of parts and runners,
-  one producer per part, and ``absent`` (pending, escalated past a deadline) for every part no job settled.
+  one producer per part, and ``absent`` (pending, since when) for every part no job settled.
 * :mod:`dev_lab.dev.workstationverdict` -- the one exception to VERDICTS-FROM-THE-FORGE: a declared
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS

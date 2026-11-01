@@ -51,7 +51,7 @@ from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictstore import WORKSTATION_KEY, ContentKey, Found, cite, lookup
-from dev_lab.dev.workstationrevoke import CLEAR_REMEDY, box_of, revoked, strike
+from dev_lab.dev.workstationrevoke import box_of, clear_remedy, revoked, strike
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -152,12 +152,13 @@ def _declared(root: Path, part: str) -> str:
 
 
 def _revoked_here(client: Client | None, root: Path) -> str:
-    """Why this box may not post by its strikes: ``''`` when it may; FAIL CLOSED on anything unreadable."""
+    """Why this box may not post by its strikes: ``''`` when it may; FAIL CLOSED on an unreadable store."""
+    host = this_machine()
     try:
-        gone = box_of(this_machine()) in revoked(client or client_for(root))
+        gone = box_of(host) in revoked(client or client_for(root))
     except (OSError, ValueError) as failed:
         return f'the revocation list could not be read ({failed})'
-    return f'its contradicted spot checks reached the limit (remedy: {CLEAR_REMEDY})' if gone else ''
+    return f'its contradicted spot checks reached the limit (remedy: {clear_remedy(host)})' if gone else ''
 
 
 def workstation_refusal(root: Path, part: str, *, full: bool, client: Client | None = None) -> str | None:
