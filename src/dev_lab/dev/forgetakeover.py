@@ -170,7 +170,7 @@ def takeover(
     does is :data:`~dev_lab.dev.reviewgate.RERUN`. It refuses a head the forge already reviewed. A head with no PR
     keeps its ledger in its own issue (:func:`ledger_of`).
     """
-    if review_missing(status_list(client, head), forge_posted(client, head)) is None:
+    if review_missing(status_list(client, head), forge_posted(client, head, base=base)) is None:
         msg = f'{head[:12]} is already reviewed by the forge: nothing to take over'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, head, base=base, pull=pull)

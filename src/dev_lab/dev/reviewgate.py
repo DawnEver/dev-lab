@@ -19,13 +19,18 @@ same-user agent, the forge's record of who wrote is not.
   an Actions run of this repository that the forge's API lists at this very head (:func:`job_run_url` is how the
   job names its own run). A deleted user's status carries no such run; a live user's token is never null.
 
-ON GITEA THE REPO'S DECLARATION AT THE JUDGED HEAD SAYS WHICH IDENTITY IS THE FORGE (:func:`adopts_actions_review`).
-A repo that declares ``[tool.dev_lab.ci."review.yml"]`` (it renders ``.gitea/workflows/review.yml``) is judged by
-the Actions rule above. One that does not has no review job: its review is posted by ``forge serve``, and the forge
-is the login the judging client authenticates as (:meth:`~dev_lab.dev.forgework.Client.whoami`) -- the serve's own
-account, which no developer or agent token is (the pre-#14 rule, ``forge_bots`` with ``[tool.dev_lab.review]
-forge_bot``, be39f7a6). Judging by the HEAD's declaration means a PR adopting the workflow lands only once Actions
-really reviews it.
+ON GITEA THE REPO'S DECLARATION SAYS WHICH IDENTITY IS THE FORGE (:func:`adopts_actions_review`), and the STRICTER
+of the PR's base and head decides: a repo that declares ``[tool.dev_lab.ci."review.yml"]`` (it renders
+``.gitea/workflows/review.yml``) at EITHER is judged by the Actions rule above. A PR can adopt the Actions review (it
+then lands only once Actions really reviews it) but never un-adopt it: the base is the integration branch, which the
+PR cannot edit. A repo declaring it at neither has no review job: its review is posted by ``forge serve``, and the
+forge is the login the judging client authenticates as (:meth:`~dev_lab.dev.forgework.Client.whoami`) -- the pre-#14
+rule (be39f7a6, ``forge_bots`` with ``[tool.dev_lab.review] forge_bot`` = "the login forge serve posts as"), its
+identity now read from the forge rather than declared. RESIDUAL, ACCEPTED ON RECORD (D18, "fake isolation"): on a
+Gitea host the serve's login is shared with the agents on that host, so until the repo adopts the Actions review a
+same-host agent's token is indistinguishable from the serve's.
+A declaration that cannot be read -- no ``pyproject.toml``, an answer without content -- refuses
+(:class:`DeclarationUnread`); only a parsed manifest lacking the table is "not adopted".
 
 The remedy for a head whose review could not run is :data:`RERUN`: the forge's own review, run again.
 """
@@ -43,6 +48,7 @@ from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgework import ForgeCallFailed
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -53,6 +59,7 @@ if TYPE_CHECKING:
 __all__ = [
     'ACTIONS_REVIEW',
     'RERUN',
+    'DeclarationUnread',
     'adopts_actions_review',
     'forge_posted',
     'github_posted',
@@ -84,22 +91,39 @@ def _run_path(url: str, owner: str, repo: str) -> str:
     return found.group(0).lower() if found else ''
 
 
-def adopts_actions_review(client: Client, head: str) -> bool:
-    """Whether the repo's ``pyproject.toml`` at *head*, as the forge holds it, declares :data:`ACTIONS_REVIEW`."""
-    answer: Any = client.call('GET', f'{client.repo}/contents/pyproject.toml?ref={head}')
-    text = base64.b64decode((answer or {}).get('content') or '').decode()
-    return ACTIONS_REVIEW in declared_table(tomllib.loads(text), 'ci', {})
+class DeclarationUnread(ValueError):
+    """The repo's ``pyproject.toml`` at a ref could not be read: whose review counts is undecided, so none does."""
 
 
-def forge_posted(client: Client, head: str) -> Callable[[CommitStatus], bool]:
+def adopts_actions_review(client: Client, ref: str) -> bool:
+    """Whether the repo's ``pyproject.toml`` at *ref*, as the forge holds it, declares :data:`ACTIONS_REVIEW`.
+
+    Raises:
+        DeclarationUnread: the file is absent at *ref*, or the forge's answer carries no content.
+
+    """
+    try:
+        answer: Any = client.call('GET', f'{client.repo}/contents/pyproject.toml?ref={ref}')
+    except ForgeCallFailed as failed:
+        msg = f'pyproject.toml at {ref} cannot be read: {failed}'
+        raise DeclarationUnread(msg) from failed
+    content = answer.get('content') if isinstance(answer, dict) else None
+    if not content:
+        msg = f'pyproject.toml at {ref}: the forge answered no content'
+        raise DeclarationUnread(msg)
+    return ACTIONS_REVIEW in declared_table(tomllib.loads(base64.b64decode(content).decode()), 'ci', {})
+
+
+def forge_posted(client: Client, head: str, *, base: str) -> Callable[[CommitStatus], bool]:
     """The test of whether a status on *head* was posted by *client*'s forge's own review (module docstring).
 
     On Gitea the runs at *head* are read once, on the first null-creator status asked about; a repo that has not
-    adopted the Actions review (:func:`adopts_actions_review`) is reviewed by the serve, the client's own login.
+    adopted the Actions review at *base* or *head* (:func:`adopts_actions_review`) is reviewed by the serve, the
+    client's own login.
     """
     if client.backend is GITHUB:
         return github_posted
-    if not adopts_actions_review(client, head):
+    if not (adopts_actions_review(client, base) or adopts_actions_review(client, head)):
         serve = client.whoami()
         return lambda status: bool(serve) and status.creator == serve
     owner, repo = client.forge.owner, client.forge.repo
