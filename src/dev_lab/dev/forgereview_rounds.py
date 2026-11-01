@@ -136,14 +136,18 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
     record (:func:`~dev_lab.dev.forgereview_judge.claim_record`), and only when the login it names is the login the
     forge records as its author. Without this the forge's own job never sees a claim (#11: the claim was DawnEver's,
     the job is the Actions bot). A cap RAISE is read the same way
-    (:func:`~dev_lab.dev.reviewbudget.raise_record`, #17: DawnEver's raise never reached the Actions job).
+    (:func:`~dev_lab.dev.reviewbudget.raise_record`, #17: DawnEver's raise never reached the Actions job), and
+    admitted only when the forge records its author with write permission (:meth:`Client.can_write`): naming
+    yourself proves who wrote it, never that you may raise.
     """
     trusted = {client.whoami(), client.backend.actions_login}
     out = []
     for comment in comment_list(client, number):
         if comment.author in trusted:
             out.append(comment.body)
-        elif record := claim_record(comment.body, comment.author) or raise_record(comment.body, comment.author):
+        elif (record := claim_record(comment.body, comment.author)) or (
+            (record := raise_record(comment.body, comment.author)) and client.can_write(comment.author)
+        ):
             out.append(record)
     return out
 
