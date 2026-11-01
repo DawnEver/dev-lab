@@ -37,7 +37,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared
-from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
+from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from dev_lab.dev.forgecoalesce import behind
@@ -280,7 +280,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> int:
     """``queue [--json]``; exit 1 when the forge cannot be read."""

@@ -63,7 +63,7 @@ from dev_lab.dev import (
     pushwatch,
     servelock,
 )
-from dev_lab.dev.forge import Transport, https_transport
+from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, Issue, PullRequest, client_for
 from dev_lab.dev.labsession import ENV
 
@@ -189,7 +189,7 @@ def issue_and_pr(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
 ) -> int:
     """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))

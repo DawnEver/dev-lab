@@ -32,9 +32,9 @@ A STATUS CONTEXT IS REPORTED AND, WHEN DECLARED EMPTY, NEVER WRITTEN -- ``status
 declared absence :func:`protection_body` honours, because a branch protected against a status nobody
 publishes is indistinguishable from a broken gate.
 
-THE TRANSPORT IS HTTPS BY CONSTRUCTION. :func:`https_transport` speaks exactly one protocol, so no
-URL here can be redirected onto another scheme and no comment has to assert that a URL is fine -- an
-assertion no checker can verify is the declaration that lies.
+THE TRANSPORT IS HTTPS TO EVERY NON-LOOPBACK HOST. :func:`forge_transport` speaks HTTPS to every host but a loopback one
+(a Gitea Actions job's own forge), chosen by the host alone, so no URL here can be redirected onto another scheme
+and no comment has to assert that a URL is fine -- an assertion no checker can verify is the declaration that lies.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ import os
 import re
 import socket
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credential_for, store_credential
@@ -92,7 +92,7 @@ __all__ = [
     'fetch_origin',
     'forge_from_remote',
     'forge_of_url',
-    'https_transport',
+    'forge_transport',
     'on_origin',
     'protection_body',
     'read_rule',
@@ -154,8 +154,19 @@ def user_agent(forge: Forge) -> str:
     return f'dev-lab ({login}@{machine}; {forge.owner}/{forge.repo})'
 
 
-def https_transport(host: str, timeout: float) -> http.client.HTTPSConnection:
-    """The shipped transport: one protocol, structurally."""
+#: Loopback host names: a request to one never leaves the machine, so they are the only hosts spoken plain HTTP.
+_LOOPBACK_HOSTS: Final = frozenset({'127.0.0.1', 'localhost', '[::1]'})
+
+
+def forge_transport(host: str, timeout: float) -> http.client.HTTPConnection:
+    """The shipped transport: HTTPS, except plain HTTP to a LOOPBACK *host* (``127.0.0.1:9000``).
+
+    A Gitea Actions job reaches its forge at the runner's registered instance, a loopback HTTP port: the public
+    name is refused from inside the host's network. A loopback request never crosses a wire, so it carries the
+    token no further than the forge process beside it; every other host is HTTPS, structurally.
+    """
+    if host.rpartition(':')[0] in _LOOPBACK_HOSTS or host in _LOOPBACK_HOSTS:
+        return http.client.HTTPConnection(host, timeout=timeout)
     return http.client.HTTPSConnection(host, timeout=timeout)
 
 
@@ -388,7 +399,7 @@ def call(
     *,
     method: str = 'GET',
     body: Mapping[str, Any] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     timeout: float = 30.0,
 ) -> object:
     """One API call; an error status RAISES.
@@ -418,7 +429,7 @@ def call(
         conn.close()
 
 
-def read_rule(forge: Forge, token: str, target: Protection, *, transport: Transport = https_transport) -> dict | None:
+def read_rule(forge: Forge, token: str, target: Protection, *, transport: Transport = forge_transport) -> dict | None:
     """The live rule for *target*'s branch, MATCHED rather than taken as the first rule.
 
     A repo with several protected branches would otherwise be reported on under the wrong one.
@@ -429,7 +440,7 @@ def read_rule(forge: Forge, token: str, target: Protection, *, transport: Transp
 
 
 def apply_protection(
-    forge: Forge, token: str, target: Protection, *, transport: Transport = https_transport
+    forge: Forge, token: str, target: Protection, *, transport: Transport = forge_transport
 ) -> tuple[Clause, ...]:
     """Make *target* true, and return the assessment of the state AFTER.
 

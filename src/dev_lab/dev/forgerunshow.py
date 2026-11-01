@@ -28,7 +28,7 @@ from typing import Any, Final
 from lab_commons.hpc.pytest_item import badness
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import Transport, https_transport
+from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgerecords import listing, replace_named
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 
@@ -124,7 +124,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
 ) -> int:
     """``run show <sha>``: print what the cluster published for *sha*; exit 1 when the forge cannot be read."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge run', description=__doc__.splitlines()[0])

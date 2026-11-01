@@ -13,7 +13,7 @@ from _forge_state import StateForge
 from dev_lab.dev import jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import ACTIONS_BOT, client_for
+from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN, client_for
 from dev_lab.dev.producer import full_suite_refusal
 
 SHA = 'b' * 40
@@ -143,6 +143,26 @@ def test_inside_github_actions_the_job_token_is_the_credential_on_github_only(tm
         client_for(hub, env={**store, 'GITHUB_TOKEN': 'job-token'})
     with pytest.raises(NoCredential):
         client_for(make_repo(tmp_path / 'tea', 'https://forge.example.org/o/r.git'), env=actions)
+
+
+def test_inside_gitea_actions_the_job_token_is_the_credential_on_gitea_only(tmp_path: Path) -> None:
+    """Gitea's runner sets GITEA_ACTIONS=true beside GITHUB_ACTIONS=true; its job writes as its Actions user.
+
+    PLANTED CONTROL: the same variables against a github.com remote, or without GITEA_ACTIONS, read the store.
+    """
+    empty = tmp_path / 'empty-gitconfig'
+    empty.write_text('[credential]\n\thelper = "!f() { :; }; f"\n', encoding='utf-8')
+    store = {'GIT_CONFIG_GLOBAL': str(empty), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+    actions = {**store, 'GITHUB_ACTIONS': 'true', 'GITEA_ACTIONS': 'true', 'GITHUB_TOKEN': 'job-token'}
+    (tmp_path / 'hub').mkdir()
+    (tmp_path / 'tea').mkdir()
+    tea = make_repo(tmp_path / 'tea', 'http://127.0.0.1:9000/o/r.git')
+    client = client_for(tea, env=actions)
+    assert (client.token, client.refresh, client.username) == ('job-token', None, GITEA_ACTIONS_LOGIN)
+    with pytest.raises(NoCredential):
+        client_for(tea, env={**actions, 'GITEA_ACTIONS': ''})
+    with pytest.raises(NoCredential):
+        client_for(make_repo(tmp_path / 'hub', 'https://github.com/o/r.git'), env=actions)
 
 
 def test_hosted_keeps_only_the_parts_a_hosted_runner_produces(tmp_path: Path) -> None:

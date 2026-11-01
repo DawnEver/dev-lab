@@ -88,7 +88,7 @@ from dev_lab.dev.forge import (
     Transport,
     UnreadableRemote,
     fetch_origin,
-    https_transport,
+    forge_transport,
 )
 from dev_lab.dev.forgeaffinity import context_of, covers, declared, deferral
 from dev_lab.dev.forgeclaim import (
@@ -362,7 +362,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     fetch: Callable[[Path], None] = fetch_origin,
     seat_of: Callable[[], ClusterAccount | None] = this_seat,
     host: str | None = None,

@@ -60,7 +60,7 @@ from lab_commons.hpc.testcells import conclude
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgepulls import issues
 from dev_lab.dev.forgework import Client, ForgeCallFailed, Issue, client_for
 
@@ -339,7 +339,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
 ) -> int:
     """``python -m dev_lab.dev.forge route <record.json.gz>``; exit 1 on a forge failure, 2 on a refusal."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge route', description='route reds to area issues')

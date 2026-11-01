@@ -20,6 +20,7 @@ from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.breakglass import notices, unreviewed
 from dev_lab.dev.componentbump import LANE
 from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -581,15 +582,17 @@ def test_every_admitted_break_glass_commit_is_one_hand_action_naming_branch_sha_
 
 
 def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pending() -> None:
-    """``error``, ``takeover pending`` and a claim are not a review; the forge's (login a, declared) ``success`` is."""
+    """``error``, ``takeover pending`` and a claim are not a review; the forge's (its Actions ghost) ``success`` is."""
     forge = StateForge()
+    forge.login = GITEA_ACTIONS_LOGIN  # the job token: Gitea records its Actions ghost as the creator
     head = 'a' * 40
-    assert 'not posted' in unreviewed(forge, head, 'a')
+    _, run = forge.add_run(head)
+    assert 'not posted' in unreviewed(forge, head)
     for state, description in (('pending', 'claimed by h, reviewing'), ('error', 'the review command failed')):
         status_post(forge, head, context=REVIEW_CONTEXT, state=state, description=description)
-        assert description in unreviewed(forge, head, 'a')
+        assert description in unreviewed(forge, head)
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='over the cap')
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings')
-    assert 'over the cap' in unreviewed(forge, head, 'a'), 'a hold not yet released is not a review'
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings', target_url=run)
+    assert 'over the cap' in unreviewed(forge, head), 'a hold not yet released is not a review'
     status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released: review reviewed this head')
-    assert unreviewed(forge, head, 'a') is None
+    assert unreviewed(forge, head) is None

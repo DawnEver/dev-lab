@@ -57,7 +57,7 @@ from dev_lab.dev.forge import (
     credential_for,
     forge_from_remote,
     forge_of_url,
-    https_transport,
+    forge_transport,
     store_credential,
 )
 from dev_lab.dev.forgework import Client, ForgeCallFailed, stored_client
@@ -156,7 +156,7 @@ def family_hosts(root: Path) -> tuple[str, ...]:
 
 
 def login(
-    forge: Forge, token: str, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = https_transport
+    forge: Forge, token: str, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = forge_transport
 ) -> str:
     """Verify *token* against the forge, then store it for ``https://<host>``; return the login.
 
@@ -171,7 +171,7 @@ def login(
 
 
 def status(
-    forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = https_transport
+    forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = forge_transport
 ) -> str:
     """The login the stored token authenticates as.
 
@@ -184,7 +184,7 @@ def status(
 
 
 def tick_refusal(
-    forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = https_transport
+    forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = forge_transport
 ) -> str:
     """What the forge API refuses the stored credential that a tick needs on *forge*'s repo; ``''`` when nothing."""
     try:
@@ -240,7 +240,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     read_secret: Callable[[str], str] = getpass.getpass,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,

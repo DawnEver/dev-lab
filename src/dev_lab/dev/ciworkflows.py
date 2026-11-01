@@ -1,4 +1,4 @@
-"""GitHub Actions workflows, declared in TOML and RENDERED -- YAML only because GitHub forces it.
+"""GitHub and Gitea Actions workflows, declared in TOML and RENDERED -- YAML only because the forges force it.
 
 ONE SOURCE PER LAYER: the family base is ``ci_base.toml`` beside this module; a repo's layer is
 ``[tool.dev_lab.ci."<file>.yml"]`` in its ``pyproject.toml``. A repo opts in to a base workflow by
@@ -7,6 +7,11 @@ deep-merged (tables key by key; anything else replaces) and each workflow is wri
 ``.github/workflows/<file>.yml`` as JSON -- JSON is YAML, so the stdlib renders it and no YAML library
 is needed. Nothing ever parses a workflow back: the drift check compares RENDERED BYTES to the file,
 and a workflow file the table does not declare is refused as hand-written.
+
+A WORKFLOW NAMES ITS FORGE. A table's ``forge`` key (:data:`FORGE_KEY`, ``github`` when omitted) places it in that
+forge's directory (:data:`WORKFLOW_DIRS`) and is never rendered: Gitea Actions runs ``.gitea/workflows`` and, once
+that exists, ignores ``.github/workflows``. Both forges' workflows draw on the same ``_steps``, so a step the two
+share -- the review itself -- has one source.
 
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
@@ -40,11 +45,12 @@ from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 __all__ = [
     'AI_LAB_REF_VAR',
     'BASE_PATH',
+    'FORGE_KEY',
     'RENDER_COMMAND',
     'SHARED',
     'STAMP',
     'USE_STEPS',
-    'WORKFLOW_DIR',
+    'WORKFLOW_DIRS',
     'ai_lab_ref',
     'drift',
     'expand',
@@ -62,7 +68,11 @@ SHARED: Final = '_steps'
 
 #: The key of a step that stands for a named list of :data:`SHARED`.
 USE_STEPS: Final = 'use-steps'
-WORKFLOW_DIR: Final = Path('.github') / 'workflows'
+#: The directory each forge's Actions runs its workflows from.
+WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('.gitea') / 'workflows'}
+
+#: The table key naming the forge a workflow is rendered for; a placement, never part of the rendered workflow.
+FORGE_KEY: Final = 'forge'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 
 #: The env naming the ai-lab commit the shared ``method`` steps install: declared ONCE, in ``ci_base.toml``.
@@ -130,18 +140,28 @@ def expand(workflow: dict[str, Any], shared: dict[str, list[dict[str, Any]]]) ->
     return {**workflow, 'jobs': jobs}
 
 
-def workflows(root: Path) -> dict[str, dict[str, Any]]:
-    """Every workflow *root* declares, by file name, with the base merged under the ones it names."""
+def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """Every workflow *root* declares, by file name: its forge's directory and the workflow, base merged under."""
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     pyproject = root / 'pyproject.toml'
     text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
     declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
     hosted = hosted_parts(text)
-    return {
-        name: hosted_jobs(expand(merge(base.get(name, {}), layer), shared), hosted)
-        for name, layer in sorted(declared.items())
-    }
+    out = {}
+    for name, layer in sorted(declared.items()):
+        workflow = hosted_jobs(expand(merge(base.get(name, {}), layer), shared), hosted)
+        forge = workflow.pop(FORGE_KEY, 'github')
+        if forge not in WORKFLOW_DIRS:
+            msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
+            raise ValueError(msg)
+        out[name] = (WORKFLOW_DIRS[forge], workflow)
+    return out
+
+
+def workflows(root: Path) -> dict[str, dict[str, Any]]:
+    """Every workflow *root* declares, by file name, with the base merged under the ones it names."""
+    return {name: workflow for name, (_, workflow) in _placed(root).items()}
 
 
 def render(workflow: dict[str, Any]) -> str:
@@ -151,31 +171,30 @@ def render(workflow: dict[str, Any]) -> str:
 
 def drift(root: Path) -> list[str]:
     """Every rendered workflow that differs from its file, and every workflow file nobody declared."""
-    declared = workflows(root)
-    directory = root / WORKFLOW_DIR
+    declared = _placed(root)
     out = []
-    for name, workflow in declared.items():
-        path = directory / name
+    for name, (directory, workflow) in declared.items():
+        path = root / directory / name
         if not path.is_file():
             out.append(f'{path}: declared and not rendered')
         elif path.read_text(encoding='utf-8') != render(workflow):
             out.append(f'{path}: differs from its TOML (hand-edited, or the TOML moved without a render)')
-    if directory.is_dir():
-        out += [
-            f'{path}: a workflow no [tool.dev_lab.ci] table declares -- hand-written; declare it in TOML'
-            for path in sorted(directory.iterdir())
-            if path.suffix in {'.yml', '.yaml'} and path.name not in declared
-        ]
+    for directory in WORKFLOW_DIRS.values():
+        if (root / directory).is_dir():
+            out += [
+                f'{path}: a workflow no [tool.dev_lab.ci] table declares -- hand-written; declare it in TOML'
+                for path in sorted((root / directory).iterdir())
+                if path.suffix in {'.yml', '.yaml'} and declared.get(path.name, (None,))[0] != directory
+            ]
     return out
 
 
 def write(root: Path) -> list[Path]:
-    """Render every declared workflow of *root* to disk; returns the paths written."""
-    directory = root / WORKFLOW_DIR
+    """Render every declared workflow of *root* to its forge's directory; returns the paths written."""
     written = []
-    for name, workflow in workflows(root).items():
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / name
+    for name, (directory, workflow) in _placed(root).items():
+        path = root / directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(render(workflow), encoding='utf-8', newline='\n')
         written.append(path)
     return written

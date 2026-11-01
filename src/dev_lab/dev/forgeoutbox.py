@@ -61,7 +61,7 @@ from dev_lab.dev.forge import (
     NoCredential,
     Transport,
     UnreadableRemote,
-    https_transport,
+    forge_transport,
     on_origin,
 )
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
@@ -320,7 +320,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
 ) -> int:
     """``python -m dev_lab.dev.forge publish``: post every queued status whose commit is on origin."""
     argparse.ArgumentParser(prog='dev_lab.dev.forge publish', description=main.__doc__).parse_args(

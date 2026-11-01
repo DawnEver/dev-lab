@@ -134,6 +134,7 @@ from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
+from dev_lab.dev.reviewgate import post_review
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
@@ -264,7 +265,6 @@ class Review:
     code: tuple[str, ...] = forgereview_scope.CODE
     not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
-    forge_bot: str = ''  # Gitea: the login forge serve posts as; only its tests/review success counts (D11)
 
     def __post_init__(self) -> None:
         """Refuse a ``claim_stale`` that is not a duration, naming it."""
@@ -421,9 +421,7 @@ def _without_command(client: Client, pull: PullRequest, scope: Scope) -> str | N
     """The line said when *pull*'s head is settled with no command run (nothing but generated files to read)."""
     if scope.slices:
         return None
-    status_post(
-        client, pull.head_sha, context=REVIEW_CONTEXT, state='success', description=ONLY_GENERATED[:DESCRIPTION]
-    )
+    post_review(client, pull.head_sha, state='success', description=ONLY_GENERATED[:DESCRIPTION])
     return f'#{pull.number} {pull.head_sha[:12]}: {ONLY_GENERATED}'
 
 

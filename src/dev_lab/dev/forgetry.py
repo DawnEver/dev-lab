@@ -29,7 +29,7 @@ from lab_commons.compute.admission import Admission
 from lab_commons.log import emit
 from lab_commons.resources import admits
 
-from dev_lab.dev.forge import _GIT, NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
+from dev_lab.dev.forge import _GIT, NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
 from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgenotice import duration
 from dev_lab.dev.forgepublish import RequestRefused, publish
@@ -79,7 +79,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     fetch: Callable[[Path], None] = fetch_origin,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:

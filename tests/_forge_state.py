@@ -16,7 +16,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 API = '/api/v1/repos/o/r'
@@ -35,6 +35,8 @@ class StateForge(Client):
         #: Every merge the forge was asked for, as sent: ``(number, body)``.
         self.merges: list[tuple[int, dict[str, Any]]] = []
         self.comments: dict[int, list[dict[str, Any]]] = {}
+        #: The repository's Actions runs, as Gitea's ``GET .../actions/runs`` lists them.
+        self.runs: list[dict[str, Any]] = []
         self.fail_lists = False
         self.deny_delete = False
         self.private: bool | None = True  # the repository's visibility, as the forge's `private` flag answers it
@@ -44,6 +46,18 @@ class StateForge(Client):
         self.now_http = NOW_HTTP
         #: Every call as ``METHOD path?query``, in order: what a test counts requests by.
         self.asked: list[str] = []
+
+    def add_run(self, head: str, *, repo: str = 'o/r') -> tuple[int, str]:
+        """An Actions run of *repo* at *head*: its id (``GITHUB_RUN_ID``) and its web URL, as Gitea answers them."""
+        run_id = 7000 + len(self.runs)
+        url = f'https://{self.forge.host}/{repo}/actions/runs/{len(self.runs) + 1}'
+        self.runs.append({'id': run_id, 'head_sha': head, 'html_url': url})
+        return run_id, url
+
+    def _runs(self, query: dict[str, str]) -> dict[str, Any]:
+        mine = [r for r in self.runs if f'/{self.forge.owner}/{self.forge.repo}/' in r['html_url']]
+        listed = [r for r in mine if r['head_sha'] == query.get('head_sha', r['head_sha'])]
+        return {'workflow_runs': listed, 'total_count': len(listed)}
 
     def _number(self) -> int:
         """Issues and pulls share one number space, as on both forges."""
@@ -102,11 +116,13 @@ class StateForge(Client):
             api: 'repo',
             f'{api}/issues': 'issues',
             f'{api}/pulls': 'pulls',
+            f'{api}/actions/runs': 'runs',
         }
         if route in fixed:
             return fixed[route], ''
-        if route.startswith(f'{api}/statuses/'):
-            return 'statuses', route.removeprefix(f'{api}/statuses/')
+        for prefix, kind in ((f'{api}/actions/runs/', 'run'), (f'{api}/statuses/', 'statuses')):
+            if route.startswith(prefix):
+                return kind, route.removeprefix(prefix)
         if route.startswith(f'{api}/commits/') and route.endswith('/statuses'):  # GitHub's list, with creators
             return 'statuses', route.removeprefix(f'{api}/commits/').removesuffix('/statuses')
         if route.startswith(f'{api}/pulls/'):
@@ -166,7 +182,10 @@ class StateForge(Client):
     def _post_status(self, sha: str, body: dict[str, Any]) -> dict[str, Any]:
         """Gitea keeps every post, answering the state as ``status``; ids ascend across the forge."""
         self._next_comment += 1
-        made = {'id': self._next_comment, 'status': body['state'], 'creator': {'login': self.login}} | body
+        # Gitea records a job token's status as its Actions ghost (user -2) and answers ``"creator": null``, while
+        # the same token's comments name its Actions user (D11, measured 2026-11-01).
+        creator = None if self.login == GITEA_ACTIONS_LOGIN else {'login': self.login}
+        made = {'id': self._next_comment, 'status': body['state'], 'creator': creator} | body
         self.statuses.setdefault(sha, []).append(made)
         return made
 
@@ -197,6 +216,8 @@ class StateForge(Client):
         opened = sum(i['state'] == 'open' for i in self.issues_by_number.values())
         handlers = {
             ('GET', 'user'): lambda: {'login': self.login},
+            ('GET', 'runs'): lambda: self._runs(query),
+            ('GET', 'run'): lambda: next(r for r in self.runs if r['id'] == number),
             ('GET', 'repo'): lambda: {
                 'open_issues_count': opened,
                 'open_pr_counter': 0,

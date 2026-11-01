@@ -40,7 +40,7 @@ from lab_commons.hpc.allocation import RECORD as ALLOCATION
 from lab_commons.log import emit
 
 from dev_lab.dev._forge_journal import Durable, Probe
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import STORAGE, Alarm
 from dev_lab.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
@@ -340,7 +340,7 @@ def main(
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
+    transport: Transport = forge_transport,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> int:
     """``records list|prune|get|put|rm``; exit 1 with the forge's remedy when a call fails."""

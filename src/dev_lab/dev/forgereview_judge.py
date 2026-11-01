@@ -34,7 +34,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev._forgebackends import ACTIONS_BOT
+from dev_lab.dev._forgebackends import GITEA, GITHUB
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.principles import payload
@@ -77,7 +77,7 @@ _MIN_WHY: Final = 12
 
 #: The logins a workflow job token writes as -- GitHub's Actions bot, Gitea's Actions user. Only a job holds that
 #: token, so the login (read from the forge, never from an env variable) is what binds a ruling to CI.
-CI_LOGINS: Final = frozenset({ACTIONS_BOT, 'gitea-actions'})
+CI_LOGINS: Final = frozenset({GITHUB.actions_login, GITEA.actions_login})
 
 
 class AdjudicationRefused(ValueError):
