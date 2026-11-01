@@ -84,6 +84,7 @@ class Severity(StrEnum):
     downgrade an alert to something no remedy chain matches.
     """
 
+    INFO = 'info'  # a notice that needs no action: the alert-channel test (D55)
     WARNING = 'warning'
     CRITICAL = 'critical'
 

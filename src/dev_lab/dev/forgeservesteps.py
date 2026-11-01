@@ -12,7 +12,7 @@ from pathlib import Path
 
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import forgeship, retention
+from dev_lab.dev import forgeship, hostalarm, retention
 from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
@@ -43,6 +43,7 @@ from dev_lab.dev.relock import carry
 
 __all__ = [
     'hygiene',
+    'pressed',
     'prompt',
     'raise_once',
     'relock',
@@ -186,6 +187,14 @@ def retain_storage(
     if done is not None and done.over:
         body = done.alarm or f'freed {done.freed_bytes} bytes and {done.freed_files} files; still over pressure'
         alarm(Alarm(STORAGE, repo, f'{who} storage is still near its quota', body))
+
+
+def pressed(root: Path, repo: str, *, who: str, say: Callable[[str], None], alarm: Callable[[Alarm], object]) -> None:
+    """The host-pressure reading (:func:`dev_lab.dev.hostalarm.step`, ruling D54); a failure to read is said."""
+    try:
+        hostalarm.step(root, repo, who=who, alarm=alarm)
+    except (OSError, ValueError) as why:
+        say(f'[serve] the host-pressure reading did not run: {why}')
 
 
 def relock(

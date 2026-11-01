@@ -103,6 +103,7 @@ def test_the_roster_is_what_this_build_ships() -> None:
         'heartbeat',
         'disk_usage',
         'process_monitor',
+        'host_pressure',
         'log_scanner',
         'progress_tracker',
         'deploy',

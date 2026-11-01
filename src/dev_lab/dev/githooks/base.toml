@@ -160,3 +160,10 @@ always_run = true
 id = "pr-notices"
 run = ["python", "-m", "dev_lab.dev.branchnotices"]
 always_run = true
+
+# A PRESSED HOST TELLS ITS AGENTS (ruling D54): this host's disk/memory/CPU alarms, the agent hook's own lines
+# (dev_lab.dev.hostalarm check; silent when the host is not pressed) -- a secondary channel to the hook.
+[[post-commit]]
+id = "host-pressure"
+run = ["python", "-m", "dev_lab.dev.hostalarm", "check"]
+always_run = true
