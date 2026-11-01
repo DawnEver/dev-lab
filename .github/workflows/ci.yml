@@ -204,7 +204,7 @@
         },
         {
           "name": "tests/review",
-          "run": "trap \"git credential-cache exit\" EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-env FAMILY_READ_TOKEN --git-token-env GITHUB_TOKEN --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "run": "trap \"git credential-cache exit\" EXIT\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
           "env": {
             "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
             "FAMILY_READ_TOKEN": "${{ secrets.FAMILY_READ_TOKEN }}",
