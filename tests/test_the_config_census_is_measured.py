@@ -218,12 +218,12 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
         pages = dev_pages(reached[repo])
         assert pages == {'index.md'}, f'{repo} now holds {sorted(pages)}; its row says the tree is one pointer page'
         text = (reached[repo] / 'docs-src' / 'dev' / 'index.md').read_text(encoding='utf-8')
-        assert '../../../lab-commons/docs-src/dev/' in text, f'{repo} index.md stopped pointing at the shared tree'
+        assert '../../../dev-lab/docs-src/dev/' in text, f'{repo} index.md stopped pointing at the shared tree'
         assert 'pointer_table' in text, f'{repo} index.md no longer names the generator that keeps it honest'
     if 'consumer-a' in reached:
         own = dev_pages(reached['consumer-a']) - kit_pages
         assert own >= {'gate.md', 'testing.md', 'user-flow.md', 'compute-resources.md'}, sorted(own)
         index = read_at_head(reached['consumer-a'], 'docs-src/dev/index.md') or ''
-        assert '../../../lab-commons/docs-src/dev/' in index, (
+        assert '../../../dev-lab/docs-src/dev/' in index, (
             'the consumer-a dev index stopped pointing upstream, so its SPLITS row describes a former shape'
         )

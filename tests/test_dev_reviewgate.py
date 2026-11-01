@@ -112,7 +112,7 @@ def test_on_gitea_a_named_user_never_counts_even_naming_this_heads_run(creator: 
     _, run = forge.add_run(head)
     said = _gitea_review(forge, head, login=creator, url=run)
     assert said is not None
-    assert creator in said
+    assert 'not by the forge' in said, 'a named user is refused as a user, not for another reason'
     assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=run) is None
 
 
