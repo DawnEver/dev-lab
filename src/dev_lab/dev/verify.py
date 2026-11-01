@@ -509,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     post = None
     if outside is None:
         post = functools.partial(post_part, root, arguments=posted, part=parsed.part, extra=workstation)
-    stored, check = _stored(root, parsed.part, key, producer=post is not None and not posted)
+    stored, check = _stored(root, parsed.part, key, producer=post is not None and not posted and not parsed.rerun)
     if stored is not None and check is None:
         return EXIT_CODES[stored.result]
     code = _lead(root, arguments, key, cache, wait_s=wait_s, post=post)

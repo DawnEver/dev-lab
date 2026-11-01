@@ -23,7 +23,7 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev.forgerecords import listing
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.platformparts import PartRefusal, part_context, part_of
-from dev_lab.dev.workstationrevoke import strikes_name
+from dev_lab.dev.workstationrevoke import box_of
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -106,7 +106,7 @@ def _sha_part(name: str) -> tuple[str, str] | None:
 def _passes(record: Mapping[str, Any], key: ContentKey, revoked: Collection[str]) -> bool:
     if record.get('env') != key.env or record.get('scope') != 'full' or record.get('platform') != key.part:
         return False
-    if (box := record.get(WORKSTATION_KEY)) and strikes_name(str(box)) in revoked:
+    if (box := record.get(WORKSTATION_KEY)) and box_of(str(box)) in revoked:
         return False
     try:
         return part_of(record).result is Conclusion.PASS
@@ -126,7 +126,7 @@ def lookup(
     named = [(item, found) for item in listing(client) if (found := _sha_part(item.name)) and found[1] == key.part]
     trees = trees_of(root, {sha for _, (sha, _) in named})
     fetch = download or client.download
-    for item, (sha, _) in reversed(named):
+    for item, (sha, _) in sorted(named, key=lambda one: one[0].id, reverse=True):  # newest: the forge's id
         if trees.get(sha) != key.tree:
             continue
         record = json.loads(gzip.decompress(fetch(item.url)).decode('utf-8'))

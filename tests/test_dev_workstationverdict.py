@@ -31,6 +31,7 @@ SHA, OLD = 'a' * 40, 'c' * 40
 TREE, OTHER_TREE = 't' * 40, 'u' * 40
 ENV = 'env-now'
 SERVE = {'repos': ['optimi-lab'], 'parts': 'every'}
+STRIKE_FILE = f'workstation-strike-DUIPEZZTZ-{"0" * 32}.json'
 CLEAN = Facts(part='base@windows', full=True, declared='', revoked='', dirt=(), pushed=True, stale='')
 
 
@@ -74,6 +75,15 @@ def test_the_declaration_is_the_machine_files_serve_table_and_nothing_else() -> 
     )
 
 
+def test_repos_that_is_not_a_list_is_a_refusal_never_a_substring_match() -> None:
+    """F-7718516ce1d6: ``repos = "optimi-lab"`` must not declare the box a producer of ``lab``."""
+    one = {**SERVE, 'repos': 'optimi-lab'}
+    refused = workstationverdict.declared_refusal(one, repo='lab', part='base', present={'windows'})
+    assert 'is not a list of repo names' in refused
+    refused = workstationverdict.declared_refusal(one, repo='optimi-lab', part='base', present={'windows'})
+    assert 'is not a list of repo names' in refused
+
+
 class Store:
     """The run-records store, in memory: name -> bytes, read through ``listing`` and the client's ``download``."""
 
@@ -85,6 +95,7 @@ class Store:
         for module in (verdictstore, workstationrevoke):
             monkeypatch.setattr(module, 'listing', self.listing)
         monkeypatch.setattr(workstationrevoke, 'replace_named', self.replace)
+        monkeypatch.setattr(workstationrevoke, 'remove_named', self.remove)
 
     def listing(self, _client: object) -> tuple[Attachment, ...]:
         return tuple(Attachment(index, name, name) for index, name in enumerate(self.files))
@@ -93,6 +104,9 @@ class Store:
         self.files.pop(name, None)
         self.files[name] = data
         return Attachment(0, name, name)
+
+    def remove(self, _client: object, name: str) -> int:
+        return 1 if self.files.pop(name, None) is not None else 0
 
     def record(self, name: str, record: dict) -> None:
         self.files[name] = gzip.compress(json.dumps(record).encode('utf-8'))
@@ -119,9 +133,9 @@ def test_an_unreadable_or_malformed_revocation_list_refuses_the_post(
     _declared_box(monkeypatch)
     store = Store(monkeypatch)
     assert workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=store.client) is None
-    store.files[workstationrevoke.strikes_name('DUIPEZZTZ')] = b'not json'
+    store.files[STRIKE_FILE] = b'not json'
     assert 'revocation list could not be read' in _refusal(tmp_path, store)
-    store.files[workstationrevoke.strikes_name('DUIPEZZTZ')] = b'{"a": 1}'
+    store.files[STRIKE_FILE] = b'{"a": 1}'
     assert 'revocation list could not be read' in _refusal(tmp_path, store)
 
     def down(_client: object) -> tuple[Attachment, ...]:
@@ -278,8 +292,73 @@ def test_one_contradiction_is_a_strike_and_the_limit_revokes(monkeypatch: pytest
     workstationverdict.after_run(store.client, _found('OTHERBOX'), Conclusion.FAIL)
     second = workstationverdict.after_run(store.client, _found(), Conclusion.FAIL)
     assert 'REVOKED' in second
-    assert workstationrevoke.revoked(store.client) == {workstationrevoke.strikes_name('DUIPEZZTZ')}
+    assert workstationrevoke.revoked(store.client) == {'DUIPEZZTZ'}
     assert 'names no box' in workstationverdict.after_run(store.client, _found(''), Conclusion.FAIL)
+
+
+def test_two_strikes_written_at_once_both_count_and_clear_lifts_them(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F-24463108d1a9: a strike is a new file, never a read-modify-write, so racing strikes never lose one."""
+    store = Store(monkeypatch)
+    real = workstationrevoke._strikes
+    monkeypatch.setattr(workstationrevoke, '_strikes', lambda _client: [])  # both writers read "no strikes yet"
+    workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'one')
+    workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'two')
+    monkeypatch.setattr(workstationrevoke, '_strikes', real)
+    assert workstationrevoke.revoked(store.client) == {'DUIPEZZTZ'}
+    monkeypatch.setattr(workstationrevoke, 'client_for', lambda _root: store.client)
+    assert workstationrevoke.main(['clear', 'DUIPEZZTZ']) == 0
+    assert workstationrevoke.revoked(store.client) == frozenset()
+
+
+def test_a_revoked_box_is_refused_naming_the_remedy(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """F-464f9b2fb0f8: the refusal names who lifts it and how."""
+    _declared_box(monkeypatch)
+    store = Store(monkeypatch)
+    for why in ('one', 'two'):
+        workstationrevoke.strike(store.client, 'DUIPEZZTZ', why)
+    refused = _refusal(tmp_path, store)
+    assert 'reached the limit' in refused
+    assert 'python -m dev_lab.dev.workstationrevoke clear <box>' in refused
+
+
+def test_lookup_takes_the_newest_record_by_the_forges_id_not_the_listing_order(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """F-f0df4a8c7ea8: whatever order the forge lists in, the highest id is the newest."""
+    store = Store(monkeypatch)
+    newer, older = f'run-{OLD}-base@windows-r2.json.gz', f'run-{OLD}-base@windows-r1.json.gz'
+    store.record(newer, _record(OLD))
+    store.record(older, _record(OLD))
+    ids = {newer: 9, older: 1}
+    monkeypatch.setattr(
+        verdictstore, 'listing', lambda _client: tuple(Attachment(ids[n], n, n) for n in (newer, older))
+    )
+    _trees(monkeypatch, {OLD: TREE})
+    found = verdictstore.lookup(tmp_path, store.client, KEY, revoked=())
+    assert found is not None
+    assert found.attachment.name == newer
+
+
+def test_verify_rerun_never_reads_the_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """F-fe77aada3432: ``--rerun`` runs the part even when the store holds a PASS of its key; the control cites."""
+    _verify_root(monkeypatch, tmp_path)
+    monkeypatch.setenv(PRODUCING_VAR, f'tests/base@windows@{SHA}')
+    monkeypatch.setattr(verify, 'head_sha', lambda _root: SHA)
+    monkeypatch.setattr(verify, 'head_tree', lambda _root: TREE)
+    monkeypatch.setattr(verify, 'client_for', lambda _root: StateForge())
+    asked: list[object] = []
+
+    def before_run(*_a: object, **_k: object) -> workstationverdict.Decision:
+        asked.append(1)
+        return workstationverdict.Decision(_found(), cited=True, line='cited')
+
+    monkeypatch.setattr(verify, 'before_run', before_run)
+    ran: list[object] = []
+    monkeypatch.setattr(verify, '_judge', lambda *_a, **_k: ran.append(1) or (ProducerExit.PASS, []))
+    assert verify.main(['--part', 'base@windows']) == ProducerExit.PASS
+    assert (asked, ran) == ([1], []), 'PLANTED CONTROL: without --rerun the stored PASS is cited'
+    assert verify.main(['--part', 'base@windows', '--rerun']) == ProducerExit.PASS
+    assert (asked, ran) == ([1], [1]), '--rerun ran the part and never asked the store'
 
 
 def _verify_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

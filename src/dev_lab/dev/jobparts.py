@@ -14,8 +14,10 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
   (:func:`dev_lab.dev.forgework.actions_token`);
 * an ``if: always()`` job runs ``absent <sha>`` over the SAME event's matrix: ABSENT IS A STATE, NOT A FAILURE
   (ruling D50-1, optimi-lab #124: a full Windows run read red only because no job took the row). Every row the
-  checkout derives that no job settled is posted ``pending`` saying :data:`ABSENT` and since when; a later run of
-  the verb past :data:`ABSENT_DEADLINE` re-posts it naming the escalation and sounds an ``integration`` alarm.
+  checkout derives that no job settled is posted ``pending`` saying :data:`ABSENT` and since when, so every reader
+  sees its age. A run of the verb past :data:`ABSENT_DEADLINE` re-posts it naming the escalation and sounds an
+  ``integration`` alarm -- but NOTHING SCHEDULES that later run today: the workflow runs the verb once per event,
+  so the escalation fires only when a workflow re-run, the integrator or a person runs ``absent <sha>`` again.
   It is never a settled part (:func:`dev_lab.dev.platformparts.parts_of`), so merge-ready and promote still
   refuse until every row stands PASS -- and any producer, a declared workstation included
   (:mod:`dev_lab.dev.workstationverdict`), may still settle it.

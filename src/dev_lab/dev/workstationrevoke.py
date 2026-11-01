@@ -5,59 +5,101 @@ that box, never at once a revocation: one flaky test must not bar an honest box.
 strikes revoke it -- it may post no part any more, and no record it ever posted is cited
 (:func:`dev_lab.dev.verdictstore.lookup`).
 
-ONE FILE PER BOX (``workstation-strikes-<box>.json``, a JSON list of the strikes' texts), so two boxes struck at
-once never overwrite each other's strikes. A file that does not read as a list of strings RAISES ``ValueError``:
-every reader fails closed on it.
+ONE FILE PER STRIKE (``workstation-strike-<box>-<uuid>.json``, the strike's text as a JSON string): a strike is
+only ever ADDED, never read-modified-written, so two producers striking one box at once both count -- no lock is
+needed because nothing is overwritten. A strike file that is not a JSON string RAISES ``ValueError``: every reader
+fails closed on it.
+
+THE REMEDY for a revoked box is a human decision, taken by whoever holds the forge credential once the cause is
+understood: ``python -m dev_lab.dev.workstationrevoke clear <box>`` deletes its strikes (:func:`clear`).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
+import sys
+import uuid
+from collections import Counter
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev.forgerecords import listing, replace_named
+from lab_commons.log import emit
+
+from dev_lab.dev.forgerecords import listing, remove_named, replace_named
+from dev_lab.dev.forgework import client_for
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from dev_lab.dev.forgework import Client
 
-__all__ = ['STRIKES_TO_REVOKE', 'revoked', 'strike', 'strikes_name']
+__all__ = ['CLEAR_REMEDY', 'STRIKES_TO_REVOKE', 'box_of', 'clear', 'main', 'revoked', 'strike']
 
 #: How many contradicted spot checks revoke a box.
 STRIKES_TO_REVOKE: Final = 2
 
-_PREFIX: Final = 'workstation-strikes-'
+#: What a revoked box's refusal names as the remedy.
+CLEAR_REMEDY: Final = 'python -m dev_lab.dev.workstationrevoke clear <box>, once the contradiction is understood'
+
+_PREFIX: Final = 'workstation-strike-'
 _SUFFIX: Final = '.json'
-_UNSAFE: Final = re.compile(r'[^A-Za-z0-9_.-]')
+_UNSAFE: Final = re.compile(r'[^A-Za-z0-9_.]')
+_STRIKE: Final = re.compile(rf'^{_PREFIX}(?P<box>[A-Za-z0-9_.]+)-[0-9a-f]{{32}}{re.escape(_SUFFIX)}$')
 
 
-def strikes_name(host: str) -> str:
-    """The store file holding *host*'s strikes."""
-    return f'{_PREFIX}{_UNSAFE.sub("_", host)}{_SUFFIX}'
+def box_of(host: str) -> str:
+    """*host* as it is spelled in a strike file's name."""
+    return _UNSAFE.sub('_', host)
 
 
-def _strikes(client: Client) -> dict[str, list[str]]:
-    """``{file name: its strikes}`` for every box with a strike; a malformed file raises ``ValueError``."""
-    found: dict[str, list[str]] = {}
+def _strikes(client: Client) -> list[tuple[str, str]]:
+    """``(box, attachment name)`` of every strike; a malformed strike file raises ``ValueError``."""
+    found = []
     for item in listing(client):
-        if item.name.startswith(_PREFIX) and item.name.endswith(_SUFFIX):
-            value = json.loads(client.download(item.url).decode('utf-8'))
-            if not isinstance(value, list) or not all(isinstance(one, str) for one in value):
-                msg = f'{item.name} is not a list of strike texts'
+        if (named := _STRIKE.match(item.name)) is not None:
+            if not isinstance(json.loads(client.download(item.url).decode('utf-8')), str):
+                msg = f'{item.name} is not a strike text'
                 raise ValueError(msg)
-            found[item.name] = value
+            found.append((named['box'], item.name))
     return found
 
 
 def revoked(client: Client) -> frozenset[str]:
-    """The store file names of every revoked box (:func:`strikes_name`). Unreadable: ``OSError``/``ValueError``."""
-    return frozenset(name for name, struck in _strikes(client).items() if len(struck) >= STRIKES_TO_REVOKE)
+    """Every revoked box (:func:`box_of` spelling). Unreadable: ``OSError``; malformed: ``ValueError``."""
+    counts = Counter(box for box, _ in _strikes(client))
+    return frozenset(box for box, count in counts.items() if count >= STRIKES_TO_REVOKE)
 
 
 def strike(client: Client, host: str, why: str) -> str:
-    """Add a strike naming *why* against *host*; the line saying so, and whether it is now revoked."""
-    name = strikes_name(host)
-    struck = [*_strikes(client).get(name, []), why]
-    replace_named(client, name, json.dumps(struck).encode('utf-8'))
-    state = 'REVOKED' if len(struck) >= STRIKES_TO_REVOKE else 'not yet revoked'
-    return f'[workstationrevoke] strike {len(struck)}/{STRIKES_TO_REVOKE} against {host}: {why} -- {state}'
+    """Add one strike naming *why* against *host*; the line saying so, and whether it is now revoked."""
+    box = box_of(host)
+    replace_named(client, f'{_PREFIX}{box}-{uuid.uuid4().hex}{_SUFFIX}', json.dumps(why).encode('utf-8'))
+    count = sum(1 for one, _ in _strikes(client) if one == box)
+    state = f'REVOKED -- remedy: {CLEAR_REMEDY}' if count >= STRIKES_TO_REVOKE else 'not yet revoked'
+    return f'[workstationrevoke] strike {count}/{STRIKES_TO_REVOKE} against {host}: {why} -- {state}'
+
+
+def clear(client: Client, host: str) -> int:
+    """Delete every strike against *host*; how many went."""
+    box = box_of(host)
+    return sum(remove_named(client, name) for one, name in _strikes(client) if one == box)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``clear <box> [--root <checkout>]``: delete a box's strikes on the checkout's forge."""
+    parser = argparse.ArgumentParser(
+        prog='python -m dev_lab.dev.workstationrevoke', description=__doc__.splitlines()[0]
+    )
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    cleared = verbs.add_parser('clear', help="delete a box's strikes, lifting its revocation")
+    cleared.add_argument('box')
+    cleared.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose forge holds the store')
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    emit(f'[workstationrevoke] cleared {clear(client_for(args.root), args.box)} strike(s) against {args.box}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

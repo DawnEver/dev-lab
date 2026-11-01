@@ -51,7 +51,7 @@ from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictstore import WORKSTATION_KEY, ContentKey, Found, cite, lookup
-from dev_lab.dev.workstationrevoke import revoked, strike, strikes_name
+from dev_lab.dev.workstationrevoke import CLEAR_REMEDY, box_of, revoked, strike
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -92,7 +92,10 @@ class Facts:
 
 def declared_refusal(serve: Mapping[str, Any], *, repo: str, part: str, present: Collection[str]) -> str:
     """Why this box is no declared producer of *part* of *repo* by its ``[serve]`` table; ``''`` when it is."""
-    if repo not in (serve.get('repos') or []):
+    repos = serve.get('repos', [])
+    if not isinstance(repos, list) or not all(isinstance(one, str) for one in repos):
+        return f'machine file [{SERVE_TABLE}] repos = {repos!r} is not a list of repo names'
+    if repo not in repos:
         return f'this box does not serve {repo} (machine file [{SERVE_TABLE}] repos)'
     try:
         skipped = Serves.of(serve).skips(needs_of(row_part(part)))
@@ -151,10 +154,10 @@ def _declared(root: Path, part: str) -> str:
 def _revoked_here(client: Client | None, root: Path) -> str:
     """Why this box may not post by its strikes: ``''`` when it may; FAIL CLOSED on anything unreadable."""
     try:
-        gone = strikes_name(this_machine()) in revoked(client or client_for(root))
+        gone = box_of(this_machine()) in revoked(client or client_for(root))
     except (OSError, ValueError) as failed:
         return f'the revocation list could not be read ({failed})'
-    return 'its contradicted spot checks reached the limit' if gone else ''
+    return f'its contradicted spot checks reached the limit (remedy: {CLEAR_REMEDY})' if gone else ''
 
 
 def workstation_refusal(root: Path, part: str, *, full: bool, client: Client | None = None) -> str | None:
