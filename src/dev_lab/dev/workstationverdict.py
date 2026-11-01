@@ -1,42 +1,36 @@
 """A DECLARED WORKSTATION POSTS ITS FULL PART -- the one exception to ``VERDICTS-FROM-THE-FORGE`` (ruling D50-1).
 
-A verdict is a fact about a CONTENT KEY (:class:`ContentKey`): the committed tree (``HEAD^{tree}``, what ``git
-write-tree`` of a clean checkout writes), the environment key ``verify`` prints (:func:`lab_commons.envkey.env_key`)
-and the part. Which machine produced it is not part of the fact, so a workstation the repo's serving setup
-already declares a producer may post it -- under every condition below, each one REFUSING when unmet
-(:func:`posting_refusal`):
+A verdict is a fact about a content key (:class:`dev_lab.dev.verdictstore.ContentKey`: tree, env key, part), not
+about which machine produced it, so a workstation the repo's serving setup already declares a producer may post
+it -- under every condition below, each one REFUSING when unmet (:func:`posting_refusal`):
 
 * DECLARED: this box's machine file ``[serve]`` table lists the repo in ``repos`` and its ``parts`` rule claims
   the part (:class:`lab_commons.compute.serves.Serves`) -- the same declaration ``workstation deploy`` writes and
   ``forge serve`` claims by; there is no second roster. The box has the part's needs (its OS row included).
-* NOT REVOKED: the box is not on :data:`REVOKED_NAME` in the run-records store (an unreadable store refuses).
+* NOT REVOKED: the box has fewer than :data:`~dev_lab.dev.workstationrevoke.STRIKES_TO_REVOKE` strikes
+  (:mod:`dev_lab.dev.workstationrevoke`). An unreadable store, a malformed strike file, an unreadable origin or
+  machine file each REFUSE, never crash.
 * CLEAN AND PUSHED: no dirt, and HEAD is on an ``origin`` branch -- so the tree is a pushed sha's tree.
 * FULL: ``verify --part <part>`` naming no pytest argument; a selection is a measure and never posts.
 * CURRENT ENV: the lock is fresh (:func:`dev_lab.dev.lockpins.lock_freshness`).
 
 The run then posts exactly as a producer's does (:func:`dev_lab.dev.localpart.post_part`: the record to the
 run-records store, the status through the outbox and :func:`~dev_lab.dev.forgestatus.status_post`), its record
-naming the box (:data:`WORKSTATION_KEY`) and the tree, so it is audited like any producer record.
+naming the box and the tree, so it is audited like any producer record.
 
-DEDUPE BY KEY (:func:`lookup`, :func:`cite`). Before a producer runs a full part it reads the store: a settled
-full record of the same part whose sha's tree is this tree and whose ``env`` is this env key is the verdict --
-posted on this sha with that record as its ``target_url``, nothing re-run. A different tree or another env key
-is never a hit. (REACH-CARRY, :mod:`dev_lab.dev.forgecarry`, carries ACROSS trees by footprint; this is the
-exact-tree case.)
+DEDUPE BY KEY (:func:`before_run`): before a producer runs a full part it asks the store
+(:func:`dev_lab.dev.verdictstore.lookup`) for a PASS of the same key from no revoked box, and cites it.
 
-SPOT CHECK (:func:`spot_checked`, :func:`revoke`). A hit on a WORKSTATION record is re-run instead of cited with
-probability :data:`SPOT_CHECK_FRACTION`, drawn by the checking producer at check time -- never derivable from the
-key, so a box cannot know which of its records will be checked. A re-run whose conclusion differs from the
-record's revokes the box: it is added to :data:`REVOKED_NAME` with the two conclusions, and every later post from
-it is refused.
+SPOT CHECK (:func:`spot_checked`, :func:`after_run`). ANY hit -- whatever box its record names or omits, so
+coverage never rests on a self-asserted field -- is re-run instead of cited with probability
+:data:`SPOT_CHECK_FRACTION`, drawn by the checking producer at check time, so a box cannot know which of its
+records will be checked. A re-run that FAILS where the record PASSED strikes the box the record names
+(:func:`dev_lab.dev.workstationrevoke.strike`); enough strikes revoke it.
 """
 
 from __future__ import annotations
 
-import gzip
-import json
 import random
-import subprocess
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,64 +44,37 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgeclaim import this_machine
-from dev_lab.dev.forgerecords import listing, read_named, replace_named
-from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.localpart import present_here
 from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.partrows import row_part
-from dev_lab.dev.platformparts import PartRefusal, part_context, part_of
+from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.treedirt import status_paths
+from dev_lab.dev.verdictstore import WORKSTATION_KEY, ContentKey, Found, cite, lookup
+from dev_lab.dev.workstationrevoke import revoked, strike, strikes_name
 
 if TYPE_CHECKING:
-    from dev_lab.dev.forgerecords import Attachment
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'REVOKED_NAME',
     'SPOT_CHECK_FRACTION',
-    'WORKSTATION_KEY',
-    'ContentKey',
+    'Decision',
     'Facts',
-    'Found',
     'after_run',
     'before_run',
-    'cite',
     'declared_refusal',
     'head_tree',
-    'lookup',
     'posting_refusal',
     'pushed',
-    'revoke',
-    'revoked',
     'spot_checked',
-    'trees_of',
     'workstation_fields',
     'workstation_refusal',
 ]
 
-#: The record key naming the workstation that produced it; absent on a forge producer's record.
-WORKSTATION_KEY: Final = 'workstation'
-
-#: The one mutable file in the run-records store listing revoked workstations: ``{host: why}``.
-REVOKED_NAME: Final = 'workstation-revoked.json'
-
-#: The fraction of workstation-record hits a forge producer re-runs instead of citing.
+#: The fraction of store hits a producer re-runs instead of citing.
 SPOT_CHECK_FRACTION: Final = 0.2
 
 _GIT_TIMEOUT_S: Final = 60
-
-#: How many hex digits a full commit sha has.
-_SHA_HEX: Final = 40
-
-
-@dataclass(frozen=True)
-class ContentKey:
-    """What a part's verdict is a fact about: the committed tree, the env key and the part."""
-
-    tree: str
-    env: str
-    part: str
 
 
 @dataclass(frozen=True)
@@ -154,19 +121,6 @@ def posting_refusal(facts: Facts) -> str | None:
     return f'a workstation may post {part_context(facts.part)} only when ' + '; '.join(why)
 
 
-def revoked(client: Client) -> dict[str, str]:
-    """``{host: why}`` from :data:`REVOKED_NAME`; none stored reads empty. An unreadable store RAISES."""
-    data = read_named(client, REVOKED_NAME)
-    return {} if data is None else {str(k): str(v) for k, v in json.loads(data.decode('utf-8')).items()}
-
-
-def revoke(client: Client, host: str, why: str) -> str:
-    """Add *host* to :data:`REVOKED_NAME` naming *why*; the line saying so."""
-    table = {**revoked(client), host: why}
-    replace_named(client, REVOKED_NAME, json.dumps(table, sort_keys=True).encode('utf-8'))
-    return f'[workstationverdict] REVOKED workstation {host}: {why}'
-
-
 def _git(root: Path, *args: str) -> str:
     done = _door.run(
         ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', check=False,
@@ -185,121 +139,72 @@ def pushed(root: Path) -> bool:
     return bool(_git(root, 'for-each-ref', '--contains', 'HEAD', '--format=%(refname)', 'refs/remotes/origin').strip())
 
 
-def trees_of(root: Path, shas: Collection[str]) -> dict[str, str]:
-    """``{sha: its tree}`` for each of *shas* this checkout holds; an unknown sha is left out."""
-    if not shas:
-        return {}
+def _declared(root: Path, part: str) -> str:
+    """:func:`declared_refusal` of this box; an unreadable origin or machine file is a refusal naming it."""
     try:
-        out = _git(root, 'log', '--no-walk', '--ignore-missing', '--format=%H %T', *sorted(shas))
-    except (OSError, subprocess.TimeoutExpired):
-        return {}
-    return dict(line.split(' ', 1) for line in out.splitlines() if ' ' in line)
+        repo = forge_from_remote(root).repo
+        return declared_refusal(section(SERVE_TABLE), repo=repo, part=part, present=present_here(root))
+    except (OSError, ValueError) as unread:
+        return f'its declaration could not be read ({unread})'
 
 
-@dataclass(frozen=True)
-class Found:
-    """A stored record proving *key*: its attachment, its record and the part it proves."""
-
-    attachment: Attachment
-    record: Mapping[str, Any]
-
-    @property
-    def workstation(self) -> str:
-        """The box that produced it, ``''`` for a forge producer."""
-        return str(self.record.get(WORKSTATION_KEY, ''))
-
-    @property
-    def result(self) -> Conclusion:
-        """The conclusion it proves."""
-        return part_of(self.record).result
-
-
-def _sha_part(name: str) -> tuple[str, str] | None:
-    """``(sha, part)`` of a run record's name ``run-<sha>-<part>-<req>[-<hash>].json.gz``; ``None`` otherwise."""
-    if not name.startswith('run-') or not name.endswith('.json.gz'):
-        return None
-    sha, _, rest = name[4:].partition('-')
-    part, _, _ = rest.partition('-')
-    return (sha, part) if len(sha) == _SHA_HEX and part else None
-
-
-def lookup(
-    root: Path, client: Client, key: ContentKey, *, download: Callable[[str], bytes] | None = None
-) -> Found | None:
-    """The newest stored settled FULL record of *key*'s part at *key*'s tree and env; ``None`` on no hit."""
-    named = [(item, found) for item in listing(client) if (found := _sha_part(item.name)) and found[1] == key.part]
-    trees = trees_of(root, {sha for _, (sha, _) in named})
-    fetch = download or client.download
-    for item, (sha, _) in reversed(named):
-        if trees.get(sha) != key.tree:
-            continue
-        record = json.loads(gzip.decompress(fetch(item.url)).decode('utf-8'))
-        if record.get('env') != key.env or record.get('scope') != 'full' or record.get('platform') != key.part:
-            continue
-        try:
-            part_of(record)
-        except PartRefusal:
-            continue
-        return Found(item, record)
-    return None
-
-
-def spot_checked(found: Found, *, me: str, draw: Callable[[], float] = random.random) -> bool:
-    """Whether a producer *me* re-runs *found* instead of citing it: a workstation's record, not its own, sampled."""
-    return bool(found.workstation) and found.workstation != me and draw() < SPOT_CHECK_FRACTION
-
-
-def cite(client: Client, sha: str, found: Found) -> str:
-    """Post *found*'s part on *sha* through the status door, its record as the target; the line."""
-    part = part_of(found.record)
-    status_post(
-        client, sha, context=part_context(part.platform), state=part.state, description=part.description(),
-        target_url=found.attachment.url,
-    )  # fmt: skip
-    by = f'workstation {found.workstation}' if found.workstation else 'a forge producer'
-    return f'[workstationverdict] {part.platform} part {part.result.name} CITED from {found.attachment.name} ({by})'
+def _revoked_here(client: Client | None, root: Path) -> str:
+    """Why this box may not post by its strikes: ``''`` when it may; FAIL CLOSED on anything unreadable."""
+    try:
+        gone = strikes_name(this_machine()) in revoked(client or client_for(root))
+    except (OSError, ValueError) as failed:
+        return f'the revocation list could not be read ({failed})'
+    return 'its contradicted spot checks reached the limit' if gone else ''
 
 
 def workstation_refusal(root: Path, part: str, *, full: bool, client: Client | None = None) -> str | None:
     """:func:`posting_refusal` of THIS box posting *part* of *root*'s HEAD (module docstring); ``None``: it may."""
-    repo = forge_from_remote(root).repo
-    declared = declared_refusal(section(SERVE_TABLE), repo=repo, part=part, present=present_here(root))
-    try:
-        why = revoked(client or client_for(root)).get(this_machine(), '')
-    except OSError as failed:  # fail CLOSED: an unread revocation list is no permission
-        why = f'the revocation list could not be read ({failed})'
     facts = Facts(
-        part=part, full=full, declared=declared, revoked=why, dirt=status_paths(root), pushed=pushed(root),
-        stale=lock_freshness(root) or '',
+        part=part, full=full, declared=_declared(root, part), revoked=_revoked_here(client, root),
+        dirt=status_paths(root), pushed=pushed(root), stale=lock_freshness(root) or '',
     )  # fmt: skip
     return posting_refusal(facts)
 
 
 def workstation_fields(root: Path) -> dict[str, str]:
-    """The keys a declared workstation's record adds: the box (:data:`WORKSTATION_KEY`) and the tree it judged."""
+    """The keys a declared workstation's record adds: the box and the tree it judged."""
     return {WORKSTATION_KEY: this_machine(), 'tree': head_tree(root)}
 
 
-def before_run(root: Path, sha: str, key: ContentKey, *, me: str, client: Client) -> tuple[Found | None, str]:
-    """A producer's look at the store before it runs *key*: ``(found, line)``; cite when the line says CITED.
+@dataclass(frozen=True)
+class Decision:
+    """A producer's reading of the store: *found* (a hit), whether it was *cited*, and the *line* to say."""
 
-    No hit, or an unreadable store: ``(None, '')`` -- run. A spot-checked workstation hit: ``(found, '')`` --
-    run, then :func:`after_run` compares. Any other hit is cited on *sha*: ``(found, <the cite line>)``.
-    """
+    found: Found | None = None
+    cited: bool = False
+    line: str = ''
+
+
+def spot_checked(found: Found, *, me: str, draw: Callable[[], float] = random.random) -> bool:
+    """Whether producer *me* re-runs *found* instead of citing it: any hit not naming *me*, sampled at check time."""
+    return found.workstation != me and draw() < SPOT_CHECK_FRACTION
+
+
+def before_run(
+    root: Path, sha: str, key: ContentKey, *, me: str, client: Client, draw: Callable[[], float] = random.random
+) -> Decision:
+    """A producer's look at the store before it runs *key* (module docstring); an unreadable store: run, saying so."""
     try:
-        found = lookup(root, client, key)
-    except (OSError, ValueError):
-        return None, ''
+        found = lookup(root, client, key, revoked=revoked(client))
+    except (OSError, ValueError) as unread:
+        return Decision(line=f'[workstationverdict] the store was not read ({unread}); running')
     if found is None:
-        return None, ''
-    if spot_checked(found, me=me):
-        return found, ''
-    return found, cite(client, sha, found)
+        return Decision()
+    if spot_checked(found, me=me, draw=draw):
+        return Decision(found, line=f'[workstationverdict] spot check: re-running {found.attachment.name}')
+    return Decision(found, cited=True, line=cite(client, sha, found))
 
 
 def after_run(client: Client, found: Found, result: Conclusion) -> str:
-    """Compare a spot-check re-run's *result* with the workstation record *found*; revoke the box on a mismatch."""
-    if result is Conclusion.INCONCLUSIVE or result is found.result:
-        return f'[workstationverdict] spot check of {found.attachment.name}: {result.name} agrees'
-    why = f'{found.attachment.name} said {found.result.name}; a re-run said {result.name}'
-    return revoke(client, found.workstation, why)
+    """Compare a spot-check re-run's *result* with the PASS record *found*; a FAIL strikes the box it names."""
+    if result is not Conclusion.FAIL:
+        return f'[workstationverdict] spot check of {found.attachment.name}: {result.name}, no contradiction'
+    why = f'{found.attachment.name} said PASS; a re-run said FAIL'
+    if not found.workstation:
+        return f'[workstationverdict] spot check CONTRADICTED: {why} -- the record names no box to strike'
+    return strike(client, found.workstation, why)

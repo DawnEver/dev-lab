@@ -72,6 +72,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'footprint': ('original',),
     'localpart': ('original',),
     'workstationverdict': ('original',),
+    'verdictstore': ('original',),
+    'workstationrevoke': ('original',),
     'lockpins': ('original',),
     'lockwait': ('original',),
     'test_outcomes': ('original',),

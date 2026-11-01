@@ -87,6 +87,7 @@ from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
+from dev_lab.dev.verdictstore import ContentKey, Found
 from dev_lab.dev.verifybox import (
     MEASURE_WAIT_S,
     WAIT_S,
@@ -95,15 +96,7 @@ from dev_lab.dev.verifybox import (
     learn_ended,
     serial_width,
 )
-from dev_lab.dev.workstationverdict import (
-    ContentKey,
-    Found,
-    after_run,
-    before_run,
-    head_tree,
-    workstation_fields,
-    workstation_refusal,
-)
+from dev_lab.dev.workstationverdict import after_run, before_run, head_tree, workstation_fields, workstation_refusal
 
 __all__ = [
     'EXIT_CODES',
@@ -574,11 +567,12 @@ def _stored(root: Path, part: str, key: RunKey, *, producer: bool) -> tuple[Foun
         client = client_for(root)
     except OSError:
         return None, None
-    found, line = before_run(root, sha, ContentKey(tree, key.env, part), me=this_machine(), client=client)
-    if line:
-        emit(line)
-        return found, None
-    return found, (client if found is not None else None)
+    decision = before_run(root, sha, ContentKey(tree, key.env, part), me=this_machine(), client=client)
+    if decision.line:
+        emit(decision.line)
+    if decision.found is None:
+        return None, None
+    return decision.found, (None if decision.cited else client)
 
 
 def _post_cited(root: Path, log: str, posted: tuple[str, ...], *, part: str, producer: bool) -> None:

@@ -15,15 +15,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _forge_fake import git_out, make_repo, run_git
 from _forge_state import StateForge
 from lab_commons.hpc.testcells import TestCell
-from lab_commons.outcomes import Cell, Conclusion, Status
+from lab_commons.outcomes import Cell, Conclusion, Reason, Status
 
-from dev_lab.dev import verify, workstationverdict
+from dev_lab.dev import verdictstore, verify, workstationrevoke, workstationverdict
 from dev_lab.dev.forgerecords import Attachment
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit
-from dev_lab.dev.workstationverdict import ContentKey, Facts, Found, posting_refusal
+from dev_lab.dev.verdictstore import ContentKey, Found
+from dev_lab.dev.workstationverdict import Facts, posting_refusal
 
 SHA, OLD = 'a' * 40, 'c' * 40
 TREE, OTHER_TREE = 't' * 40, 'u' * 40
@@ -40,7 +42,7 @@ def test_the_declared_clean_full_run_on_a_pushed_tree_may_post() -> None:
     ('planted', 'named'),
     [
         ({'declared': 'this box does not serve optimi-lab'}, 'does not serve'),
-        ({'revoked': 'run-x said PASS; a re-run said FAIL'}, 'revoked'),
+        ({'revoked': 'its contradicted spot checks reached the limit'}, 'revoked'),
         ({'dirt': ('M src/x.py',)}, 'dirty'),
         ({'dirt': None}, 'could not be read'),
         ({'pushed': False}, 'no origin branch'),
@@ -72,8 +74,31 @@ def test_the_declaration_is_the_machine_files_serve_table_and_nothing_else() -> 
     )
 
 
-def test_an_unreadable_revocation_list_refuses_the_post(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """FAIL CLOSED: a box whose revocation cannot be read is not allowed to post."""
+class Store:
+    """The run-records store, in memory: name -> bytes, read through ``listing`` and the client's ``download``."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An empty store, routed into both modules that read it."""
+        self.files: dict[str, bytes] = {}
+        self.client = StateForge()
+        monkeypatch.setattr(self.client, 'download', lambda url: self.files[url], raising=False)
+        for module in (verdictstore, workstationrevoke):
+            monkeypatch.setattr(module, 'listing', self.listing)
+        monkeypatch.setattr(workstationrevoke, 'replace_named', self.replace)
+
+    def listing(self, _client: object) -> tuple[Attachment, ...]:
+        return tuple(Attachment(index, name, name) for index, name in enumerate(self.files))
+
+    def replace(self, _client: object, name: str, data: bytes) -> Attachment:
+        self.files.pop(name, None)
+        self.files[name] = data
+        return Attachment(0, name, name)
+
+    def record(self, name: str, record: dict) -> None:
+        self.files[name] = gzip.compress(json.dumps(record).encode('utf-8'))
+
+
+def _declared_box(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(workstationverdict, 'forge_from_remote', lambda _root: type('F', (), {'repo': 'optimi-lab'}))
     monkeypatch.setattr(workstationverdict, 'section', lambda _name: SERVE)
     monkeypatch.setattr(workstationverdict, 'present_here', lambda _root: frozenset({'windows'}))
@@ -82,16 +107,47 @@ def test_an_unreadable_revocation_list_refuses_the_post(monkeypatch: pytest.Monk
     monkeypatch.setattr(workstationverdict, 'lock_freshness', lambda _root: None)
     monkeypatch.setattr(workstationverdict, 'this_machine', lambda: 'DUIPEZZTZ')
 
-    def unreadable(_client: object) -> dict[str, str]:
-        down = 'forge down'
-        raise OSError(down)
 
-    monkeypatch.setattr(workstationverdict, 'revoked', unreadable)
-    refused = workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=StateForge())
-    assert refused is not None
-    assert 'revocation list could not be read' in refused
-    monkeypatch.setattr(workstationverdict, 'revoked', lambda _client: {})
-    assert workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=StateForge()) is None
+def _refusal(tmp_path: Path, store: Store) -> str:
+    return str(workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=store.client))
+
+
+def test_an_unreadable_or_malformed_revocation_list_refuses_the_post(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """FAIL CLOSED: a box whose revocation cannot be read -- down, not JSON, not a list -- is refused, never a crash."""
+    _declared_box(monkeypatch)
+    store = Store(monkeypatch)
+    assert workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=store.client) is None
+    store.files[workstationrevoke.strikes_name('DUIPEZZTZ')] = b'not json'
+    assert 'revocation list could not be read' in _refusal(tmp_path, store)
+    store.files[workstationrevoke.strikes_name('DUIPEZZTZ')] = b'{"a": 1}'
+    assert 'revocation list could not be read' in _refusal(tmp_path, store)
+
+    def down(_client: object) -> tuple[Attachment, ...]:
+        message = 'forge down'
+        raise OSError(message)
+
+    monkeypatch.setattr(workstationrevoke, 'listing', down)
+    assert 'revocation list could not be read (forge down)' in _refusal(tmp_path, store)
+
+
+def test_an_unreadable_declaration_is_a_refusal_not_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _declared_box(monkeypatch)
+    store = Store(monkeypatch)
+
+    def no_origin(_root: Path) -> object:
+        message = 'no origin remote'
+        raise OSError(message)
+
+    monkeypatch.setattr(workstationverdict, 'forge_from_remote', no_origin)
+    assert 'declaration could not be read (no origin remote)' in _refusal(tmp_path, store)
+
+
+def _cell(status: str) -> Cell:
+    return Cell(Status(status), reason=None if status == 'ok' else Reason('x', 'why'))
 
 
 def _record(sha: str, *, env: str = ENV, scope: str = 'full', workstation: str = '', status: str = 'ok') -> dict:
@@ -100,7 +156,7 @@ def _record(sha: str, *, env: str = ENV, scope: str = 'full', workstation: str =
         'platform': 'base@windows',
         'scope': scope,
         'req': 'r1',
-        'cells': {'t::a': TestCell(Cell(Status(status))).to_plain()},
+        'cells': {'t::a': TestCell(_cell(status)).to_plain()},
         'flaky': [],
         'handed': {},
         'env': env,
@@ -108,43 +164,88 @@ def _record(sha: str, *, env: str = ENV, scope: str = 'full', workstation: str =
     return {**record, 'workstation': workstation} if workstation else record
 
 
-def _store(monkeypatch: pytest.MonkeyPatch, records: dict[str, dict], trees: dict[str, str]) -> dict[str, bytes]:
-    """Plant the run-records store (name -> record) and the local sha -> tree map; returns url -> bytes."""
-    blobs = {f'u/{name}': gzip.compress(json.dumps(one).encode('utf-8')) for name, one in records.items()}
-    listed = tuple(Attachment(index, name, f'u/{name}') for index, name in enumerate(records))
-    monkeypatch.setattr(workstationverdict, 'listing', lambda _client: listed)
-    monkeypatch.setattr(workstationverdict, 'trees_of', lambda _root, shas: {s: trees[s] for s in shas if s in trees})
-    return blobs
+KEY = ContentKey(TREE, ENV, 'base@windows')
 
 
-def test_a_record_of_the_same_tree_env_and_part_is_a_hit_and_nothing_else_is(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The content key: a different tree, a stale env key or a selection record is never a hit."""
-    key = ContentKey(TREE, ENV, 'base@windows')
-    planted = {
-        f'run-{OLD}-base@windows-r0.json.gz': _record(OLD),  # PLANTED: another tree
-        f'run-{SHA}-base@windows-r1.json.gz': _record(SHA, env='env-stale'),  # PLANTED: a stale env key
-        f'run-{SHA}-base@windows-r2.json.gz': _record(SHA, scope='incremental'),  # PLANTED: a selection
-        f'run-{SHA}-base-r3.json.gz': {**_record(SHA), 'platform': 'base'},  # PLANTED: another part
-    }
-    blobs = _store(monkeypatch, planted, {OLD: OTHER_TREE, SHA: TREE})
-    assert workstationverdict.lookup(tmp_path, StateForge(), key, download=blobs.__getitem__) is None
+def _trees(monkeypatch: pytest.MonkeyPatch, trees: dict[str, str]) -> None:
+    monkeypatch.setattr(verdictstore, 'trees_of', lambda _root, shas: {s: trees[s] for s in shas if s in trees})
+
+
+def test_only_a_pass_of_the_same_tree_env_and_part_is_a_hit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The content key: another tree, a stale env key, a selection, another part or a FAIL is never a hit."""
+    store = Store(monkeypatch)
+    store.record(f'run-{OLD}-base@windows-r0.json.gz', _record(OLD))  # PLANTED: another tree
+    store.record(f'run-{SHA}-base@windows-r1.json.gz', _record(SHA, env='env-stale'))  # PLANTED: a stale env key
+    store.record(f'run-{SHA}-base@windows-r2.json.gz', _record(SHA, scope='incremental'))  # PLANTED: a selection
+    store.record(f'run-{SHA}-base-r3.json.gz', {**_record(SHA), 'platform': 'base'})  # PLANTED: another part
+    store.record(f'run-{SHA}-base@windows-r5.json.gz', _record(SHA, status='rejected'))  # PLANTED: a FAIL
+    _trees(monkeypatch, {OLD: OTHER_TREE, SHA: TREE})
+    assert verdictstore.lookup(tmp_path, store.client, KEY, revoked=()) is None, 'a FAIL is never sticky'
     hit = f'run-{OLD}-base@windows-r4-0123456789abcdef.json.gz'  # another commit, the SAME tree: still a hit
-    blobs = _store(monkeypatch, {**planted, hit: _record(OLD)}, {OLD: TREE, SHA: TREE})
-    found = workstationverdict.lookup(tmp_path, StateForge(), key, download=blobs.__getitem__)
+    store.record(hit, _record(OLD))
+    _trees(monkeypatch, {OLD: TREE, SHA: TREE})
+    found = verdictstore.lookup(tmp_path, store.client, KEY, revoked=())
     assert found is not None
     assert found.attachment.name == hit
 
 
-def _found(workstation: str = 'DUIPEZZTZ', status: str = 'ok') -> Found:
+def test_a_stored_fail_makes_the_producer_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """F-a6e1540c15a3: a flaky FAIL on a tree is re-run on the next sha of that tree, never cited."""
+    store = Store(monkeypatch)
+    store.record(f'run-{OLD}-base@windows-r1.json.gz', _record(OLD, status='rejected'))
+    _trees(monkeypatch, {OLD: TREE})
+    decision = workstationverdict.before_run(tmp_path, SHA, KEY, me='host', client=store.client, draw=lambda: 0.9)
+    assert decision == workstationverdict.Decision()
+    assert status_list(store.client, SHA) == ()
+
+
+def test_a_revoked_boxs_earlier_records_are_never_cited(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """F-dc7c4109926e: revocation reaches every record the box already posted."""
+    store = Store(monkeypatch)
+    store.record(f'run-{OLD}-base@windows-r1.json.gz', _record(OLD, workstation='DUIPEZZTZ'))
+    _trees(monkeypatch, {OLD: TREE})
+    cited = workstationverdict.before_run(tmp_path, SHA, KEY, me='host', client=store.client, draw=lambda: 0.9)
+    assert cited.cited, 'PLANTED CONTROL: before the revocation it is a hit'
+    for _ in range(workstationrevoke.STRIKES_TO_REVOKE):
+        workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'contradicted')
+    after = workstationverdict.before_run(tmp_path, SHA, KEY, me='host', client=store.client, draw=lambda: 0.9)
+    assert after == workstationverdict.Decision()
+
+
+def test_an_unreadable_store_runs_and_says_why(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = Store(monkeypatch)
+    store.record(f'run-{OLD}-base@windows-r1.json.gz', _record(OLD))
+
+    def git_down(_root: Path, _shas: object) -> dict[str, str]:
+        message = 'git cat-file could not read the trees'
+        raise OSError(message)
+
+    monkeypatch.setattr(verdictstore, 'trees_of', git_down)
+    decision = workstationverdict.before_run(tmp_path, SHA, KEY, me='host', client=store.client)
+    assert decision.found is None
+    assert 'not read (git cat-file could not read the trees); running' in decision.line
+
+
+def test_trees_are_read_on_stdin_and_an_unknown_sha_is_left_out(tmp_path: Path) -> None:
+    """F-1d9c8a5058ec: no sha on argv; an unknown sha is absent, and git failing RAISES, never reads as none."""
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    run_git(repo, 'commit', '-q', '--allow-empty', '-m', 'one')
+    head = git_out(repo, 'rev-parse', 'HEAD')
+    tree = git_out(repo, 'rev-parse', 'HEAD^{tree}')
+    assert verdictstore.trees_of(repo, {head, 'f' * 40}) == {head: tree}
+    (tmp_path / 'bare').mkdir()
+    with pytest.raises(OSError, match='could not read'):
+        verdictstore.trees_of(tmp_path / 'bare', {head})
+
+
+def _found(workstation: str = 'DUIPEZZTZ') -> Found:
     name = f'run-{OLD}-base@windows-r1.json.gz'
-    return Found(Attachment(1, name, f'u/{name}'), _record(OLD, workstation=workstation, status=status))
+    return Found(Attachment(1, name, f'u/{name}'), _record(OLD, workstation=workstation))
 
 
 def test_a_hit_is_cited_through_the_status_door_naming_its_record() -> None:
     forge = StateForge()
-    line = workstationverdict.cite(forge, SHA, _found())
+    line = verdictstore.cite(forge, SHA, _found())
     (status,) = status_list(forge, SHA)
     assert (status.context, status.state, status.url) == (
         'tests/base@windows',
@@ -156,25 +257,29 @@ def test_a_hit_is_cited_through_the_status_door_naming_its_record() -> None:
     assert 'DUIPEZZTZ' in line
 
 
-def test_the_spot_check_samples_only_another_boxs_workstation_records() -> None:
-    """The rule: a hit on ANOTHER box's workstation record is re-run when a fresh draw < SPOT_CHECK_FRACTION."""
+def test_the_spot_check_samples_any_hit_but_its_own() -> None:
+    """The rule: a hit not naming this box is re-run when a fresh draw < SPOT_CHECK_FRACTION -- named box or none."""
     low, high = (lambda: 0.0), (lambda: 0.99)
     assert workstationverdict.spot_checked(_found(), me='forge-host', draw=low)
     assert not workstationverdict.spot_checked(_found(), me='forge-host', draw=high)
-    assert not workstationverdict.spot_checked(_found(workstation=''), me='forge-host', draw=low), 'a producer record'
+    assert workstationverdict.spot_checked(_found(workstation=''), me='forge-host', draw=low), 'a record naming no box'
     assert not workstationverdict.spot_checked(_found(), me='DUIPEZZTZ', draw=low), 'never its own record'
 
 
-def test_a_spot_check_mismatch_revokes_the_box_and_an_agreement_does_not(monkeypatch: pytest.MonkeyPatch) -> None:
-    stored: dict[str, bytes] = {}
-    monkeypatch.setattr(workstationverdict, 'read_named', lambda _client, name: stored.get(name))
-    monkeypatch.setattr(workstationverdict, 'replace_named', lambda _client, name, data: stored.__setitem__(name, data))
-    agrees = workstationverdict.after_run(StateForge(), _found(), Conclusion.PASS)
-    assert 'agrees' in agrees
-    assert workstationverdict.revoked(StateForge()) == {}
-    said = workstationverdict.after_run(StateForge(), _found(), Conclusion.FAIL)
-    assert 'REVOKED workstation DUIPEZZTZ' in said
-    assert 'said PASS; a re-run said FAIL' in workstationverdict.revoked(StateForge())['DUIPEZZTZ']
+def test_one_contradiction_is_a_strike_and_the_limit_revokes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F-7a7698101791: one flaky mismatch does not bar an honest box; the limit does. Each box has its own file."""
+    store = Store(monkeypatch)
+    assert 'no contradiction' in workstationverdict.after_run(store.client, _found(), Conclusion.PASS)
+    assert workstationrevoke.revoked(store.client) == frozenset()
+    first = workstationverdict.after_run(store.client, _found(), Conclusion.FAIL)
+    assert 'strike 1/2 against DUIPEZZTZ' in first
+    assert 'not yet revoked' in first
+    assert workstationrevoke.revoked(store.client) == frozenset()
+    workstationverdict.after_run(store.client, _found('OTHERBOX'), Conclusion.FAIL)
+    second = workstationverdict.after_run(store.client, _found(), Conclusion.FAIL)
+    assert 'REVOKED' in second
+    assert workstationrevoke.revoked(store.client) == {workstationrevoke.strikes_name('DUIPEZZTZ')}
+    assert 'names no box' in workstationverdict.after_run(store.client, _found(''), Conclusion.FAIL)
 
 
 def _verify_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
