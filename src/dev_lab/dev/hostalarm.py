@@ -114,7 +114,8 @@ def step(
 ) -> dict[str, Any]:
     """One tick's reading: measure ``[pressure]`` (default: *root*'s disk), record the state, sound each alarm."""
     table = section('pressure') if table is None else table
-    declared = Declared.of({'paths': [str(root)], **table})
+    cadence = float(section('schedule').get('tick_minutes', 5)) * 60  # the tick reads at its own cadence
+    declared = Declared.of({'paths': [str(root)], 'interval_s': cadence, **table})
     previous = hostalarms.memo(hostalarms.FORGE)
     owner = str(table.get('owner', hostalarms.AGENTS))
     measured = measuring(declared, previous, now=time.time(), psutil=psutil_module)

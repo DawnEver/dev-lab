@@ -38,7 +38,7 @@ __all__ = [
     'DATUM_KEPT',
     'FORGE',
     'INTEGRATOR',
-    'STALE_AFTER',
+    'STALE_INTERVALS',
     'STATE_NAME',
     'SUPERVISE',
     'current',
@@ -65,8 +65,9 @@ INTEGRATOR: Final = 'integrator'
 FORGE: Final = 'forge'
 SUPERVISE: Final = 'supervise'
 
-#: An alarm row its writer has not re-seen within this long is STALE and told to nobody: twelve 5-minute ticks.
-STALE_AFTER: Final = timedelta(hours=1)
+#: An alarm row its writer has not re-seen within this many of ITS OWN reading intervals is STALE, told to nobody.
+#: Each row carries ``stale_after_s`` = this times the writer's ``interval_s``: the window follows the cadence.
+STALE_INTERVALS: Final = 12
 
 #: How many characters of one untrusted name are kept.
 DATUM_KEPT: Final = 120
@@ -139,21 +140,23 @@ def rows(
             'measurement': one.measurement,
             'consumers': [[c.path, c.bytes, c.owned] for c in one.consumers],
             'doors': list(DOORS),
+            'stale_after_s': STALE_INTERVALS * measured.interval_s,
         }
         for one in measured.findings
     }
 
 
 def current(state: Mapping[str, Any], now: datetime) -> dict[str, Any]:
-    """*state*'s alarms whose writer saw them within :data:`STALE_AFTER` of *now*; a stopped writer pins nothing."""
+    """*state*'s alarms re-seen within their own ``stale_after_s`` of *now*; a stopped writer pins nothing."""
     alarms = state.get('alarms', {})
-    return {kind: row for kind, row in alarms.items() if _recent(row.get('last_seen'), now)}
+    return {kind: row for kind, row in alarms.items() if _recent(row, now)}
 
 
-def _recent(stamp: object, now: datetime) -> bool:
+def _recent(row: Mapping[str, Any], now: datetime) -> bool:
     try:
-        return now - datetime.fromisoformat(str(stamp)) <= STALE_AFTER
-    except (TypeError, ValueError):
+        window = timedelta(seconds=float(row['stale_after_s']))
+        return now - datetime.fromisoformat(str(row['last_seen'])) <= window
+    except (KeyError, TypeError, ValueError):
         return False
 
 

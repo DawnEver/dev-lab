@@ -138,10 +138,11 @@ def test_post_commit_prints_the_hook_s_own_lines(capsys) -> None:
 
 
 def test_a_stopped_writer_cannot_pin_an_alarm(capsys) -> None:
-    """F-2d0545f27c1a, F-023bf77d03a6: a row not re-seen within STALE_AFTER is told to nobody; fresh speaks."""
+    """F-2d0545f27c1a, F-023bf77d03a6: a row not re-seen within its stale_after_s is told to nobody; fresh speaks."""
     _pressed(NOW)
-    assert _hook('s9', NOW + hostalarms.STALE_AFTER + timedelta(seconds=1), capsys) == ''
-    assert _hook('s9', NOW + hostalarms.STALE_AFTER, capsys) != ''
+    window = timedelta(seconds=hostalarms.STALE_INTERVALS * PRESSED.interval_s)
+    assert _hook('s9', NOW + window + timedelta(seconds=1), capsys) == ''
+    assert _hook('s9', NOW + window, capsys) != ''
     assert hostalarms.lines(hostalarms.read(), now=NOW + timedelta(days=2)) == []
 
 
@@ -279,3 +280,11 @@ def test_a_forge_tick_that_misses_the_lock_still_sounds(monkeypatch: pytest.Monk
     hostalarm.step(tmp_path, 'r', who='g', alarm=raised.append, table={}, measuring=lambda *_a, **_k: PRESSED)
     assert [a.about for a in raised] == ['disk:/']
     assert hostalarms.memo(hostalarms.FORGE) == {}
+
+
+def test_the_staleness_window_follows_the_writer_s_cadence(capsys) -> None:
+    """F-7b76c2d65b7f: a writer reading every minute is stale after 12 minutes, not a fixed hour. Control: 11."""
+    fast = Measured(findings=PRESSED.findings, interval_s=60.0)
+    hostalarms.record(fast, host='ws', source=hostalarms.FORGE, now=NOW)
+    assert _hook('a', NOW + timedelta(minutes=11), capsys) != ''
+    assert _hook('b', NOW + timedelta(minutes=13), capsys) == ''

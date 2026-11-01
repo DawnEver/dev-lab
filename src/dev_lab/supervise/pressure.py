@@ -34,7 +34,6 @@ __all__ = [
     'DOORS',
     'OWNED',
     'RAM_CRITICAL',
-    'SLOPE_SPAN_FLOOR_S',
     'THRESHOLDS',
     'WALK_BUDGET',
     'Consumer',
@@ -64,6 +63,12 @@ THRESHOLDS: Final[Mapping[str, float]] = {
     'cpu_percent_ceiling': 90.0,  # a workstation's CPU, averaged over the window
     'memory_percent_ceiling': float(RAM_CRITICAL),  # a workstation's RAM: supervision's own ceiling, one source
     'psutil_window_s': 5.0,  # the averaging window on a workstation; never a 50 ms sample
+    # THE CADENCE AND THE SLOPE, ONE SOURCE: a writer reads every `interval_s` (a writer passes its own: the
+    # forge tick's `[schedule] tick_minutes`, supervision's `cycle.interval`); a days-to-full slope is believed
+    # only over at least `slope_span_s`, and the disk history is kept BY AGE -- `slope_span_s + interval_s` --
+    # so at any cadence the window holds a reading old enough to meet the floor.
+    'interval_s': 300.0,
+    'slope_span_s': 3600.0,
 }
 
 #: The cgroup counters a declared service's ``memory.events`` is read for, and the severity a rise carries.
@@ -75,12 +80,8 @@ CGROUP_ROOT: Final = Path('/sys/fs/cgroup/system.slice')
 #: The PSI files, by resource.
 PSI: Final[Mapping[str, Path]] = {'memory': Path('/proc/pressure/memory'), 'cpu': Path('/proc/pressure/cpu')}
 
-#: How many disk readings the days-to-full slope is taken over.
-HISTORY_KEPT: Final = 12
-
-#: A slope needs two readings, spanning at least this long before it is believed.
+#: A slope needs two readings.
 _SLOPE_POINTS: Final = 2
-SLOPE_SPAN_FLOOR_S: Final = 3600.0
 
 #: How many directory entries one reading's consumer walk may visit: a pressed disk is not walked whole.
 WALK_BUDGET: Final = 200_000
@@ -157,6 +158,7 @@ class Measured:
     findings: list[Finding] = field(default_factory=list)
     readings: dict[str, float | None] = field(default_factory=dict)
     memo: dict[str, Any] = field(default_factory=dict)
+    interval_s: float = THRESHOLDS['interval_s']
 
 
 def parse_psi(text: str) -> dict[str, float]:
@@ -194,8 +196,9 @@ def _disk(
     if not disk.total:  # no size is unanswerable, never 0% full
         return [], {f'disk:{name}:percent': None}, history
     percent, free_gb = disk.used / disk.total * 100, disk.free / 1024**3
-    kept = [*history, [now, float(disk.used)]][-HISTORY_KEPT:]
-    days = _days_to_full(kept, disk.free)
+    oldest = now - limits['slope_span_s'] - limits['interval_s']
+    kept = [one for one in history if one[0] >= oldest] + [[now, float(disk.used)]]
+    days = _days_to_full(kept, disk.free, limits['slope_span_s'])
     readings = {f'disk:{name}:percent': round(percent, 1), f'disk:{name}:free_gb': round(free_gb, 2),
                 f'disk:{name}:days_to_full': None if days is None else round(days, 1)}  # fmt: skip
     said = f'{name} {percent:.1f}% used, {free_gb:.1f} GB free' + (f', full in {days:.1f} days' if days else '')
@@ -210,12 +213,12 @@ def _disk(
     return [], readings, kept
 
 
-def _days_to_full(history: Sequence[Sequence[float]], free: int) -> float | None:
-    """Days until *free* bytes are gone at the slope of the first to the last reading; ``None`` when not filling."""
+def _days_to_full(history: Sequence[Sequence[float]], free: int, span: float) -> float | None:
+    """Days until *free* bytes are gone at the first-to-last slope; ``None`` when not filling or under *span*."""
     if len(history) < _SLOPE_POINTS:
         return None
     (t0, used0), (t1, used1) = history[0], history[-1]
-    if t1 - t0 < SLOPE_SPAN_FLOOR_S:  # a burst seconds apart is not a trend
+    if t1 - t0 < span:  # a burst seconds apart is not a trend
         return None
     rate = (used1 - used0) / (t1 - t0)  # bytes per second
     return free / rate / 86400 if rate > 0 else None
@@ -359,7 +362,7 @@ def measure(
     real reading passes :func:`~dev_lab.supervise.components.resources.psutil_module`; ``None`` is absent),
     *linux* whether PSI and cgroups are asked, *sizes* the consumers of a disk alarm.
     """
-    done = Measured()
+    done = Measured(interval_s=declared.limits['interval_s'])
     histories = previous.get('disk', {})
     for path in declared.paths:
         found, readings, kept = _disk(path, declared.limits, histories.get(path.as_posix(), []), now, usage)

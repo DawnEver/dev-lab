@@ -103,12 +103,12 @@ def test_a_disk_filling_fast_alarms_on_days_to_full_before_it_is_nearly_full(tmp
     """20 GB free, 10 GB written per day: full in two days, under the three-day floor. Control: a flat disk."""
     declared = Declared(paths=(tmp_path,))
     day = 86400.0
-    past = {'disk': {tmp_path.as_posix(): [[0.0, 70.0 * GB]]}}
+    past = {'disk': {tmp_path.as_posix(): [[day - 3600.0, 80.0 * GB - 10.0 * GB / 24]]}}
     filling = measure(declared, past, now=day, usage=lambda _p: Disk(100 * GB, 80 * GB, 20 * GB), linux=False,
                       psutil=lambda: None, sizes=lambda _r: ())  # fmt: skip
     assert [f.severity for f in filling.findings] == ['warning']
     assert filling.readings[f'disk:{tmp_path.as_posix()}:days_to_full'] == 2.0
-    flat = {'disk': {tmp_path.as_posix(): [[0.0, 80.0 * GB]]}}
+    flat = {'disk': {tmp_path.as_posix(): [[day - 3600.0, 80.0 * GB]]}}
     still = measure(declared, flat, now=day, usage=lambda _p: Disk(100 * GB, 80 * GB, 20 * GB), linux=False,
                     psutil=lambda: None)  # fmt: skip
     assert still.findings == []
@@ -185,3 +185,27 @@ def test_two_readings_seconds_apart_are_not_a_trend(tmp_path: Path) -> None:
                    linux=False, psutil=lambda: None)  # fmt: skip
     assert half.findings == []
     assert half.readings[f'disk:{tmp_path.as_posix()}:days_to_full'] is None
+
+
+def test_days_to_full_warns_at_the_real_cadence(tmp_path: Path) -> None:
+    """F-9152150e82b5 (HIGH): 300 s readings of a disk filling 50 GB/h with 100 GB free warn within the window.
+
+    PLANTED CONTROL: the same cadence on a flat disk never warns.
+    """
+    declared = Declared(paths=(tmp_path,))
+
+    def run(rate: float) -> list[str | None]:
+        memo: dict = {}
+        said: list[str | None] = []
+        for tick in range(20):
+            used = 300 * GB + int(rate * tick * 300)
+            done = measure(declared, memo, now=tick * 300.0, usage=lambda _p, u=used: Disk(500 * GB, u, 500 * GB - u),
+                           linux=False, psutil=lambda: None, sizes=lambda _r: ())  # fmt: skip
+            memo = done.memo
+            said.append(done.findings[0].severity if done.findings else None)
+        return said
+
+    filling = run(50 * GB / 3600)
+    assert 'warning' in filling
+    assert filling[: int(THRESHOLDS['slope_span_s'] // 300)] == [None] * int(THRESHOLDS['slope_span_s'] // 300)
+    assert run(0.0) == [None] * 20
