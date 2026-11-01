@@ -55,16 +55,25 @@ class StateForge(Client):
         self.pyproject = '[tool.dev_lab.ci."review.yml"]\n'
         self.pyproject_at: dict[str, str | None] = {}  # ``None``: the file is absent at that ref
 
-    def add_run(self, head: str, *, repo: str = 'o/r') -> tuple[int, str]:
-        """An Actions run of *repo* at *head*: its id (``GITHUB_RUN_ID``) and its web URL, as Gitea answers them."""
+    def add_run(
+        self, head: str, *, repo: str = 'o/r', event: str = 'pull_request_target',
+        path: str = 'review.yml@refs/pull/1/head', conclusion: str = 'success',
+    ) -> tuple[int, str]:  # fmt: skip
+        """An Actions run of *repo* at *head*: its id (``GITHUB_RUN_ID``) and its web URL, as Gitea answers them.
+
+        By default the base's review run (``pull_request_target``, ``review.yml@<ref>``) concluded ``success``;
+        ``conclusion=''`` is a run still in progress.
+        """
         run_id = 7000 + len(self.runs)
         url = f'https://{self.forge.host}/{repo}/actions/runs/{len(self.runs) + 1}'
-        self.runs.append({'id': run_id, 'head_sha': head, 'html_url': url})
+        self.runs.append(
+            {'id': run_id, 'head_sha': head, 'html_url': url, 'event': event, 'path': path, 'conclusion': conclusion}
+        )
         return run_id, url
 
     def _runs(self, query: dict[str, str]) -> dict[str, Any]:
         mine = [r for r in self.runs if f'/{self.forge.owner}/{self.forge.repo}/' in r['html_url']]
-        listed = [r for r in mine if r['head_sha'] == query.get('head_sha', r['head_sha'])]
+        listed = [r for r in mine if r['head_sha'] == query.get('head_sha', r['head_sha'])][::-1]  # newest first
         return {'workflow_runs': listed, 'total_count': len(listed)}
 
     def _contents(self, ref: str) -> dict[str, Any]:

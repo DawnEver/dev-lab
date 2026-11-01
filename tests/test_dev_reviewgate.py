@@ -21,7 +21,14 @@ from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import DeclarationUnread, forge_posted, github_posted, job_run_url, review_missing
+from dev_lab.dev.reviewgate import (
+    DeclarationUnread,
+    RunsUnread,
+    forge_posted,
+    github_posted,
+    job_run_url,
+    review_missing,
+)
 
 _BASE = 'integrate/main'
 _SECURED = ('tests/security', 'success', 'nothing found')
@@ -193,8 +200,8 @@ def _judged_by_serve(forge: StateForge, head: str, *, login: str, url: str) -> s
 
 
 @pytest.mark.parametrize('third', ['DawnEver', ACTIONS_BOT, GITEA_ACTIONS_LOGIN])
-def test_a_gitea_repo_adopting_the_actions_review_at_neither_base_nor_head_is_reviewed_by_the_serve(third) -> None:
-    """No ``[tool.dev_lab.ci."review.yml"]`` anywhere: no Actions job reviews, ``forge serve`` does (2026-11-01).
+def test_a_gitea_repo_not_adopting_the_actions_review_at_its_base_is_reviewed_by_the_serve(third) -> None:
+    """No ``[tool.dev_lab.ci."review.yml"]`` at the base: no Actions job reviews, ``forge serve`` does (2026-11-01).
 
     PLANTED CONTROL: a third login's success -- or a null one naming this head's run -- is still refused.
     """
@@ -207,22 +214,87 @@ def test_a_gitea_repo_adopting_the_actions_review_at_neither_base_nor_head_is_re
     assert _judged_by_serve(forge, head, login=_SERVE, url='') is None
 
 
-@pytest.mark.parametrize(('at_base', 'at_head'), [(_UNADOPTED, None), (None, _UNADOPTED)])
-def test_adopted_at_base_or_head_the_serves_login_is_refused_a_pr_adopts_but_never_un_adopts(at_base, at_head) -> None:
-    """The STRICTER of base and head decides (F-e7e5368516ee): a PR adopts, never un-adopts.
-
-    A PR adopting review.yml lands only once Actions
-    reviews it, and a PR dropping it from an adopted base is still judged by the Actions rule.
+def test_adopted_at_base_the_serves_login_is_refused_a_pr_never_un_adopts() -> None:
+    """A PR dropping review.yml from an adopted base is still judged by the Actions rule: the base decides.
 
     PLANTED CONTROL: the Actions job's success naming this head's run counts.
     """
     forge, head = StateForge(), 'f' * 40
-    forge.pyproject_at.update({k: v for k, v in ((_BASE, at_base), (head, at_head)) if v is not None})
+    forge.pyproject_at[head] = _UNADOPTED
     _, run = forge.add_run(head)
     said = _judged_by_serve(forge, head, login=_SERVE, url=run)
     assert said is not None
     assert _SERVE in said
     assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=run) is None
+
+
+def test_a_head_only_adoption_is_judged_by_the_serve_rule_until_it_lands() -> None:
+    """dev-lab #30 (b): a head-only adoption waits for no Actions review; the serve reviews it until it lands.
+
+    Only the BASE's review.yml runs under pull_request_target, so the Actions review a head adopts cannot come.
+
+    PLANTED CONTROL: a null-creator success naming an honest run at this head is refused under the serve rule.
+    """
+    forge, head = StateForge(), 'f' * 40
+    forge.pyproject_at[_BASE] = _UNADOPTED
+    _, run = forge.add_run(head)
+    said = _judged_by_serve(forge, head, login=GITEA_ACTIONS_LOGIN, url=run)
+    assert said is not None
+    assert 'not by the forge' in said
+    assert _judged_by_serve(forge, head, login=_SERVE, url='') is None
+
+
+def test_a_pr_head_workflow_s_success_never_counts_only_the_base_s_review_run_does() -> None:
+    """dev-lab #30: the verdict is the base's ``pull_request_target`` run's, never a PR-head workflow's status.
+
+    Every Actions job posts ``creator: null``, so a PR adding an ``on: pull_request`` workflow posts a success
+    indistinguishable by its creator, naming its own run or the honest one.
+
+    PLANTED CONTROL: the same null-creator success naming an honest review run that concluded success counts.
+    """
+    forge, head = StateForge(), 'f' * 40
+    _, planted = forge.add_run(head, event='pull_request', path='review.yml@refs/pull/1/head')
+    said = _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=planted)
+    assert said is not None
+    assert 'not by the forge' in said
+    _, other = forge.add_run(head, path='ci.yml@refs/pull/1/head')  # pull_request_target, but another workflow
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=other) is not None
+    _, honest = forge.add_run(head)
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=honest) is None
+
+
+@pytest.mark.parametrize('conclusion', ['failure', 'cancelled'])
+def test_a_review_run_that_did_not_conclude_success_refuses_a_success_naming_it(conclusion: str) -> None:
+    """The job exits non-zero unless it posted success, so a success status beside a failed run is someone else's.
+
+    A run still in progress decides nothing: the run before it stands. PLANTED CONTROL: a later honest run that
+    concluded success counts, and one in progress after it does not unseat it.
+    """
+    forge, head = StateForge(), 'f' * 40
+    _, failed = forge.add_run(head, conclusion=conclusion)
+    said = _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=failed)
+    assert said is not None
+    assert 'not by the forge' in said
+    _, honest = forge.add_run(head)
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=honest) is None
+    forge.add_run(head, conclusion='')
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=honest) is None
+    forge.add_run(head, conclusion='failure')
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=honest) is not None
+
+
+def test_a_runs_listing_without_a_list_refuses_never_passes() -> None:
+    """PLANTED CONTROL: the same head with the forge answering its runs counts its honest success."""
+    forge, head = StateForge(), 'f' * 40
+    _, run = forge.add_run(head)
+    real = forge.call
+    forge.call = lambda method, path, body=None, durable=None: (
+        {} if '/actions/runs?' in path else real(method, path, body, durable)
+    )
+    with pytest.raises(RunsUnread):
+        _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=run)
+    forge.call = real
+    assert breakglass.unreviewed(forge, head, base=_BASE) is None
 
 
 @pytest.mark.parametrize('answer', ['missing', 'empty'])
@@ -233,14 +305,11 @@ def test_an_unreadable_declaration_refuses_never_reads_as_not_adopted(answer: st
     """
     forge, head = StateForge(), 'f' * 40
     forge.pyproject_at.update({head: _UNADOPTED, _BASE: _UNADOPTED})
-    if answer == 'missing':
-        forge.pyproject_at[head] = None
-    else:
-        forge.pyproject_at[head] = ''
+    forge.pyproject_at[_BASE] = None if answer == 'missing' else ''
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
     forge.login = _SERVE
     with pytest.raises(DeclarationUnread):
         breakglass.unreviewed(forge, head, base=_BASE)
-    forge.pyproject_at[head] = _UNADOPTED
+    forge.pyproject_at[_BASE] = _UNADOPTED
     _gitea_review(forge, head, login=_SERVE, url='')
     assert breakglass.unreviewed(forge, head, base=_BASE) is None

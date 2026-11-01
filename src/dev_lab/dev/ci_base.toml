@@ -18,7 +18,8 @@
 #   absent-parts  always: `jobparts absent --event` posts failure on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
 #   review        `forge review run --pr N`: tests/review (pull_request ONLY -- never pull_request_target,
-#                 which would run a fork's code with this repository's secrets)
+#                 which would run a fork's code with this repository's secrets; Gitea's review.yml below is the
+#                 one pull_request_target workflow, as it runs no PR code)
 #   merge-ready   last, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready and, when it is success, merges that head into integrate/main itself
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
@@ -282,13 +283,21 @@ git checkout -q --detach "$HEAD_SHA"
 ]
 
 # GITEA'S REVIEW JOB (2026-11-01): tests/review on a Gitea-hosted repo is posted by its Actions job, so the status's
-# recorded creator is the forge's Actions ghost -- the only creator reviewgate counts there (D11). Same trigger as
-# ci.yml's review (pull_request, never pull_request_target), the same `method` and `review` steps.
+# recorded creator is the forge's Actions ghost (D11) -- but so is EVERY Actions job's, a PR-head workflow's too.
+# TRIGGERED BY pull_request_target (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a pull_request
+# workflow from the PR HEAD, so a same-repo PR could rewrite this file to post success itself or print the review
+# key; a pull_request_target workflow is detected from the BASE commit (notifier_helper.go, 1.27), so the BASE's
+# workflow runs -- the PR can neither change what runs nor read the secret -- and reviewgate counts a success only
+# when that run concluded success (the job fails unless it posted success, forgetakeover.job_exit). Safe ONLY because
+# the job runs no code the PR supplies (test_the_review_job_runs_no_code_the_pr_supplies): the head is DATA.
+# GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
+# The types are pull_request's defaults, so the job runs on the events it ran on before.
 ["review.yml"]
 forge = "gitea"
 name = "Review"
 
-["review.yml".on.pull_request]
+["review.yml".on.pull_request_target]
+types = ["opened", "synchronize", "reopened"]
 
 ["review.yml".concurrency]
 group = "review-${{ github.event.pull_request.number }}"
@@ -315,9 +324,8 @@ steps = [
 ]
 
 # Gitea has no `statuses` scope: POST /statuses/{sha} asks Code write (reqRepoWriter(unit.TypeCode), 1.27), so the
-# job takes contents: write. This block is NOT a ceiling: Gitea runs a pull_request workflow from the PR head, so a
-# same-repo PR may rewrite it -- and its author already holds Code write by pushing that branch. The ceiling is the
-# repo/org MaxTokenPermissions; a fork PR's token is read-only regardless.
+# job takes contents: write. Under pull_request_target the base's block is the one that runs, so a PR cannot widen
+# it; the ceiling is still the repo/org MaxTokenPermissions.
 ["review.yml".jobs.review.permissions]
 actions = "read"  # reviewgate reads the job's own run: GET actions/runs/{id} is reqRepoReader(unit.TypeActions)
 contents = "write"

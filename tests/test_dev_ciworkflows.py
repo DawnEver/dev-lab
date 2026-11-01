@@ -426,10 +426,16 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     """ONE review step: the Gitea job runs the very step GitHub's ci.yml review job runs, on the ``review`` runner.
 
     Lean: no ``uses`` action (a host-mode runner behind an ACL fetches none), no ``uv sync`` of the repo's deps.
+    TRIGGERED BY ``pull_request_target`` ALONE (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a
+    ``pull_request`` workflow from the PR head, which could rewrite it to post success or print the key; the
+    ``pull_request_target`` workflow is the BASE's. Safe only because the job runs no PR code
+    (:func:`test_the_review_job_runs_no_code_the_pr_supplies`). PLANTED CONTROL: GitHub's ci.yml never takes it.
     """
     review = _gitea_review(tmp_path)
-    assert set(review['on']) == {'pull_request'}
-    assert 'pull_request_target' not in render(review)
+    assert set(review['on']) == {'pull_request_target'}
+    assert review['on']['pull_request_target']['types'] == ['opened', 'synchronize', 'reopened'], "pull_request's"
+    (tmp_path / 'ci').mkdir()
+    assert 'pull_request_target' not in render(_base_ci(tmp_path / 'ci'))
     job = review['jobs']['review']
     assert job['runs-on'] == 'review'
     assert not [step for step in job['steps'] if 'uses' in step]

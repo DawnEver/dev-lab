@@ -9,16 +9,16 @@ from pathlib import Path
 
 import pytest
 from _forge_state import StateForge
-from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
+from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _output, _work
 
 from dev_lab.dev import forgereview_scope, reviewgitauth
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_rounds import trusted_bodies
-from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import held, main, review_run, runtimes_with
-from dev_lab.dev.forgework import ACTIONS_BOT
+from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewgate import review_missing
 
@@ -76,12 +76,59 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
 
 
 def test_the_cli_reads_the_secret_from_the_named_variable(tmp_path: Path, monkeypatch) -> None:
+    """A held head is not reviewed, so the job fails (dev-lab #30: the run's conclusion is the verdict)."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = ACTIONS_BOT
     monkeypatch.delenv('REVIEW_KEY', raising=False)
-    assert main(['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY'], cwd=work, client=forge) == 0
+    assert main(['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY'], cwd=work, client=forge) == 1
     assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
+
+
+@pytest.mark.parametrize('host', ['forge.example.org', 'github.com'])
+def test_the_job_exits_non_zero_unless_it_posted_success(tmp_path: Path, host: str) -> None:
+    """dev-lab #30: a job that posts anything but success fails, on both forges.
+
+    Gitea counts a review only when the base's review RUN concluded success, so the run must fail unless it posted
+    success; GitHub's ci.yml merge-ready runs ``always()`` after it, so a red review job blocks nothing there.
+
+    PLANTED CONTROL: the same PR whose round finds nothing exits 0.
+    """
+    work, head = _work(tmp_path)
+    forge = StateForge(Forge(host, 'o', 'r'))
+    number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    forge.login = ACTIONS_BOT
+    blocking = FakeCommand(_output(severity='HIGH'))
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=blocking, ready=_can) == 1
+    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'failure'
+    (tmp_path / 'control').mkdir()
+    other_work, other_head = _work(tmp_path / 'control')
+    control = StateForge(Forge(host, 'o', 'r'))
+    other = control.add_pull('pr/x', 'integrate/main', title='add x', sha=other_head)
+    control.login = ACTIONS_BOT
+    assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=FakeCommand(), ready=_can) == 0
+
+
+def test_a_success_a_pr_head_workflow_posted_first_never_passes_the_job(tmp_path: Path) -> None:
+    """dev-lab #30: a success a PR-head workflow planted before the job runs never concludes the job success.
+
+    The PR-head ``on: pull_request`` workflow posts a null-creator success first; the job finds the head "already
+    reviewed" and posts nothing, so the gate decides -- and the gate refuses it.
+
+    PLANTED CONTROL: the same head whose earlier base review run concluded success passes the re-run.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = GITEA_ACTIONS_LOGIN
+    _, planted = forge.add_run(head, event='pull_request')
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean', target_url=planted)
+    command = FakeCommand()
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 1
+    assert command.ran == [], 'the planted success stands for the round: only the exit refuses it'
+    _, honest = forge.add_run(head)
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean', target_url=honest)
+    forge.add_run(head, conclusion='')  # this re-run, in progress
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 0
 
 
 def test_a_runtime_given_on_the_command_line_fills_the_host_value_a_runner_lacks() -> None:
