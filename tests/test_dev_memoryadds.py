@@ -255,3 +255,29 @@ def test_planted_a_sync_whose_resolution_rewrites_an_upstream_edit_is_refused(re
     found = memoryadds.pending(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
+
+
+def test_restoring_an_entry_the_lane_edited_to_the_integration_lines_text_passes(repo: Path) -> None:
+    """The remedy the refusal prints -- restore the entry -- must itself be committable.
+
+    MEASURED 2026-11-01: a lane holding three old in-place edits restored them to origin/integrate/main's text and
+    the commit was refused, because the restore is a change against HEAD. An entry staged exactly as the integration
+    line holds it is not an edit by this commit.
+    """
+    _lane(repo)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\naccessed: 2026-10-02\n---\n\nEdited in place.\n')
+    _commit(repo, 'lane edits in place (before the rule)', ENTRY)
+    _git(repo, 'checkout', 'origin/integrate/main', '--', ENTRY)
+    assert memoryadds.pending(repo) == ()
+
+
+def test_planted_a_lane_rewriting_an_entry_to_neither_text_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: the lane's second edit matches neither HEAD nor the integration line -- an edit."""
+    _lane(repo)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\naccessed: 2026-10-02\n---\n\nEdited in place.\n')
+    _commit(repo, 'lane edits in place (before the rule)', ENTRY)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\naccessed: 2026-10-02\n---\n\nEdited again.\n')
+    _git(repo, 'add', '--', ENTRY)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
