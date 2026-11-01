@@ -40,7 +40,7 @@ class _Home:
     def listing(self, _client: object) -> tuple[Attachment, ...]:
         return tuple(Attachment(n, name, name) for n, name in enumerate(self.files))
 
-    def client(self) -> Any:  # noqa: ANN401 -- a duck-typed forge client
+    def client(self) -> SimpleNamespace:  # a duck-typed forge client
         return SimpleNamespace(download=self.files.__getitem__)
 
 

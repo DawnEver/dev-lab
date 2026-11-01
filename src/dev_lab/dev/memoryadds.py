@@ -29,7 +29,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
@@ -47,6 +47,7 @@ VOLATILE_FIELDS = ('accessed', 'tier', 'count')
 _GIT = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S = 120
 _ZERO = '0' * 40
+_REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
 _MEMORY = '.claude/memory/'
 _TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
 _FRONTMATTER = re.compile(r'\A---\n(.*?)\n---(?:\n|\Z)', re.DOTALL)
@@ -186,7 +187,7 @@ def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
     out: list[str] = []
     for line in ref_lines.splitlines():
         parts = line.split()
-        if len(parts) != 4 or parts[1] == _ZERO:  # noqa: PLR2004 -- git's four-field ref line
+        if len(parts) != _REF_LINE_FIELDS or parts[1] == _ZERO:
             continue
         out.extend(problems_between(root, integration, parts[1]))
     return tuple(out)

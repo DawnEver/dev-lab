@@ -153,7 +153,9 @@ def test_on_github_a_red_decision_is_never_merged(tmp_path: Path) -> None:
     assert forge.merges == []
 
 
-def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_said(tmp_path: Path) -> None:
+def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_said(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     work, forge, number, head = _hub_pr(tmp_path)
     original = forge.pr_view
 
@@ -162,7 +164,7 @@ def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_
         forge.pulls[n]['head']['sha'] = 'f' * 40  # a push lands between the judgement and the merge
         return found
 
-    forge.pr_view = moved  # type: ignore[method-assign]
+    monkeypatch.setattr(forge, 'pr_view', moved)
     said = ready(work, forge, number)
     assert forge.merges == []
     assert forge.deleted_refs == []

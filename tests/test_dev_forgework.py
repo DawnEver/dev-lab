@@ -503,7 +503,10 @@ def test_whoami_always_asks_the_forge_and_only_github_names_the_actions_bot(serv
 
     PLANTED CONTROL: GitHub's own integration refusal of ``/user`` -- a real job token -- is the Actions bot.
     """
-    sleep = lambda _s: None  # noqa: E731
+
+    def sleep(_s: float) -> None:
+        return None
+
     _answer('GET', '/api/v1/user', (200, {'login': 'maintainer'}))
     pat = Client(
         Forge('forge.example.org', 'o', 'r'), 'T', transport=_Loopback(server), username=ACTIONS_BOT, sleep=sleep

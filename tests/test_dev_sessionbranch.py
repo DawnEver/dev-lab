@@ -28,6 +28,7 @@ from dev_lab.dev.relock import branch_for
 from dev_lab.dev.sessionbranch import P2, P3, P5, P6, refusals
 
 _GIT = shutil.which('git') or 'git'
+_BASE = 'integrate/main'  # the integration branch whose declaration names the forge
 _DECL = (
     "[tool.dev_lab.branchset]\ntrunk = 'stable'\nsessions = ['int/line', 'feat/s']\n\n"
     "[tool.dev_lab.integrator]\nintegration = 'int/line'\ntrunk = 'stable'\n"
@@ -587,12 +588,12 @@ def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pend
     forge.login = GITEA_ACTIONS_LOGIN  # the job token: Gitea records its Actions ghost as the creator
     head = 'a' * 40
     _, run = forge.add_run(head)
-    assert 'not posted' in unreviewed(forge, head)
+    assert 'not posted' in unreviewed(forge, head, base=_BASE)
     for state, description in (('pending', 'claimed by h, reviewing'), ('error', 'the review command failed')):
         status_post(forge, head, context=REVIEW_CONTEXT, state=state, description=description)
-        assert description in unreviewed(forge, head)
+        assert description in unreviewed(forge, head, base=_BASE)
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='over the cap')
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings', target_url=run)
-    assert 'over the cap' in unreviewed(forge, head), 'a hold not yet released is not a review'
+    assert 'over the cap' in unreviewed(forge, head, base=_BASE), 'a hold not yet released is not a review'
     status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released: review reviewed this head')
-    assert unreviewed(forge, head) is None
+    assert unreviewed(forge, head, base=_BASE) is None

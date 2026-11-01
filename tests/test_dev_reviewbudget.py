@@ -61,8 +61,8 @@ def test_the_fit_reproduces_a_known_distribution_and_its_quantile() -> None:
     """100 PRs in 30 days costing 0.1 .. 10.0 USD: 100 PRs a month, cap at the 0.9 quantile (9.01), affordable."""
     got = fit(_spend(by_tag=_history([i / 10 for i in range(1, 101)])))
     assert got.source == 'fitted'
-    assert got.prs_per_month == pytest.approx(100.0)
-    assert got.cap_usd == pytest.approx(0.1 + CAP_QUANTILE * 9.9)
+    assert got.prs_per_month == pytest.approx(100.0, abs=1e-9)  # PRs/month; a float fit of an exact count
+    assert got.cap_usd == pytest.approx(0.1 + CAP_QUANTILE * 9.9, abs=1e-9)  # USD, sub-nano-dollar
 
 
 def test_a_fitted_cap_never_lets_a_month_of_typical_prs_overrun_the_budget() -> None:
@@ -70,7 +70,9 @@ def test_a_fitted_cap_never_lets_a_month_of_typical_prs_overrun_the_budget() -> 
     costs = [i / 10 for i in range(1, 101)]
     got = fit(Spend(300.0, 0.0, 30, _history(costs)))
     assert got.cap_usd < 0.1 + CAP_QUANTILE * 9.9
-    assert got.prs_per_month * sum(min(c, got.cap_usd) for c in costs) / len(costs) == pytest.approx(300.0)
+    assert got.prs_per_month * sum(min(c, got.cap_usd) for c in costs) / len(costs) == pytest.approx(
+        300.0, abs=1e-6
+    )  # USD per month, sub-micro-dollar
 
 
 def test_a_planted_spend_record_moves_the_fit() -> None:
