@@ -134,7 +134,7 @@ from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
-from dev_lab.dev.reviewgate import forge_posted, post_review
+from dev_lab.dev.reviewgate import DeclarationUnread, forge_posted, post_review
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
@@ -161,6 +161,7 @@ __all__ = [
     'hold',
     'judge_for',
     'load_review',
+    'review_at',
     'review_from',
     'review_pull',
     'review_tick',
@@ -307,9 +308,37 @@ def review_from(text: str, origin: str) -> Review:
 
 
 def load_review(root: Path) -> Review:
-    """*root*'s working-tree ``[tool.dev_lab.review]``; defaults when it has no manifest."""
+    """*root*'s working-tree ``[tool.dev_lab.review]``; defaults when it has no manifest.
+
+    A LOCAL check of a checkout's own declaration (the family test, the policy page, merge-ready's config line);
+    never what a PR's review acts on -- that is the base's, :func:`review_at`.
+    """
     manifest = root / 'pyproject.toml'
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
+
+
+def review_at(root: Path, base: str) -> Review:
+    """The ``[tool.dev_lab.review]`` ``origin/<base>`` declares in *root* -- what a PR's review acts on.
+
+    F-46e412ee799d, F-ef3a6c8b86b2 (dev-lab #38 round 2): the review job checks out the PR head, and the declared
+    ``command`` runs beside the review key, so a head's own declaration would choose the code that runs -- under
+    ``pull_request_target`` too, whose WORKFLOW alone is the base's. Every PR review path (the job, the serve, a
+    takeover, an adjudication) reads the declaration here, at the base only: a PR changing its review declaration
+    is reviewed under the base's until it lands, like the Actions adoption (:mod:`dev_lab.dev.reviewgate`).
+    Read from git (``git show``, never the working tree, which is the head's), so the serve's tick reads no forge
+    before it knows its host can run the command. An unreadable base declaration refuses
+    (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back to the head.
+    """
+    where = f'origin/{base}:pyproject.toml'
+    try:
+        text = forgereview_scope.git(root, 'show', where)[1]
+    except OSError as failed:
+        msg = f'{where} cannot be read: {failed}'
+        raise DeclarationUnread(msg) from failed
+    if not text.strip():
+        msg = f'{where} is empty'
+        raise DeclarationUnread(msg)
+    return review_from(text, where)
 
 
 def stale_after(review: Review) -> timedelta:
@@ -569,7 +598,7 @@ def step(
     A host that cannot fill or start the command says so once and reads no PR.
     """
     try:
-        review = load_review(root)
+        review = review_at(root, policy.integration)
         here = host_runtimes()
         try:  # any range, any slice: can this host run the command at all
             cannot = ready(command_for(review, '', here), root)

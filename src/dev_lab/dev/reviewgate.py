@@ -84,6 +84,7 @@ __all__ = [
     'forge_posted',
     'github_posted',
     'job_run_url',
+    'manifest_at',
     'post_review',
     'posted_verdicts',
     'review_missing',
@@ -124,8 +125,8 @@ class RunsUnread(ValueError):
     """The forge's runs at a head could not be read: whether its review run concluded success is undecided."""
 
 
-def adopts_actions_review(client: Client, ref: str) -> bool:
-    """Whether the repo's ``pyproject.toml`` at *ref*, as the forge holds it, declares :data:`ACTIONS_REVIEW`.
+def manifest_at(client: Client, ref: str) -> str:
+    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree.
 
     Raises:
         DeclarationUnread: the file is absent at *ref*, or the forge's answer carries no content.
@@ -140,7 +141,12 @@ def adopts_actions_review(client: Client, ref: str) -> bool:
     if not content:
         msg = f'pyproject.toml at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
-    return ACTIONS_REVIEW in declared_table(tomllib.loads(base64.b64decode(content).decode()), 'ci', {})
+    return base64.b64decode(content).decode()
+
+
+def adopts_actions_review(client: Client, ref: str) -> bool:
+    """Whether the repo's ``pyproject.toml`` at *ref* (:func:`manifest_at`) declares :data:`ACTIONS_REVIEW`."""
+    return ACTIONS_REVIEW in declared_table(tomllib.loads(manifest_at(client, ref)), 'ci', {})
 
 
 def review_runs(client: Client, head: str) -> list[dict[str, Any]]:

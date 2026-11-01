@@ -19,7 +19,7 @@
 #   security      `forge security run --pr N`: tests/security
 #   review        `forge review run --pr N`: tests/review (pull_request ONLY -- never pull_request_target,
 #                 which would run a fork's code with this repository's secrets; Gitea's review.yml below is the
-#                 one pull_request_target workflow, as it runs no PR code)
+#                 one pull_request_target workflow: it acts on nothing the head declares, below)
 #   merge-ready   last, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready and, when it is success, merges that head into integrate/main itself
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
@@ -120,9 +120,10 @@ pull-requests = "read"
 # into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
 # the head and fails (forgetakeover.review_run), never exits green with no review.
 # The method's install and key are the shared `method` steps (below, with `setup`): the review job and the claims
-# workflow use the same ones. The job holds the review key and a write token, so it runs NO code of the PR's
-# (F-76c85dbc4b77): the head is checked out as DATA only -- never `setup`'s `uv sync`, whose lock and project
-# are the PR's -- and the dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
+# workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
+# supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
+# whose lock and project are the PR's -- the review declaration (its command) is read at the BASE
+# (forgereview.review_at), and the dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
 ["ci.yml".jobs.review]
 if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
@@ -298,7 +299,9 @@ git checkout -q --detach "$HEAD_SHA"
 # key; a pull_request_target workflow is detected from the BASE commit (notifier_helper.go, 1.27), so the BASE's
 # workflow runs -- the PR can neither change what runs nor read the secret -- and reviewgate counts a success only
 # when that run concluded success (the job fails unless it posted success, forgetakeover.job_exit). Safe ONLY because
-# the job runs no code the PR supplies (test_the_review_job_runs_no_code_the_pr_supplies): the head is DATA.
+# what the job takes from the head is the DIFF, read as data; what it acts on is the base's -- the workflow,
+# the [tool.dev_lab.review] declaration (forgereview.review_at: the command, budget, rounds, globs; F-46e412ee799d)
+# and the tools, pinned by SHA (DEV_LAB_REF, AI_LAB_REF) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
 # The types are pull_request's defaults, so the job runs on the events it ran on before.
 ["review.yml"]

@@ -120,15 +120,15 @@ def test_every_held_head_is_an_integrator_prompt_naming_the_rerun(tmp_path: Path
 
 def test_the_door_lists_held_heads_and_runs_the_takeover(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     work, forge, _, head = _held(tmp_path)
-    (work / 'pyproject.toml').write_text(
+    sliced = (
         (work / 'pyproject.toml')
         .read_text(encoding='utf-8')
         .replace(
             "command = ['reviewer', '--range', '{range}', '--model', 'm']",
             "command = ['reviewer', '--range', '{range}', '--paths', '{paths}']\nmax_diff_bytes = 10",
-        ),
-        encoding='utf-8',
+        )
     )
+    advance(work, 'integrate/main', 'pyproject.toml', sliced)  # a takeover acts on the base's review (review_at)
     fetched: list[int] = []
     assert main(['held'], cwd=work, client=forge) == 1
     assert RERUN in capsys.readouterr().out
@@ -211,10 +211,10 @@ def test_the_door_reads_the_repo_it_is_told_and_refuses_a_sha_it_lacks(tmp_path:
 
 def test_the_takeover_in_a_repo_with_an_empty_command_names_the_same_fix(tmp_path: Path, capsys) -> None:
     work, forge, _, head = _merged(tmp_path)
-    manifest = work / 'pyproject.toml'
-    text = manifest.read_text(encoding='utf-8')
-    manifest.write_text(text.replace("command = ['reviewer', '--range', '{range}', '--model', 'm']", 'command = []'),
-                        encoding='utf-8')  # fmt: skip
+    text = (work / 'pyproject.toml').read_text(encoding='utf-8')  # the base's declaration is what a takeover reads
+    empty = text.replace("command = ['reviewer', '--range', '{range}', '--model', 'm']", 'command = []')
+    advance(work, 'integrate/main', 'pyproject.toml', empty)
+    (work / 'pyproject.toml').write_text(text, encoding='utf-8')
     assert main(['takeover', head], cwd=work, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 2
     assert EMPTY_COMMAND_FIX in capsys.readouterr().err
 

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance, clone_pair
-from _forge_fake import git_out
+from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 from lab_commons.outcomes import Conclusion
 
@@ -131,10 +131,12 @@ def _work(tmp_path: Path) -> tuple[Path, str]:
     _, work = clone_pair(tmp_path)
     (work / '.claude' / 'rules').mkdir(parents=True)
     (work / 'tests').mkdir()
+    advance(work, 'main', 'pyproject.toml', _MANIFEST)  # the review a PR is reviewed under (review_at): the base's
+    run_git(work, 'push', '-q', 'origin', 'origin/main:refs/heads/integrate/main')  # one commit, the head's too
+    run_git(work, 'fetch', '-q', 'origin')
     advance(work, 'integrate/main', 'tests/test_a.py', 'def test_a():\n    assert True\n')  # the audit's subject
     advance(work, 'integrate/main', 'AGENTS.md', '# Agents\n')
     advance(work, 'integrate/main', '.claude/rules/taste.md', _RULES)
-    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
     head = advance(work, 'pr/x', 'x.py', 'x\n')
     return work, head
 
@@ -191,7 +193,7 @@ def test_an_empty_command_names_the_fix_at_the_merge_and_at_the_takeover(tmp_pat
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     opted_out = _MANIFEST.split('[tool.dev_lab.review]', maxsplit=1)[0] + '[tool.dev_lab.review]\ncommand = []\n'
-    (work / 'pyproject.toml').write_text(opted_out, encoding='utf-8')
+    advance(work, 'integrate/main', 'pyproject.toml', opted_out)  # the serve reads the base's (review_at)
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     green = (_status('tests/base', 'success', 'scope=full'), _status('tests/security', 'success', 'nothing found'),
              _status(REVIEW_CONTEXT, 'success', 'reviewed'))  # fmt: skip

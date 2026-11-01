@@ -37,7 +37,7 @@ from dev_lab.dev.forgereview import (
     command_for,
     hold,
     judge_for,
-    load_review,
+    review_at,
     review_pull,
 )  # fmt: skip
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
@@ -310,7 +310,7 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
     if args.verb == 'cap':
         return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
     ruled = adjudicate_thread(
-        root, origin, load_review(root), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
+        root, origin, review_at(root, base), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
         runtimes=runtimes_with(host_runtimes(), args.runtime),
     )  # fmt: skip
     return [f'[review] {one}' for one in ruled]
@@ -345,14 +345,14 @@ def main(
                 verifies=True,
             )
             with posted_verdicts() as said:
-                emit(f'[review] {review_run(root, origin, load_review(root), args.pr, base=base, runner=runner)}')
+                emit(f'[review] {review_run(root, origin, review_at(root, base), args.pr, base=base, runner=runner)}')
             return job_exit(origin, args.pr, said, base=base)
         if args.verb in {'held', 'blocked', 'dispose', 'cap', 'adjudicate'}:
             said = _listed(args, root, origin, base, run)
             for one in said:
                 emit(one)
             return 1 if said and args.verb in {'held', 'blocked'} else 0
-        review, pull = load_review(root), pull_for(origin, args.sha)  # the forge first: the PR brings its head
+        review, pull = review_at(root, base), pull_for(origin, args.sha)  # the forge first: the PR brings its head
         if pull is not None:
             pull_in(root, pull.number)
         head = _commit(root, pull.head_sha if pull is not None else args.sha)

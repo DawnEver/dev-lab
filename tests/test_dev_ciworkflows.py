@@ -434,8 +434,10 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     Lean: no ``uses`` action (a host-mode runner behind an ACL fetches none), no ``uv sync`` of the repo's deps.
     TRIGGERED BY ``pull_request_target`` ALONE (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a
     ``pull_request`` workflow from the PR head, which could rewrite it to post success or print the key; the
-    ``pull_request_target`` workflow is the BASE's. Safe only because the job runs no PR code
-    (:func:`test_the_review_job_runs_no_code_the_pr_supplies`). PLANTED CONTROL: GitHub's ci.yml never takes it.
+    ``pull_request_target`` workflow is the BASE's. Safe only because the job acts on nothing the head declares:
+    the diff is data, the review declaration is the base's (``forgereview.review_at``, F-46e412ee799d) and the tools
+    are pinned by SHA (:func:`test_the_review_job_runs_no_code_the_pr_supplies`).
+    PLANTED CONTROL: GitHub's ci.yml never takes it.
     """
     review = _gitea_review(tmp_path)
     assert set(review['on']) == {'pull_request_target'}
