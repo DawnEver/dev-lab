@@ -217,7 +217,7 @@ git clone -q --no-tags --filter=blob:none --no-checkout "${{ github.server_url }
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -m pip install -q uv
 "$RUNNER_TEMP/review/bin/uv" export --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project | grep -E '^lab-commons @ ' > "$RUNNER_TEMP/review.txt"
-"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" "$RUNNER_TEMP/dev-lab" -r "$RUNNER_TEMP/review.txt"
+"$RUNNER_TEMP/review/bin/uv" pip install --python "$RUNNER_TEMP/review/bin/python" "$RUNNER_TEMP/dev-lab" --override "$RUNNER_TEMP/review.txt"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 ''', env = { DEV_LAB_REF = "1af31d23541153523a472e0e2048604196cabea6", FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}" } },
 ]
