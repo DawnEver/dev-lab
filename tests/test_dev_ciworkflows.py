@@ -331,7 +331,10 @@ def test_no_credential_outlives_the_step_that_uses_it(tmp_path: Path) -> None:
                 # (dev-lab #17's own review, 2026-11-01: "could not read Username").
                 assert 'Authorization: basic $(' in step['run'], step.get('name')
         review = next(s for s in steps if s.get('name') == 'tests/review')
-        assert review['run'].startswith('trap "git credential-cache exit" EXIT')
+        # F-5fd2611e79ea: the token files die with the step, whatever the door did (a self-hosted runner reuses temp).
+        assert review['run'].startswith(
+            """trap 'git credential-cache exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT"""
+        )
         # F-ca1dda52c2ef: the door carries the lazy-blob header itself, read from the hand-over file.
         assert 'GIT_CONFIG' not in review['run'], 'the review step derives no header in shell'
         assert '--git-token-file "$RUNNER_TEMP/forge-secrets/read"' in review['run']

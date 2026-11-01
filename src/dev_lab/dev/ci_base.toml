@@ -216,13 +216,14 @@ python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I 
 # the hand-over step alone holds the tokens, writes each to a private file (umask 077), and the door reads each
 # once and removes it before any subprocess: the read token is its git header, the job token its forge client's.
 # The review key (ANTHROPIC_API_KEY) stays in the tests/review env: the reviewer needs it, a separate concern.
+# Whatever the door does, the files die with the step (F-5fd2611e79ea): a self-hosted runner may reuse RUNNER_TEMP.
 review = [
     { name = "Hand the forge tokens to the door", run = '''umask 077
 mkdir -p "$RUNNER_TEMP/forge-secrets"
 printf '%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" > "$RUNNER_TEMP/forge-secrets/read"
 printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 ''', env = { FAMILY_READ_TOKEN = "${{ secrets.FAMILY_READ_TOKEN }}", GITHUB_TOKEN = "${{ github.token }}" } },
-    { name = "tests/review", run = '''trap "git credential-cache exit" EXIT
+    { name = "tests/review", run = '''trap 'git credential-cache exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
 "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
 ''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
 ]
