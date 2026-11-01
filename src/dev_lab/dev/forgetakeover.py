@@ -41,7 +41,7 @@ from dev_lab.dev.forgereview import (
     review_pull,
 )  # fmt: skip
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
-from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose
+from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_cap
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
@@ -54,6 +54,7 @@ from dev_lab.dev.forgework import ACTIONS_BOT, GITHUB, ForgeCallFailed, PullRequ
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT
+from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, ForgeBotUndeclared, forge_bots, review_missing
 
 if TYPE_CHECKING:
@@ -238,6 +239,11 @@ def _parser() -> argparse.ArgumentParser:
     disposal.add_argument('pr', type=int, help="the PR, or a PR-less head's ledger issue")
     disposal.add_argument('finding')
     disposal.add_argument('--why', required=True, help='the claim: why it is not a defect (cite code or tests)')
+    raising = verbs.add_parser('cap', help="raise one PR's review caps, the reason recorded on the PR (integrator)")
+    raising.add_argument('pr', type=int)
+    raising.add_argument('--usd', type=float, help='the dollar cap; the month remainder still bounds it')
+    raising.add_argument('--rounds', type=int, help='the round cap')
+    raising.add_argument('--why', required=True, help='the recorded reason for the raise')
     ruling = verbs.add_parser('adjudicate', help='rule on every pending claim of a thread (the forge runs this)')
     ruling.add_argument('number', type=int, help="the PR, or a PR-less head's ledger issue")
     ruling.add_argument('--dry-run', action='store_true', help='print the verdicts, post nothing (any session)')
@@ -281,6 +287,8 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
     me = identity(origin, this_machine())
     if args.verb == 'dispose':
         return [f'[review] {dispose(origin, args.pr, args.finding, args.why, by=me)}']
+    if args.verb == 'cap':
+        return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
     ruled = adjudicate_thread(
         root, origin, load_review(root), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
         runtimes=runtimes_with(host_runtimes(), args.runtime),
@@ -294,7 +302,7 @@ def main(
     ready: Callable[[Sequence[str], Path], str | None] = can_start,
     fetch: Callable[[Path, int], object] | None = None,
 ) -> int:  # fmt: skip
-    """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``, ``run --pr <N>``.
+    """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``, ``cap <pr>``, ``run``.
 
     Exit 0 done, 1 held or blocked heads listed, 2 refused.
     """
@@ -310,7 +318,7 @@ def main(
             )
             emit(f'[review] {review_run(root, origin, load_review(root), args.pr, base=base, runner=runner)}')
             return 0
-        if args.verb in {'held', 'blocked', 'dispose', 'adjudicate'}:
+        if args.verb in {'held', 'blocked', 'dispose', 'cap', 'adjudicate'}:
             said = _listed(args, root, origin, base, run)
             for one in said:
                 emit(one)

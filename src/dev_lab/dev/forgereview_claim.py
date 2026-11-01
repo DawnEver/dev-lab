@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'RELEASED', 'claimable', 'passed', 'standing', 'unable']
+__all__ = ['CAPPED', 'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'RELEASED', 'claimable', 'passed', 'standing', 'unable']
 
 #: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
 CLAIMED: Final = 'claimed by'
@@ -33,6 +33,10 @@ RELEASED: Final = 'released by'
 #: What an ``error`` says when THIS HOST cannot run the review (:class:`ReviewUnsupported`): a fact about the host,
 #: not the head, so the head stays claimable -- by a capable host, or by this one once it is fixed.
 HOST_UNABLE: Final = 'not reviewed: cannot run on host'
+
+#: What a ``pending`` status opens with when the PR's review cap holds it (:mod:`dev_lab.dev.reviewbudget`): the
+#: merge waits, and the head stays claimable so a raised cap or a new month is read on the next tick.
+CAPPED: Final = 'review capped, merge waits:'
 
 _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
 
@@ -49,7 +53,7 @@ def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> b
         return True
     if status.state != 'pending':
         return False
-    if status.description.startswith(RELEASED):
+    if status.description.startswith((RELEASED, CAPPED)):
         return True
     if (claim := _CLAIM.match(status.description)) is None:
         return False  # takeover pending, or any other pending: not ours to take

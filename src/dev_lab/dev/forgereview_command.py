@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.reviewbudget import Spend, read_spend
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
@@ -95,3 +97,5 @@ class Runner:
     secret: bool = True
     #: Whether this is the ``forge serve`` process: its rounds are the forge's ruling (:func:`identity`).
     serving: bool = False
+    #: This host's ai-lab spend report (:func:`dev_lab.dev.reviewbudget.read_spend`); ``None``: rounds cap only.
+    spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend
