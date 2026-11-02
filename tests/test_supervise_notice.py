@@ -8,6 +8,7 @@ import re
 import pytest
 
 from dev_lab.supervise.notice import (
+    INVESTIGATE,
     TELEGRAM_LIMIT,
     Context,
     Notice,
@@ -430,3 +431,14 @@ def test_the_host_label_comes_from_notify_else_the_default_else_the_hostname(mon
     assert host_label({'host_label': 'Gitea'}) == 'Gitea'
     assert host_label({}, default='gitea-1') == 'gitea-1'
     assert host_label({}) == 'iZd7o3pitw8km72ti2wkrwZ'
+
+
+@pytest.mark.parametrize('severity', [Severity.WARNING, Severity.CRITICAL])
+def test_an_alarm_without_an_action_never_says_no_action(severity: Severity) -> None:
+    """F-358f80905635: a WARNING or CRITICAL with no action points at the details; only TEST and INFO may say none."""
+    alarm = Notice(title='web: health check failed', severity=severity, findings=('HTTP 503',))
+    for render in RENDERERS.values():
+        assert 'No action' not in render(alarm)
+    assert f'**Action:** {INVESTIGATE}' in markdown(alarm)
+    assert 'No action needed' in markdown(CASES['test'])  # control: a test still says it
+    assert 'No action needed' in markdown(CASES['info'])  # and an INFO

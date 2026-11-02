@@ -30,6 +30,7 @@ from lab_commons.config import section
 from dev_lab.supervise.verdict import Severity
 
 __all__ = [
+    'INVESTIGATE',
     'TELEGRAM_LIMIT',
     'Context',
     'Notice',
@@ -51,6 +52,8 @@ _SEP: Final = ' \N{MIDDLE DOT} '
 
 #: Said when *action* is empty: the second thing a reader learns is that nothing is asked of them.
 _NO_ACTION: Final = 'No action needed.'
+#: Said for a WARNING or CRITICAL notice that names no action: never "no action" -- that would lie about an alarm.
+INVESTIGATE: Final = 'Investigate -- see Details.'
 
 #: What Markdown (and the renderer here) would read as markup inside running text.
 _MARKUP: Final = re.compile(r'([\\`*_\[\]<>&~|])')
@@ -203,10 +206,19 @@ def _fields(notice: Notice) -> list[tuple[str, str]]:
     return out
 
 
+def _action(notice: Notice) -> str:
+    """The action line: the notice's own; else "no action" ONLY for a test or an INFO, else :data:`INVESTIGATE`."""
+    if notice.action:
+        return notice.action
+    if notice.test:
+        return f'{_NO_ACTION} This is a test.'
+    return _NO_ACTION if notice.severity is Severity.INFO else INVESTIGATE
+
+
 def markdown(notice: Notice) -> str:
     """THE text of *notice*: the agent hook and the email's plain part carry it; the HTML channels render it."""
     first = _SEP.join([f'**{_severity(notice)}**', *(_md(part) for part in _what(notice))])
-    action = _md(notice.action) if notice.action else _md(_NO_ACTION + (' This is a test.' if notice.test else ''))
+    action = _md(_action(notice))
     out = [first, '', f'**Action:** {action}']
     if fields := _fields(notice):
         out += ['', *(f'- **{name}:** {value}' for name, value in fields)]

@@ -47,11 +47,13 @@ from dev_lab.supervise.state import (
 from dev_lab.supervise.verdict import Anomaly, CheckResult, Completion, Severity
 
 __all__ = [
+    'ACTIONS',
     'CHECK_FAILED',
     'DEPLOY_SLICE',
     'STATE_LOST',
     'UNCONFIGURED',
     'CycleResult',
+    'action_for',
     'run_cycle',
 ]
 
@@ -335,6 +337,7 @@ def _notify(
             value='' if anomaly.value is None else f'{anomaly.value:g}',
             threshold='' if anomaly.threshold is None else f'{anomaly.threshold:g}',
             findings=tuple(rest),
+            action=action_for(anomaly.kind),
         )
         delivered = notifier.send(notice)
         sent.extend(delivered)
@@ -349,6 +352,33 @@ def _notify(
         if any(one.ok for one in delivered):
             mark_notified(state, anomaly.source, clock.isoformat())
     return sent
+
+
+#: What a reader does about an anomaly, by the END of its kind (``<name>_<suffix>``) or its prefix; first match wins.
+#: A kind none names gets the notice's own fallback (:data:`dev_lab.supervise.notice.INVESTIGATE`), never "no action".
+ACTIONS: Final = (
+    (
+        ('_unreachable', '_status', '_failed', '_unexpected'),
+        'Check the service: is it running, and what do its logs say?',
+    ),
+    (('_stale', 'stalled', 'supervisor_stale'), 'Check the producer: it has stopped reporting progress.'),
+    (('_unconfigured',), 'Fix the supervision config for this check.'),
+    (('pressure_disk', 'disk_check_failed', 'disk_unmeasurable'), 'Free disk space, or fix the disk check.'),
+    (('pressure_', 'system_ram_critical'), 'Find what holds the resource and relieve it.'),
+    (('errors_in_log',), 'Read the log lines in Details and fix their cause.'),
+    (('drifted',), 'Redeploy the verified release, or explain the drift.'),
+    (('release_failing',), 'Roll back, or fix the failing release.'),
+    (('release_available',), 'Deploy the new release when ready.'),
+    (('_unreadable', 'no_psutil', 'no_verified_release'), 'Fix what supervision cannot read (see Details).'),
+)
+
+
+def action_for(kind: str) -> str:
+    """The action :data:`ACTIONS` names for *kind*, else ``''`` (the notice's honest fallback)."""
+    for marks, action in ACTIONS:
+        if any(kind.endswith(m) or kind.startswith(m) for m in marks):
+            return action
+    return ''
 
 
 def _escalation_for(registry: Registry, kind: str) -> int | None:
