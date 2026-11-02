@@ -28,8 +28,8 @@ def test_the_schema_is_pinned(tmp_path: Path, capsys: pytest.CaptureFixture[str]
         'principles': payload()['principles'],
         'code': list(CODE),
         'not_code': list(NOT_CODE),
-        'max_total_bytes': 4_000_000,
-        'max_file_bytes': 200_000,
+        'max_total_bytes': 800_000,
+        'max_file_bytes': 400_000,
         'blocking': ['HIGH', 'security'],
         'summary': {'cite': ['commits', 'memory', 'merge_audit', 'pr_body']},
     }

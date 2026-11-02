@@ -467,3 +467,41 @@ def test_a_derived_glob_matches_whole_paths_on_the_declared_minimum_python() -> 
     assert not reviewable('uv.lock', derived)
     assert reviewable('sub/uv.lock', derived)
     assert reviewable('docs/a/c.py', derived)
+
+
+def test_a_large_head_is_one_whole_range_review_under_the_family_budget_never_many_slices(tmp_path: Path) -> None:
+    """Review spend 2026-11-03: #5115, #5429 and #5450 were cut into 8 to 20 slices, each paying the fixed prompt.
+
+    Under the family's declared budget (``Review().budget``) a head past ``max_total_bytes`` is ONE whole-range
+    structure review (:data:`WHOLE`), and a slice packs twice the old bytes. PLANTED CONTROL: the same head under the
+    old budget (200 kB a slice, 4 MB a head) is cut into many slices.
+    """
+    _, work = clone_pair(tmp_path)
+    head = ''
+    for at in range(12):  # 12 directories of ~150 kB code each: ~1.8 MB, under the old 4 MB total
+        (work / f'd{at}').mkdir()
+        head = advance(work, 'pr/x', f'd{at}/m.py', ''.join(f'v{n} = {n}\n' for n in range(11_000)))
+    old = plan(work, 'origin/integrate/main', head, Budget(slice_bytes=200_000, total_bytes=4_000_000))
+    new = plan(work, 'origin/integrate/main', head, Review().budget)
+    assert (len(old.slices), old.structure) == (12, None), 'before: one slice per directory'
+    assert len(new.slices) == 1
+    assert new.structure is not None
+    assert 'max_total_bytes' in new.structure
+    assert new.slices[0].paths == (), 'one whole-range review: no path list'
+
+
+def test_the_family_budget_packs_a_mid_size_head_into_fewer_larger_slices(tmp_path: Path) -> None:
+    """Under ``max_total_bytes`` a head packs into slices of the raised ``max_diff_bytes``: fewer fixed prompts.
+
+    PLANTED CONTROL: the same head under the old 200 kB slice needs twice the slices.
+    """
+    _, work = clone_pair(tmp_path)
+    head = ''
+    for at in range(4):  # 4 directories of ~150 kB code: ~600 kB
+        (work / f'd{at}').mkdir()
+        head = advance(work, 'pr/x', f'd{at}/m.py', ''.join(f'v{n} = {n}\n' for n in range(11_000)))
+    old = plan(work, 'origin/integrate/main', head, Budget(slice_bytes=200_000, total_bytes=4_000_000))
+    new = plan(work, 'origin/integrate/main', head, Review().budget)
+    assert (len(old.slices), len(new.slices)) == (4, 2)
+    assert new.structure is None
+    assert all(one.paths for one in new.slices)

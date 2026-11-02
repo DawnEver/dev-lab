@@ -212,8 +212,8 @@ retired host field (any `{capabilities.*}`: a host value is where a runtime live
 # command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model} {rules}
 model = "<id>"             # the default is forgereview_declared.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
-max_diff_bytes = 200000    # one slice
-max_total_bytes = 4000000  # one head
+max_diff_bytes = 400000    # one slice
+max_total_bytes = 800000   # one head
 derived = []               # generated-file globs beyond famfiles.GENERATED
 strict = ["**/hooks/**", "**/rules/**", "tests/architecture/**", "**/contracts/**"]  # the default
 light = ["docs-src/**", "**/.claude/memory/**", "**/*.md"]                          # the default
