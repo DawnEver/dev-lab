@@ -51,7 +51,7 @@ from dev_lab.dev.forgereview_judge import Judge, Verdict, judge
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
 from dev_lab.dev.forgereview_scope import Budget
-from dev_lab.dev.lanepolicy import policy_at
+from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.dev.rules import RULES
 
@@ -243,7 +243,7 @@ def trusted_integration(root: Path, client: Client) -> str:
         msg = 'the forge names no default branch: which integration branch a review trusts is undecided'
         raise DeclarationUnread(msg)
     try:
-        return policy_at(root, f'origin/{default}').integration
+        return policy_from(_manifest_at(root, f'origin/{default}'), f'origin/{default}:pyproject.toml').integration
     except (ValueError, OSError) as failed:
         msg = f'origin/{default}:pyproject.toml declares no readable integration branch: {failed}'
         raise DeclarationUnread(msg) from failed
@@ -263,7 +263,7 @@ def review_at(root: Path, base: str) -> Review:
     """
     where = f'origin/{base}:pyproject.toml'
     try:
-        text = forgereview_scope.git(root, 'show', where)[1]
+        text = _manifest_at(root, f'origin/{base}')
     except OSError as failed:
         msg = f'{where} cannot be read: {failed}'
         raise DeclarationUnread(msg) from failed
@@ -271,6 +271,16 @@ def review_at(root: Path, base: str) -> Review:
         msg = f'{where} is empty'
         raise DeclarationUnread(msg)
     return review_from(text, where)
+
+
+def _manifest_at(root: Path, rev: str) -> str:
+    """*rev*'s ``pyproject.toml``, read by the door's git: its held credential fetches a blobless clone's blob.
+
+    The review job's clone is ``--filter=blob:none``, so the read fetches the blob lazily; a plain ``git show``
+    carries no credential and failed every review on a private forge (2026-11-02, exit 128). The header rides the
+    door's git env alone (:func:`~dev_lab.dev.reviewgitauth.git_env`), never the reviewer's.
+    """
+    return forgereview_scope.git(root, 'show', f'{rev}:pyproject.toml')[1]
 
 
 def stale_after(review: Review) -> timedelta:
