@@ -8,6 +8,9 @@ moved in. So the verb checks nothing out and pushes nothing -- the session publi
 * ``promote <sha>`` -- fast-forward the LOCAL trunk ref to *sha*, an integration commit on origin whose
   every derived ``tests/<part>`` stands PASS at scope full (:func:`decide`, the same standing push
   admission reads). Never a merge onto the trunk.
+* ``pending <sha>`` -- print ``pending=true`` while the trunk does not hold *sha*, else ``pending=false`` (a
+  ``$GITHUB_OUTPUT`` line): the nightly promotion run (D48-1A) tests and promotes integration's tip only while it is
+  pending, so a tip already promoted runs nothing.
 
 The integration branch is moved by the FORGE alone, server side, when it merges a reviewed, safe, clean pull request
 -- whose parts need NOT pass: they gate only this promotion
@@ -40,7 +43,7 @@ from dev_lab.dev.platformparts import standing
 from dev_lab.dev.trialmerge import contains, rev
 from dev_lab.dev.unproduced import unproduced_waived
 
-__all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'promote']
+__all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'pending', 'promote']
 
 _GIT: Final = shutil.which('git') or 'git'
 
@@ -89,10 +92,21 @@ def _policy(root: Path, at: str) -> Policy:
         raise IntegrateRefused(msg) from exc
 
 
+def _trunk(root: Path, policy: Policy) -> str | None:
+    """The trunk's commit: the local ref, else origin's."""
+    return rev(root, f'refs/heads/{policy.trunk}') or rev(root, f'origin/{policy.trunk}')
+
+
+def pending(root: Path, policy: Policy, sha: str) -> bool:
+    """Whether the trunk does not yet hold *sha*: a promotion of it is still to be decided."""
+    found, trunk = rev(root, sha), _trunk(root, policy)
+    return not (found and trunk and contains(root, trunk, found))
+
+
 def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
     """Whether the local trunk may fast-forward to *sha*; pure of any write. Reads origin's integration branch."""
     found = rev(root, sha)
-    trunk = rev(root, f'refs/heads/{policy.trunk}') or rev(root, f'origin/{policy.trunk}')
+    trunk = _trunk(root, policy)
     published = rev(root, f'origin/{policy.integration}')
     if found is None or published is None or not contains(root, published, found):
         return Promotion('refused', sha, (f'{sha} is not a commit of origin/{policy.integration}',))
@@ -134,14 +148,21 @@ def main(
     client: Client | None = None,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> int:
-    """``promote <sha>``: exit 0 done, 2 refused, 1 on a failure."""
+    """``promote <sha>``: exit 0 done, 2 refused, 1 on a failure.
+
+    ``pending <sha>``: exit 0 answered, 2 refused (no declaration at *sha*), 1 on a failure.
+    """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.integrate', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('promote').add_argument('sha')
+    verbs.add_parser('pending', help='print pending=true while the trunk does not hold <sha>').add_argument('sha')
     args = parser.parse_args(argv)
     root = Path.cwd() if cwd is None else cwd
     try:
         fetch(root)
+        if args.verb == 'pending':
+            emit(f'pending={str(pending(root, _policy(root, args.sha), args.sha)).lower()}')
+            return 0
         found = promote(root, client or client_for(root), args.sha)
         trunk = _policy(root, args.sha).trunk
     except IntegrateRefused as refused:

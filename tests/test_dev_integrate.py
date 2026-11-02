@@ -100,3 +100,21 @@ def test_the_client_has_no_verb_that_moves_the_integration_branch(
         integrate.main(['merge', 'lane/x'], cwd=tmp_path)
     assert left.value.code == 2
     assert 'invalid choice' in capsys.readouterr().err
+
+
+def test_pending_says_whether_the_trunk_still_lacks_the_sha_so_a_promoted_tip_runs_no_nightly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """D48-1A: the nightly run tests and promotes integration's tip only while the trunk lacks it.
+
+    PLANTED both ways: a tip ahead of main is pending; once main is fast-forwarded onto it, it is not.
+    """
+    _, repo = clone_pair(tmp_path)
+    tip = advance(repo, 'integrate/main', 'f.txt', 'f\n')
+    run_git(repo, 'checkout', '-q', '--detach')
+    run_git(repo, 'branch', '-f', 'main', 'origin/main')
+    assert integrate.main(['pending', tip], cwd=repo, fetch=lambda _: None) == 0
+    assert capsys.readouterr().out.strip() == 'pending=true'
+    run_git(repo, 'branch', '-f', 'main', tip)
+    assert integrate.main(['pending', tip], cwd=repo, fetch=lambda _: None) == 0
+    assert capsys.readouterr().out.strip() == 'pending=false'

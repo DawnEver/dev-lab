@@ -11,8 +11,11 @@
 # who PRODUCES and who TRIGGERS differ. Every job runs a dev_lab door; none holds logic of its own:
 #
 #   parts         `jobparts matrix --event`: the commit's parts and the runner each need-set needs, an
-#                 OS-free part on every OS of the event -- PR linux+windows, push also macos (D84) -- (the
-#                 matrix is the COMMAND's output, never a list typed here)
+#                 OS-free part on every OS of the event -- PR linux+windows, a full run also macos (D84) -- (the
+#                 matrix is the COMMAND's output, never a list typed here). PARTS_EVENT names the event: a merge
+#                 (a push, or merge-ready's `smoke` dispatch) takes the PR's set as its SMOKE -- every part, no
+#                 macos -- because the head was just tested as a PR (D48-1A); the nightly schedule and an on-demand
+#                 dispatch run the full set, and only while `integrate pending` says main lacks the tip
 #   part          one job per row: `jobparts produce <row>`, the declared producer, posts tests/<row>
 #                 (tests/<part>, or tests/<part>@<os> off its own runner)
 #   absent-parts  always: `jobparts absent --event` posts pending (absent) on every expected row no job settled
@@ -25,7 +28,8 @@
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
 #                 job token makes starts no workflow, so it dispatches this one on integrate/main; the
 #                 parts never gate it (user ruling 2026-10-29)
-#   promote       on a push or dispatch to integrate/main (a merged PR), once every part settled: `integrate promote`
+#   promote       NIGHTLY (D48-1A, user ruling 2026-11-01), never per merge: on the full run of a pending
+#                 integrate/main tip, once every part settled: `integrate promote`
 #                 refuses unless every part stands PASS -- the ONE place the parts gate,
 #                 the SAME decision Gitea's integrator runs, fast-forwards main and the job token pushes it;
 #                 then `branchprune sweep` deletes every branch integration now contains
@@ -33,6 +37,9 @@
 # Permissions are least per job; the workflow grants only `contents: read`.
 ["ci.yml"]
 name = "CI"
+# THE NIGHTLY PROMOTION (D48-1A): integrate/main is GitHub's default branch, so the schedule (ciworkflows'
+# NIGHTLY_CRON) runs on its tip.
+nightly = true
 
 # ONE FLOW (user ruling 2026-10-29, D83): PRs land on integrate/main; main moves only by `promote` below.
 ["ci.yml".on.push]
@@ -42,10 +49,16 @@ branches = ["integrate/main"]
 ["ci.yml".on.pull_request]
 types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
-["ci.yml".on.workflow_dispatch]
 
+# On demand the full run (the nightly one); merge-ready dispatches a merge's run with smoke = true.
+["ci.yml".on.workflow_dispatch.inputs.smoke]
+description = "a merge's smoke run: the PR's part set, no promote"
+type = "boolean"
+default = false
+
+# A merge's smoke run never cancels the nightly run on the same ref, nor the reverse.
 ["ci.yml".concurrency]
-group = "ci-${{ github.ref }}"
+group = "ci-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.smoke) && 'smoke' || github.event_name }}"
 cancel-in-progress = true
 
 ["ci.yml".permissions]
@@ -57,21 +70,28 @@ contents = "read"
 ["ci.yml".env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha || github.sha }}"
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # the family repos sit beside this one
+# The event whose part set this run takes (`jobparts matrix --event`): a merge's smoke takes the PR's.
+PARTS_EVENT = "${{ (github.event_name == 'push' || inputs.smoke) && 'pull_request' || github.event_name }}"
 
 ["ci.yml".jobs.parts]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { id = "matrix", name = "The parts and their runners", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event ${{ github.event_name }})" >> "$GITHUB_OUTPUT"' },
+    { id = "pending", name = "Whether main still lacks the tip", if = "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}", run = 'uv run --no-sync python -m dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' },
+    { id = "matrix", name = "The parts and their runners", if = "${{ steps.pending.outputs.pending != 'false' }}", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event "$PARTS_EVENT")" >> "$GITHUB_OUTPUT"' },
 ]
 
+# An empty matrix (a tip main already holds) runs no part, no absent-parts and no promote.
 ["ci.yml".jobs.parts.outputs]
 matrix = "${{ steps.matrix.outputs.matrix }}"
+event = "${{ env.PARTS_EVENT }}"
+pending = "${{ steps.pending.outputs.pending }}"
 
 ["ci.yml".jobs.part]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = "parts"
+if = "${{ needs.parts.outputs.matrix != '' }}"
 name = "tests/${{ matrix.part }}"
 runs-on = "${{ matrix.runs-on }}"
 steps = [
@@ -91,11 +111,11 @@ matrix = "${{ fromJSON(needs.parts.outputs.matrix) }}"
 ["ci.yml".jobs.absent-parts]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["parts", "part"]
-if = "${{ always() && needs.parts.result == 'success' }}"
+if = "${{ always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "Post every part no job settled", run = 'uv run --no-sync python -m dev_lab.dev.jobparts absent "$HEAD_SHA" --event ${{ github.event_name }}' },
+    { name = "Post every part no job settled", run = 'uv run --no-sync python -m dev_lab.dev.jobparts absent "$HEAD_SHA" --event "$PARTS_EVENT"' },
 ]
 
 ["ci.yml".jobs.absent-parts.permissions]
@@ -155,7 +175,7 @@ runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
     { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac' },
-    { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main', env = { GH_TOKEN = "${{ github.token }}" } },
+    { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
 ]
 
 # Merges the PR and deletes its head branch with the job token (contents: write, pull-requests: write), then
@@ -170,8 +190,8 @@ actions = "write"
 # closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
 ["ci.yml".jobs.promote]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
-needs = ["absent-parts"]
-if = "${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/integrate/main' }}"
+needs = ["parts", "absent-parts"]
+if = "${{ needs.parts.outputs.pending == 'true' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
@@ -301,12 +321,16 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # objects stay in the mirror's packs until a gc's prune expiry (two weeks), far beyond a job.
 # The checkout is sparse, root files only: the review reads the head through git and only pyproject.toml from
 # the tree, and a full checkout would lazily fetch every blob of the head (a large consumer: 10+ minutes on the host).
-lean = [
+# `reach` is its own list: every Gitea host-runner job (review.yml, promote.yml) takes it before its own fetch.
+reach = [
     { name = "Reach the forge on the runner's instance", run = '''
 [ -n "$ACTIONS_RUNTIME_URL" ] || { echo "ACTIONS_RUNTIME_URL is unset: the runner names no forge to fetch from"; exit 1; }
 echo "FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}" >> "$GITHUB_ENV"
 echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
 ''' },
+]
+
+lean = [
     { name = "Fetch the head", env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
@@ -375,6 +399,7 @@ UV_CONCURRENT_BUILDS = "1"
 ["review.yml".jobs.review]
 runs-on = "review"
 steps = [
+    { use-steps = "reach" },
     { use-steps = "lean" },
     { use-steps = "door" },
     { use-steps = "method" },
@@ -426,3 +451,61 @@ contents = "read"
 statuses = "write"
 pull-requests = "write"
 issues = "write"
+
+# GITEA'S NIGHTLY PROMOTION (D48-1A, user ruling 2026-11-01): Gitea promotes integrate/main's tip once a night by the
+# SAME decision as ci.yml's promote job -- `integrate promote`, the ONE place the parts gate -- then `branchprune
+# sweep`. The decision reads only git and the forge's statuses (the parts Ada's `forge serve` already posted on the
+# tip, D111), so the Gitea host, which cannot reach Ada, runs it: Ada pulls its work and pushes its verdicts, and the
+# promotion asks Ada nothing. A tip main already holds is `current`: nothing moves. The parts are NOT re-run here --
+# on Gitea the serve produces them per integration push; a tip whose run has not finished is refused tonight and
+# promoted the first night it stands PASS. The checkout is commits only (--filter=tree:0, the MIRROR RULE's
+# spirit: never the history's blobs); promote reads ancestry and the declaration at the tip, fetched on demand.
+# Gitea's default branch is main, so the clone's HEAD would hold main and promote would refuse to move it: HEAD is
+# detached onto integration's tip, and no worktree holds a branch.
+# The door is the pinned DEV_LAB_REF (`door` steps).
+["promote.yml"]
+forge = "gitea"
+name = "Promote"
+nightly = true
+
+["promote.yml".on.workflow_dispatch]
+
+["promote.yml".concurrency]
+group = "promote"
+cancel-in-progress = false
+
+["promote.yml".env]
+FAMILY_SOURCE = "https://github.com/DawnEver/"
+UV_PYTHON = "python3"
+UV_PYTHON_DOWNLOADS = "never"
+UV_CONCURRENT_INSTALLS = "1"
+UV_CONCURRENT_BUILDS = "1"
+
+["promote.yml".jobs.promote]
+runs-on = "review"
+steps = [
+    { use-steps = "reach" },
+    { name = "Fetch integration's commits", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
+git config --global core.hooksPath /dev/null
+git clone -q --no-tags --filter=tree:0 --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
+git update-ref --no-deref HEAD "$(git rev-parse origin/integrate/main)"
+echo "HEAD_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"
+''' },
+    { use-steps = "door" },
+    { name = "Promote main", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.integrate promote "$HEAD_SHA" && git push origin main
+''' },
+    { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.branchprune sweep
+''' },
+]
+
+# Promote posts no status: contents: write pushes main and deletes landed branches, pull-requests: write closes a
+# landed PR before its branch goes.
+["promote.yml".jobs.promote.permissions]
+contents = "write"
+pull-requests = "write"

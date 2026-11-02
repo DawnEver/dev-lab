@@ -13,6 +13,9 @@ forge's directory (:data:`WORKFLOW_DIRS`) and is never rendered: Gitea Actions r
 that exists, ignores ``.github/workflows``. Both forges' workflows draw on the same ``_steps``, so a step the two
 share -- the review itself -- has one source.
 
+THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
+rendered) schedules that workflow at it, so GitHub's ci.yml and Gitea's promote.yml promote on one clock.
+
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
 so the setup every job repeats has one source. ``_steps`` is never a workflow and never rendered.
@@ -43,6 +46,8 @@ from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 __all__ = [
     'BASE_PATH',
     'FORGE_KEY',
+    'NIGHTLY_CRON',
+    'NIGHTLY_KEY',
     'PINS',
     'RENDER_COMMAND',
     'SHARED',
@@ -70,6 +75,10 @@ WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('
 
 #: The table key naming the forge a workflow is rendered for; a placement, never part of the rendered workflow.
 FORGE_KEY: Final = 'forge'
+#: The table key asking for the nightly schedule; a trigger, never part of the rendered workflow.
+NIGHTLY_KEY: Final = 'nightly'
+#: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
+NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 
 #: Each pinned repo -> (the ``_steps`` list installing it, the env of its first step naming the commit). Declared ONCE,
@@ -128,6 +137,8 @@ def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     for name, layer in sorted(declared.items()):
         workflow = hosted_jobs(expand(merge(base.get(name, {}), layer), shared), hosted)
         forge = workflow.pop(FORGE_KEY, 'github')
+        if workflow.pop(NIGHTLY_KEY, False):
+            workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
         if forge not in WORKFLOW_DIRS:
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)

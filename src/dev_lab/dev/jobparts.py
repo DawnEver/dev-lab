@@ -6,9 +6,10 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
 * ``python -m dev_lab.dev.jobparts matrix [--runners hosted] [--event <name>]`` prints the checkout's parts, each
   with the runner its need-set needs (:func:`runner_for`), as the JSON a workflow's ``fromJSON`` fans out over --
   the matrix is this COMMAND's output, never a list typed into a workflow. A part that names no OS and runs hosted
-  runs on every OS of the EVENT (:func:`systems_for`, ruling D84): a pull request on linux and windows, a push or a
-  dispatch on macos too. Its row off its own runner is ``<part>@<os>`` (``tests/base@windows``), its own status, so
-  two OSes are two settled results; a part that names an OS keeps exactly that OS;
+  runs on every OS of the EVENT (:func:`systems_for`, ruling D84): a pull request on linux and windows, any other
+  event on macos too (a merge's smoke run passes ``--event pull_request``, D48-1A). Its row off its own runner is
+  ``<part>@<os>`` (``tests/base@windows``), its own status, so two
+  OSes are two settled results; a part that names an OS keeps exactly that OS;
 * each job runs ``produce <part>``: the ONE declared producer (:func:`dev_lab.dev.platformparts.producer_argv`),
   which posts its part as any local verify does, the job token being the credential there
   (:func:`dev_lab.dev.forgework.actions_token`);
@@ -26,7 +27,7 @@ hosted when repository secrets supply it; the repo declares that ONCE, in its py
     [tool.dev_lab.parts]
     hosted = { live = { secrets = ["ANTHROPIC_API_KEY"], setup = "python -m ai_lab.auth login --from-file -" } }
 
-It gets ONE linux row, on a push or a dispatch only (as macos, D84), carrying its secrets' NAMES
+It gets ONE linux row, on a full run only (as macos, D84), carrying its secrets' NAMES
 (:func:`hosted_parts`). The generic matrix job never runs it: :func:`hosted_jobs` renders it its own job, in which
 ONE setup step alone has the secrets in its environment and reads them on stdin as ``NAME=value`` lines -- never
 argv, never echoed -- before the part is produced. The render names a secret; it never holds a value.
@@ -92,8 +93,9 @@ _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 #: A secret's name: all that ``${{ secrets.<NAME> }}`` and ``"$<NAME>"`` carry into a rendered workflow.
 _SECRET_NAME: Final = re.compile(r'[A-Z][A-Z0-9_]*')
 
-#: The ``if`` of a hosted part's job: a push or a dispatch, never a pull request (as macos, D84).
-_PUSH_ONLY: Final = "${{ github.event_name != 'pull_request' }}"
+#: The ``if`` of a hosted part's job: a FULL run's (the parts job's event is not the PR's set, as macos, D84;
+#: a merge's smoke takes the PR's set, D48-1A), never one main already holds (an empty matrix).
+_FULL_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
 
 
 @dataclass(frozen=True)
@@ -150,7 +152,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
             'env': {secret: f'${{{{ secrets.{secret} }}}}' for secret in part.secrets},
         }
         steps = [*one['steps'][:-1], setup, one['steps'][-1]]
-        added[f'part-{name}'] = {**one, 'if': _PUSH_ONLY, 'runs-on': HOSTED_RUNNERS['linux'], 'steps': steps}
+        added[f'part-{name}'] = {**one, 'if': _FULL_ONLY, 'runs-on': HOSTED_RUNNERS['linux'], 'steps': steps}
     out = dict(jobs)
     if 'absent-parts' in out:
         needs = out['absent-parts'].get('needs', [])
