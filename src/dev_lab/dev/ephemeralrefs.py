@@ -13,7 +13,7 @@ NOT EPHEMERAL: an untracked path under a tracked root (``src/gone.py``) is a bro
 link, not cited content that lives outside version control; measured 2026-10-28 that reading
 refused ~10k such lines in one downstream repo alone, almost all dated memory, so it is a different defect.
 
-THREE PROPERTIES, over every tracked file (2 and 3 skip archived code, ``attic/``):
+THREE PROPERTIES, over every tracked file (2 and 3 skip archived code, ``attic/``, and dated memory entries):
 
 1. NO TRACKED FILE LIVES UNDER AN IGNORED ROOT (a ``git add -f`` into ``output/``):
    ``git ls-files -ci --exclude-standard``.
