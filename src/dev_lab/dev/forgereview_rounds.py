@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Final
 
@@ -79,6 +79,7 @@ __all__ = [
     'context_summary',
     'ledger_of',
     'post_round',
+    'recorded_usd',
     'render',
     'review_record',
     'trailed',
@@ -119,12 +120,13 @@ class Ledger:
     round: int
     open: tuple[Finding, ...] = ()
     closed: tuple[tuple[str, str], ...] = ()  # (id, how) closed THIS round
+    usd: float = 0.0  # what THIS round spent, measured on the host that ran it (:func:`recorded_usd` sums them)
 
     def line(self) -> str:
         """The hidden comment line that records this ledger (``>`` escaped, so the JSON cannot close the comment)."""
         doc = {
             'version': LEDGER_VERSION, 'head': self.head, 'round': self.round,
-            'open': [asdict(one) for one in self.open],
+            'open': [asdict(one) for one in self.open], 'usd': self.usd,
         }  # fmt: skip
         text = json.dumps(doc, ensure_ascii=False).replace('>', '\\u003e')
         return f'<!-- review-ledger {text} -->'
@@ -187,7 +189,29 @@ def ledger_of(bodies: Iterable[str]) -> Ledger | None:
     if found.get('version') != LEDGER_VERSION:
         msg = f'a review ledger of version {found.get("version")!r}; this reader knows {LEDGER_VERSION}'
         raise ValueError(msg)
-    return Ledger(found['head'], int(found['round']), tuple(_finding(row) for row in found['open']))
+    return _ledger(found)
+
+
+def _ledger(found: Mapping[str, Any]) -> Ledger:
+    rows = tuple(_finding(row) for row in found['open'])
+    return Ledger(found['head'], int(found['round']), rows, usd=float(found.get('usd', 0.0)))
+
+
+def recorded_usd(bodies: Iterable[str]) -> float:
+    """What the PR's recorded rounds spent: each head's newest ledger in *bodies*, summed over heads.
+
+    The ONE source of a PR's spend (review spend 2026-11-03): every host's rounds land on the PR, so a host reads
+    what the others spent, never its own local ledger alone. A ledger of another version is refused.
+    """
+    per_head: dict[str, float] = {}
+    for body in bodies:
+        for match in _LEDGER.finditer(body):
+            found = json.loads(match['json'])
+            if found.get('version') != LEDGER_VERSION:
+                msg = f'a review ledger of version {found.get("version")!r}; this reader knows {LEDGER_VERSION}'
+                raise ValueError(msg)
+            per_head[found['head']] = float(found.get('usd', 0.0))
+    return sum(per_head.values())
 
 
 def trailed(root: Path, target: str, head: str) -> dict[str, str]:
@@ -418,14 +442,15 @@ def _rejudged(prior: Ledger, touched: frozenset[str], asked: Mapping[str, object
 def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings, max_rounds: int,
     judged: Judge, reviewer: Identity, authors: frozenset[str], by: str = 'review', outside: int = 0,
-    authored: Mapping[str, str] | None = None, emergency: bool = False,
+    authored: Mapping[str, str] | None = None, emergency: bool = False, usd: float = 0.0,
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment and :data:`REVIEW_CONTEXT`; the line said.
 
     *judged* re-judges the prior open findings that are blocking or claimed and on a file *reviewed* changed, each
     with its pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and
     may not be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the
-    changed files that are not code, said in the comment. *authored* is the author's trailer dispositions.
+    changed files that are not code, said in the comment. *authored* is the author's trailer dispositions. *usd* is what
+    the round spent, recorded in its ledger.
 
     Only the forge posts a round (:func:`ruling`) and moves :data:`REVIEW_CONTEXT`; its round releases a pending
     hold. An *emergency* round (the takeover door) is ADVISORY (D11): its comment says so, it posts no status,
@@ -448,7 +473,7 @@ def post_round(
             text = adjudication_text(one, verdicts[fid], reviewer)
             comment_upsert(client, pull.number, kind=Marker.ADJUDICATION, key=fid, text=text)
             bodies = [*bodies, f'{marker(Marker.ADJUDICATION, fid)}\n{text}']
-    ledger = advance(root, head, reviewed, prior, found, judged=verdicts)
+    ledger = replace(advance(root, head, reviewed, prior, found, judged=verdicts), usd=usd)
     gone = upheld(bodies)
     summary = context_summary(root, reviewed, pull.body) if ledger.round == 1 else ''
     text = render(ledger, gone, number=pull.number, reviewed=reviewed, max_rounds=max_rounds,
