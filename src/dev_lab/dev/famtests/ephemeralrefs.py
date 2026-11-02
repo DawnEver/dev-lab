@@ -43,11 +43,14 @@ _WINDOWS_HOME = 'C:/' + 'Users/someone/' + 'x.txt'
 _POSIX_HOME = '/' + 'home/someone/x'
 _INTERPRETER = venvpath.venv_interpreter(os_name='nt')
 
-#: The six planted text files the scan must read (the force-added one among them; the archived one is not read).
-_PLANTED_FILES = 6
+#: The eight planted text files the scan must read (the force-added one among them; the archived one and the
+#: dated memory entry are records and are not read).
+_PLANTED_FILES = 8
 
 #: What the planted tree must yield, exactly -- each convicted for the reason named.
 _CONVICT = (
+    ".claude/memory/x.md:1: cites ignored path 'output/x.json'",
+    ".claude/rules/x.md:1: cites ignored path 'output/x.json'",
     "code.py:1: cites untracked path 'scratch/probe.py'",
     "code.py:2: reads ignored path 'output/reference/a.jproj'",
     "code.py:5: reads untracked path 'scratch/foo.py'",
@@ -85,7 +88,8 @@ def assert_the_scanner_still_convicts(plant_root: Path) -> None:
     a force-added file; clears a placeholder shape, the bare roots, a URL, the interpreter door, a bare
     temp root, a tracked path (also with a line or test suffix), a tracked directory, a glob, a token
     naming no repo place, a broken link under a tracked root (stale, not ephemeral), a WRITE to output
-    a literal joined onto a base, and a citation in archived code (``attic/``).
+    a literal joined onto a base, a citation in archived code (``attic/``) and one in a dated memory entry
+    (``.claude/memory/<yyyy>/<mm>/<dd>/``); the same citation in a rules page, a memory index and a doc convicts.
 
     Raises:
         AssertionError: the scan named anything other than exactly the planted offenders.
@@ -101,12 +105,14 @@ def assert_the_scanner_still_convicts(plant_root: Path) -> None:
     (plant_root / 'code.py').write_text(_CODE, encoding='utf-8')
     (plant_root / 'src/pkg').mkdir(parents=True)
     (plant_root / 'src/pkg/a.py').write_text('', encoding='utf-8')
-    for home in ('attic', 'docs'):  # archived code is never judged; the same line outside it is
-        (plant_root / home).mkdir()
+    # archived code and a dated memory entry are records, never judged; the same line outside them is
+    homes = ('attic', '.claude/memory/2026/10/28', 'docs', '.claude/rules', '.claude/memory')
+    for home in homes:
+        (plant_root / home).mkdir(parents=True, exist_ok=True)
         (plant_root / home / 'x.md').write_text('see `output/x.json`\n', encoding='utf-8')
     (plant_root / 'output').mkdir()
     (plant_root / 'output/forced.md').write_text('', encoding='utf-8')
-    git('add', '.gitignore', 'doc.md', 'code.py', 'src/pkg/a.py', 'attic/x.md', 'docs/x.md')
+    git('add', '.gitignore', 'doc.md', 'code.py', 'src/pkg/a.py', *(f'{home}/x.md' for home in homes))
     git('add', '-f', 'output/forced.md')
     problems, read = ephemeralrefs.scan(plant_root)
     if tuple(problems) != _CONVICT or read != _PLANTED_FILES:
