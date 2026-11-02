@@ -29,8 +29,10 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
+from dev_lab.supervise.process.systemd import subprocess_runner
+
 __all__ = [
-    'CGROUP_ROOT',
+    'CGROUP_MOUNT',
     'DOORS',
     'OWNED',
     'RAM_CRITICAL',
@@ -41,6 +43,7 @@ __all__ = [
     'Finding',
     'Measured',
     'consumers',
+    'control_group',
     'measure',
     'parse_events',
     'parse_psi',
@@ -74,8 +77,12 @@ THRESHOLDS: Final[Mapping[str, float]] = {
 #: The cgroup counters a declared service's ``memory.events`` is read for, and the severity a rise carries.
 EVENTS: Final[Mapping[str, str]] = {'high': 'warning', 'max': 'critical', 'oom_kill': 'critical'}
 
-#: Where systemd's services' cgroups live (cgroup v2).
-CGROUP_ROOT: Final = Path('/sys/fs/cgroup/system.slice')
+#: The cgroup v2 mount. WHERE under it a unit lives is systemd's answer (:func:`control_group`), never a guess:
+#: on 2026-11-02 the runners moved to ``/ci.slice/ci-runners.slice`` and a hard-coded ``system.slice`` went blind.
+CGROUP_MOUNT: Final = Path('/sys/fs/cgroup')
+
+#: How long ``systemctl show`` may take, in seconds.
+_SYSTEMCTL_TIMEOUT_S: Final = 10
 
 #: The PSI files, by resource.
 PSI: Final[Mapping[str, Path]] = {'memory': Path('/proc/pressure/memory'), 'cpu': Path('/proc/pressure/cpu')}
@@ -241,16 +248,41 @@ def _psi(
     return findings, readings
 
 
+def control_group(unit: str) -> str:
+    """*unit*'s cgroup path as systemd reports it (``/ci.slice/ci-runners.slice/x.service``); a service or a slice.
+
+    Raises:
+        LookupError: systemctl failed or reported no group -- the reason, for the finding.
+
+    """
+    ran = subprocess_runner(['systemctl', 'show', unit, '-p', 'ControlGroup', '--value'], _SYSTEMCTL_TIMEOUT_S, None)
+    group = ran.out.strip()
+    if ran.code != 0 or not group.startswith('/'):
+        msg = f'systemctl show gave no ControlGroup (exit {ran.code}{": " + ran.err.strip() if ran.err else ""})'
+        raise LookupError(msg)
+    return group
+
+
 def _cgroups(
-    services: Sequence[str], previous: Mapping[str, Mapping[str, int]], read: Callable[[Path], str | None]
+    services: Sequence[str],
+    previous: Mapping[str, Mapping[str, int]],
+    read: Callable[[Path], str | None],
+    locate: Callable[[str], str],
 ) -> tuple[list[Finding], dict[str, float | None], dict[str, dict[str, int]]]:
     findings: list[Finding] = []
     readings: dict[str, float | None] = {}
     counts: dict[str, dict[str, int]] = {}
     for service in services:
-        text = read(CGROUP_ROOT / service / 'memory.events')
-        if text is None:
+        try:
+            events = CGROUP_MOUNT / locate(service).lstrip('/') / 'memory.events'
+            text = read(events)
+            reason = f'{events.as_posix()} not readable'
+        except LookupError as exc:
+            text, reason = None, str(exc)
+        if text is None:  # unmeasurable is a reading AND a finding: an alarm that cannot see must say so
             readings[f'cgroup:{service}'] = None
+            said = f'{service}: memory.events unreadable ({reason}) -- the alarm cannot see it'
+            findings.append(Finding(f'cgroup:{service}', 'warning', said))
             continue
         now = counts[service] = parse_events(text)
         before = previous.get(service)
@@ -355,12 +387,14 @@ def measure(
     psutil: Callable[[], ModuleType | None] = lambda: None,
     linux: bool = sys.platform.startswith('linux'),
     sizes: Callable[[Sequence[Path]], tuple[Consumer, ...]] = consumers,
+    locate: Callable[[str], str] = control_group,
 ) -> Measured:
     """One reading of everything *declared*, judged against its limits and the *previous* memo.
 
     Each seam is a fixture's way in: *read* a file's text, *usage* a disk, *psutil* the module's loader (a
     real reading passes :func:`~dev_lab.supervise.components.resources.psutil_module`; ``None`` is absent),
-    *linux* whether PSI and cgroups are asked, *sizes* the consumers of a disk alarm.
+    *linux* whether PSI and cgroups are asked, *sizes* the consumers of a disk alarm, *locate* a
+    declared unit's cgroup (systemd's ``ControlGroup``).
     """
     done = Measured(interval_s=declared.limits['interval_s'])
     histories = previous.get('disk', {})
@@ -377,7 +411,7 @@ def measure(
         found, readings = _psi(declared.limits, read)
         done.findings += found
         done.readings.update(readings)
-        found, readings, counts = _cgroups(declared.services, previous.get('cgroup', {}), read)
+        found, readings, counts = _cgroups(declared.services, previous.get('cgroup', {}), read, locate)
         done.findings += found
         done.readings.update(readings)
         done.memo['cgroup'] = counts
