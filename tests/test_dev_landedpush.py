@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from _forge_state import StateForge
 
+from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pr_by_head
 from dev_lab.dev.landedpush import RULE, refusals
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
@@ -85,3 +88,25 @@ def test_an_unreadable_forge_refuses_naming_it() -> None:
     found = refusals(Path(), _line('pr/x'), integration=_BASE, client=down)
     assert len(found) == 1
     assert 'the forge cannot be read' in found[0]
+
+
+def test_the_guard_asks_one_question_per_branch_however_many_prs_closed() -> None:
+    forge = StateForge()
+    for n in range(120):
+        forge._merge(forge.add_pull(f'pr/old{n}', _BASE), {})
+    forge._merge(forge.add_pull('pr/x', _BASE), {})
+    lines = _line('pr/x') + _line('pr/y')
+    assert len(refusals(Path(), lines, integration=_BASE, client=lambda: forge)) == 1
+    assert len(forge.asked) == 2
+
+
+@pytest.mark.parametrize('host', ['forge.example.org', 'github.com'])
+def test_pr_by_head_answers_the_newest_pr_of_a_head_into_a_base_on_both_forges(host: str) -> None:
+    forge = StateForge(Forge(host, 'o', 'r'))
+    forge._merge(forge.add_pull('pr/x', _BASE), {})
+    newest = forge.add_pull('pr/x', _BASE)
+    forge.add_pull('pr/x', 'elsewhere')
+    found = pr_by_head(forge, 'pr/x', _BASE)
+    assert found is not None
+    assert found.number == newest
+    assert pr_by_head(forge, 'pr/none', _BASE) is None

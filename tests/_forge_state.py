@@ -159,8 +159,11 @@ class StateForge(Client):
         if route.startswith(f'{api}/commits/') and route.endswith('/statuses'):  # GitHub's list, with creators
             return 'statuses', route.removeprefix(f'{api}/commits/').removesuffix('/statuses')
         if route.startswith(f'{api}/pulls/'):
-            number, _, tail = route.removeprefix(f'{api}/pulls/').partition('/')
-            return ('merge' if tail == 'merge' else 'pull'), number
+            rest = route.removeprefix(f'{api}/pulls/')
+            number, _, tail = rest.partition('/')
+            # gitea's ``pulls/{base}/{head}`` is the newest PR of that pair
+            kind = 'pull_pair' if not number.isdigit() else 'merge' if tail == 'merge' else 'pull'
+            return kind, rest if kind == 'pull_pair' else number
         head, _, tail = route.removeprefix(f'{api}/issues/').partition('/')
         if head == 'comments':
             return 'comment', tail
@@ -198,7 +201,24 @@ class StateForge(Client):
 
     def _pulls_listed(self, query: dict[str, str]) -> list[dict[str, Any]]:
         state = query.get('state', 'open')
-        return self._page([p for _, p in sorted(self.pulls.items()) if state in ('all', p['state'])], query)
+        head = query.get('head', ':').partition(':')[2]  # GitHub's ``<owner>:<branch>`` filter
+        listed = [
+            p
+            for _, p in sorted(self.pulls.items())
+            if state in ('all', p['state'])
+            and (not head or p['head']['ref'] == head)
+            and query.get('base', p['base']['ref']) == p['base']['ref']
+        ]
+        return self._page(listed, query)
+
+    def _pull_pair(self, key: str) -> dict[str, Any]:
+        """Gitea's ``GET pulls/{base}/{head}``: the newest PR of the pair, else 404."""
+        base, _, head = key.partition('/')
+        base = urllib.parse.unquote(base)
+        found = [p for _, p in sorted(self.pulls.items()) if p['base']['ref'] == base and p['head']['ref'] == head]
+        if not found:
+            raise ForgeCallFailed(Report(('GET', 'pull'), (Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED),), 1))
+        return found[-1]
 
     def _create_pull(self, body: dict[str, Any]) -> dict[str, Any]:
         number = self.add_pull(body['head'], body['base'], title=body['title'], body=body['body'])
@@ -285,6 +305,7 @@ class StateForge(Client):
             ('GET', 'pulls'): lambda: self._pulls_listed(query),
             ('POST', 'pulls'): lambda: self._create_pull(sent),
             ('GET', 'pull'): lambda: self.pulls[number],
+            ('GET', 'pull_pair'): lambda: self._pull_pair(key),
             ('PATCH', 'pull'): lambda: self._edit_pull(number, sent),
             ('POST', 'merge'): lambda: self._merge(number, sent),
             ('PUT', 'merge'): lambda: self._merge_github(number, sent),

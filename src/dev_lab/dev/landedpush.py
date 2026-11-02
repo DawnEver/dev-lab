@@ -5,9 +5,10 @@ branch is merged or closed, so no PR will ever carry it: the PR reads "merged" w
 is on no integration branch. Seen twice on 2026-11-02 (dev-lab #44's round-3 fix, re-landed as #52; a relock
 push after motronics #5397 merged); only a manual ``merge-base --is-ancestor`` noticed.
 
-So the ``landed-pr`` pre-push row reads the forge's PRs (:func:`dev_lab.dev.forgepulls.pr_list`) for every
-branch the push creates or updates, the integration branch and the trunk aside: a branch whose PR into the
-integration branch is merged or closed, and that no OPEN PR has as its head, is refused, the refusal naming
+So the ``landed-pr`` pre-push row asks the forge ONE question per branch the push creates or updates, the
+integration branch and the trunk aside -- the newest PR of that head into the integration branch
+(:func:`dev_lab.dev.forgepulls.pr_by_head`), never a listing of every closed PR: when it is merged or closed
+(so no newer OPEN PR of that pair exists) the push is refused, the refusal naming
 the remedy -- a new PR from the branch, or a new branch name. A deletion and a tag are not judged.
 
 A forge that cannot be read refuses, as :func:`dev_lab.dev.breakglass.forge_unreviewed` does: a push needs the
@@ -26,7 +27,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
+from dev_lab.dev.forgepulls import ListingIncomplete, pr_by_head
+from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.refspec import pushed_refs
 
@@ -43,14 +45,12 @@ _GIT: Final = shutil.which('git') or 'git'
 _UNREADABLE: Final = (ForgeCallFailed, ListingIncomplete, OSError, ValueError)
 
 
-def landed(
-    open_pulls: Sequence[PullRequest], shut: Sequence[PullRequest], branch: str, base: str
-) -> PullRequest | None:
-    """The newest merged or closed PR of *branch* into *base*, unless an OPEN PR has *branch* as its head."""
-    if any(pull.head == branch for pull in open_pulls):
-        return None
-    found = [pull for pull in shut if pull.head == branch and pull.base == base]
-    return max(found, key=lambda pull: pull.number) if found else None
+def landed(newest: PullRequest | None) -> PullRequest | None:
+    """*newest* -- the newest PR of a branch into the integration branch -- when the forge merged or closed it.
+
+    An open newest PR carries the push; a newer open PR after a landed one is the newest, so it passes too.
+    """
+    return newest if newest is not None and newest.state != 'open' else None
 
 
 def _refusal(pull: PullRequest, branch: str, base: str) -> str:
@@ -77,15 +77,8 @@ def refusals(
     if not branches:
         return []
     try:
-        if client is None:
-            from dev_lab.dev.forgework import client_for  # noqa: PLC0415 (a network leaf, read only when judged)
-
-            forge = client_for(root)
-        else:
-            forge = client()
-        open_pulls = pr_list(forge)
-        unopened = [b for b in branches if not any(pull.head == b for pull in open_pulls)]
-        shut = pr_list(forge, state='closed') if unopened else ()
+        forge = client_for(root) if client is None else client()
+        newest = {branch: pr_by_head(forge, branch, integration) for branch in branches}
     except _UNREADABLE as failed:
         return [
             (
@@ -94,11 +87,7 @@ def refusals(
                 'answers'
             )
         ]
-    return [
-        _refusal(pull, branch, integration)
-        for branch in branches
-        if (pull := landed(open_pulls, shut, branch, integration)) is not None
-    ]
+    return [_refusal(pull, branch, integration) for branch in branches if (pull := landed(newest[branch])) is not None]
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -28,6 +28,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev._forge_journal import Durable, Probe, since
+from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import Comment, PullRequest, comment_of, is_pull, pull_of
 
@@ -46,6 +47,7 @@ __all__ = [
     'marker',
     'marker_kinds',
     'pages',
+    'pr_by_head',
     'pr_list',
     'pr_retarget',
     'pulls_off',
@@ -199,6 +201,27 @@ def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
             return ()
         raise
     return tuple(sorted((pull_of(item) for item in raw), key=lambda pr: pr.number))
+
+
+def pr_by_head(client: Client, head: str, base: str) -> PullRequest | None:
+    """The newest PR, in any state, of branch *head* into *base*; ``None`` when there is none. ONE forge call.
+
+    GitHub filters its listing (``state=all&head=<owner>:<head>&base=<base>``); gitea answers the pair directly
+    (``GET /pulls/{base}/{head}``, the newest such PR, 404 when none). Neither lists every closed PR.
+    """
+    if client.backend is GITHUB:
+        query = {'state': 'all', 'head': f'{client.forge.owner}:{head}', 'base': base}
+        query[client.backend.page_param] = str(_PAGE)
+        listed = client.call('GET', f'{client.repo}/pulls?{urllib.parse.urlencode(query)}')
+        found = [pull_of(raw) for raw in listed]
+        return max(found, key=lambda pull: pull.number) if found else None
+    path = f'{client.repo}/pulls/{urllib.parse.quote(base, safe="")}/{urllib.parse.quote(head, safe="/")}'
+    try:
+        return pull_of(client.call('GET', path))
+    except ForgeCallFailed as failed:
+        if failed.report.attempts and failed.report.attempts[-1].returncode == _NOT_FOUND:
+            return None
+        raise
 
 
 def pulls_off(client: Client, failed: ForgeCallFailed) -> bool:
