@@ -10,10 +10,10 @@ it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses one
 Nothing is reserved for the person at the box (user ruling 2026-10-25): they DECLARE their use as a ledger
 claim (``python -m lab_commons.box claim``).
 
-1. PROBE: ``uv`` and ``git`` on PATH; ``node`` and ``codex`` when ``workstation`` is declared; JMAG Designer and
-   its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
-2. CREDENTIAL: ``git ls-remote`` of every repo with prompting off, so only a STORED git credential
-   answers; none is ever read or printed. A refusal names the one manual step.
+1-2. PROBE and CREDENTIAL (:mod:`dev_lab.dev.workstationprobe`): the tools and COM classes the declared
+   capabilities need, and a stored git credential for every repo. Every missing item is refused at once,
+   each with its remedy. Only a host the registry gives the ``forge`` role deploys or serves
+   (:mod:`dev_lab.dev.workstationregistry`).
 3. CHECKOUTS at ``<forge home>/repos/<repo>`` (:func:`dev_lab.dev.servetask.checkout`), derived from the
    platform data dir and never configured (user ruling 2026-10-26: serve checkouts are neither user-visible
    nor shared with dev checkouts): clone ``<forge>/<repo>.git`` at ``--ref``, or fast-forward an existing
@@ -55,20 +55,18 @@ serve log (:func:`dev_lab.dev.servetask.open_log`).
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any, Final
+from typing import IO, Any
 
 import lab_commons.launch as _door
 from lab_commons.compute.serves import SERVE_TABLE
-from lab_commons.config import config_path, section
+from lab_commons.config import section
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
@@ -80,120 +78,17 @@ from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import ENV_STAMP, Moved, follow, network, read, refresh, sync_venv, venv_python
 from dev_lab.dev.hpchost.spec import KIT
 from dev_lab.dev.hpchost.steps import Step, Tools
-from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
-from dev_lab.dev.workstationfile import (
-    ROLES,
-    WORKSTATION,
-    capabilities,
-    machine_file,
-    role_refusal,
-    role_tables,
-    template,
-)
+from dev_lab.dev.workstationfile import ROLES, capabilities, machine_file, role_refusal, role_tables, template
+from dev_lab.dev.workstationprobe import CREDENTIAL_REMEDY, com_server, missing, refused_credentials
+from dev_lab.dev.workstationregistry import NoRegistry, forge_refusal, this_computer
 
-if sys.platform == 'win32':
-    import winreg
-
-__all__ = [
-    'FORGE_ROLE',
-    'JMAG_PROGIDS',
-    'REGISTRY_TABLE',
-    'NoRegistry',
-    'Programs',
-    'com_server',
-    'deploy',
-    'forge_refusal',
-    'main',
-    'serve',
-]
-
-#: What a ``workstation`` declaration promises on ``PATH`` -- probed at deploy, so the declaration cannot lie.
-_WORKSTATION_KIT: Final = ('node', 'codex')
-
-#: The COM classes a ``jmag`` host drives: the Designer and its Scheduler.
-JMAG_PROGIDS: Final = ('designer.Application', 'scheduler.JobApplication')
-
-
-_REMEDIES: Final = {
-    'uv': 'install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"',
-    'git': 'install Git for Windows: winget install --id Git.Git -e',
-    'node': 'install Node.js LTS: winget install --id OpenJS.NodeJS.LTS -e',
-    'codex': 'install the Codex CLI: npm install -g @openai/codex',
-}
-_JMAG_REMEDY: Final = 'install JMAG-Designer; its installer registers ' + ' and '.join(JMAG_PROGIDS)
-_CREDENTIAL_REMEDY: Final = (
-    'store your OWN git credential for the forge once -- `git clone <forge>/<repo>.git` anywhere and sign '
-    'in, or `python -m dev_lab.dev.forge auth login` -- then re-run'
-)
-#: Prompting off: only a STORED credential can answer.
-_NO_PROMPT: Final = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
-
-
-def com_server(progid: str) -> Path | None:
-    """The executable COM *progid* is registered to (``HKCR`` -> ``LocalServer32``), when it exists on disk."""
-    if sys.platform != 'win32':
-        return None
-    try:
-        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, f'{progid}\\CLSID') as key:
-            clsid = winreg.QueryValue(key, None)
-        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, f'CLSID\\{clsid}\\LocalServer32') as key:
-            server = winreg.QueryValue(key, None).strip()
-    except OSError:
-        return None
-    exe = Path(server[1:].split('"', 1)[0] if server.startswith('"') else server.split(' ', 1)[0])
-    return exe if exe.is_file() else None
+__all__ = ['Programs', 'deploy', 'main', 'serve']
 
 
 def _own_python(checkout: Path) -> tuple[str, ...]:
     return (str(venv_python(checkout)),)
-
-
-#: The machine-file table naming the synced workstation registry: ``[workstation] registry = "<hosts.json>"``.
-REGISTRY_TABLE: Final = 'workstation'
-#: The registry role that makes a workstation a ``forge serve`` host (user ruling 2026-10-22: G alone).
-FORGE_ROLE: Final = 'forge'
-
-
-class NoRegistry(ValueError):
-    """No workstation registry is declared here, so whether this machine serves the forge is undeclared."""
-
-
-def _computer() -> str:
-    return os.environ.get('COMPUTERNAME') or socket.gethostname()
-
-
-def forge_refusal(computer: str) -> str | None:
-    """``None`` when the registry gives *computer* the ``forge`` role; else why it may not serve.
-
-    ONE PLACE says which workstation serves the forge: the synced registry's ``roles``. This machine's entry
-    is the one whose ``computer`` (the OS name, ``COMPUTERNAME``) equals *computer*, case-insensitively, else
-    the one whose ``name`` does -- ``computer`` first because it is read off the machine, ``name`` a label.
-    No ``[workstation] registry`` raises :class:`NoRegistry`: a workstation never serves by omission.
-    """
-    declared = section(REGISTRY_TABLE).get('registry')
-    if not isinstance(declared, str) or not declared:
-        msg = (
-            f'no [{REGISTRY_TABLE}] registry in {config_path()}: declare the synced hosts.json there; '
-            f'only a host whose entry carries role "{FORGE_ROLE}" serves the forge'
-        )
-        raise NoRegistry(msg)
-    registry = Path(declared).expanduser()
-    try:
-        hosts = json.loads(registry.read_text(encoding='utf-8-sig'))['hosts']
-    except (OSError, ValueError, KeyError, TypeError) as bad:
-        return f'registry {registry} unreadable ({bad}); not serving until it reads'
-    key = computer.casefold()
-    entry = next((h for h in hosts if str(h.get('computer', '')).casefold() == key), None) or next(
-        (h for h in hosts if str(h.get('name', '')).casefold() == key), None
-    )
-    if entry is None:
-        return f'no entry for computer {computer!r} in {registry}; add one with role "{FORGE_ROLE}" to serve'
-    roles = list(entry.get('roles') or [])
-    if FORGE_ROLE in roles:
-        return None
-    return f'{registry} roles of {entry.get("name")}: {roles}; add "{FORGE_ROLE}" to serve'
 
 
 def _release(checkout: Path) -> list[str]:
@@ -217,7 +112,7 @@ class Programs:
     home: Path = field(default_factory=forge_home)  # the forge's machine home; serve checkouts in <home>/repos
     executable: Path = Path(sys.executable)  # the interpreter serving; it must be the dev-lab serve checkout's
     alarm: Callable[[Alarm], object] = sound
-    computer: str = field(default_factory=_computer)
+    computer: str = field(default_factory=this_computer)
     release: Callable[[Path], list[str]] = _release
 
 
@@ -258,31 +153,10 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _probe(programs: Programs, capabilities: Mapping[str, Any]) -> list[str]:
-    wanted = ['uv', 'git', *(_WORKSTATION_KIT if WORKSTATION in capabilities else ())]
-    emit(f'[probe] {", ".join([*wanted, *(["jmag"] if "jmag" in capabilities else [])])}')
-    missing = [f'{tool} not on PATH: {_REMEDIES[tool]}' for tool in wanted if programs.which(tool) is None]
-    if 'jmag' in capabilities and (absent := [p for p in JMAG_PROGIDS if programs.com(p) is None]):
-        missing.append(f'COM class {", ".join(absent)} not registered: {_JMAG_REMEDY}')
-    return missing
-
-
 def _url(programs: Programs, checkout: Path, name: str, forge: str) -> str:
     if (checkout / '.git').exists():
         return read([*programs.git, '-C', str(checkout), 'remote', 'get-url', 'origin']).stdout.strip()
     return f'{forge.rstrip("/")}/{name}.git' if forge else ''
-
-
-def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
-    emit('[credential] git ls-remote per repo, prompting off: only a stored credential answers')
-    denied = []
-    for name, url in urls.items():
-        argv = [*programs.git, '-c', 'credential.interactive=never', 'ls-remote', '-q', url, 'HEAD']
-        rc = run_network_verb(argv, env={**os.environ, **_NO_PROMPT}).returncode
-        emit(f'  {name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
-        if rc:
-            denied.append(name)
-    return denied
 
 
 def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> Moved:
@@ -328,15 +202,15 @@ def _preflight(args: argparse.Namespace, tools: Programs, checkouts: Mapping[str
         return 'a workstation serves from a Windows Scheduled Task; a POSIX host serves from cron'
     if why := forge_refusal(tools.computer):
         return f'not a forge host: {why}'
-    if missing := _probe(tools, args.capabilities):
-        for line in missing:
+    if absent := missing(tools.which, tools.com, args.capabilities):
+        for line in absent:
             emit(f'  {line}', err=True)
-        return f'{len(missing)} missing; install each as named, then re-run'
+        return f'{len(absent)} missing; install each as named, then re-run'
     urls = {name: _url(tools, co, name, args.forge) for name, co in checkouts.items()}
     if unknown := [name for name, url in urls.items() if not url]:
         return f'no checkout of {", ".join(unknown)} in {servetask.repos(tools.home)}; pass --forge <https base>'
-    if denied := _credentials(tools, urls):
-        return f'no stored git credential reads {", ".join(denied)}; {_CREDENTIAL_REMEDY}'
+    if denied := refused_credentials(tools.git, urls):
+        return f'no stored git credential reads {", ".join(denied)}; {CREDENTIAL_REMEDY}'
     return urls
 
 

@@ -187,6 +187,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'servetask',
     'workstation',
     'workstationfile',
+    'workstationprobe',
+    'workstationregistry',
     # ORIGINAL: user ruling 2026-10-30, a resource a repo produces no part for.
     'unproduced',
     'hostrefresh',

@@ -24,7 +24,7 @@ from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import hostrefresh, servetask, workstation, workstationfile
+from dev_lab.dev import hostrefresh, servetask, workstation, workstationfile, workstationregistry
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.hpchost.spec import host_serve_argv
 from dev_lab.dev.servelock import held
@@ -505,9 +505,9 @@ def test_a_host_the_registry_gives_no_forge_role_claims_nothing_and_releases_its
 
 def test_the_registry_entry_is_matched_by_computer_before_name(box: Box, tmp_path: Path) -> None:
     _registry(tmp_path, box.machine, ['forge'], computer='box')
-    assert workstation.forge_refusal('BOX') is None, 'COMPUTERNAME matches case-insensitively'
-    assert workstation.forge_refusal('G') is None, 'the label matches when no computer does'
-    assert 'roles of WS9' in (workstation.forge_refusal('OTHER') or '')
+    assert workstationregistry.forge_refusal('BOX') is None, 'COMPUTERNAME matches case-insensitively'
+    assert workstationregistry.forge_refusal('G') is None, 'the label matches when no computer does'
+    assert 'roles of WS9' in (workstationregistry.forge_refusal('OTHER') or '')
 
 
 def test_serve_with_no_registry_declared_is_refused_by_name(
@@ -692,7 +692,7 @@ LIGHT: Final = ('--repos', REPOS, '--role', 'light', '--forge', FORGE)
 
 
 def test_the_light_role_declares_its_profile_and_withholds_every_heavy_tool(box: Box) -> None:
-    """WS1/WS2 serve forge parts, never heavy compute (user ruling 2026-10-28): every probed tool is withheld."""
+    """HOST1/HOST2 serve forge parts, never heavy compute (user ruling 2026-10-28): every probed tool is withheld."""
     assert workstation.deploy(list(LIGHT), programs=box.programs) == 0
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     assert declared['capabilities'] == {'workstation': {}}
@@ -730,7 +730,7 @@ G_RUNTIME: Final = '[capabilities.ai_lab]  # the review interpreter\npython = "C
 
 
 def _g_shaped(box: Box) -> str:
-    """G's 2026-10-29 machine file: the retired runtime table, commented, between live capabilities tables."""
+    """The forge host's 10-29 machine file: the retired runtime table, commented, between live capabilities tables."""
     text = box.machine.read_text(encoding='utf-8').replace('[capabilities.jmag]', G_RUNTIME + '\n[capabilities.jmag]')
     text += '\n[capabilities.connection]  # supply\nseats = 1\n'
     box.machine.write_text(text, encoding='utf-8')
@@ -738,7 +738,7 @@ def _g_shaped(box: Box) -> str:
 
 
 def test_a_dry_run_reports_the_runtime_move_it_would_make(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
-    """The live bug: G's dry run said "already declares every table" over a retired ``[capabilities.ai_lab]``."""
+    """Live bug: the forge host's dry run said "declares every table" over a retired ``[capabilities.ai_lab]``."""
     assert box.deploy() == 0
     held = _g_shaped(box)
     capsys.readouterr()
@@ -789,7 +789,7 @@ def test_the_docs_template_is_the_profile_rendered_never_a_hand_copy() -> None:
 
 
 def test_a_behind_kit_is_fast_forwarded_and_the_tick_defers_to_the_next_run(box: Box, tmp_path: Path) -> None:
-    """Incident 2026-10-30: G's serve never moved its own kit, so it merged by a gate dev-lab had retired.
+    """Incident 2026-10-30: the forge host's serve never moved its own kit, so it merged by a gate dev-lab had retired.
 
     The tick fast-forwards the kit and then serves NOTHING: the running process is the old code, and the next
     Task run starts on the new. PLANTED CONTROL: that next tick, its kit current, serves every repo.

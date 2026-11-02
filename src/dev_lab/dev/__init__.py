@@ -432,6 +432,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.
 * :mod:`dev_lab.dev.workstation` -- a Windows workstation as a serve host in one run, and the Task's serve loop.
 * :mod:`dev_lab.dev.workstationfile` -- the machine-file tables a workstation deploy writes, and its roles.
+* :mod:`dev_lab.dev.workstationprobe` -- the tools, COM classes and stored credentials a workstation deploy needs.
+* :mod:`dev_lab.dev.workstationregistry` -- which workstation serves the forge: the synced registry's roles.
 * :mod:`dev_lab.dev.hpchost` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
 * :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
