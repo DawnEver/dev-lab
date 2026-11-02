@@ -104,7 +104,6 @@ __all__ = [
     'labelled_issues',
     'load_schedule',
     'over_budget',
-    'parse_usage',
     'ref_usage',
     'repo_name',
     'starved_alarms',
@@ -215,21 +214,6 @@ def coalesced(root: Path, ref: str) -> bool:
 def tip_of(root: Path, ref: str) -> str:
     """*ref*'s tip on ``origin`` as last fetched, ``''`` when it has none."""
     return _git(root, 'rev-parse', '--verify', '-q', f'{_TRACKING}{ref}')
-
-
-def parse_usage(sacct: str) -> dict[str, float]:
-    """``sacct -n -P -o JobName,CPUTimeRAW`` lines into core-hours per run job name's sha12 (``run-<sha12>-<part>``)."""
-    used: dict[str, float] = {}
-    for line in sacct.splitlines():
-        name, _, seconds = line.partition('|')
-        if name.startswith('run-') and seconds.strip().isdigit():
-            sha12 = name[4:16]
-            used[sha12] = used.get(sha12, 0.0) + int(seconds) / 3600
-    return used
-
-
-#: The sacct read of this account's last day, parsed by :func:`parse_usage`.
-USAGE_COMMAND: Final = 'sacct -X -n -P -S now-24hours -o JobName,CPUTimeRAW'
 
 
 def ref_usage(root: Path, ref: str, used: Mapping[str, float]) -> float:
