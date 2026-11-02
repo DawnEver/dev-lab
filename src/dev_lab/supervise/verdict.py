@@ -19,7 +19,10 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from dev_lab.supervise.notice import Notice
 
 __all__ = [
     'OPERATORS',
@@ -132,6 +135,13 @@ class Anomaly:
             constant while the condition is unchanged (a commit sha, a file path) and changes when
             the situation genuinely moves, so suppression releases on real change. Empty falls
             back to *message*.
+        notice: the component's own :class:`~dev_lab.supervise.notice.Notice`, when it has one. The loop
+            sends it AS IT IS -- never re-wrapped -- so its headline is the alert's first line. A component
+            that has a notice hands it here; its *message* stays plain text.
+
+    Raises:
+        ValueError: *message* is already a rendered notice (:func:`~dev_lab.supervise.notice.markdown`); the
+            loop would wrap it a second time, which is the 2026-11-02 Gitea alert's raw ``**`` and backticks.
 
     """
 
@@ -142,6 +152,17 @@ class Anomaly:
     threshold: float | None = None
     source: str = ''
     signature: str = ''
+    notice: Notice | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse a message that is a rendered notice: hand the :class:`Notice` itself as *notice*."""
+        if _RENDERED.search(self.message):
+            msg = f'{self.kind}: message is a rendered notice; pass the Notice as notice= and a plain message'
+            raise ValueError(msg)
+
+
+#: What only :func:`dev_lab.supervise.notice.markdown` writes: its bold severity first line, or a fenced block.
+_RENDERED: Final = re.compile(r'\A\*\*(?:CRITICAL|WARNING|INFO|TEST)\*\*|^```$', re.MULTILINE)
 
 
 @dataclass

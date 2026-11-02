@@ -329,16 +329,7 @@ def _notify(
         )
         if not verdict.notify:
             continue
-        first, *rest = anomaly.message.splitlines() or ['']
-        notice = Notice(
-            title=f'{anomaly.source}: {first}',
-            severity=anomaly.severity,
-            host=host_label(config.get('notify')),
-            value='' if anomaly.value is None else f'{anomaly.value:g}',
-            threshold='' if anomaly.threshold is None else f'{anomaly.threshold:g}',
-            findings=tuple(rest),
-            action=action_for(anomaly.kind),
-        )
+        notice = anomaly.notice or _wrapped(anomaly, config)
         delivered = notifier.send(notice)
         sent.extend(delivered)
         # RECORDED ONLY IF SOMETHING TOOK IT, and this ordering is the point. The decision to send
@@ -352,6 +343,20 @@ def _notify(
         if any(one.ok for one in delivered):
             mark_notified(state, anomaly.source, clock.isoformat())
     return sent
+
+
+def _wrapped(anomaly: Anomaly, config: Mapping[str, Any]) -> Notice:
+    """The notice for an anomaly that carries none: its plain message as title and findings, said once."""
+    first, *rest = anomaly.message.splitlines() or ['']
+    return Notice(
+        title=f'{anomaly.source}: {first}',
+        severity=anomaly.severity,
+        host=host_label(config.get('notify')),
+        value='' if anomaly.value is None else f'{anomaly.value:g}',
+        threshold='' if anomaly.threshold is None else f'{anomaly.threshold:g}',
+        findings=tuple(rest),
+        action=action_for(anomaly.kind),
+    )
 
 
 #: What a reader does about an anomaly, by the END of its kind (``<name>_<suffix>``) or its prefix; first match wins.
