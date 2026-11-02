@@ -33,8 +33,9 @@ from lab_commons.compute.durable import durable_write
 from lab_commons.proc import pid_alive
 
 from dev_lab.dev.forgeclaim import Claim, forge_now
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_history, status_post
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.producer import RETRYABLE
 from dev_lab.dev.shatree import close_tree
 from dev_lab.dev.worktreeplace import main_checkout

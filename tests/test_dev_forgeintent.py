@@ -18,8 +18,8 @@ from _forge_fake import run_git
 
 from dev_lab.dev import forgeintent, forgeproduce
 from dev_lab.dev.forgeclaim import OPEN, Claim, Work, assess
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.producer import RETRYABLE
 from dev_lab.dev.shatree import Tree

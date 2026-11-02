@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import verify
+from dev_lab.dev import verifysteps
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND, install, read_hooks
 
 _GIT = shutil.which('git') or 'git'
@@ -63,7 +63,7 @@ def test_a_producer_run_does_not_judge_the_hooks_of_its_fresh_checkout(
         handle.flush()
         return 0
 
-    monkeypatch.setattr(verify, 'boxed', lambda _root, argv, **_k: (argv, None))
-    monkeypatch.setattr(verify, '_tee', step)
-    verdict = verify.run_verify(repo, hooks=hooks)
+    monkeypatch.setattr(verifysteps, 'boxed', lambda _root, argv, **_k: (argv, None))
+    monkeypatch.setattr(verifysteps, '_tee', step)
+    verdict = verifysteps.run_verify(repo, hooks=hooks)
     assert (HOOKS_STEP in verdict.result.failures) is failed

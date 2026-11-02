@@ -60,7 +60,8 @@ from dev_lab.dev.forge import (
     forge_transport,
     store_credential,
 )
-from dev_lab.dev.forgework import Client, ForgeCallFailed, stored_client
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import Client, stored_client
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.worktreeplace import family_root
 

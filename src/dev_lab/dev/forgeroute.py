@@ -61,8 +61,9 @@ from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import issues
-from dev_lab.dev.forgework import Client, ForgeCallFailed, Issue, client_for
+from dev_lab.dev.forgework import Client, Issue, client_for
 
 __all__ = [
     'DEFAULT_AREA',

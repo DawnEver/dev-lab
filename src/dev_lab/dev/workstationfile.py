@@ -3,7 +3,8 @@
 A ``--role`` is a declared profile (:data:`ROLES`: its capabilities and ``[serve]`` rule); ``template --role
 <role> --repos ...`` prints the tables it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses
 one in ``--capabilities``. The merge (:func:`machine_file`) keeps every other table, key and comment, removes a
-RETIRED ``[capabilities.<name>]`` -- one naming a runtime (:data:`~dev_lab.dev.forgereview.FAMILY_RUNTIMES`, or a
+RETIRED ``[capabilities.<name>]`` -- one naming a runtime (:data:`~dev_lab.dev.forgereview_declared.FAMILY_RUNTIMES`,
+or a
 registry row whose remedy is ``[runtimes.<name>]``) is RENAMED in place, keys and comment kept, after a one-time
 ``<file>.lab-deploy.bak`` -- and under ``--dry-run`` prints the diff (each move named) without writing.
 """
@@ -25,7 +26,7 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
 from dev_lab.dev._machinefile import diff, merged, renamed
-from dev_lab.dev.forgereview import FAMILY_RUNTIMES
+from dev_lab.dev.forgereview_declared import FAMILY_RUNTIMES
 from dev_lab.dev.forgereview_runtimes import RUNTIMES_TABLE
 
 if TYPE_CHECKING:

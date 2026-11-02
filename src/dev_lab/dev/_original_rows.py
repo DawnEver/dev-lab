@@ -19,6 +19,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'producer',
     'envseat',
     'verifybox',
+    'verifysteps',
     'agent_guard',
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
@@ -60,6 +61,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeauth',
     'forgecli',
     'forgecred',
+    'forgefailure',
     'forgework',
     'forgestatus',
     'forgeoutbox',
@@ -76,8 +78,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgetick',
     'forgeautosync',
     'forgeintegration',
+    'forgelanes',
     'forgemerge',
     'forgereview',
+    'forgereview_declared',
     'forgereview_findings',
     # ORIGINAL: the review read the whole diff or nothing; the slice budget and lenses are new here.
     'forgereview_command',
@@ -90,6 +94,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'labsession',
     'pradmit',
     'forgerun',
+    'forgesupersede',
     'forgerunpost',
     'forgerunstate',
     'components',
@@ -109,6 +114,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'partrows',
     'forgeoom',
     'forgeslurm',
+    'slurmkilled',
     'forgeship',
     'artefacts',
     'artefactstores',

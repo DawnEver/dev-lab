@@ -20,8 +20,9 @@ from test_dev_forgereview_rounds import _REVIEW, _doc, _finding
 
 from dev_lab.dev import forgereview_rounds, forgereview_scope, reviewgitauth
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, review_at
+from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import ReviewUnsupported, Runner, run_command
+from dev_lab.dev.forgereview_declared import review_at
 from dev_lab.dev.forgereview_dispose import dispose
 from dev_lab.dev.forgereview_judge import Identity
 from dev_lab.dev.forgereview_rounds import trusted_bodies

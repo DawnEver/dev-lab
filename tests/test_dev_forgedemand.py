@@ -9,8 +9,8 @@ import pytest
 from lab_commons.compute import learned
 
 from dev_lab.dev import forgedemand
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import Attachment
-from dev_lab.dev.forgework import ForgeCallFailed
 
 REPO = 'https://g/r.git'
 

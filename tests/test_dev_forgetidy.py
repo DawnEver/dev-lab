@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_ORIGIN, HOSTS_TITLE
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgetidy import Hygiene, load_hygiene, tidy
-from dev_lab.dev.forgework import ForgeCallFailed
 from tests._forge_state import StateForge
 
 if TYPE_CHECKING:

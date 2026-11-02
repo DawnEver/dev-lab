@@ -34,12 +34,22 @@ from lab_commons.hpc.run import NoRoom
 from lab_commons.hpc.slurm import FORGE_SESSION, Node, Quota, Snapshot, parse_usage
 from lab_commons.hpc.tree import NotSubmitted
 
-from dev_lab.dev import artefacts, forgecarry, forgerun, forgerunpost, forgerunstate, forgeship, forgeslurm
+from dev_lab.dev import (
+    artefacts,
+    forgecarry,
+    forgerun,
+    forgerunpost,
+    forgerunstate,
+    forgeship,
+    forgeslurm,
+    forgesupersede,
+)
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
 from dev_lab.dev.forgecoalesce import DRAINING
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.forgework import GITEA, ForgeCallFailed
+from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
@@ -158,8 +168,9 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(forgerun, 'route', lambda *_a: ())
     monkeypatch.setattr(forgerun, 'read_record', lambda _path: {'sha': SHA})
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: SHA)  # the run's sha is its ref's tip
-    monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: True)
-    monkeypatch.setattr(forgerun, '_integration', lambda _root: INTEGRATION_REF)
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref: SHA)  # the run's sha is its ref's tip
+    monkeypatch.setattr(forgesupersede, 'coalesced', lambda _root, _ref: True)
+    monkeypatch.setattr(forgesupersede, '_integration', lambda _root: INTEGRATION_REF)
     return tmp_path
 
 
@@ -731,9 +742,11 @@ def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sh
     """
     for tip, open_again in ((SHA, True), ('d' * 40, False)):
         monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: SHA)  # submitted while it was the tip
+        monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref: SHA)  # submitted while it was the tip
         store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
         _submitted_run(home, store, slurm)
         monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
+        monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref, tip=tip: tip)
         slurm.recorded = []  # the part's state.json never existed: the ids were another part's
         assert _tick(store, slurm, alarms=alarms) is None
         assert forgerunstate.live('https://f/o/r.git') == ()
@@ -772,7 +785,8 @@ def test_a_run_whose_coalesced_ref_moves_on_withdraws_its_pending_tasks_and_drai
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
     _submitted_run(home, store, slurm, ref=PR_REF)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: tip)
-    monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: coalesced)
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref: tip)
+    monkeypatch.setattr(forgesupersede, 'coalesced', lambda _root, _ref: coalesced)
     slurm.started = ['4242'] if began else []
     after = _tick(store, slurm, alarms=alarms)
     assert slurm.cancelled == [], 'a task within its deadline is never killed for supersession'
@@ -824,8 +838,9 @@ def test_a_run_whose_ref_is_gone_is_cancelled_started_tasks_too_unless_its_resul
     _submitted_run(home, store, slurm)
     integration = 'e' * 40
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, ref: integration if ref == 'integration' else '')
-    monkeypatch.setattr(forgerun, '_integration', lambda _root: 'integration')
-    monkeypatch.setattr(forgerun, 'equivalent', lambda _root, a, b: carries and (a, b) == (SHA, integration))
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, ref: integration if ref == 'integration' else '')
+    monkeypatch.setattr(forgesupersede, '_integration', lambda _root: 'integration')
+    monkeypatch.setattr(forgesupersede, 'equivalent', lambda _root, a, b: carries and (a, b) == (SHA, integration))
     slurm.started = ['4242']
     after = _tick(store, slurm, alarms=alarms)
     if not cancelled:
@@ -930,6 +945,7 @@ def test_a_started_integration_run_finishes_on_its_own_sha_when_integration_move
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
     _submitted_run(home, store, slurm, ref=ref)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40)
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref: 'd' * 40)
     monkeypatch.setattr(forgecarry, 'post', lambda _root, _path: 'posted')
     slurm.started = ['4242']
     after = _tick(store, slurm, alarms=alarms)
@@ -958,6 +974,7 @@ def test_a_run_not_yet_submitted_whose_ref_moved_on_is_released_superseded_witho
     """
     for tip, superseded in (('d' * 40, True), (SHA, False)):
         monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
+        monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref, tip=tip: tip)
         store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
         _start(home, store)
         after = _tick(store, slurm, alarms=alarms)
@@ -992,8 +1009,17 @@ def test_a_run_whose_ref_moved_on_to_a_docs_only_tip_is_never_cancelled(
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
     _submitted_run(home, store, slurm, ref=PR_REF)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40)
-    monkeypatch.setattr(forgerun, 'equivalent', lambda _root, a, b: change == 'docs' and (a, b) == (SHA, 'd' * 40))
-    monkeypatch.setattr(forgerun, 'data_only', lambda _root, a, b: change == 'memory' and (a, b) == (SHA, 'd' * 40))
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref: 'd' * 40)
+
+    def docs(_root: Path, a: str, b: str) -> bool:
+        return change == 'docs' and (a, b) == (SHA, 'd' * 40)
+
+    monkeypatch.setattr(forgesupersede, 'equivalent', docs)
+
+    def memory(_root: Path, a: str, b: str) -> bool:
+        return change == 'memory' and (a, b) == (SHA, 'd' * 40)
+
+    monkeypatch.setattr(forgesupersede, 'data_only', memory)
     slurm.phrase = 'running 3/4 done 1/4'
     after = _tick(store, slurm, alarms=alarms)
     assert (after is not None) is kept
@@ -1017,6 +1043,7 @@ def test_a_superseded_runs_started_task_drains_until_its_learned_deadline_then_i
     superseded = head == 'superseded'
     _submitted_run(home, store, slurm, ref=PR_REF)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40 if superseded else SHA)
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref: 'd' * 40 if superseded else SHA)
     slurm.started = ['4242']
     task = forgerunstate.Started('4242_0', started_at=1000.0, limit_s=600.0)
     slurm.draining = forgerunstate.Draining(1100.0, (task,))  # superseded at 1100: deadline 1700
@@ -1045,9 +1072,9 @@ def test_a_deadline_counts_from_supersession_or_the_tasks_start_whichever_is_lat
     """A task started just before supersession is never cut short below its own limit."""
     early = forgerunstate.Started('1_0', started_at=0.0, limit_s=100.0)
     late = forgerunstate.Started('1_1', started_at=90.0, limit_s=100.0)
-    assert forgerun.overdue(forgerunstate.Draining(139.0, (early, late)), since=40.0) == []
-    assert forgerun.overdue(forgerunstate.Draining(150.0, (early, late)), since=40.0) == ['1_0']
-    assert forgerun.overdue(forgerunstate.Draining(191.0, (early, late)), since=40.0) == ['1_0', '1_1']
+    assert forgesupersede.overdue(forgerunstate.Draining(139.0, (early, late)), since=40.0) == []
+    assert forgesupersede.overdue(forgerunstate.Draining(150.0, (early, late)), since=40.0) == ['1_0']
+    assert forgesupersede.overdue(forgerunstate.Draining(191.0, (early, late)), since=40.0) == ['1_0', '1_1']
 
 
 def test_a_started_task_is_priced_from_the_learned_table_times_the_safety(
@@ -1084,7 +1111,7 @@ def test_a_started_task_is_priced_from_the_learned_table_times_the_safety(
 def test_the_ref_gone_tip_never_rebinds_a_hold_verdict() -> None:
     """``_hold``'s verdicts and ``_superseding_tip``'s ref-gone sentinel are two names: neither shadows the other."""
     assert forgerun._GONE == 'gone'
-    assert forgerun._REF_GONE not in {forgerun._ADVANCE, forgerun._WAIT, forgerun._GONE}
+    assert forgesupersede.REF_GONE not in {forgerun._ADVANCE, forgerun._WAIT, forgerun._GONE}
 
 
 #: ``sacct -n -P -j 7,8 -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit`` of one OOM, one timeout, one success.

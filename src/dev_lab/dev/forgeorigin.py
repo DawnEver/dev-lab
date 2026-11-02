@@ -24,8 +24,9 @@ from lab_commons.compute.model import REQUEST, Candidate
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import host_id, this_host
-from dev_lab.dev.forgework import GITHUB, Client, ForgeCallFailed
+from dev_lab.dev.forgework import GITHUB, Client
 
 __all__ = ['ORIGIN_HOST', 'head_login', 'main', 'origin_host_of', 'stamp', 'vouched']
 

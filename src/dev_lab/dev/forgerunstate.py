@@ -106,7 +106,7 @@ class Draining:
 
 @dataclass(frozen=True)
 class Killed:
-    """One job Slurm killed (:data:`KILLED`): what it asked and what it used, in MB and seconds."""
+    """One job Slurm killed (:data:`dev_lab.dev.slurmkilled.KILLED`): its ask and use, in MB and seconds."""
 
     job: str
     state: str

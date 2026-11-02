@@ -202,7 +202,7 @@ through the same method (takeover chain: anthropic API, then a ccc session, then
 It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
 integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the
 command reads its own (`ai_lab`, the `pr-review` task key). The command is the FAMILY's
-(`forgereview.FAMILY_COMMAND`: `{runtimes.ai_lab.python} -m ai_lab.review --range {range} --lens {lens}
+(`forgereview_declared.FAMILY_COMMAND`: `{runtimes.ai_lab.python} -m ai_lab.review --range {range} --lens {lens}
 --model {model} --rules {rules} --paths {paths}`; `{rules}` is the registry's ids, so ai-lab imports none); a repo declares only where it differs, and a redeclared family command or a
 retired host field (any `{capabilities.*}`: a host value is where a runtime lives, read from the machine file's
 `[runtimes.<name>]`, never a capability) is refused (`famtests.reviewcommand`). Every key optional:
@@ -210,7 +210,7 @@ retired host field (any `{capabilities.*}`: a host value is where a runtime live
 ```toml
 [tool.dev_lab.review]
 # command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model} {rules}
-model = "<id>"             # the default is forgereview.FAMILY_MODEL
+model = "<id>"             # the default is forgereview_declared.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 200000    # one slice
 max_total_bytes = 4000000  # one head

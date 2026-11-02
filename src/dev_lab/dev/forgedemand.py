@@ -21,9 +21,9 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.compute import learned
 
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import unprompted_client
 from dev_lab.dev.forgerecords import listing
-from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import origin_url
 
 if TYPE_CHECKING:

@@ -101,6 +101,7 @@ from dev_lab.dev.forgeclaim import (
     this_machine,
     this_seat,
 )
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
@@ -112,7 +113,7 @@ from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgewait import Box, nowhere, tell
-from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import derived, origin_url, parts_of

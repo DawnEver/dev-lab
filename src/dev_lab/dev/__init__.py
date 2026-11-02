@@ -34,6 +34,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
+* :mod:`dev_lab.dev.verifysteps` — the steps verify runs under one root into one log, and the verdict they fold into.
 * :mod:`dev_lab.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
   own file, so a profile carries an ``anchor`` for the checkout it describes.
@@ -296,6 +297,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.treedirt` -- did the tree MOVE while judged; identity stays with ``content``.
 * :mod:`dev_lab.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
 * :mod:`dev_lab.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
+* :mod:`dev_lab.dev.forgefailure` -- how a forge answer reads: an answer, transient, a refused call or credential.
 * :mod:`dev_lab.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``; ``HARNESS_*`` stamp.
 * :mod:`dev_lab.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
 * :mod:`dev_lab.dev.forgepublish` -- ``forge request``: publish a request only when a host could reproduce it.
@@ -322,6 +324,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   having a part's need-set is named.
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`dev_lab.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
+* :mod:`dev_lab.dev.forgesupersede` -- NEWEST-HEAD-ONLY: a superseded run's tasks withdrawn or drained, then released.
 * :mod:`dev_lab.dev.forgerunpost` -- a cluster run's forge posts (progress, release), saved steps and alarms.
 * :mod:`dev_lab.dev.forgerunstate` -- a cluster run's state file, its schema upgrades, and the Slurm protocol.
 * :mod:`dev_lab.dev.components` -- the engines a product mounts under ``components/``, declared once.
@@ -329,6 +332,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
 * :mod:`dev_lab.dev.forgeoom` -- an OOM-killed task floors every file it ran at its ask, in the folded record.
 * :mod:`dev_lab.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
+* :mod:`dev_lab.dev.slurmkilled` -- the jobs ``sacct`` says Slurm killed for memory or time, and what each used.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
   store cleanup its host owns.
 * :mod:`dev_lab.dev.retention` -- the storage retention pass serve runs every tick, and its quota alarm.
@@ -354,6 +358,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   full-PASS integration commit). Neither checks out nor pushes.
 * :mod:`dev_lab.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`dev_lab.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
+* :mod:`dev_lab.dev.forgelanes` -- the origin branches tracked, a PR head fetched, the PR a pushed lane lands by.
 * :mod:`dev_lab.dev.forgemerge` -- the forge's server-side merge of a reviewed, clean PR into integration.
 * :mod:`dev_lab.dev.forgeautosync` -- the serve tick merges integration into a behind ``pr/*`` PR head.
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
@@ -363,6 +368,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
 * :mod:`dev_lab.dev.forgereview` -- the review of each open PR head by the declared command; HIGH/security block.
 * :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, what stands on it, a host unable.
+* :mod:`dev_lab.dev.forgereview_declared` -- the review a repo declares, read from the integration branch a PR trusts.
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-judged each round.

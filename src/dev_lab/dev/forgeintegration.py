@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import fnmatch
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -47,19 +46,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
-import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgeautosync, forgeheadgate, forgenotice
-from dev_lab.dev.branchdelete import landed
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
+from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
-from dev_lab.dev.forgemerge import auto_merge, judged, merge
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
+from dev_lab.dev.forgemerge import judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -73,26 +72,21 @@ from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgesync import upstreams
-from dev_lab.dev.forgework import GITEA, Client, ForgeCallFailed, PullRequest, client_for
+from dev_lab.dev.forgework import GITEA, Client, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
-from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
-from dev_lab.dev.relock import PREFIX as RELOCK_PREFIX
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
 from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = [
     'CONTEXT',
-    'OPENED',
-    'OWNER_CLOSED',
     'Child',
     'Feedback',
     'Ticked',
     'alarms',
     'feedback',
     'main',
-    'open_lanes',
     'retarget_note',
     'settle',
     'tick',
@@ -101,8 +95,6 @@ __all__ = [
 #: The commit-status context a child branch without a PR carries its integration line in.
 CONTEXT: Final = 'integration'
 
-_TRACKING: Final = 'refs/remotes/origin/'
-_PULLS: Final = 'refs/lab-commons/pulls/'
 #: The summary of a PR the forge merged this tick.
 _MERGED: Final = 'merged by the forge'
 
@@ -174,7 +166,7 @@ def _areas(client: Client, head: str) -> list[str]:
 
 def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     """The integration text for *child*, from the object store and the forge; writes nothing."""
-    base, trunk = f'{_TRACKING}{policy.integration}', f'{_TRACKING}{policy.trunk}'
+    base, trunk = f'{TRACKING}{policy.integration}', f'{TRACKING}{policy.trunk}'
     statuses = status_list(child.client, child.head)
     scarce = unreached(root, child.client, policy.integration, child.head, statuses) if child.pr else frozenset()
     waived = scarce | unproduced_waived(root, child.head, statuses)
@@ -228,91 +220,12 @@ def retarget_note(policy: Policy) -> str:
     )
 
 
-def _fetch_pull(root: Path, remote: str, number: int) -> str:
-    ref = f'{_PULLS}{remote}/{number}'
-    report = run_network_verb(
-        [_GIT, 'fetch', '--quiet', remote, f'+refs/pull/{number}/head:{ref}'], cwd=root, timeout=300
-    )
-    if not report.ok:
-        raise OSError(report.remedy)
-    found = rev(root, ref)
-    if found is None:
-        msg = f'pull {number} on {remote} fetched no commit'
-        raise OSError(msg)
-    return found
-
-
-def _git(root: Path, *args: str) -> str:
-    done = _door.run(
-        [_GIT, *args],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
-    return done.stdout if done.returncode == 0 else ''
-
-
 def _lanes(root: Path, policy: Policy, schedule: Schedule) -> list[tuple[str, str]]:
     found = []
-    for line in _git(root, 'for-each-ref', '--format=%(refname) %(objectname)', _TRACKING).splitlines():
-        ref, sha = line.split(' ')
-        branch = ref.removeprefix(_TRACKING)
+    for branch, sha in tracked(root):
         if schedule.class_of(branch) is not None and branch not in {policy.trunk, policy.integration}:
             found.append((branch, sha))
     return found
-
-
-#: The body of a PR the tick opens for a pushed lane.
-OPENED: Final = (
-    'Opened by the forge (`forge integration`): `{branch}` is a pushed `{glob}` lane holding content '
-    '`{integration}` lacks, and no pull request carried it. A lane lands by its PR; close this one unmerged '
-    'and the forge never opens another for `{branch}`.'
-)
-#: What the tick says of a lane whose PR its owner closed unmerged: the owner's "do not land".
-OWNER_CLOSED: Final = '{branch}: no PR opened -- #{number} was closed unmerged by its owner: do not land'
-
-
-def open_lanes(root: Path, client: Client, policy: Policy, open_heads: set[str]) -> tuple[list[str], list[Child]]:
-    """Open the one PR each pushed ephemeral lane lands by; the lines said and the children opened.
-
-    A lane is an origin branch in a declared ephemeral namespace (``[tool.dev_lab.branchset] ephemeral``) holding
-    content integration lacks (:func:`dev_lab.dev.branchdelete.landed`), with no open PR (*open_heads*). A relock
-    branch opens its own (:func:`dev_lab.dev.relock.carry`), and a lane whose PR was closed UNMERGED is its
-    owner's "do not land": never reopened, only said. The title is the head's newest subject; on GitHub the PR
-    is put on auto-merge (:func:`dev_lab.dev.forgemerge.auto_merge`), as ``forge pr create`` does.
-    """
-    try:
-        declared = declared_branchset(root)
-    except BranchSetNotDeclared:
-        return [], []
-    lanes = []
-    for ref in _git(root, 'for-each-ref', '--format=%(refname) %(objectname)', _TRACKING).splitlines():
-        name, sha = ref.split(' ')
-        branch = name.removeprefix(_TRACKING)
-        if branch in open_heads or branch.startswith(f'{RELOCK_PREFIX}-') or not declared.is_ephemeral(branch):
-            continue
-        if landed(root, policy, name).lost:
-            lanes.append((branch, sha))
-    if not lanes:
-        return [], []
-    refused = {pr.head: pr.number for pr in pr_list(client, state='closed') if not pr.merged}
-    lines: list[str] = []
-    opened: list[Child] = []
-    for branch, sha in lanes:
-        if branch in refused:
-            lines.append(OWNER_CLOSED.format(branch=branch, number=refused[branch]))
-            continue
-        title = _git(root, 'log', '-1', '--format=%s', sha).strip() or branch
-        glob = next(g for g in declared.ephemeral if fnmatch.fnmatchcase(branch, g))
-        body = OPENED.format(branch=branch, glob=glob, integration=policy.integration)
-        pr = client.pr_create(title, body, head=branch, base=policy.integration, draft=False)  # a lane is done work
-        lines.append(f'{branch}: opened #{pr.number} -- {auto_merge(client, pr.number)}')
-        opened.append(Child(branch, sha, client, pr.number))
-    return lines, opened
 
 
 def _publish(child: Child, said: Feedback) -> str:
@@ -350,7 +263,7 @@ def tick(
     origin: Client,
     policy: Policy,
     *,
-    fetch_pull: Callable[[Path, str, int], str] = _fetch_pull,
+    fetch_pull: Callable[[Path, str, int], str] = fetch_pull,
     host: str = '',
     clock: Callable[[Client], datetime] = forge_now,
     sync: Callable[..., str] = forgeautosync.sync,
@@ -376,7 +289,7 @@ def tick(
         children.append(Child(pr.head, fetch_pull(root, 'origin', pr.number), origin, pr.number))
     opening, opened = open_lanes(root, origin, policy, {pr.head for pr in listed_open})
     lines += opening
-    children += opened
+    children += [Child(branch, sha, origin, number) for branch, sha, number in opened]
     with_pr = {child.branch for child in children}
     children += [Child(b, sha, origin) for b, sha in _lanes(root, policy, load_schedule(root)) if b not in with_pr]
     pulls = [forgeautosync.Open(c.pr, c.branch, c.head) for c in children if c.pr is not None]
@@ -414,7 +327,7 @@ def _noticed(root: Path, child: Child, policy: Policy, said: Feedback, *, number
     if now is not None:
         statuses = status_list(child.client, child.head)
         result = standing(statuses, head=child.head).result
-        committed = int(_git(root, 'show', '-s', '--format=%ct', child.head).strip() or now.timestamp())
+        committed = int(read_git(root, 'show', '-s', '--format=%ct', child.head).strip() or now.timestamp())
         found = forgenotice.kinds(
             statuses, conflicts=said.conflicts, settled=result in {Conclusion.PASS, Conclusion.FAIL},
             age=now - datetime.fromtimestamp(committed, UTC),
@@ -422,7 +335,7 @@ def _noticed(root: Path, child: Child, policy: Policy, said: Feedback, *, number
         )  # fmt: skip
         block = forgenotice.update(
             block, pr=number, branch=child.branch, head=child.head, found=found,
-            sessions=sorted(sessions(root, f'{_TRACKING}{policy.integration}', child.head)),
+            sessions=sorted(sessions(root, f'{TRACKING}{policy.integration}', child.head)),
             green=said.summary == _MERGED or said.state == 'success' or result is Conclusion.PASS, now=now,
         )  # fmt: skip
     rendered = forgenotice.render(block)

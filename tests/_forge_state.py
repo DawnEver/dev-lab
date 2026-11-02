@@ -17,7 +17,8 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, ForgeCallFailed
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 API = '/api/v1/repos/o/r'

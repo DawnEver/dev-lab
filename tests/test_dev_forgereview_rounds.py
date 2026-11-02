@@ -16,7 +16,8 @@ from test_dev_forgereview import JUDGE, FakeCommand, _forge, _tick, _work
 
 from dev_lab.dev._forgebackends import GITEA, GITHUB
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
-from dev_lab.dev.forgereview import RANGE_FIELD, REVIEW_CONTEXT, Review
+from dev_lab.dev.forgereview import REVIEW_CONTEXT
+from dev_lab.dev.forgereview_declared import RANGE_FIELD, Review
 from dev_lab.dev.forgereview_findings import Finding, Findings
 from dev_lab.dev.forgereview_judge import Claim, Identity, Verdict, adjudication_text, claim, upheld
 from dev_lab.dev.forgereview_rounds import (

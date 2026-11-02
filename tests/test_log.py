@@ -63,7 +63,7 @@ class TestEmit:
 class TestEmitOnAConsoleThatCannotCarryTheCharacter:
     """THE CONSOLE DEGRADES; IT DOES NOT KILL THE RUN -- both directions, planted.
 
-    MEASURED 2026-09-18 on consumer-b: a test printed U+2713, ``dev_lab.dev.verify._tee`` handed it
+    MEASURED 2026-09-18 on consumer-b: a test printed U+2713, ``dev_lab.dev.verifysteps._tee`` handed it
     to ``emit``, and a cp1252 stdout -- the Windows DEFAULT whenever nothing overrides it -- raised
     ``UnicodeEncodeError`` out through the verdict runner, which produced an INCONCLUSIVE WITH NO
     LOG. The crash reproduces in four lines, so the fix is controlled in four.

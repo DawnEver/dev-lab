@@ -145,8 +145,8 @@ pull-requests = "read"
 # workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
 # supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
 # whose lock and project are the PR's, and never a module path (forgereview_command.SAFE_PATH). THE TRUST CHAIN:
-# the forge's default branch -> its integration name (forgereview.trusted_integration, F-169e99e6c68c) -> that
-# branch's review declaration (forgereview.review_at) -> the command; a PR into any other base is not reviewed.
+# the forge's default branch -> its integration name (forgereview_declared.trusted_integration, F-169e99e6c68c) -> that
+# branch's review declaration (forgereview_declared.review_at) -> the command; a PR into any other base is not reviewed.
 # The dev_lab door is the shared `door` steps' pinned DEV_LAB_REF.
 ["ci.yml".jobs.review]
 if = "${{ github.event_name == 'pull_request' }}"

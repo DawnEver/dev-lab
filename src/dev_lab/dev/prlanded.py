@@ -30,8 +30,9 @@ from lab_commons.log import emit
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import PRUNED, Alarm
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
-from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import ENV
 
 if TYPE_CHECKING:

@@ -42,7 +42,8 @@ from lab_commons.log import emit
 from dev_lab.dev._forge_journal import Durable, Probe
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import STORAGE, Alarm
-from dev_lab.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import GITHUB, Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
 
 __all__ = [

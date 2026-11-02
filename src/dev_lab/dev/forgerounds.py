@@ -34,12 +34,12 @@ from lab_commons.hpc.needsets import needs_of
 from dev_lab.dev import forgerun, forgerunstate
 from dev_lab.dev.forgealarm import AUTH, Alarm
 from dev_lab.dev.forgeclaim import Work
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgefleet import watch as fleet_watch
 from dev_lab.dev.forgehosts import HostCard, card_host, publish_card
 from dev_lab.dev.forgeproduce import Produced, box_claim
 from dev_lab.dev.forgetick import TickReport, tick
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.forgework import ForgeCallFailed
 
 __all__ = ['Producing', 'Rounds', 'box_now', 'locked_fetch', 'reserve', 'supply_now']
 

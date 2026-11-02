@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev.famtests.reviewcommand import assert_the_review_declares_only_its_difference
-from dev_lab.dev.forgereview import (
+from dev_lab.dev.forgereview_declared import (
     FAMILY_COMMAND,
     FAMILY_MODEL,
     LENS_FIELD,

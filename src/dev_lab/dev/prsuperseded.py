@@ -28,8 +28,9 @@ from lab_commons.log import emit
 
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete
-from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.prlanded import landing
 

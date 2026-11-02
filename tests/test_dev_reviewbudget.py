@@ -14,8 +14,9 @@ from test_dev_forgereview import JUDGE, FakeCommand, _forge, _work
 from test_dev_forgereview_rounds import _doc, _finding, _state
 
 from dev_lab.dev.forgepulls import Marker, comment_upsert
-from dev_lab.dev.forgereview import RANGE_FIELD, Review, review_tick
+from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_claim import CAPPED
+from dev_lab.dev.forgereview_declared import RANGE_FIELD, Review
 from dev_lab.dev.forgereview_dispose import raise_cap
 from dev_lab.dev.forgereview_judge import Identity
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, trusted_bodies

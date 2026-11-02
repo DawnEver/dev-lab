@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from dev_lab.dev import reports, verify
+from dev_lab.dev import reports, verifysteps
 from dev_lab.dev._logdistil import distil
 from dev_lab.dev.serialpass import SERIAL_MARK
 from dev_lab.dev.verdict import Conclusion
@@ -56,9 +56,9 @@ def _ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, marked: bool) ->
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.pytest.ini_options]\naddopts = "--strict-markers"\n', encoding='utf-8'
     )
-    monkeypatch.setattr(verify, 'boxed', _unboxed)
-    monkeypatch.setattr(verify, 'RUFF_STEPS', ())
-    verdict = verify.run_verify(tmp_path, ('tests',), hooks=False)
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    verdict = verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
     return sorted(ledger.read_text(encoding='utf-8').splitlines()), verdict.result.outcome
 
 

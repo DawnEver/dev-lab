@@ -75,8 +75,8 @@ from dev_lab.dev._forgesource import (
 from dev_lab.dev._testfacts_readers import mark_names
 from dev_lab.dev.family import declared_in
 from dev_lab.dev.forge import _GIT
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelabels import add_label
-from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import ProducerExit, release_reason
 from dev_lab.dev.treedirt import status_paths

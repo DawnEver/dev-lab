@@ -496,7 +496,8 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     TRIGGERED BY ``pull_request_target`` ALONE (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a
     ``pull_request`` workflow from the PR head, which could rewrite it to post success or print the key; the
     ``pull_request_target`` workflow is the BASE's. Safe only because the job acts on nothing the head declares:
-    the diff is data, the review declaration is the base's (``forgereview.review_at``, F-46e412ee799d) and the tools
+    the diff is data, the review declaration is the base's (``forgereview_declared.review_at``, F-46e412ee799d) and the
+    tools
     are pinned by SHA (:func:`test_the_review_job_runs_no_code_the_pr_supplies`).
     PLANTED CONTROL: GitHub's ci.yml never takes it.
     """
@@ -615,7 +616,9 @@ def test_the_gitea_review_declares_one_permissions_block(tmp_path: Path) -> None
 
 
 def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None:
-    """The review reads the head through git and only ``pyproject.toml`` from the tree (``forgereview.load_review``).
+    """The review reads the head through git and only ``pyproject.toml`` from the tree.
+
+    (``forgereview_declared.load_review``).
 
     Measured 2026-11-01, consumer #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
     the head tree -- a ``pack-objects`` on the 1.6 GB forge host running 10+ minutes at 314 MiB. A cone sparse

@@ -22,7 +22,7 @@ already pushed posts at once), ``python -m dev_lab.dev.forge publish`` after a p
 
 A POST THAT WAS ATTEMPTED AND FAILED RAISES (:class:`PostFailed`, naming its remedy) after every other
 entry was tried; the failed entry stays queued -- unless the forge refused it FINALLY
-(:attr:`~dev_lab.dev.forgework.ForgeCallFailed.final`, the one rule for every outbox path): that entry is
+(:attr:`~dev_lab.dev.forgefailure.ForgeCallFailed.final`, the one rule for every outbox path): that entry is
 dropped and named once, since a definitive 4xx replayed every tick never lands.
 A post that could not be attempted -- no credential
 or no ``origin`` on this box -- is reported and kept, never raised: the box simply does not publish.
@@ -65,9 +65,10 @@ from dev_lab.dev.forge import (
     on_origin,
 )
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import attach
 from dev_lab.dev.forgestatus import STATES, CommitStatus, status_history, status_post
-from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [

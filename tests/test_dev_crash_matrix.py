@@ -25,13 +25,14 @@ from test_dev_forgeintent import _Forge, _reattach
 from test_dev_forgerun import SHA as RUN_SHA
 from test_dev_forgerun import _CrashAtSbatch, _Slurm, _start, _Store, _tick
 
-from dev_lab.dev import forgeintent, forgerun, forgerunstate
+from dev_lab.dev import forgeintent, forgerun, forgerunstate, forgesupersede
 from dev_lab.dev._forge_journal import Journal, journal_for
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import DONE, OPEN, Claim, assess
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush, queued, replay
 from dev_lab.dev.forgestatus import CommitStatus, status_post
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.producer import ProducerExit, release_reason
 
 FORGE = Forge('forge.example.org', 'o', 'r')
@@ -215,7 +216,8 @@ def test_login_node_restart_resumes_the_cluster_run_without_a_human(tmp_path: Pa
     monkeypatch.setattr(forgerun, 'pyproject_at', lambda _root, _sha: '')
     monkeypatch.setattr(forgerun, 'route', lambda *_a: ())
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: RUN_SHA)  # the ref has not moved on
-    monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: True)
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, _ref: RUN_SHA)  # the ref has not moved on
+    monkeypatch.setattr(forgesupersede, 'coalesced', lambda _root, _ref: True)
     store, crashing = _Store(), _CrashAtSbatch(tmp_path / 'r')
     _start(tmp_path, store)
     with pytest.raises(ConnectionResetError):

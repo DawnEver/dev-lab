@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgemerge import ready
 from dev_lab.dev.forgepulls import Marker, comment_upsert, pr_list
-from dev_lab.dev.forgereview import Review, judge_for
+from dev_lab.dev.forgereview_declared import Review, judge_for
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, adjudicate, claim, upheld
 from dev_lab.dev.forgereview_rounds import DISPOSE_DOOR, blocking, ledger_of, trusted_bodies, verdict
 from dev_lab.dev.forgereview_scope import landed_base

@@ -61,10 +61,11 @@ from lab_commons.log import emit
 from dev_lab.dev.branchset import declared_branchset
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING, waiting
-from dev_lab.dev.forgereview import load_review
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import GITHUB, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import GITHUB, client_for
 from dev_lab.dev.githooks import PYTHON_ENV, bash_executable, hook_path
 from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy

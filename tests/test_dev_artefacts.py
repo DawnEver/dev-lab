@@ -29,7 +29,8 @@ from dev_lab.dev.artefacts import (
     RcloneStore,
     Ref,
 )
-from dev_lab.dev.forgework import GITEA, Client, ForgeCallFailed
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import GITEA, Client
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 SHA = 'a' * 40

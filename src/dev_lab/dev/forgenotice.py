@@ -232,11 +232,12 @@ def main(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     """``forge notices``: print the open notices; exit 0 when none, 1 when some, 2 when the forge fails."""
+    from dev_lab.dev.forgefailure import ForgeCallFailed  # noqa: PLC0415
     from dev_lab.dev.forgereview_dispose import blocked  # noqa: PLC0415
     from dev_lab.dev.forgereview_dispose import line as blocked_line  # noqa: PLC0415
     from dev_lab.dev.forgetakeover import held  # noqa: PLC0415
     from dev_lab.dev.forgetakeover import line as held_line  # noqa: PLC0415
-    from dev_lab.dev.forgework import ForgeCallFailed, client_for  # noqa: PLC0415
+    from dev_lab.dev.forgework import client_for  # noqa: PLC0415
     from dev_lab.dev.lanepolicy import load_policy  # noqa: PLC0415
 
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
