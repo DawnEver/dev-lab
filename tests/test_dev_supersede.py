@@ -347,6 +347,16 @@ def test_the_registry_is_two_sided_over_planted_modules() -> None:
     assert 'not one of' in undeclared_modules(modules, {'checkout': ('moved',)})[0]
 
 
+def test_an_original_name_reads_as_an_original_row_and_a_name_in_both_files_is_refused(tmp_path: Path) -> None:
+    """The ``original`` half lives in its own file as bare names; one module may not be declared both ways."""
+    (tmp_path / '_provenance_rows.py').write_text(_ROWS.format(kind='supersedes'), encoding='utf-8')
+    (tmp_path / '_original_rows.py').write_text("ORIGINAL_MODULES = ('forge',)\n", encoding='utf-8')
+    assert provenance_rows(tmp_path) == {'checkout': ('supersedes', 'scripts/repo/debris.py'), 'forge': ('original',)}
+    (tmp_path / '_original_rows.py').write_text("ORIGINAL_MODULES = ('checkout',)\n", encoding='utf-8')
+    with pytest.raises(ValueError, match='checkout'):
+        provenance_rows(tmp_path)
+
+
 def test_every_published_kit_module_declares_its_provenance() -> None:
     """THE RATCHET, live. A module that forgets to say what it replaced is itself the red now.
 

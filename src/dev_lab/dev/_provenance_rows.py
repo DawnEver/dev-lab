@@ -1,10 +1,11 @@
-"""WHAT EACH PUBLISHED `dev_lab.dev` MODULE REPLACED, or did not -- DATA, one row per module.
+"""WHAT EACH PUBLISHED `dev_lab.dev` MODULE REPLACED -- DATA, one row per module that makes a claim.
 
 READ AS SOURCE by `dev_lab.dev._provenance.provenance_rows`, never imported, so every value here
 is a literal. `undeclared_modules` is the mechanism that makes this file a ratchet rather than a
 habit: a published module with no row reds, and a row naming no module reds too.
 
-THREE KINDS, AND ONLY THE FIRST IS A PROVENANCE CLAIM.
+THREE KINDS, AND ONLY THE FIRST IS A PROVENANCE CLAIM. The first two live here; the third is a
+bare name in `_original_rows.py`, because it claims nothing about any consumer file.
 
 * `supersedes` -- this module replaced those consumer files, whole or in part. This is the only kind
   the census's PROVENANCE detector reads.
@@ -29,15 +30,6 @@ from typing import Final
 __all__ = ['PROVENANCE']
 
 PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
-    'ab_bench': ('original',),
-    'producer': ('original',),
-    'envseat': ('original',),
-    'verifybox': ('original',),
-    'agent_guard': ('original',),
-    # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
-    # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
-    # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.
-    'allow_adoption': ('original',),
     # THE TWO ROWS THE `__init__`-ONLY BLINDNESS HID, added 2026-09-18 in the commit that closed it.
     # Neither is new; both were published, imported and unreadable to the ratchet, because
     # `_published` drops any path with a private part and `__init__.py` has one. A guard that cannot
@@ -64,22 +56,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'scripts/gate/wall_reason.py',
         'scripts/gate/width.py',
     ),
-    'inflight': ('original',),
-    'runcache': ('original',),
-    'forgeserve': ('original',),
-    'forgeproduce': ('original',),
-    'forgecarry': ('original',),
-    'footprint': ('original',),
-    'localpart': ('original',),
-    'workstationverdict': ('original',),
-    'verdictstore': ('original',),
-    'workstationrevoke': ('original',),
-    'lockpins': ('original',),
-    'lockwait': ('original',),
-    'test_outcomes': ('original',),
-    'serialpass': ('original',),
-    'lanepolicy': ('original',),
-    'platformparts': ('original',),
     'bypath': ('supersedes', 'scripts/gate/_by_path.py'),
     'checkout': (
         'supersedes',
@@ -87,8 +63,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'scripts/lanes/session_branches.py',
         'scripts/repo/worktree_debris.py',
     ),
-    'cjk': ('original',),
-    'content': ('original',),
     'codeplace': ('supersedes', 'tests/architecture/repo/test_code_lives_only_where_code_belongs.py'),
     'scratch': (
         'supersedes',
@@ -97,18 +71,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     ),
     'datedlog': ('supersedes', 'scripts/gate/_dated.py'),
     'dep': ('supersedes', 'scripts/gate/native_install.py'),
-    # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism
-    # is new to the family -- and the two rows that LOOK like candidates are not: `netverb` is the
-    # retry wrapper these transports CALL, and `installdoor` asks whether an install delivers a
-    # declared build, where this asks whether the resolved build is the CURRENT one. Two subjects, no
-    # shared file, so there is no fork to name.
-    'dep_observe': ('original',),
-    'depversions': ('original',),
-    'devdocs': ('original',),
     # THREE implementations existed -- consumer-a `scripts/repo/docs.py`, consumer-b `scripts/docs.py`,
     # consumer-c `scripts/pdoc`. The table stayed with each repo, so this is adoption, not a move.
     'docsite': ('adopted_by', 'scripts/repo/docs.py'),
-    'docwidth': ('original',),
     # SUPERSEDES consumer-b's `scripts/durations.py`, which is the LEDGER half and nothing else -- the
     # verdict taken on it stays in that repo's `test_slow_is_discovered_by_the_wall.py`, which is
     # therefore NOT named here: it holds `WALL_SECONDS`, `SLOW_BAR`, `FAST_CEILING`, the ledger floor
@@ -117,174 +82,23 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # file and an adoption of nothing: the consumer deletes its `scripts/durations.py` and keeps its
     # own bars. Checked before writing: that path is live in consumer-b today.
     'durations': ('supersedes', 'scripts/durations.py'),
-    'famconfig': ('original',),
     # The floor refusal was written EIGHT times across this family and no two copies agreed -- four
     # standalone bodies raising four different exception types, three of them here in `src/`; three
     # more inlined at the top of a larger arm; and consumer-b's `bind_floor`. TWO of the four are both
     # named `VacuousScan` over DIFFERENT base classes, in this one repo. The consumer path named is
     # the one that PUBLISHED the helper; consumer-c's EIGHT inline copies have no path to name.
     'floors': ('supersedes', 'tests/architecture/_corpus.py'),
-    # See the module docstring above: declared original against a measured 2-name overlap.
-    'forge': ('original',),
-    # No consumer had issue/PR verbs or a token installer to fork: each box ran ``gh``/``tea`` or a
-    # browser. Checked 2026-10-01 against every consumer's tracked files.
-    'forgeauth': ('original',),
-    'forgecli': ('original',),
-    'forgecred': ('original',),
-    'forgework': ('original',),
-    'forgestatus': ('original',),
-    'forgeoutbox': ('original',),
-    'forgelabels': ('original',),
-    'forgepublish': ('original',),
-    'forgeintent': ('original',),
-    'forgenotice': ('original',),
-    'forgetry': ('original',),
-    'forgewait': ('original',),
-    'branchnotices': ('original',),
-    'lockcheck': ('original',),
-    'relock': ('original',),
-    'forgerecords': ('original',),
-    'forgetick': ('original',),
-    'forgeautosync': ('original',),
-    'forgeintegration': ('original',),
-    'forgemerge': ('original',),
-    'forgereview': ('original',),
-    'forgereview_findings': ('original',),
-    # ORIGINAL: the review read the whole diff or nothing; the slice budget and lenses are new here.
-    'forgereview_command': ('original',),
-    'forgereview_scope': ('original',),
-    'forgereview_runtimes': ('original',),
-    'integrate': ('original',),
-    'forgepulls': ('original',),
-    'forgesync': ('original',),
-    'trialmerge': ('original',),
-    'labsession': ('original',),
-    'pradmit': ('original',),
-    'forgerun': ('original',),
-    'forgerunpost': ('original',),
-    'forgerunstate': ('original',),
-    'components': ('original',),
-    'componentbump': ('original',),
-    'shatree': ('original',),
-    'forgeclaim': ('original',),
-    'forgeschedule': ('original',),
-    'forgequeue': ('original',),
-    'forgehosts': ('original',),
-    'forgepoller': ('original',),
-    'forgesettled': ('original',),
-    'forgeprovides': ('original',),
-    'forgetidy': ('original',),
-    'branchprune': ('original',),
-    'branchdelete': ('original',),
-    'forgereview_claim': ('original',),
-    'partrows': ('original',),
-    'forgeoom': ('original',),
-    'forgeslurm': ('original',),
-    'forgeship': ('original',),
-    'artefacts': ('original',),
-    'artefactstores': ('original',),
-    'selection': ('original',),
-    'forgealarm': ('original',),
-    'forgefleet': ('original',),
-    # ORIGINAL: split out of forgetick/forgeserve inside the kit; no consumer held them.
-    'forgetake': ('original',),
-    'forgerounds': ('original',),
-    'forgecoalesce': ('original',),
-    'forgeservesteps': ('original',),
-    'forgeunit': ('original',),
-    'forgeorigin': ('original',),
-    'breakglass': ('original',),
-    'forgerequest': ('original',),
-    'retention': ('original',),
-    'retentionplan': ('original',),
-    'diskusage': ('original',),
-    # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
-    'pushgate': ('original',),
-    # ORIGINAL: shared demand derived from the forge's run records; no consumer read them (D4).
-    'forgedemand': ('original',),
-    'forgeissue': ('original',),
-    'forgeroute': ('original',),
-    # ORIGINAL: both are forge mechanisms of 2026-10-22 with no consumer file before them.
-    'forgescarce': ('original',),
-    'prlanded': ('original',),
-    'issueref': ('original',),
-    # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
-    'integrator': ('original',),
-    # ORIGINAL: a consumer's primary-checkout hook guarded the other direction only.
-    'sessionbranch': ('original',),
-    # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
-    'mergeaudit': ('original',),
-    # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).
-    'mergeresolution': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
     'hook_adoption': ('supersedes', 'scripts/repo/write_deny_rules.py'),
     'hook_install': ('supersedes', 'scripts/repo/_hooks.py'),
-    # ORIGINAL: the principles lived only as ai-lab reviewer data and one private CLAUDE.md; no repo rendered them.
-    'principles': ('original',),
-    'principlespage': ('original',),
-    # `scripts/hooks/with-retry.sh` is a REMEDY that resolves in one checkout on earth, which is why
-    # `hooks` holds the statements and `hook_adoption` holds the pointer. Neither replaced it.
-    'hooks': ('original',),
-    # ORIGINAL rather than superseding `installdoor`, and the distinction is the whole row: it
-    # asks whether one COMMAND delivers the declared build, this asks whether a repo's DOOR SET was
-    # ever looked at and is still what was measured. Nothing anywhere in the family answered the
-    # second -- three consumers adopted `installdoor` with three differently-shaped door sets and no
-    # tree could see the other two. There is no path to name because there was no prior mechanism.
-    'doorcensus': ('original',),
-    # ORIGINAL, and the row is worth its comment because the thing it measures is THIS package. No
-    # prior mechanism asked whether the LEAF carries a consumer's data: the README's tier-1 rule and
-    # `.claude/rules/statement-and-mechanism.md` both stated it, both were read on every turn, and
-    # the `dev` layer absorbed 38 executable values, 153 unresolvable paths and 181 prose mentions
-    # anyway. There is no path to name because prose was the only prior mechanism, and it lost.
-    'foreign': ('original',),
-    'installdoor': ('original',),
-    'logref': ('original',),
     # Both named by `netverb`'s docstring as the vacuum it closes, and both ADOPTED it on 2026-09-17
     # while staying: consumer-b's roster carries one as SPLITS and the other as STAYS.
     'netverb': ('adopted_by', 'scripts/pull_all.py', 'scripts/consumer-b-update.sh'),
-    # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
-    'branchset': ('original',),
-    'family': ('original',),
-    # ORIGINAL: one parse of git's pre-push refspec lines for every pre-push row.
-    'refspec': ('original',),
-    # ORIGINAL: the lock PIN moved from a pre-push row into the repo's own forge-judged suite (2026-10-24).
-    'lockpin': ('original',),
-    # ORIGINAL: lock freshness and branch set as forge statuses on a PR head (2026-10-24).
-    'forgeheadgate': ('original',),
-    # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
-    'autodoors': ('original',),
-    # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
-    'disclosure': ('original',),
-    'injectedtext': ('original',),
-    # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
-    'stoprun': ('original',),
-    # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
-    'handback': ('original',),
-    'servelanes': ('original',),
-    'servelock': ('original',),
-    'servetask': ('original',),
-    'workstation': ('original',),
-    'workstationfile': ('original',),
-    # ORIGINAL: user ruling 2026-10-30, a resource a repo produces no part for.
-    'unproduced': ('original',),
-    'hostrefresh': ('original',),
-    # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
-    'worktrees': ('original',),
-    # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
-    'reclaim': ('original',),
-    'reclaimrun': ('original',),
-    # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
-    # consumer held a copy, which is why each published one had no guard at all.
-    'privatemarkers': ('original',),
-    'profile': ('original',),
-    'quantity_values': ('original',),
     # `supersedes` AND NOT `adopted_by`, and the distinction is load-bearing here: the whole of
     # `_transcript.py` except its `[census]` grammar is on this page, so the consumer file is meant
     # to SHRINK to that grammar rather than to delegate and stay. It cannot do either until a
     # release carrying this module reaches that repo -- the row is the claim, not the landing.
     'pytestout': ('supersedes', 'scripts/gate/_transcript.py'),
-    'reports': ('original',),
-    'reportplace': ('original',),
     # ADOPTED_BY, AND NOT `supersedes`, BECAUSE BOTH FILES STAY AND BOTH DELEGATE: the reader half of
     # `tests/_config_census.py` moved here under a spelling-complete table, leaving that file its
     # placement machinery, and `tests/test_a_waiver_wider_than_an_ignore_is_declared.py` kept its
@@ -296,24 +110,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'tests/_config_census.py',
         'tests/test_a_waiver_wider_than_an_ignore_is_declared.py',
     ),
-    'rules': ('original',),
     'seams': ('supersedes', 'scripts/gate/seam_install.py'),
     'selfbuild': ('supersedes', 'scripts/gate/native_install.py'),
     'shadow_build': ('supersedes', 'scripts/gate/native_ab.py'),
     'shards': ('supersedes', 'scripts/gate/_shards.py'),
-    'supersede': ('original',),
     'symcov': ('supersedes', 'scripts/repo/_symbol_coverage.py'),
-    # ORIGINAL rather than superseding consumer-a' `scripts/gate/dep_sync.py`, and the distinction is
-    # the pair's whole point. That script MUTATES an environment and reports what it removed
-    # AFTERWARDS; these two never touch one and answer BEFOREHAND, from command text joined to a
-    # manifest. Nothing in the family answered "which extras survive" -- `_doorcensus_rows` names it
-    # as an ABSENT mechanism rather than implying coverage -- so there is no prior code to name.
-    # The TEST-TREE half of the same question, and the one `syncscope`'s docstring names as
-    # unmeasurable from a manifest. No prior code in any repo read a test tree for its imports:
-    # `testfacts` reads marks and timeouts from the same AST and never an import.
-    'collectscope': ('original',),
-    'synccensus': ('original',),
-    'syncscope': ('original',),
     # THE CENSUS OVER `collectscope`, AND IT IS A RENAME RATHER THAN A CARVING: git records
     # `R052 tests/_collect_census.py -> src/dev_lab/dev/collectcensus.py` in the commit that made
     # this repo stop holding consumers' rows, and the path named here no longer exists. The file that
@@ -328,9 +129,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # population half `collect` and `census` already own; what moved is the reading.
     'testfacts': ('supersedes', 'tests/architecture/ratchets/test_no_test_asserts_only_is_not_none.py'),
     'treedirt': ('supersedes', 'scripts/gate/tree_state.py'),
-    'unit_slices': ('original',),
-    'units': ('original',),
-    'verdict': ('original',),
     # `scripts/gate/runner.py` is the tree this was CARVED FROM and it stayed: it shares 0 of its 51
     # names with this module. Naming it `supersedes` is the mistake this kind exists to refuse.
     'verify': ('adopted_by', 'scripts/gate/runner.py'),
@@ -339,7 +137,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     #    has not adopted the body yet imports nothing from the kit at all.
     'agentguard': ('supersedes', 'tests/architecture/test_the_agent_guard_is_live.py'),
     'allowguard': ('supersedes', 'tests/architecture/test_no_allow_entry_names_a_denied_shape.py'),
-    'remedypaths': ('original',),
     # THREE consumer files under THREE names, and the third is this repo's own -- a kit guard is a
     # consumer of the kit like any other. They do not agree on the BAR: `test_arch_every_approx...`
     # requires `abs=` unconditionally, the other two only under a stated `rel=`, and the two convict
@@ -377,11 +174,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # orphan every entry. Also NOT `famtests.rulespages`: that pins how many LINES a page has and
     # sums the pins; this caps how long a line IS. One page measured 32 lines at 694 columns.
     'injectedwidth': ('supersedes', 'tests/architecture/test_injected_doc_width_ceiling.py'),
-    # ORIGINAL, for `dep_observe`'s reason read the other way round: this is the VERDICT half whose
-    # readings are `depversions`'s, so the consumer file it would supersede is the one this lane
-    # EXISTS to write next -- a per-repo copy of `test_dependencies_take_the_latest.py` that reads a
-    # different question today (a ceiling in the declaration, not a frozen resolution).
-    'latestversions': ('original',),
     # TWO consumers in TWO LANGUAGES and they do not agree on the policy: consumer-b BANS the bound with
     # an exemption set it asserts is empty, consumer-a requires it to be DECLARED with its reason
     # because two of its crates are ABI-coupled and unbounding either alone produces a pairing that
@@ -414,39 +206,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # return a pinnable set before anything runs), and only one of them reads a population and so
     # needs a floor. The argument is in the module, because it is a fact about the scanner.
     'untimedwaits': ('supersedes', 'tests/architecture/gate/test_no_untimed_subprocess.py'),
-    # THE OTHER HALF OF THAT PAIR, and the boundary was settled by measurement rather than by taste.
-    # NOT inside `untimedwaits`, which is the SCAN: that one imports `ast`, takes a `Path`, returns a
-    # pinnable SET, refuses BEFORE anything runs and needs a floor. This imports `subprocess`/`time`/
-    # `os`, SPAWNS A REAL PROCESS TREE, asserts on ELAPSED TIME, refuses ONE LIVE WAIT and needs no
-    # floor -- it has a calibration instead. Measured 2026-09-18: the overlap between the two
-    # surfaces is EMPTY. NOT on `dev.bounded` either: 293 lines plus this body lands past the 400
-    # band, and `famtests` is where a body a CONSUMER'S architecture test is judged by lives.
-    # `untimedwaits`' own docstring already pointed at `bounded.wall_reason` for the sized-ceiling
-    # claim; the pointer existed and the module it should have pointed at did not. The readings half,
-    # `famtests/_boundedremedy_readings.py`, is private and has no row.
-    'boxneeds': ('original',),
-    # ORIGINAL: no consumer file asserted onboarding as one statement; the five repos each failed on a
-    # different missing piece (2026-10-20), so there was no local copy for this body to supersede.
-    'onboarding': ('original',),
-    # ORIGINAL: no consumer file refused a platform skip; the need arose when an OS became a resource a host
-    # supplies by itself (2026-10-21) and a skipped Windows path was found to run on no host at all.
-    'platformskips': ('original',),
-    # ORIGINAL: no consumer file refused a host Node; the need arose when the cluster verdict host was ruled
-    # Node-free (2026-10-28) and a downstream repo's review JS tests were found to call shutil.which('node').
-    'hostnode': ('original',),
     'boundedremedy': ('supersedes', 'tests/architecture/test_a_bounded_wait_names_its_remedy.py'),
-    # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
-    # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was
-    # driven on an absent tier word and passed in all three repos on 2026-09-18.
-    # NOT inside `untimedwaits`, whose walk shape it shares: that one reads CALLS and asks whether a
-    # wait declares a ceiling; this reads DATA FLOW inside one body and asks whether an assertion can
-    # fail at all. Measured the same day, the two surfaces share `take_scan` and nothing else, and
-    # one is entirely about `subprocess` while the other never mentions it. NOT inside `citedtests`
-    # either, the nearest neighbour BY SUBJECT -- a declaration that lies -- which reads PROSE
-    # against the whole tree where this cannot see across a single function boundary.
-    'echoedtoken': ('original',),
-    # ORIGINAL in the kit: refuses consumer-local push-admission copies once `admission` exists.
-    'localadmission': ('original',),
     # FOUR consumer rosters, not three: consumer-a holds TWO, one for `scripts/` and one for
     # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
     # exclude each other's value. That is why the bars are arguments here and not constants, and why
@@ -488,18 +248,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'tests/architecture/layering/test_migration_boundary_density.py',
     ),
     'rostercensus': ('supersedes', 'tests/architecture/test_the_roster_is_re_read_against_the_kit.py'),
-    # ORIGINAL, and it is the only kind it could honestly be: no consumer file asks this question, and
-    # the absence is the finding rather than a gap in the search. All four placement rosters STORE the
-    # density reading that decided each row in that row's `why` prose, all four re-derive that reading
-    # elsewhere, and not one compares the two -- so a number goes stale silently and the roster, which
-    # is the family's migration progress meter, over-states the work left. Measured 2026-09-19 with
-    # this module pointed at them: 210 stored readings across 96 rows disagree with re-deriving them,
-    # in four repos that were all green. NOT `placement`, which reads the manifest's KEYS against a
-    # walk and bounds two bars against readings PASSED to it -- it never opens a row's prose. NOT
-    # `rostercensus` either, which reads a row's SIDE against the published kit and is blind to the
-    # numbers under it. NOT `density`, which is the METER: it computes a reading and judges nothing,
-    # and this judges a SENTENCE against whatever meter the consumer supplies.
-    'storedreadings': ('original',),
     'rulespages': (
         'supersedes',
         'tests/architecture/test_the_rules_pages_are_a_ratchet.py',
@@ -520,68 +268,4 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # before writing: `tests/architecture/test_a_pin_is_a_named_set.py` is live in consumer-c today,
     # and it is that repo's last open roster row.
     'countpins': ('supersedes', 'tests/architecture/test_a_pin_is_a_named_set.py'),
-    'venvspelling': ('original',),
-    # ORIGINAL: no consumer holds a guard it would supersede; it refuses their re-declared settings.
-    'sharedsettings': ('original',),
-    # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
-    # not a forked file.
-    'venvpath': ('original',),
-    # ORIGINAL: no consumer file ran JS on a declared engine; every JS test called `shutil.which('node')` until the
-    # Node-free cluster verdict host (2026-10-28) made that host dependency red.
-    'jsrun': ('original',),
-    'worktreeplace': ('original',),
-    'ephemeralrefs': ('original',),
-    'famfiles': ('original',),
-    # ORIGINAL: an audit (2026-10-21) found consumer pages restating registry rules, and no consumer
-    # file refused the copy -- there is nothing to supersede.
-    'restatedrules': ('original',),
-    # ORIGINAL: SPLIT-BY-CONCEPT was prose until this body; no consumer guard read module names.
-    'sizesplits': ('original',),
-    # -- `dev_lab.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
-    'table': ('original',),
-    'runner': ('original',),
-    'filechecks': ('original',),
-    'ciworkflows': ('original',),
-    # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
-    # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
-    'account': ('original',),
-    'allocate': ('original',),
-    'checks': ('original',),
-    'deploy': ('original',),
-    'fleet': ('original',),
-    'spec': ('original',),
-    'steps': ('original',),
-    'tick': ('original',),
-    # ORIGINAL: new mechanisms no consumer held a file for.
-    'automode': ('original',),
-    'forgestuck': ('original',),
-    'forgewatch': ('original',),
-    'jobparts': ('original',),
-    'pushwatch': ('original',),
-    'liverun': ('original',),
-    'metrics': ('original',),
-    'monthsummary': ('original',),
-    'prsuperseded': ('original',),
-    'worktree_archive': ('original',),
-    # ORIGINAL: the forge's review/security gate, new here; and the in-kit splits of `metrics` and
-    # `forge` (a split of a kit module supersedes no CONSUMER file, so it inherits the parent's kind).
-    'forgecontexts': ('original',),
-    'forgereview_dispose': ('original',),
-    'forgereview_rounds': ('original',),
-    'forgesecurity': ('original',),
-    'forgetakeover': ('original',),
-    'metrics_compute': ('original',),
-    'metrics_report': ('original',),
-    'reviewcommand': ('original',),
-    'reviewbudget': ('original',),  # the review's round and dollar caps, new here
-    'commandpart': ('original',),  # a non-pytest repo's one command part, new here
-    'forgeaffinity': ('original',),  # HPC account affinity of verify parts, new here
-    'forgereview_judge': ('original',),  # independent re-judging and claim adjudication, new here
-    'forgerunshow': ('original',),  # a cluster run's findings published on the forge, new here
-    'memoryadds': ('original',),  # memory is added to, never edited, new here
-    'remconfig': ('original',),  # the family's rem.json, new here
-    'reviewgate': ('original',),  # the one reviewed-head predicate, new here
-    'reviewgitauth': ('original',),  # the review door's file-held tokens, new here
-    'reviewpolicy': ('original',),  # the review policy exported for every trigger, new here
-    'security': ('original',),
 }
