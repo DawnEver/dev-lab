@@ -63,12 +63,12 @@ from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
 from lab_commons.resources import Engine
 
+from dev_lab.dev import hpcusage
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
 from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_items
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
-from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from dev_lab.dev.forgestuck import parse_duration, remote_path
 from dev_lab.dev.slurmkilled import KILLED_FIELDS, killed_jobs
 
@@ -379,7 +379,8 @@ class SlurmCluster:
             'storage': storage_text(usage),
             'untagged': sum(s.usage[''].tasks for s, _ in read if '' in s.usage),  # hpc.slurm.stream_of
         }
-        return Standing(supply, parse_usage(shell(USAGE_COMMAND, None)), facts)
+        day = hpcusage.parse(shell(hpcusage.COMMAND, None))  # the ONE sacct read: the budget's and the card's
+        return Standing(supply, day.per_run(), {**facts, 'usage': day.summary()})
 
     @property
     def scope(self) -> str:
