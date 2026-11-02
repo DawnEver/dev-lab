@@ -13,9 +13,9 @@ from datetime import UTC, datetime
 from dev_lab.supervise.component import CheckContext, Component
 from dev_lab.supervise.components.resources import psutil_module
 from dev_lab.supervise.hostalarms import AGENTS, SUPERVISE, memo, notice, record, rows
-from dev_lab.supervise.notice import host_label, markdown
+from dev_lab.supervise.notice import headline, host_label
 from dev_lab.supervise.pressure import THRESHOLDS, Declared, measure
-from dev_lab.supervise.verdict import Anomaly, CheckResult, Severity
+from dev_lab.supervise.verdict import Anomaly, CheckResult
 
 __all__ = ['HostPressure']
 
@@ -55,12 +55,14 @@ class HostPressure(Component):
         for kind, alarm in mine.items():
             if alarm.get('source') != SUPERVISE:
                 continue  # the forge tick's rows are sounded by the tick
+            told = notice(alarm, host=host, owner=owner)
             result.anomalies.append(
                 Anomaly(
                     kind=f'pressure_{kind}',
-                    severity=Severity.CRITICAL if alarm['severity'] == 'critical' else Severity.WARNING,
-                    message=markdown(notice(alarm, host=host, owner=owner)),
+                    severity=told.severity,
+                    message=headline(told),
                     signature=f'pressure:{kind}',
+                    notice=told,
                 )
             )
         return result

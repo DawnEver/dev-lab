@@ -232,7 +232,7 @@ def test_the_hook_is_wired_after_shell_calls_and_on_each_prompt() -> None:
 
 
 def test_supervision_convicts_and_records_only_its_own_alarm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The component writes the state the hook reads; its anomaly is that state's text; the tick's rows are not its."""
+    """The component writes the state the hook reads; its anomaly carries the notice; the tick's are not its."""
     _pressed(source=hostalarms.FORGE)
     monkeypatch.setattr(component, 'measure', lambda *_a, **_k: CGROUP)
     ctx = CheckContext(
@@ -241,7 +241,8 @@ def test_supervision_convicts_and_records_only_its_own_alarm(monkeypatch: pytest
     (anomaly,) = HostPressure().check(ctx).anomalies
     assert anomaly.signature == 'pressure:cgroup:gitea-runner.service:high'
     state = hostalarms.read()
-    assert anomaly.message == hostalarms.lines(state, {'cgroup:gitea-runner.service:high'})[0]
+    assert anomaly.notice is not None
+    assert markdown(anomaly.notice) == hostalarms.lines(state, {'cgroup:gitea-runner.service:high'})[0]
 
 
 class _Held:
