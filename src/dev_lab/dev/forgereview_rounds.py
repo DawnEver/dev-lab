@@ -9,9 +9,12 @@ head's findings comment (a hidden ``review-ledger`` line); the next round starts
   reviews the whole branch change and also carries a :func:`context_summary` -- what changed, which layers, and
   the WHY cited from each of :data:`SUMMARY_CITES` in order -- the team's shared context.
 * ROUND k > 1 reviews only what the branch added since its last reviewed head
-  (:func:`dev_lab.dev.forgereview_scope.own_base`) and RE-JUDGES every open finding against the new head
+  (:func:`dev_lab.dev.forgereview_scope.own_base`) and RE-JUDGES each open finding that is blocking or claimed and
+  whose file the increment changed (:func:`changed`) against the new head
   (:func:`dev_lab.dev.forgereview_judge.judge`, user ruling 2026-10-31): ``fixed`` or ``false-positive`` CLOSES
-  it with the judge's evidence recorded, ``present`` keeps it -- the text is never merely carried over. NO MOVING
+  it with the judge's evidence recorded, ``present`` keeps it. Every other open finding carries forward unchanged
+  with its state (review spend 2026-11-03: an untouched file fixes nothing, a non-blocking finding gates nothing,
+  and a claim on an untouched file is the adjudication door's). NO MOVING
   GOALPOSTS: a new finding below ``HIGH`` whose
   anchor is not a line the round added is dropped -- a later round may not raise a non-HIGH finding on a line
   the earlier rounds already read.
@@ -72,6 +75,7 @@ __all__ = [
     'Ledger',
     'advance',
     'blocking',
+    'changed',
     'context_summary',
     'ledger_of',
     'post_round',
@@ -375,6 +379,25 @@ def render(
     return '\n\n'.join(parts)
 
 
+def changed(root: Path, reviewed: str) -> frozenset[str]:
+    """The paths the range *reviewed* changes (a rename as both its paths): what a round's increment touched."""
+    _, text = git(root, 'diff', '--no-renames', '--name-only', reviewed)
+    return frozenset(line for line in text.splitlines() if line)
+
+
+def _rejudged(prior: Ledger, touched: frozenset[str], asked: Mapping[str, object], own: Iterable[str]) -> list[Finding]:
+    """The prior open findings a round re-judges: blocking or claimed (*asked*), on a *touched* file, not *own*.
+
+    Every other finding CARRIES FORWARD unchanged with its state: an untouched file cannot have fixed it, a
+    non-blocking one gates nothing, and a claim on an untouched file is ruled by the adjudication door
+    (:mod:`dev_lab.dev.forgereview_dispose`). Review spend 2026-11-03: 77% of re-judgements were on untouched
+    files and 81% on non-blocking findings.
+    """
+    mine = set(own)
+    return [one for one in prior.open
+            if one.id not in mine and one.file in touched and (one.blocking or one.id in asked)]  # fmt: skip
+
+
 def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings, max_rounds: int,
     judged: Judge, reviewer: Identity, authors: frozenset[str], by: str = 'review', outside: int = 0,
@@ -382,10 +405,10 @@ def post_round(
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment and :data:`REVIEW_CONTEXT`; the line said.
 
-    *judged* re-judges the prior open findings, each with its
-    pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and may not
-    be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the changed
-    files that are not code, said in the comment. *authored* is the author's trailer dispositions.
+    *judged* re-judges the prior open findings that are blocking or claimed and on a file *reviewed* changed, each
+    with its pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and
+    may not be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the
+    changed files that are not code, said in the comment. *authored* is the author's trailer dispositions.
 
     Only the forge posts a round (:func:`ruling`) and moves :data:`REVIEW_CONTEXT`; its round releases a pending
     hold. An *emergency* round (the takeover door) is ADVISORY (D11): its comment says so, it posts no status,
@@ -401,7 +424,7 @@ def post_round(
     mine = reviewer.session
     asked = {fid: one for fid, one in pending(bodies).items() if not (mine and one.by.session == mine)}
     own = {fid for fid, one in claims(bodies).items() if mine and one.by.session == mine}
-    rejudged = [one for one in prior.open if one.id not in own] if prior else []
+    rejudged = _rejudged(prior, changed(root, reviewed), asked, own) if prior else []
     verdicts = judged([(one, asked[one.id].why if one.id in asked else '') for one in rejudged]) if prior else {}
     for fid, one in asked.items():
         if fid in verdicts:
