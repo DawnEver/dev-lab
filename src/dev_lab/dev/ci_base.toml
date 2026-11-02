@@ -263,10 +263,12 @@ printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 ''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
 ]
 
-# THE REVIEW DOOR, installed for both forges' review jobs from the dev-lab commit the BASE's uv.lock pins (dev-lab
-# #18): the consumer's lock is the one source of which door it runs, so the job and `uv sync` never disagree. Read
-# at BASE_SHA, never the PR head (F-76c85dbc4b77): the head is DATA, and its lock would let a PR choose the code that
-# runs beside the review key. dev-lab's own lock holds itself editable, so it reviews with its base commit.
+# THE DOOR, installed from the dev-lab commit that DOOR_SHA's uv.lock pins (dev-lab #18): the consumer's lock is the
+# one source of which door a job runs, so the job and `uv sync` never disagree. DOOR_SHA is a TRUSTED commit: a
+# review job's BASE, never the PR head (F-76c85dbc4b77: the head is DATA, and its lock would let a PR choose the
+# code that runs beside the review key); a job with no pull request (promote.yml) names the merged integration tip
+# it fetched, as INTEGRATION_SHA. Neither is refused by name. dev-lab's own lock holds itself editable, so it runs
+# the door at DOOR_SHA itself.
 # Every dependency installs as the door commit's lock names it, the door itself --no-deps; the door lives in a
 # venv of its own (REVIEW_PYTHON). Every uv call runs from $RUNNER_TEMP with --no-config (F-963500c5db57): a PR's
 # uv.toml or [tool.uv.pip] in the checkout would otherwise name the index the locked packages come from.
@@ -276,7 +278,8 @@ door = [
     { name = "Install the review door", run = '''
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
-DEV_LAB_REF=$(git -C "$GITHUB_WORKSPACE" show "$BASE_SHA:uv.lock" | python3 -I -c 'import sys, tomllib
+[ -n "$DOOR_SHA" ] || { echo "no commit names the door: no pull request base and no INTEGRATION_SHA"; exit 1; }
+DEV_LAB_REF=$(git -C "$GITHUB_WORKSPACE" show "$DOOR_SHA:uv.lock" | python3 -I -c 'import sys, tomllib
 lock = tomllib.loads(sys.stdin.read())
 (source,) = [p["source"] for p in lock.get("package", []) if p["name"] == "dev-lab"] or sys.exit("the base lock pins no dev-lab")
 if "git" in source:
@@ -284,7 +287,7 @@ if "git" in source:
 elif source.get("editable") == ".":
     print(sys.argv[1])
 else:
-    sys.exit(f"dev-lab is locked from {source}, not a git revision")' "$BASE_SHA") || exit 1
+    sys.exit(f"dev-lab is locked from {source}, not a git revision")' "$DOOR_SHA") || exit 1
 git clone -q --no-tags --filter=blob:none --no-checkout "${FAMILY_SOURCE}dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" fetch -q --no-tags origin "$DEV_LAB_REF"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
@@ -293,7 +296,7 @@ python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I 
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
-''', env = { BASE_SHA = "${{ github.event.pull_request.base.sha }}", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
+''', env = { DOOR_SHA = "${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, behind a campus ACL). No `uses`
@@ -462,7 +465,7 @@ issues = "write"
 # spirit: never the history's blobs); promote reads ancestry and the declaration at the tip, fetched on demand.
 # Gitea's default branch is main, so the clone's HEAD would hold main and promote would refuse to move it: HEAD is
 # detached onto integration's tip, and no worktree holds a branch.
-# The door is the pinned DEV_LAB_REF (`door` steps).
+# The door is the dev-lab the tip's own uv.lock pins: the fetch exports INTEGRATION_SHA, the `door` steps read it.
 ["promote.yml"]
 forge = "gitea"
 name = "Promote"
@@ -491,12 +494,12 @@ git config --global url."$FORGE_URL/".insteadOf "${{ github.server_url }}/"
 git config --global core.hooksPath /dev/null
 git clone -q --no-tags --filter=tree:0 --no-checkout "$FORGE_URL/${{ github.repository }}.git" .
 git update-ref --no-deref HEAD "$(git rev-parse origin/integrate/main)"
-echo "HEAD_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"
+echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"
 ''' },
     { use-steps = "door" },
     { name = "Promote main", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-"$REVIEW_PYTHON" -I -m dev_lab.dev.integrate promote "$HEAD_SHA" && git push origin main
+"$REVIEW_PYTHON" -I -m dev_lab.dev.integrate promote "$INTEGRATION_SHA" && git push origin main
 ''' },
     { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"

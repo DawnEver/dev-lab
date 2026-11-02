@@ -463,9 +463,9 @@ def test_the_door_is_the_dev_lab_the_base_s_lock_pins(tmp_path: Path) -> None:
     """
     hub, tea = _door_steps(tmp_path)
     assert hub == tea, 'one source for both forges'
-    assert hub['env']['BASE_SHA'] == '${{ github.event.pull_request.base.sha }}'
+    assert hub['env']['DOOR_SHA'] == '${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}'
     assert 'DEV_LAB_REF' not in hub['env'], 'no second, hand-bumped pin beside the lock'
-    assert 'show "$BASE_SHA:uv.lock"' in hub['run']
+    assert 'show "$DOOR_SHA:uv.lock"' in hub['run']
     assert 'HEAD_SHA' not in hub['run'], 'PLANTED CONTROL: the head lock is never read'
 
 
@@ -784,7 +784,7 @@ def test_gitea_promotes_nightly_by_the_same_decision_and_asks_ada_nothing(tmp_pa
     assert set(found['on']) == {'schedule', 'workflow_dispatch'}
     assert found['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
     runs = [step.get('run', '') for step in found['jobs']['promote']['steps']]
-    promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$HEAD_SHA"' in run)
+    promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$INTEGRATION_SHA"' in run)
     assert 'git push origin main' in runs[promoted]
     assert next(i for i, run in enumerate(runs) if 'dev_lab.dev.branchprune sweep' in run) > promoted
     text = render(found)
@@ -815,3 +815,25 @@ def test_gitea_s_promote_checkout_holds_no_branch_so_main_can_move(tmp_path: Pat
         subprocess.run([bash, '-c', text], cwd=tmp_path / name, env=env, check=True)
     assert [name for _, name in worktrees(tmp_path / 'plain') or ()] == ['main'], 'PLANTED CONTROL: it holds main'
     assert [name for _, name in worktrees(tmp_path / 'job') or ()] == ['detached'], 'main stays free to move'
+
+
+def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path: Path) -> None:
+    """promote.yml runs with no pull request, so no base sha: its door is the lock of the tip it fetched.
+
+    The tip is already merged, so it is trusted as a base is. An empty DOOR_SHA is refused by name, never read as
+    ``git show ":uv.lock"`` against an empty index (F-e460f9e7c527).
+    """
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
+    steps = workflows(tmp_path)['promote.yml']['jobs']['promote']['steps']
+    names = [s.get('name') for s in steps]
+    fetch = steps[names.index("Fetch integration's commits")]
+    door = steps[names.index('Install the review door')]
+    assert names.index("Fetch integration's commits") < names.index('Install the review door')
+    assert 'echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"' in fetch['run']
+    assert 'env.INTEGRATION_SHA' in door['env']['DOOR_SHA']
+    guard = next(line for line in door['run'].splitlines() if line.startswith('[ -n "$DOOR_SHA" ]'))
+    bash = shutil.which('bash')
+    assert bash, 'the door step is bash'
+    ran = subprocess.run([bash, '-c', guard], env={'DOOR_SHA': ''}, capture_output=True, text=True, check=False)
+    assert ran.returncode != 0
+    assert 'no commit names the door' in ran.stdout + ran.stderr
