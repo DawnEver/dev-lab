@@ -115,6 +115,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_sessionbranch.py',),
     ),
     (
+        'NO-PUSH-ONTO-A-LANDED-PR',
+        (
+            'A push that creates or updates `refs/heads/<X>` (the integration branch and the trunk aside) is refused '
+            'at pre-push when the forge`s PR with head `<X>` into the integration branch is merged or closed and no '
+            'OPEN PR has head `<X>`: no PR would ever carry the push. The refusal names the remedy (a new PR from '
+            '`<X>`, or a new branch name), and a forge that cannot be read refuses, never passes unchecked.'
+        ),
+        ('tests/test_dev_landedpush.py',),
+    ),
+    (
         'SESSION-HISTORY-ONLY-GROWS',
         (
             'A push to a declared session branch or the trunk is refused at pre-push unless origin`s tip is an '
