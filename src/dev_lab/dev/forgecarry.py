@@ -9,7 +9,7 @@ THE RULE IS DERIVED PER TEST FILE, not declared per repo. Each test file has a F
 reads -- EVERYTHING when it reads the repo by a path it cannot prove. An outcome of test file F at A is
 CARRIED to B (:func:`carried`) when B descends from A and no path in ``git diff --no-renames A B`` lies in
 F's footprint at A -- a rename counts both its sides. A changed ``uv.lock`` is first resolved to the
-imports it reaches (:func:`~dev_lab.dev.footprint.resolve_lock`, user ruling D48-2, 2026-11-01: a relock
+imports it reaches (:func:`~dev_lab.dev.lockreach.resolve_lock`, user ruling D48-2, 2026-11-01: a relock
 moving only the dev-lab pin had re-run a consumer's whole suite, ``ran=5471``, per push). Any doubt (no
 ancestry, an unreadable declaration) carries nothing: the carry is an optimisation, refusing it only
 costs the run it would have saved.
@@ -55,12 +55,13 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.footprint import ALWAYS, LOCK, Footprints, declared, resolve_lock, test_files
+from dev_lab.dev.footprint import ALWAYS, LOCK, Footprints, declared, test_files
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgeclaim import CLAIMED, Claim, assess
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND, earlier_tips
 from dev_lab.dev.forgeschedule import tip_of
 from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, CommitStatus, status_history, status_post
+from dev_lab.dev.lockreach import resolve_lock
 from dev_lab.dev.platformparts import part_context, parts_of, post
 
 if TYPE_CHECKING:

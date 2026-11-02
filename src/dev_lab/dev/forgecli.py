@@ -65,7 +65,8 @@ from dev_lab.dev import (
     servelock,
 )
 from dev_lab.dev.forge import Transport, forge_transport
-from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, Issue, PullRequest, client_for
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
 from dev_lab.dev.labsession import ENV
 
 if TYPE_CHECKING:

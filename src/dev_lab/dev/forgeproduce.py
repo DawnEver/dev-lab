@@ -73,12 +73,13 @@ from lab_commons.proccpu import TreeCpu
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
 from dev_lab.dev.forgeclaim import Work, forge_now
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeintent import Intent, forget, journal
 from dev_lab.dev.forgelabels import LabelMissing
 from dev_lab.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgewait import claim_vector
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import origin_url, parts_of, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
 from dev_lab.dev.servelock import was_stopped

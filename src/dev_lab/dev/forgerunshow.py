@@ -29,8 +29,9 @@ from lab_commons.hpc.pytest_item import badness
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import Transport, forge_transport
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import listing, replace_named
-from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import Client, client_for
 
 __all__ = ['LEDGER', 'failing', 'ledger', 'ledger_name', 'main', 'posted_rounds', 'show']
 

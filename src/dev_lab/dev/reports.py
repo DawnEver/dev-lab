@@ -45,7 +45,7 @@ READING IT NEEDS ONE FLAG, and that is a MEASUREMENT rather than a preference. p
 summary by default -- ``SKIPPED [2] tests/test_vendor.py:31: reason``, grouped by (file, line,
 reason) with no node id anywhere in the line. ``--no-fold-skipped`` selects
 ``_pytest.terminal.show_skipped_unfolded`` instead, which prints ``SKIPPED <node id> - <reason>``,
-one line per skip. :func:`~dev_lab.dev.verify.run_verify` passes it, and
+one line per skip. :func:`~dev_lab.dev.verifysteps.run_verify` passes it, and
 ``tests/test_dev_logdistil.py`` pins the line a LIVE pytest prints rather than a hand-written one.
 
 WHAT A CONSUMER MUST DECLARE, AND HOW THE ROWS MIGRATE: nothing in the test code, and mechanically.
@@ -332,7 +332,7 @@ def vanished_shortfall(stale: tuple[str, ...]) -> tuple[str, ...]:
     """The refusal for a declaration whose SUBJECT left the checkout, read off the tree.
 
     Its own function because it is the one shortfall no step produced: every other reason in
-    :func:`dev_lab.dev.verify.run_verify` is read out of what a process PRINTED, and this one is
+    :func:`dev_lab.dev.verifysteps.run_verify` is read out of what a process PRINTED, and this one is
     read out of the files a declaration names -- so it binds before anything launches, and on a selected invocation too,
     where the run cannot judge anybody else's allowance retired.
     """

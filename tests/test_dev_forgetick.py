@@ -57,12 +57,12 @@ from dev_lab.dev.forgeclaim import (
     this_machine,
 )
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND, behind
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetick import tick
 from dev_lab.dev.forgewait import NEVER_FITS, Box
-from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.producer import ProducerExit, release_reason
 

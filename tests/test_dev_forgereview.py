@@ -26,23 +26,19 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
-from dev_lab.dev.forgereview import (
+from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, TAKEOVER_PENDING, review_tick, step
+from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE
+from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
+from dev_lab.dev.forgereview_declared import (
     DEFAULT_CLAIM_STALE,
     EMPTY_COMMAND_FIX,
     FAMILY_COMMAND,
-    NEEDS_MAINTAINER,
     RANGE_FIELD,
     RETIRED_KEYS,
-    REVIEW_CONTEXT,
-    TAKEOVER_PENDING,
     Review,
     command_for,
     review_from,
-    review_tick,
-    step,
 )
-from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE
-from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
@@ -744,7 +740,7 @@ def test_a_docs_only_head_carries_the_previous_heads_review_and_runs_no_command(
 
 
 def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> None:
-    """G's serve tick said only "declares no [runtimes.ai_lab]"; the retired spelling names its remedy."""
+    """The forge host's serve tick said only "declares no [runtimes.ai_lab]"; the retired spelling names its remedy."""
     command = ('{runtimes.ai_lab.python}', RANGE_FIELD)
     why = retired_table(command, {}, {'ai_lab': {'python': 'x'}, 'jmag': {}})
     assert why == (

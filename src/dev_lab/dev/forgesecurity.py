@@ -64,9 +64,10 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
-from dev_lab.dev.forgework import ForgeCallFailed, client_for
+from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.security import (

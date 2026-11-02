@@ -142,6 +142,7 @@ from dev_lab.dev.forgealarm import (
     sound,
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostsIssueLost, card_host, card_owners, read_cards, recording
 from dev_lab.dev.forgeintent import reattach
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
@@ -153,7 +154,7 @@ from dev_lab.dev.forgeschedule import host_weights
 from dev_lab.dev.forgeservesteps import pressed, repo_wide, retain_storage, review, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL

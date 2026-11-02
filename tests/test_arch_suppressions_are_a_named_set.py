@@ -389,8 +389,13 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from dev_lab.dev.forgework import ForgeCallFailed, client_for',
+        'from dev_lab.dev.forgework import client_for',
     ): 'the same leaf-at-import reason: the client is built only by the CLI entry point',
+    (
+        'src/dev_lab/dev/forgenotice.py',
+        'PLC0415',
+        'from dev_lab.dev.forgefailure import ForgeCallFailed',
+    ): 'the same leaf-at-import reason: a forge failure is caught only by the CLI entry point',
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',

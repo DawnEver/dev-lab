@@ -66,8 +66,8 @@ from urllib.parse import urlsplit
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_post
-from dev_lab.dev.forgework import ForgeCallFailed
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence

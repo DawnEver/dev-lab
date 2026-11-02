@@ -76,9 +76,6 @@ def code_lines(path: Path) -> int:
 DEBT: dict[str, int] = {
     'src/dev_lab/dev/_rule_rows.py': 401,  # 2026-10-23: the memory rows moved to _rule_rows_memory.py (was 422)
     'src/dev_lab/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
-    # Over the band AT the split base (lab-commons 8c401f0) and unpinned there: pinned at the split with
-    # their measurement, each a refactor that has not happened.
-    'src/dev_lab/dev/workstation.py': 335,
 }
 
 #: The ceiling on the escape hatch: total pinned debt in CODE lines. It went UP exactly once, on
@@ -88,7 +85,8 @@ DEBT: dict[str, int] = {
 #: From here it may only go DOWN.
 #: 2026-10-23: down to the sum, 1473 -> 1349, paid back by the _rule_rows memory split.
 #: 2026-10-26: down to the sum, 1349 -> 1347, paid back by the forgecontexts split.
-DEBT_CEILING = 1347
+#: 2026-11-02: down to the sum, 1347 -> 711, paid back by the workstation probe/registry split.
+DEBT_CEILING = 711
 
 
 def oversized(paths: tuple[Path, ...], band: int) -> dict[str, int]:

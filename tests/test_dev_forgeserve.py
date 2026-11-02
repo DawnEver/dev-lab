@@ -40,12 +40,12 @@ from dev_lab.dev import (
 )
 from dev_lab.dev.forgealarm import AUTH, IDLE, INTEGRATION, PRUNED, RUN, STARVED, UNTAGGED, Alarm
 from dev_lab.dev.forgeclaim import OPEN, Claim, Work
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeintegration import Child, Feedback, Ticked
 from dev_lab.dev.forgeproduce import Produced
 from dev_lab.dev.forgeroute import Routed
 from dev_lab.dev.forgetick import TickReport
 from dev_lab.dev.forgetidy import Hygiene
-from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart
 from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason

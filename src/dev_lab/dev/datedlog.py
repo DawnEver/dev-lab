@@ -7,7 +7,7 @@ same layout, is the duplication this module ends.
 
 **THE BASE IS THE REPO'S ANSWER AND HAS NO DEFAULT**, and that is a MEASUREMENT rather than caution.
 consumer-a writes under ``output/logs/`` because a user directive said so on 2026-09-03; this very
-package writes its own verify log to ``.verify/`` (:data:`dev_lab.dev.verify.LOG_DIRECTORY`) and
+package writes its own verify log to ``.verify/`` (:data:`dev_lab.dev.verifysteps.LOG_DIRECTORY`) and
 the two labs have no dated tree at all. So the family holds four answers to "where", and a default
 here would hand any of the other three consumer-a' directive while looking like a shared convention.
 What IS universal is the partition -- a date taken once, a kind beneath it, and a NAME that may not

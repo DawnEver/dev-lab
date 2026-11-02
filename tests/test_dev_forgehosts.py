@@ -16,8 +16,9 @@ import pytest
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgeclaim, forgehosts
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE, HostCard, publish, read_cards
-from dev_lab.dev.forgework import ForgeCallFailed, is_pull
+from dev_lab.dev.forgework import is_pull
 from tests._forge_state import StateForge
 
 if TYPE_CHECKING:
@@ -245,17 +246,17 @@ def _claim_on(box: str, monkeypatch: pytest.MonkeyPatch) -> forgeclaim.Claim:
 
 def test_two_workstations_on_one_login_are_two_claim_owners(monkeypatch: pytest.MonkeyPatch) -> None:
     """No harness, one forge login, two boxes: neither reads the other's claim as MINE. PLANTED CONTROL: same box."""
-    g, ws2 = _claim_on('G.lab.example', monkeypatch), _claim_on('ws2', monkeypatch)
-    assert not g.same_owner(ws2)
+    g, host2 = _claim_on('G.lab.example', monkeypatch), _claim_on('host2', monkeypatch)
+    assert not g.same_owner(host2)
     assert g.machine == 'G'
     assert g.same_owner(_claim_on('G', monkeypatch))
 
 
 def test_the_claim_machine_and_the_card_host_are_one_name(monkeypatch: pytest.MonkeyPatch) -> None:
     """Off a cluster the card is the claim's machine; on a cluster the card is the seat, the claim the login host."""
-    claim = _claim_on('ws3', monkeypatch)
+    claim = _claim_on('host3', monkeypatch)
     monkeypatch.setattr(forgehosts, 'this_seat', lambda: None)
-    assert forgehosts.this_host() == claim.machine == 'ws3'
+    assert forgehosts.this_host() == claim.machine == 'host3'
     seat = ClusterAccount('ada', 'alice')
     assert _claim_on('login2.ada', monkeypatch).machine == 'login2'
     monkeypatch.setattr(forgehosts, 'this_seat', lambda: seat)

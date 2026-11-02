@@ -87,10 +87,10 @@ def test_a_part_too_large_for_every_live_host_is_answered_with_the_remedy() -> N
     """Every live host is too small: an answer now. Any doubt -- a big host, an unsized one -- waits instead."""
     asked = {'cpu': 1, 'mem_gb': 40}
     seen = _box().outlook(asked)
-    small = _card('ws2', size={'cpu': 16, 'mem_gb': 24})
+    small = _card('host2', size={'cpu': 16, 'mem_gb': 24})
     why = nowhere(asked, seen, [small, _card('G', size={'cpu': 8, 'mem_gb': 30})], me='G', now=NOW)
     assert why.startswith(f'{NEVER_FITS} here: mem_gb 40 asked of a 32 size; no other live host')
-    assert 'ws2 cpu 16, mem_gb 24' in why
+    assert 'host2 cpu 16, mem_gb 24' in why
     assert 'remedy' in why
     assert nowhere(asked, seen, [], me='G', now=NOW).endswith(
         'no other live host serves it -- remedy: a host of that size, a cluster part, or a narrower selection'
@@ -136,17 +136,17 @@ def test_a_part_waiting_past_the_bound_is_told_once_an_hour_and_settled_when_cla
         _ranked('base', 9.0, blocked, kind=REQUEST, sha='c' * 40),
         _ranked('base', 9.0, 'waiting behind its ref run', sha='d' * 40),
     ]
-    said = tell(_NO_CLIENT, queue, [], history=lambda _sha: (), hours=6.0, host='G', post=post)
-    head = 'waited 7 h on G: lacking mem_gb (12.4 asked, 0 free); earliest start 2026-10-25T13:00Z'
+    said = tell(_NO_CLIENT, queue, [], history=lambda _sha: (), hours=6.0, host='gbox', post=post)
+    head = 'waited 7 h on gbox: lacking mem_gb (12.4 asked, 0 free); earliest start 2026-10-25T13:00Z'
     assert post.made == [('a' * 40, 'waits/base', 'pending', head)]
     assert len(said) == 1
     told = CommitStatus(wait_context('base'), 'pending', head, '', id=7)
     post.made.clear()
-    tell(_NO_CLIENT, queue[:1], [], history=lambda _sha: (told,), hours=6.0, host='G', post=post)
+    tell(_NO_CLIENT, queue[:1], [], history=lambda _sha: (told,), hours=6.0, host='gbox', post=post)
     assert post.made == [], 'told this hour already'
     claimed = Work('pr/x', 'a' * 40, 'base', MINE)
-    tell(_NO_CLIENT, [], [claimed], history=lambda _sha: (told,), hours=6.0, host='G', post=post)
-    assert post.made == [('a' * 40, 'waits/base', 'success', 'claimed by G')]
+    tell(_NO_CLIENT, [], [claimed], history=lambda _sha: (told,), hours=6.0, host='gbox', post=post)
+    assert post.made == [('a' * 40, 'waits/base', 'success', 'claimed by gbox')]
 
 
 def test_the_wait_context_is_never_a_part_context() -> None:

@@ -45,7 +45,7 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.testcells import TestCell
 from lab_commons.outcomes import Cell, Conclusion, Record, Status
 
-from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox
+from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox, verifysteps
 from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -63,8 +63,9 @@ from dev_lab.dev.reports import (
 from dev_lab.dev.runcache import CachedRun, record, runs
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verdict import Verdict
-from dev_lab.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
-from dev_lab.dev.verify import _tee as tee_step
+from dev_lab.dev.verify import EXIT_CODES, project_root
+from dev_lab.dev.verifysteps import LEDGER_PLUGIN, PYTEST_ARGS, build_verdict
+from dev_lab.dev.verifysteps import _tee as tee_step
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -645,16 +646,16 @@ class TestThePlantedControl:
             handle.flush()
             return 0
 
-        monkeypatch.setattr(verify, 'boxed', _unboxed)
-        monkeypatch.setattr(verify, '_tee', recorded_step)
-        verdict = verify.run_verify(tmp_path, selection)
+        monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+        monkeypatch.setattr(verifysteps, '_tee', recorded_step)
+        verdict = verifysteps.run_verify(tmp_path, selection)
         expected_command = (
             sys.executable,
             '-m',
             'pytest',
             *PYTEST_ARGS,
             *LEDGER_PLUGIN,
-            *verify.OUTCOME_PLUGIN,
+            *verifysteps.OUTCOME_PLUGIN,
             *serialpass.PLUGIN,
         )
         assert commands[-1] == (*expected_command, *selection)
@@ -695,9 +696,9 @@ class TestThePlantedControl:
             handle.flush()
             return 0
 
-        monkeypatch.setattr(verify, 'boxed', _unboxed)
-        monkeypatch.setattr(verify, '_tee', recorded_step)
-        verdict = verify.run_verify(tmp_path)
+        monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+        monkeypatch.setattr(verifysteps, '_tee', recorded_step)
+        verdict = verifysteps.run_verify(tmp_path)
         assert verdict.result.outcome is Conclusion.INCONCLUSIVE
         assert 'tests/test_gone.py::test_vanished' in verdict.result.reason
         assert 'allowed_skips' in verdict.result.reason
@@ -1112,16 +1113,16 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
     monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)
-    monkeypatch.setattr(verify, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
     clean = StepReport(name='hooks', reported=('hooks',), failures=())
-    monkeypatch.setattr(verify, 'read_hooks', lambda _root, **_kw: clean)
+    monkeypatch.setattr(verifysteps, 'read_hooks', lambda _root, **_kw: clean)
 
     def tee(command: list[str], *, handle: io.TextIOBase, **_where: object) -> int:
         is_pytest = 'pytest' in command
         handle.write(pytest_text if is_pytest else '')
         return pytest_code if is_pytest else 0
 
-    monkeypatch.setattr(verify, '_tee', tee)
+    monkeypatch.setattr(verifysteps, '_tee', tee)
 
 
 @pytest.mark.parametrize(
@@ -1142,7 +1143,7 @@ def test_every_inconclusive_path_exits_3_through_the_producer_contract(
     """
     _planted_steps(monkeypatch, tmp_path, pytest_text=pytest_text, pytest_code=pytest_code)
     if plant is not None:
-        monkeypatch.setattr(verify, *plant)
+        monkeypatch.setattr(verifysteps, *plant)
     held = path == 'box refused'  # inside a producer the box's no-room is capacity: 4, re-queued (test below)
     assert verify.main(['--rerun']) == (ProducerExit.UNREACHABLE if held else ProducerExit.INCONCLUSIVE), path
 
@@ -1514,7 +1515,7 @@ def test_a_box_with_no_room_releases_a_producers_claim_claimable(
     """A capacity refusal is no verdict: inside a producer it exits UNREACHABLE, so serve releases the claim RETRYABLE.
 
     Live 2026-10-22: head 67d955f's tests/base read ``released: inconclusive (exit 3) -- no part`` after
-    the box on G had no room; exit 3 settles the part, so nothing re-claimed it. A developer's run keeps
+    the box on the forge host had no room; exit 3 settles the part, so nothing re-claimed it. A developer's run keeps
     INCONCLUSIVE (the control): nothing re-queues a developer, and the code tells them nothing was measured.
     """
 

@@ -38,7 +38,7 @@ from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgecarry import changed_paths
-from dev_lab.dev.forgework import ForgeCallFailed
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of
 

@@ -16,7 +16,7 @@ says why): the method hands the reviewer the change map at the directory level, 
   integration commit *head* holds (:func:`_automerge`, ``git merge-tree --write-tree``, committed locally and
   never pushed): what the head holds beyond it is R's own new content -- a hand resolution, an evil merge, a
   commit before or after the sync -- and upstream content is never read again (D52, user ruling 2026-11-01:
-  motronics #5397 took two forge syncs in a day, and each restarted its review at the merge base).
+  consumer #5397 took two forge syncs in a day, and each restarted its review at the merge base).
 * A PURE SYNC IS NO NEW WORK (D52): a head whose tree IS that clean automatic merge (:func:`synced_from`) holds
   R's reviewed content plus integration's, and nothing else, so R's verdict carries
   (:func:`dev_lab.dev.forgereview_claim.synced`); no round is spent.

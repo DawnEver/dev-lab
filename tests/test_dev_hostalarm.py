@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from dev_lab.supervise.process.base import ProcessManager
 
 NOW = datetime(2026, 11, 1, 12, tzinfo=UTC)
-LANE = '/home/runner/.claude/worktrees/stale-lane'
+LANE = '/srv/runner/.claude/worktrees/stale-lane'
 PRESSED = Measured(
     findings=[Finding('disk:/', 'critical', '/ 98.0% used, 2.0 GB free', (Consumer(LANE, 41 * 1024**3, owned=True),))]
 )
@@ -157,12 +157,12 @@ def test_measure_is_read_only(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
 def test_the_forge_tick_sounds_each_of_its_alarms_as_a_pressure_alarm(tmp_path: Path) -> None:
     """Control: an unpressed reading sounds nothing, and supervision's rows are not the tick's to sound."""
     raised: list[Alarm] = []
-    hostalarm.step(tmp_path, 'r', who='ws1', alarm=raised.append, table={}, measuring=lambda *_a, **_k: PRESSED)
+    hostalarm.step(tmp_path, 'r', who='host1', alarm=raised.append, table={}, measuring=lambda *_a, **_k: PRESSED)
     assert [(a.kind, a.about) for a in raised] == [(PRESSURE, 'disk:/')]
     assert json.dumps(LANE) in raised[0].body
-    hostalarms.record(CGROUP, host='ws1', source=hostalarms.SUPERVISE, now=NOW)
+    hostalarms.record(CGROUP, host='host1', source=hostalarms.SUPERVISE, now=NOW)
     quiet: list[Alarm] = []
-    hostalarm.step(tmp_path, 'r', who='ws1', alarm=quiet.append, table={}, measuring=lambda *_a, **_k: Measured())
+    hostalarm.step(tmp_path, 'r', who='host1', alarm=quiet.append, table={}, measuring=lambda *_a, **_k: Measured())
     assert quiet == []
 
 

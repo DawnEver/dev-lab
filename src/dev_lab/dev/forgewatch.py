@@ -21,8 +21,9 @@ from typing import Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import Client, client_for
 
 __all__ = ['TESTS', 'main', 'settled', 'watch']
 

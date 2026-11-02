@@ -36,8 +36,9 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev import metrics
 from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.platformparts import standing
 from dev_lab.dev.trialmerge import contains, rev

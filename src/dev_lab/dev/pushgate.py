@@ -49,9 +49,9 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forge import _GIT, NoCredential, UnreadableRemote
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import unprompted_client
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.githooks.runner import parse_push_lines
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.logref import MARKER

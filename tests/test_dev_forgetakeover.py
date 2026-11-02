@@ -11,15 +11,9 @@ from _forge_state import StateForge
 from test_dev_forgereview import JUDGE, FakeCommand, _forge, _output, _work
 
 from dev_lab.dev.forgepulls import Marker, marker
-from dev_lab.dev.forgereview import (
-    EMPTY_COMMAND_FIX,
-    NEEDS_MAINTAINER,
-    PATHS_FIELD,
-    RANGE_FIELD,
-    REVIEW_CONTEXT,
-    Review,
-)
+from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import Runner
+from dev_lab.dev.forgereview_declared import EMPTY_COMMAND_FIX, PATHS_FIELD, RANGE_FIELD, Review
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose
 from dev_lab.dev.forgereview_judge import Identity
 from dev_lab.dev.forgestatus import status_list, status_post

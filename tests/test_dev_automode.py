@@ -40,7 +40,7 @@ _GIT = shutil.which('git') or 'git'
 _FLEET = Fleet(
     workstations=(
         {'name': 'G', 'computer': 'G', 'address': '192.0.2.1', 'roles': ['client', 'node', 'forge']},
-        {'name': 'WS1', 'computer': 'BOXONE', 'address': 'boxone.example.ac.uk', 'roles': ['client', 'node']},
+        {'name': 'HOST1', 'computer': 'BOXONE', 'address': 'boxone.example.ac.uk', 'roles': ['client', 'node']},
     ),
     grants=(
         Grant(user='alice9', hosts=('login1.example.ac.uk', 'login2.example.ac.uk'), slurm_account='acct'),
@@ -98,7 +98,7 @@ def test_the_render_equals_its_sources(tmp_path: Path) -> None:
         assert rendered[key][0] == '$defaults', key
         assert spelled_commands(rendered[key][1:]) == (), key
     environment = ' '.join(rendered['environment'])
-    for fact in ('G (computer G; address 192.0.2.1', 'serves the forge', 'WS1 (computer BOXONE'):
+    for fact in ('G (computer G; address 192.0.2.1', 'serves the forge', 'HOST1 (computer BOXONE'):
         assert fact in environment
     assert (
         'account alice9 at login hosts login1.example.ac.uk, login2.example.ac.uk (Slurm account acct)' in environment
@@ -141,7 +141,7 @@ def test_no_committed_kit_text_carries_a_fleet_fact() -> None:
 
 def test_the_leak_scan_sees_a_planted_fleet_fact() -> None:
     """PLANTED CONTROL: a category carrying a host, an address or an account is caught."""
-    assert leaks(['restart WS1 nightly'], _FLEET) == ('WS1',)
+    assert leaks(['restart HOST1 nightly'], _FLEET) == ('HOST1',)
     assert leaks(['deploy alice9 there'], _FLEET) == ('alice9',)
     assert '192.0.2.9' in leaks(['reach 192.0.2.9'])
     assert 'login1.cluster.example.ac.uk' in leaks(['on login1.cluster.example.ac.uk'])
@@ -176,7 +176,7 @@ def test_the_dependency_door_renders_it_in_its_own_process(tmp_path: Path) -> No
 #: The SHAPES a real fleet fact takes in this family: a private (RFC 1918) address, a university AD or Ada host.
 _TREE_SHAPES = re.compile(
     r'\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b'
-    r'|\b[\w-]+(?:\.[\w-]+)*\.(?:ada|ad)\.nottingham\.ac\.uk\b',
+    r'|\b[\w-]+(?:\.[\w-]+)*\.(?:ada|ad)\.[\w-]+\.ac\.uk\b',
     re.IGNORECASE,
 )
 
@@ -231,8 +231,8 @@ def test_the_tree_scan_sees_a_planted_fleet_fact() -> None:
         'a': 'reach 10.' + '1.2.3',
         'b': 'reach 172.' + '20.0.1',
         'c': 'reach 192.' + '168.4.5',
-        'd': 'ssh login1.' + 'ada.nottingham.ac.uk',
-        'e': 'box ws.' + 'ad.nottingham.ac.uk',
+        'd': 'ssh login1.' + 'ada.uni.ac.uk',
+        'e': 'box ws.' + 'ad.uni.ac.uk',
         'f': 'deploy alice9 there',
     }
     assert len(_tree_leaks(planted, _FLEET)) == 6
@@ -245,7 +245,7 @@ def test_write_outside_a_checkout_says_why_and_fails(tmp_path: Path, capsys: pyt
 
 
 def test_a_host_name_is_a_leak_whatever_its_case() -> None:
-    assert leaks(['ssh WS1.Example.AC.UK']) == ('WS1.Example.AC.UK',)
+    assert leaks(['ssh HOST1.Example.AC.UK']) == ('HOST1.Example.AC.UK',)
 
 
 def test_the_forge_pr_review_and_request_intents_render_in_every_repo() -> None:

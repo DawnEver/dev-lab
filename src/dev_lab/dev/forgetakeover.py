@@ -28,20 +28,12 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
-from dev_lab.dev.forgeintegration import _fetch_pull
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import comment_list, pages, pr_list
-from dev_lab.dev.forgereview import (
-    PATHS_FIELD,
-    HostCannot,
-    Review,
-    command_for,
-    hold,
-    judge_for,
-    review_at,
-    review_pull,
-    trusted_integration,
-)  # fmt: skip
+from dev_lab.dev.forgereview import HostCannot, hold, review_pull
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
+from dev_lab.dev.forgereview_declared import PATHS_FIELD, Review, command_for, judge_for, review_at, trusted_integration
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_cap
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
@@ -51,7 +43,7 @@ from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import ForgeCallFailed, PullRequest, client_for
+from dev_lab.dev.forgework import PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
@@ -331,7 +323,7 @@ def main(
     """
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = args.repo or (Path.cwd() if cwd is None else cwd)
-    pull_in = fetch or (lambda where, number: _fetch_pull(where, 'origin', number))
+    pull_in = fetch or (lambda where, number: fetch_pull(where, 'origin', number))
     try:
         # run: the tokens arrive by file, never env, before any subprocess (F-5a82981c5f22, F-d61706393b50);
         # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.

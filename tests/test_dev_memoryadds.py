@@ -239,7 +239,7 @@ def _downstream_merge_of_an_upstream_edit(repo: Path) -> None:
 def test_a_sync_taking_upstreams_own_memory_edit_verbatim_passes(repo: Path) -> None:
     """A downstream merge staging an entry EXACTLY as MERGE_HEAD holds it is not an edit by this merge.
 
-    It is the integration line's own change, judged where it was made. MEASURED 2026-11-01: a motronics lane
+    It is the integration line's own change, judged where it was made. MEASURED 2026-11-01: a consumer lane
     syncing 2454 commits was refused on 255 such entries, and the hook's remedy (restore them) would have reverted
     upstream inside the merge.
     """

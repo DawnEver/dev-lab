@@ -45,7 +45,7 @@ from lab_commons.log import emit
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
-from dev_lab.dev.workstation import FORGE_ROLE, REGISTRY_TABLE
+from dev_lab.dev.workstationregistry import FORGE_ROLE, REGISTRY_TABLE
 
 __all__ = [
     'AUTOMODE_REL',

@@ -16,7 +16,8 @@ from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, se
 
 from dev_lab.dev import forgesync
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgeintegration import CONTEXT, OWNER_CLOSED, open_lanes, retarget_note, tick
+from dev_lab.dev.forgeintegration import CONTEXT, retarget_note, tick
+from dev_lab.dev.forgelanes import OWNER_CLOSED, open_lanes
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgerecords import RECORDS_TAG, attach, listing
 from dev_lab.dev.lanepolicy import Policy, load_policy
@@ -242,7 +243,7 @@ def test_only_a_pushed_unlanded_lane_without_a_pr_gets_one(server, tmp_path: Pat
         ('pr/new', 'integrate/main', 'feat(n): the newest subject')
     ], 'landed, open-PR, owner-closed, relock and non-ephemeral lanes get none; a MERGED closed PR blocks nothing'
     assert 'Opened by the forge' in creates[0]['body']
-    assert [(c.branch, c.pr) for c in opened] == [('pr/new', 9)]
+    assert [(branch, pr) for branch, _sha, pr in opened] == [('pr/new', 9)]
     assert OWNER_CLOSED.format(branch='pr/refused', number=7) in lines
     graphql = [r for r in Recorder.received if r['path'] == '/graphql']
     assert len(graphql) == (1 if forge is GITHUB else 0), 'GitHub puts the opened PR on auto-merge'

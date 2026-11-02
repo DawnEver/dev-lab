@@ -28,7 +28,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev._forge_journal import Durable, Probe, since
-from dev_lab.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, is_pull, pull_of
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import Comment, PullRequest, comment_of, is_pull, pull_of
 
 if TYPE_CHECKING:
     from pathlib import Path

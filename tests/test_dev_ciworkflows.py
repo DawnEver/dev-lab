@@ -5,6 +5,7 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import shutil
@@ -148,12 +149,32 @@ def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_
 def _parts_event(ci: dict[str, Any], event: str, *, smoke: bool | None = None) -> str:
     """The RENDERED PARTS_EVENT expression, evaluated for one trigger (``inputs.smoke`` is null off a dispatch).
 
-    Actions' ``&&``/``||`` return an operand, as Python's ``and``/``or`` do, so the expression is evaluated as one.
+    Actions' ``&&``/``||`` return an operand, as Python's ``and``/``or`` do, so the expression is parsed as one and
+    walked: only names, literals, ``==``/``!=`` and ``and``/``or`` are understood, anything else refuses.
     """
     expression = ci['env']['PARTS_EVENT'].removeprefix('${{').removesuffix('}}')
     python = expression.replace('&&', ' and ').replace('||', ' or ')
     python = python.replace('github.event_name', 'event_name').replace('inputs.smoke', 'smoke')
-    return eval(python, {'__builtins__': {}}, {'event_name': event, 'smoke': smoke})  # noqa: S307 -- our own text
+    names: dict[str, str | bool | None] = {'event_name': event, 'smoke': smoke}
+
+    def walk(node: ast.expr) -> str | bool | None:
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            return names[node.id]
+        if isinstance(node, ast.BoolOp):
+            value = walk(node.values[0])
+            for operand in node.values[1:]:
+                if isinstance(node.op, ast.And) != bool(value):
+                    return value
+                value = walk(operand)
+            return value
+        if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq | ast.NotEq):
+            equal = walk(node.left) == walk(node.comparators[0])
+            return equal if isinstance(node.ops[0], ast.Eq) else not equal
+        raise ValueError(ast.dump(node))  # a PARTS_EVENT node this reader does not understand
+
+    return walk(ast.parse(python.strip(), mode='eval').body)
 
 
 def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_path: Path) -> None:
@@ -524,7 +545,8 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     TRIGGERED BY ``pull_request_target`` ALONE (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a
     ``pull_request`` workflow from the PR head, which could rewrite it to post success or print the key; the
     ``pull_request_target`` workflow is the BASE's. Safe only because the job acts on nothing the head declares:
-    the diff is data, the review declaration is the base's (``forgereview.review_at``, F-46e412ee799d) and the tools
+    the diff is data, the review declaration is the base's (``forgereview_declared.review_at``, F-46e412ee799d) and the
+    tools
     are pinned by SHA (:func:`test_the_review_job_runs_no_code_the_pr_supplies`).
     PLANTED CONTROL: GitHub's ci.yml never takes it.
     """
@@ -599,7 +621,7 @@ def _commands(run: str) -> list[str]:
 def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -> None:
     """Gitea has no ``statuses`` scope: ``POST /statuses/{sha}`` is ``reqRepoWriter(unit.TypeCode)`` (1.27).
 
-    Measured 2026-11-01 on motronics #5397: with ``contents: read`` the job's ``tests/review`` POST was refused
+    Measured 2026-11-01 on consumer #5397: with ``contents: read`` the job's ``tests/review`` POST was refused
     while ``GET /user`` answered. ``contents: write`` is the Code-write the route asks for. Not a ceiling: Gitea
     takes a pull_request workflow from the PR head, whose author already holds Code write (see ci_base.toml).
     """
@@ -611,7 +633,7 @@ def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -
 def test_the_gitea_review_job_token_can_read_its_own_run(tmp_path: Path) -> None:
     """The job reads its own run for reviewgate: ``GET .../actions/runs/{id}``, Actions read on Gitea 1.27.
 
-    Measured 2026-11-01 on motronics #5397 and wdg-lab #427 (runs 5, 6): with no ``actions`` scope the GET was
+    Measured 2026-11-01 on consumer #5397 and consumer-b #427 (runs 5, 6): with no ``actions`` scope the GET was
     refused right after the status POST that ``contents: write`` had unblocked.
     """
     assert _gitea_review(tmp_path)['jobs']['review']['permissions']['actions'] == 'read'
@@ -643,9 +665,11 @@ def test_the_gitea_review_declares_one_permissions_block(tmp_path: Path) -> None
 
 
 def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None:
-    """The review reads the head through git and only ``pyproject.toml`` from the tree (``forgereview.load_review``).
+    """The review reads the head through git and only ``pyproject.toml`` from the tree.
 
-    Measured 2026-11-01, motronics #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
+    (``forgereview_declared.load_review``).
+
+    Measured 2026-11-01, consumer #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
     the head tree -- a ``pack-objects`` on the 1.6 GB forge host running 10+ minutes at 314 MiB. A cone sparse
     checkout with no directories materialises the root files alone.
     """
@@ -665,7 +689,7 @@ def _full_adoption(tmp_path: Path) -> dict[str, Any]:
 def test_the_review_key_cache_is_the_job_s_own(tmp_path: Path) -> None:
     """Every helper set and every daemon stopped names a socket under RUNNER_TEMP, removed with the job.
 
-    F-83bc8b74b803 (motronics #5397 round 2): the default credential-cache socket is per HOME, shared by every job
+    F-83bc8b74b803 (consumer #5397 round 2): the default credential-cache socket is per HOME, shared by every job
     on a persistent runner, and a SIGKILLed job never runs its EXIT trap -- the key then waits for the next job.
     """
     socket = '--socket=$RUNNER_TEMP/git-credential-cache/socket'
@@ -735,7 +759,7 @@ def _fetch_the_head(tmp_path: Path) -> dict[str, Any]:
 
 
 def test_the_review_job_fetches_from_a_per_repository_mirror(tmp_path: Path) -> None:
-    """D53(b): a whole-history clone per job was most of the runner's 557 MiB peak (motronics, 1.6 GB host).
+    """D53(b): a whole-history clone per job was most of the runner's 557 MiB peak (consumer, 1.6 GB host).
 
     The job updates a persistent bare mirror under the runner's HOME, one per repository, under a kernel lock
     (released when a killed job dies), and its checkout borrows the mirror's objects; no whole clone from the forge.

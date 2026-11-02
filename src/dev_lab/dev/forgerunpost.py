@@ -16,9 +16,10 @@ from lab_commons.hpc.run import NoRoom
 from dev_lab.dev.artefacts import MissingOutput
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import Claim, forge_now
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerunstate import Killed, Run, save
 from dev_lab.dev.forgestatus import status_post
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 

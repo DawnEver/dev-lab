@@ -15,13 +15,9 @@ THE CREDENTIAL ROUTE IS THE ONE :mod:`dev_lab.dev.forge` ALREADY USES, AND ONLY 
 credential fill`` for the host (user ruling 2026-10-09: the person's own credential, never a global
 token variable a process tree inherits). Nothing is written to disk and the token never reaches output.
 
-RETRY, THEN REPORT, IN NETVERB'S VOCABULARY. Every call is bounded by
-:data:`~dev_lab.dev.netverb.DEFAULT_ATTEMPTS` and its outcome is a
-:class:`~dev_lab.dev.netverb.Report`, so an HTTP failure reads exactly like a failed ``git
-push``. An ANSWERED 4xx is a refusal and is never repeated (408 and 429 stay retryable, as the table
-says); a 5xx or a dropped connection is retried. A 401/403 is MEASURED before it is named: the same
-credential is asked ``GET /user``; a refusal there is a credential refusal (not retried, the ``auth
-login`` remedy), an answer there makes the 401/403 transient (retried, and never told to re-store).
+RETRY, THEN REPORT, IN NETVERB'S VOCABULARY: how an answer reads -- success, transient, a refusal, a refused
+credential -- is :mod:`dev_lab.dev.forgefailure`. A 401/403 is MEASURED before it is named: the same credential
+is asked ``GET /user`` (:meth:`Client._diagnosis`).
 A create whose response was lost may still have landed, so before a create is RETRIED the newest
 objects are read back and the token's own identical one created since the attempt began is returned
 instead (:class:`~dev_lab.dev._forge_journal.Probe`); when that read itself fails the create is
@@ -80,7 +76,8 @@ from dev_lab.dev.forge import (
     forge_of_url,
     forge_transport,
 )
-from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
+from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, ForgeCallFailed, diagnose
+from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report
 
 __all__ = [
     'ACTIONS_BOT',
@@ -91,7 +88,6 @@ __all__ = [
     'Backend',
     'Client',
     'Comment',
-    'ForgeCallFailed',
     'Issue',
     'PullRequest',
     'backend_for',
@@ -106,61 +102,8 @@ __all__ = [
 #: What GitHub answers a workflow job token asking `/user`: only this answer, from GitHub, names the Actions bot.
 _INTEGRATION: Final = 'Resource not accessible by integration'
 
-#: Statuses below this are answers; at or above it the call failed.
-_HTTP_ERROR_FLOOR: Final = 400
-
-#: The 5xx floor: a server error, which a later attempt may clear.
-_HTTP_SERVER_FLOOR: Final = 500
-
-#: The one status that says the credential did not authenticate (a 403 authenticated it and refused the act).
-_UNAUTHENTICATED: Final = 401
-
-#: 4xx statuses that are NOT a refusal of the request itself: timeout and rate limit clear by waiting.
-_HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
-
-
 #: The separator in the provenance line, spelled once.
 _DOT: Final = ' · '
-
-
-class ForgeCallFailed(OSError):
-    """A forge call that did not succeed within the bound; :attr:`report` is netverb's report of it."""
-
-    def __init__(self, report: Report, *, credential_gone: bool = False, credential_kept: bool = False) -> None:
-        """Carry the report; on a 401/403 the message adds what the credential check and refresh MEASURED.
-
-        *credential_gone*: the refresh left the store holding no credential -- a re-login fixes it.
-        *credential_kept*: the store cannot refresh, so the refused credential was kept -- a re-login may fix it.
-        """
-        last = report.attempts[-1].returncode if report.attempts else 0
-        said = _forge.AUTH_TRANSIENT
-        if _credential_refused(report):
-            said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_KEPT if credential_kept else _forge.AUTH_REMEDY
-        super().__init__(f'{report.remedy}. {said}' if last in _forge.AUTH_REFUSED else report.remedy)
-        self.report = report
-
-    @property
-    def credential_refused(self) -> bool:
-        """Whether the forge refused the stored CREDENTIAL -- measured by ``GET /user``, never read off one status."""
-        return _credential_refused(self.report)
-
-    @property
-    def final(self) -> int | None:
-        """The HTTP status when the forge refused THIS CALL for good, else ``None`` (a later attempt may land).
-
-        Final is an answered refusal (:attr:`~dev_lab.dev.netverb.Diagnosis.FORGE_REFUSED`, e.g. a 405 on
-        merging a merged PR) that is not a refused CREDENTIAL: that one is the box's fault, not the call's.
-        """
-        last = self.report.attempts[-1] if self.report.attempts else None
-        if last is None or last.diagnosis is not Diagnosis.FORGE_REFUSED or self.credential_refused:
-            return None
-        return last.returncode
-
-
-def _credential_refused(report: Report) -> bool:
-    """The last attempt was a 401/403 that :meth:`Client._diagnosis` diagnosed refused after asking ``GET /user``."""
-    last = report.attempts[-1] if report.attempts else None
-    return last is not None and last.returncode in _forge.AUTH_REFUSED and last.diagnosis is Diagnosis.FORGE_REFUSED
 
 
 def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
@@ -180,16 +123,6 @@ def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
     )
     branch = done.stdout.strip() if done.returncode == 0 else ''
     return '[' + _DOT.join(part for part in (machine, agent, branch) if part) + ']'
-
-
-def _diagnose(status: int, text: str) -> Diagnosis:
-    """Read through netverb's table first; an answered 4xx it does not know is a refusal, never a transient.
-
-    A 401/403 never reaches here: :meth:`Client._diagnosis` measures it against ``GET /user`` first.
-    """
-    found = classify(f'error: {status} {text}')
-    answered = _HTTP_ERROR_FLOOR <= status < _HTTP_SERVER_FLOOR and status not in _HTTP_RETRYABLE_4XX
-    return Diagnosis.FORGE_REFUSED if found is Diagnosis.UNCLASSIFIED and answered else found
 
 
 @dataclass
@@ -242,14 +175,16 @@ class Client:
             conn.close()
 
     def _diagnosis(self, status: int, text: str, path: str) -> Diagnosis:
-        """:func:`_diagnose`, except a 401/403 is MEASURED: refused only when ``GET /user`` refuses the credential too.
+        """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401/403 is MEASURED against ``GET /user`` first.
+
+        Refused only when ``GET /user`` refuses the credential too.
 
         The incident (2026-10-18): one 401 was read as "permanent, re-store the credential" while ``git
         credential fill`` held a credential that authenticated minutes later. A check that cannot be made
         (dropped, 5xx) is not evidence against the credential, so the attempt stays transient.
         """
         if status not in _forge.AUTH_REFUSED:
-            return _diagnose(status, text)
+            return diagnose(status, text)
         user = f'{self.backend.api_root}/user'
         if path != user:
             try:
@@ -258,7 +193,7 @@ class Client:
                 return Diagnosis.TRANSIENT
         if status not in _forge.AUTH_REFUSED:
             return Diagnosis.TRANSIENT
-        return Diagnosis.TRANSIENT if status == _UNAUTHENTICATED and self._refresh() else Diagnosis.FORGE_REFUSED
+        return Diagnosis.TRANSIENT if status == UNAUTHENTICATED and self._refresh() else Diagnosis.FORGE_REFUSED
 
     def _refresh(self) -> bool:
         """Refresh the refused credential once, as git does after a 401; whether a DIFFERENT one came back.
@@ -321,7 +256,7 @@ class Client:
         parts = urllib.parse.urlsplit(url)
         path = parts.path + (f'?{parts.query}' if parts.query else '')
         status, payload = self._once('GET', path, None, 'application/octet-stream', parts.netloc or None)
-        if not 0 < status < _HTTP_ERROR_FLOOR:
+        if not 0 < status < HTTP_ERROR_FLOOR:
             text = payload.decode(errors='replace')[:300]
             raise ForgeCallFailed(
                 Report(('GET', path), (Attempt(1, status or 1, text, self._diagnosis(status, text, path)),), 1)
@@ -350,7 +285,7 @@ class Client:
                 status, payload = self._once(write.method, write.path, data, write.content_type, write.host or None)
             except OSError as exc:
                 status, payload = 0, str(exc).encode()
-            if 0 < status < _HTTP_ERROR_FLOOR:
+            if 0 < status < HTTP_ERROR_FLOOR:
                 return json.loads(payload) if payload else None
             text = payload.decode(errors='replace')[:300]
             made.append(Attempt(index, status or 1, text, self._diagnosis(status, text, write.path)))

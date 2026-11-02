@@ -18,7 +18,8 @@ from test_dev_forgework import _answer, _Loopback, _Recorder, _repo, server
 
 from dev_lab.dev.forge import Forge, store_credential, token_for
 from dev_lab.dev.forgeauth import main
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, Disposition
 
 __all__ = ['server']

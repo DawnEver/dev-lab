@@ -532,7 +532,7 @@ def _sync_with_an_off_format_upstream_commit(repo: Path) -> tuple[str, str]:
 def test_a_sync_increment_does_not_re_judge_what_the_base_already_holds(repo: Path, tmp_path: Path) -> None:
     """A commit reachable from LAB_CZ_BASE_REF was judged where it landed; only the lane's own are judged here.
 
-    MEASURED 2026-11-01: a motronics lane's sync push was refused for two ``data(femm)`` commits integrate/main
+    MEASURED 2026-11-01: a consumer lane's sync push was refused for two ``data(femm)`` commits integrate/main
     already held.
     """
     argv_log = _plant_judging_commitizen(repo, tmp_path)

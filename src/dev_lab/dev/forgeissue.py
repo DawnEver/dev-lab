@@ -39,8 +39,9 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import Client, Comment, client_for
 from dev_lab.dev.integrator import lane_ready
 from dev_lab.dev.issueref import CLOSING_VERBS, REF_VERBS
 

@@ -1,6 +1,6 @@
 """The door fetches the reviewed blobs before the reviewer runs: the reviewer holds no forge token.
 
-Measured 2026-11-01 on the Gitea review of motronics #5397: in the job's blobless clone the reviewer's own
+Measured 2026-11-01 on the Gitea review of consumer #5397: in the job's blobless clone the reviewer's own
 ``git diff -M`` fetched blobs lazily and failed ``could not read Username`` -- by design it gets no credential
 (:mod:`dev_lab.dev.reviewgitauth`). The door does hold one, so it asks for every blob the ranges change, at once.
 """

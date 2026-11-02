@@ -81,7 +81,7 @@ def test_an_upheld_claim_closes_the_finding_and_names_both_parties(tmp_path: Pat
 
 
 @pytest.mark.parametrize(
-    'who', [_AUTHOR, Identity('b', 'ws2', 'S-third'), Identity('a', 'box', 'S-claimant'), Identity('a', 'box')]
+    'who', [_AUTHOR, Identity('b', 'host2', 'S-third'), Identity('a', 'box', 'S-claimant'), Identity('a', 'box')]
 )
 def test_no_session_rules_only_the_forge_does(tmp_path: Path, who: Identity) -> None:
     """#11 round 2 (F-e97824b7b801): the author, a third session, the claimant, an unset LAB_SESSION -- all refused.
@@ -118,7 +118,7 @@ def test_an_unset_session_may_not_self_review_and_the_ci_identity_may() -> None:
     with pytest.raises(AdjudicationRefused, match='names no session'):
         self_review(Identity('a', 'box', '   '.strip()), authors, 'reviewing #1')
     self_review(Identity(ACTIONS_BOT, 'runner', ci=True), authors, 'reviewing #1')
-    self_review(Identity('b', 'ws2', 'S-other'), authors, 'reviewing #1')
+    self_review(Identity('b', 'host2', 'S-other'), authors, 'reviewing #1')
 
 
 @pytest.mark.parametrize('by', [Identity('a', 'box'), Identity('', 'box', 'S-x')])

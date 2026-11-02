@@ -78,8 +78,9 @@ from dev_lab.dev.artefactstores import (
     sorted_refs,
     verified_copy,
 )
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pulls_off
-from dev_lab.dev.forgework import Client, ForgeCallFailed, is_pull, pull_of
+from dev_lab.dev.forgework import Client, is_pull, pull_of
 
 __all__ = [
     'ARCHIVE',

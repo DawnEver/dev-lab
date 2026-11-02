@@ -19,6 +19,7 @@ from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgedraft import alarms as idle_drafts
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeintegration import alarms as sync_alarms
 from dev_lab.dev.forgeintegration import tick as integration_tick
@@ -35,7 +36,7 @@ from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgetakeover import alarms as held_reviews
 from dev_lab.dev.forgetidy import load_hygiene
 from dev_lab.dev.forgetidy import tidy as issue_tidy
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.integrator import observe
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.prlanded import serve_close_landed

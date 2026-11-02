@@ -35,7 +35,7 @@ from dev_lab.dev._logdistil import Distillate, distil, distil_log, relevant
 from dev_lab.dev.floors import assert_floor, assert_floor_still_binds
 from dev_lab.dev.pytestout import TRUNCATION_MARKERS
 from dev_lab.dev.reports import StepReport, read_pytest
-from dev_lab.dev.verify import _PYTEST_BANNER, PYTEST_ARGS, _tee
+from dev_lab.dev.verifysteps import _PYTEST_BANNER, PYTEST_ARGS, _tee
 
 #: The banner ``verify`` writes between the ruff half of a log and the pytest half.
 BANNER = _PYTEST_BANNER

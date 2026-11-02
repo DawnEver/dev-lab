@@ -24,7 +24,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:  # a type-only import: `supersede` imports THIS module, and a cycle is not a type.
     from .supersede import KitModule
@@ -32,8 +32,10 @@ if TYPE_CHECKING:  # a type-only import: `supersede` imports THIS module, and a 
 __all__ = [
     'ADOPTED_BY',
     'ORIGINAL',
+    'ORIGINAL_ROWS',
     'PROVENANCE_ROWS',
     'SUPERSEDES',
+    'DeclaredTwice',
     'provenance_rows',
     'undeclared_modules',
 ]
@@ -46,6 +48,10 @@ __all__ = [
 PROVENANCE_ROWS = '_provenance_rows.py'
 _ROWS_NAME = 'PROVENANCE'
 
+#: The bare names declared :data:`ORIGINAL`, beside the claims: a name claims nothing, so it is no row.
+ORIGINAL_ROWS = '_original_rows.py'
+_ORIGINALS_NAME = 'ORIGINAL_MODULES'
+
 #: What a row may say, and only the first of them opens a provenance case. A consumer that DELEGATES
 #: has not been replaced, and folding the two together is the false positive already measured here:
 #: ``verify``'s prose names ``scripts/gate/runner.py`` as the tree it was carved from, and that file
@@ -57,15 +63,31 @@ _KINDS = frozenset({SUPERSEDES, ADOPTED_BY, ORIGINAL})
 
 
 def provenance_rows(directory: Path) -> dict[str, tuple[str, ...]]:
-    """Read :data:`PROVENANCE_ROWS` beside *directory* AS SOURCE. An absent registry is no rows.
+    """Read :data:`PROVENANCE_ROWS` and :data:`ORIGINAL_ROWS` beside *directory* AS SOURCE.
 
-    Absent is permitted because a kit directory is an argument here and a planted one has no
-    registry. What is NOT permitted is a shipped registry that misses a module, and that is
-    :func:`undeclared_modules`.
+    An absent file is no rows. Absent is permitted because a kit directory is an argument here and a
+    planted one has no registry. What is NOT permitted is a shipped registry that misses a module,
+    and that is :func:`undeclared_modules`. A module named in BOTH files is refused: one provenance each.
     """
-    path = directory / PROVENANCE_ROWS
+    claims = cast('dict[str, tuple[str, ...]]', _literal(directory / PROVENANCE_ROWS, _ROWS_NAME, {}))
+    originals = cast('tuple[str, ...]', _literal(directory / ORIGINAL_ROWS, _ORIGINALS_NAME, ()))
+    rows = {name: tuple(row) for name, row in claims.items()}
+    if both := sorted(set(rows) & set(originals)):
+        raise DeclaredTwice(both)
+    return rows | dict.fromkeys(originals, (ORIGINAL,))
+
+
+class DeclaredTwice(ValueError):
+    """A module is declared ``original`` AND given a claiming row: one module has one provenance."""
+
+    def __init__(self, names: list[str]) -> None:
+        super().__init__(f'declared {ORIGINAL} in {ORIGINAL_ROWS} and given a row in {PROVENANCE_ROWS}: {names}')
+
+
+def _literal(path: Path, name: str, absent: object) -> object:
+    """The literal bound to *name* at the top level of *path*, read as source; *absent* when there is none."""
     if not path.is_file():
-        return {}
+        return absent
     for node in ast.parse(path.read_text(encoding='utf-8')).body:
         if isinstance(node, ast.Assign):
             targets: list[ast.expr] = list(node.targets)
@@ -73,9 +95,9 @@ def provenance_rows(directory: Path) -> dict[str, tuple[str, ...]]:
             targets = [node.target]
         else:
             continue
-        if node.value is not None and any(isinstance(t, ast.Name) and t.id == _ROWS_NAME for t in targets):
-            return {name: tuple(row) for name, row in ast.literal_eval(node.value).items()}
-    return {}
+        if node.value is not None and any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            return ast.literal_eval(node.value)
+    return absent
 
 
 def undeclared_modules(modules: Iterable[KitModule], rows: Mapping[str, tuple[str, ...]]) -> tuple[str, ...]:

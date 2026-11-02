@@ -14,7 +14,7 @@ from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
 from dev_lab.dev.forge import fetch_origin
-from dev_lab.dev.forgework import ForgeCallFailed
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.netverb import Report
 from dev_lab.dev.prsuperseded import close_superseded
 

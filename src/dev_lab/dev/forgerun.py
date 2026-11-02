@@ -55,7 +55,8 @@ DRAIN TO A DEADLINE (user rulings 2026-10-22, 2026-10-24 "B"). A run of a ``Sche
 no longer its ref's tip has every NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a
 STARTED task drains -- the run keeps its claim as ``draining`` -- until its DEADLINE: its learned limit (the
 packer's estimate times ``policy.safety``, the figure its ``--time`` was cut from) counted from supersession or
-its own start, whichever is later (:func:`overdue`). Past it, that task alone is cancelled and its tests are left
+its own start, whichever is later (:func:`dev_lab.dev.forgesupersede.overdue`). Past it, that task alone is cancelled
+and its tests are left
 for the tip. Once none runs the run is released as superseded naming the tip and dropped -- one alarm. The tip
 waits behind it (:mod:`forgecoalesce`), so its run carries every outcome the drained tasks finished
 (:mod:`dev_lab.dev.forgecarry`). Ada 2026-10-24: five superseded heads of live PRs held one account up to 1 d 16 h.
@@ -64,7 +65,7 @@ nothing, so the serve's stall watch cancels it like any other (:meth:`dev_lab.de
 -- Ada 2026-10-24..26, eight drained tasks each spun 34-41 h on one hung test, their deadline cut from an
 estimate a doubled kill floor had inflated past every partition's wall.
 A run whose REF IS GONE (merged or closed) has no tip to drain for: unless the integration tip carries its
-result (equivalent, P6), every job is cancelled, started ones too (:func:`_ref_gone`).
+result (equivalent, P6), every job is cancelled, started ones too (:func:`dev_lab.dev.forgesupersede.superseding_tip`).
 Ada 2026-10-22: 44% of a week's forge core-h was
 cancelled while running, 34 points of it for supersession. A DOCS-ONLY tip
 never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
@@ -101,9 +102,10 @@ from lab_commons.hpc.tree import NotSubmitted
 from dev_lab.dev import forgerunpost, forgerunshow, forgeship
 from dev_lab.dev.artefacts import MissingOutput, run_id
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
-from dev_lab.dev.forgecarry import data_only, equivalent, publish
+from dev_lab.dev.forgecarry import publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
-from dev_lab.dev.forgecoalesce import DRAINING, PUBLISHING
+from dev_lab.dev.forgecoalesce import PUBLISHING
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeroute import pyproject_at, route
 from dev_lab.dev.forgerunpost import DESCRIPTION_MAX
 from dev_lab.dev.forgerunstate import (
@@ -113,28 +115,24 @@ from dev_lab.dev.forgerunstate import (
     SUBMITTED,
     SUBMITTING,
     Cluster,
-    Draining,
     Run,
     Unrecorded,
     drop,
     save,
 )
-from dev_lab.dev.forgeschedule import coalesced, tip_of
+from dev_lab.dev.forgeschedule import tip_of
 from dev_lab.dev.forgestatus import status_history
-from dev_lab.dev.forgework import Client, ForgeCallFailed
-from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.forgesupersede import supersede, superseding_tip
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 
-__all__ = ['advance', 'overdue', 'start']
+__all__ = ['advance', 'start']
 
 #: What a tick may do with a run (:func:`_hold`).
 _ADVANCE: Final = 'advance'
 _WAIT: Final = 'wait'
 _GONE: Final = 'gone'
-
-#: :func:`_superseding_tip` for a run whose ref is gone (merged or closed) and no live head carries it.
-_REF_GONE: Final = '(ref gone)'
 
 
 def start(work: Work, owner: Claim) -> Run:
@@ -169,8 +167,8 @@ def advance(
         return run if held == _WAIT else None
     try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
         if run.phase in {CLAIMED_PHASE, SUBMITTING}:
-            if tip := _superseding_tip(root, run):  # its ref moved on: no submit, the tip takes the slot
-                return _supersede(client, run, tip, cluster=cluster, lease=lease, say=say, alarm=alarm, tag=tag)
+            if tip := superseding_tip(root, run):  # its ref moved on: no submit, the tip takes the slot
+                return supersede(client, run, tip, cluster=cluster, lease=lease, say=say, alarm=alarm, tag=tag)
             submitted = _submit(run, client=client, lease=lease, cluster=cluster, say=say, alarm=alarm, tag=tag)
             if submitted is None:
                 return run
@@ -214,8 +212,8 @@ def _gather(
     if not ids and not cluster.orphans(run):  # no state and no job of this part: it never ran
         _settle(root, run, client=client, why='no job of this part was ever submitted', say=say, alarm=alarm, ran=False)
         return None
-    if tip := _superseding_tip(root, run):  # its pending tasks go, its started ones drain (ruling 2026-10-22)
-        return _supersede(client, run, tip, cluster=cluster, lease=lease, say=say, alarm=alarm, tag=tag)
+    if tip := superseding_tip(root, run):  # its pending tasks go, its started ones drain (ruling 2026-10-22)
+        return supersede(client, run, tip, cluster=cluster, lease=lease, say=say, alarm=alarm, tag=tag)
     try:
         record = cluster.gather(run)
     except Unrecorded as why:
@@ -256,111 +254,6 @@ def _publish_rounds(
         return run, lost
     say(f'{tag}: published round {len(folded) - 1} ({lost} id(s) lost so far)')
     return forgerunpost.step(run, rounds_posted=len(folded)), lost
-
-
-def _superseding_tip(root: Path, run: Run) -> str:
-    """The newer tip of *run*'s coalesced ref that supersedes it; ``''`` when none (still the tip, another class).
-
-    A DOCS-ONLY tip never supersedes (DOCS-ONLY-CARRIES, :func:`dev_lab.dev.forgecarry.docs_only`): no test's
-    footprint reaches its diff, so its part IS this run's result, posted on it too when it lands (:func:`publish`).
-    A DATA-ONLY tip (a memory or docs head a whole-tree test still reads, P6) never supersedes either: it waits
-    on this run and then carries every outcome its diff cannot reach (:func:`dev_lab.dev.forgecarry.docs_only`).
-    :data:`_REF_GONE` when the ref itself is gone and no live head carries the run (:func:`_ref_gone`).
-    A STARTED run of the INTEGRATION branch (a job submitted) is never superseded (D111): it is the only verdict
-    ``integrate promote`` can read, and the branch moves faster than one run finishes.
-    """
-    if _ref_gone(root, run):
-        return _REF_GONE
-    if run.job_ids and run.ref == _integration(root):
-        return ''
-    tip = tip_of(root, run.ref)
-    moved = tip and tip != run.sha and coalesced(root, run.ref)
-    return tip if moved and not (equivalent(root, run.sha, tip) or data_only(root, run.sha, tip)) else ''
-
-
-def _integration(root: Path) -> str:
-    """*root*'s integration branch."""
-    return load_policy(root).integration
-
-
-def _ref_gone(root: Path, run: Run) -> bool:
-    """Whether *run*'s ref has no tip (merged or closed, deleted) and its result carries to no live head.
-
-    NEWEST-HEAD-ONLY drains a superseded run's started tasks because its tip carries them; a gone ref has no
-    tip. The integration tip is the one live head left that may carry it (DOCS-ONLY-CARRIES, P6).
-    """
-    if tip_of(root, run.ref):
-        return False
-    integration = tip_of(root, _integration(root))
-    return not (integration and equivalent(root, run.sha, integration))
-
-
-def _cancel_orphan(
-    client: Client, run: Run, *, cluster: Cluster, say: Callable[[str], None], alarm: Callable[[Alarm], None], tag: str
-) -> None:
-    """Cancel every job of *run* -- started ones too -- release it superseded and drop it: one alarm."""
-    ids = cluster.cancel(run)
-    reason = f'released: superseded -- {run.ref} is gone and no live head carries its result'[:DESCRIPTION_MAX]
-    why = f'jobs {" ".join(ids) or "none"} cancelled'
-    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was orphaned', why))
-    say(f'{tag}: {why} -- {reason}')
-    forgerunpost.release(client, run, reason, say)
-    drop(run)
-
-
-def _supersede(
-    client: Client,
-    run: Run,
-    tip: str,
-    *,
-    cluster: Cluster,
-    lease: timedelta,
-    say: Callable[[str], None],
-    alarm: Callable[[Alarm], None],
-    tag: str,
-) -> Run | None:
-    """Withdraw *run*'s NOT-YET-STARTED tasks; drain its started ones to their deadline; then release it.
-
-    NEWEST-HEAD-ONLY (user rulings 2026-10-22, 2026-10-24 "B"): while a started task runs within its deadline
-    (:func:`overdue`) the run keeps its claim -- so the tip waits behind it (:mod:`dev_lab.dev.forgecoalesce`)
-    and its run carries what the drained tasks finished (:mod:`dev_lab.dev.forgecarry`) -- and is returned. A
-    task past its deadline is cancelled alone, its tests left for the tip. Once none runs the run is released
-    superseded by *tip* and dropped: one alarm.
-    """
-    if tip == _REF_GONE:  # no tip to drain for: every job goes, started ones too
-        _cancel_orphan(client, run, cluster=cluster, say=say, alarm=alarm, tag=tag)
-        return None
-    started, cut = cluster.withdraw(run), []
-    if started:
-        drain = cluster.started_tasks(run)
-        if not run.superseded_at:
-            run = forgerunpost.step(run, superseded_at=drain.now)
-        if late := overdue(drain, since=run.superseded_at):
-            cut = cluster.cancel_tasks(run, late)
-            say(f'{tag}: superseded by {tip[:12]} -- past their deadline, tasks {" ".join(cut)} cancelled')
-        left = [one.job_id for one in drain.tasks if one.job_id not in cut]
-        if left or not drain.tasks:  # an unread task is never judged late: it drains
-            say(f'{tag}: superseded by {tip[:12]} -- pending tasks withdrawn, draining jobs {" ".join(started)}')
-            count = len(left) if drain.tasks else len(started)
-            return forgerunpost.report(client, run, f'{DRAINING} {count} started job(s) for {tip[:12]}', lease, say)
-    reason = f'released: superseded -- {run.ref} moved on to {tip[:12]}; its slot goes to the tip'
-    reason = reason[:DESCRIPTION_MAX]
-    why = 'pending tasks withdrawn, ' + (
-        f'tasks {" ".join(cut)} cancelled past their deadline' if cut else 'no started task cancelled'
-    )
-    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded by {tip[:12]}', why))
-    say(f'{tag}: {why} -- {reason}')
-    forgerunpost.release(client, run, reason, say)
-    drop(run)
-    return None
-
-
-def overdue(drain: Draining, *, since: float) -> list[str]:
-    """The started tasks of *drain* past their deadline: their limit after *since* or their start, the later.
-
-    A task started just before supersession is never cut short below its own limit.
-    """
-    return [one.job_id for one in drain.tasks if drain.now > max(since, one.started_at) + one.limit_s]
 
 
 def _settle(

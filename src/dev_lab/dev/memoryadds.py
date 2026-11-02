@@ -171,7 +171,7 @@ def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str
     """*rows* without the paths staged EXACTLY as ``MERGE_HEAD`` or ``origin/<integration>`` holds them.
 
     Such a path is a change judged where it was made, not an edit by this commit -- two shapes, both measured
-    2026-11-01 on a motronics lane:
+    2026-11-01 on a consumer lane:
 
     * a SYNC carries the integration line's history: an entry staged byte-for-byte as the merged side has it (or
       absent where that side deleted it). Reverting it to the lane's text would undo upstream inside the merge.

@@ -19,7 +19,7 @@ A JOB SLURM KILLED IS READ, NAMED AND LEARNED (:meth:`SlurmCluster.killed`; Ada 
 here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.measured.Measured.killed`).
 
 A FORGE JOB WHOSE RUN IS GONE IS CANCELLED (:meth:`SlurmCluster.strays`; Ada 2026-10-25: 25 % of a day's
-core-hours). A run whose ref is gone cancels its own jobs (:func:`dev_lab.dev.forgerun._cancel_orphan`); a job
+core-hours). A run whose ref is gone cancels its own jobs (:func:`dev_lab.dev.forgesupersede.supersede`); a job
 no run file names at all -- its run lost to another owner, or dropped -- had nobody to cancel it.
 
 A RUNNING FORGE TASK THAT STOPPED PROGRESSING IS CANCELLED (:meth:`SlurmCluster.stalled`; Ada 2026-10-24..26:
@@ -70,14 +70,12 @@ from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from dev_lab.dev.forgestuck import parse_duration, remote_path
+from dev_lab.dev.slurmkilled import KILLED_FIELDS, killed_jobs
 
-__all__ = ['KILLED', 'STALL_MULTIPLE', 'SlurmCluster', 'killed_jobs', 'progress_text', 'slurm_cluster', 'standing_of']
+__all__ = ['STALL_MULTIPLE', 'SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
 
-#: The ``sacct`` states of a job Slurm killed for its ask: memory, or time.
-KILLED: Final = ('OUT_OF_MEMORY', 'TIMEOUT')
 #: A forge job's name (:func:`lab_commons.hpc.run.job_name`, and the schema-1 ``run-<sha12>``).
 _FORGE_JOB: Final = re.compile(r'run-[0-9a-f]{12}(-.+)?')
-_KILLED_FIELDS: Final = 'JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
 #: How many times its per-test walls a RUNNING task may go before it is STALLED: its round's stream silent past
 #: this times its LONGEST wall, or the task running past this times the SUM of its walls. The item runner
 #: (:mod:`lab_commons.hpc.pytest_item`) writes a line at every test's start and end and kills any test at its
@@ -86,8 +84,6 @@ _KILLED_FIELDS: Final = 'JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
 STALL_MULTIPLE: Final = 2.0
 #: Every RUNNING task of the account: its id, name, elapsed time and work dir (the round's run dir), and the clock.
 _RUNNING: Final = "date +%s; squeue -h --me -t RUNNING -o '%i|%j|%M|%Z'"
-_SIZE: Final = re.compile(r'([\d.]+)([KMGT]?)')
-_MB_PER: Final = {'K': 1 / 1024, '': 1 / 1024 / 1024, 'M': 1, 'G': 1024, 'T': 1024 * 1024}
 
 
 def stall_of(items: list[dict[str, Any]], *, idle_s: float, elapsed_s: float) -> str:
@@ -119,41 +115,6 @@ def _last_started(text: str, items: set[object]) -> str:
             if isinstance(line, dict) and line.get('item') in items and 'start' in line:
                 last = str(line['start'])
     return last
-
-
-def _mb(text: str) -> int:
-    """``4G``, ``8000M``, ``4300000K`` (or ``4Gn``/``4Gc`` of older Slurm) in MB; empty is 0."""
-    match = _SIZE.match(text.strip())
-    return round(float(match.group(1)) * _MB_PER[match.group(2)]) if match else 0
-
-
-def _seconds(text: str) -> int:
-    return round(parse_duration(text)) if text.strip() and text.strip()[0].isdigit() else 0
-
-
-def killed_jobs(sacct: str) -> tuple[Killed, ...]:
-    """Each job of ``sacct -n -P -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit`` in a :data:`KILLED` state.
-
-    The ask is the job's own row; ``MaxRSS`` is its steps' (``7_0.batch``), the largest; a job is killed when its
-    row or a step's state is.
-    """
-    jobs: dict[str, list[str]] = {}
-    used: dict[str, int] = {}
-    for line in sacct.splitlines():
-        job, state, req, rss, elapsed, limit = (*line.split('|'), '', '', '', '', '')[:6]
-        base, dot, _step = job.strip().partition('.')
-        state = state.split()[0] if state.strip() else ''
-        if not dot:
-            jobs[base] = [state, req, elapsed, limit]
-            continue
-        used[base] = max(used.get(base, 0), _mb(rss))
-        if state in KILLED and base in jobs and jobs[base][0] not in KILLED:
-            jobs[base][0] = state
-    return tuple(
-        Killed(job, state, _mb(req), used.get(job, 0), _seconds(limit), _seconds(elapsed))
-        for job, (state, req, elapsed, limit) in jobs.items()
-        if state in KILLED
-    )
 
 
 def progress_text(where_: Progress) -> str:
@@ -273,7 +234,7 @@ class SlurmCluster:
         return records[-1]
 
     def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
-        """*run*'s jobs Slurm killed for memory or time (:func:`killed_jobs`); an OOM's ask is learned grown.
+        """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's ask is learned grown.
 
         Grown by :data:`~lab_commons.compute.learned.OOM_GROWTH`, held to the most any grant gives, never
         lowering a known ask (:func:`~lab_commons.compute.learned.record_ask`): one learned store, read by the next
@@ -284,7 +245,7 @@ class SlurmCluster:
         ids = [str(job) for one in state['rounds'] for job in one['job_ids']]
         if not ids:
             return ()
-        found = killed_jobs(shell(f'sacct -n -P -j {",".join(ids)} -o {_KILLED_FIELDS}', None))
+        found = killed_jobs(shell(f'sacct -n -P -j {",".join(ids)} -o {KILLED_FIELDS}', None))
         oom = [one.asked_mb for one in found if one.state == 'OUT_OF_MEMORY']
         if oom:
             grants = self.machine.grants

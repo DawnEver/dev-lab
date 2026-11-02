@@ -21,7 +21,8 @@ import pytest
 from dev_lab.dev.branchprune import DELETABLE, DELETE, EPHEMERAL, MERGED, STALE, prune, serve_prune, survey
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from tests._forge_state import API, FORGE

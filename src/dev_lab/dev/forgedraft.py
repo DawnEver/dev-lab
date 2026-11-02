@@ -39,9 +39,10 @@ from lab_commons.log import emit
 from dev_lab.dev._forge_records import draft_title, ready_title
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import GITHUB, ForgeCallFailed, client_for
+from dev_lab.dev.forgework import GITHUB, client_for
 from dev_lab.dev.labsession import sessions
 
 if TYPE_CHECKING:

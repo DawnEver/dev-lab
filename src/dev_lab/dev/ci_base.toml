@@ -145,9 +145,9 @@ pull-requests = "read"
 # workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
 # supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
 # whose lock and project are the PR's, and never a module path (forgereview_command.SAFE_PATH). THE TRUST CHAIN:
-# the forge's default branch -> its integration name (forgereview.trusted_integration, F-169e99e6c68c) -> that
-# branch's review declaration (forgereview.review_at) -> the command; a PR into any other base is not reviewed.
-# The dev_lab door is the shared `door` steps': the dev-lab the base's uv.lock pins.
+# the forge's default branch -> its integration name (forgereview_declared.trusted_integration, F-169e99e6c68c) -> that
+# branch's review declaration (forgereview_declared.review_at) -> the command; a PR into any other base is not reviewed.
+# The dev_lab door is the shared `door` steps': the dev-lab DOOR_SHA's uv.lock pins.
 ["ci.yml".jobs.review]
 if = "${{ github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
@@ -311,7 +311,7 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # Every origin branch is fetched (the merge decision trial-merges against one), blobless, one pack thread: the
 # review reads only its range's blobs.
 # THE MIRROR RULE (D53(b), user ruling 2026-11-01): a job never clones the whole history. The local index-pack of
-# motronics' full history was most of the runner's 557 MiB peak on the 1.6 GB host, which held capacity at 1. Each
+# a consumer's full history was most of the runner's 557 MiB peak on the 1.6 GB host, which held capacity at 1. Each
 # repository has ONE persistent bare blobless mirror, $HOME/mirrors/<owner>/<repo>.git under the runner's HOME; a job
 # updates it incrementally under `flock` on <repo>.git.lock (the kernel drops the lock when a killed job dies; the
 # first run builds it at <repo>.git.new and renames it, so a half-built mirror is never used, and a stale *.lock a

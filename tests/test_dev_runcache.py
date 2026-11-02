@@ -19,7 +19,7 @@ from dev_lab.dev.logref import LogRef
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.runcache import CACHE_REL, CachedRun, RetiredCache, cache_path, cached, record, remember, runs
 from dev_lab.dev.verdict import Verdict
-from dev_lab.dev.verify import build_verdict
+from dev_lab.dev.verifysteps import build_verdict
 
 GIT = shutil.which('git') or 'git'
 
