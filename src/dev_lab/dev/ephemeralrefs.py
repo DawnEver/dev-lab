@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping, Sequence
 
 __all__ = [
+    'DATED_MEMORY',
     'MACHINE_LOCAL',
     'PORTABLE',
     'READ_VERBS',
@@ -78,6 +79,12 @@ __all__ = [
 ]
 
 RULE: Final = 'TRACKED-CITES-NO-EPHEMERAL'
+
+#: A dated memory entry, ``.claude/memory/<yyyy>/<mm>/<dd>/...`` at any depth: an immutable record of what
+#: happened (MEMORY-SHAPE; integrator ruling 2026-11-02), so a path it cites existed THEN and is a true
+#: statement about the past. THIS scan alone skips it, beside archived code; the memory index files and
+#: ``.claude/rules`` stay judged, and no other family scan inherits the exemption.
+DATED_MEMORY: Final = re.compile(r'(?:^|/)\.claude/memory/\d{4}/\d{2}/\d{2}/')
 #: The one remedy every refusal prints.
 REMEDY: Final = 'cite a tracked source or a <placeholder> shape, or declare an escape in [tool.dev_lab.ephemeral_refs]'
 
@@ -306,12 +313,13 @@ def citations_in(root: Path, names: Iterable[str]) -> tuple[list[Citation], int]
     """Every refused citation across *names* (repo-relative), and how many files were READ.
 
     Archived code (:func:`dev_lab.dev.codeplace.is_archived`) is read-only history and is skipped, as by
-    every family scan; property 1 still covers it, because it judges WHERE a file lives, not what it says.
+    every family scan, and so is a :data:`DATED_MEMORY` entry, by this scan only; property 1
+    still covers it, because it judges WHERE a file lives, not what it says.
     """
     pending: list[tuple[str, int, str, bool]] = []
     read = 0
     for name in names:
-        if is_archived(name):
+        if is_archived(name) or DATED_MEMORY.search(name):
             continue
         file = root / name
         try:

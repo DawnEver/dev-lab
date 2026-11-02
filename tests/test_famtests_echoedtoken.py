@@ -110,6 +110,11 @@ def test_the_scanner_names_the_planted_echo_and_none_of_its_honest_neighbours(tm
     echoedtoken.assert_the_scanner_still_convicts(tmp_path, roots=ROOTS)
 
 
+def test_a_dated_memory_entry_is_still_scanned(tmp_path: Path) -> None:
+    """The ephemeral-citation scan's dated-memory exemption is its own; this scan never inherits it."""
+    echoedtoken.assert_the_scanner_still_convicts(tmp_path, roots=(('.claude/memory/2026/10/28', '*.py'),))
+
+
 def test_the_control_refuses_to_run_with_no_roots(tmp_path: Path) -> None:
     """A control handed nothing walks nothing and passes in triumph, which is the vacuous green."""
     empty: Collection[tuple[str, str]] = ()

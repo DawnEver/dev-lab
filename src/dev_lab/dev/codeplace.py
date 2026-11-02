@@ -64,6 +64,7 @@ from dev_lab.dev.reportplace import refuse_report
 
 __all__ = [
     'ARCHIVED_SEGMENTS',
+    'ARCHIVE_DIRECTORY',
     'CODE_SUFFIXES',
     'FAMILY_CODE_ROOTS',
     'FAMILY_HOMES',
@@ -129,14 +130,13 @@ FAMILY_STRAY_ROOTS: tuple[str, ...] = (FAMILY_HOMES['one-off experiment, probe o
 #: The family default for ``max_age_days`` (:mod:`dev_lab.dev.scratch` reads it off the placement).
 SCRATCH_MAX_AGE_DAYS = 3.0
 
+#: The directory under a day's memory that held archived one-offs until that exit was retired
+#: (2026-10-22); what is already there stays archived history.
+ARCHIVE_DIRECTORY = 'attachments'
 #: Segments whose tree is read-only archived code at ANY depth: a migrated repo's ``attic/`` and an
-#: ``archived/`` tree. With a dated memory day (:data:`_MEMORY_DAY`) these are every archive a scan
+#: ``archived/`` tree. With a memory day's :data:`ARCHIVE_DIRECTORY` these are every archive a scan
 #: skips; :func:`is_archived` is the one reading, so no scan keeps its own copy of the set.
 ARCHIVED_SEGMENTS = frozenset({'attic', 'archived'})
-#: A dated memory day, ``<yyyy>/<mm>/<dd>``, under a ``.claude/memory/`` tree. Its entries are an immutable
-#: record of what happened (MEMORY-SHAPE; integrator ruling 2026-11-02): a path it cites existed then, so
-#: it is archived like ``attic/``. The memory INDEX files above the day stay live and are judged.
-_MEMORY_DAY = (4, 2, 2)
 _SECONDS_PER_DAY = 86400.0
 #: Where a repo declares its delta: ``[tool.dev_lab.placement]`` in this file.
 _MANIFEST = 'pyproject.toml'
@@ -417,21 +417,13 @@ if __name__ == '__main__':
 def is_archived(rel: str) -> bool:
     """Whether repo-relative POSIX *rel* is archived code, which every code scan skips.
 
-    Archived means under an :data:`ARCHIVED_SEGMENTS` segment, or inside a dated day of a
-    ``.claude/memory/`` tree at any depth (memory is scoped per module in some consumers): the day's
-    entries and the ``attachments/`` one-offs archived there until that exit was retired on 2026-10-22.
+    Archived means under an :data:`ARCHIVED_SEGMENTS` segment, or under the :data:`ARCHIVE_DIRECTORY`
+    of a ``.claude/memory/`` tree at any depth (memory is scoped per module in some consumers), which
+    which held archived one-offs until that exit was retired on 2026-10-22.
     """
     parts = PurePosixPath(rel).parts
     if ARCHIVED_SEGMENTS.intersection(parts):
         return True
     return any(
-        parts[i : i + 2] == ('.claude', 'memory') and _is_memory_day(parts[i + 2 : -1]) for i in range(len(parts))
-    )
-
-
-def _is_memory_day(below: tuple[str, ...]) -> bool:
-    """Whether the directories *below* a memory root open with a dated ``<yyyy>/<mm>/<dd>`` day."""
-    day = below[: len(_MEMORY_DAY)]
-    return len(day) == len(_MEMORY_DAY) and all(
-        part.isdigit() and len(part) == width for part, width in zip(day, _MEMORY_DAY, strict=True)
+        parts[i : i + 2] == ('.claude', 'memory') and ARCHIVE_DIRECTORY in parts[i + 2 : -1] for i in range(len(parts))
     )
