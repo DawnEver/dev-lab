@@ -137,6 +137,13 @@ id = "session-branch"
 run = ["python", "-m", "dev_lab.dev.sessionbranch"]
 always_run = true
 
+# NO-PUSH-ONTO-A-LANDED-PR (dev_lab.dev.landedpush): a branch whose PR into the integration branch the forge
+# merged or closed, with no open PR for it, takes no new push -- no PR would carry it. An unreadable forge refuses.
+[[pre-push]]
+id = "landed-pr"
+run = ["python", "-m", "dev_lab.dev.landedpush"]
+always_run = true
+
 # FORGE NOTICES WHERE A SESSION ACTS ON ITS PR (user ruling 2026-10-21): a pr/* push, and every commit on a pr/*
 # branch, print that PR's open notices for this LAB_SESSION (dev_lab.dev.branchnotices: one reader, cached 60 s,
 # short deadline, read-only, silent when none, exit 0 always). git verbs are the decision points every vendor shares.

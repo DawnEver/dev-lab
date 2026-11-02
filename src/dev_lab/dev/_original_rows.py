@@ -147,6 +147,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrator',
     # ORIGINAL: a consumer's primary-checkout hook guarded the other direction only.
     'sessionbranch',
+    # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02).
+    'landedpush',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit',
     # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).

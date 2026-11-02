@@ -258,6 +258,10 @@ local reads only -- no network call beyond the push itself -- with no escape hat
 | INTEGRATION-TAKES-ONLY-FORGE-MERGES | a new first-parent commit on the integration branch past `pr_merges_since` that the forge did not merge: replaces INTEGRATION-IS-MERGES-ONLY for that branch |
 | ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES | a push creating or updating `refs/heads/X` where the pushed tip's branch set does not admit `X` (not the trunk, a session, or an `ephemeral` glob): fan-out stays local |
 
+The separate base row `landed-pr` (`dev_lab.dev.landedpush`) READS THE FORGE: NO-PUSH-ONTO-A-LANDED-PR refuses a
+push updating a branch whose PR into the integration branch is merged or closed while no open PR has that head,
+naming the remedy (a new PR from the branch, or a new branch name); a forge that cannot be read refuses.
+
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
 integration branch after `merges_only_since` that is not a two-parent merge with a `Merged-Branch:` trailer
 whose merge audit passes.
