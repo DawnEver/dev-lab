@@ -24,6 +24,7 @@ from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 from lab_commons.outcomes import Conclusion
 
+from dev_lab.dev import forgereview_command
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, TAKEOVER_PENDING, review_tick, step
@@ -843,3 +844,17 @@ def test_a_head_inside_the_quiet_period_waits_and_spends_nothing(tmp_path: Path)
     assert len(command.ran) == 1
     with pytest.raises(ValueError, match='quiet'):
         Review(quiet='10')
+
+
+def test_a_command_whose_interpreter_ignores_safe_path_cannot_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dev-lab #40: an interpreter blind to ``PYTHONSAFEPATH`` (older than 3.11) cannot start the command.
+
+    It would put the PR checkout first on ``sys.path`` beside the key.
+
+    PLANTED control: the same interpreter, the env withheld, reports no safe path and is refused.
+    """
+    assert can_start([sys.executable, '-m', 'json.tool'], tmp_path) is None
+    monkeypatch.setattr(forgereview_command, 'SAFE_PATH', {})
+    assert 'safe_path' in (can_start([sys.executable, '-m', 'json.tool'], tmp_path) or '')

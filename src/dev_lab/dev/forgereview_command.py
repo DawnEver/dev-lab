@@ -26,7 +26,13 @@ __all__ = ['REFUSED_EXIT', 'ReviewRefused', 'ReviewUnsupported', 'Runner', 'can_
 #: The exit a review command REFUSES with (a bad method, version or range): empty stdout, the reason on stderr.
 REFUSED_EXIT: Final = 2
 
-_PROBE: Final = 'import importlib.util, sys; sys.exit(importlib.util.find_spec(sys.argv[1]) is None)'
+_UNSAFE_PATH_EXIT: Final = 3
+#: Run under :data:`SAFE_PATH`: an interpreter reporting no ``sys.flags.safe_path`` (older than 3.11) exits 3.
+_PROBE: Final = (
+    'import importlib.util, sys; '
+    f'sys.exit({_UNSAFE_PATH_EXIT} if not getattr(sys.flags, "safe_path", False) '
+    'else importlib.util.find_spec(sys.argv[1]) is None)'
+)
 _MISSING_MODULE: Final = 'No module named'  # what `python -m <absent>` says
 _USAGE_ERROR: Final = 'error: unrecognized arguments'  # argparse's exit 2: the command does not speak this interface
 _COMMAND_TIMEOUT_S: Final = 1800
@@ -44,7 +50,10 @@ class ReviewUnsupported(OSError):
 
 
 def can_start(argv: Sequence[str], root: Path) -> str | None:
-    """Why this host cannot start *argv* (its executable absent, or its ``-m`` module unimportable); ``None`` if it can.
+    """Why this host cannot start *argv*; ``None`` if it can.
+
+    Its executable absent, its ``-m`` interpreter blind to :data:`SAFE_PATH` (dev-lab #40), or its module
+    unimportable.
 
     Checked BEFORE a claim is posted; the reason becomes the ``error`` status.
     """
@@ -53,7 +62,12 @@ def can_start(argv: Sequence[str], root: Path) -> str | None:
         return f'unsupported: the review command {argv[0]!r} is not installed on this host'
     match argv:
         case [_, '-m', module, *_]:
-            probe = _door.run([found, '-c', _PROBE, module], cwd=root, capture_output=True, timeout=120, check=False)
+            probe = _door.run(
+                [found, '-c', _PROBE, module], cwd=root, capture_output=True, timeout=120, check=False,
+                env={**os.environ, **SAFE_PATH},
+            )  # fmt: skip
+            if probe.returncode == _UNSAFE_PATH_EXIT:
+                return f'unsupported: the review interpreter {argv[0]!r} reports no sys.flags.safe_path (3.11+)'
             if probe.returncode != 0:
                 return f'unsupported: the review command cannot import {module!r} on this host'
     return None

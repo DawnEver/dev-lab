@@ -79,6 +79,7 @@ __all__ = [
     'command_for',
     'judge_for',
     'load_review',
+    'operator_integration',
     'review_at',
     'review_from',
     'stale_after',
@@ -244,6 +245,24 @@ def trusted_integration(root: Path, client: Client) -> str:
     if not default:
         msg = 'the forge names no default branch: which integration branch a review trusts is undecided'
         raise DeclarationUnread(msg)
+    return _integration_of(root, default)
+
+
+def operator_integration(root: Path) -> str:
+    """:func:`trusted_integration` for the operator's own verbs (``plan``, ``takeover``, ``held``...), offline.
+
+    The default branch is the operator clone's ``origin/HEAD`` -- set by the clone, never by a PR head -- so no
+    ``GET /repos`` is spent (dev-lab #40). An unset ``origin/HEAD`` refuses, naming the fix.
+    """
+    code, out = forgereview_scope.git(root, 'symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD', ok=(0, 1))
+    default = out.strip().removeprefix('origin/') if code == 0 else ''
+    if not default:
+        msg = 'origin/HEAD is unset: `git remote set-head origin --auto` names the default branch'
+        raise DeclarationUnread(msg)
+    return _integration_of(root, default)
+
+
+def _integration_of(root: Path, default: str) -> str:
     try:
         return policy_from(_manifest_at(root, f'origin/{default}'), f'origin/{default}:pyproject.toml').integration
     except (ValueError, OSError) as failed:

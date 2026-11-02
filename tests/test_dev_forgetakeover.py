@@ -297,3 +297,20 @@ def test_a_ledger_issue_is_only_one_the_forge_itself_opened(tmp_path: Path) -> N
     assert ledger.number not in {squatter, pull}
     assert forge.issues_by_number[ledger.number]['user']['login'] == forge.login
     assert ledger_of(forge, sha, 'integrate/main').number == ledger.number, 'the forge own issue is reused'
+
+
+def test_the_offline_verbs_name_the_integration_without_asking_the_forge(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """dev-lab #40: ``plan``/``takeover`` read the default branch from ``origin/HEAD``, never ``GET /repos``.
+
+    PLANTED control: the forge names no default branch, which refuses the ``run`` verb (the review job's lookup).
+    """
+    work, forge, _, head = _held(tmp_path)
+    forge.default_branch = ''  # type: ignore[attr-defined]
+    run_git(work, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/integrate/main')
+    assert main(['plan', head], cwd=work, client=forge, fetch=lambda _r, _n: None) == 0
+    assert 'x.py' in capsys.readouterr().out
+    run_git(work, 'symbolic-ref', '--delete', 'refs/remotes/origin/HEAD')
+    assert main(['plan', head], cwd=work, client=forge, fetch=lambda _r, _n: None) == 2, 'no origin/HEAD refuses'
+    assert 'origin/HEAD' in capsys.readouterr().err
