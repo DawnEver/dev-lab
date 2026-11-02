@@ -11,8 +11,9 @@ which runs after this step on every serve tick, is the one deleter. A PR whose h
 never touched. A closed PR is not listed again, so a second pass does nothing.
 
 Every ``forge serve`` tick runs it over every open PR (:func:`serve_close_landed`); a person or agent runs
-``python -m dev_lab.dev.forge pr close-landed [<n>...]`` (:func:`main`), which refuses a named PR whose
-head is not contained. Each close writes one :data:`EVENT` line.
+``python -m dev_lab.dev.forge pr close-landed [<n>...]`` or ``python -m dev_lab.dev.prlanded [<n>...]``
+(:func:`main`; Gitea's light merge job runs the latter, which imports the family alone), which refuses a named PR
+whose head is not contained. Each close writes one :data:`EVENT` line.
 """
 
 from __future__ import annotations
@@ -118,3 +119,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         emit(f'[forge] pr close-landed: {failed}', err=True)
         return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

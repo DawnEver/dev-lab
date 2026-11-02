@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any, NamedTuple
 
 from dev_lab.supervise.pressure import (
-    CGROUP_ROOT,
+    CGROUP_MOUNT,
     PSI,
     THRESHOLDS,
     Declared,
@@ -38,14 +38,32 @@ def _files(table: dict[Path, str]) -> Callable[[Path], str | None]:
     return table.get
 
 
-def _linux(files: dict[Path, str], declared: Declared, previous: dict | None = None) -> Measured:
-    return measure(declared, previous or {}, now=1000.0, read=_files(files), linux=True)
+RUNNERS = '/ci.slice/ci-runners.slice'
+
+
+def _systemd(units: dict[str, str]) -> Callable[[str], str]:
+    """A fake ``systemctl show <unit> -p ControlGroup --value``: a known unit's group, else the refusal."""
+
+    def locate(unit: str) -> str:
+        if unit not in units:
+            msg = f'systemctl knows no ControlGroup for {unit}'
+            raise LookupError(msg)
+        return units[unit]
+
+    return locate
+
+
+def _linux(
+    files: dict[Path, str], declared: Declared, previous: dict | None = None, units: dict[str, str] | None = None
+) -> Measured:
+    located = units if units is not None else {s: f'{RUNNERS}/{s}' for s in declared.services}
+    return measure(declared, previous or {}, now=1000.0, read=_files(files), linux=True, locate=_systemd(located))
 
 
 def test_a_cgroup_whose_high_counter_jumps_alarms_and_a_flat_one_does_not() -> None:
     """The 2026-11-01 incident: memory.high hit 151,572 times while host RAM read ~80%. PLANTED CONTROL: flat."""
     service = 'gitea-runner.service'
-    events = CGROUP_ROOT / service / 'memory.events'
+    events = CGROUP_MOUNT / RUNNERS.lstrip('/') / service / 'memory.events'
     declared = Declared(services=(service,))
     first = _linux({events: EVENTS.format(high=100)}, declared)
     assert first.findings == []  # a first reading is a baseline, never a delta
@@ -55,6 +73,46 @@ def test_a_cgroup_whose_high_counter_jumps_alarms_and_a_flat_one_does_not() -> N
     flat = _linux({events: EVENTS.format(high=151_672)}, declared, jumped.memo)
     assert flat.findings == []
     assert flat.readings[f'cgroup:{service}:high_delta'] == 0
+
+
+def test_a_unit_in_a_nested_slice_is_read_where_systemd_says_it_lives() -> None:
+    """2026-11-02: the runners moved to /ci.slice/ci-runners.slice; the alarm reads there, nowhere else."""
+    service = 'gitea-runner.service'
+    nested = CGROUP_MOUNT / 'ci.slice' / 'ci-runners.slice' / service / 'memory.events'
+    old = Path('/sys/fs/cgroup/system.slice') / service / 'memory.events'
+    declared = Declared(services=(service,))
+    first = _linux({nested: EVENTS.format(high=1), old: EVENTS.format(high=1)}, declared)
+    jumped = _linux({nested: EVENTS.format(high=9), old: EVENTS.format(high=1)}, declared, first.memo)
+    assert [f.kind for f in jumped.findings] == [f'cgroup:{service}:high']
+
+
+def test_the_old_system_slice_guess_is_never_consulted() -> None:
+    """PLANTED CONTROL: a file only at the old hard-coded path, and systemd placing the unit elsewhere."""
+    service = 'gitea-runner.service'
+    old = Path('/sys/fs/cgroup/system.slice') / service / 'memory.events'
+    done = _linux({old: EVENTS.format(high=5)}, Declared(services=(service,)))
+    assert done.memo['cgroup'] == {}
+    assert [(f.kind, f.severity) for f in done.findings] == [(f'cgroup:{service}', 'warning')]
+
+
+def test_a_slice_unit_is_read_at_its_own_group() -> None:
+    slice_unit = 'ci-runners.slice'
+    events = CGROUP_MOUNT / 'ci.slice' / slice_unit / 'memory.events'
+    declared = Declared(services=(slice_unit,))
+    units = {slice_unit: f'/ci.slice/{slice_unit}'}
+    first = _linux({events: EVENTS.format(high=0)}, declared, units=units)
+    jumped = _linux({events: EVENTS.format(high=3)}, declared, first.memo, units=units)
+    assert [(f.kind, f.severity) for f in jumped.findings] == [(f'cgroup:{slice_unit}:high', 'warning')]
+
+
+def test_an_unresolvable_or_unreadable_unit_is_a_warning_never_a_silent_none() -> None:
+    gone, unread = 'gone.service', 'unread.service'
+    done = _linux({}, Declared(services=(gone, unread)), units={unread: f'{RUNNERS}/{unread}'})
+    by_kind = {f.kind: f for f in done.findings}
+    assert {k: f.severity for k, f in by_kind.items()} == {f'cgroup:{gone}': 'warning', f'cgroup:{unread}': 'warning'}
+    assert 'systemctl knows no ControlGroup' in by_kind[f'cgroup:{gone}'].measurement
+    assert 'the alarm cannot see it' in by_kind[f'cgroup:{unread}'].measurement
+    assert done.readings[f'cgroup:{gone}'] is None
 
 
 def test_psi_over_its_line_alarms_under_it_does_not_and_absent_is_unmeasurable_not_zero() -> None:

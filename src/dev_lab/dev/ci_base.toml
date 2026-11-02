@@ -269,7 +269,9 @@ printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 # code that runs beside the review key); a job with no pull request (promote.yml) names the merged integration tip
 # it fetched, as INTEGRATION_SHA. Neither is refused by name. dev-lab's own lock holds itself editable, so it runs
 # the door at DOOR_SHA itself.
-# Every dependency installs as the door commit's lock names it, the door itself --no-deps; the door lives in a
+# Every dependency installs as the door commit's lock names it, the door itself --no-deps; a LIGHT job (below) whose
+# verbs import less names its packages in DOOR_ONLY (`a|b`, lock names), and only those lines of the lock install,
+# --no-deps -- a name the lock lacks refuses the job, and a test imports each verb to prove the set suffices; the door lives in a
 # venv of its own (REVIEW_PYTHON). Every uv call runs from $RUNNER_TEMP with --no-config (F-963500c5db57): a PR's
 # uv.toml or [tool.uv.pip] in the checkout would otherwise name the index the locked packages come from.
 # The door is fetched by sha as well as cloned: a commit not on a branch head the clone took is still served by sha
@@ -293,7 +295,12 @@ git -C "$RUNNER_TEMP/dev-lab" fetch -q --no-tags origin "$DEV_LAB_REF"
 git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
 python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/review/bin/uv" export --no-config --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/review.txt"
+if [ -n "$DOOR_ONLY" ]; then
+grep -E "^($DOOR_ONLY)( @ |==)" "$RUNNER_TEMP/review.txt" > "$RUNNER_TEMP/only.txt" && [ "$(wc -l < "$RUNNER_TEMP/only.txt")" -eq "$(echo "$DOOR_ONLY" | awk -F'|' '{print NF}')" ] || { echo "DOOR_ONLY=$DOOR_ONLY names a package the door's lock does not pin"; exit 1; }
+"$RUNNER_TEMP/review/bin/uv" pip install --no-config --no-deps --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/only.txt"
+else
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/review.txt"
+fi
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 ''', env = { DOOR_SHA = "${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
@@ -324,7 +331,9 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # objects stay in the mirror's packs until a gc's prune expiry (two weeks), far beyond a job.
 # The checkout is sparse, root files only: the review reads the head through git and only pyproject.toml from
 # the tree, and a full checkout would lazily fetch every blob of the head (a large consumer: 10+ minutes on the host).
-# `reach` is its own list: every Gitea host-runner job (review.yml, promote.yml) takes it before its own fetch.
+# `reach` is its own list: every Gitea host-runner job (review.yml, promote.yml, merge.yml) takes it before its own fetch.
+# A job with no pull request (merge.yml) takes EVERY PR head (refs/pull/*/head) and checks out integration's tip;
+# every job learns that tip as INTEGRATION_SHA (a review's door still reads its PR base first).
 reach = [
     { name = "Reach the forge on the runner's instance", run = '''
 [ -n "$ACTIONS_RUNTIME_URL" ] || { echo "ACTIONS_RUNTIME_URL is unset: the runner names no forge to fetch from"; exit 1; }
@@ -358,9 +367,10 @@ git config core.repositoryformatversion 1
 git config extensions.partialClone origin
 git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
-git fetch -q --no-tags --filter=blob:none origin '+refs/heads/*:refs/remotes/origin/*' "+refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/origin/pull/${{ github.event.pull_request.number }}"
+git fetch -q --no-tags --filter=blob:none origin '+refs/heads/*:refs/remotes/origin/*' "+refs/pull/${{ github.event.pull_request.number || '*' }}/head:refs/remotes/origin/pull/${{ github.event.pull_request.number || '*' }}"
 git sparse-checkout set --cone
-git checkout -q --detach "$HEAD_SHA"
+echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"
+git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 ''' },
 ]
 
@@ -484,8 +494,11 @@ UV_PYTHON_DOWNLOADS = "never"
 UV_CONCURRENT_INSTALLS = "1"
 UV_CONCURRENT_BUILDS = "1"
 
+# LIGHT (user ruling 2026-11-02): promote and sweep import only dev_lab and lab_commons (measured by
+# test_a_light_door_s_packages_are_every_import_its_verbs_make), so the door installs lab-commons beside itself.
 ["promote.yml".jobs.promote]
-runs-on = "review"
+runs-on = "light"
+env = { DOOR_ONLY = "lab-commons" }
 steps = [
     { use-steps = "reach" },
     { name = "Fetch integration's commits", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
@@ -512,3 +525,74 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CO
 ["promote.yml".jobs.promote.permissions]
 contents = "write"
 pull-requests = "write"
+
+# GITEA MERGES IN ITS OWN CI (P3, user ruling 2026-11-02): a PR into integration whose review passed and whose head is
+# safe and clean is merged by THIS job -- `forge merge ready` with no number judges every open PR into integration by
+# the ONE decision (dev_lab.dev.forgemerge.ready) and merges each ready head as the job token -- then the landed PRs
+# are closed (dev_lab.dev.prlanded) and the landed branches swept (branchprune sweep). Declaring this table is the
+# opt-in (forgemerge.ci_merges): the workstation's `forge serve` then merges, closes and sweeps nothing for the repo.
+# TRIGGERS. Gitea 1.27 has no `status` event, so a posted status starts nothing: the Review workflow completing
+# (workflow_run, read from the DEFAULT branch) and a schedule are the triggers; tests/security, posted by a serve,
+# is caught by the schedule. NEVER a pull_request-family event (pull_request_review included): Gitea runs those from
+# the PR HEAD's workflow file, and this job holds a token that merges.
+# THE TOKEN. The Actions token merges and deletes branches with contents: write (POST pulls/{n}/merge asks
+# CanWrite(code), routers/api/v1/api.go 1.27; no Actions special case in services/pull/merge.go) unless the
+# integration branch's protection enables a merge whitelist, which the Actions user can never be on. Closing a PR
+# is pull-requests: write. No bot token: the forge-bot is parked (motronics memory 2026-11-01).
+# A merge the Actions user makes starts no workflow (notifier_helper.go skips its events); the serve hosts produce
+# the integration parts by polling, as before.
+# Trees are needed (the trial merge, the audit), so it fetches through the persistent per-repo mirror (`lean`).
+["merge.yml"]
+forge = "gitea"
+name = "Merge"
+
+["merge.yml".on.workflow_run]
+workflows = ["Review"]
+types = ["completed"]
+
+["merge.yml".on]
+schedule = [{ cron = "*/10 * * * *" }]
+
+["merge.yml".on.workflow_dispatch]
+
+["merge.yml".concurrency]
+group = "merge"
+cancel-in-progress = false
+
+["merge.yml".env]
+FAMILY_SOURCE = "https://github.com/DawnEver/"
+UV_PYTHON = "python3"
+UV_PYTHON_DOWNLOADS = "never"
+UV_CONCURRENT_INSTALLS = "1"
+UV_CONCURRENT_BUILDS = "1"
+
+# The decision validates the review declaration (lab_commons.units: pint, numpy, pydantic) and runs the repo's
+# message row (commitizen), so this door installs the whole lock -- a hand list of that closure would be a second lock.
+["merge.yml".jobs.merge]
+runs-on = "light"
+steps = [
+    { use-steps = "reach" },
+    { use-steps = "lean" },
+    { use-steps = "door" },
+    { name = "Merge every ready PR", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge merge ready
+''' },
+    { name = "Close the landed PRs", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.prlanded
+''' },
+    { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.branchprune sweep
+''' },
+]
+
+["merge.yml".jobs.merge.permissions]
+contents = "write"
+pull-requests = "write"
+
+# THE GITEA RUNNER LABELS, declared once (user ruling 2026-11-02); every Gitea job's runs-on is one of them.
+[_runners]
+review = "the review job: the review method and its key; one review peaks at 557 MB, so capacity 1"
+light = "merge, close, sweep and promote: no review method, no key, a door of only what the verbs import"

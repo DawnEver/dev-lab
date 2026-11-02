@@ -185,6 +185,20 @@ def test_the_tick_merges_a_green_pr_once_declared_and_never_without(tmp_path: Pa
     assert 'merged by the forge' in comment['body']
 
 
+def test_the_tick_leaves_the_merge_to_a_repo_s_merge_job_and_still_says_the_decision(tmp_path: Path) -> None:
+    """P3: a repo declaring the CI merger is merged by its Gitea job; PLANTED CONTROL: the test above merges."""
+    work, head = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + '[tool.dev_lab.ci."merge.yml"]\n', encoding='utf-8')
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    forge.add_run(head)
+    forge.statuses[head] = _green()
+    _tick(work, forge, head, POLICY)
+    assert forge.merges == []
+    (comment,) = forge.comments[number]
+    assert 'ready: the merge.yml job merges it' in comment['body']
+
+
 def test_a_pr_with_a_failed_part_is_merged_by_the_forge(tmp_path: Path) -> None:
     """A red ``tests/<part>`` does not hold the merge into integration; it holds the promotion to main."""
     work, head = _work(tmp_path)
