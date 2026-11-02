@@ -307,3 +307,33 @@ def test_the_pr_cap_reads_the_recorded_rounds_not_this_hosts_spend_alone(tmp_pat
         assert len(command.ran) == runs
         if not runs:
             assert _state(forge, head)[1].startswith(f'{CAPPED} budget reached: 11.00/10.00 USD')
+
+
+@pytest.mark.parametrize('cap', ['rounds', 'usd'])
+def test_a_capped_pr_spends_zero_calls_on_a_push(tmp_path: Path, cap: str) -> None:
+    """Review spend 2026-11-03: a push to a capped PR runs no reviewer, no judge and no synthesis -- a WAIT only.
+
+    PLANTED CONTROL: the same push one round under the cap runs the reviewer.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    review = Review(judge=JUDGE, command=_REVIEW.command, max_rounds=1 if cap == 'rounds' else 5)
+    spent = {f'o/r#{number}': 11.0 if cap == 'usd' else 0.0}
+    calls: list[list[str]] = []
+    command = FakeCommand(_doc(_finding('F-h', severity='HIGH', file='x.py', anchor='x')))
+
+    def run(argv: list[str], root: Path) -> str:
+        calls.append(list(argv))
+        return command(argv, root)
+
+    review_tick(work, forge, review, base='integrate/main', run=run, ready=lambda *_: None, host='box',
+                spend=lambda *_: _spend())  # fmt: skip
+    assert calls, 'PLANTED CONTROL: under the cap, round 1 runs'
+    calls.clear()
+    pushed = advance(work, 'pr/x', 'x.py', 'x\nmore\n')
+    forge.pulls[number]['head']['sha'] = pushed
+    review_tick(work, forge, review, base='integrate/main', run=run, ready=lambda *_: None, host='box',
+                spend=lambda *_: _spend(by_tag=spent))  # fmt: skip
+    assert calls == [], 'a capped PR spends no call on a push'
+    assert _state(forge, pushed)[0] == 'pending'
+    assert _state(forge, pushed)[1].startswith(CAPPED)
