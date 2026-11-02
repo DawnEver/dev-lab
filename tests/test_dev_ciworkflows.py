@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,6 @@ from dev_lab.dev.ciworkflows import (
     expand,
     main,
     merge,
-    pin_drift,
     pinned_ref,
     render,
     workflows,
@@ -302,7 +302,7 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     )
 
 
-_INSTALLS = {'ai-lab': 'Install the review method', 'dev-lab': 'Install the review door'}
+_INSTALLS = {'ai-lab': 'Install the review method'}
 
 
 def test_each_pinned_ref_is_declared_once_and_both_review_workflows_install_it(tmp_path: Path) -> None:
@@ -449,20 +449,48 @@ def _config_held_token(text: str) -> bool:
     return re.search(r'git config [^\n]*extraHeader', text, flags=re.IGNORECASE) is not None
 
 
-def test_the_pin_check_names_a_stale_ref_and_the_bump() -> None:
-    """PLANTED control: the declared ref at its repo's head is no drift."""
-    for repo, (_, var) in PINS.items():
-        assert pin_drift(repo, pinned_ref(repo), pinned_ref(repo)) is None
-        stale = pin_drift(repo, pinned_ref(repo), 'f' * 40)
-        assert pinned_ref(repo)[:12] in stale
-        assert 'f' * 12 in stale
-        assert var in stale
+def _door_steps(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    (tmp_path / 'hub').mkdir()
+    jobs = (_base_ci(tmp_path / 'hub')['jobs']['review'], _gitea_review(tmp_path)['jobs']['review'])
+    hub, tea = (next(s for s in job['steps'] if s.get('name') == 'Install the review door') for job in jobs)
+    return hub, tea
 
 
-def test_the_pin_verb_reads_each_repo_s_head_through_its_seam(capsys) -> None:
-    assert main(['pin'], head=pinned_ref) == 0
-    assert main(['pin'], head=lambda repo: 'f' * 40 if repo == 'dev-lab' else pinned_ref(repo)) == 1
-    assert 'DEV_LAB_REF pins dev-lab' in capsys.readouterr().out
+def test_the_door_is_the_dev_lab_the_base_s_lock_pins(tmp_path: Path) -> None:
+    """dev-lab #18: the door has ONE source, the consumer's uv.lock, read at the BASE sha -- never the PR head's.
+
+    The job runs the base's workflow, so a lock read at the head would let a PR choose the door that judges it.
+    """
+    hub, tea = _door_steps(tmp_path)
+    assert hub == tea, 'one source for both forges'
+    assert hub['env']['DOOR_SHA'] == '${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}'
+    assert 'DEV_LAB_REF' not in hub['env'], 'no second, hand-bumped pin beside the lock'
+    assert 'show "$DOOR_SHA:uv.lock"' in hub['run']
+    assert 'HEAD_SHA' not in hub['run'], 'PLANTED CONTROL: the head lock is never read'
+
+
+def _locked_ref(run: str, lock: str) -> subprocess.CompletedProcess[str]:
+    (code,) = re.findall(r"python3 -I -c '([^']*)'", run)
+    return subprocess.run(
+        [sys.executable, '-I', '-c', code, 'b' * 40], input=lock, capture_output=True, text=True, check=False
+    )
+
+
+def test_the_door_reads_the_locked_git_revision_and_refuses_any_other_source(tmp_path: Path) -> None:
+    """A consumer's lock names a git revision; dev-lab's own (editable) is its base; anything else refuses."""
+    run = _door_steps(tmp_path)[0]['run']
+    lock = '[[package]]\nname = "{name}"\nsource = {source}\n'
+    git = lock.format(name='dev-lab', source='{ git = "https://github.com/DawnEver/dev-lab.git#' + 'a' * 40 + '" }')
+    assert _locked_ref(run, git).stdout.strip() == 'a' * 40
+    own = lock.format(name='dev-lab', source='{ editable = "." }')
+    assert _locked_ref(run, own).stdout.strip() == 'b' * 40, 'dev-lab reviews itself with its base'
+    for refused in (
+        lock.format(name='dev-lab', source='{ registry = "https://pypi.org/simple" }'),
+        lock.format(name='other', source='{ editable = "." }'),
+    ):
+        done = _locked_ref(run, refused)
+        assert done.returncode != 0, refused
+        assert not done.stdout.strip(), refused
 
 
 def _gitea_review(tmp_path: Path) -> dict[str, Any]:
@@ -756,7 +784,7 @@ def test_gitea_promotes_nightly_by_the_same_decision_and_asks_ada_nothing(tmp_pa
     assert set(found['on']) == {'schedule', 'workflow_dispatch'}
     assert found['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
     runs = [step.get('run', '') for step in found['jobs']['promote']['steps']]
-    promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$HEAD_SHA"' in run)
+    promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$INTEGRATION_SHA"' in run)
     assert 'git push origin main' in runs[promoted]
     assert next(i for i, run in enumerate(runs) if 'dev_lab.dev.branchprune sweep' in run) > promoted
     text = render(found)
@@ -787,3 +815,25 @@ def test_gitea_s_promote_checkout_holds_no_branch_so_main_can_move(tmp_path: Pat
         subprocess.run([bash, '-c', text], cwd=tmp_path / name, env=env, check=True)
     assert [name for _, name in worktrees(tmp_path / 'plain') or ()] == ['main'], 'PLANTED CONTROL: it holds main'
     assert [name for _, name in worktrees(tmp_path / 'job') or ()] == ['detached'], 'main stays free to move'
+
+
+def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path: Path) -> None:
+    """promote.yml runs with no pull request, so no base sha: its door is the lock of the tip it fetched.
+
+    The tip is already merged, so it is trusted as a base is. An empty DOOR_SHA is refused by name, never read as
+    ``git show ":uv.lock"`` against an empty index (F-e460f9e7c527).
+    """
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
+    steps = workflows(tmp_path)['promote.yml']['jobs']['promote']['steps']
+    names = [s.get('name') for s in steps]
+    fetch = steps[names.index("Fetch integration's commits")]
+    door = steps[names.index('Install the review door')]
+    assert names.index("Fetch integration's commits") < names.index('Install the review door')
+    assert 'echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"' in fetch['run']
+    assert 'env.INTEGRATION_SHA' in door['env']['DOOR_SHA']
+    guard = next(line for line in door['run'].splitlines() if line.startswith('[ -n "$DOOR_SHA" ]'))
+    bash = shutil.which('bash')
+    assert bash, 'the door step is bash'
+    ran = subprocess.run([bash, '-c', guard], env={'DOOR_SHA': ''}, capture_output=True, text=True, check=False)
+    assert ran.returncode != 0
+    assert 'no commit names the door' in ran.stdout + ran.stderr

@@ -23,30 +23,25 @@ so the setup every job repeats has one source. ``_steps`` is never a workflow an
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
-THE REVIEW TOOLING IS PINNED ONCE (:data:`PINS`): the ``method`` steps' ``AI_LAB_REF`` is the ai-lab commit and the
-``door`` steps' ``DEV_LAB_REF`` the dev-lab commit every review job installs (:func:`pinned_ref`) -- never a floating
-branch, and never the PR head's own lock (F-76c85dbc4b77); ``pin`` compares each with its repo's ``integrate/main``.
+THE REVIEW TOOLING IS PINNED ONCE: the ``method`` steps' ``AI_LAB_REF`` is the ai-lab commit (:data:`PINS`,
+:func:`pinned_ref`), and the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins (dev-lab #18) --
+never a floating branch, and never the PR head's own lock (F-76c85dbc4b77).
 
-``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift; ``pin`` exits 1 when
-a declared ref is not its repo's head.
+``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import tomllib
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
-from dev_lab.dev.netverb import run_network_verb
 
 __all__ = [
     'BASE_PATH',
@@ -62,7 +57,6 @@ __all__ = [
     'drift',
     'expand',
     'merge',
-    'pin_drift',
     'pinned_ref',
     'render',
     'workflows',
@@ -88,11 +82,8 @@ NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 
 #: Each pinned repo -> (the ``_steps`` list installing it, the env of its first step naming the commit). Declared ONCE,
-#: as that env in ``ci_base.toml``; every workflow reads it there.
-PINS: Final = {'ai-lab': ('method', 'AI_LAB_REF'), 'dev-lab': ('door', 'DEV_LAB_REF')}
-
-#: The branch a pin is compared with: where a repo's reviewed changes land.
-_PIN_BRANCH: Final = 'refs/heads/integrate/main'
+#: as that env in ``ci_base.toml``; every workflow reads it there. dev-lab is not here: its door is the base's lock.
+PINS: Final = {'ai-lab': ('method', 'AI_LAB_REF')}
 
 
 def pinned_ref(repo: str) -> str:
@@ -100,33 +91,6 @@ def pinned_ref(repo: str) -> str:
     steps, var = PINS[repo]
     (install, *_) = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[SHARED][steps]
     return install['env'][var]
-
-
-def pin_drift(repo: str, declared: str, head: str) -> str | None:
-    """Why *repo*'s *declared* ref is stale against its *head*, naming the bump; ``None`` when it is the head."""
-    if declared == head:
-        return None
-    var = PINS[repo][1]
-    return (
-        f'{var} pins {repo} {declared[:12]}, its head is {head[:12]}: set {var} = "{head}" in '
-        f'dev_lab/dev/ci_base.toml, then `{RENDER_COMMAND}` in every repo'
-    )
-
-
-_LS_REMOTE_FIELDS: Final = 2  # git ls-remote: <sha> TAB <ref>
-
-
-def _head(root: Path, repo: str) -> str:
-    """*repo*'s head, read from the forge that holds *root*'s origin (*repo* beside it)."""
-    origin = _door.run(['git', '-C', str(root), 'remote', 'get-url', 'origin'], capture_output=True, text=True,
-                            encoding='utf-8', check=True).stdout.strip()  # fmt: skip
-    url = origin.rsplit('/', 1)[0] + f'/{repo}.git'
-    argv = ['git', 'ls-remote', url, _PIN_BRANCH]
-    report = run_network_verb(argv)  # a transient is retried, a refusal is not
-    if not report.ok:
-        raise subprocess.CalledProcessError(report.returncode, argv, report.remedy)
-    rows = (line.split() for line in report.attempts[-1].output.splitlines())
-    return next((row[0] for row in rows if len(row) == _LS_REMOTE_FIELDS and row[1].endswith(_PIN_BRANCH)), '')
 
 
 #: The first line of every rendered workflow -- a YAML comment, so the JSON body below stays valid YAML.
@@ -223,18 +187,12 @@ def write(root: Path) -> list[Path]:
     return written
 
 
-def main(argv: list[str] | None = None, *, head: Callable[[str], str] | None = None) -> int:
-    """``render`` writes the workflows; ``check`` exits 1 naming each drift; ``pin`` exits 1 on any stale pin."""
+def main(argv: list[str] | None = None) -> int:
+    """``render`` writes the workflows; ``check`` exits 1 naming each drift."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.ciworkflows', description=__doc__.splitlines()[0])
-    parser.add_argument('verb', choices=('render', 'check', 'pin'))
+    parser.add_argument('verb', choices=('render', 'check'))
     parser.add_argument('--root', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
-    if args.verb == 'pin':
-        read = head if head is not None else (lambda repo: _head(args.root, repo))
-        verdicts = [(repo, pin_drift(repo, pinned_ref(repo), read(repo))) for repo in PINS]
-        for repo, stale in verdicts:
-            emit(f'[ciworkflows] {stale or f"{PINS[repo][1]} is {repo} head {pinned_ref(repo)[:12]}"}')
-        return 1 if any(stale for _, stale in verdicts) else 0
     if args.verb == 'render':
         for path in write(args.root):
             emit(f'[ciworkflows] rendered {path}')

@@ -106,14 +106,7 @@ which refuses a named PR whose head is not contained (`dev_lab.dev.prlanded`).
 
 ### Mirrors
 
-A gitea push mirror runs a mirror push, which PRUNES: a branch deleted on gitea is deleted on the mirror at its
-next sync. Measured 2026-10-13: lab-commons mirrors to `github.com/DawnEver/lab-commons` (`sync_on_commit = true`,
-`interval = 8h`), and both carry the same 14 heads. consumer-a and consumer-b have no push mirror. What the
-repository admin must keep set (Settings > Repository > Mirror settings):
-
-- a PUSH mirror, not a pull mirror. Its mirror push is what carries a deletion, and nothing else does.
-- `interval` non-zero. `sync_on_commit` fires on a push, and a deletion through the API is not a push, so the
-  interval sync is the one guaranteed to carry it. Expect up to `interval` (8 h here), or the next push to any
-  branch, before the mirror drops the branch.
-- a mirror credential with delete rights on the GitHub side (a token with `contents: write`). Without them
-  the mirror's `last_error` says so, under the same settings page.
+There are none. Each repository has ONE home: the toolchain (dev-lab, ai-lab, numerics-lab) on GitHub, the
+product repositories on gitea. The gitea copies of the toolchain repositories are archived and frozen by design
+(2026-10-29): a push mirror between two homes would overwrite one with the other, so a deletion on one forge
+is final there and carried nowhere. Never read a toolchain head from a gitea remote; it is a frozen copy.
