@@ -80,6 +80,7 @@ __all__ = [
     'ledger_of',
     'post_round',
     'render',
+    'review_record',
     'trailed',
     'trusted_bodies',
     'verdict',
@@ -100,6 +101,7 @@ LEDGER_VERSION: Final = 1
 DISPOSE_DOOR: Final = 'python -m dev_lab.dev.forge review dispose {pr} {id} --why "<claim>" (adjudicated)'
 
 _LEDGER: Final = re.compile(r'<!-- review-ledger (?P<json>\{.*?\}) -->', re.DOTALL)
+_ROUND: Final = re.compile(re.escape(marker(Marker.REVIEW, 'SHA')).replace('SHA', '[0-9a-f]{7,40}'))
 _ANY_EXIT: Final = range(256)  # a read whose failure reads as empty: the summary and trailers degrade, never stop
 _SUBJECTS: Final = 20  # commit subjects (memory paths, merges) the summary lists
 _TRAILER: Final = 'Review-Disposed'
@@ -141,7 +143,8 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
     the job is the Actions bot). A cap RAISE is read the same way
     (:func:`~dev_lab.dev.reviewbudget.raise_record`, #17: DawnEver's raise never reached the Actions job), and
     admitted only when the forge records its author with write permission (:meth:`Client.can_write`): naming
-    yourself proves who wrote it, never that you may raise.
+    yourself proves who wrote it, never that you may raise. A ROUND posted by another host is read the same way: a
+    writer's ``Marker.REVIEW`` comment contributes its marker and ledger (:func:`review_record`).
     """
     trusted = {client.whoami(), client.backend.actions_login}
     out = []
@@ -149,10 +152,24 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
         if comment.author in trusted:
             out.append(comment.body)
         elif (record := claim_record(comment.body, comment.author)) or (
-            (record := raise_record(comment.body, comment.author)) and client.can_write(comment.author)
+            (record := raise_record(comment.body, comment.author) or review_record(comment.body))
+            and client.can_write(comment.author)
         ):
             out.append(record)
     return out
+
+
+def review_record(body: str) -> str | None:
+    """The round record alone in a ``Marker.REVIEW`` comment *body* -- its marker line and its ledger -- else ``None``.
+
+    Another host's round (the serve host's, read by the Actions job, or the reverse) is the same forge state: without
+    it a job restarted at round 1 and past the round cap (#5397, 9 rounds). Only the two lines are returned, so
+    nothing else the comment carries -- an adjudication marker, a raise -- is read from it.
+    """
+    first = body.split('\n', 1)[0].strip()
+    if not _ROUND.fullmatch(first) or (match := _LEDGER.search(body)) is None:
+        return None
+    return f'{first}\n{match.group(0)}'
 
 
 def _finding(row: Mapping) -> Finding:
