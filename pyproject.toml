@@ -30,6 +30,11 @@ dependencies = [
 # it as `dev-lab[test]` in its dev extra, never in a runtime dependency (famtests.hostnode refuses that).
 test = ["nodejs-wheel-binaries"]
 
+[dependency-groups]
+# THE REVIEW METHOD the CI review jobs run (ci_base.toml `method` steps): dev-lab is the code that calls it, so this
+# lock names which ai-lab runs. NON-DEFAULT: neither `uv sync`, the door's `uv export`, nor a consumer installs it.
+review = ["ai-lab @ git+https://github.com/DawnEver/ai-lab.git"]
+
 # The allocation record's reader, loaded by lab_commons.hpc.allocation.recorded: every submitter reads it.
 [project.entry-points."lab_commons.hpc.allocation"]
 forge = "dev_lab.dev.forgerecords:read_allocation"

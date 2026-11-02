@@ -27,8 +27,8 @@ no review method and no key (user ruling 2026-11-02). It is never a workflow and
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
-THE REVIEW TOOLING IS PINNED ONCE: the ``method`` steps' ``AI_LAB_REF`` is the ai-lab commit (:data:`PINS`,
-:func:`pinned_ref`), and the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins (dev-lab #18) --
+THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
+(dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
 never a floating branch, and never the PR head's own lock (F-76c85dbc4b77).
 
 ``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift.
@@ -53,7 +53,6 @@ __all__ = [
     'LIGHT',
     'NIGHTLY_CRON',
     'NIGHTLY_KEY',
-    'PINS',
     'RENDER_COMMAND',
     'RUNNERS',
     'SHARED',
@@ -63,7 +62,6 @@ __all__ = [
     'drift',
     'expand',
     'merge',
-    'pinned_ref',
     'render',
     'runner_labels',
     'workflows',
@@ -92,17 +90,6 @@ NIGHTLY_KEY: Final = 'nightly'
 #: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
 NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
-
-#: Each pinned repo -> (the ``_steps`` list installing it, the env of its first step naming the commit). Declared ONCE,
-#: as that env in ``ci_base.toml``; every workflow reads it there. dev-lab is not here: its door is the base's lock.
-PINS: Final = {'ai-lab': ('method', 'AI_LAB_REF')}
-
-
-def pinned_ref(repo: str) -> str:
-    """The *repo* commit every review job installs: its install step's env in ``ci_base.toml`` (:data:`PINS`)."""
-    steps, var = PINS[repo]
-    (install, *_) = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[SHARED][steps]
-    return install['env'][var]
 
 
 def runner_labels() -> dict[str, str]:
