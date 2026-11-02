@@ -248,6 +248,6 @@ def test_a_host_name_is_a_leak_whatever_its_case() -> None:
     assert leaks(['ssh HOST1.Example.AC.UK']) == ('HOST1.Example.AC.UK',)
 
 
-def test_the_forge_pr_review_and_request_intents_render_in_every_repo() -> None:
+def test_the_forge_pr_dispose_and_request_intents_render_in_every_repo() -> None:
     """The three rows once hand-kept in the synced user settings are the kit's, so they render per repo."""
     assert {'open-pr', 'dispose-fixed', 'correct-request'} <= INTENTS.keys()

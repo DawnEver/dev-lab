@@ -36,6 +36,16 @@ from dev_lab.dev.reviewgate import DeclarationUnread, review_missing
 _RUNNER = Runner('runner-1', ready=_can)
 
 
+@pytest.fixture(autouse=True)
+def _not_inside_the_review_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test is not the review job: the CI step running these tests carries GITHUB_TOKEN, which the door refuses.
+
+    A test that means a token in the environment plants it with ``monkeypatch.setenv``.
+    """
+    for name in (*reviewgitauth.FORGE_TOKEN_ENVS, *(k for k in os.environ if k.startswith('GIT_CONFIG_'))):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _latest(forge: StateForge, sha: str, context: str) -> tuple[str, str] | None:
     found = next((one for one in status_list(forge, sha) if one.context == context), None)
     return None if found is None else (found.state, found.description)
