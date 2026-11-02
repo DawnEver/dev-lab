@@ -108,10 +108,29 @@ def test_on_github_a_created_pr_asks_for_native_auto_merge_as_a_merge_commit_and
     assert tea.sent == []
 
 
-@pytest.mark.parametrize('verb', ['ready'])
-def test_the_merge_door_needs_a_pr(verb: str) -> None:
-    with pytest.raises(SystemExit):
-        forgemerge.main([verb])
+_CI_MERGER = f'[tool.dev_lab.ci."{forgemerge.CI_MERGER}"]\n'
+
+
+def test_on_gitea_the_merge_job_merges_a_ready_pr_only_where_the_repo_declares_it(tmp_path: Path) -> None:
+    """P3: Gitea's merge job runs the same decision and merges; PLANTED CONTROL: undeclared, the job only posts."""
+    work, forge, number, head = _pr(tmp_path)
+    ready(work, forge, number)
+    assert forge.merges == [], 'undeclared: the serve tick merges it'
+    (work / 'pyproject.toml').write_text(_MANIFEST + _INTEGRATOR + _CI_MERGER, encoding='utf-8')
+    said = ready(work, forge, number)
+    [(merged, body)] = forge.merges
+    assert merged == number
+    assert (body['Do'], body['head_commit_id'], body['delete_branch_after_merge']) == ('merge', head, True)
+    assert said.endswith('; merged')
+
+
+def test_with_no_pr_the_door_judges_every_open_pr_into_integration(tmp_path: Path) -> None:
+    work, forge, _number, head = _pr(tmp_path)
+    elsewhere = 'e' * 40
+    forge.add_pull('pr/y', 'main', sha=elsewhere)
+    assert forgemerge.main(['ready'], cwd=work, client=forge) == 0
+    assert _merge_ready(forge, head)[0] == 'success'
+    assert [one for one in status_list(forge, elsewhere) if one.context == MERGE_READY_CONTEXT] == []
 
 
 _HUB = Forge('github.com', 'o', 'r')

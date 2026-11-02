@@ -10,13 +10,16 @@ when nothing is missing, asks the forge to merge it (:func:`merge`). A client pu
 branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).
 
 ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :func:`judged` reads a PR's head and
-decides; on Gitea the serve tick merges on it, and on GitHub a workflow job runs ``forge merge ready --pr <N>``
-(:func:`ready`), which posts the decision as ONE status, :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and
-on ``success`` asks GitHub to merge that head itself (:func:`merge`, as the job's own token). GitHub still enforces
-the branch's required checks on that merge; one still pending refuses it, and the native auto-merge ``forge pr
-create`` enabled merges once they are green. GitHub refuses to enable auto-merge on a PR that is already mergeable
-(dev-lab#15), which is why the job that posts ready merges rather than waiting on it. The PR base is
-:attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
+decides; a workflow job runs ``forge merge ready [--pr <N>]`` (:func:`ready`; no number: every open PR into
+integration), which posts the decision as ONE status, :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`,
+and on ``success`` asks the forge to merge that head itself (:func:`merge`, as the job's own token). That job
+merges on GitHub always, and on Gitea where the repo declares the CI merger (:data:`CI_MERGER`, :func:`ci_merges`;
+P3, user ruling 2026-11-02): Gitea's ``merge.yml`` runs it on the light runner, and the serve tick then only says
+the decision. A Gitea repo that does not declare it is still merged by the serve tick on the same :func:`judged`.
+GitHub still enforces the branch's required checks on that merge; one still pending refuses it, and the native
+auto-merge ``forge pr create`` enabled merges once they are green. GitHub refuses to enable auto-merge on a PR
+that is already mergeable (dev-lab#15), which is why the job that posts ready merges rather than waiting on it.
+The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
@@ -50,6 +53,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,9 +63,11 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.branchset import declared_branchset
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING, waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
@@ -83,9 +89,31 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
-    'FORGE_PULL', 'READY', 'Decision', 'auto_merge', 'decide', 'judged', 'main', 'merge', 'merge_message',
-    'message_wait', 'ready',
+    'CI_MERGER',
+    'FORGE_PULL',
+    'READY',
+    'Decision',
+    'auto_merge',
+    'ci_merges',
+    'decide',
+    'judged',
+    'main',
+    'merge',
+    'merge_message',
+    'message_wait',
+    'ready',
 ]  # fmt: skip
+
+#: The Gitea workflow that merges, closes landed PRs and sweeps (``ci_base.toml``); declaring it is the opt-in.
+CI_MERGER: Final = 'merge.yml'
+
+
+def ci_merges(root: Path) -> bool:
+    """Whether *root* declares ``[tool.dev_lab.ci."merge.yml"]``: then serve neither merges, closes nor sweeps."""
+    pyproject = root / 'pyproject.toml'
+    data = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
+    return CI_MERGER in declared_table(data, 'ci', {})
+
 
 #: The trailer naming the pull request a forge merge closed.
 FORGE_PULL: Final = 'Forge-Pull'
@@ -220,7 +248,8 @@ def ready(root: Path, client: Client, number: int) -> str:
 
     ``success`` when nothing is missing, else ``failure`` naming what is (cut to the forge's description limit; the
     workflow log carries the whole line). A PR into another branch than the PR base is ``failure`` saying so.
-    On GitHub a ``success`` is followed by the merge of that judged head (:func:`merge`); a refusal -- the head
+    On GitHub, or where the repo :func:`ci_merges`, a ``success`` is followed by the merge of that judged head
+    (:func:`merge`); a refusal -- the head
     moved, a required check still pending -- is said, never raised: the decision stands posted either way.
     """
     policy, pull = load_policy(root), client.pr_view(number)
@@ -234,7 +263,7 @@ def ready(root: Path, client: Client, number: int) -> str:
     state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
     said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
-    if missing or client.backend is not GITHUB:
+    if missing or (client.backend is not GITHUB and not ci_merges(root)):
         return said
     ephemeral = declared_branchset(root).is_ephemeral(pull.head)
     try:
@@ -245,17 +274,27 @@ def ready(root: Path, client: Client, number: int) -> str:
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
-    """``forge merge ready --pr <N>``: post the PR's merge decision. Exit 0 posted (ready or not), 2 refused."""
+    """``forge merge ready [--pr <N>]``: post the merge decision of PR *N*, else of every open PR into integration.
+
+    Exit 0 posted (ready or not), 2 refused.
+    """
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge merge', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('ready', help=f'post the PR head its {MERGE_READY_CONTEXT} decision').add_argument(
-        '--pr', type=int, required=True
+        '--pr', type=int, help='one PR; omitted: every open PR into the integration branch'
     )
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     try:
-        emit(f'[merge] {ready(root, client or client_for(root), args.pr)}')
-    except (ForgeCallFailed, OSError, ValueError) as failed:
+        built = client or client_for(root)
+        if args.pr is not None:
+            numbers = [args.pr]
+        else:
+            into = load_policy(root).integration
+            numbers = [pull.number for pull in pr_list(built) if pull.base == into]
+        for number in numbers:
+            emit(f'[merge] {ready(root, built, number)}')
+    except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         emit(f'[merge] refused: {failed}', err=True)
         return 2
     return 0

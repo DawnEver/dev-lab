@@ -1086,6 +1086,25 @@ def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch,
     assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'held']
 
 
+def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, tmp_path: Path) -> None:
+    """P3: the merge job closes landed PRs and sweeps; the PLANTED CONTROL above runs both on the poller."""
+    ran: list[str] = []
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED + '[tool.dev_lab.ci."merge.yml"]\n', encoding='utf-8')
+    _serve(
+        monkeypatch,
+        tmp_path,
+        TickReport((), (), ()),
+        prune=lambda *_a, **_k: ran.append('prune') or (),
+        close_landed=lambda *_a, **_k: ran.append('close'),
+        sweep=lambda *_a, **_k: ran.append('sweep') or 0,
+        records_prune=lambda *_a, **_k: ran.append('records') or (),
+        issue_tidy=lambda *_a: ran.append('tidy') or [],
+        observe=lambda *_a, **_k: ran.append('observe') or [],
+        held=lambda *_a, **_k: ran.append('held') or [],
+    )
+    assert ran == ['prune', 'records', 'tidy', 'observe', 'held']
+
+
 def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:
     """``forge tidy`` exempts exactly ISSUE_KINDS as machine-kept, so raise_once may keep no other kind."""
     with pytest.raises(ValueError, match='ISSUE_KINDS'):
