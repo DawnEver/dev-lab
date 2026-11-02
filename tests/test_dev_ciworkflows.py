@@ -493,7 +493,12 @@ def test_the_door_is_the_dev_lab_the_base_s_lock_pins(tmp_path: Path) -> None:
 def _locked_ref(run: str, lock: str) -> subprocess.CompletedProcess[str]:
     (code,) = re.findall(r"python3 -I -c '([^']*)'", run)
     return subprocess.run(
-        [sys.executable, '-I', '-c', code, 'b' * 40], input=lock, capture_output=True, text=True, check=False
+        [sys.executable, '-I', '-c', code, 'b' * 40],
+        input=lock,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
     )
 
 
@@ -858,6 +863,8 @@ def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path:
     guard = next(line for line in door['run'].splitlines() if line.startswith('[ -n "$DOOR_SHA" ]'))
     bash = shutil.which('bash')
     assert bash, 'the door step is bash'
-    ran = subprocess.run([bash, '-c', guard], env={'DOOR_SHA': ''}, capture_output=True, text=True, check=False)
+    ran = subprocess.run(
+        [bash, '-c', guard], env={'DOOR_SHA': ''}, capture_output=True, text=True, encoding='utf-8', check=False
+    )
     assert ran.returncode != 0
     assert 'no commit names the door' in ran.stdout + ran.stderr
