@@ -6,6 +6,8 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,6 @@ from dev_lab.dev.ciworkflows import (
     expand,
     main,
     merge,
-    pin_drift,
     pinned_ref,
     render,
     workflows,
@@ -241,7 +242,7 @@ def test_a_hosted_part_renders_its_own_push_only_job_and_only_its_setup_step_see
     )
 
 
-_INSTALLS = {'ai-lab': 'Install the review method', 'dev-lab': 'Install the review door'}
+_INSTALLS = {'ai-lab': 'Install the review method'}
 
 
 def test_each_pinned_ref_is_declared_once_and_both_review_workflows_install_it(tmp_path: Path) -> None:
@@ -388,20 +389,48 @@ def _config_held_token(text: str) -> bool:
     return re.search(r'git config [^\n]*extraHeader', text, flags=re.IGNORECASE) is not None
 
 
-def test_the_pin_check_names_a_stale_ref_and_the_bump() -> None:
-    """PLANTED control: the declared ref at its repo's head is no drift."""
-    for repo, (_, var) in PINS.items():
-        assert pin_drift(repo, pinned_ref(repo), pinned_ref(repo)) is None
-        stale = pin_drift(repo, pinned_ref(repo), 'f' * 40)
-        assert pinned_ref(repo)[:12] in stale
-        assert 'f' * 12 in stale
-        assert var in stale
+def _door_steps(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    (tmp_path / 'hub').mkdir()
+    jobs = (_base_ci(tmp_path / 'hub')['jobs']['review'], _gitea_review(tmp_path)['jobs']['review'])
+    hub, tea = (next(s for s in job['steps'] if s.get('name') == 'Install the review door') for job in jobs)
+    return hub, tea
 
 
-def test_the_pin_verb_reads_each_repo_s_head_through_its_seam(capsys) -> None:
-    assert main(['pin'], head=pinned_ref) == 0
-    assert main(['pin'], head=lambda repo: 'f' * 40 if repo == 'dev-lab' else pinned_ref(repo)) == 1
-    assert 'DEV_LAB_REF pins dev-lab' in capsys.readouterr().out
+def test_the_door_is_the_dev_lab_the_base_s_lock_pins(tmp_path: Path) -> None:
+    """dev-lab #18: the door has ONE source, the consumer's uv.lock, read at the BASE sha -- never the PR head's.
+
+    The job runs the base's workflow, so a lock read at the head would let a PR choose the door that judges it.
+    """
+    hub, tea = _door_steps(tmp_path)
+    assert hub == tea, 'one source for both forges'
+    assert hub['env']['BASE_SHA'] == '${{ github.event.pull_request.base.sha }}'
+    assert 'DEV_LAB_REF' not in hub['env'], 'no second, hand-bumped pin beside the lock'
+    assert 'show "$BASE_SHA:uv.lock"' in hub['run']
+    assert 'HEAD_SHA' not in hub['run'], 'PLANTED CONTROL: the head lock is never read'
+
+
+def _locked_ref(run: str, lock: str) -> subprocess.CompletedProcess[str]:
+    (code,) = re.findall(r"python3 -I -c '([^']*)'", run)
+    return subprocess.run(
+        [sys.executable, '-I', '-c', code, 'b' * 40], input=lock, capture_output=True, text=True, check=False
+    )
+
+
+def test_the_door_reads_the_locked_git_revision_and_refuses_any_other_source(tmp_path: Path) -> None:
+    """A consumer's lock names a git revision; dev-lab's own (editable) is its base; anything else refuses."""
+    run = _door_steps(tmp_path)[0]['run']
+    lock = '[[package]]\nname = "{name}"\nsource = {source}\n'
+    git = lock.format(name='dev-lab', source='{ git = "https://github.com/DawnEver/dev-lab.git#' + 'a' * 40 + '" }')
+    assert _locked_ref(run, git).stdout.strip() == 'a' * 40
+    own = lock.format(name='dev-lab', source='{ editable = "." }')
+    assert _locked_ref(run, own).stdout.strip() == 'b' * 40, 'dev-lab reviews itself with its base'
+    for refused in (
+        lock.format(name='dev-lab', source='{ registry = "https://pypi.org/simple" }'),
+        lock.format(name='other', source='{ editable = "." }'),
+    ):
+        done = _locked_ref(run, refused)
+        assert done.returncode != 0, refused
+        assert not done.stdout.strip(), refused
 
 
 def _gitea_review(tmp_path: Path) -> dict[str, Any]:
