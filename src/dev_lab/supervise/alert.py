@@ -1,11 +1,13 @@
-"""How a notice reaches a human: four channels, one shape, and no reason to raise.
+"""How a notice reaches a human: four channels, one model, and no reason to raise.
 
 A supervision run that finds something wrong and cannot say so has done nothing. The predecessor
 had this right in outline -- one transport module, channels gated by their own ``enabled`` -- and
 wrong in three details this fixes:
 
-* it sent HTML. A deployment alert is a line of text and a link; markup buys nothing and adds an
-  escaping bug between a commit subject and a mail client. Everything here is plain text.
+* each channel worded its own message. Now the notice is ONE structured model
+  (:class:`dev_lab.supervise.notice.Notice`), written once as Markdown, and each channel only renders it:
+  Telegram as HTML, email as ``multipart/alternative`` (the Markdown, and its HTML; the subject the headline),
+  a webhook as the Markdown. The escaping lives once, in the renderers.
 * it built its own failure paths so a channel that threw took the others down with it. Each channel
   is delivered independently and reports its own outcome, so one broken webhook cannot silence the
   email beside it.
@@ -28,10 +30,10 @@ from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Any, Final
 
+from dev_lab.supervise.notice import Notice, email_html, headline, markdown, telegram_html
 from dev_lab.supervise.transport import BODY_CAP, OK_CEILING, OK_FLOOR, REPLY_KEPT, Transport, https_only, split_url
-from dev_lab.supervise.verdict import Severity
 
-__all__ = ['Delivery', 'Notice', 'Notifier', 'Transport']
+__all__ = ['Delivery', 'Notifier', 'Transport']
 
 #: How long a channel is given. Bounded because an alert that blocks is worse than an alert that
 #: fails: the cycle it is holding is the one that would have retried.
@@ -50,31 +52,6 @@ _RESEND_HOST: Final = 'api.resend.com'
 #: disagree: `transport` was changed to read its body TO A CAP and this one went on calling
 #: ``response.read()`` with no argument, which reads to EOF. Two constants that agree today are not
 #: one fact, and the second one carried no reason for its number.
-
-
-@dataclass(frozen=True)
-class Notice:
-    """One thing to tell a human.
-
-    Attributes:
-        subject: one line naming what happened.
-        body: the detail, as plain text.
-        severity: how loudly this should read.
-
-    """
-
-    subject: str
-    body: str
-    severity: Severity = Severity.WARNING
-
-    def as_text(self) -> str:
-        """Render the notice for a channel with no subject field.
-
-        Returns:
-            The severity, the subject and the body, in that order.
-
-        """
-        return f'[{self.severity.value.upper()}] {self.subject}\n\n{self.body}'
 
 
 @dataclass(frozen=True)
@@ -154,14 +131,16 @@ class Notifier:
             cfg: the ``alerts.email`` table.
 
         Returns:
-            A plain-text message with the configured prefix on its subject.
+            A ``multipart/alternative`` message -- plain text, then HTML -- whose subject is the headline
+            behind the configured prefix.
 
         """
         message = EmailMessage()
-        message['Subject'] = f'{cfg.get("subject_prefix", "")}{notice.subject}'.strip()
+        message['Subject'] = _subject(notice, cfg)
         message['From'] = str(cfg.get('sender', ''))
         message['To'] = ', '.join(str(one) for one in cfg.get('recipients', []))
-        message.set_content(notice.body)
+        message.set_content(markdown(notice))
+        message.add_alternative(email_html(notice), subtype='html')
         return message
 
     def _smtp(self, notice: Notice, cfg: Mapping[str, Any]) -> Delivery:
@@ -204,8 +183,9 @@ class Notifier:
         payload = {
             'from': str(cfg.get('sender', '')),
             'to': [str(one) for one in cfg.get('recipients', [])],
-            'subject': f'{cfg.get("subject_prefix", "")}{notice.subject}'.strip(),
-            'text': notice.body,
+            'subject': _subject(notice, cfg),
+            'text': markdown(notice),
+            'html': email_html(notice),
         }
         return self._post(
             'email',
@@ -227,7 +207,12 @@ class Notifier:
             What the API did.
 
         """
-        payload = {'chat_id': str(cfg.get('chat', '')), 'text': notice.as_text()}
+        payload = {
+            'chat_id': str(cfg.get('chat', '')),
+            'text': telegram_html(notice),
+            'parse_mode': 'HTML',
+            'link_preview_options': {'is_disabled': True},
+        }
         path = f'/bot{cfg.get("token", "")}/sendMessage'
         return self._post('telegram', 'https', _TELEGRAM_HOST, path, payload, headers={})
 
@@ -242,7 +227,12 @@ class Notifier:
             What the endpoint did.
 
         """
-        payload = {'text': notice.as_text(), 'subject': notice.subject, 'severity': notice.severity.value}
+        payload = {
+            'text': markdown(notice),
+            'subject': headline(notice),
+            'severity': notice.severity.value,
+            'test': notice.test,
+        }
         try:
             scheme, host, path = split_url(str(cfg.get('url', '')))
         except ValueError as exc:
@@ -293,3 +283,8 @@ class Notifier:
                 connection.close()
         except (OSError, ValueError, http.client.HTTPException) as exc:
             return Delivery(channel=channel, ok=False, detail=f'{type(exc).__name__}: {exc}')
+
+
+def _subject(notice: Notice, cfg: Mapping[str, Any]) -> str:
+    """The mail subject: the configured prefix, then the headline a lock screen shows."""
+    return f'{cfg.get("subject_prefix", "")}{headline(notice)}'.strip()

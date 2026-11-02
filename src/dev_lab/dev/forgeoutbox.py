@@ -70,6 +70,7 @@ from dev_lab.dev.forgerecords import attach
 from dev_lab.dev.forgestatus import STATES, CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.venvpath import running_interpreter
+from dev_lab.supervise.notice import Context
 
 __all__ = [
     'OUTBOX_REL',
@@ -251,6 +252,7 @@ def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], obj
                 f'{post.context} on {post.sha[:12]} gave {first.state} and then {post.state}',
                 f'the first result ({first.description}) stands; the later one ({post.description}) was not posted. '
                 'The same unit gave two results: find what made it non-deterministic.',
+                context=Context(sha=post.sha),
             )
         )  # fmt: skip
         line = f'status: {post.context} on {post.sha[:12]} held {first.state}; a later {post.state} ALARMED, not posted'

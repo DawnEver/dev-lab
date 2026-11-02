@@ -24,7 +24,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgemerge import ready
 from dev_lab.dev.forgepulls import Marker, comment_upsert, pr_list
 from dev_lab.dev.forgereview_declared import Review, judge_for
@@ -74,6 +74,7 @@ def alarms(client: Client, base: str, repo: str) -> list[Alarm]:
             f'review blocks {pull.head_sha[:12]} (#{pull.number})',
             f'{line(pull, ids)}. The author fixes it (the next round re-judges it), or claims it is not a defect; '
             'an independent reviewer adjudicates the claim. No human and no author clears a block.',
+            context=pull_context(pull),
         )
         for pull, ids in blocked(client, base)
     ]

@@ -45,18 +45,22 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.compute.durable import durable_text, read_table
 from lab_commons.config import config_path, section
 from lab_commons.log import emit
 
 from dev_lab.dev import metrics
-from dev_lab.supervise.alert import Notice, Notifier
+from dev_lab.supervise.alert import Notifier
+from dev_lab.supervise.notice import Context, Notice, host_label
 from dev_lab.supervise.verdict import Severity
+
+if TYPE_CHECKING:
+    from dev_lab.dev._forge_records import PullRequest
 
 __all__ = [
     'AUTH',
@@ -76,7 +80,9 @@ __all__ = [
     'STORAGE',
     'UNTAGGED',
     'Alarm',
+    'linked',
     'main',
+    'pull_context',
     'repeat_window',
     'sound',
 ]  # fmt: skip
@@ -129,6 +135,10 @@ class Alarm:
     """One silent failure, named: its kind, the repo it concerns, a one-line subject and the remedy.
 
     *about* names WHICH thing of its kind (a starved candidate), so two of one kind repeat independently.
+    *context* is what it concerns -- the PR (number, title, link), branch, commit, run, service -- so the humans
+    are sent it as fields; *repo* fills its repository, and a forge URL links the PR and the commit.
+    *notice* is the structured notice when the raiser has a reading of its own (host pressure); absent,
+    :meth:`as_notice` builds one from the subject, the body and the context.
     """
 
     kind: str
@@ -136,6 +146,38 @@ class Alarm:
     subject: str
     body: str
     about: str = ''
+    context: Context = field(default_factory=Context)
+    notice: Notice | None = None
+
+    def as_notice(self) -> Notice:
+        """What the humans are sent: the raiser's own notice, else the subject, the context and the body."""
+        if self.notice is not None:
+            return self.notice
+        return Notice(
+            title=self.subject,
+            severity=Severity.WARNING if self.kind in PROMPTS else Severity.CRITICAL,
+            host=host_label(),
+            context=linked(self.context, self.repo),
+            findings=tuple(line for line in self.body.splitlines() if line.strip()),
+            action='Act on the details below.',
+        )
+
+
+def linked(context: Context, repo: str) -> Context:
+    """*context* with *repo* as its repository, and its PR and commit linked when *repo* is a forge URL."""
+    web = repo.removesuffix('.git') if repo.startswith(('https://', 'http://')) else ''
+    name = web.split('://', 1)[1].split('/', 1)[-1] if web else repo
+    return replace(
+        context,
+        repo=context.repo or name,
+        pr_url=context.pr_url or (f'{web}/pulls/{context.pr}' if web and context.pr is not None else ''),
+        sha_url=context.sha_url or (f'{web}/commit/{context.sha}' if web and context.sha else ''),
+    )
+
+
+def pull_context(pull: PullRequest) -> Context:
+    """A pull request's number, title, link, branch and head commit, as an alarm's context."""
+    return Context(pr=pull.number, pr_title=pull.title, pr_url=pull.url, branch=pull.head, sha=pull.head_sha)
 
 
 def _state() -> Path:
@@ -171,8 +213,7 @@ def sound(
     if due and alarm.kind not in PROMPTS:
         metrics.record(metrics.HOST_FAILURE, root=Path.cwd(), repo=alarm.repo, rule=alarm.kind, reason=alarm.kind)
     if due:
-        notice = Notice(subject=alarm.subject, body=alarm.body, severity=Severity.CRITICAL)
-        results = deliver(notice)
+        results = deliver(alarm.as_notice())
         delivered = tuple(d.channel for d in results if d.ok)
         if delivered or not results:  # taken, or nothing to retry: the line alone is the delivery
             durable_text(path, json.dumps({**last, key: now.isoformat()}))

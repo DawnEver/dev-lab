@@ -9,9 +9,11 @@ from pathlib import Path
 import pytest
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev.forgealarm import AUTH, EVENT, INTEGRATION, Alarm, main, repeat_window, sound
+from dev_lab.dev.forgealarm import AUTH, EVENT, INTEGRATION, Alarm, linked, main, repeat_window, sound
 from dev_lab.dev.metrics import HOST_FAILURE, read
-from dev_lab.supervise.alert import Delivery, Notice
+from dev_lab.supervise.alert import Delivery
+from dev_lab.supervise.notice import Context, Notice
+from dev_lab.supervise.verdict import Severity
 
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
 ALARM = Alarm(AUTH, 'https://f/o/r.git', 'the forge refused the stored credential', 'remedy: auth login')
@@ -47,7 +49,8 @@ def test_a_configured_channel_takes_it_and_a_repeat_inside_the_window_is_not_del
         return [Delivery('telegram', ok=True)]
 
     assert sound(ALARM, send=telegram, now=NOW) == ('telegram',)
-    assert sent[0].subject == ALARM.subject
+    assert sent[0].title == ALARM.subject
+    assert sent[0].findings == tuple(ALARM.body.splitlines())
     assert sound(ALARM, send=telegram, now=NOW + timedelta(minutes=5)) == ()
     assert _line(capsys)['repeat'] is True, 'a five-minute cron does not page every five minutes'
     assert len(sent) == 1
@@ -104,3 +107,21 @@ def test_a_failure_alarm_is_a_host_failure_once_per_window_and_a_prompt_is_not(
     assert [(line['lab.rule.id'], line['vcs.repository.url.full']) for line in read(HOST_FAILURE, root=tmp_path)] == [
         (AUTH, 'https://f/o/r.git')
     ]
+
+
+def test_a_forge_alarm_is_sent_with_its_pr_and_commit_linked() -> None:
+    """The alarm's context reaches the notice; a forge URL links the PR and the commit; a prompt is a WARNING."""
+    repo = 'https://git.example.org/DawnEver/motronics-studio.git'
+    alarm = Alarm(
+        INTEGRATION, repo, 'review blocks 3f2a9c81d7e4 (#5443)', 'fix it', context=Context(pr=5443, sha='3f2a9c81d7e4')
+    )
+    notice = alarm.as_notice()
+    assert notice.severity is Severity.WARNING
+    assert notice.context == Context(
+        repo='DawnEver/motronics-studio',
+        pr=5443,
+        pr_url='https://git.example.org/DawnEver/motronics-studio/pulls/5443',
+        sha='3f2a9c81d7e4',
+        sha_url='https://git.example.org/DawnEver/motronics-studio/commit/3f2a9c81d7e4',
+    )
+    assert linked(Context(pr=1), 'owner/name') == Context(repo='owner/name', pr=1)  # control: no URL, no link

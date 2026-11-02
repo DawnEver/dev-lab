@@ -7,13 +7,13 @@ so the agent hook on this host reads what supervision measured. Reports; never d
 
 from __future__ import annotations
 
-import socket
 import time
 from datetime import UTC, datetime
 
 from dev_lab.supervise.component import CheckContext, Component
 from dev_lab.supervise.components.resources import psutil_module
-from dev_lab.supervise.hostalarms import AGENTS, SUPERVISE, memo, record, render, rows
+from dev_lab.supervise.hostalarms import AGENTS, SUPERVISE, memo, notice, record, rows
+from dev_lab.supervise.notice import host_label, markdown
 from dev_lab.supervise.pressure import THRESHOLDS, Declared, measure
 from dev_lab.supervise.verdict import Anomaly, CheckResult, Severity
 
@@ -47,7 +47,7 @@ class HostPressure(Component):
         cadence = ctx.shared.get('cycle', {}).get('interval', THRESHOLDS['interval_s'])  # supervision's own
         declared = Declared.of({'interval_s': cadence, **ctx.config})
         measured = measure(declared, memo(SUPERVISE), now=time.time(), psutil=psutil_module)
-        owner, host = str(ctx.config.get('owner', AGENTS)), socket.gethostname()
+        owner, host = str(ctx.config.get('owner', AGENTS)), host_label()
         state = record(measured, host=host, owner=owner, source=SUPERVISE)
         stamp = datetime.now(UTC).isoformat()
         mine = rows(measured, source=SUPERVISE, stamp=stamp) if state is None else state['alarms']
@@ -59,7 +59,7 @@ class HostPressure(Component):
                 Anomaly(
                     kind=f'pressure_{kind}',
                     severity=Severity.CRITICAL if alarm['severity'] == 'critical' else Severity.WARNING,
-                    message=render(alarm, host=host, owner=owner),
+                    message=markdown(notice(alarm, host=host, owner=owner)),
                     signature=f'pressure:{kind}',
                 )
             )

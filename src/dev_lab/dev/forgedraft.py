@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev._forge_records import draft_title, ready_title
-from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pr_list
@@ -136,6 +136,7 @@ def alarms(root: Path, client: Client, base: str, repo: str, *, now: datetime) -
             INTEGRATION, repo, f'draft #{pull.number} idle {pull.head_sha[:12]}',
             f'#{pull.number} ({pull.title}) by {pull.author} [{who}] is a draft with no push for {STALE_DRAFT}: '
             f'nothing reviews or merges it. If its work is done, its author runs `{door}`; else it waits on them.',
+            context=pull_context(pull),
         ))  # fmt: skip
     return out
 

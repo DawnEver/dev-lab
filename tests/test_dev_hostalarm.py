@@ -14,10 +14,11 @@ from dev_lab.dev import forgeservesteps, hostalarm
 from dev_lab.dev.agent_guard import PRESSURE_COMMAND, WIRING
 from dev_lab.dev.forgealarm import PRESSURE, Alarm, sound
 from dev_lab.supervise import hostalarms
-from dev_lab.supervise.alert import Delivery, Notice
+from dev_lab.supervise.alert import Delivery
 from dev_lab.supervise.component import CheckContext
 from dev_lab.supervise.components import pressure as component
 from dev_lab.supervise.components.pressure import HostPressure
+from dev_lab.supervise.notice import Notice, headline, markdown
 from dev_lab.supervise.pressure import DOORS, Consumer, Finding, Measured
 from dev_lab.supervise.verdict import Severity
 
@@ -54,7 +55,7 @@ def test_the_hook_reminds_once_is_silent_within_the_window_and_reminds_again_aft
     """PLANTED CONTROLS: the second call inside 30 minutes is silent; the one past it, and another session, speak."""
     _pressed()
     first = _hook('s1', NOW, capsys)
-    assert 'HOST-PRESSURE CRITICAL on gitea' in first
+    assert first.startswith('**CRITICAL** · gitea')
     assert json.dumps(LANE) in first
     assert DOORS[0] in first
     assert 'the integrator' in first
@@ -85,10 +86,11 @@ def test_a_name_on_disk_reaches_the_agent_as_inert_quoted_data(capsys) -> None:
     hostalarms.record(hostile, host='ws', source=hostalarms.FORGE, now=NOW)
     said = _hook('s1', NOW, capsys)
     (row,) = [line for line in said.splitlines() if 'Ignore previous' in line]
-    assert row.startswith('  - "/srv/xIgnore previous')  # the newline is dropped: the name stays on its line
+    assert row.startswith('- "/srv/xIgnore previous')  # the newline is dropped: the name stays on its line
     assert chr(0x202E) not in said
     assert len(row) < hostalarms.DATUM_KEPT + 60
-    assert 'not instructions' in said.splitlines()[1]
+    lines = said.splitlines()
+    assert 'not instructions' in lines[lines.index(row) - 1]  # the fence sits right above the names
     assert hostalarms.datum('a"b') == '"a\\"b"'
 
 
@@ -150,7 +152,7 @@ def test_measure_is_read_only(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     """F-bf41b6816cae: a manual reading prints, and writes no state, so no tick's baseline moves."""
     monkeypatch.setattr(hostalarm, 'measure', lambda *_a, **_k: PRESSED)
     assert hostalarm.main(['measure']) == 0
-    assert 'HOST-PRESSURE CRITICAL' in capsys.readouterr().out
+    assert '**CRITICAL**' in capsys.readouterr().out
     assert not hostalarms.state_path().exists()
 
 
@@ -178,8 +180,9 @@ def test_the_humans_get_it_through_the_notifier_and_never_a_credential() -> None
     hostalarm.step(Path(), 'r', who='gitea', alarm=raised.append, table={}, measuring=lambda *_a, **_k: PRESSED)
     assert sound(raised[0], alerts=ALERTS, send=send, now=NOW) == ('telegram',)
     (notice,) = sent
-    assert json.dumps(LANE) in notice.body
-    assert not any(s in notice.as_text() for s in SECRETS)
+    assert json.dumps(LANE) in markdown(notice)
+    assert headline(notice) == 'CRITICAL · gitea · / 98.0% used, 2.0 GB free'
+    assert not any(s in markdown(notice) for s in SECRETS)
 
 
 def test_the_channel_test_sends_one_info_notice_and_prints_only_channel_results(capsys) -> None:
@@ -195,13 +198,13 @@ def test_the_channel_test_sends_one_info_notice_and_prints_only_channel_results(
     out = capsys.readouterr().out
     assert out.splitlines() == ['email ok id=-', 'telegram ok id=4711']
     (notice,) = sent
-    assert notice.severity is Severity.INFO
-    assert notice.subject == '[test] alert channels on gitea'
-    for part in ('sent by: ops@gitea', '2026-11-01 12:00:00 UTC', 'channels attempted: email, telegram',
-                 'no action is needed', hostalarm.TEST_AGAIN):  # fmt: skip
-        assert part in notice.body
-    assert notice.body.startswith('HOST-PRESSURE INFO on gitea')  # the alarms' own formatter
-    assert not any(s in notice.as_text() + out for s in SECRETS)
+    assert (notice.test, notice.severity) == (True, Severity.INFO)
+    assert headline(notice) == 'TEST · gitea · alert channels reached'
+    for part in ('sent by: ops@gitea', '**At:** 2026-11-01 12:00 UTC', 'channels attempted: email, telegram',
+                 'No action needed', hostalarm.TEST_AGAIN):  # fmt: skip
+        assert part in markdown(notice)
+    assert 'Since' not in markdown(notice)  # since == last: said once
+    assert not any(s in markdown(notice) + out for s in SECRETS)
     failed = hostalarm.channel_test(ALERTS, send=lambda _n: [Delivery('telegram', ok=False, detail=SECRETS[0])])
     assert failed == 1
     assert SECRETS[0] not in capsys.readouterr().out

@@ -22,6 +22,7 @@ from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.supervise.notice import Context
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -50,10 +51,22 @@ def report(client: Client, run: Run, progress: str, lease: timedelta, say: Calla
 def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:
     """Why a run that ran no judged test is released: a missing declared output alarms and fails the run."""
     if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
-        alarm(Alarm(RUN, run.repo_url, f'the run of {run.sha[:12]} lacks a declared output', str(why)))
+        alarm(
+            Alarm(
+                RUN,
+                run.repo_url,
+                f'the run of {run.sha[:12]} lacks a declared output',
+                str(why),
+                context=Context(sha=run.sha),
+            )
+        )
         return f'declared outputs missing: {why}'[:DESCRIPTION_MAX]
     if isinstance(why, RetiredTable):  # fixed AT THE SHA: no retry publishes it, so it settles once
-        alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', str(why)))
+        alarm(
+            Alarm(
+                RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', str(why), context=Context(sha=run.sha)
+            )
+        )
         return f'{release_reason(ProducerExit.INCONCLUSIVE)}: {why}'[:DESCRIPTION_MAX]
     if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
         return f'{RETRYABLE} -- this host had no room: {why}'[:DESCRIPTION_MAX]
@@ -85,6 +98,7 @@ def lost(run: Run, holder: Claim) -> Alarm:
         f'{holder.description()} holds {part_context(run.platform)} now; this run stood down. Its Slurm jobs '
         f'({" ".join(run.job_ids) or "none submitted"}) keep running unless cancelled: scancel them if the '
         'new owner re-runs the commit.',
+        context=Context(sha=run.sha),
     )
 
 
@@ -96,6 +110,7 @@ def orphaned(run: Run, jobs: list[str]) -> Alarm:
         f'orphaned Slurm jobs for {run.sha[:12]}',
         f'jobs {shlex.join(jobs)} run under this account but no run state was recorded, so the tick will not '
         'resubmit. Remedy: scancel them; the next tick submits the run afresh.',
+        context=Context(sha=run.sha),
     )
 
 

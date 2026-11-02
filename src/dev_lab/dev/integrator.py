@@ -51,6 +51,7 @@ from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import standing
+from dev_lab.supervise.notice import Context
 
 __all__ = [
     'BLOCKED',
@@ -211,6 +212,7 @@ def prompts(queue: Queue, repo: str) -> list[Alarm]:
             f'{row.branch} {_ASKS[row.state]}',
             f'{row.branch} at {row.tip[:12]} {_ASKS[row.state]} (python -m dev_lab.dev.integrator queue)',
             about=f'{row.state} {row.branch}@{row.tip[:12]}',
+            context=Context(branch=row.branch, sha=row.tip),
         )
         for row in rows
         if row.state in _ASKS

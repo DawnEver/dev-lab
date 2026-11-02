@@ -29,8 +29,9 @@ from typing import Any, Final
 
 from lab_commons.box import hold
 
-from dev_lab.supervise.alert import Delivery, Notice, Notifier
+from dev_lab.supervise.alert import Delivery, Notifier
 from dev_lab.supervise.component import ActionContext, CheckContext, Registry
+from dev_lab.supervise.notice import Notice, host_label
 from dev_lab.supervise.policy import decide
 from dev_lab.supervise.process.base import ProcessManager
 from dev_lab.supervise.remedy import Attempt, apply_chain
@@ -326,7 +327,15 @@ def _notify(
         )
         if not verdict.notify:
             continue
-        notice = Notice(subject=f'{anomaly.source}: {anomaly.message}', body=anomaly.message, severity=anomaly.severity)
+        first, *rest = anomaly.message.splitlines() or ['']
+        notice = Notice(
+            title=f'{anomaly.source}: {first}',
+            severity=anomaly.severity,
+            host=host_label(config.get('notify')),
+            value='' if anomaly.value is None else f'{anomaly.value:g}',
+            threshold='' if anomaly.threshold is None else f'{anomaly.threshold:g}',
+            findings=tuple(rest),
+        )
         delivered = notifier.send(notice)
         sent.extend(delivered)
         # RECORDED ONLY IF SOMETHING TOOK IT, and this ordering is the point. The decision to send

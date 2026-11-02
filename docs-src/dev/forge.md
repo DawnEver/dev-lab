@@ -515,6 +515,11 @@ BLOCKED red to route, a head whose review is HELD over the cap -- the integrator
 past the grace, never deleted; see [pruning origin](branch-set.md#pruning-origin)). The machine file's
 `[alerts]` table (telegram, email, webhook) delivers them; one `(kind, repo[, about])` is delivered at most
 once per `[alerts] repeat_hours` (absent: 6) -- the receiver's decision, so it lives in the receiver's machine file.
+Every alarm is one structured notice (`dev_lab.supervise.notice`) written once as Markdown: its first line is
+the severity in words, the host, and what is wrong (a metric's value against its threshold); then the action,
+the context (repository, PR, branch, commit, run, service, since/last) and the remedy. The agent hook and the
+email's plain part carry that Markdown; Telegram and the email's HTML part render it. The host is
+`[notify] host_label` in the machine file (absent: the hostname).
 
 ## Records and the outbox
 

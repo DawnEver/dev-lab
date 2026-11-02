@@ -158,6 +158,7 @@ from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL
+from dev_lab.supervise.notice import Context
 
 __all__ = ['POLL_LEASE_TICKS', 'ServeReport', 'main', 'polls', 'serve', 'work_root']
 
@@ -349,7 +350,15 @@ def _advance(
     me = Claim(machine, built.whoami(), forge_now(built) + lease, str(seat) if seat else '')
     if slurm is None:  # not on a cluster, or no grant for this account
         for run in runs:
-            alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} cannot advance', why))
+            alarm(
+                Alarm(
+                    RUN,
+                    run.repo_url,
+                    f'the cluster run of {run.sha[:12]} cannot advance',
+                    why,
+                    context=Context(sha=run.sha),
+                )
+            )
         say(f'[serve] no cluster to advance {len(runs)} run(s) on: {why}')
         return [run.sha for run in runs]
     left: list[str] = []
@@ -364,7 +373,15 @@ def _advance(
                 root, run, client=built, me=me, lease=lease, cluster=slurm, say=say, alarm=alarm,
             )  # fmt: skip
         except (RuntimeError, OSError, ValueError) as stuck:  # Slurm or the build refused: the run waits
-            alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} cannot advance', str(stuck)))
+            alarm(
+                Alarm(
+                    RUN,
+                    run.repo_url,
+                    f'the cluster run of {run.sha[:12]} cannot advance',
+                    str(stuck),
+                    context=Context(sha=run.sha),
+                )
+            )
             say(f'{run_tag(run.platform, run.sha)}: cannot advance: {stuck}')
             after = run
         if after is not None:
