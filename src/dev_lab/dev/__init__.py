@@ -157,6 +157,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.forgecarry` -- REACH-CARRY: an outcome stands at a descendant whose diff misses its
   test's footprint; per outcome on a cluster run, per part when every test carries.
 * :mod:`dev_lab.dev.footprint` -- the repo paths a test file's outcome can depend on, derived statically.
+* :mod:`dev_lab.dev.lockreach` -- the import names a ``uv.lock`` change reaches, so a relock re-runs only importers.
 * :mod:`dev_lab.dev.localpart` -- a local run as a ``tests/<part>`` part, in the cluster
   record's shape.
 * :mod:`dev_lab.dev.jobparts` -- the same parts produced by workflow jobs: the matrix of parts and runners,

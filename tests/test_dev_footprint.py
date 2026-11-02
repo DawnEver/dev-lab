@@ -11,7 +11,7 @@ from pathlib import Path
 
 from _forge_fake import git_out, run_git
 
-from dev_lab.dev import footprint, forgecarry
+from dev_lab.dev import footprint, forgecarry, lockreach
 
 PYPROJECT = '[tool.dev_lab.parts]\noutput = "output/logs"\n'
 BASE = {
@@ -227,7 +227,7 @@ def _lock(*, pin: str = 'aaa', numpy: str = '2.0.0', head: str = LOCK_HEAD, extr
 
 def _lock_carried(tmp_path: Path, monkeypatch: object, new_lock: str) -> set[str]:
     """Which of :data:`LOCK_TESTS` carry across a commit changing ONLY ``uv.lock`` to *new_lock*."""
-    monkeypatch.setattr(footprint, 'import_names', MAPPED.get)  # type: ignore[attr-defined]
+    monkeypatch.setattr(lockreach, 'import_names', MAPPED.get)
     a = _repo(tmp_path, **LOCK_TESTS, **{'uv.lock': _lock()})
     b = _commit(tmp_path, {'uv.lock': new_lock})
     return {node.split('::')[0] for node in forgecarry.carried(tmp_path, a, b, LOCK_NODES)}
@@ -251,18 +251,18 @@ def test_a_numpy_bump_reaches_its_reverse_dependents_importers(tmp_path: Path, m
 def test_a_lock_header_or_marker_change_reaches_every_test(tmp_path: Path, monkeypatch) -> None:
     """A change outside ``[[package]]`` is doubt. CONTROL: the same packages under the old header carry all."""
     assert _lock_carried(tmp_path, monkeypatch, _lock(head=LOCK_HEAD + 'resolution-markers = ["x"]\n')) == set()
-    assert footprint.lock_reach(_lock(), _lock(), MAPPED.get) == frozenset()
+    assert lockreach.lock_reach(_lock(), _lock(), MAPPED.get) == frozenset()
 
 
 def test_an_unmappable_changed_package_reaches_every_test(tmp_path: Path, monkeypatch) -> None:
     """A package the metadata cannot map is doubt. CONTROL: the mapped dev-lab move alone reaches dev_lab only."""
     extra = '\n[[package]]\nname = "mystery"\nversion = "1"\nsource = { registry = "https://pypi.org/simple" }\n'
     assert _lock_carried(tmp_path, monkeypatch, _lock(extra=extra)) == set()
-    assert footprint.lock_reach(_lock(), _lock(pin='bbb'), MAPPED.get) == frozenset({'dev_lab'})
+    assert lockreach.lock_reach(_lock(), _lock(pin='bbb'), MAPPED.get) == frozenset({'dev_lab'})
 
 
 def test_an_unresolved_lock_still_reaches_every_footprint() -> None:
-    """Called without :func:`footprint.resolve_lock`, ``uv.lock`` stays in every footprint: doubt is wide."""
+    """Called without :func:`lockreach.resolve_lock`, ``uv.lock`` stays in every footprint: doubt is wide."""
     prints = _synthetic({'tests/test_a.py': 'import json\n'})
     assert prints.reaches('tests/test_a.py', (footprint.LOCK,))
     assert prints.of('tests/test_a.py').reaches(footprint.LOCK)
@@ -272,9 +272,9 @@ def test_an_unresolved_lock_still_reaches_every_footprint() -> None:
 
 def test_import_names_reads_the_installed_metadata_and_refuses_the_runner() -> None:
     """One mapping: a library maps to its top-level names; pytest and an unknown distribution reach everything."""
-    assert footprint.import_names('Pluggy') == frozenset({'pluggy'}), 'pytest depends on it, so it is installed'
-    assert footprint.import_names('pytest') is None
-    assert footprint.import_names('no-such-distribution-d48') is None
+    assert lockreach.import_names('Pluggy') == frozenset({'pluggy'}), 'pytest depends on it, so it is installed'
+    assert lockreach.import_names('pytest') is None
+    assert lockreach.import_names('no-such-distribution-d48') is None
 
 
 def test_a_from_import_does_not_hide_a_later_read_by_path() -> None:
@@ -301,7 +301,7 @@ def test_the_repos_own_project_entry_does_not_carry_a_pin_move_to_everything() -
                      'dependencies = [{ name = "dev-lab" }, { name = "numpy" }]\n')  # fmt: skip
 
     for source in ('editable = "."', 'virtual = "."', 'editable = "packages/sub"'):
-        assert footprint.lock_reach(lock('aaa', source), lock('bbb', source), MAPPED.get) == {'dev_lab'}, source
+        assert lockreach.lock_reach(lock('aaa', source), lock('bbb', source), MAPPED.get) == {'dev_lab'}, source
     assert (
-        footprint.lock_reach(lock('aaa', 'editable = "../app"'), lock('bbb', 'editable = "../app"'), MAPPED.get) is None
+        lockreach.lock_reach(lock('aaa', 'editable = "../app"'), lock('bbb', 'editable = "../app"'), MAPPED.get) is None
     )

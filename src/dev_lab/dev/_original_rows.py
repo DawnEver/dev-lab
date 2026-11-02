@@ -30,6 +30,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeproduce',
     'forgecarry',
     'footprint',
+    'lockreach',
     'localpart',
     'workstationverdict',
     'verdictstore',
