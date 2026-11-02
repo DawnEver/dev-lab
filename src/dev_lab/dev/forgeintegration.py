@@ -58,7 +58,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import judged, merge
+from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -243,12 +243,15 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     """Merge PR *child* through the forge when nothing is missing; *said* with the outcome added as a line.
 
     Only where ``pr_merges_since`` is declared and the forge is gitea (GitHub merges natively on the same decision,
-    :func:`dev_lab.dev.forgemerge.ready`); an already-merged child is left alone.
+    :func:`dev_lab.dev.forgemerge.ready`); an already-merged child is left alone. A repo that declares the CI merger
+    (:func:`~dev_lab.dev.forgemerge.ci_merges`) is merged by its Gitea job on the same decision: here it is only said.
     """
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said
     found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
-    if found.ready:
+    if found.ready and ci_merges(root):
+        line, summary = f'ready: the {CI_MERGER} job merges it', f'{said.summary}; ready for the {CI_MERGER} job'
+    elif found.ready:
         ephemeral = declared_branchset(root).is_ephemeral(child.branch)
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
         line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED

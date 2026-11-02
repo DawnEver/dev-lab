@@ -20,6 +20,10 @@ SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the 
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
 so the setup every job repeats has one source. ``_steps`` is never a workflow and never rendered.
 
+THE GITEA RUNNER LABELS ARE DECLARED ONCE: the top-level ``_runners`` table (:data:`RUNNERS`, :func:`runner_labels`)
+names each label a Gitea job may run on -- ``review`` for the review job alone, :data:`LIGHT` for the jobs that hold
+no review method and no key (user ruling 2026-11-02). It is never a workflow and never rendered.
+
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
@@ -46,10 +50,12 @@ from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 __all__ = [
     'BASE_PATH',
     'FORGE_KEY',
+    'LIGHT',
     'NIGHTLY_CRON',
     'NIGHTLY_KEY',
     'PINS',
     'RENDER_COMMAND',
+    'RUNNERS',
     'SHARED',
     'STAMP',
     'USE_STEPS',
@@ -59,6 +65,7 @@ __all__ = [
     'merge',
     'pinned_ref',
     'render',
+    'runner_labels',
     'workflows',
     'write',
 ]  # fmt: skip
@@ -67,6 +74,11 @@ BASE_PATH: Final = Path(__file__).resolve().parent / 'ci_base.toml'
 
 #: The top-level table of named step lists; never a workflow.
 SHARED: Final = '_steps'
+
+#: The top-level table of Gitea runner labels; never a workflow.
+RUNNERS: Final = '_runners'
+#: The label of the small-memory runner every job that holds no review method nor key runs on.
+LIGHT: Final = 'light'
 
 #: The key of a step that stands for a named list of :data:`SHARED`.
 USE_STEPS: Final = 'use-steps'
@@ -91,6 +103,11 @@ def pinned_ref(repo: str) -> str:
     steps, var = PINS[repo]
     (install, *_) = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[SHARED][steps]
     return install['env'][var]
+
+
+def runner_labels() -> dict[str, str]:
+    """Every Gitea runner label ``ci_base.toml`` declares, with what runs on it."""
+    return dict(tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS])
 
 
 #: The first line of every rendered workflow -- a YAML comment, so the JSON body below stays valid YAML.

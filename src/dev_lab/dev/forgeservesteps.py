@@ -23,6 +23,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeintegration import alarms as sync_alarms
 from dev_lab.dev.forgeintegration import tick as integration_tick
+from dev_lab.dev.forgemerge import CI_MERGER, ci_merges
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
@@ -229,10 +230,14 @@ def repo_wide(
 ) -> None:
     """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgeserve.polls`).
 
-    In order: close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock.
+    In order: close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock. A repo that
+    declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
     """
-    serve_close_landed(root, client(root), say=say, alarm=alarm)
-    serve_sweep(root, client(root), say=say, alarm=alarm)
+    if ci_merges(root):
+        say(f'[serve] the {CI_MERGER} job closes landed PRs and sweeps landed branches')
+    else:
+        serve_close_landed(root, client(root), say=say, alarm=alarm)
+        serve_sweep(root, client(root), say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     hygiene(root, client(root), say=say)
