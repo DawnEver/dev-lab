@@ -12,7 +12,7 @@ from typing import Final
 from dev_lab.dev.forgerunstate import Killed
 from dev_lab.dev.forgestuck import parse_duration
 
-__all__ = ['KILLED', 'KILLED_FIELDS', 'killed_jobs']
+__all__ = ['KILLED', 'KILLED_FIELDS', 'killed_jobs', 'size_mb']
 
 #: The ``sacct`` states of a job Slurm killed for its ask: memory, or time.
 KILLED: Final = ('OUT_OF_MEMORY', 'TIMEOUT')
@@ -22,7 +22,7 @@ _SIZE: Final = re.compile(r'([\d.]+)([KMGT]?)')
 _MB_PER: Final = {'K': 1 / 1024, '': 1 / 1024 / 1024, 'M': 1, 'G': 1024, 'T': 1024 * 1024}
 
 
-def _mb(text: str) -> int:
+def size_mb(text: str) -> int:
     """``4G``, ``8000M``, ``4300000K`` (or ``4Gn``/``4Gc`` of older Slurm) in MB; empty is 0."""
     match = _SIZE.match(text.strip())
     return round(float(match.group(1)) * _MB_PER[match.group(2)]) if match else 0
@@ -47,11 +47,11 @@ def killed_jobs(sacct: str) -> tuple[Killed, ...]:
         if not dot:
             jobs[base] = [state, req, elapsed, limit]
             continue
-        used[base] = max(used.get(base, 0), _mb(rss))
+        used[base] = max(used.get(base, 0), size_mb(rss))
         if state in KILLED and base in jobs and jobs[base][0] not in KILLED:
             jobs[base][0] = state
     return tuple(
-        Killed(job, state, _mb(req), used.get(job, 0), _seconds(limit), _seconds(elapsed))
+        Killed(job, state, size_mb(req), used.get(job, 0), _seconds(limit), _seconds(elapsed))
         for job, (state, req, elapsed, limit) in jobs.items()
         if state in KILLED
     )

@@ -333,6 +333,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeoom` -- an OOM-killed task floors every file it ran at its ask, in the folded record.
 * :mod:`dev_lab.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
 * :mod:`dev_lab.dev.slurmkilled` -- the jobs ``sacct`` says Slurm killed for memory or time, and what each used.
+* :mod:`dev_lab.dev.hpcusage` -- an account's last day from its one ``sacct`` read: run budget and card table.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
   store cleanup its host owns.
 * :mod:`dev_lab.dev.retention` -- the storage retention pass serve runs every tick, and its quota alarm.

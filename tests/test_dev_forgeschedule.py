@@ -12,7 +12,7 @@ from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev.forgehosts import host_id
 from dev_lab.dev.forgeorigin import vouched
-from dev_lab.dev.forgeschedule import coalesced, host_weights, load_schedule, parse_usage
+from dev_lab.dev.forgeschedule import coalesced, host_weights, load_schedule
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 FAMILY = Schedule()
@@ -130,11 +130,6 @@ def test_a_blocked_candidate_past_its_class_bound_is_starved() -> None:
     blocked = [dataclasses.replace(item, blocked='not admitted: lacking cpu') for item in (old, young)]
     assert [i.candidate.ref for i in starved(blocked, {'o/r': FAMILY})] == ['feat/x']
     assert starved([old], {'o/r': FAMILY}) == ()
-
-
-def test_usage_is_core_hours_per_run_job() -> None:
-    sacct = 'run-abcdef123456-base|7200\nrun-abcdef123456-femm|3600\nother|99999\nrun-ffffffffffff-base|\n'
-    assert parse_usage(sacct) == {'abcdef123456': 3.0}, "every part of a sha is that sha's use"
 
 
 def test_a_priority_candidate_ranks_first_over_a_higher_score() -> None:

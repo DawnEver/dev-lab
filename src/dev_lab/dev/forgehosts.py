@@ -63,7 +63,7 @@ from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
-from dev_lab.dev import forgerunstate
+from dev_lab.dev import forgerunstate, hpcusage
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -174,6 +174,7 @@ class HostCard:
         head = f'**{self.host}** serves `{self.platform}`{engines} as {self.login}; ticked {self.ticked}; holds {holds}'
         head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
         head += f'\n\nstorage: {self.facts["storage"]}' if 'storage' in self.facts else ''
+        head += f'\n\n{usage}' if (usage := hpcusage.table(self.facts.get('usage'))) else ''
         head += f'\n\nrunning: {", ".join(self.running)}' if self.running else ''
         absent = [
             f'`{name}` ({row["evidence"][-1]["source"]}: {row["evidence"][-1]["value"]})'
