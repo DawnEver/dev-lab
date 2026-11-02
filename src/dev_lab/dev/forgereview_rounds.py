@@ -132,7 +132,7 @@ class Ledger:
         return f'<!-- review-ledger {text} -->'
 
 
-def trusted_bodies(client: Client, number: int) -> list[str]:
+def trusted_bodies(client: Client, number: int, reviewers: Iterable[str] = ()) -> list[str]:
     """PR *number*'s comment bodies (oldest first) the forge records as written by THIS client's login.
 
     A ledger or a disposition is state the forge and the integrator write; a comment anyone else writes that
@@ -145,17 +145,23 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
     the job is the Actions bot). A cap RAISE is read the same way
     (:func:`~dev_lab.dev.reviewbudget.raise_record`, #17: DawnEver's raise never reached the Actions job), and
     admitted only when the forge records its author with write permission (:meth:`Client.can_write`): naming
-    yourself proves who wrote it, never that you may raise. A ROUND posted by another host is read the same way: a
-    writer's ``Marker.REVIEW`` comment contributes its marker and ledger (:func:`review_record`).
+    yourself proves who wrote it, never that you may raise.
+
+    A ROUND posted by another review producer is read only from a DECLARED reviewer login (*reviewers*, the base's
+    ``[tool.dev_lab.review] reviewers``), never from any writer: a ledger decides which findings stay open, and an
+    author never clears a review's block on its own (:mod:`dev_lab.dev.forgereview_dispose`). Such a comment
+    contributes its marker and ledger alone (:func:`review_record`).
     """
     trusted = {client.whoami(), client.backend.actions_login}
+    producers = set(reviewers) - trusted
     out = []
     for comment in comment_list(client, number):
         if comment.author in trusted:
             out.append(comment.body)
-        elif (record := claim_record(comment.body, comment.author)) or (
-            (record := raise_record(comment.body, comment.author) or review_record(comment.body))
-            and client.can_write(comment.author)
+        elif (
+            (record := claim_record(comment.body, comment.author))
+            or ((record := raise_record(comment.body, comment.author)) and client.can_write(comment.author))
+            or (comment.author in producers and (record := review_record(comment.body)))
         ):
             out.append(record)
     return out
@@ -443,6 +449,7 @@ def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings, max_rounds: int,
     judged: Judge, reviewer: Identity, authors: frozenset[str], by: str = 'review', outside: int = 0,
     authored: Mapping[str, str] | None = None, emergency: bool = False, usd: float = 0.0,
+    reviewers: Iterable[str] = (),
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment and :data:`REVIEW_CONTEXT`; the line said.
 
@@ -450,7 +457,7 @@ def post_round(
     with its pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and
     may not be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the
     changed files that are not code, said in the comment. *authored* is the author's trailer dispositions. *usd* is what
-    the round spent, recorded in its ledger.
+    the round spent, recorded in its ledger. *reviewers* are the declared producer logins whose rounds are read.
 
     Only the forge posts a round (:func:`ruling`) and moves :data:`REVIEW_CONTEXT`; its round releases a pending
     hold. An *emergency* round (the takeover door) is ADVISORY (D11): its comment says so, it posts no status,
@@ -460,7 +467,7 @@ def post_round(
         ruling(reviewer, f'reviewing #{pull.number}')
     self_review(reviewer, authors, f'reviewing #{pull.number}')
     head = pull.head_sha
-    bodies = trusted_bodies(client, pull.number)
+    bodies = trusted_bodies(client, pull.number, reviewers)
     prior = ledger_of(bodies)
     prior = None if prior is not None and prior.head == head else prior  # a head re-posted is not a new round
     mine = reviewer.session

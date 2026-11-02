@@ -296,14 +296,15 @@ def test_the_pr_cap_reads_the_recorded_rounds_not_this_hosts_spend_alone(tmp_pat
         (tmp_path / str(recorded)).mkdir()
         work, earlier = _work(tmp_path / str(recorded))
         forge, number = _forge(earlier)
-        forge.permissions['serve-host'] = 'write'
-        forge.login = 'serve-host'
+        forge.login = 'serve-host'  # a DECLARED review producer
         comment_upsert(forge, number, kind=Marker.REVIEW, key=earlier, text=Ledger(earlier, 1, usd=recorded).line())
         forge.login = 'ci-job'
         head = advance(work, 'pr/x', 'y.py', 'y = 1\n')
         forge.pulls[number]['head']['sha'] = head
         command = FakeCommand(_doc())
-        _tick(work, forge, command, _spend())
+        review = Review(judge=JUDGE, command=_REVIEW.command, reviewers=('serve-host',))
+        review_tick(work, forge, review, base='integrate/main', run=command, ready=lambda *_: None, host='box',
+                    spend=lambda *_: _spend())  # fmt: skip
         assert len(command.ran) == runs
         if not runs:
             assert _state(forge, head)[1].startswith(f'{CAPPED} budget reached: 11.00/10.00 USD')

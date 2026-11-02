@@ -26,6 +26,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     not_code = [...]           # globs never code whatever their extension (forgereview_scope.NOT_CODE)
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
     quiet = "10 min"           # the default (DEFAULT_QUIET): the serve reviews a head only once it is this old
+    reviewers = []             # forge logins the review producers post as (serve hosts, jobs): their rounds are read
 
 The keys of the retired in-process reviewer (``max_tokens``, ``rules``) are refused by name.
 """
@@ -169,6 +170,7 @@ class Review:
     not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
     quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
+    reviewers: tuple[str, ...] = ()  # the producer logins whose review rounds every host reads (never any writer)
 
     def __post_init__(self) -> None:
         """Refuse a ``claim_stale`` or ``quiet`` that is not a duration, naming it."""

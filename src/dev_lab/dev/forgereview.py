@@ -208,7 +208,7 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
         post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
-                      outside=scope.outside, authored=authored, usd=usd,
+                      outside=scope.outside, authored=authored, usd=usd, reviewers=review.reviewers,
                       **_judging(root, client, review, pull, runner=runner))  # fmt: skip
 
 
@@ -243,7 +243,7 @@ def capped(
     remedy, and the review is ``None`` -- posted and said once (``None, None`` after), and read again every tick,
     so a raise or a new month releases it.
     """
-    head, bodies = pull.head_sha, trusted_bodies(client, pull.number)
+    head, bodies = pull.head_sha, trusted_bodies(client, pull.number, review.reviewers)
     prior = ledger_of(bodies)
     rounds_done = 0 if prior is None else prior.round - (prior.head == head)
     spend = runner.spend(runner.runtimes, root)
@@ -283,7 +283,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     if (stands := passed(root, client, head, runner.clock(), review.stale, counted=counted)) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     # the forge's own rounds only: a pasted marker naming an unreviewed sha would shrink the range or seed a carry
-    done = reviewed_heads(trusted_bodies(client, pull.number))
+    done = reviewed_heads(trusted_bodies(client, pull.number, review.reviewers))
     if (source := synced_from(root, target, head, done)) and (why := synced(client, head, source, base=pull.base)):
         return f'#{pull.number} {head[:12]}: {why}'
     if (wait := _young(root, head, runner)) is not None:
@@ -326,8 +326,8 @@ def _command_round(
     before = _tagged(root, pull, runner)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
-        found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body,
-                                      disposed=upheld(trusted_bodies(client, pull.number))))  # fmt: skip
+        gone = upheld(trusted_bodies(client, pull.number, review.reviewers))
+        found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body, disposed=gone))
     except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
         return unable(client, pull, runner.host, str(unsupported))
     except (UnknownSchemaVersion, ReviewRefused) as named:

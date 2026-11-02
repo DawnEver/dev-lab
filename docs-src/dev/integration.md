@@ -179,20 +179,14 @@ slice, not whether a head is read at all:
   Markdown), `standard` for the rest. The outputs merge into one document (a finding once per id); a declared
   `synthesis` command then reads it (`{findings}`) over the whole range for what crosses slices.
 
-**It is not a part**: `integrate promote` and push admission never wait on `tests/review`. Beside the blocking
-above, the forge's auto-merge waits on a head the slices cannot hold -- its reviewable change
-over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices for a command without `{paths}`.
-That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), and it is
-a TAKEOVER the INTEGRATOR AGENT owns (user ruling 2026-10-26): the forge lists it among the integrator's prompts
-(an `integration` issue per held head, `forge notices`, `forge review held`) with the door to run,
-`python -m dev_lab.dev.forge review takeover <sha>`. The door runs the same sliced method over EVERY slice -- a
-session is not metered, so the byte cap that bounds a program review does not bind it -- posts the findings comment
-and `tests/review`, and releases the hold, refusing to release without a findings comment for that sha (the
-release is the record that a review happened; a raw `status post` on `tests/review-hold` is refused,
-[STATUS-VIA-DOORS](refusals.md#status-via-doors)). `forge review plan <sha>` prints the slices. A
-human is asked only for a decision the review surfaces, never for the routine review or the release. So an
-unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
-nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review
+**It is not a part**: `integrate promote` and push admission never wait on `tests/review`. A head is NEVER
+held for its size (D123, user ruling 2026-10-31): a head the slices cannot hold -- its reviewable change over
+`max_total_bytes`, one file alone over `max_diff_bytes`, or several slices for a command without `{paths}` -- is
+ONE whole-range structure review with no paths (`forgereview_scope.WHOLE`; the comment says why): the method maps
+the range at the directory level, the reviewer reads what it chooses, and its findings gate the merge like any
+round's. `forge review plan <sha>` prints the slices, or the one whole-range review. `tests/review-hold` is
+`pending` only when the review could not run for the PR at all (no review secret, or a host that cannot run the
+command), and the forge's re-run releases it. A second tick on the same head runs nothing and posts nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review
 (a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run on host
 <host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
