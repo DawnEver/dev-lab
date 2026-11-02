@@ -126,6 +126,7 @@ from dev_lab.dev.forgesupersede import supersede, superseding_tip
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.supervise.notice import Context
 
 __all__ = ['advance', 'start']
 
@@ -279,7 +280,15 @@ def _settle(
     else:
         reason = f'released: superseded -- never submitted, and {run.ref} moved on'
     reason = reason[:DESCRIPTION_MAX]
-    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', f'{why}; {reason}'))
+    alarm(
+        Alarm(
+            RUN,
+            run.repo_url,
+            f'the cluster run of {run.sha[:12]} settled',
+            f'{why}; {reason}',
+            context=Context(sha=run.sha),
+        )
+    )
     say(f'{run_tag(run.platform, run.sha)}: {why} -- {reason}')
     forgerunpost.release(client, run, reason, say)
     drop(run)
@@ -366,7 +375,15 @@ def _hold(
     try:
         held = claim(client, Work(run.ref, run.sha, run.platform, state), renewal)
     except ForgeCallFailed as failed:
-        alarm(Alarm(LEASE, run.repo_url, f'cannot renew the claim on {run.sha[:12]}', str(failed)))
+        alarm(
+            Alarm(
+                LEASE,
+                run.repo_url,
+                f'cannot renew the claim on {run.sha[:12]}',
+                str(failed),
+                context=Context(sha=run.sha),
+            )
+        )
         say(f'{tag}: could not renew its claim: {failed}')
         return _WAIT, run
     if held.state != MINE:

@@ -24,7 +24,7 @@ import os
 import shutil
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
@@ -149,13 +149,17 @@ class Finding:
     """One alarm: which pressure, how severe, what was read, and who holds the resource.
 
     *kind* names WHICH pressure (``disk:/``, ``cgroup:gitea-runner.service:high``); *consumers* are the biggest
-    owners of the resource.
+    owners of the resource. *metric*, *value* and *threshold* are the glanceable reading an alert's first line
+    shows (``disk /``, ``91%``, ``> 90%``); *measurement* is the full sentence.
     """
 
     kind: str
     severity: str
     measurement: str
     consumers: tuple[Consumer, ...] = ()
+    metric: str = ''
+    value: str = ''
+    threshold: str = ''
 
 
 @dataclass
@@ -211,12 +215,26 @@ def _disk(
     said = f'{name} {percent:.1f}% used, {free_gb:.1f} GB free' + (f', full in {days:.1f} days' if days else '')
     if free_gb < limits['disk_free_floor_gb']:
         return (
-            [Finding(f'disk:{name}', 'critical', f'{said} (floor {limits["disk_free_floor_gb"]} GB)')],
+            [
+                Finding(
+                    f'disk:{name}',
+                    'critical',
+                    f'{said} (floor {limits["disk_free_floor_gb"]} GB)',
+                    metric=f'disk {name}',
+                    value=f'{free_gb:.1f} GB free',
+                    threshold=f'{limits["disk_free_floor_gb"]:g} GB',
+                )
+            ],
             readings,
             kept,
         )
     if percent > limits['disk_percent_ceiling'] or (days is not None and days < limits['days_to_full_floor']):
-        return [Finding(f'disk:{name}', 'warning', said)], readings, kept
+        if percent > limits['disk_percent_ceiling']:
+            value, bar = f'{percent:.0f}%', f'{limits["disk_percent_ceiling"]:g}%'
+        else:
+            value, bar = f'full in {days:.1f} days', f'{limits["days_to_full_floor"]:g} days'
+        found = Finding(f'disk:{name}', 'warning', said, metric=f'disk {name}', value=value, threshold=bar)
+        return [found], readings, kept
     return [], readings, kept
 
 
@@ -244,7 +262,12 @@ def _psi(
         limit = limits[f'psi_{resource}_{scope}_avg60']
         if value is not None and value > limit:
             text = f'{resource} pressure {scope} avg60 {value:.1f}% > {limit:.1f}%'
-            findings.append(Finding(f'psi:{resource}:{scope}', severity, text))
+            reading = {
+                'metric': f'{resource} pressure {scope}',
+                'value': f'{value:.1f}%',
+                'threshold': f'{limit:.1f}%',
+            }
+            findings.append(Finding(f'psi:{resource}:{scope}', severity, text, **reading))
     return findings, readings
 
 
@@ -291,7 +314,8 @@ def _cgroups(
             readings[f'cgroup:{service}:{counter}_delta'] = rise  # the first reading has no delta yet
             if rise is not None and rise > 0:
                 said = f'{service} cgroup memory.events {counter} rose by {rise} (now {now.get(counter, 0)})'
-                findings.append(Finding(f'cgroup:{service}:{counter}', severity, said))
+                reading = {'metric': f'{service} memory.{counter}', 'value': f'+{rise}', 'threshold': '0'}
+                findings.append(Finding(f'cgroup:{service}:{counter}', severity, said, **reading))
     return findings, readings, counts
 
 
@@ -301,7 +325,14 @@ def _windowed(psutil: ModuleType | None, limits: Mapping[str, float]) -> tuple[l
     cpu = float(psutil.cpu_percent(interval=limits['psutil_window_s']))  # averaged over the window
     memory = float(psutil.virtual_memory().percent)
     findings = [
-        Finding(f'{name}:percent', 'warning', f'{name} {value:.0f}% averaged over {limits["psutil_window_s"]:.0f}s')
+        Finding(
+            f'{name}:percent',
+            'warning',
+            f'{name} {value:.0f}% averaged over {limits["psutil_window_s"]:.0f}s',
+            metric=name,
+            value=f'{value:.0f}%',
+            threshold=f'{limits[f"{name}_percent_ceiling"]:g}%',
+        )
         for name, value in (('cpu', cpu), ('memory', memory))
         if value > limits[f'{name}_percent_ceiling']
     ]
@@ -406,7 +437,7 @@ def measure(
             named = sizes([path]) if found else ()
         except OSError:
             named = ()  # the alarm stands without its consumers
-        done.findings += [Finding(f.kind, f.severity, f.measurement, named) for f in found]
+        done.findings += [replace(f, consumers=named) for f in found]
     if linux:
         found, readings = _psi(declared.limits, read)
         done.findings += found

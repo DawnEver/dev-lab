@@ -23,6 +23,7 @@ from dev_lab.dev.forgerunstate import Cluster, Draining, Run, drop
 from dev_lab.dev.forgeschedule import coalesced, tip_of
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.supervise.notice import Context
 
 __all__ = ['REF_GONE', 'overdue', 'supersede', 'superseding_tip']
 
@@ -74,7 +75,9 @@ def _cancel_orphan(
     ids = cluster.cancel(run)
     reason = f'released: superseded -- {run.ref} is gone and no live head carries its result'[:DESCRIPTION_MAX]
     why = f'jobs {" ".join(ids) or "none"} cancelled'
-    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was orphaned', why))
+    alarm(
+        Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was orphaned', why, context=Context(sha=run.sha))
+    )
     say(f'{tag}: {why} -- {reason}')
     forgerunpost.release(client, run, reason, say)
     drop(run)
@@ -120,7 +123,15 @@ def supersede(
     why = 'pending tasks withdrawn, ' + (
         f'tasks {" ".join(cut)} cancelled past their deadline' if cut else 'no started task cancelled'
     )
-    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded by {tip[:12]}', why))
+    alarm(
+        Alarm(
+            RUN,
+            run.repo_url,
+            f'the cluster run of {run.sha[:12]} was superseded by {tip[:12]}',
+            why,
+            context=Context(sha=run.sha),
+        )
+    )
     say(f'{tag}: {why} -- {reason}')
     forgerunpost.release(client, run, reason, say)
     drop(run)

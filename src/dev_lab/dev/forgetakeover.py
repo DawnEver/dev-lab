@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
@@ -89,6 +89,7 @@ def alarms(client: Client, base: str, repo: str) -> list[Alarm]:
             f'review held {pull.head_sha[:12]} (#{pull.number})',
             f"{line(pull)}. Only the forge's own review releases tests/review-hold and counts; a session's "
             '`forge review takeover` is advisory. A human is asked only for a decision the review surfaces.',
+            context=pull_context(pull),
         )
         for pull in held(client, base)
     ]

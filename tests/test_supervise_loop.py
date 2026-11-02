@@ -14,7 +14,7 @@ from lab_commons.compute.model import Demand
 
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.component import ActionContext, CheckContext, Component, Handler, Registry
-from dev_lab.supervise.loop import UNCONFIGURED, CycleResult, run_cycle
+from dev_lab.supervise.loop import UNCONFIGURED, CycleResult, action_for, run_cycle
 from dev_lab.supervise.process import SystemdProcessManager
 from dev_lab.supervise.process.base import Ran
 from dev_lab.supervise.process.systemd import ceiling_gb
@@ -432,3 +432,11 @@ def test_the_state_a_cycle_reports_is_the_state_it_wrote(tmp_path: Path) -> None
     result = run_cycle(_registry(_Probe()), store, _config(), _PROJECT, _manager([]), clock=_CLOCK)
     assert result.state == store.read()
     assert result.state['anomalies']['probe.bad']['consecutive'] == 1
+
+
+def test_each_anomaly_kind_gets_its_real_action_and_an_unknown_one_the_honest_fallback() -> None:
+    """F-358f80905635: a failing health check says check the service; a gap, the producer; else the notice's own."""
+    assert action_for('web_status').startswith('Check the service')
+    assert action_for('heartbeat_stale').startswith('Check the producer')
+    assert action_for('pressure_disk:/').startswith('Free disk space')
+    assert action_for('something_new') == ''  # the notice then renders INVESTIGATE, never "no action"

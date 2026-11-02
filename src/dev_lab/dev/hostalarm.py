@@ -1,7 +1,7 @@
 """A PRESSED HOST TELLS ITS AGENTS, ABOVE ALL, AND ITS HUMANS (user ruling D54, 2026-11-01).
 
 The host's alarm state (:mod:`dev_lab.supervise.hostalarms`, measured by :mod:`dev_lab.supervise.pressure`)
-reaches three readers, all through :func:`~dev_lab.supervise.hostalarms.lines` -- one formatter:
+reaches three readers, all from :func:`~dev_lab.supervise.hostalarms.notice` -- one model, rendered per reader:
 
 * THE AGENT (``hook``): a Claude Code ``PostToolUse`` (shell tools) and ``UserPromptSubmit`` hook
   (:data:`dev_lab.dev.agent_guard.WIRING`) injects each alarm as additional context -- ONE reminder per alarm
@@ -10,7 +10,7 @@ reaches three readers, all through :func:`~dev_lab.supervise.hostalarms.lines` -
 * THE HUMANS (:func:`step`, each ``forge serve`` tick): the host is measured and each alarm is sounded as a
   ``pressure`` alarm (:mod:`dev_lab.dev.forgealarm`) -- the structured line, the host card ``forge queue``
   prints, and the existing :class:`~dev_lab.supervise.alert.Notifier` over the machine file's ``[alerts]``;
-* THE CHANNEL TEST (``test``, user ruling D55): one INFO notice, rendered by the same formatter, through the real
+* THE CHANNEL TEST (``test``, user ruling D55): one TEST notice, the same model, through the real
   Notifier (the machine file's ``[alerts]``, or ``--supervise-config PATH``'s for supervision's channels); it
   prints only each channel's result and message id, never a reply body or a credential.
 
@@ -38,11 +38,11 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import PRESSURE, Alarm
 from dev_lab.supervise import hostalarms
-from dev_lab.supervise.alert import Delivery, Notice, Notifier
+from dev_lab.supervise.alert import Delivery, Notifier
 from dev_lab.supervise.components.resources import psutil_module
 from dev_lab.supervise.config import load_config
+from dev_lab.supervise.notice import Notice, headline, host_label, markdown
 from dev_lab.supervise.pressure import Declared, Measured, measure
-from dev_lab.supervise.verdict import Severity
 
 __all__ = ['CHANNELS', 'REMINDED_NAME', 'REMIND_EVERY', 'TEST_AGAIN', 'channel_test', 'due', 'hook', 'main', 'step']
 
@@ -127,11 +127,10 @@ def step(
         if state is None
         else {k: v for k, v in state['alarms'].items() if v.get('source') == hostalarms.FORGE}
     )
+    label = host_label(default=who)
     for kind, one in sorted(mine.items()):
-        subject = f'{who} is pressed: {one["measurement"]}' + (
-            ' (integrator)' if owner == hostalarms.INTEGRATOR else ''
-        )
-        alarm(Alarm(PRESSURE, repo, subject, hostalarms.render(one, host=who, owner=owner), about=kind))
+        notice = hostalarms.notice(one, host=label, owner=owner)
+        alarm(Alarm(PRESSURE, repo, headline(notice), markdown(notice), about=kind, notice=notice))
     return state or {}
 
 
@@ -157,21 +156,21 @@ def channel_test(
     host: str | None = None,
     sender: str | None = None,
 ) -> int:
-    """THE ALERT TEST DOOR (user ruling D55): ONE info notice through the real Notifier; per-channel results only.
+    """THE ALERT TEST DOOR (user ruling D55): ONE test notice through the real Notifier; per-channel results only.
 
     Prints ``<channel> ok|FAILED id=<message id>`` per channel -- the message id parsed out of the reply, never the
     reply itself (Telegram echoes the chat id) and never a credential. Exit 0 when every enabled channel took it.
     """
-    here = host or socket.gethostname()
+    here = host or host_label()
     channels = [name for name in CHANNELS if alerts.get(name, {}).get('enabled')]
-    subject, body = hostalarms.test_notice(
+    notice = hostalarms.test_notice(
         host=here,
-        sender=sender or f'{getpass.getuser()}@{here} via {TEST_AGAIN}',
+        sender=sender or f'{getpass.getuser()}@{socket.gethostname()}',
         channels=channels,
         again=TEST_AGAIN,
         now=now or datetime.now(UTC),
     )
-    results = (send or Notifier({'alerts': alerts}).send)(Notice(subject, body, Severity.INFO))
+    results = (send or Notifier({'alerts': alerts}).send)(notice)
     if not results:
         emit('host-alarm test: no channel is enabled in [alerts]; nothing was sent')
         return 1
