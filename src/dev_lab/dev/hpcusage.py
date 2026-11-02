@@ -123,11 +123,12 @@ class Day:
         forge = sum(job.alloc_s for job in self.jobs if _FORGE_JOB.match(job.name))
         finished = [job for job in self.jobs if job.finished]
         finished_alloc = sum(job.alloc_s for job in finished)
+        wasted = sum(job.wasted_s for job in finished)
         ranked = sorted(finished, key=lambda job: -job.wasted_s)[:TOP]
         return {
             'jobs': len(self.jobs),
             'core_hours': round(alloc / 3600, 3),
-            'cpu_efficiency': round(sum(j.used_s for j in finished) / finished_alloc, 4) if finished_alloc else None,
+            'cpu_efficiency': round(1 - wasted / finished_alloc, 4) if finished_alloc else None,
             'states': states,
             'forge_share': round(forge / alloc, 4) if alloc else 0.0,
             'top_inefficient': [

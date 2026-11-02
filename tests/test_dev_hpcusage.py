@@ -49,8 +49,8 @@ def test_core_hours_per_run_are_what_the_budget_binds() -> None:
 
 
 def test_efficiency_reads_a_day_prefixed_totalcpu_and_skips_running_jobs() -> None:
-    """``1-02:00:00`` is 26 h; the RUNNING job's zero TotalCPU is not counted as waste."""
-    used = 3.5 * 3600 + 26 * 3600 + 3600 + 0 + 3570.5 + 3600
+    """``1-02:00:00`` is 26 h, capped at its allocation; a RUNNING job's zero TotalCPU is no waste."""
+    used = 3.5 * 3600 + 28800 + 3600 + 0 + 3570.5 + 3600  # 102 used 26 h of 8: capped at its allocation
     assert _summary()['cpu_efficiency'] == pytest.approx(used / (ALLOC - 57600), abs=1e-4)
     assert _summary('105|lab|RUNNING|16|57600|00:00:00|32G|\n')['cpu_efficiency'] is None
 
