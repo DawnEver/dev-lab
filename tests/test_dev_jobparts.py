@@ -99,7 +99,7 @@ def test_the_matrix_command_prints_json_a_workflow_reads_with_fromjson(tmp_path:
 
 
 def test_every_expected_part_with_no_settled_status_is_posted_pending_absent_and_a_settled_one_is_left() -> None:
-    """ABSENT IS A STATE, NOT A FAILURE (D50-1, optimi-lab #124) -- and promote still refuses: absent is not PASS."""
+    """ABSENT IS A STATE, NOT A FAILURE (D50-1, consumer #124) -- and promote still refuses: absent is not PASS."""
     forge = StateForge()
     for context, state in (('tests/base', 'success'), ('tests/windows', 'pending')):
         forge.call(

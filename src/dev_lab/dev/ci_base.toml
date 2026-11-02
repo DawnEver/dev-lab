@@ -298,7 +298,7 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # Every origin branch is fetched (the merge decision trial-merges against one), blobless, one pack thread: the
 # review reads only its range's blobs.
 # THE MIRROR RULE (D53(b), user ruling 2026-11-01): a job never clones the whole history. The local index-pack of
-# motronics' full history was most of the runner's 557 MiB peak on the 1.6 GB host, which held capacity at 1. Each
+# a consumer's full history was most of the runner's 557 MiB peak on the 1.6 GB host, which held capacity at 1. Each
 # repository has ONE persistent bare blobless mirror, $HOME/mirrors/<owner>/<repo>.git under the runner's HOME; a job
 # updates it incrementally under `flock` on <repo>.git.lock (the kernel drops the lock when a killed job dies; the
 # first run builds it at <repo>.git.new and renames it, so a half-built mirror is never used, and a stale *.lock a

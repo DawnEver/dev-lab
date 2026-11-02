@@ -191,7 +191,7 @@ def test_break_glass_and_the_merge_read_the_one_predicate() -> None:
 
 
 _UNADOPTED = '[tool.dev_lab.ci."ci.yml"]\n'
-_SERVE = 'MingyangBao'
+_SERVE = 'ServeBot'
 
 
 def _judged_by_serve(forge: StateForge, head: str, *, login: str, url: str) -> str | None:

@@ -1514,7 +1514,7 @@ def test_a_box_with_no_room_releases_a_producers_claim_claimable(
     """A capacity refusal is no verdict: inside a producer it exits UNREACHABLE, so serve releases the claim RETRYABLE.
 
     Live 2026-10-22: head 67d955f's tests/base read ``released: inconclusive (exit 3) -- no part`` after
-    the box on G had no room; exit 3 settles the part, so nothing re-claimed it. A developer's run keeps
+    the box on the forge host had no room; exit 3 settles the part, so nothing re-claimed it. A developer's run keeps
     INCONCLUSIVE (the control): nothing re-queues a developer, and the code tells them nothing was measured.
     """
 

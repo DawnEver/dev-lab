@@ -51,7 +51,7 @@ THE COST IS BOUNDED: one review per head sha (the status is the record; a second
 nothing and posts nothing), drafts skipped, generated files never read, ``max_total_bytes`` per head.
 
 A ROUND IS SPENT ONLY ON NEW WORK (D52, user ruling 2026-11-01): every push was a round and every forge sync of
-integration into a PR restarted its review at the merge base (motronics #5397, twice in a day), against a cap of
+integration into a PR restarted its review at the merge base (consumer #5397, twice in a day), against a cap of
 :data:`~dev_lab.dev.forgereview_rounds.FAMILY_MAX_ROUNDS`.
 
 * A PURE SYNC carries: a head whose tree is git's clean automatic merge of its last reviewed head with integration

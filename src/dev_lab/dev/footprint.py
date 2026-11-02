@@ -27,7 +27,7 @@ what the test can read, so it is built to be WIDE, never hopeful:
 
 A LOCK CHANGE REACHES ONLY ITS IMPORTERS (user ruling D48-2, 2026-11-01). :data:`LOCK` used to sit in
 :data:`ALWAYS`, so a relock that only moved the ``dev-lab`` git pin re-ran a consumer's whole suite
-(``scope=full ran=5471`` on the cluster, measured 2026-11-01; motronics #5397 relocked ~7 times that day).
+(``scope=full ran=5471`` on the cluster, measured 2026-11-01; consumer #5397 relocked ~7 times that day).
 Now :func:`resolve_lock` replaces a changed :data:`LOCK` by ``import:<name>`` for the import names of the
 packages whose locked entry changed, closed over the lock's dependency graph IN REVERSE (a numpy bump
 reaches scipy's importers). Doubt reaches everything by leaving :data:`LOCK` itself in the diff: a change

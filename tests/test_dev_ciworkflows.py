@@ -571,7 +571,7 @@ def _commands(run: str) -> list[str]:
 def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -> None:
     """Gitea has no ``statuses`` scope: ``POST /statuses/{sha}`` is ``reqRepoWriter(unit.TypeCode)`` (1.27).
 
-    Measured 2026-11-01 on motronics #5397: with ``contents: read`` the job's ``tests/review`` POST was refused
+    Measured 2026-11-01 on consumer #5397: with ``contents: read`` the job's ``tests/review`` POST was refused
     while ``GET /user`` answered. ``contents: write`` is the Code-write the route asks for. Not a ceiling: Gitea
     takes a pull_request workflow from the PR head, whose author already holds Code write (see ci_base.toml).
     """
@@ -583,7 +583,7 @@ def test_the_gitea_review_job_token_can_post_its_commit_status(tmp_path: Path) -
 def test_the_gitea_review_job_token_can_read_its_own_run(tmp_path: Path) -> None:
     """The job reads its own run for reviewgate: ``GET .../actions/runs/{id}``, Actions read on Gitea 1.27.
 
-    Measured 2026-11-01 on motronics #5397 and wdg-lab #427 (runs 5, 6): with no ``actions`` scope the GET was
+    Measured 2026-11-01 on consumer #5397 and consumer-b #427 (runs 5, 6): with no ``actions`` scope the GET was
     refused right after the status POST that ``contents: write`` had unblocked.
     """
     assert _gitea_review(tmp_path)['jobs']['review']['permissions']['actions'] == 'read'
@@ -617,7 +617,7 @@ def test_the_gitea_review_declares_one_permissions_block(tmp_path: Path) -> None
 def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None:
     """The review reads the head through git and only ``pyproject.toml`` from the tree (``forgereview.load_review``).
 
-    Measured 2026-11-01, motronics #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
+    Measured 2026-11-01, consumer #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
     the head tree -- a ``pack-objects`` on the 1.6 GB forge host running 10+ minutes at 314 MiB. A cone sparse
     checkout with no directories materialises the root files alone.
     """
@@ -637,7 +637,7 @@ def _full_adoption(tmp_path: Path) -> dict[str, Any]:
 def test_the_review_key_cache_is_the_job_s_own(tmp_path: Path) -> None:
     """Every helper set and every daemon stopped names a socket under RUNNER_TEMP, removed with the job.
 
-    F-83bc8b74b803 (motronics #5397 round 2): the default credential-cache socket is per HOME, shared by every job
+    F-83bc8b74b803 (consumer #5397 round 2): the default credential-cache socket is per HOME, shared by every job
     on a persistent runner, and a SIGKILLed job never runs its EXIT trap -- the key then waits for the next job.
     """
     socket = '--socket=$RUNNER_TEMP/git-credential-cache/socket'
@@ -707,7 +707,7 @@ def _fetch_the_head(tmp_path: Path) -> dict[str, Any]:
 
 
 def test_the_review_job_fetches_from_a_per_repository_mirror(tmp_path: Path) -> None:
-    """D53(b): a whole-history clone per job was most of the runner's 557 MiB peak (motronics, 1.6 GB host).
+    """D53(b): a whole-history clone per job was most of the runner's 557 MiB peak (consumer, 1.6 GB host).
 
     The job updates a persistent bare mirror under the runner's HOME, one per repository, under a kernel lock
     (released when a killed job dies), and its checkout borrows the mirror's objects; no whole clone from the forge.

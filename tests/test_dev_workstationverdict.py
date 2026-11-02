@@ -1,6 +1,6 @@
 """A DECLARED WORKSTATION POSTS ITS FULL PART (ruling D50-1): every condition refuses when unmet; the key dedupes.
 
-The incident: optimi-lab #124 -- ``tests/base@windows`` read "absent" although the full suite ran clean on a
+The incident: consumer #124 -- ``tests/base@windows`` read "absent" although the full suite ran clean on a
 declared Windows box. Each posting condition carries its own PLANTED CONTROL: an undeclared box, a revoked one, a
 dirty tree, an unpushed HEAD, a selection, a stale env key -- each refused -- and the declared clean full run posts.
 """
@@ -30,8 +30,8 @@ from dev_lab.dev.workstationverdict import Facts, posting_refusal
 SHA, OLD = 'a' * 40, 'c' * 40
 TREE, OTHER_TREE = 't' * 40, 'u' * 40
 ENV = 'env-now'
-SERVE = {'repos': ['optimi-lab'], 'parts': 'every'}
-STRIKE_FILE = f'workstation-strike-DUIPEZZTZ-{"0" * 32}.json'
+SERVE = {'repos': ['consumer'], 'parts': 'every'}
+STRIKE_FILE = f'workstation-strike-BOXALPHA-{"0" * 32}.json'
 CLEAN = Facts(part='base@windows', full=True, declared='', revoked='', dirt=(), pushed=True, stale='')
 
 
@@ -42,7 +42,7 @@ def test_the_declared_clean_full_run_on_a_pushed_tree_may_post() -> None:
 @pytest.mark.parametrize(
     ('planted', 'named'),
     [
-        ({'declared': 'this box does not serve optimi-lab'}, 'does not serve'),
+        ({'declared': 'this box does not serve consumer'}, 'does not serve'),
         ({'revoked': 'its contradicted spot checks reached the limit'}, 'revoked'),
         ({'dirt': ('M src/x.py',)}, 'dirty'),
         ({'dirt': None}, 'could not be read'),
@@ -59,28 +59,26 @@ def test_every_unmet_condition_refuses_and_names_itself(planted: dict[str, Any],
 
 def test_the_declaration_is_the_machine_files_serve_table_and_nothing_else() -> None:
     """``[serve] repos`` names the repo and ``[serve] parts`` claims the part; the box has its needs."""
-    ok = workstationverdict.declared_refusal(SERVE, repo='optimi-lab', part='base@windows', present={'windows'})
+    ok = workstationverdict.declared_refusal(SERVE, repo='consumer', part='base@windows', present={'windows'})
     assert ok == ''
     assert 'does not serve' in workstationverdict.declared_refusal(
-        {}, repo='optimi-lab', part='base', present={'windows'}
+        {}, repo='consumer', part='base', present={'windows'}
     ), 'PLANTED: a box with no [serve] table is no producer -- the default rule never declares a developer box'
     assert 'does not serve' in workstationverdict.declared_refusal(
         SERVE, repo='other-lab', part='base', present={'windows'}
     )
     assert 'does not claim' in workstationverdict.declared_refusal(
-        {**SERVE, 'parts': 'needs-a-resource'}, repo='optimi-lab', part='base', present={'windows'}
+        {**SERVE, 'parts': 'needs-a-resource'}, repo='consumer', part='base', present={'windows'}
     )
-    assert 'lacks femm' in workstationverdict.declared_refusal(
-        SERVE, repo='optimi-lab', part='femm', present={'windows'}
-    )
+    assert 'lacks femm' in workstationverdict.declared_refusal(SERVE, repo='consumer', part='femm', present={'windows'})
 
 
 def test_repos_that_is_not_a_list_is_a_refusal_never_a_substring_match() -> None:
-    """F-7718516ce1d6: ``repos = "optimi-lab"`` must not declare the box a producer of ``lab``."""
-    one = {**SERVE, 'repos': 'optimi-lab'}
+    """F-7718516ce1d6: ``repos = "consumer"`` must not declare the box a producer of ``lab``."""
+    one = {**SERVE, 'repos': 'consumer'}
     refused = workstationverdict.declared_refusal(one, repo='lab', part='base', present={'windows'})
     assert 'is not a list of repo names' in refused
-    refused = workstationverdict.declared_refusal(one, repo='optimi-lab', part='base', present={'windows'})
+    refused = workstationverdict.declared_refusal(one, repo='consumer', part='base', present={'windows'})
     assert 'is not a list of repo names' in refused
 
 
@@ -113,13 +111,13 @@ class Store:
 
 
 def _declared_box(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(workstationverdict, 'forge_from_remote', lambda _root: type('F', (), {'repo': 'optimi-lab'}))
+    monkeypatch.setattr(workstationverdict, 'forge_from_remote', lambda _root: type('F', (), {'repo': 'consumer'}))
     monkeypatch.setattr(workstationverdict, 'section', lambda _name: SERVE)
     monkeypatch.setattr(workstationverdict, 'present_here', lambda _root: frozenset({'windows'}))
     monkeypatch.setattr(workstationverdict, 'status_paths', lambda _root: ())
     monkeypatch.setattr(workstationverdict, 'pushed', lambda _root: True)
     monkeypatch.setattr(workstationverdict, 'lock_freshness', lambda _root: None)
-    monkeypatch.setattr(workstationverdict, 'this_machine', lambda: 'DUIPEZZTZ')
+    monkeypatch.setattr(workstationverdict, 'this_machine', lambda: 'BOXALPHA')
 
 
 def _refusal(tmp_path: Path, store: Store) -> str:
@@ -216,12 +214,12 @@ def test_a_stored_fail_makes_the_producer_run(monkeypatch: pytest.MonkeyPatch, t
 def test_a_revoked_boxs_earlier_records_are_never_cited(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """F-dc7c4109926e: revocation reaches every record the box already posted."""
     store = Store(monkeypatch)
-    store.record(f'run-{OLD}-base@windows-r1.json.gz', _record(OLD, workstation='DUIPEZZTZ'))
+    store.record(f'run-{OLD}-base@windows-r1.json.gz', _record(OLD, workstation='BOXALPHA'))
     _trees(monkeypatch, {OLD: TREE})
     cited = workstationverdict.before_run(tmp_path, SHA, KEY, me='host', client=store.client, draw=lambda: 0.9)
     assert cited.cited, 'PLANTED CONTROL: before the revocation it is a hit'
     for _ in range(workstationrevoke.STRIKES_TO_REVOKE):
-        workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'contradicted')
+        workstationrevoke.strike(store.client, 'BOXALPHA', 'contradicted')
     after = workstationverdict.before_run(tmp_path, SHA, KEY, me='host', client=store.client, draw=lambda: 0.9)
     assert after == workstationverdict.Decision()
 
@@ -252,7 +250,7 @@ def test_trees_are_read_on_stdin_and_an_unknown_sha_is_left_out(tmp_path: Path) 
         verdictstore.trees_of(tmp_path / 'bare', {head})
 
 
-def _found(workstation: str = 'DUIPEZZTZ') -> Found:
+def _found(workstation: str = 'BOXALPHA') -> Found:
     name = f'run-{OLD}-base@windows-r1.json.gz'
     return Found(Attachment(1, name, f'u/{name}'), _record(OLD, workstation=workstation))
 
@@ -268,7 +266,7 @@ def test_a_hit_is_cited_through_the_status_door_naming_its_record() -> None:
     )
     assert status.description == 'scope=full ran=1 hands=-', 'a settled part, read as one'
     assert 'CITED' in line
-    assert 'DUIPEZZTZ' in line
+    assert 'BOXALPHA' in line
 
 
 def test_the_spot_check_samples_any_hit_but_its_own() -> None:
@@ -277,7 +275,7 @@ def test_the_spot_check_samples_any_hit_but_its_own() -> None:
     assert workstationverdict.spot_checked(_found(), me='forge-host', draw=low)
     assert not workstationverdict.spot_checked(_found(), me='forge-host', draw=high)
     assert workstationverdict.spot_checked(_found(workstation=''), me='forge-host', draw=low), 'a record naming no box'
-    assert not workstationverdict.spot_checked(_found(), me='DUIPEZZTZ', draw=low), 'never its own record'
+    assert not workstationverdict.spot_checked(_found(), me='BOXALPHA', draw=low), 'never its own record'
 
 
 def test_one_contradiction_is_a_strike_and_the_limit_revokes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -286,13 +284,13 @@ def test_one_contradiction_is_a_strike_and_the_limit_revokes(monkeypatch: pytest
     assert 'no contradiction' in workstationverdict.after_run(store.client, _found(), Conclusion.PASS)
     assert workstationrevoke.revoked(store.client) == frozenset()
     first = workstationverdict.after_run(store.client, _found(), Conclusion.FAIL)
-    assert 'strike 1/2 against DUIPEZZTZ' in first
+    assert 'strike 1/2 against BOXALPHA' in first
     assert 'not yet revoked' in first
     assert workstationrevoke.revoked(store.client) == frozenset()
     workstationverdict.after_run(store.client, _found('OTHERBOX'), Conclusion.FAIL)
     second = workstationverdict.after_run(store.client, _found(), Conclusion.FAIL)
     assert 'REVOKED' in second
-    assert workstationrevoke.revoked(store.client) == {'DUIPEZZTZ'}
+    assert workstationrevoke.revoked(store.client) == {'BOXALPHA'}
     assert 'names no box' in workstationverdict.after_run(store.client, _found(''), Conclusion.FAIL)
 
 
@@ -308,14 +306,14 @@ def test_two_strikes_that_interleave_both_count(monkeypatch: pytest.MonkeyPatch)
     def upload_with_b_in_between(client: object, name: str, data: bytes) -> Attachment:
         if not interleaved:
             interleaved.append('B started')
-            interleaved.append(workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'B'))
+            interleaved.append(workstationrevoke.strike(store.client, 'BOXALPHA', 'B'))
         return plain(client, name, data)
 
     monkeypatch.setattr(workstationrevoke, 'replace_named', upload_with_b_in_between)
-    said = workstationrevoke.strike(store.client, 'DUIPEZZTZ', 'A')
+    said = workstationrevoke.strike(store.client, 'BOXALPHA', 'A')
     assert interleaved, 'PLANTED CONTROL: B really ran inside A'
     assert 'strike 2/2' in said
-    assert workstationrevoke.revoked(store.client) == {'DUIPEZZTZ'}
+    assert workstationrevoke.revoked(store.client) == {'BOXALPHA'}
 
 
 def test_clear_removes_by_name_even_a_malformed_strike_and_fails_when_it_removed_nothing(
@@ -324,18 +322,18 @@ def test_clear_removes_by_name_even_a_malformed_strike_and_fails_when_it_removed
     store = Store(monkeypatch)
     monkeypatch.setattr(workstationrevoke, 'client_for', lambda _root: store.client)
     for why in ('one', 'two'):
-        workstationrevoke.strike(store.client, 'DUIPEZZTZ', why)
+        workstationrevoke.strike(store.client, 'BOXALPHA', why)
     store.files[STRIKE_FILE] = b'not json'
-    assert workstationrevoke.main(['clear', 'DUIPEZZTZ']) == 0
+    assert workstationrevoke.main(['clear', 'BOXALPHA']) == 0
     assert store.files == {}
-    assert workstationrevoke.main(['clear', 'DUIPEZZTZ']) == 1, 'nothing removed is no success'
-    assert workstationrevoke.main(['clear', 'DUIPEZZTZX']) == 1, 'a mistyped box removes nothing'
+    assert workstationrevoke.main(['clear', 'BOXALPHA']) == 1, 'nothing removed is no success'
+    assert workstationrevoke.main(['clear', 'BOXALPHAX']) == 1, 'a mistyped box removes nothing'
 
 
 def test_box_names_are_injective() -> None:
     """``a-b`` and ``a_b`` are two boxes: one's strikes never count against the other."""
     assert workstationrevoke.box_of('a-b') != workstationrevoke.box_of('a_b')
-    assert workstationrevoke.box_of('DUIPEZZTZ') == 'DUIPEZZTZ'
+    assert workstationrevoke.box_of('BOXALPHA') == 'BOXALPHA'
 
 
 def test_a_revoked_box_is_refused_naming_the_remedy_with_its_real_name(
@@ -345,10 +343,10 @@ def test_a_revoked_box_is_refused_naming_the_remedy_with_its_real_name(
     _declared_box(monkeypatch)
     store = Store(monkeypatch)
     for why in ('one', 'two'):
-        workstationrevoke.strike(store.client, 'DUIPEZZTZ', why)
+        workstationrevoke.strike(store.client, 'BOXALPHA', why)
     refused = _refusal(tmp_path, store)
     assert 'reached the limit' in refused
-    assert 'python -m dev_lab.dev.workstationrevoke clear DUIPEZZTZ,' in refused
+    assert 'python -m dev_lab.dev.workstationrevoke clear BOXALPHA,' in refused
 
 
 def test_lookup_takes_the_newest_record_by_the_forges_id_not_the_listing_order(
@@ -406,7 +404,7 @@ def test_verify_outside_a_producer_runs_a_declared_workstations_full_part_and_na
     """The exception wired: no producer marker, a declared clean full ``--part`` run is the producer and posts."""
     _verify_root(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'workstation_refusal', lambda _root, _part, *, full: None if full else 'selection')
-    monkeypatch.setattr(verify, 'workstation_fields', lambda _root: {'workstation': 'DUIPEZZTZ', 'tree': TREE})
+    monkeypatch.setattr(verify, 'workstation_fields', lambda _root: {'workstation': 'BOXALPHA', 'tree': TREE})
     monkeypatch.setattr(verify, '_stored', lambda *_a, **_k: (None, None))
     seen: list[object] = []
 
@@ -416,19 +414,19 @@ def test_verify_outside_a_producer_runs_a_declared_workstations_full_part_and_na
 
     monkeypatch.setattr(verify, '_judge', judge)
     assert verify.main(['--part', 'base@windows']) == ProducerExit.PASS
-    assert seen == [{'workstation': 'DUIPEZZTZ', 'tree': TREE}], 'it posts, and its record names the box'
+    assert seen == [{'workstation': 'BOXALPHA', 'tree': TREE}], 'it posts, and its record names the box'
 
 
 def test_verify_outside_a_producer_refuses_an_undeclared_box_naming_why(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _verify_root(monkeypatch, tmp_path)
-    monkeypatch.setattr(verify, 'workstation_refusal', lambda *_a, **_k: 'this box does not serve optimi-lab')
+    monkeypatch.setattr(verify, 'workstation_refusal', lambda *_a, **_k: 'this box does not serve consumer')
     monkeypatch.setattr(verify, '_judge', lambda *_a, **_k: pytest.fail('an undeclared box ran the full part'))
     assert verify.main(['--part', 'base@windows']) == ProducerExit.USAGE
     err = capsys.readouterr().err
     assert 'push; the forge produces the part' in err
-    assert 'does not serve optimi-lab' in err
+    assert 'does not serve consumer' in err
 
 
 def test_a_producer_cites_a_stored_hit_and_runs_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

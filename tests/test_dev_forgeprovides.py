@@ -41,8 +41,8 @@ def _card(host: str, *, age_min: float) -> HostCard:
 
 
 def test_a_stale_hosts_declared_resources_are_no_supply() -> None:
-    """WS1/WS2 2026-10-28: stale since 10-25/10-27 and still read as jmag=1. A stale card supplies NOTHING."""
-    stale, fresh = _card('WS1', age_min=24 * 60), _card('G', age_min=1)
+    """HOST1/HOST2 2026-10-28: stale since 10-25/10-27 and still read as jmag=1. A stale card supplies NOTHING."""
+    stale, fresh = _card('HOST1', age_min=24 * 60), _card('G', age_min=1)
     assert supplied(stale, NOW) == frozenset()
     assert unserved({'jmag'}, [supplied(stale, NOW)]) == f'{NO_PROVIDER} jmag'
     assert unserved({'jmag'}, [supplied(c, NOW) for c in (stale, fresh)]) == '', 'PLANTED CONTROL: a fresh one serves'

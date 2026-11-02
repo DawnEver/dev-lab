@@ -71,7 +71,7 @@ class Role:
     withhold: tuple[str, ...]  # [serve] withhold: never this host's forge work, part or request
 
 
-#: THE ONE PLACE a workstation role is declared. ``light`` (user ruling 2026-10-28, WS1 and WS2): it serves forge
+#: THE ONE PLACE a workstation role is declared. ``light`` (user ruling 2026-10-28, HOST1 and HOST2): it serves forge
 #: parts and requests but never heavy compute -- every probed tool is withheld, because a probe finds an installed
 #: JMAG whether or not it is declared, and a heavy capability is refused at deploy.
 ROLES: Final = {'light': Role(capabilities=(WORKSTATION,), parts=EVERY, withhold=HEAVY)}

@@ -31,16 +31,16 @@ def _card(host: str, platform: str, *, age_min: float, tools: tuple[str, ...] = 
 
 
 def test_a_resource_is_dark_when_every_host_providing_it_is_stale() -> None:
-    """WS1/WS2 2026-10-28 read jmag=1 while stale: that is NO jmag supply. PLANTED CONTROL: one fresh provider."""
-    cards = [_card('WS1', 'windows', age_min=60, tools=('jmag',)), _card('box', 'windows', age_min=1)]
-    assert dark_resources(cards, NOW) == {'jmag': ('WS1',)}
+    """HOST1/HOST2 2026-10-28 read jmag=1 while stale: that is NO jmag supply. PLANTED CONTROL: one fresh provider."""
+    cards = [_card('HOST1', 'windows', age_min=60, tools=('jmag',)), _card('box', 'windows', age_min=1)]
+    assert dark_resources(cards, NOW) == {'jmag': ('HOST1',)}
     assert dark_platforms(cards, NOW) == {}, 'the platform is lit; the resource is still dark'
     assert dark_resources([*cards, _card('G', 'windows', age_min=1, tools=('jmag',))], NOW) == {}
 
 
 def test_a_dark_resource_alarms_once_per_episode() -> None:
     raised: list[Alarm] = []
-    cards = [_card('WS1', 'windows', age_min=60, tools=('jmag',)), _card('box', 'windows', age_min=1)]
+    cards = [_card('HOST1', 'windows', age_min=60, tools=('jmag',)), _card('box', 'windows', age_min=1)]
     watch(cards, NOW, alarm=raised.append, repo=REPO)
     watch(cards, NOW, alarm=raised.append, repo=REPO)
     assert [(a.kind, a.about) for a in raised] == [(FLEET, 'jmag')]

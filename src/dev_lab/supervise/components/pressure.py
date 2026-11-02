@@ -27,7 +27,7 @@ class HostPressure(Component):
 
         [components.host_pressure]
         enabled = true
-        paths = ["/", "/home/runner"]
+        paths = ["/", "/srv/runner"]
         services = ["gitea-runner.service"]
         owner = "integrator"
         psi_memory_some_avg60 = 10

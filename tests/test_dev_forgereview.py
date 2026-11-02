@@ -744,7 +744,7 @@ def test_a_docs_only_head_carries_the_previous_heads_review_and_runs_no_command(
 
 
 def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> None:
-    """G's serve tick said only "declares no [runtimes.ai_lab]"; the retired spelling names its remedy."""
+    """The forge host's serve tick said only "declares no [runtimes.ai_lab]"; the retired spelling names its remedy."""
     command = ('{runtimes.ai_lab.python}', RANGE_FIELD)
     why = retired_table(command, {}, {'ai_lab': {'python': 'x'}, 'jmag': {}})
     assert why == (
