@@ -20,12 +20,13 @@ from test_dev_forgereview_rounds import _REVIEW, _doc, _finding
 
 from dev_lab.dev import forgereview_rounds, forgereview_scope, reviewgitauth
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import ReviewUnsupported, Runner, run_command
 from dev_lab.dev.forgereview_declared import review_at
 from dev_lab.dev.forgereview_dispose import dispose
 from dev_lab.dev.forgereview_judge import Identity
-from dev_lab.dev.forgereview_rounds import trusted_bodies
+from dev_lab.dev.forgereview_rounds import Ledger, ledger_of, trusted_bodies
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import held, main, review_run, runtimes_with
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
@@ -523,3 +524,31 @@ def test_the_review_command_never_imports_from_the_pr_checkout(tmp_path: Path) -
     with pytest.raises(ReviewUnsupported):
         run_command([sys.executable, '-m', 'planted'], tmp_path)
     assert run_command([sys.executable, '-m', 'json.tool', '--help'], tmp_path)
+
+
+def test_a_declared_reviewers_ledger_is_read_by_a_job_of_another_login() -> None:
+    """A DECLARED review producer's round is read across hosts: its review marker and ledger only.
+
+    Review spend 2026-11-03: the Actions job ignored the serve host's ledgers and restarted at round 1 (#5397: 9
+    rounds past a 5-round cap). Never "any writer": a ledger decides which findings stay open, and an author never
+    clears a review's block on its own.
+
+    PLANTED CONTROL: the same well-formed ledger by a writer that is not declared is ignored, as is one by a
+    non-writer; and a declared reviewer's other text is not admitted.
+    """
+    head = 'c' * 40
+    for author, permission, read in (('serve-host', 'read', True), ('author-agent', 'write', False),
+                                     ('mallory', 'read', False)):  # fmt: skip
+        forge = StateForge()
+        number = forge.add_pull('pr/x', 'main', sha=head)
+        forge.comments[number] = []
+        forge.permissions[author] = permission
+        forge.login = author
+        text = f'round text <!-- lab-commons:review-adjudication:F-1 -->\n\n{Ledger(head, 3).line()}'
+        comment_upsert(forge, number, kind=Marker.REVIEW, key=head, text=text)
+        forge.login = 'ci-job'
+        bodies = trusted_bodies(forge, number, ('serve-host',))
+        seen = ledger_of(bodies)
+        assert (seen is not None and seen.round == 3) is read, author
+        assert all('round text' not in body and 'review-adjudication' not in body for body in bodies)
+        assert any(marker(Marker.REVIEW, head) in body for body in bodies) is read

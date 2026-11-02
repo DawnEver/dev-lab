@@ -110,7 +110,7 @@ from dev_lab.dev.forgereview_judge import (
     self_review,
     upheld,
 )
-from dev_lab.dev.forgereview_rounds import ledger_of, post_round, trailed, trusted_bodies
+from dev_lab.dev.forgereview_rounds import ledger_of, post_round, recorded_usd, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import (
     host_runtimes,
     retired_table,
@@ -192,7 +192,7 @@ def _young(root: Path, head: str, runner: Runner) -> str | None:
 
 
 def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
-            authored: Mapping[str, str], runner: Runner) -> str:  # fmt: skip
+            authored: Mapping[str, str], runner: Runner, usd: float = 0.0) -> str:  # fmt: skip
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
@@ -208,8 +208,8 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
         post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
-                      outside=scope.outside, authored=authored, **_judging(root, client, review, pull,
-                                                                            runner=runner))  # fmt: skip
+                      outside=scope.outside, authored=authored, usd=usd, reviewers=review.reviewers,
+                      **_judging(root, client, review, pull, runner=runner))  # fmt: skip
 
 
 def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, runner: Runner) -> dict:
@@ -243,12 +243,13 @@ def capped(
     remedy, and the review is ``None`` -- posted and said once (``None, None`` after), and read again every tick,
     so a raise or a new month releases it.
     """
-    head, bodies = pull.head_sha, trusted_bodies(client, pull.number)
+    head, bodies = pull.head_sha, trusted_bodies(client, pull.number, review.reviewers)
     prior = ledger_of(bodies)
     rounds_done = 0 if prior is None else prior.round - (prior.head == head)
     spend = runner.spend(runner.runtimes, root)
     tag = tag_of(pull.url, pull.number)
-    allowed = gate(number=pull.number, spent_usd=0.0 if spend is None else spend.of(tag), rounds_done=rounds_done,
+    spent = max(recorded_usd(bodies), 0.0 if spend is None else spend.of(tag))  # the rounds every host recorded
+    allowed = gate(number=pull.number, spent_usd=spent, rounds_done=rounds_done,
                    max_rounds=review.max_rounds, spend=spend, raised=raised_of(bodies))  # fmt: skip
     if allowed.state == 'run':
         model = review.model if allowed.model is None else allowed.model
@@ -282,7 +283,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     if (stands := passed(root, client, head, runner.clock(), review.stale, counted=counted)) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     # the forge's own rounds only: a pasted marker naming an unreviewed sha would shrink the range or seed a carry
-    done = reviewed_heads(trusted_bodies(client, pull.number))
+    done = reviewed_heads(trusted_bodies(client, pull.number, review.reviewers))
     if (source := synced_from(root, target, head, done)) and (why := synced(client, head, source, base=pull.base)):
         return f'#{pull.number} {head[:12]}: {why}'
     if (wait := _young(root, head, runner)) is not None:
@@ -322,10 +323,11 @@ def _command_round(
     self_review(me, sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
     claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
     post_review(client, head, state='pending', description=claim)
+    before = _tagged(root, pull, runner)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
-        found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body,
-                                      disposed=upheld(trusted_bodies(client, pull.number))))  # fmt: skip
+        gone = upheld(trusted_bodies(client, pull.number, review.reviewers))
+        found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body, disposed=gone))
     except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
         return unable(client, pull, runner.host, str(unsupported))
     except (UnknownSchemaVersion, ReviewRefused) as named:
@@ -337,7 +339,18 @@ def _command_round(
         post_review(client, head, state='error', description=why)
         return f'#{pull.number} {head[:12]}: {why}: {failed}'
     authored = trailed(root, f'origin/{pull.base}', head)
-    return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner)
+    usd = max(0.0, _tagged(root, pull, runner) - before)
+    return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner, usd=usd)
+
+
+def _tagged(root: Path, pull: PullRequest, runner: Runner) -> float:
+    """What this host's ai-lab has charged to *pull* so far; 0 without a spend report.
+
+    A round's dollars are the difference across it, recorded in its ledger
+    (:func:`~dev_lab.dev.forgereview_rounds.recorded_usd`).
+    """
+    spend = runner.spend(runner.runtimes, root)
+    return 0.0 if spend is None else spend.of(tag_of(pull.url, pull.number))
 
 
 def review_tick(

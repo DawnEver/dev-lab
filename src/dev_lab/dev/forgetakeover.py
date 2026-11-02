@@ -171,7 +171,9 @@ def takeover(
     thread = pull if pull is not None else ledger_of(client, head, base)
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
     synth = command_for(review, scope.range, runtimes, synthesis=True)
-    gone = upheld(trusted_bodies(client, thread.number))  # upheld claims only: a trailer never reaches the engine
+    gone = upheld(
+        trusted_bodies(client, thread.number, review.reviewers)
+    )  # upheld claims only: a trailer never reaches the engine
     found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=thread.body, disposed=gone))
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
@@ -181,6 +183,7 @@ def takeover(
         root, client, thread, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover',
         outside=scope.outside, authored=trailed(root, since, head), judged=judge_for(root, review, scope.range, run,
         runtimes), reviewer=identity(client, host), authors=sessions(root, since, head), emergency=True,
+        reviewers=review.reviewers,
     )  # fmt: skip
     return (f'{said} ({len(scope.slices)} slice(s)); {RERUN} for a review that counts',)
 
@@ -206,7 +209,7 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
         said = review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
     except HostCannot as cannot:
         raise HostCannot(hold(client, pull, f'{HOST_CANNOT}: {cannot}')) from cannot
-    if not pending(trusted_bodies(client, number)):
+    if not pending(trusted_bodies(client, number, review.reviewers)):
         return said
     ruled = adjudicate_thread(
         root, client, review, number, base=base, adjudicator=identity(client, runner.host, serving=runner.serving),

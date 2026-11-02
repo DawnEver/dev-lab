@@ -18,14 +18,15 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_rounds = 5             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, the head waits
-    max_diff_bytes = 200000    # one slice: what one reviewer reads
-    max_total_bytes = 4000000  # one head: past it, held for a session
+    max_diff_bytes = 400000    # one slice: what one reviewer reads
+    max_total_bytes = 800000   # one head: past it, ONE whole-range structure review
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
     code = [...]               # globs of what executes (forgereview_scope.CODE): nothing else is read or capped
     not_code = [...]           # globs never code whatever their extension (forgereview_scope.NOT_CODE)
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
     quiet = "10 min"           # the default (DEFAULT_QUIET): the serve reviews a head only once it is this old
+    reviewers = []             # forge logins the review producers post as (serve hosts, jobs): their rounds are read
 
 The keys of the retired in-process reviewer (``max_tokens``, ``rules``) are refused by name.
 """
@@ -160,8 +161,8 @@ class Review:
     synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
     judge: tuple[str, ...] = FAMILY_JUDGE  # re-judges open findings and adjudicates claims, every round
     max_rounds: int = FAMILY_MAX_ROUNDS  # full rounds per PR; past it, the head waits (reviewbudget)
-    max_diff_bytes: int = 200_000  # one slice
-    max_total_bytes: int = 4_000_000  # one head
+    max_diff_bytes: int = 400_000  # one slice: every slice pays the fixed prompt again, so few and large
+    max_total_bytes: int = 800_000  # one head: past it, ONE whole-range review, never N slices (spend 2026-11-03)
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = STRICT
     light: tuple[str, ...] = LIGHT
@@ -169,6 +170,7 @@ class Review:
     not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
     quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
+    reviewers: tuple[str, ...] = ()  # the producer logins whose review rounds every host reads (never any writer)
 
     def __post_init__(self) -> None:
         """Refuse a ``claim_stale`` or ``quiet`` that is not a duration, naming it."""

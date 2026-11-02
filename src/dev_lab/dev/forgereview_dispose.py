@@ -116,7 +116,7 @@ def adjudicate_thread(
     run: Callable[[Sequence[str], Path], str], runtimes: Mapping[str, Mapping[str, Any]], dry_run: bool = False,
 ) -> list[str]:  # fmt: skip
     """Adjudicate every pending claim on thread *number* and re-post its head's verdict; the lines said."""
-    bodies = trusted_bodies(client, number)
+    bodies = trusted_bodies(client, number, review.reviewers)
     ledger = ledger_of(bodies)
     if ledger is None:
         return [f'#{number}: no review round, nothing to adjudicate']
@@ -127,7 +127,7 @@ def adjudicate_thread(
                       dry_run=dry_run)  # fmt: skip
     if dry_run:
         return said
-    state, why = verdict(ledger, upheld(trusted_bodies(client, number)), number)
+    state, why = verdict(ledger, upheld(trusted_bodies(client, number, review.reviewers)), number)
     post_review(client, ledger.head, state=state, description=f'adjudicated: {why}'[:240])
     return [*said, f'#{number} {ledger.head[:12]}: tests/review {state}', *merge_ready_after(root, client, number)]
 

@@ -19,7 +19,7 @@ from dev_lab.dev.forgereview_claim import CAPPED
 from dev_lab.dev.forgereview_declared import RANGE_FIELD, Review
 from dev_lab.dev.forgereview_dispose import raise_cap
 from dev_lab.dev.forgereview_judge import Identity
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, trusted_bodies
+from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, Ledger, ledger_of, recorded_usd, trusted_bodies
 from dev_lab.dev.reviewbudget import (
     CAP_QUANTILE,
     DEGRADED_MODEL,
@@ -258,3 +258,83 @@ def test_a_malformed_raise_payload_is_no_record_and_no_crash(tmp_path: Path, pay
     forge.login = 'mallory'
     comment_upsert(forge, number, kind=Marker.REVIEW_CAP, text=f'<!-- review-cap {good} -->')
     assert _raised_as_seen_by(forge, number, 'github-actions[bot]').rounds == 5
+
+
+# --- the PR's spend is the rounds it recorded ------------------------------------------------------------------
+
+
+def test_a_ledger_records_its_rounds_dollars_and_the_pr_spend_sums_every_head() -> None:
+    """Review spend 2026-11-03: each host saw only its own local spend.
+
+    PLANTED CONTROL: a head re-posted counts once.
+    """
+    one, two = Ledger('a' * 40, 1, usd=1.5), Ledger('b' * 40, 2, usd=2.25)
+    assert ledger_of([one.line()]).usd == 1.5
+    reposted = Ledger('b' * 40, 2, usd=2.5)
+    assert recorded_usd([one.line(), two.line()]) == 3.75
+    assert recorded_usd([one.line(), two.line(), reposted.line()]) == 4.0, 'the newest ledger of a head wins'
+    assert recorded_usd(['no ledger']) == 0.0
+
+
+def test_a_round_records_what_it_spent_in_its_ledger(tmp_path: Path) -> None:
+    """The round's dollars are the PR tag's spend after the round less before it, on the host that ran it."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    tag = f'o/r#{number}'
+    reads = iter([_spend(by_tag={tag: 1.0}), _spend(by_tag={tag: 1.0}), _spend(by_tag={tag: 3.5})])
+    review_tick(work, forge, _REVIEW, base='integrate/main', run=FakeCommand(_doc()), ready=lambda *_: None,
+                host='box', spend=lambda *_: next(reads))  # fmt: skip
+    assert ledger_of([forge.comments[number][-1]['body']]).usd == 2.5
+
+
+def test_the_pr_cap_reads_the_recorded_rounds_not_this_hosts_spend_alone(tmp_path: Path) -> None:
+    """Another host's rounds recorded 11 USD; this host spent nothing on the PR, and the PR still waits.
+
+    PLANTED CONTROL: the same recorded rounds under the cap run.
+    """
+    for recorded, runs in ((11.0, 0), (4.0, 1)):
+        (tmp_path / str(recorded)).mkdir()
+        work, earlier = _work(tmp_path / str(recorded))
+        forge, number = _forge(earlier)
+        forge.login = 'serve-host'  # a DECLARED review producer
+        comment_upsert(forge, number, kind=Marker.REVIEW, key=earlier, text=Ledger(earlier, 1, usd=recorded).line())
+        forge.login = 'ci-job'
+        head = advance(work, 'pr/x', 'y.py', 'y = 1\n')
+        forge.pulls[number]['head']['sha'] = head
+        command = FakeCommand(_doc())
+        review = Review(judge=JUDGE, command=_REVIEW.command, reviewers=('serve-host',))
+        review_tick(work, forge, review, base='integrate/main', run=command, ready=lambda *_: None, host='box',
+                    spend=lambda *_: _spend())  # fmt: skip
+        assert len(command.ran) == runs
+        if not runs:
+            assert _state(forge, head)[1].startswith(f'{CAPPED} budget reached: 11.00/10.00 USD')
+
+
+@pytest.mark.parametrize('cap', ['rounds', 'usd'])
+def test_a_capped_pr_spends_zero_calls_on_a_push(tmp_path: Path, cap: str) -> None:
+    """Review spend 2026-11-03: a push to a capped PR runs no reviewer, no judge and no synthesis -- a WAIT only.
+
+    PLANTED CONTROL: the same push one round under the cap runs the reviewer.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    review = Review(judge=JUDGE, command=_REVIEW.command, max_rounds=1 if cap == 'rounds' else 5)
+    spent = {f'o/r#{number}': 11.0 if cap == 'usd' else 0.0}
+    calls: list[list[str]] = []
+    command = FakeCommand(_doc(_finding('F-h', severity='HIGH', file='x.py', anchor='x')))
+
+    def run(argv: list[str], root: Path) -> str:
+        calls.append(list(argv))
+        return command(argv, root)
+
+    review_tick(work, forge, review, base='integrate/main', run=run, ready=lambda *_: None, host='box',
+                spend=lambda *_: _spend())  # fmt: skip
+    assert calls, 'PLANTED CONTROL: under the cap, round 1 runs'
+    calls.clear()
+    pushed = advance(work, 'pr/x', 'x.py', 'x\nmore\n')
+    forge.pulls[number]['head']['sha'] = pushed
+    review_tick(work, forge, review, base='integrate/main', run=run, ready=lambda *_: None, host='box',
+                spend=lambda *_: _spend(by_tag=spent))  # fmt: skip
+    assert calls == [], 'a capped PR spends no call on a push'
+    assert _state(forge, pushed)[0] == 'pending'
+    assert _state(forge, pushed)[1].startswith(CAPPED)

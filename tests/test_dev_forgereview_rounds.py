@@ -156,7 +156,7 @@ def test_every_round_re_judges_a_finding_whose_scenario_the_head_removed(tmp_pat
     forge, number = _forge(head)
     high = _finding('F-x', severity='HIGH', file='x.py', anchor='x')
     _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
-    after = advance(work, 'pr/x', 'guard.py', 'assert x\n')  # x.py keeps its anchor line; a guard now covers it
+    after = advance(work, 'pr/x', 'x.py', 'assert y\nx\n')  # x.py keeps its anchor line; a guard now covers it
     forge.pulls[number]['head']['sha'] = after
     rulings = {'F-x': ('fixed', 'guard.py asserts x before use')}
     command = FakeCommand(_doc(), rulings=rulings)
@@ -165,7 +165,7 @@ def test_every_round_re_judges_a_finding_whose_scenario_the_head_removed(tmp_pat
     ((asked,),) = command.judged
     assert asked['id'] == 'F-x'
     assert 'fixed: guard.py asserts x before use' in forge.comments[number][-1]['body']
-    still = advance(work, 'pr/x', 'other.py', 'o\n')
+    still = advance(work, 'pr/x', 'x.py', 'x\n')  # the guard taken out: x.py changed, so F-x is re-judged
     forge.pulls[number]['head']['sha'] = still
     _tick(work, forge, FakeCommand(_doc(high), rulings={'F-x': ('present', 'nothing guards x')}), _REVIEW)
     assert _state(forge, still)[0] == 'failure', 're-raised and judged present: it blocks again'
@@ -238,11 +238,11 @@ def test_a_claim_is_adjudicated_by_the_next_round_and_only_an_upheld_one_unblock
         (tmp_path / outcome).mkdir()
         work, head = _work(tmp_path / outcome)
         forge, number = _forge(head)
-        high = _finding('F-x', severity='HIGH', anchor='x')
+        high = _finding('F-x', severity='HIGH', file='x.py', anchor='x')
         _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
         claim(forge, number, 'F-x', 'the guard is upstream', by=Identity('a', 'box', 'S-author'), open_ids=['F-x'])
         assert _state(forge, head)[0] == 'failure', 'a claim moves no status'
-        after = advance(work, 'pr/x', 'y.py', 'y = 1\n')  # code: a round runs
+        after = advance(work, 'pr/x', 'x.py', 'x\ny = 1\n')  # code on the finding's file: the round re-judges it
         forge.pulls[number]['head']['sha'] = after
         command = FakeCommand(_doc(high), rulings={'F-x': (outcome, 'ruled on the code')})
         _tick(work, forge, command, _REVIEW)
@@ -333,7 +333,7 @@ def test_what_it_does_links_its_cites_in_the_backend_form(backend: object, file_
 
 
 def test_the_re_judge_reads_the_whole_change_at_the_head_never_the_increment(tmp_path: Path) -> None:
-    """#7 round 3: a finding about a file the increment did not touch was judged on the increment alone.
+    """#7 round 3: a finding was judged on the increment alone, blind to the rest of the PR's change.
 
     The round's reviewer reads its increment; the JUDGE of an open finding reads the PR's whole change at the head.
     PLANTED CONTROL: the round's own review command still reads only the increment.
@@ -341,7 +341,7 @@ def test_the_re_judge_reads_the_whole_change_at_the_head_never_the_increment(tmp
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     _tick(work, forge, FakeCommand(_doc(_finding('F-x', severity='HIGH', file='x.py', anchor='x'))), _REVIEW)
-    after = advance(work, 'pr/x', 'y.py', 'y = 1\n')
+    after = advance(work, 'pr/x', 'x.py', 'x\ny = 1\n')
     forge.pulls[number]['head']['sha'] = after
     seen: list[list[str]] = []
     command = FakeCommand(_doc())
@@ -356,3 +356,52 @@ def test_the_re_judge_reads_the_whole_change_at_the_head_never_the_increment(tmp
     base = git_out(work, 'merge-base', 'origin/integrate/main', after)
     assert judged[judged.index('--range') + 1] == f'{base}..{after}'
     assert reviewed[-1] == f'{head}..{after}'
+
+
+def test_a_round_re_judges_only_blocking_or_claimed_findings_on_a_file_the_increment_changed(tmp_path: Path) -> None:
+    """Review spend 2026-11-03: 77% of re-judgements were on untouched files, 81% on non-blocking findings.
+
+    A finding on a file the increment did not change, or one neither blocking nor claimed, CARRIES FORWARD unchanged
+    with its state (here: a blocking one stays open and blocking). PLANTED CONTROL: the blocking finding on the
+    changed file IS re-judged, and closes on the judge's ruling.
+    """
+    work, _ = _work(tmp_path)
+    head = advance(work, 'pr/x', 'y.py', 'y\n')
+    forge, number = _forge(head)
+    on_changed = _finding('F-hx', severity='HIGH', file='x.py', anchor='x')
+    untouched = _finding('F-hy', severity='HIGH', file='y.py', anchor='y')
+    minor = _finding('F-mx', severity='MEDIUM', file='x.py', anchor='x')
+    _tick(work, forge, FakeCommand(_doc(on_changed, untouched, minor)), _REVIEW)
+    after = advance(work, 'pr/x', 'x.py', 'x\nguarded\n')
+    forge.pulls[number]['head']['sha'] = after
+    command = FakeCommand(_doc(), rulings={'F-hx': ('fixed', 'guarded'), 'F-hy': ('fixed', 'never asked')})
+    _tick(work, forge, command, _REVIEW)
+    ((asked,),) = command.judged
+    assert asked['id'] == 'F-hx', 'only the blocking finding on the changed file is re-judged'
+    ledger = ledger_of([forge.comments[number][-1]['body']])
+    assert [one.id for one in ledger.open] == ['F-hy', 'F-mx'], 'carried forward'
+    assert {one.id: one for one in ledger.open}['F-hy'].severity == 'HIGH'
+    assert 'F-hx' in forge.comments[number][-1]['body'].split('### Closed this round', 1)[1]
+    assert _state(forge, after)[0] == 'failure', 'the untouched blocking finding still blocks'
+
+
+def test_a_claimed_finding_on_an_untouched_file_is_left_to_the_adjudication_door(tmp_path: Path) -> None:
+    """A pending claim on a finding whose file the increment did not change is not re-judged by the round.
+
+    PLANTED CONTROL: the same claim, once the increment changes the finding's file, is re-judged with its claim.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    _tick(work, forge, FakeCommand(_doc(_finding('F-x', file='x.py', anchor='x'))), _REVIEW)
+    claim(forge, number, 'F-x', 'not a defect', by=Identity('a', 'box', 'S-author'), open_ids=['F-x'])
+    after = advance(work, 'pr/x', 'y.py', 'y = 1\n')
+    forge.pulls[number]['head']['sha'] = after
+    command = FakeCommand(_doc())
+    _tick(work, forge, command, _REVIEW)
+    assert command.judged == []
+    touched = advance(work, 'pr/x', 'x.py', 'x\nz = 1\n')
+    forge.pulls[number]['head']['sha'] = touched
+    command = FakeCommand(_doc(), rulings={'F-x': ('false-positive', 'ruled')})
+    _tick(work, forge, command, _REVIEW)
+    ((asked,),) = command.judged
+    assert (asked['id'], asked['claim']) == ('F-x', 'not a defect')

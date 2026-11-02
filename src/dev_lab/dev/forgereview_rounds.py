@@ -9,9 +9,12 @@ head's findings comment (a hidden ``review-ledger`` line); the next round starts
   reviews the whole branch change and also carries a :func:`context_summary` -- what changed, which layers, and
   the WHY cited from each of :data:`SUMMARY_CITES` in order -- the team's shared context.
 * ROUND k > 1 reviews only what the branch added since its last reviewed head
-  (:func:`dev_lab.dev.forgereview_scope.own_base`) and RE-JUDGES every open finding against the new head
+  (:func:`dev_lab.dev.forgereview_scope.own_base`) and RE-JUDGES each open finding that is blocking or claimed and
+  whose file the increment changed (:func:`changed`) against the new head
   (:func:`dev_lab.dev.forgereview_judge.judge`, user ruling 2026-10-31): ``fixed`` or ``false-positive`` CLOSES
-  it with the judge's evidence recorded, ``present`` keeps it -- the text is never merely carried over. NO MOVING
+  it with the judge's evidence recorded, ``present`` keeps it. Every other open finding carries forward unchanged
+  with its state (review spend 2026-11-03: an untouched file fixes nothing, a non-blocking finding gates nothing,
+  and a claim on an untouched file is the adjudication door's). NO MOVING
   GOALPOSTS: a new finding below ``HIGH`` whose
   anchor is not a line the round added is dropped -- a later round may not raise a non-HIGH finding on a line
   the earlier rounds already read.
@@ -33,7 +36,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Final
 
@@ -72,10 +75,13 @@ __all__ = [
     'Ledger',
     'advance',
     'blocking',
+    'changed',
     'context_summary',
     'ledger_of',
     'post_round',
+    'recorded_usd',
     'render',
+    'review_record',
     'trailed',
     'trusted_bodies',
     'verdict',
@@ -96,6 +102,7 @@ LEDGER_VERSION: Final = 1
 DISPOSE_DOOR: Final = 'python -m dev_lab.dev.forge review dispose {pr} {id} --why "<claim>" (adjudicated)'
 
 _LEDGER: Final = re.compile(r'<!-- review-ledger (?P<json>\{.*?\}) -->', re.DOTALL)
+_ROUND: Final = re.compile(re.escape(marker(Marker.REVIEW, 'SHA')).replace('SHA', '[0-9a-f]{7,40}'))
 _ANY_EXIT: Final = range(256)  # a read whose failure reads as empty: the summary and trailers degrade, never stop
 _SUBJECTS: Final = 20  # commit subjects (memory paths, merges) the summary lists
 _TRAILER: Final = 'Review-Disposed'
@@ -113,18 +120,19 @@ class Ledger:
     round: int
     open: tuple[Finding, ...] = ()
     closed: tuple[tuple[str, str], ...] = ()  # (id, how) closed THIS round
+    usd: float = 0.0  # what THIS round spent, measured on the host that ran it (:func:`recorded_usd` sums them)
 
     def line(self) -> str:
         """The hidden comment line that records this ledger (``>`` escaped, so the JSON cannot close the comment)."""
         doc = {
             'version': LEDGER_VERSION, 'head': self.head, 'round': self.round,
-            'open': [asdict(one) for one in self.open],
+            'open': [asdict(one) for one in self.open], 'usd': self.usd,
         }  # fmt: skip
         text = json.dumps(doc, ensure_ascii=False).replace('>', '\\u003e')
         return f'<!-- review-ledger {text} -->'
 
 
-def trusted_bodies(client: Client, number: int) -> list[str]:
+def trusted_bodies(client: Client, number: int, reviewers: Iterable[str] = ()) -> list[str]:
     """PR *number*'s comment bodies (oldest first) the forge records as written by THIS client's login.
 
     A ledger or a disposition is state the forge and the integrator write; a comment anyone else writes that
@@ -138,17 +146,38 @@ def trusted_bodies(client: Client, number: int) -> list[str]:
     (:func:`~dev_lab.dev.reviewbudget.raise_record`, #17: DawnEver's raise never reached the Actions job), and
     admitted only when the forge records its author with write permission (:meth:`Client.can_write`): naming
     yourself proves who wrote it, never that you may raise.
+
+    A ROUND posted by another review producer is read only from a DECLARED reviewer login (*reviewers*, the base's
+    ``[tool.dev_lab.review] reviewers``), never from any writer: a ledger decides which findings stay open, and an
+    author never clears a review's block on its own (:mod:`dev_lab.dev.forgereview_dispose`). Such a comment
+    contributes its marker and ledger alone (:func:`review_record`).
     """
     trusted = {client.whoami(), client.backend.actions_login}
+    producers = set(reviewers) - trusted
     out = []
     for comment in comment_list(client, number):
         if comment.author in trusted:
             out.append(comment.body)
-        elif (record := claim_record(comment.body, comment.author)) or (
-            (record := raise_record(comment.body, comment.author)) and client.can_write(comment.author)
+        elif (
+            (record := claim_record(comment.body, comment.author))
+            or ((record := raise_record(comment.body, comment.author)) and client.can_write(comment.author))
+            or (comment.author in producers and (record := review_record(comment.body)))
         ):
             out.append(record)
     return out
+
+
+def review_record(body: str) -> str | None:
+    """The round record alone in a ``Marker.REVIEW`` comment *body* -- its marker line and its ledger -- else ``None``.
+
+    Another host's round (the serve host's, read by the Actions job, or the reverse) is the same forge state: without
+    it a job restarted at round 1 and past the round cap (#5397, 9 rounds). Only the two lines are returned, so
+    nothing else the comment carries -- an adjudication marker, a raise -- is read from it.
+    """
+    first = body.split('\n', 1)[0].strip()
+    if not _ROUND.fullmatch(first) or (match := _LEDGER.search(body)) is None:
+        return None
+    return f'{first}\n{match.group(0)}'
 
 
 def _finding(row: Mapping) -> Finding:
@@ -166,7 +195,29 @@ def ledger_of(bodies: Iterable[str]) -> Ledger | None:
     if found.get('version') != LEDGER_VERSION:
         msg = f'a review ledger of version {found.get("version")!r}; this reader knows {LEDGER_VERSION}'
         raise ValueError(msg)
-    return Ledger(found['head'], int(found['round']), tuple(_finding(row) for row in found['open']))
+    return _ledger(found)
+
+
+def _ledger(found: Mapping[str, Any]) -> Ledger:
+    rows = tuple(_finding(row) for row in found['open'])
+    return Ledger(found['head'], int(found['round']), rows, usd=float(found.get('usd', 0.0)))
+
+
+def recorded_usd(bodies: Iterable[str]) -> float:
+    """What the PR's recorded rounds spent: each head's newest ledger in *bodies*, summed over heads.
+
+    The ONE source of a PR's spend (review spend 2026-11-03): every host's rounds land on the PR, so a host reads
+    what the others spent, never its own local ledger alone. A ledger of another version is refused.
+    """
+    per_head: dict[str, float] = {}
+    for body in bodies:
+        for match in _LEDGER.finditer(body):
+            found = json.loads(match['json'])
+            if found.get('version') != LEDGER_VERSION:
+                msg = f'a review ledger of version {found.get("version")!r}; this reader knows {LEDGER_VERSION}'
+                raise ValueError(msg)
+            per_head[found['head']] = float(found.get('usd', 0.0))
+    return sum(per_head.values())
 
 
 def trailed(root: Path, target: str, head: str) -> dict[str, str]:
@@ -375,17 +426,38 @@ def render(
     return '\n\n'.join(parts)
 
 
+def changed(root: Path, reviewed: str) -> frozenset[str]:
+    """The paths the range *reviewed* changes (a rename as both its paths): what a round's increment touched."""
+    _, text = git(root, 'diff', '--no-renames', '--name-only', reviewed)
+    return frozenset(line for line in text.splitlines() if line)
+
+
+def _rejudged(prior: Ledger, touched: frozenset[str], asked: Mapping[str, object], own: Iterable[str]) -> list[Finding]:
+    """The prior open findings a round re-judges: blocking or claimed (*asked*), on a *touched* file, not *own*.
+
+    Every other finding CARRIES FORWARD unchanged with its state: an untouched file cannot have fixed it, a
+    non-blocking one gates nothing, and a claim on an untouched file is ruled by the adjudication door
+    (:mod:`dev_lab.dev.forgereview_dispose`). Review spend 2026-11-03: 77% of re-judgements were on untouched
+    files and 81% on non-blocking findings.
+    """
+    mine = set(own)
+    return [one for one in prior.open
+            if one.id not in mine and one.file in touched and (one.blocking or one.id in asked)]  # fmt: skip
+
+
 def post_round(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings, max_rounds: int,
     judged: Judge, reviewer: Identity, authors: frozenset[str], by: str = 'review', outside: int = 0,
-    authored: Mapping[str, str] | None = None, emergency: bool = False,
+    authored: Mapping[str, str] | None = None, emergency: bool = False, usd: float = 0.0,
+    reviewers: Iterable[str] = (),
 ) -> str:  # fmt: skip
     """Post *pull*'s head review round: its comment and :data:`REVIEW_CONTEXT`; the line said.
 
-    *judged* re-judges the prior open findings, each with its
-    pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and may not
-    be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the changed
-    files that are not code, said in the comment. *authored* is the author's trailer dispositions.
+    *judged* re-judges the prior open findings that are blocking or claimed and on a file *reviewed* changed, each
+    with its pending claim, and every claim it answers gets its adjudication comment. *reviewer* runs the round and
+    may not be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside* counts the
+    changed files that are not code, said in the comment. *authored* is the author's trailer dispositions. *usd* is what
+    the round spent, recorded in its ledger. *reviewers* are the declared producer logins whose rounds are read.
 
     Only the forge posts a round (:func:`ruling`) and moves :data:`REVIEW_CONTEXT`; its round releases a pending
     hold. An *emergency* round (the takeover door) is ADVISORY (D11): its comment says so, it posts no status,
@@ -395,20 +467,20 @@ def post_round(
         ruling(reviewer, f'reviewing #{pull.number}')
     self_review(reviewer, authors, f'reviewing #{pull.number}')
     head = pull.head_sha
-    bodies = trusted_bodies(client, pull.number)
+    bodies = trusted_bodies(client, pull.number, reviewers)
     prior = ledger_of(bodies)
     prior = None if prior is not None and prior.head == head else prior  # a head re-posted is not a new round
     mine = reviewer.session
     asked = {fid: one for fid, one in pending(bodies).items() if not (mine and one.by.session == mine)}
     own = {fid for fid, one in claims(bodies).items() if mine and one.by.session == mine}
-    rejudged = [one for one in prior.open if one.id not in own] if prior else []
+    rejudged = _rejudged(prior, changed(root, reviewed), asked, own) if prior else []
     verdicts = judged([(one, asked[one.id].why if one.id in asked else '') for one in rejudged]) if prior else {}
     for fid, one in asked.items():
         if fid in verdicts:
             text = adjudication_text(one, verdicts[fid], reviewer)
             comment_upsert(client, pull.number, kind=Marker.ADJUDICATION, key=fid, text=text)
             bodies = [*bodies, f'{marker(Marker.ADJUDICATION, fid)}\n{text}']
-    ledger = advance(root, head, reviewed, prior, found, judged=verdicts)
+    ledger = replace(advance(root, head, reviewed, prior, found, judged=verdicts), usd=usd)
     gone = upheld(bodies)
     summary = context_summary(root, reviewed, pull.body) if ledger.round == 1 else ''
     text = render(ledger, gone, number=pull.number, reviewed=reviewed, max_rounds=max_rounds,
