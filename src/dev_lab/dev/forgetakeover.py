@@ -33,7 +33,15 @@ from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import comment_list, pages, pr_list
 from dev_lab.dev.forgereview import HostCannot, hold, review_pull
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
-from dev_lab.dev.forgereview_declared import PATHS_FIELD, Review, command_for, judge_for, review_at, trusted_integration
+from dev_lab.dev.forgereview_declared import (
+    PATHS_FIELD,
+    Review,
+    command_for,
+    judge_for,
+    operator_integration,
+    review_at,
+    trusted_integration,
+)
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_cap
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
@@ -333,7 +341,9 @@ def main(
         # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.
         api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
         origin = client or client_for(root, token=api)
-        base = trusted_integration(root, origin)  # never the working tree's: the head's (F-169e99e6c68c)
+        # never the working tree's: the head's (F-169e99e6c68c); the job asks the forge, the operator's verbs
+        # read their clone's origin/HEAD offline (dev-lab #40)
+        base = trusted_integration(root, origin) if args.verb == 'run' else operator_integration(root)
         if args.verb == 'run':
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(
