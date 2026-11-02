@@ -104,7 +104,7 @@ def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]
             label = f'open PR #{open_heads[name]} ({name})' if name in open_heads else name
             return Verdict(branch, sha, container=label)
     lost = (git_out(root, 'rev-list', sha, '--not', *(f'{ORIGIN}{name}' for name in others)) or '').split()
-    unlanded = _unlanded(root, sha, others, policy.integration) if lost else ()
+    unlanded = _unlanded(root, sha, others, policy.integration, exempt=GENERATED) if lost else ()
     if not unlanded:
         by_content = f'{policy.integration} (by content: no content {policy.integration} lacks)'
         return Verdict(branch, sha, container=by_content if lost else 'the union of the other origin branches')
@@ -114,12 +114,15 @@ def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]
     return Verdict(branch, sha, lost=tuple(lost), refused=refused)
 
 
-def _unlanded(root: Path, sha: str, others: Sequence[str], integration: str) -> tuple[str, ...]:
+def _unlanded(
+    root: Path, sha: str, others: Sequence[str], integration: str, *, exempt: frozenset[str]
+) -> tuple[str, ...]:
     """The files its own commits wrote whose tree entry at *sha* is not *integration*'s; FAILS CLOSED.
 
     The commits on *sha* alone name the files they wrote: a plain commit every file it changes, a merge only the
     files it resolved (``--cc``: differing from every parent), so a sync merge of integration names none. Of those,
-    a file the family generates (:data:`~dev_lab.dev.famfiles.GENERATED`) is regenerated, never lost. Any other
+    the *exempt* ones are set aside: LOSSLESS-DELETE passes the family's generated files
+    (:data:`~dev_lab.dev.famfiles.GENERATED`), regenerated rather than lost; the landed sweep passes none. Any other
     whose ``(mode, blob)`` at the tip differs from integration's -- added (even empty), changed, re-moded or deleted
     -- is unlanded. A file integration changed after the branch landed it is refused too: a branch-side edit and
     integration moving ahead are not told apart, because a false refusal is safe and a false delete is not. Paths
@@ -129,7 +132,7 @@ def _unlanded(root: Path, sha: str, others: Sequence[str], integration: str) -> 
     written = git_out(root, 'log', '-z', '--format=', '--name-only', '--cc', *tip_only)
     if written is None:
         return ("(git could not list the branch's files)",)
-    candidates = sorted({path.strip('\n') for path in written.split('\0')} - {''} - GENERATED)
+    candidates = sorted({path.strip('\n') for path in written.split('\0')} - {''} - exempt)
     if not candidates:
         return ()
     entries = [_entries(root, rev, candidates) for rev in (f'{ORIGIN}{integration}', sha)]
@@ -203,6 +206,9 @@ def landed(root: Path, policy: Policy, ref: str) -> Verdict:
     identical there, generated files aside -- so a squash-landed or forge-synced branch is landed under other
     shas, and one unlanded line keeps it. No other branch is a holder: that is LOSSLESS-DELETE's wider
     question (:func:`judge`); the sweep asks only whether integration now includes the branch.
+
+    NO FILE IS EXEMPT HERE, generated ones included: "landed" closes an open PR, and a commit that only relocks
+    ``uv.lock`` is work integration lacks (wdg-lab PR #439 was closed and its branch deleted so, 2026-11-02).
     """
     branch = ref.removeprefix(ORIGIN).removeprefix('refs/heads/')
     sha = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}') or '').strip()
@@ -213,7 +219,7 @@ def landed(root: Path, policy: Policy, ref: str) -> Verdict:
     for name in holders:
         if git_out(root, 'merge-base', '--is-ancestor', sha, f'{ORIGIN}{name}') is not None:
             return Verdict(branch, sha, container=name)
-    unlanded = _unlanded(root, sha, holders, policy.integration)
+    unlanded = _unlanded(root, sha, holders, policy.integration, exempt=frozenset())
     if not unlanded:
         return Verdict(branch, sha, container=f'{policy.integration} (by content: no content it lacks)')
     lost = (git_out(root, 'rev-list', sha, '--not', *(f'{ORIGIN}{name}' for name in holders)) or '').split()

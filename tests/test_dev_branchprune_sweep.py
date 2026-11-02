@@ -168,3 +168,25 @@ def test_a_push_of_another_branch_or_a_fetch_detaches_nothing(tmp_path: Path) ->
     assert post_push([], stdin=_payload(work, 'git push origin HEAD:pr/x'), detach=started.append) == 0
     assert post_push([], stdin=_payload(work, 'git status'), detach=started.append) == 0
     assert started == []
+
+
+def test_an_open_pr_whose_one_commit_only_relocks_is_neither_closed_nor_deleted(tmp_path: Path) -> None:
+    """Wdg-lab PR #439 (2026-11-02): one commit on integration's tip changing only ``uv.lock``, merged nowhere.
+
+    ``uv.lock`` is a generated family file, and the content judge set generated files aside, so the sweep found
+    no unlanded content, closed the PR "landed ... merged by <integration tip>" and deleted its branch.
+    """
+    work = _repo(tmp_path)
+    base = advance(work, 'integrate/main', 'uv.lock', 'old\n')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'{base}:refs/heads/pr/relock')
+    run_git(work, 'fetch', '-q', 'origin')
+    head = advance(work, 'pr/relock', 'uv.lock', 'relocked\n')
+    assert git_out(work, 'rev-parse', f'{head}^') == base
+    forge = StateForge()
+    number = forge.add_pull('pr/relock', 'integrate/main', sha=head)
+    code, said, alarms = _sweep(work, forge)
+    assert code == 0, said
+    assert forge.pulls[number]['state'] == 'open', said
+    assert _on_origin(work, 'pr/relock')
+    assert any('pr/relock' in line and 'uv.lock' in line for line in said), said
+    assert alarms == []
