@@ -222,8 +222,9 @@ setup = [
 # THE REVIEW METHOD, installed and keyed once for every job that reviews or judges (ci.yml review, review-claims.yml).
 # The method is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3, 2026-10-31:
 # "cannot import 'ai_lab.review'", nothing posted): ai-lab is installed from this owner's forge into an environment of
-# its own, whose interpreter the door is handed. The ai-lab COMMIT is the install step's AI_LAB_REF -- the ONE
-# declaration (ciworkflows.pinned_ref('ai-lab')), never a floating branch (dev-lab #5 took whatever was current that minute).
+# its own, whose interpreter the door is handed. The ai-lab COMMIT is the one the DOOR's dev-lab lock pins (its
+# non-default `review` group): dev-lab calls the method, so its lock says which one runs -- never a second pin, never
+# a floating branch (dev-lab #5 took whatever was current that minute). So every job runs `door` before `method`.
 # ai-lab reads keys from the git
 # credential store ONLY (dev-lab #5: every reviewer `unsupported` with the secret set), so the key is stored for the
 # review task in an in-memory credential cache, on stdin; with no secret (a fork PR) nothing is stored.
@@ -237,8 +238,13 @@ method = [
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 python3 -I -m venv "$RUNNER_TEMP/ai-lab" && "$RUNNER_TEMP/ai-lab/bin/python" -I -m pip install -q uv
-"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REF"
-''', env = { AI_LAB_REF = "3f8c7c5b25188b40673602682ce9df61157a16f6", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
+AI_LAB_REV=$(python3 -I -c 'import sys, tomllib
+lock = tomllib.loads(sys.stdin.read())
+(source,) = [p["source"] for p in lock.get("package", []) if p["name"] == "ai-lab"] or sys.exit("the door lock pins no ai-lab")
+"git" in source or sys.exit(f"ai-lab is locked from {source}, not a git revision")
+print(source["git"].rpartition("#")[2])' < "$RUNNER_TEMP/dev-lab/uv.lock") || exit 1
+"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REV"
+''', env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
 ]
 
@@ -383,7 +389,7 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 # when that run concluded success (the job fails unless it posted success, forgetakeover.job_exit). Safe ONLY because
 # what the job takes from the head is the DIFF, read as data; what it acts on is the base's -- the workflow,
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
-# ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, AI_LAB_REF) (test_the_review_job_runs_no_code_the_pr_supplies).
+# ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
 # The types are pull_request's defaults plus ready_for_review (D52/D53): a draft is never reviewed, so marking it
 # ready is what reviews it.
@@ -402,7 +408,7 @@ cancel-in-progress = true
 HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
 # Where the review tools come from: the toolchain lives on GitHub (ruling 2026-10-29), public and unauthenticated;
 # the forge's own copy is not readable by the job token (D37). The host cannot substitute content: the locked dev-lab
-# and AI_LAB_REF are full commit SHAs. A runner that cannot reach GitHub cannot run this job, and says so.
+# and the ai-lab its lock pins are full commit SHAs. A runner that cannot reach GitHub cannot run this job, and says so.
 FAMILY_SOURCE = "https://github.com/DawnEver/"
 UV_PYTHON = "python3"  # the host's interpreter: a host runner behind the ACL downloads none
 UV_PYTHON_DOWNLOADS = "never"
@@ -447,6 +453,7 @@ contents = "read"
 
 ["review-claims.yml".env]
 HEAD_SHA = "${{ github.sha }}"
+INTEGRATION_SHA = "${{ github.sha }}"  # the door's trusted commit: an issue_comment runs the default branch's tip
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # the family repos sit beside this one
 GITHUB_TOKEN = "${{ github.token }}"
 
@@ -455,6 +462,7 @@ if = "${{ contains(github.event.comment.body, '<!-- lab-commons:review-claim:') 
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
+    { use-steps = "door" },
     { use-steps = "method" },
     { name = "Adjudicate the claims", run = 'trap "git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' },
 ]

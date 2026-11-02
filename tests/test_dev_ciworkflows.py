@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -18,16 +19,17 @@ from _branch_repos import clone_pair
 
 from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.ciworkflows import (
+    BASE_PATH,
     NIGHTLY_CRON,
-    PINS,
     RENDER_COMMAND,
+    RUNNERS,
+    SHARED,
     STAMP,
     USE_STEPS,
     drift,
     expand,
     main,
     merge,
-    pinned_ref,
     render,
     workflows,
     write,
@@ -116,12 +118,6 @@ def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_
     assert '--runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' in review
     assert '$GITHUB_WORKSPACE/.venv' not in review, "the repo's own environment does not carry the method"
     assert 'uv run' not in review
-
-
-def test_the_review_method_is_pinned_to_the_commit_dev_lab_declares() -> None:
-    """dev-lab #5 (2026-10-31) installed whatever ai-lab's default branch was that minute: a pin, never a float."""
-    for repo in PINS:
-        assert re.fullmatch(r'[0-9a-f]{40}', pinned_ref(repo)), (repo, pinned_ref(repo))
 
 
 def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_path: Path) -> None:
@@ -323,24 +319,96 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     )
 
 
-_INSTALLS = {'ai-lab': 'Install the review method'}
-
-
-def test_each_pinned_ref_is_declared_once_and_both_review_workflows_install_it(tmp_path: Path) -> None:
-    """Round 1 F-581fef0aab0b, F-76c85dbc4b77: one declared value per repo, rendered as its install step's env.
-
-    GitHub's ci.yml review and Gitea's review.yml run the very same install step.
-    """
+def _method_steps(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     (tmp_path / 'hub').mkdir()
     jobs = (_base_ci(tmp_path / 'hub')['jobs']['review'], _gitea_review(tmp_path)['jobs']['review'])
-    for repo, name in _INSTALLS.items():
-        var = PINS[repo][1]
-        hub, tea = (next(s for s in job['steps'] if s.get('name') == name) for job in jobs)
-        assert hub == tea, f'{name}: one source for both forges'
-        assert hub['env'][var] == pinned_ref(repo)
-        assert f'${{FAMILY_SOURCE}}{repo}.git' in hub['run'], 'installed from the declared family source'
-        assert f'${var}' in hub['run']
-        assert pinned_ref(repo) not in hub['run'], 'the step names no sha itself'
+    hub, tea = (next(s for s in job['steps'] if s.get('name') == 'Install the review method') for job in jobs)
+    return hub, tea
+
+
+def test_the_review_method_is_the_ai_lab_the_door_s_dev_lab_lock_pins(tmp_path: Path) -> None:
+    """dev-lab is the code that calls the review method, so ITS lock names the ai-lab that runs -- no second pin.
+
+    The door cloned that dev-lab at the trusted DOOR_SHA's locked revision; the method reads ai-lab from there.
+    """
+    hub, tea = _method_steps(tmp_path)
+    assert hub == tea, 'one source for both forges'
+    assert 'env' not in hub or not any(re.fullmatch(r'[0-9a-f]{40}', v) for v in hub['env'].values())
+    assert '< "$RUNNER_TEMP/dev-lab/uv.lock"' in hub['run']
+    assert '"ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REV"' in hub['run']
+    assert not re.search(r'[0-9a-f]{40}', hub['run']), 'the step names no sha itself'
+
+
+def test_the_method_reads_the_locked_git_ai_lab_and_refuses_any_other_source(tmp_path: Path) -> None:
+    """The snippet resolves a git-sourced ai-lab; a missing or non-git ai-lab refuses, printing nothing."""
+    run = _method_steps(tmp_path)[0]['run']
+    lock = '[[package]]\nname = "{name}"\nsource = {source}\n'
+    git = lock.format(name='ai-lab', source='{ git = "https://github.com/DawnEver/ai-lab.git#' + 'c' * 40 + '" }')
+    assert _locked_ref(run, git).stdout.strip() == 'c' * 40
+    for refused in (
+        lock.format(name='ai-lab', source='{ registry = "https://pypi.org/simple" }'),
+        lock.format(name='ai-lab', source='{ editable = "." }'),
+        lock.format(name='dev-lab', source='{ git = "https://github.com/DawnEver/dev-lab.git#' + 'c' * 40 + '" }'),
+    ):
+        done = _locked_ref(run, refused)
+        assert done.returncode != 0, refused
+        assert not done.stdout.strip(), refused
+
+
+def test_every_job_installing_the_method_installs_the_door_first(tmp_path: Path) -> None:
+    """The method reads the door's dev-lab lock, so a job without the door before it has no ai-lab to install."""
+    names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS}]
+    (tmp_path / 'pyproject.toml').write_text(''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names), encoding='utf-8')
+    all_jobs = [(f'{w}:{j}', job) for w, flow in workflows(tmp_path).items() for j, job in flow['jobs'].items()]
+    users = 0
+    for name, job in all_jobs:
+        steps = [s.get('name') for s in job['steps']]
+        if 'Install the review method' in steps:
+            users += 1
+            assert 'Install the review door' in steps, name
+            assert steps.index('Install the review door') < steps.index('Install the review method'), name
+    assert users >= 2, 'PLANTED CONTROL: the review and the claims jobs install the method'
+
+
+def test_ai_lab_ref_is_gone_everywhere() -> None:
+    """The retired second pin survives nowhere tracked: the lock is the one source."""
+    root = Path(__file__).resolve().parents[1]
+    hits = subprocess.run(
+        [shutil.which('git') or 'git', 'grep', '-l', 'AI_LAB' + '_REF'],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.split()
+    assert hits == []
+
+
+def test_the_review_group_stays_out_of_the_door_and_every_consumer() -> None:
+    """ai-lab is a NON-DEFAULT group: dev-lab's lock pins it, yet the door's export and a consumer install skip it."""
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    assert any(d.startswith('ai-lab') for d in project['dependency-groups']['review'])
+    assert 'review' not in project.get('tool', {}).get('uv', {}).get('default-groups', ['dev'])
+    assert not any('ai-lab' in d for d in project['project']['dependencies']), 'a group never reaches a consumer'
+    exported = subprocess.run(
+        [
+            shutil.which('uv') or 'uv',
+            'export',
+            '--no-config',
+            '--project',
+            str(root),
+            '--frozen',
+            '--no-hashes',
+            '--no-header',
+            '--no-annotate',
+            '--no-emit-project',
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert 'ai-lab' not in exported, "the door's export excludes the group"
+    assert 'ai_lab' not in exported
 
 
 def test_the_review_job_runs_no_code_the_pr_supplies(tmp_path: Path) -> None:
