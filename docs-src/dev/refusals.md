@@ -54,6 +54,11 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 - **Why it is refused.** a run executes its checkout's code and `.venv` for its whole life, so an edit, a merge, a checkout or an environment sync under it makes its result describe a tree that never existed. Measured 2026-10-19 in consumer-a: during a JMAG `deck run`, an agent edited a test, merged into the checkout and re-synced the venv the run executed from. The run is found WITHOUT its cooperation (`dev_lab.dev.liverun`, read off `lab_commons.census`): a process READS the tree when it is a Python interpreter working in it or an argument names a path in it, and the row binds only while one exists. `output/`, `.claude/` and `.venv/` are not the tree; a process executing from the venv locks the venv (`dep`), not the tree.
 - **The exit.** Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait for the run, or stop it yourself: {python} -m dev_lab.dev.stoprun --pid <pid>.
 
+## STRAY-FILE-REFUSED
+
+- **Why it is refused.** A file somebody meant is staged; a program's artefact belongs in `output/`; a one-off script belongs in `scratch/`. An untracked, non-ignored file anywhere else is a file nobody claimed -- the 2026-10-20 vendor logs in the checkout root and the stray `uv.lock` (`dev_lab.dev.codeplace.stray_files`). It reports after each shell call and at Stop.
+- **The exit.** One per file, by its kind: a file under a code root was meant -- `git add` it; a script is a one-off -- move it to `scratch/<yy>/<mm>/<dd>/<kind>/`; anything else is a program's data -- move it to `output/logs/<yy>/<mm>/<dd>/<kind>/` and make the program write there (a vendor tool writes into its cwd: give it a cwd under `output/`).
+
 ## GIT-STASH
 
 - **Why it is refused.** `refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly concurrent checkout, that is another agent losing work it never knew existed.
