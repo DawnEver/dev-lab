@@ -10,8 +10,11 @@ branches repeated it. Now every commit is judged on its PIN alone, on the forge
 * else :func:`decision` reads ``origin/<integration>`` through :func:`dev_lab.dev.lockcheck.stale` -- the ONE
   staleness reading -- in a detached worktree under the repository's git directory;
 * a stale lock is rewritten by the dependency door (``dev_lab.dev.dep --lock-upgrade``, the one writer of a
-  lock), committed alone on top of integration, pushed as ``pr/relock-<dist>-<integration short sha>`` and
-  opened as a pull request into integration, which merges like every other once its parts pass;
+  lock), and the files the NEW pin renders are rendered again in the same tree (:func:`rerender`): a lock that
+  moves dev-lab without its rendered workflows is a repo whose CI runs the old pin's steps (2026-11-03: the
+  review job of lab-commons could not import the review method and passed silently). Both are committed as
+  ONE commit on top of integration, pushed as ``pr/relock-<dist>-<integration short sha>`` and opened as a
+  pull request into integration, which merges like every other once its parts pass;
 * a lane takes the new lock with ``forge sync``.
 
 A step that cannot finish RAISES :class:`RelockFailed` naming why (no integration branch, the resolution could
@@ -30,6 +33,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.labsession import machine_env
 from dev_lab.dev.lockcheck import FRESHENED, TOOLCHAIN, mount_submodules, newest_stable, refreshable, stale
@@ -41,12 +45,15 @@ if TYPE_CHECKING:
     from dev_lab.dev.netverb import Report
 
 __all__ = [
-    'PREFIX', 'Relock', 'RelockFailed', 'branch_for', 'carry', 'decision', 'detached_worktree', 'dist_of',
-    'door_upgrade',
+    'PREFIX', 'RENDERED', 'Relock', 'RelockFailed', 'branch_for', 'carry', 'decision', 'detached_worktree',
+    'dist_of', 'door_upgrade', 'rerender',
 ]  # fmt: skip
 
 #: The prefix every relock branch carries, inside the declared ephemeral ``pr/*`` namespace.
 PREFIX: Final = 'pr/relock'
+
+#: The directories a render writes (:data:`dev_lab.dev.ciworkflows.WORKFLOW_DIRS`), staged with the lock.
+RENDERED: Final = tuple(sorted({path.as_posix() for path in WORKFLOW_DIRS.values()}))
 
 #: How much of a sha names a branch -- enough to be unique on one host, short enough to read.
 SHORT: Final = 12
@@ -154,6 +161,26 @@ def door_upgrade(tree: Path) -> int:
     return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
 
 
+def _tree_python(tree: Path) -> str:
+    """The interpreter the door synced into *tree* (it holds the NEW pin), else this one."""
+    for candidate in (tree / '.venv' / 'Scripts' / 'python.exe', tree / '.venv' / 'bin' / 'python'):
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
+
+
+def rerender(tree: Path) -> int:
+    """Render *tree*'s generated workflows with the dev-lab its lock now pins (``dev_lab.dev.ciworkflows render``).
+
+    A tree that declares no workflow table renders nothing and answers 0.
+    """
+    manifest = tree / 'pyproject.toml'
+    if not manifest.is_file() or '[tool.dev_lab.ci' not in manifest.read_text(encoding='utf-8'):
+        return 0
+    argv = [_tree_python(tree), '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tree)]
+    return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
+
+
 def _push(tree: Path, branch: str) -> None:
     report = run_network_verb([_GIT, 'push', 'origin', f'HEAD:refs/heads/{branch}'], cwd=tree, timeout=300)
     if not report.ok:
@@ -170,13 +197,14 @@ def carry(
     resolve: Callable[[Path], Report] | None = None,
     stable: Callable[[], str] = newest_stable,
     upgrade: Callable[[Path], int] = door_upgrade,
+    rerender: Callable[[Path], int] = rerender,
     push: Callable[[Path, str], None] = _push,
 ) -> str:
     """Relock ``origin/<integration>`` of *root* through one pull request, if it needs one; the line said.
 
     *pulls* lists the open pull requests and *create* opens one (``Client.pr_create``'s signature); *resolve*,
-    *stable*, *upgrade* and *push* are the resolution, the newest Rust stable, the door and the push, each a
-    seam a test plants.
+    *stable*, *upgrade*, *rerender* and *push* are the resolution, the newest Rust stable, the door, the render
+    of the generated files and the push, each a seam a test plants.
     """
     for pull in pulls():
         if pull.head.startswith(f'{PREFIX}-'):
@@ -197,7 +225,12 @@ def carry(
         if not _must(tree, 'status', '--porcelain', '--', *pinned):
             msg = f'the dependency door left {" and ".join(pinned)} unchanged though the resolution moves {found.dist}'
             raise RelockFailed(msg)
-        _must(tree, 'commit', '-q', '-m', found.title, '-m', found.body, '--', *pinned)
+        if (exited := rerender(tree)) != 0:
+            msg = f'the render of the generated files exited {exited} after relocking {found.dist} at {sha[:SHORT]}'
+            raise RelockFailed(msg)
+        rendered = [path for path in RENDERED if (tree / path).is_dir()]
+        _must(tree, 'add', '--', *pinned, *rendered)
+        _must(tree, 'commit', '-q', '-m', found.title, '-m', found.body)
         push(tree, found.branch)
     opened = create(found.title, found.body, head=found.branch, base=policy.integration)
     return f'relocked {found.dist} onto {found.branch}: {opened.url}'
