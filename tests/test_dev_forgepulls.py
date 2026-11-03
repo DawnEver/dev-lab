@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import forget_issue, issues
 from tests._forge_state import StateForge
 
@@ -95,3 +96,34 @@ def test_an_issue_another_host_deleted_is_not_listed_from_its_cache(tmp_path: Pa
     forge.now_http = 'Mon, 12 Oct 2026 12:05:00 GMT'
     assert [raw['number'] for raw in issues(forge, state='open')] == [kept]
     assert [raw['number'] for raw in issues(forge, state='all')] == [kept]
+
+
+def _all_listings(forge: StateForge) -> list[str]:
+    return [one for one in forge.asked if one.startswith('GET ') and '/issues?' in one]
+
+
+def test_a_github_listing_never_sends_giteas_type_and_drops_the_pulls(tmp_path: Path) -> None:
+    """THE INCIDENT (2026-11-03): ``type=issues`` is Gitea's; GitHub answered 422 and every serve tick exited 1."""
+    forge = StateForge(Forge('github.com', 'o', 'r'))
+    number = forge.add_issue('x')
+    listed = {raw['number'] for raw in issues(forge)}
+    cached = _cached_github(tmp_path)
+    cached.add_issue('y')
+    issues(cached)
+    asked = _all_listings(forge) + _all_listings(cached)
+    assert asked
+    assert all('type=' not in one for one in asked)
+    assert listed == {number}
+
+
+def test_planted_control_a_gitea_listing_still_sends_type_issues() -> None:
+    forge = StateForge()
+    forge.add_issue('x')
+    issues(forge)
+    assert all('type=issues' in one for one in _listings(forge))
+
+
+def _cached_github(tmp_path: Path) -> StateForge:
+    forge = StateForge(Forge('github.com', 'o', 'r'))
+    forge.cache_dir = tmp_path
+    return forge
