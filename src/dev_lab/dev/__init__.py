@@ -410,6 +410,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``[tool.dev_lab]`` or ``[tool.lab_commons]``; :func:`~dev_lab.dev.family.declared_table` reads dev-lab's own tables.
 * :mod:`dev_lab.dev.breakglass` -- the one emergency bypass of INTEGRATION-TAKES-ONLY-FORGE-MERGES: a
   ``Break-Glass: <reason>`` trailer on every new commit, kept visible as an ``integration`` issue.
+* :mod:`dev_lab.dev.forgebreakglass` -- ``breakglass open|close|ack|status`` and ``pr breakglass N``: the client of
+  the forge host's break-glass WAVES (:mod:`dev_lab.ops.breakglass`); a TOTP code the user types opens a wave.
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
 * :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
