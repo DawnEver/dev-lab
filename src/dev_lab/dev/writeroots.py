@@ -9,15 +9,22 @@ but its two write sinks have shapes, held here:
   made by ``python -m dev_lab.dev.scratch new <kind> <name>``);
 * ``output/`` holds OUTPUTS ONLY: never a script (:data:`dev_lab.dev.scratch.SCRIPT_SUFFIXES`).
 
-A synced folder (OneDrive) is refused unless the user consents to that write. Claude's configuration and the agent
-repos are outside the policy (:func:`lab_commons.home.exempt`).
+A synced folder (OneDrive; :func:`lab_commons.home.sync_roots`) is neither allowed nor refused: the hook ASKS, so the
+user consents to that one write. Claude's configuration and the agent repos are outside the policy
+(:func:`lab_commons.home.exempt`).
 
 WHAT IS JUDGED. A ``PreToolUse`` payload: ``Write``/``Edit``/``MultiEdit``/``NotebookEdit`` by their path, and a
 ``Bash``/``PowerShell`` command by the targets it CLEARLY writes -- a redirection, ``tee``, ``Out-File``,
 ``Set-Content``/``Add-Content``, ``mkdir``/``New-Item``, ``touch``, the destination of ``cp``/``mv``/``Copy-Item``/
 ``Move-Item``, and a literal ``open(<path>, 'w'|'a'|'x')``. A target spelled through a variable is not judged here:
 the census (stray roots, swept on the serve tick) is the backstop for what no parser can see. Relative targets
-resolve against the payload's ``cwd``.
+resolve against the payload's ``cwd``; on Windows a Git Bash spelling (``/c/...``, ``/cygdrive/c/...``, ``//c/...``)
+is its drive path. Every comparison is the machine's (:func:`lab_commons.home.within`): links are followed and case is
+ignored where the filesystem ignores it.
+
+THE ANSWER IS ONE OF TWO DECISIONS (:class:`Verdict`): ``deny`` -- exit 2, the three-line refusal on stderr (what and
+why, the one remedy, the ``details:`` pointer; :mod:`dev_lab.dev.disclosure`) -- or ``ask`` -- the ``PreToolUse``
+``permissionDecision: "ask"`` on stdout, so the user approves that one write.
 
 THE POLICY IS DATA (:class:`Policy`), built from the machine (:func:`machine_policy`) and injected in tests, so the
 rules are proven without a machine file.
@@ -37,9 +44,10 @@ from typing import Any, Final, TextIO
 
 from lab_commons.log import emit
 
+from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.scratch import SCRIPT_SUFFIXES, is_dated_script
 
-__all__ = ['RULE', 'Policy', 'machine_policy', 'main', 'refusal', 'targets']
+__all__ = ['RULE', 'Policy', 'Verdict', 'machine_policy', 'main', 'targets', 'verdict']
 
 RULE: Final = 'WRITE-OUTSIDE-ROOTS'
 
@@ -58,6 +66,9 @@ _REDIRECT: Final = re.compile(r"""(?<![<>&\d])(?:\d|&)?>>?(?!&|\()\s*(?P<t>"[^"]
 _OPEN: Final = re.compile(r"""\bopen\(\s*r?(['"])(?P<t>[^'"]+)\1\s*,\s*r?(['"])[^'"]*[wax][^'"]*\3""")
 _SEGMENT: Final = re.compile(r'\s*(?:&&|\|\||[;|\n])\s*')
 _TARGET_FLAGS: Final = {'-filepath', '-path', '-literalpath', '-destination'}
+#: A Git Bash (MSYS) drive spelling: ``/c/``, ``/cygdrive/c/``, ``//c/``.
+_MSYS: Final = re.compile(r'^(?:/cygdrive/|//|/)(?P<drive>[a-zA-Z])(?=/|$)')
+_DETAILS: Final = details_for(RULE)
 
 
 @dataclass(frozen=True)
@@ -69,14 +80,29 @@ class Policy:
     repo_of: Callable[[Path], Path | None]
     tracked: Callable[[Path], bool]
     consent: tuple[Path, ...]
+    within: Callable[[Path, Path], bool]
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """The hook's answer: ``deny`` (refused) or ``ask`` (the user approves this one write), and its text."""
+
+    decision: str
+    text: str
 
 
 def machine_policy() -> Policy:
-    """The policy of the machine this runs on: :mod:`lab_commons.home` and the user's OneDrive roots."""
+    """The policy of the machine this runs on, all of it :mod:`lab_commons.home`'s."""
     from lab_commons import home  # noqa: PLC0415 -- the hook reads the machine only when it runs
 
-    consent = tuple(Path(os.environ[name]) for name in ('OneDrive', 'OneDriveCommercial') if os.environ.get(name))
-    return Policy(allowed=home.allowed, exempt=home.exempt, repo_of=home.repo_of, tracked=_tracked, consent=consent)
+    return Policy(
+        allowed=home.allowed,
+        exempt=home.exempt,
+        repo_of=home.repo_of,
+        tracked=_tracked,
+        consent=home.sync_roots(),
+        within=home.within,
+    )
 
 
 def _tracked(path: Path) -> bool:
@@ -86,12 +112,23 @@ def _tracked(path: Path) -> bool:
     return done.returncode == 0
 
 
+def _drive_path(word: str, platform: str) -> str:
+    """*word* with a Git Bash drive spelling made its Windows drive path; unchanged off Windows."""
+    if platform != 'win32':
+        return word
+    return _MSYS.sub(lambda m: f'{m["drive"].upper()}:', word, count=1)
+
+
+def _absolute(word: str, cwd: Path, platform: str = sys.platform) -> Path:
+    path = Path(_drive_path(word, platform)).expanduser()
+    return Path(os.path.normpath(path if path.is_absolute() else cwd / path))
+
+
 def _resolve(raw: str, cwd: Path) -> Path | None:
     word = raw.strip('\'"')
     if not word or word.lower() in _NULL or '$' in word or '%' in word or word.startswith('-'):
         return None
-    path = Path(word).expanduser()
-    return Path(os.path.normpath(path if path.is_absolute() else cwd / path))
+    return _absolute(word, cwd)
 
 
 def _shell_words(segment: str) -> list[str]:
@@ -125,21 +162,27 @@ def targets(command: str, cwd: Path) -> list[Path]:
     return [path for path in (_resolve(word, cwd) for word in raw) if path is not None]
 
 
-def _in_repo(path: Path, repo: Path, policy: Policy) -> str | None:
-    scratch, output = repo / 'scratch', repo / 'output'
-    if scratch == path or scratch in path.parents:
-        if policy.tracked(path) or is_dated_script(path.relative_to(scratch).as_posix()):
+def _deny(what: str, remedy: str) -> Verdict:
+    return Verdict('deny', f'{RULE}: {what}\n{remedy}\n{_DETAILS}')
+
+
+def _in_repo(path: Path, repo: Path, policy: Policy) -> Verdict | None:
+    if policy.within(path, repo / 'scratch'):
+        if policy.tracked(path) or is_dated_script(path.relative_to(repo / 'scratch').as_posix()):
             return None
-        return (
-            f'{RULE} (SCRATCH): {path} -- scratch holds scripts only, at scratch/<yy>/<mm>/<dd>/<kind>/; '
-            'make one with: python -m dev_lab.dev.scratch new <kind> <name> (data belongs in output/)'
+        return _deny(
+            f'{path} -- scratch/ holds scripts only, at scratch/<yy>/<mm>/<dd>/<kind>/',
+            'make one: python -m dev_lab.dev.scratch new <kind> <name> (data goes to output/)',
         )
-    if (output == path or output in path.parents) and path.suffix.lower() in SCRIPT_SUFFIXES:
-        return f'{RULE} (OUTPUT): {path} -- output holds outputs only; a script goes to scratch (scratch new)'
+    if policy.within(path, repo / 'output') and path.suffix.lower() in SCRIPT_SUFFIXES:
+        return _deny(
+            f'{path} -- output/ holds outputs only, never a script',
+            'make the script in scratch: python -m dev_lab.dev.scratch new <kind> <name>',
+        )
     return None
 
 
-def _judge(path: Path, policy: Policy) -> str | None:
+def _judge(path: Path, policy: Policy) -> Verdict | None:
     if policy.exempt(path):
         return None
     repo = policy.repo_of(path)
@@ -147,34 +190,39 @@ def _judge(path: Path, policy: Policy) -> str | None:
         return _in_repo(path, repo, policy)
     if policy.allowed(path):
         return None
-    if any(root == path or root in path.parents for root in policy.consent):
-        return f'{RULE}: {path} is in a synced folder -- write there only with the user consent for this write'
-    return (
-        f'{RULE}: {path} is outside every write root -- write into the repo (output/ for outputs and temp, '
-        'scratch/ for scripts) or the machine home; the roots are [repos] of the machine file'
+    if any(policy.within(path, root) for root in policy.consent):
+        return Verdict('ask', f'{RULE}: {path} is in a synced folder -- approve only if the user asked for this write')
+    return _deny(
+        f'{path} is outside every write root',
+        "write into the repo's output/ (outputs, temp at output/tmp/) or scratch/ (scripts), or ~/.motronics/",
     )
 
 
-def refusal(payload: dict[str, Any], policy: Policy) -> str | None:
-    """The refusal for *payload*, or ``None`` when every target it writes is allowed."""
-    tool, given = payload.get('tool_name'), payload.get('tool_input') or {}
-    cwd = Path(payload.get('cwd') or Path.cwd())
+def _paths(tool: object, given: dict[str, Any], cwd: Path) -> list[Path]:
     if tool in _FILE_TOOLS:
         raw = given.get(_FILE_TOOLS[tool])
-        paths = [] if not raw else [Path(os.path.normpath(Path(raw) if Path(raw).is_absolute() else cwd / raw))]
-    elif tool in _SHELL_TOOLS:
-        paths = targets(str(given.get('command') or ''), cwd)
-    else:
-        return None
-    for path in paths:
+        return [_absolute(str(raw), cwd)] if raw else []
+    if tool in _SHELL_TOOLS:
+        return targets(str(given.get('command') or ''), cwd)
+    return []
+
+
+def verdict(payload: dict[str, Any], policy: Policy) -> Verdict | None:
+    """The first non-allowed target's verdict for *payload*; ``None`` when every target it writes is allowed."""
+    given = payload.get('tool_input') or {}
+    cwd = Path(payload.get('cwd') or Path.cwd())
+    for path in _paths(payload.get('tool_name'), given, cwd):
         found = _judge(path, policy)
         if found is not None:
             return found
     return None
 
 
-def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """The ``PreToolUse`` hook: exit 2 with the refusal on stderr, else 0. An unreadable payload is not judged."""
+def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: TextIO | None = None) -> int:
+    """The ``PreToolUse`` hook: ``deny`` exits 2 with its text on stderr; ``ask`` prints the decision and exits 0.
+
+    An unreadable payload is not judged.
+    """
     del argv
     try:
         payload = json.load(stdin or sys.stdin)
@@ -182,10 +230,14 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         return 0
     if not isinstance(payload, dict):
         return 0
-    found = refusal(payload, machine_policy())
+    found = verdict(payload, machine_policy())
     if found is None:
         return 0
-    emit(found, err=True)
+    if found.decision == 'ask':
+        decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask', 'permissionDecisionReason': found.text}
+        (stdout or sys.stdout).write(json.dumps({'hookSpecificOutput': decision}) + '\n')
+        return 0
+    emit(found.text, err=True)
     return 2
 
 

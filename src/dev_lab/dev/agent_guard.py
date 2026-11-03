@@ -144,18 +144,27 @@ RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.
 #: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
 PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
 
+#: WRITE-OUTSIDE-ROOTS (:mod:`dev_lab.dev.writeroots`, ruling 2026-11-03): before every write -- a file tool's or a
+#: shell's -- refused outside the repo's ``output/``/``scratch/`` and the machine home; a synced folder asks.
+WRITEROOTS_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.writeroots'
+
+#: Every tool that writes a file: the file tools by path, the shell tools by their command's clear targets.
+WRITE_TOOLS_MATCHER: Final = 'Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell'
+
 
 @dataclass(frozen=True, slots=True)
 class Wire:
     """One hook the guard owns: its event, its command, the text marking a hook OURS, and its home.
 
-    ``on_shells`` homes it on the matcher naming every shell tool; otherwise on a matcher-less entry.
+    ``on_shells`` homes it on the matcher naming every shell tool; a ``matcher`` homes it on exactly that matcher;
+    otherwise it lives on a matcher-less entry.
     """
 
     event: str
     command: str
     marker: str
     on_shells: bool
+    matcher: str = ''
 
 
 #: THE WIRING, ONE TABLE: what :func:`wire_settings` writes is what :func:`guard_installation` reads.
@@ -165,6 +174,7 @@ class Wire:
 #: session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
+    Wire('PreToolUse', WRITEROOTS_COMMAND, 'dev_lab.dev.writeroots', on_shells=False, matcher=WRITE_TOOLS_MATCHER),
     Wire('PostToolUse', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=True),
     Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True),
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
@@ -380,8 +390,12 @@ def _mine(hook: object, wire: Wire) -> bool:
 
 
 def _home(entry: object, wire: Wire) -> bool:
-    """Whether *entry* is where *wire* lives: the full shell matcher, or any entry for a matcher-less wire."""
-    return isinstance(entry, dict) and (_tools(entry) == frozenset(SHELL_TOOLS) if wire.on_shells else True)
+    """Whether *entry* is where *wire* lives: the full shell matcher, its own matcher, or any entry."""
+    if not isinstance(entry, dict):
+        return False
+    if wire.matcher:
+        return entry.get('matcher') == wire.matcher
+    return _tools(entry) == frozenset(SHELL_TOOLS) if wire.on_shells else True
 
 
 def _wire(entries: list[Any], wire: Wire) -> None:
@@ -400,8 +414,10 @@ def _wire(entries: list[Any], wire: Wire) -> None:
         if found:
             entry['hooks'][found[0]] = hook
             return
-    if wire.on_shells and homes:
+    if (wire.on_shells or wire.matcher) and homes:
         homes[0].setdefault('hooks', []).append(hook)
+    elif wire.matcher:
+        entries.append({'matcher': wire.matcher, 'hooks': [hook]})
     else:
         entries.append({'matcher': _MATCHER, 'hooks': [hook]} if wire.on_shells else {'hooks': [hook]})
 

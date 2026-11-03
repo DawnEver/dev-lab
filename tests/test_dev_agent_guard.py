@@ -268,7 +268,7 @@ def test_the_wiring_matches_every_shell_tool(repo: Path) -> None:
     agent_guard.install_guard(repo)
     settings = json.loads((repo / agent_guard.SETTINGS_REL).read_text(encoding='utf-8'))
     matchers = [entry['matcher'] for entry in settings['hooks']['PreToolUse']]
-    assert matchers == ['Bash|PowerShell']
+    assert matchers == ['Bash|PowerShell', agent_guard.WRITE_TOOLS_MATCHER]
 
 
 def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: Path) -> None:
@@ -282,7 +282,11 @@ def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: P
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.STALE
     agent_guard.install_guard(repo)
     pre = json.loads(settings.read_text(encoding='utf-8'))['hooks']['PreToolUse']
-    assert pre == [{'matcher': 'Bash', 'hooks': [theirs]}, {'matcher': 'Bash|PowerShell', 'hooks': [ours]}]
+    assert pre == [
+        {'matcher': 'Bash', 'hooks': [theirs]},
+        {'matcher': 'Bash|PowerShell', 'hooks': [ours]},
+        {'matcher': agent_guard.WRITE_TOOLS_MATCHER, 'hooks': [_WRITEROOTS]},
+    ]
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
 
 
@@ -291,6 +295,26 @@ _PUSHWATCH = {'type': 'command', 'command': agent_guard.PUSHWATCH_COMMAND}
 _SWEEP = {'type': 'command', 'command': agent_guard.SWEEP_COMMAND}
 #: A PRESSED HOST TELLS ITS AGENTS (D54): after every shell call, and on each prompt.
 _PRESSURE = {'type': 'command', 'command': agent_guard.PRESSURE_COMMAND}
+#: WRITE-OUTSIDE-ROOTS: before every write, by a file tool or a shell.
+_WRITEROOTS = {'type': 'command', 'command': agent_guard.WRITEROOTS_COMMAND}
+
+
+def test_write_outside_roots_is_wired_before_every_file_tool_and_shell() -> None:
+    """The rule refuses nothing until wired: a PreToolUse entry naming every writing tool, through the launcher."""
+    after = agent_guard.wire_settings({})
+    assert {'matcher': agent_guard.WRITE_TOOLS_MATCHER, 'hooks': [_WRITEROOTS]} in after['hooks']['PreToolUse']
+    assert set(agent_guard.WRITE_TOOLS_MATCHER.split('|')) == {
+        'Write',
+        'Edit',
+        'MultiEdit',
+        'NotebookEdit',
+        'Bash',
+        'PowerShell',
+    }
+    assert 'dev_lab.dev.writeroots' in agent_guard.WRITEROOTS_COMMAND
+    assert agent_guard.wire_settings(after) == after
+    after['hooks']['PreToolUse'] = after['hooks']['PreToolUse'][:1]
+    assert agent_guard._unwired(after) == ['PreToolUse']  # planted: the rule unwired is STALE
 
 
 def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop() -> None:
