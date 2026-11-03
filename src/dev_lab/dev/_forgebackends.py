@@ -55,6 +55,9 @@ class Backend:
     actions_login: str = GITEA_ACTIONS_LOGIN
     #: The repository permissions ``GET .../collaborators/{login}/permission`` answers for a login that may WRITE.
     writer_permissions: frozenset[str] = frozenset({'admin', 'owner', 'write'})
+    #: What the issue listing adds to exclude pulls server-side: Gitea's ``type=issues``. GitHub has no such
+    #: parameter (it answers 422), so its listing filters pulls client-side (:func:`dev_lab.dev.forgepulls.is_pull`).
+    issues_only: tuple[tuple[str, str], ...] = (('type', 'issues'),)
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -91,6 +94,7 @@ GITHUB: Final = Backend(
     file_at='blob/{sha}/{path}',
     actions_login=ACTIONS_BOT,
     writer_permissions=frozenset({'admin', 'maintain', 'write'}),
+    issues_only=(),
     headers=(
         ('Accept', 'application/vnd.github+json'),
         ('X-GitHub-Api-Version', '2022-11-28'),
