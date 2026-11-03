@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dev_lab.ops.config import OpsConfig
+from dev_lab.ops.sshkey import ENV
 
 __all__ = ['Rendered', 'files', 'install']
 
@@ -58,7 +59,8 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     keys = f'/etc/dev-lab/ops/{role.account}.keys'
     serve = _door(config, 'breakglass', 'serve')
     sshd = (
-        f'Match User {role.account}\n    AuthorizedKeysFile {keys}\n    ForceCommand sudo -n {serve}\n'
+        f'Match User {role.account}\n    AuthorizedKeysFile {keys}\n'
+        f'    ExposeAuthInfo yes\n    ForceCommand sudo -n {serve}\n'
         '    AllowTcpForwarding no\n    AllowAgentForwarding no\n    X11Forwarding no\n    PermitTTY no\n'
     )
     tick_service = (
@@ -74,7 +76,9 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
         f'etc/systemd/system/{_UNIT}-breakglass-tick.timer': tick_timer,
         f'etc/ssh/sshd_config.d/60-{_UNIT}-{role.account}.conf': sshd,
         keys.lstrip('/'): ''.join(f'{key}\n' for key in role.keys),
-        f'etc/sudoers.d/{_UNIT}-{role.account}': f'{role.account} ALL=(root) NOPASSWD: {serve}\n',
+        f'etc/sudoers.d/{_UNIT}-{role.account}': (
+            f'Defaults:{role.account} env_keep += "{ENV}"\n{role.account} ALL=(root) NOPASSWD: {serve}\n'
+        ),
     }
 
 

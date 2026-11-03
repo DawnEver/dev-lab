@@ -33,6 +33,8 @@ class Merge:
     head: str
     reason: str
     at: float
+    #: The fingerprint of the ssh key that asked for it (:mod:`dev_lab.ops.sshkey`).
+    key: str = ''
 
 
 @dataclass
@@ -90,7 +92,10 @@ def report(state: Path, wave: Wave) -> str:
         '',
         f'- opened {_iso(wave.opened)}, closed {_iso(wave.closed or wave.expires)}, {len(wave.merges)} merge(s)',
         '',
-        *(f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head[:12]}: {m.reason}' for m in wave.merges),
+        *(
+            f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head[:12]} by key {m.key or "unknown"}: {m.reason}'
+            for m in wave.merges
+        ),
         '',
         f'Acknowledge: `python -m dev_lab.dev.forge breakglass ack {wave.id}`.',
     ]

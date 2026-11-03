@@ -24,9 +24,10 @@ def test_install_renders_units_sshd_and_sudoers_and_is_idempotent(tmp_path: Path
     sshd = rendered['etc/ssh/sshd_config.d/60-dev-lab-ops-breakglass.conf']
     assert 'Match User breakglass' in sshd
     assert 'breakglass serve' in sshd
+    assert 'ExposeAuthInfo yes' in sshd
     assert rendered['etc/dev-lab/ops/breakglass.keys'] == 'ssh-ed25519 AAAA agent\n'
     sudo = rendered['etc/sudoers.d/dev-lab-ops-breakglass']
-    assert sudo.startswith('breakglass ALL=(root) NOPASSWD: /opt/ops/bin/python -m dev_lab.ops --config ')
+    assert sudo.startswith('Defaults:breakglass env_keep += "SSH_USER_AUTH"\nbreakglass ALL=(root) NOPASSWD: ')
 
 
 def test_a_disabled_role_renders_nothing(tmp_path: Path) -> None:

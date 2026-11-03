@@ -36,7 +36,8 @@ class Breakglass:
 
     ``state`` is a directory (the wave, its reports, the last accepted TOTP step); ``wave_hours`` the longest wave a
     code opens; ``max_merges`` its cap (``0`` = none); ``tick`` when the timer closes expired waves and reminds
-    unacknowledged audits (a systemd ``OnCalendar``), at most once per ``remind_hours``.
+    unacknowledged audits (a systemd ``OnCalendar``), at most once per ``remind_hours``;
+    ``lockout_after`` consecutive wrong codes refuse every code for ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`).
     """
 
     account: str
@@ -51,6 +52,8 @@ class Breakglass:
     max_merges: int = 0
     tick: str = 'hourly'
     remind_hours: float = 24.0
+    lockout_after: int = 5
+    lockout_minutes: float = 15.0
 
 
 @dataclass(frozen=True)

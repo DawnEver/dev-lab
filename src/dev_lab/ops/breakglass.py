@@ -34,6 +34,7 @@ from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.ops import wave as waves
 from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.lockout import guarded
 from dev_lab.ops.promote import DECLARED_AT
 from dev_lab.ops.totp import TotpRefused, accept
 
@@ -81,6 +82,8 @@ class Server:
     forge_for: Callable[[Path], Forge]
     alert: Callable[[str, str], None]
     now: Callable[[], float]
+    #: The fingerprint of the ssh key this session authenticated with (:mod:`dev_lab.ops.sshkey`), ``''`` unknown.
+    key: str = ''
 
     @property
     def role(self) -> Breakglass:
@@ -99,13 +102,24 @@ class Server:
         log = Path(self.role.log)
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open('a', encoding='utf-8') as out:
-            out.write(json.dumps({'at': datetime.now(UTC).isoformat(timespec='seconds'), **line}) + '\n')
+            stamp = datetime.now(UTC).isoformat(timespec='seconds')
+            out.write(json.dumps({'at': stamp, 'key': self.key, **line}) + '\n')
 
     def _code(self, code: str) -> None:
-        try:
-            accept(Path(self.role.totp), self.state / 'totp.step', code, self.now())
-        except TotpRefused as refused:
-            raise BreakglassRefused(str(refused)) from refused
+        def check() -> None:
+            try:
+                accept(Path(self.role.totp), self.state / 'totp.step', code, self.now())
+            except TotpRefused as refused:
+                raise BreakglassRefused(str(refused)) from refused
+
+        def locked(until: float) -> None:
+            when = datetime.fromtimestamp(until, UTC).isoformat(timespec='seconds')
+            self.alert(
+                'break-glass LOCKED OUT', f'{self.role.lockout_after} wrong codes; every code refused until {when}'
+            )
+
+        guarded(self.state, check, now=self.now(), after=self.role.lockout_after, minutes=self.role.lockout_minutes,
+                on_lock=locked, refused=BreakglassRefused)  # fmt: skip
 
     def _current(self) -> waves.Wave | None:
         """The open wave, else ``None``; an expired one is closed first (so it is never merged into)."""
@@ -174,10 +188,10 @@ class Server:
         forge, integration = self._admit(repo, pr, head, reason)
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}. Reason: {reason}')
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
-        held.merges.append(waves.Merge(repo, pr, head, reason, self.now()))
+        held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key))
         waves.save(self.state, held)
         said = f'merged {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
-        self.alert(f'break-glass MERGED {repo}#{pr}', f'{said}, head {head}: {reason}')
+        self.alert(f'break-glass MERGED {repo}#{pr}', f'{said}, head {head}, key {self.key or "unknown"}: {reason}')
         self._audit({'wave': held.id, 'outcome': 'merged', 'repo': repo, 'pr': pr, 'head': head, 'reason': reason})
         return said
 

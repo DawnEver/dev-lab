@@ -6,6 +6,7 @@ Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` r
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from collections.abc import Sequence
@@ -15,7 +16,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgemerge import merge
 from dev_lab.dev.forgework import client_for
-from dev_lab.ops import breakglass, install, promote, totp
+from dev_lab.ops import breakglass, install, promote, sshkey, totp
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
@@ -68,6 +69,7 @@ def _breakglass(config: OpsConfig, verb: str, *, force: bool) -> int:
         forge_for=lambda root: _ForgeAs(root, Path(role.token).read_text(encoding='utf-8').strip()),
         alert=lambda title, detail: _alert(config, title, detail),
         now=time.time,
+        key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
     )
     try:
         said = server.tick() if verb == 'tick' else server.handle(sys.stdin.readline())
