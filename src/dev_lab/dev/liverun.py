@@ -54,7 +54,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
-from dev_lab.dev.venvpath import current_os_name, expand_interpreter, running_interpreter
+from dev_lab.dev.venvpath import PYTHON_SLOT, current_os_name, expand_interpreter, running_interpreter
 
 __all__ = [
     'NOT_THE_TREE',
@@ -232,16 +232,55 @@ def removal_holders(root: Path | str, *, census: Census = processes, me: int | N
     return tuple(one for one in census() if one.pid != mine and one.executable and _occupies(one, root))
 
 
+#: A holder that is a whole agent SESSION, not a run: an ai-lab session wrapper or the Claude CLI itself.
+_SESSION: Final = re.compile(r'-m\s+ai_lab\.session\b|(?:^|[\\/\s"])claude(?:\.exe)?(?:"|\s|$)')
+_MODULE: Final = re.compile(r'\s-m\s+([\w.]+)')
+
+
+def is_session(one: Process) -> bool:
+    """Whether *one* is an agent session: worked around by another agent, never stopped by it."""
+    return bool(_SESSION.search(one.command_line or one.executable or ''))
+
+
+def label(one: Process) -> str:
+    """A short name for *one*: ``a Claude session``, else the module it runs (``app``), else its program."""
+    if is_session(one):
+        return 'a Claude session'
+    words = (one.command_line or one.executable or '?').split()
+    program = Path(one.executable or words[0]).stem
+    module = _MODULE.search(one.command_line or '')
+    return module[1] if module else program
+
+
 def describe(runs: Iterable[Process]) -> str:
-    """One line per run: its pid and its command line, which is what the reader stops or waits for."""
-    return '\n'.join(f'  live run: pid {one.pid}: {one.command_line or one.executable}' for one in runs)
+    """One line per holder: its pid and short label -- what the reader waits for, never its full command line."""
+    return '\n'.join(f'  live run: pid {one.pid} ({label(one)})' for one in runs)
 
 
 def refusal(root: Path | str, runs: Sequence[Process]) -> str:
-    """The deny text: the row's own hazard and remedy, then the runs it saw."""
+    """The deny text in three lines: who holds *root*, the one exit, the details pointer.
+
+    A SESSION holder is worked around in another worktree, never offered to ``stoprun``: it is another
+    agent's live work, not a run the refused agent owns.
+    """
     rule = rules_by_id(DENY_RULES)[RULE_ID]
-    reason = expand_interpreter(rule.reason(), Path(root), os_name=current_os_name())
-    return f'{reason}\n  tree: {Path(root).as_posix()}\n{describe(runs)}'
+    first, more = runs[0], len(runs) - 1
+    who = f'pid {first.pid} ({label(first)})' + (f' and {more} more' if more else '')
+    clause = f'{RULE_ID}: {Path(root).as_posix()} is in use by {who}; changing it or its .venv now corrupts that work.'
+    stoppable = next((one for one in runs if not is_session(one)), None)
+    if stoppable is None:
+        exit_text = (
+            'Work in another worktree: git worktree add --detach .claude/worktrees/<name> <sha> '
+            '(a session is not yours to stop).'
+        )
+    else:
+        exit_text = expand_interpreter(
+            'Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait, or stop '
+            f'your own run: {PYTHON_SLOT} -m dev_lab.dev.stoprun --pid {stoppable.pid}.',
+            Path(root),
+            os_name=current_os_name(),
+        )
+    return f'{clause}\n{exit_text}\n{rule.details}'
 
 
 def env_in_use(name: str, prefix: str, users: Sequence[Process]) -> str:

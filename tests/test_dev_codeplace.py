@@ -28,6 +28,7 @@ from dev_lab.dev.codeplace import (
     stray_files,
     stray_refusal,
 )
+from dev_lab.dev.disclosure import problems
 from dev_lab.dev.famtests import noreflection
 
 _ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
@@ -264,3 +265,27 @@ def test_the_pre_commit_row_exits_non_zero_while_a_stray_exists(tmp_path, monkey
     assert main(['stray-check']) == 0
     _plant(tmp_path, 'status.txt')
     assert main(['stray-check']) == 1
+
+
+def test_the_stray_refusal_fits_the_budget_and_gives_each_file_one_remedy_by_its_kind(tmp_path) -> None:
+    _repo(tmp_path)
+    for rel in ('probe.py', 'fr_parts.txt', *(f'log{n}.txt' for n in range(30))):
+        _plant(tmp_path, rel)
+    reason = stray_refusal(tmp_path)
+    assert reason is not None
+    assert problems(reason, 'refusal') == []
+    first, exits, _details = reason.splitlines()
+    assert first.startswith('STRAY-FILE-REFUSED: 32 untracked file(s)')
+    assert '(+29 more)' in first
+    assert 'probe.py -> scratch/<yy>/<mm>/<dd>/<kind>/' in exits
+    assert 'data -> output/logs/<yy>/<mm>/<dd>/<kind>/' in exits
+    assert 'git add' not in exits
+
+
+def test_a_stray_under_a_code_root_is_a_file_meant_and_its_one_remedy_is_git_add(tmp_path) -> None:
+    _repo(tmp_path)
+    _plant(tmp_path, 'src/new_module.py')
+    reason = stray_refusal(tmp_path)
+    assert reason is not None
+    assert 'git add src/new_module.py' in reason.splitlines()[1]
+    assert 'scratch/' not in reason.splitlines()[1]

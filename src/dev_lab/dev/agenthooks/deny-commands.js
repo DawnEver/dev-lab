@@ -394,7 +394,9 @@ const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toL
 const VENV_TAIL = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
 const posix = (p) => p.replace(/\\/g, '/');
 
-/** `root`'s own venv interpreter; else its main checkout's (a linked worktree); else its own, spelled absolute. */
+/** `root`'s own venv interpreter; else its main checkout's (a linked worktree); else the SESSION checkout's, which
+ * exists (2026-11-03: a target with no venv was named `<target>/.venv/...python`, a command that cannot run); its
+ * own spelling only when no interpreter exists anywhere. */
 function remedyPython(root) {
   const own = path.join(path.resolve(root), '.venv', ...VENV_TAIL);
   if (fs.existsSync(own)) return posix(own);
@@ -406,8 +408,10 @@ function remedyPython(root) {
       if (fs.existsSync(main)) return posix(main);
     }
   } catch {
-    // a `.git` directory, or none: the checkout's own spelling below
+    // a `.git` directory, or none: the session's interpreter, else the checkout's own spelling below
   }
+  const session = sessionRoot && path.join(sessionRoot, '.venv', ...VENV_TAIL);
+  if (session && fs.existsSync(session)) return posix(session);
   return posix(own);
 }
 

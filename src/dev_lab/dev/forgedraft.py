@@ -49,7 +49,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'READY_DOOR', 'STALE_DRAFT', 'WAITING', 'alarms', 'main', 'mark_draft', 'mark_ready', 'opened_line', 'waiting',
+    'READY_DOOR', 'STALE_DRAFT', 'WAITING', 'alarms', 'main', 'mark_draft', 'mark_ready', 'opened_line', 'pushed',
+    'waiting',
 ]  # fmt: skip
 
 #: The door that marks PR ``{n}`` ready.
@@ -111,7 +112,7 @@ def waiting(client: Client, pull: PullRequest) -> str | None:
     return f'#{pull.number} {pull.head_sha[:12]}: {said}'
 
 
-def _pushed(client: Client, sha: str) -> datetime:
+def pushed(client: Client, sha: str) -> datetime:
     """When *sha* was committed, as the forge records it (its committer date: the closest the forge has to a push)."""
     path = f'{client.repo}/commits/{sha}' if client.backend is GITHUB else f'{client.repo}/git/commits/{sha}'
     return datetime.fromisoformat(client.call('GET', path)['commit']['committer']['date'])
@@ -128,7 +129,7 @@ def alarms(root: Path, client: Client, base: str, repo: str, *, now: datetime) -
         if pull.base != base or not pull.draft or not pull.head_sha:
             continue
         waiting(client, pull)
-        if now - _pushed(client, pull.head_sha) < STALE_DRAFT:
+        if now - pushed(client, pull.head_sha) < STALE_DRAFT:
             continue
         who = ', '.join(sorted(sessions(root, f'origin/{base}', pull.head_sha))) or 'no Lab-Session trailer'
         door = READY_DOOR.format(n=pull.number)

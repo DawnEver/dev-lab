@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.disclosure import details_for, problems
 from dev_lab.dev.handback import INTERACTIVE_ONLY, handed_commands, main, refusal
 
 # The incident, 2026-10-26, verbatim in shape.
@@ -113,3 +114,11 @@ def test_a_repeated_stop_is_let_through_and_a_bad_payload_never_blocks(tmp_path:
     with contextlib.redirect_stdout(out):
         assert main(stdin=io.StringIO('not json')) == 0
     assert out.getvalue() == ''
+
+
+def test_the_refusal_fits_the_budget_and_points_at_the_list_instead_of_inlining_it() -> None:
+    reason = refusal(_INCIDENT)
+    assert reason is not None
+    assert problems(reason, 'refusal') == []
+    assert 'gcloud auth login' not in reason
+    assert reason.splitlines()[-1] == details_for('AGENT-RUNS-ITS-OWN-COMMANDS')

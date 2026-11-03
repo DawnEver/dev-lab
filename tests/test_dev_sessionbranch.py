@@ -500,7 +500,7 @@ def test_a_fan_out_branch_pushed_as_itself_is_refused_naming_the_declaration_and
     done = _push(repo, 'lane/x')
     assert done.returncode != 0, done.stderr
     assert P6 in done.stderr
-    for named in ('lane/x', 'feat/s', 'int/line', 'stable', 'pr/*', 'pr/<feature>', 'keep lane/x local'):
+    for named in ('lane/x', 'feat/s', 'int/line', 'stable', 'pr/*', 'git branch -m lane/x pr/x', 'push -u origin pr/x'):
         assert named in done.stderr
     assert _remote(repo, 'lane/x') == ''
 
@@ -597,3 +597,13 @@ def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pend
     assert 'over the cap' in unreviewed(forge, head, base=_BASE), 'a hold not yet released is not a review'
     status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released: review reviewed this head')
     assert unreviewed(forge, head, base=_BASE) is None
+
+
+def test_a_local_fix_branch_pushed_as_pr_gets_the_same_one_rename_remedy(repo: Path) -> None:
+    """The 11-02 incident: `fix/x` pushed to `pr/x` hit P2 after P6; both now name ONE exit, the rename."""
+    _git(repo, 'checkout', '-b', 'fix/x', 'lane/x')
+    _git(repo, 'commit', '--allow-empty', '-m', 'fix: x')
+    done = _push(repo, 'fix/x:pr/x')
+    assert done.returncode != 0, done.stderr
+    assert 'git branch -m fix/x pr/x' in done.stderr
+    assert 'push -u origin pr/x' in done.stderr
