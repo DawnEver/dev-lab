@@ -104,7 +104,7 @@ def test_the_review_job_skips_a_draft_and_marking_ready_reviews_it(tmp_path: Pat
 def _drafted(monkeypatch, age: timedelta) -> tuple[StateForge, int]:
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', title='WIP: add x', sha='a' * 40)
-    monkeypatch.setattr(forgedraft, '_pushed', lambda _client, _sha: _NOW - age)
+    monkeypatch.setattr(forgedraft, 'pushed', lambda _client, _sha: _NOW - age)
     return forge, number
 
 

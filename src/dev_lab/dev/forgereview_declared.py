@@ -137,6 +137,8 @@ DEFAULT_CLAIM_STALE: Final = '1 h'
 #: DEBOUNCE (D52): how long a head must have been committed before the serve reviews it. A burst of pushes inside
 #: it is ONE round, of its last head; a head older than it is reviewed on the first tick that sees it.
 DEFAULT_QUIET: Final = '10 min'
+#: How long a ready head may wait on ``tests/review`` before the backlog alarm pages (:mod:`dev_lab.dev.forgebacklog`).
+DEFAULT_BACKLOG: Final = '6 h'
 
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
@@ -171,17 +173,24 @@ class Review:
     not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
     quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
+    backlog: str = DEFAULT_BACKLOG  # a duration: a ready head unreviewed this long pages (forgebacklog)
     reviewers: tuple[str, ...] = ()  # the producer logins whose review rounds every host reads (never any writer)
 
     def __post_init__(self) -> None:
         """Refuse a ``claim_stale`` or ``quiet`` that is not a duration, naming it."""
         stale_after(self)
         _duration('quiet', self.quiet)
+        _duration('backlog', self.backlog)
 
     @property
     def quiet_for(self) -> timedelta:
         """``quiet`` as a :class:`~datetime.timedelta`."""
         return _duration('quiet', self.quiet)
+
+    @property
+    def backlog_for(self) -> timedelta:
+        """``backlog`` as a :class:`~datetime.timedelta`."""
+        return _duration('backlog', self.backlog)
 
     @property
     def stale(self) -> timedelta:

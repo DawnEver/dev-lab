@@ -241,6 +241,7 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'held_reviews', held or (lambda *_a, **_k: []))  # reads open PRs
     monkeypatch.setattr(forgeservesteps, 'blocked_reviews', lambda *_a, **_k: [])  # reads open PRs too
     monkeypatch.setattr(forgeservesteps, 'idle_drafts', lambda *_a, **_k: [])  # reads open PRs too (D53)
+    monkeypatch.setattr(forgeservesteps, 'late_reviews', lambda *_a, **_k: [])  # reads open PRs too (backlog)
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
         forgeservesteps,

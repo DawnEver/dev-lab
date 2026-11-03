@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'AUTH',
+    'ESCAPE',
     'EVENT',
     'FLEET',
     'IDLE',
@@ -119,6 +120,8 @@ NEEDS: Final = 'needs'
 FLEET: Final = 'fleet'
 #: A host pressed for disk, memory or CPU; *about* names which (:mod:`dev_lab.dev.hostalarm`, ruling D54).
 PRESSURE: Final = 'pressure'
+#: A file written outside every allowed root, found by the tick's census (:mod:`dev_lab.dev.escapes`, 2026-11-03).
+ESCAPE: Final = 'escape'
 
 
 #: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.
