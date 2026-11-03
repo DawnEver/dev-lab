@@ -159,13 +159,13 @@ class Wire:
 
 
 #: THE WIRING, ONE TABLE: what :func:`wire_settings` writes is what :func:`guard_installation` reads.
-#: The engine before every shell call; the STRAY-FILE-REFUSED census, the pushed-head reminder and the landed
-#: sweep and the host-pressure reminder after every one (the reminder on each prompt too), the census at stop
-#: too; the hand-back check at every stop, the main session's and each subagent's; the background reclaim at
-#: session start.
+#: The engine before every shell call; the pushed-head reminder, the landed sweep and the host-pressure reminder
+#: after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at stop -- a stray is the
+#: state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a census after every
+#: shell call repeated the same block (2026-11-03 audit); the hand-back check at every stop, the main session's and
+#: each subagent's; the background reclaim at session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
-    Wire('PostToolUse', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=True),
     Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True),
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
     Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
@@ -175,6 +175,10 @@ WIRING: Final = (
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
 )
+
+#: Wires the family once installed and no longer does, as ``(event, marker)``: a re-install removes them, so an old
+#: settings file is not left running a hook the wiring retired (no-backward-compatibility).
+RETIRED_WIRING: Final = (('PostToolUse', 'dev_lab.dev.codeplace stray'),)
 
 #: The parts, in the order a reader should fix them: an engine with no rules refuses nothing, and
 #: rules with no wiring are read by nobody.
@@ -370,6 +374,12 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
     full shell matcher are kept, and our own hook there is replaced in place.
     """
     out = json.loads(json.dumps(settings))  # a deep copy through the same encoder that writes it
+    for event, marker in RETIRED_WIRING:
+        entries = out.get('hooks', {}).get(event) or []
+        for entry in entries:
+            if isinstance(entry, dict):
+                entry['hooks'] = [h for h in entry.get('hooks') or [] if marker not in str(h.get('command', ''))]
+        out.get('hooks', {})[event] = [e for e in entries if not isinstance(e, dict) or e.get('hooks')]
     for wire in WIRING:
         _wire(out.setdefault('hooks', {}).setdefault(wire.event, []), wire)
     return out

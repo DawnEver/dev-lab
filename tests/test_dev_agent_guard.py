@@ -293,14 +293,12 @@ _SWEEP = {'type': 'command', 'command': agent_guard.SWEEP_COMMAND}
 _PRESSURE = {'type': 'command', 'command': agent_guard.PRESSURE_COMMAND}
 
 
-def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop() -> None:
-    """STRAY-FILE-REFUSED is live only when wired: PostToolUse on every shell tool, and Stop."""
+def test_the_install_wires_the_stray_census_once_at_stop() -> None:
+    """STRAY-FILE-REFUSED is live only when wired: at Stop, once -- not again after every shell call."""
     after = agent_guard.wire_settings({})
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [
-        {'matcher': 'Bash|PowerShell', 'hooks': [stray, _PUSHWATCH, _SWEEP, _PRESSURE]}
-    ]
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
     assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
     assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
@@ -322,7 +320,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
     assert once['hooks']['PostToolUse'] == [
         {
             'matcher': 'Bash|PowerShell',
-            'hooks': [{'type': 'command', 'command': 'node log.js'}, stray, _PUSHWATCH, _SWEEP, _PRESSURE],
+            'hooks': [{'type': 'command', 'command': 'node log.js'}, _PUSHWATCH, _SWEEP, _PRESSURE],
         }
     ]
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
@@ -337,9 +335,7 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     after = agent_guard.wire_settings(old)
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [
-        {'matcher': 'Bash|PowerShell', 'hooks': [stray, _PUSHWATCH, _SWEEP, _PRESSURE]}
-    ]
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
     assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
 
 
@@ -414,3 +410,14 @@ def test_the_engine_reads_the_live_run_absent_key_python_writes() -> None:
     engine = (Path(agenthooks.__file__).parent / 'deny-commands.js').read_text(encoding='utf-8')
     assert f'input.{agenthooks.LIVE_RUN_ABSENT} === true' in engine
     assert 'input.dev_lab_renamed_key === true' not in engine, 'CONTROL: the probe is a literal match'
+
+
+def test_a_retired_wire_is_removed_from_an_installed_settings_file() -> None:
+    """No dual path: the old PostToolUse stray census leaves when the wiring is re-installed; foreign hooks stay."""
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    foreign = {'type': 'command', 'command': 'node log.js'}
+    old = {'hooks': {'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [foreign, stray]}]}}
+    after = agent_guard.wire_settings(old)
+    assert after['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [foreign, _PUSHWATCH, _SWEEP, _PRESSURE]}
+    ]
