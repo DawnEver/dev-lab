@@ -62,7 +62,9 @@ def test_prepare_holds_only_the_changed_files_both_sides(tmp_path: Path) -> None
     by_path = {one.path: one for one in bundle.files}
     assert sorted(by_path) == ['crlf.bin', 'gone.py', 'kept.py', 'new.py']  # untouched.py is never read
     assert (by_path['kept.py'].side('base'), by_path['kept.py'].side('head')) == (b'x = 1\n', b'x = 10\n')
-    assert by_path['crlf.bin'].side('head') == _RAW
+    assert (by_path['crlf.bin'].binary, by_path['crlf.bin'].head) == (True, None)  # a binary: its blob id only
+    assert by_path['crlf.bin'].head_blob == reviewbundle.blob_id(_RAW)
+    assert by_path['kept.py'].binary is False
     assert by_path['gone.py'].head is None
     assert by_path['new.py'].base is None
     assert (bundle.base_sha, bundle.head_sha, bundle.pr, bundle.repo) == (base, head, 7, 'o/r')
@@ -123,7 +125,7 @@ def test_the_judge_runs_only_the_declared_command_on_plain_files(tmp_path: Path)
         seen.append(argv)
         tree = Path(argv[-1])
         assert (tree / 'head' / 'kept.py').read_bytes() == b'x = 10\n'
-        assert (tree / 'head' / 'crlf.bin').read_bytes() == _RAW
+        assert not (tree / 'head' / 'crlf.bin').exists()  # a binary is listed, never written
         assert (tree / 'base' / 'gone.py').is_file()
         assert not (tree / 'head' / 'gone.py').exists()
         assert not (tree / '.git').exists()
@@ -148,4 +150,22 @@ def test_a_path_escaping_the_tree_is_refused(tmp_path: Path) -> None:
     forged['files'][0]['path'] = '../escape.py'
     rewritten = _rewritten(forged)
     with pytest.raises(BundleRefused, match='escape'):
+        reviewbundle.load(rewritten, reviewbundle.digest_of(rewritten))
+
+
+def test_a_text_file_marked_binary_or_a_binary_given_bytes_is_refused(tmp_path: Path) -> None:
+    root, base, head = _repo(tmp_path)
+    bundle = reviewbundle.prepare(root, repo='o/r', pull=_pull(head), base=base)
+    data, _ = reviewbundle.dump(bundle)
+    forged = json.loads(data)
+    kept = forged['files'][[f['path'] for f in forged['files']].index('kept.py')]
+    kept.update(binary=True, base=None, head=None)  # hide a text change from the reviewer
+    rewritten = _rewritten(forged)
+    hidden = reviewbundle.load(rewritten, reviewbundle.digest_of(rewritten))
+    with pytest.raises(BundleRefused, match=r'kept\.py.*binary'):
+        reviewbundle.matches_forge(hidden, git_out(root, 'diff', base, head))
+    forged = json.loads(data)
+    forged['files'][[f['path'] for f in forged['files']].index('crlf.bin')]['head'] = 'YQ=='
+    rewritten = _rewritten(forged)
+    with pytest.raises(BundleRefused, match=r'crlf\.bin'):
         reviewbundle.load(rewritten, reviewbundle.digest_of(rewritten))

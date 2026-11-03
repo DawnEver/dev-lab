@@ -1,11 +1,12 @@
 """A REVIEW BUNDLE: what a PR's review reads, built where PR code runs and judged where it never does.
 
-The review splits in two (user decision 2026-11-03, the forge-bot on its own host). PREPARE runs on the CI runner
--- the untrusted side, holding no reviewer token -- and writes ONE deterministic JSON document: the diff from the
-merge base to the head, the exact bytes of only the changed files on both sides, the base's ``pyproject.toml``
-(the review declaration) and the PR's identity. JUDGE runs on the reviewer host, which holds the reviewer's token
-and nothing an author can reach: it fetches a bundle, checks it, and hands the declared command a directory of
-plain files -- never a checkout, an install or a process of the PR's.
+The review splits in two (user decision 2026-11-03, the forge-bot on its own host). PREPARE runs on the CI runner --
+the untrusted side, holding no reviewer token -- and writes ONE deterministic JSON document: the diff from the merge
+base to the head, the exact bytes of only the changed TEXT files on both sides (a binary file -- git's own
+``--numstat`` verdict, ``.gitattributes`` included -- is listed by its blob ids alone, user decision 2026-11-03),
+the base's ``pyproject.toml`` (the review declaration) and the PR's identity. JUDGE runs on the reviewer host, which
+holds the reviewer's token and nothing an author can reach: it fetches a bundle, checks it, and hands the declared
+command a directory of plain files -- never a checkout, an install or a process of the PR's.
 
 WHAT THE JUDGE CHECKS before any reviewer reads a byte, each a :class:`BundleRefused` naming why:
 
@@ -14,7 +15,8 @@ WHAT THE JUDGE CHECKS before any reviewer reads a byte, each a :class:`BundleRef
 * :func:`current` -- the bundle names the PR the forge returns, its base branch, and that PR's CURRENT head: a
   bundle of an older push is stale;
 * :func:`matches_forge` -- the forge's own diff of the PR (fetched by the judge, never the producer) names the same
-  paths and blob ids: the producer cannot omit a file or swap its content.
+  paths and blob ids, and calls binary exactly the files the bundle does: the producer cannot omit a file, swap its
+  content, or hide a text change by calling it binary.
 
 THE REVIEWER'S RULES AND PRINCIPLES ARE NOT IN THE BUNDLE: they are the judge host's own install's
 (:data:`dev_lab.dev.rules.RULES`, :mod:`dev_lab.dev.principles`), never a copy the untrusted side wrote.
@@ -75,6 +77,7 @@ _NO_BLOB: Final = re.compile(r'0+')
 _INDEX: Final = re.compile(r'^index ([0-9a-f]+)\.\.([0-9a-f]+)', re.MULTILINE)
 _HEADER: Final = re.compile(r'^diff --git a/(.+?) b/(.+)$', re.MULTILINE)
 _BLOB_MODES: Final = frozenset({'100644', '100755', '120000'})
+_BINARY: Final = re.compile(r'^(?:Binary files .* differ|GIT binary patch)$', re.MULTILINE)
 
 
 class BundleRefused(ValueError):
@@ -83,13 +86,17 @@ class BundleRefused(ValueError):
 
 @dataclass(frozen=True)
 class Changed:
-    """One changed path: its blob id and exact bytes (base64) on each side; ``None`` where a side has no file."""
+    """One changed path: its blob id and exact bytes (base64) on each side; ``None`` where a side has no file.
+
+    A *binary* file carries its blob ids only: both byte fields are ``None``.
+    """
 
     path: str
     base_blob: str | None
     head_blob: str | None
     base: str | None
     head: str | None
+    binary: bool = False
 
     def side(self, which: str) -> bytes | None:
         """The exact bytes of the *which* (``base`` or ``head``) side; ``None`` when that side has no file."""
@@ -141,12 +148,21 @@ def _raw(root: Path, base: str, head: str) -> list[tuple[str | None, str | None,
     return rows
 
 
+def _binaries(root: Path, base: str, head: str) -> frozenset[str]:
+    """The changed paths git itself calls binary (``--numstat`` prints ``-`` for their line counts)."""
+    rows = _git(root, 'diff', '--numstat', '-z', '--no-renames', base, head)[1].decode('utf-8').split('\0')
+    return frozenset(row.split('\t', 2)[2] for row in rows if row.startswith('-\t-\t'))
+
+
 def prepare(root: Path, *, repo: str, pull: PullRequest, base: str) -> Bundle:
     """The bundle of *pull*'s head against its merge base with *base*, read from *root* (blobless is enough)."""
     head = pull.head_sha
     merge_base = _git(root, 'merge-base', base, head)[1].decode('ascii').strip()
+    binary = _binaries(root, merge_base, head)
     files = tuple(
-        Changed(path, old, new, _blob(root, old), _blob(root, new))
+        Changed(path, old, new, None, None, binary=True)
+        if path in binary
+        else Changed(path, old, new, _blob(root, old), _blob(root, new))
         for old, new, path in sorted(_raw(root, merge_base, head), key=lambda row: row[2])
     )
     code, declaration = _git(root, 'show', f'{merge_base}:{DECLARATION}', ok=(0, 128))
@@ -185,6 +201,11 @@ def _checked(raw: dict[str, Any]) -> Changed:
         except binascii.Error:
             msg = f'{one.path}: its {which} bytes are not base64'
             raise BundleRefused(msg) from None
+        if one.binary and data is not None:
+            msg = f'{one.path}: a binary file is listed by blob id only, yet its {which} bytes are given'
+            raise BundleRefused(msg)
+        if one.binary:
+            continue
         if (blob is None) != (data is None) or (data is not None and blob_id(data) != blob):
             msg = f'{one.path}: its {which} bytes are not the blob {blob} the bundle names'
             raise BundleRefused(msg)
@@ -217,14 +238,18 @@ def current(bundle: Bundle, pull: PullRequest, *, repo: str) -> None:
         raise BundleRefused(msg)
 
 
-def _named(diff: str) -> dict[str, tuple[str, str]]:
-    """``path -> (base id, head id)`` from a unified diff's headers and ``index`` lines (ids may be abbreviated)."""
+def _named(diff: str) -> dict[str, tuple[str, str, bool]]:
+    """``path -> (base id, head id, binary)`` from a unified diff's headers and ``index`` lines (ids abbreviated)."""
     headers = [*_HEADER.finditer(diff)]
     ends = [later.start() for later in headers[1:]] + [len(diff)]
     named = {}
     for header, end in zip(headers, ends, strict=True):
         if index := _INDEX.search(diff, header.end(), end):
-            named[header.group(2)] = (index.group(1), index.group(2))
+            named[header.group(2)] = (
+                index.group(1),
+                index.group(2),
+                _BINARY.search(diff, header.end(), end) is not None,
+            )
     return named
 
 
@@ -236,13 +261,18 @@ def _same(theirs: str, mine: str | None) -> bool:
 def matches_forge(bundle: Bundle, forge_diff: str) -> None:
     """Refuse *bundle* unless the forge's own diff of the PR names the same paths and blobs."""
     theirs = _named(forge_diff)
-    ours = {one.path: (one.base_blob, one.head_blob) for one in bundle.files}
+    ours = {one.path: one for one in bundle.files}
     if sorted(theirs) != sorted(ours):
         msg = f'the forge diff changes {sorted(theirs)}; the bundle holds {sorted(ours)}'
         raise BundleRefused(msg)
-    for path, ids in theirs.items():
-        if not all(_same(t, m) for t, m in zip(ids, ours[path], strict=True)):
-            msg = f'{path}: the forge diff names blobs {ids[0]}..{ids[1]}, the bundle {ours[path]}'
+    for path, (base_id, head_id, binary) in theirs.items():
+        mine = ours[path]
+        if not (_same(base_id, mine.base_blob) and _same(head_id, mine.head_blob)):
+            ids = f'{mine.base_blob}..{mine.head_blob}'
+            msg = f'{path}: the forge diff names blobs {base_id}..{head_id}, the bundle {ids}'
+            raise BundleRefused(msg)
+        if binary != mine.binary:
+            msg = f'{path}: the forge diff calls it {"" if binary else "not "}binary, the bundle does not agree'
             raise BundleRefused(msg)
 
 
