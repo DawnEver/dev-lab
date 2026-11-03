@@ -7,16 +7,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
+from dev_lab.supervise.consumers import consumers, tree_bytes
 from dev_lab.supervise.pressure import (
     CGROUP_MOUNT,
     PSI,
     THRESHOLDS,
     Declared,
     Measured,
-    consumers,
     measure,
     parse_psi,
-    tree_bytes,
 )
 
 GB = 1024**3
