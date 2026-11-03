@@ -115,12 +115,18 @@ def sources(lock: str) -> dict[str, tuple[str, str]]:
         git = package.get('source', {}).get('git')
         if isinstance(git, str) and '#' in git:
             name = _canonical(package['name'])
-            if not _PEP503.match(name):
-                msg = f'uv.lock package {name!r} is not a package name (PEP 503); drift refused'
-                raise ValueError(msg)
+            cache_dir(Path(), name)
             url, _, sha = git.rpartition('#')
             pins[name] = (url.partition('?')[0], sha)
     return pins
+
+
+def cache_dir(cache: Path, dist: str) -> Path:
+    """``cache/<dist>.git``, refused for a *dist* that is not a canonical PEP 503 name: it names a directory."""
+    if not _PEP503.match(dist):
+        msg = f'uv.lock package {dist!r} is not a package name (PEP 503); drift refused'
+        raise ValueError(msg)
+    return cache / f'{dist}.git'
 
 
 def admit(url: str, sha: str, schemes: tuple[str, ...]) -> None:
@@ -159,10 +165,10 @@ def lag(dist: str, url: str, pinned: str, *, cache: Path, schemes: tuple[str, ..
     """*pinned* read against the default branch of *url*: commits behind and since when.
 
     The dependency is fetched commits-only (``--filter=tree:0``) into ``cache/<dist>.git``, kept across ticks.
-    A pin that :func:`admit` refuses raises ValueError before anything is created or fetched.
+    A pin that :func:`admit` or :func:`cache_dir` refuses raises ValueError before anything is created or fetched.
     """
     admit(url, pinned, schemes)
-    repo = cache / f'{dist}.git'
+    repo = cache_dir(cache, dist)
     if not repo.is_dir():
         repo.mkdir(parents=True)
         _git(repo, 'init', '-q', '--bare')
@@ -242,7 +248,7 @@ def bound_of(data: Mapping[str, Any]) -> timedelta:
 
 
 def _census(
-    root: Path, *, now: datetime, installed: Sequence[Installed] | None
+    root: Path, *, now: datetime, installed: Sequence[Installed] | None, schemes: tuple[str, ...] = SCHEMES
 ) -> tuple[tuple[Finding, ...], list[str]]:
     integration = load_policy(root).integration
     lock = _git(root, 'show', f'origin/{integration}:uv.lock')
@@ -252,8 +258,8 @@ def _census(
     lags: list[Lag] = []
     for dist, (url, pinned) in sources(lock).items():
         try:
-            lags.append(lag(dist, url, pinned, cache=cache))
-        except OSError as why:
+            lags.append(lag(dist, url, pinned, cache=cache, schemes=schemes))
+        except (OSError, ValueError) as why:
             failed.append(f'{dist}: {why}')
     here = installed_git() if installed is None else installed
     hosts = host_mismatches(here, locked_git(root / 'uv.lock'))
@@ -268,9 +274,10 @@ def step(
     alarm: Callable[[Alarm], object],
     now: datetime | None = None,
     installed: Sequence[Installed] | None = None,
+    schemes: tuple[str, ...] = SCHEMES,
 ) -> None:
     """The serve tick's census of *root*: one alarm per finding; a dependency that could not be read is said."""
-    found, failed = _census(root, now=now or datetime.now(UTC), installed=installed)
+    found, failed = _census(root, now=now or datetime.now(UTC), installed=installed, schemes=schemes)
     for line in failed:
         say(f'[serve] drift: could not read {line}')
     for finding in found:

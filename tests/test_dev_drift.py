@@ -148,8 +148,11 @@ def test_the_serve_step_reads_integration_and_sounds_one_alarm_per_finding(
     _git(tmp_path, 'clone', '-q', str(origin), str(clone))
     sounded: list[Alarm] = []
     said: list[str] = []
-    drift.step(clone, 'o/x', say=said.append, alarm=sounded.append, now=_NOW, installed=())
+    drift.step(clone, 'o/x', say=said.append, alarm=sounded.append, now=_NOW, installed=(), schemes=('https', 'file'))
     assert [(a.kind, a.about) for a in sounded] == [(DRIFT, 'dev-lab')]
+    said.clear()
+    drift.step(clone, 'o/x', say=said.append, alarm=sounded.append, now=_NOW, installed=())
+    assert any('refused' in line for line in said), 'a refused pin is said, and the step does not crash'
     assert _git(clone, 'status', '--porcelain') == '', 'the serving checkout is never written'
 
 
@@ -215,6 +218,15 @@ def test_a_lock_package_name_that_is_not_a_pep503_name_is_refused(name: str) -> 
     text = f'version = 1\n\n[[package]]\nname = "{name}"\nsource = {{ git = "https://h/x.git#ab" }}\n'
     with pytest.raises(ValueError, match='not a package name'):
         drift.sources(text)
+
+
+@pytest.mark.parametrize('name', ['../../etc', '..', 'a/b'])
+def test_lag_refuses_a_traversal_name_before_it_creates_anything(name: str, tmp_path: Path) -> None:
+    """F-59acfb5c7833 round 2: ``lag`` builds the path itself, so the name check sits there too."""
+    cache = tmp_path / 'cache'
+    with pytest.raises(ValueError, match='not a package name'):
+        drift.lag(name, 'https://h/x.git', 'ab', cache=cache)
+    assert not cache.exists()
 
 
 def test_planted_control_a_canonical_name_with_dots_and_dashes_is_kept() -> None:
