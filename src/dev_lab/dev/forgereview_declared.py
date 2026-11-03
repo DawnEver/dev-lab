@@ -27,6 +27,9 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
     quiet = "10 min"           # the default (DEFAULT_QUIET): the serve reviews a head only once it is this old
     reviewers = []             # forge logins the review producers post as (serve hosts, jobs): their rounds are read
+    where = "serve"            # WHO reviews: "serve" (a checkout runs `command`) or "judge" (an isolated host runs
+                               # `bundle` over a verified review bundle, posting a PR review) -- ONE per repo
+    bundle = [...]             # the judge's command over {bundle} (FAMILY_BUNDLE): declared only to differ
 
 The keys of the retired in-process reviewer (``max_tokens``, ``rules``) are refused by name.
 """
@@ -53,20 +56,23 @@ from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
 from dev_lab.dev.forgereview_scope import Budget
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.reviewgate import DeclarationUnread
+from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
+    'BUNDLE_FIELD',
     'DEFAULT_CLAIM_STALE',
     'DEFAULT_QUIET',
     'EMPTY_COMMAND_FIX',
+    'FAMILY_BUNDLE',
     'FAMILY_COMMAND',
     'FAMILY_JUDGE',
     'FAMILY_MODEL',
     'FAMILY_RUNTIMES',
+    'JUDGE',
     'LENS_FIELD',
     'LIGHT',
     'MODEL_FIELD',
@@ -74,9 +80,13 @@ __all__ = [
     'RANGE_FIELD',
     'RETIRED_KEYS',
     'RULES_FIELD',
+    'SERVE',
     'STRICT',
+    'WHERE',
     'Review',
     'command_for',
+    'forge_integration',
+    'forge_review',
     'judge_for',
     'load_review',
     'operator_integration',
@@ -123,8 +133,25 @@ FAMILY_JUDGE: Final = (
     '--findings', forgereview_scope.FINDINGS_FIELD,
 )  # fmt: skip
 
+#: The placeholder the judge's bundle command carries (:data:`dev_lab.dev.reviewbundle.BUNDLE_FIELD`).
+BUNDLE_FIELD: Final = '{bundle}'
+
+#: The family's review over a REVIEW BUNDLE (:mod:`dev_lab.dev.reviewbundle`): ai-lab reads the bundle's plain
+#: files, never git. Run by ``forge review judge`` when the base declares ``where = "judge"``.
+FAMILY_BUNDLE: Final = (
+    '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--bundle', BUNDLE_FIELD, '--model', MODEL_FIELD,
+    '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
+    '--disposed', forgereview_scope.DISPOSED_FIELD,
+)  # fmt: skip
+
+#: WHO reviews a repo's PRs (``where``): a serve host or the Actions job over a checkout, or the judge host over a
+#: verified bundle. ONE per repo: the serve never reviews a ``judge`` repo, the judge never a ``serve`` one.
+SERVE: Final = 'serve'
+JUDGE: Final = 'judge'
+WHERE: Final = (SERVE, JUDGE)
+
 #: The runtimes the family's commands read from a host's ``[runtimes]``: the ONE set a deploy migrates.
-FAMILY_RUNTIMES: Final = runtime_names((*FAMILY_COMMAND, *FAMILY_JUDGE))
+FAMILY_RUNTIMES: Final = runtime_names((*FAMILY_COMMAND, *FAMILY_JUDGE, *FAMILY_BUNDLE))
 
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
@@ -175,9 +202,17 @@ class Review:
     quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
     backlog: str = DEFAULT_BACKLOG  # a duration: a ready head unreviewed this long pages (forgebacklog)
     reviewers: tuple[str, ...] = ()  # the producer logins whose review rounds every host reads (never any writer)
+    where: str = SERVE  # who reviews: SERVE or JUDGE, one per repo
+    bundle: tuple[str, ...] = FAMILY_BUNDLE  # the judge's command over {bundle}
 
     def __post_init__(self) -> None:
-        """Refuse a ``claim_stale`` or ``quiet`` that is not a duration, naming it."""
+        """Refuse a ``where`` outside :data:`WHERE`, a ``bundle`` naming no ``{bundle}``, or a bad duration."""
+        if self.where not in WHERE:
+            msg = f'where = {self.where!r} is not one of {WHERE}'
+            raise ValueError(msg)
+        if BUNDLE_FIELD not in self.bundle:
+            msg = f'bundle = {list(self.bundle)} names no {BUNDLE_FIELD}: the judge would read no bundle'
+            raise ValueError(msg)
         stale_after(self)
         _duration('quiet', self.quiet)
         _duration('backlog', self.backlog)
@@ -215,14 +250,21 @@ def review_from(text: str, origin: str) -> Review:
     if unknown := sorted(set(declared) - known):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
-    review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+    try:
+        review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+    except ValueError as bad:
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {bad}'
+        raise ValueError(msg) from bad
     if 'command' in declared and not review.command:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {EMPTY_COMMAND_FIX}'
+        raise ValueError(msg)
+    if 'bundle' in declared and review.bundle == FAMILY_BUNDLE:
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family bundle command: delete it'
         raise ValueError(msg)
     if 'command' in declared and review.command == FAMILY_COMMAND:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
-    if why := retired_field((*review.command, *review.synthesis)):
+    if why := retired_field((*review.command, *review.synthesis, *review.bundle)):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {why}'
         raise ValueError(msg)
     return review
@@ -249,12 +291,35 @@ def trusted_integration(root: Path, client: Client) -> str:
     A default branch the forge does not name, or whose manifest cannot be read, refuses
     (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back to the head.
     """
+    return _integration_of(root, _default_branch(client))
+
+
+def forge_integration(client: Client) -> str:
+    """:func:`trusted_integration` read from the FORGE alone, for a host holding no checkout (the review judge).
+
+    The same chain -- the forge's ``default_branch`` -> its manifest's integration branch -- each file read through
+    the forge's contents API (:func:`~dev_lab.dev.reviewgate.manifest_at`), never a working tree or a bundle.
+    """
+    default = _default_branch(client)
+    try:
+        return policy_from(manifest_at(client, default), f'{default}:pyproject.toml').integration
+    except ValueError as failed:
+        msg = f'{default}:pyproject.toml declares no readable integration branch: {failed}'
+        raise DeclarationUnread(msg) from failed
+
+
+def forge_review(client: Client, integration: str) -> Review:
+    """The ``[tool.dev_lab.review]`` *integration* declares, read FRESH from the forge: the judge's review_at."""
+    return review_from(manifest_at(client, integration), f'{integration}:pyproject.toml')
+
+
+def _default_branch(client: Client) -> str:
     repo: Any = client.call('GET', client.repo)
     default = repo.get('default_branch') if isinstance(repo, dict) else None
     if not default:
         msg = 'the forge names no default branch: which integration branch a review trusts is undecided'
         raise DeclarationUnread(msg)
-    return _integration_of(root, default)
+    return default
 
 
 def operator_integration(root: Path) -> str:
@@ -334,6 +399,7 @@ def _duration(key: str, value: str) -> timedelta:
 def command_for(
     review: Review, reviewed: str, runtimes: Mapping[str, Mapping[str, Any]], *,
     paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False, judge: bool = False,
+    bundle: bool = False,
 ) -> list[str]:  # fmt: skip
     """The declared command (or *synthesis*), every placeholder replaced: the range, the slice, this host's values.
 
@@ -359,7 +425,7 @@ def command_for(
             .replace(RULES_FIELD, ','.join(rule.id for rule in RULES))
         ]
 
-    declared = review.judge if judge else review.synthesis if synthesis else review.command
+    declared = review.bundle if bundle else review.judge if judge else review.synthesis if synthesis else review.command
     return [one for arg in declared for one in filled(arg)]
 
 

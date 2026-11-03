@@ -101,7 +101,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgereview_claim import CAPPED, CLAIMED, DESCRIPTION, counted_success, passed, synced, unable
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
-from dev_lab.dev.forgereview_declared import PATHS_FIELD, Review, command_for, judge_for, review_at
+from dev_lab.dev.forgereview_declared import JUDGE, PATHS_FIELD, Review, command_for, judge_for, review_at
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_judge import (
     AdjudicationRefused,
@@ -370,7 +370,10 @@ def review_tick(
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
 
     *quiet* is the debounce (D52): :func:`step` passes the declared ``quiet``; zero reviews every head now.
+    A base declaring ``where = "judge"`` is reviewed by the judge host alone (:mod:`forgereview_bundle`): nothing.
     """
+    if review.where == JUDGE:
+        return ()
     runner = Runner(
         host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True, spend=spend, quiet=quiet
     )

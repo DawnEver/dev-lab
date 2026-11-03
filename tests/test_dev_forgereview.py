@@ -523,7 +523,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     assert {field.name for field in dataclasses.fields(Review)} == {
         'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code', 'reviewers', 'backlog',
-        'claim_stale', 'max_rounds', 'quiet',
+        'claim_stale', 'max_rounds', 'quiet', 'where', 'bundle',
     }  # fmt: skip
 
 

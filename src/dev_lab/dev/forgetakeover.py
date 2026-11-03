@@ -34,6 +34,7 @@ from dev_lab.dev.forgepulls import comment_list, pages, pr_list
 from dev_lab.dev.forgereview import HostCannot, hold, review_pull
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
 from dev_lab.dev.forgereview_declared import (
+    JUDGE,
     PATHS_FIELD,
     Review,
     command_for,
@@ -213,6 +214,8 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     pull = client.pr_view(number)
     if pull.base != base or pull.draft or not pull.head_sha:
         return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
+    if review.where == JUDGE:  # one mode per repo: the judge host reviews it from a bundle
+        return f'#{number}: not reviewed here -- {base} declares where = "{JUDGE}"'
     try:
         said = review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
     except HostCannot as cannot:

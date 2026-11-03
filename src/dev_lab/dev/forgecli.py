@@ -45,6 +45,7 @@ from dev_lab.dev import (
     forgepublish,
     forgequeue,
     forgerecords,
+    forgereview_bundle,
     forgeroute,
     forgerunshow,
     forgesecurity,
@@ -88,7 +89,9 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'integration': forgeintegration.main,
     'merge': forgemerge.main,
     'notices': forgenotice.main,
-    'review': forgetakeover.main,
+    'review': lambda argv: (forgereview_bundle.main if argv[:1] in (['prepare'], ['judge']) else forgetakeover.main)(
+        argv
+    ),
     'security': forgesecurity.main,
     'tidy': forgetidy.main,
     'hosts': forgehosts.main,
