@@ -1087,6 +1087,25 @@ def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch,
     assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'held']
 
 
+def test_every_repo_wide_step_reads_through_one_pass_memo_and_the_review_through_none(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """2026-11-04: the poller's steps re-read each open PR's statuses once per step; one memo per pass reads once."""
+    given: list = []
+    _serve(
+        monkeypatch,
+        tmp_path,
+        TickReport((), (), ()),
+        close_landed=lambda _root, built, **_k: given.append(built),
+        sweep=lambda _root, built, **_k: given.append(built) or 0,
+        prune=lambda _root, built, **_k: given.append(built) or (),
+    )
+    memos = {id(getattr(one, 'memo', None)) for one in given}
+    assert len(given) == 3
+    assert len(memos) == 1
+    assert getattr(given[0], 'memo', None) is not None
+
+
 def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, tmp_path: Path) -> None:
     """P3: the merge job closes landed PRs and sweeps; the PLANTED CONTROL above runs both on the poller."""
     ran: list[str] = []

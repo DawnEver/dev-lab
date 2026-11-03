@@ -18,7 +18,8 @@ release -- whatever is due); on a cluster, clean the artefact stores (:func:`dev
 run the storage retention pass, every tick (:mod:`dev_lab.dev.retention`; still over quota raises a
 ``storage`` alarm); publish this host's card; then, ONLY ON THE REPO'S POLLER -- the host holding the poller
 lease (:func:`polls`, :mod:`dev_lab.dev.forgepoller`; measured 2026-10-24, every host polling every repo
-pegged the forge) -- close open PRs whose head is on their base (:func:`dev_lab.dev.prlanded.serve_close_landed`),
+pegged the forge), every step reading through ONE pass memo (:class:`~dev_lab.dev.forgework.ReadMemo`) --
+close open PRs whose head is on their base (:func:`dev_lab.dev.prlanded.serve_close_landed`),
 delete every origin branch integration now contains (:func:`dev_lab.dev.branchdelete.serve_sweep`), prune merged
 idle origin branches (idempotent) (:func:`dev_lab.dev.branchprune.serve_prune`),
 prune the records home -- dead shas' records, unit results over budget -- once per interval
@@ -154,7 +155,7 @@ from dev_lab.dev.forgeschedule import host_weights
 from dev_lab.dev.forgeservesteps import pressed, repo_wide, retain_storage, review, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client, ReadMemo, client_for
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL
@@ -292,7 +293,7 @@ def serve(
         alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
-        repo_wide(root, repo, client, name, cards, clock=clock, say=say, alarm=alarm)
+        repo_wide(root, repo, remembering(client), name, cards, clock=clock, say=say, alarm=alarm)
     review(root, client(root), say=say, host=name)  # wherever the command can run, never only on the poller
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
@@ -306,6 +307,18 @@ def serve(
 
 #: How many tick periods a poller lease outlives its last renewal (:mod:`dev_lab.dev.forgepoller`).
 POLL_LEASE_TICKS = 3
+
+
+def remembering(client: Callable[[Path], Client]) -> Callable[[Path], Client]:
+    """*client*, each one it builds reading through ONE fresh :class:`~dev_lab.dev.forgework.ReadMemo`: one pass's."""
+    memo = ReadMemo()
+
+    def built(here: Path) -> Client:
+        made = client(here)
+        made.memo = memo
+        return made
+
+    return built
 
 
 def polls(built: Client, host: str, ttl: timedelta, say: Callable[[str], None]) -> bool:

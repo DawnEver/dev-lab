@@ -30,6 +30,7 @@ set, every created issue body, PR body and comment opens with ``[<machine> · <a
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import hashlib
 import json
@@ -90,6 +91,7 @@ __all__ = [
     'Comment',
     'Issue',
     'PullRequest',
+    'ReadMemo',
     'backend_for',
     'client_for',
     'comment_of',
@@ -125,6 +127,18 @@ def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
     return '[' + _DOT.join(part for part in (machine, agent, branch) if part) + ']'
 
 
+class ReadMemo(dict[tuple[str, str], Any]):
+    """The answers to one pass's reads, keyed by ``(host, path)``: a repeated read is answered from the first.
+
+    THE INCIDENT (2026-11-04): the poller's repo-wide steps -- the integration report, auto-sync, the head
+    gate, the security step -- each read every open PR head's statuses afresh, several reads of one
+    ``statuses/<sha>`` per pass on a 2-core Gitea host. Gitea's API sends no ``ETag`` or ``Last-Modified``
+    on these listings (measured 2026-11-04), so a conditional request cannot answer it; a memo the pass
+    owns can. ANY WRITE through a memoed client empties it, so a step reads what an earlier one wrote. A
+    pass is a snapshot: what another host writes during it is read by the next pass.
+    """
+
+
 @dataclass
 class Client:
     """The seven verbs against one repository. *stamp* is the provenance line, or ``None``."""
@@ -148,6 +162,8 @@ class Client:
     #: Where this repository's read caches live (:func:`dev_lab.dev.forgepulls.issues`); :func:`client_for`
     #: sets it -- ``None`` reads everything afresh.
     cache_dir: Path | None = None
+    #: The pass-scoped read memo this client answers repeated GETs from (:class:`ReadMemo`); ``None`` reads afresh.
+    memo: ReadMemo | None = None
     #: Whether :attr:`refresh` was spent, and whether it left the store empty.
     _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
     _gone: bool = dataclasses.field(default=False, init=False, repr=False)
@@ -270,6 +286,15 @@ class Client:
         intent = durable or Durable()
         key = intent.key or write_key(method, host, path, data or b'')
         write = Write(key, method, path, content_type, data or b'', host, intent.probe, time.time(), intent.until)
+        if self.memo is not None:
+            if method != 'GET':
+                self.memo.clear()
+            elif (seen := (host, path)) in self.memo:
+                return copy.deepcopy(self.memo[seen])
+            else:
+                answer = self._attempts(write, data)
+                self.memo[seen] = copy.deepcopy(answer)
+                return answer
         if method == 'GET' or self.journal is None:
             return self._attempts(write, data)
         write = self.journal.record(write)
