@@ -89,6 +89,10 @@ INTENTS: Final[dict[str, str]] = {
         'A Break-Glass merge into the integration branch when the forge cannot merge a pull request, carried '
         'by a commit trailer that states the reason, so every use stays in the history it bypassed.'
     ),
+    'pr-lifecycle': (
+        'Opening a draft pull request onto the integration branch, and marking it ready for review or back to '
+        'draft, through the forge door; the agent does this itself and never hands it to the user.'
+    ),
     'close-landed': 'Closing pull requests whose head is already merged into their base branch.',
     'close-superseded': (
         'Closing an open pull request whose content was salvaged into another open pull request or a '

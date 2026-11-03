@@ -83,6 +83,7 @@ _IDS = frozenset(
         'ONE-SESSION-ONE-PR',
         'NO-STACKED-PRS',
         'DRAFT-UNTIL-READY',
+        'FORGE-DOORS-ARE-CONSENT',
         'DOCS-ONLY-CARRIES',
         'PUSHED-HEAD-IS-WATCHED',
         'ONE-BRANCH-PER-SESSION',

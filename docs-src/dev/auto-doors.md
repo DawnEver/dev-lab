@@ -2,7 +2,8 @@
 
 In Claude Code and Codex auto mode, the family's checked doors run without a prompt or a classifier refusal
 (`AUTO-MODE-RUNS-THE-DOORS`). Use the door instead of the raw verb: each re-checks its precondition at the
-moment it acts. Local cleanup is a door; deleting a branch on origin stays a human's action, and a subagent never
+moment it acts. The forge PR lifecycle is a door the agent runs itself, never hands to the user
+(`FORGE-DOORS-ARE-CONSENT`). Local cleanup is a door; deleting a branch on origin stays a human's action, and a subagent never
 pushes.
 
 ## The doors
@@ -13,6 +14,8 @@ pushes.
 | `python -m dev_lab.dev.worktrees [--prune]` | Lists every linked worktree and orphan directory with its verdict. `--prune` reclaims a linked tree only when ALL hold: not `git worktree lock`-ed; no change to a TRACKED file, staged or not (`git status --porcelain --untracked-files=no` empty; untracked and ignored files never block); its content landed on the trunk or a declared session (`git cherry` empty, or its origin ref gone after a squash merge); no process works in, executes from or reads it (LIVE-RUN `occupants`). Its outputs (`archive-outputs`) are moved home and verified first (`worktree_archive.home_outputs`); only on a verified archive, `git worktree remove --force`, then its branch via `branchset --apply` where a branch set is declared. An unverified archive keeps the tree, with the reason. An orphan directory goes the same way: outputs home, verified, then deleted. Every kept tree is listed with its reason. The session debris hook runs it. |
 | `python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]` | Stops one identified run and its subtree, children first, never an ancestor or a sibling. A run is identified by its command line: the built-in signatures (verify, a gate runner, pytest) plus regexes in `[tool.dev_lab.stoprun] signatures`. Any other pid is refused (exit 3). |
 
+| `python -m dev_lab.dev.forge pr create --head H --base B --title T [--ready]` | Opens a draft PR (DRAFT-UNTIL-READY); advises, on stderr and in the body, a stacked head or a second PR of one session. |
+| `python -m dev_lab.dev.forge pr ready N` / `pr draft N` | Marks PR `N` ready for review, or back to draft. |
 | `python -m dev_lab.dev.forge pr close-landed [N...]` | Closes an open PR whose head is already on its base, with an evidence comment. Never deletes its branch: the forge's prune of merged branches (`prune_merged`) is the one deleter. |
 | `python -m dev_lab.dev.forge pr close-superseded N... --by <M\|sha\|ref> [--why <line>]` | Closes each open PR salvaged into open, unmerged PR `M` or into a commit, and comments `superseded by #M: <line>` (or `superseded by <sha12>: <line>`). Never deletes its branch. Refuses a closed target, a closed or merged `M`, a commit that does not resolve, or `M` itself. |
 | `python -m dev_lab.dev.branchprune delete <branch>...` | LOSSLESS-DELETE: a remote branch only when every commit on it is on integration or another live branch or open PR head, or, by content, when every file its own commits wrote, generated ones aside, is identical (mode and blob) on integration; it fails closed. Refusals name the files carrying unlanded content. |
