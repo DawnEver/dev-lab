@@ -25,7 +25,8 @@ from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, JUDGE, Review, command_for, review_from
 from dev_lab.dev.reviewbundle import BundleRefused
 
-_JUDGE_TOML = '[tool.dev_lab.integrator]\nintegration = "main"\n[tool.dev_lab.review]\nwhere = "judge"\n'
+_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
+_JUDGE_TOML = '[tool.dev_lab.integrator]\nintegration = "main"\n' + _JUDGED
 _RUNTIMES = {'ai_lab': {'python': 'py'}}
 
 
@@ -51,6 +52,7 @@ class FakeForge:
     diff: str
     manifest: str = _JUDGE_TOML
     login: str = 'review-bot'
+    poster: str | None = None  # who the runner's status is recorded as: None is Gitea's Actions (null creator)
     statuses: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     reviews: list[dict[str, Any]] = field(default_factory=list)
     forge: Forge = field(default_factory=lambda: Forge('forge.example.org', 'o', 'r'))
@@ -78,7 +80,8 @@ class FakeForge:
             self.reviews.append({'user': {'login': self.login}, 'state': body['event'], **body})
             return self.reviews[-1]
         rows = self.statuses.setdefault(path.rsplit('/', 1)[1], [])
-        rows.append({'id': len(rows) + 1, 'creator': {'login': 'runner'}, **body})
+        creator = None if self.poster is None else {'login': self.poster}
+        rows.append({'id': len(rows) + 1, 'creator': creator, **body})
         return rows[-1]
 
     def _get(self, path: str) -> Any:  # noqa: ANN401
@@ -202,12 +205,14 @@ def test_a_serve_repo_is_never_judged(prepared: tuple[FakeForge, Path]) -> None:
 
 
 def test_a_judge_repo_is_never_served(tmp_path: Path) -> None:
-    review = Review(where=JUDGE)
+    review = Review(where=JUDGE, judge_login='review-bot')
     assert review_tick(tmp_path, object(), review, base='main', host='h') == ()  # type: ignore[arg-type]
 
 
 def test_the_declaration_names_one_mode_and_a_bundle_command_that_reads_the_bundle() -> None:
-    assert review_from('[tool.dev_lab.review]\nwhere = "judge"\n', 'x').where == JUDGE
+    assert review_from(_JUDGED, 'x').where == JUDGE
+    with pytest.raises(ValueError, match='judge_login'):
+        review_from('[tool.dev_lab.review]\nwhere = "judge"\n', 'x')
     with pytest.raises(ValueError, match='where'):
         review_from('[tool.dev_lab.review]\nwhere = "both"\n', 'x')
     with pytest.raises(ValueError, match='bundle'):
@@ -224,3 +229,46 @@ def test_a_pointer_round_trips_and_anything_else_is_refused() -> None:
     for bad in ('https://x/y', 'artefact:?backend=folder'):
         with pytest.raises(BundleRefused, match='Ref'):
             fb.ref_of_pointer(bad)
+
+
+def _repost(forge: FakeForge, login: str) -> None:
+    """*login* re-posts the head's pointer as its own: the newest review/bundle status, a forged one."""
+    (honest,) = forge.statuses[forge.pull.head_sha]
+    forge.poster = login
+    forge.call(
+        'POST',
+        f'{forge.repo}/statuses/{forge.pull.head_sha}',
+        {k: honest[k] for k in ('context', 'state', 'description', 'target_url')}
+        | {'target_url': 'artefact:?backend=folder&ref=forged&bytes=1&sha256=' + '0' * 64},
+    )
+
+
+def test_a_pointer_only_another_login_posted_is_ignored(prepared: tuple[FakeForge, Path]) -> None:
+    """PLANTED CONTROL: the same head pointed at by the CI (null creator) is approved above."""
+    forge, _ = prepared
+    forge.statuses[forge.pull.head_sha][0]['creator'] = {'login': 'mallory'}
+    said, seen = _judged(forge, _findings(None))
+    assert (said, seen, forge.reviews) == ([], [], [])
+
+
+def test_a_forged_newer_pointer_neither_griefs_nor_shadows_the_ci_one(prepared: tuple[FakeForge, Path]) -> None:
+    forge, _ = prepared
+    _repost(forge, 'mallory')
+    said, _ = _judged(forge, _findings(None))
+    assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
+
+
+def test_a_declared_preparer_s_pointer_is_read(prepared: tuple[FakeForge, Path]) -> None:
+    forge, _ = prepared
+    forge.statuses[forge.pull.head_sha][0]['creator'] = {'login': 'prep-bot'}
+    forge.manifest = _JUDGE_TOML + 'preparers = ["prep-bot"]\n'
+    said, _ = _judged(forge, _findings(None))
+    assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
+
+
+def test_a_host_that_is_not_the_declared_judge_judges_nothing(prepared: tuple[FakeForge, Path]) -> None:
+    forge, _ = prepared
+    forge.login = 'someone-else'
+    said, seen = _judged(forge, _findings(None))
+    assert (seen, forge.reviews) == ([], [])
+    assert 'judge_login' in said[0]

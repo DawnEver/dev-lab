@@ -18,6 +18,7 @@ from test_dev_forgereview import _LANE_POLICY, _work
 from dev_lab.dev import breakglass
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgemerge import decide
+from dev_lab.dev.forgereview_declared import review_from, review_gate
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -30,6 +31,7 @@ from dev_lab.dev.reviewgate import (
     post_review,
     posted_verdicts,
     review_missing,
+    status_gate,
 )
 
 _BASE = 'integrate/main'
@@ -57,13 +59,17 @@ def test_every_review_state_but_success_blocks_the_merge_and_names_itself(tmp_pa
     rest = (_status(*_SECURED),)
     statuses = ((_status(REVIEW_CONTEXT, *review),) if review else ()) + rest
     assert review_missing(statuses, github_posted) is not None
-    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses, posted=github_posted)
+    found = decide(
+        work, policy, branch='pr/x', number=1, head=head, statuses=statuses, reviewed=status_gate(github_posted)
+    )
     assert not found.ready
     (line,) = [one for one in found.missing if REVIEW_CONTEXT in one]
     assert (review[1] if review else 'not posted') in line
     ok = (_status(REVIEW_CONTEXT, 'success', 'review round 1: no blocking finding open'), *rest)
     assert review_missing(ok, github_posted) is None
-    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=ok, posted=github_posted).ready
+    assert decide(
+        work, policy, branch='pr/x', number=1, head=head, statuses=ok, reviewed=status_gate(github_posted)
+    ).ready
 
 
 @pytest.mark.parametrize('creator', ['maintainer', 'a', ''])
@@ -78,7 +84,9 @@ def test_a_success_a_user_posted_never_satisfies_the_gate(tmp_path: Path, creato
     said = review_missing(forged, github_posted)
     assert said is not None
     assert 'not by the forge' in said
-    assert not decide(work, policy, branch='pr/x', number=1, head=head, statuses=forged, posted=github_posted).ready
+    assert not decide(
+        work, policy, branch='pr/x', number=1, head=head, statuses=forged, reviewed=status_gate(github_posted)
+    ).ready
     real = (_status(REVIEW_CONTEXT, 'success', 'review round 1: clean'), _status(*_SECURED))
     assert review_missing(real, github_posted) is None
 
@@ -346,3 +354,83 @@ def test_an_unreadable_declaration_refuses_never_reads_as_not_adopted(answer: st
     forge.pyproject_at[_BASE] = _UNADOPTED
     _gitea_review(forge, head, login=_SERVE, url='')
     assert breakglass.unreviewed(forge, head, base=_BASE) is None
+
+
+# THE JUDGE MODE: a repo whose base declares ``where = "judge"`` is reviewed by its DECLARED judge's PR review.
+_JUDGE_LOGIN = 'review-bot'
+_JUDGED = f'[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "{_JUDGE_LOGIN}"\n'
+
+
+def _judge_repo(*, github: bool = False) -> tuple[StateForge, str, int]:
+    forge = StateForge(Forge('github.com', 'o', 'r')) if github else StateForge()
+    forge.pyproject_at[_BASE] = _JUDGED
+    head = 'd' * 40
+    return forge, head, forge.add_pull('pr/x', _BASE, sha=head)
+
+
+def _gate(forge: StateForge, head: str) -> str | None:
+    return review_gate(forge, head, base=_BASE)(status_list(forge, head))
+
+
+@pytest.mark.parametrize('github', [False, True])
+def test_a_judge_repo_is_reviewed_by_its_declared_judge_approving_this_head(*, github: bool) -> None:
+    """PLANTED CONTROL for the waits below: the declared judge's APPROVED at this head passes, on either forge."""
+    forge, head, number = _judge_repo(github=github)
+    assert _gate(forge, head) is not None  # no review yet: waits
+    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
+    assert _gate(forge, head) is None
+    assert breakglass.unreviewed(forge, head, base=_BASE) is None
+
+
+@pytest.mark.parametrize(
+    ('login', 'commit', 'later'),
+    [
+        (_JUDGE_LOGIN, 'e' * 40, None),  # approved an older head
+        ('someone-else', 'd' * 40, None),  # approved by a login that is not the declared judge
+        (_JUDGE_LOGIN, 'd' * 40, 'REQUEST_CHANGES'),  # the judge changed its mind after approving
+    ],
+)
+def test_a_judge_repo_waits_on_any_approval_but_the_declared_judge_s_latest_at_this_head(
+    login: str, commit: str, later: str | None
+) -> None:
+    forge, head, number = _judge_repo()
+    forge.add_review(number, login=login, state='APPROVED', commit=commit)
+    if later:
+        forge.add_review(number, login=_JUDGE_LOGIN, state=later, commit=head)
+    assert _gate(forge, head) is not None
+    assert breakglass.unreviewed(forge, head, base=_BASE) is not None
+
+
+def test_a_judge_repo_ignores_a_forged_tests_review_success() -> None:
+    """A tests/review success, even the forge's own, is no review where the judge reviews."""
+    forge, head, _ = _judge_repo()
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean')
+    assert _gate(forge, head) is not None
+
+
+def test_a_pending_hold_still_blocks_a_judge_approved_head() -> None:
+    forge, head, number = _judge_repo()
+    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
+    status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='held')
+    assert 'held' in _gate(forge, head)
+
+
+def test_a_serve_repo_is_unaffected_by_a_judge_approval() -> None:
+    """The serve gate is the one it was: an APPROVED review alone does not pass it; the forge's success does."""
+    forge, head = StateForge(), 'a' * 40
+    forge.pyproject_at[_BASE] = _UNADOPTED
+    number = forge.add_pull('pr/x', _BASE, sha=head)
+    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
+    assert _gate(forge, head) == review_missing(status_list(forge, head), forge_posted(forge, head, base=_BASE))
+    assert _gate(forge, head) is not None
+
+
+def test_a_judge_declaration_without_a_judge_login_is_refused() -> None:
+    with pytest.raises(ValueError, match='judge_login'):
+        review_from('[tool.dev_lab.review]\nwhere = "judge"\n', 'x')
+    forge, head, _ = _judge_repo()
+    forge.pyproject_at[_BASE] = '[tool.dev_lab.review]\nwhere = "judge"\n'
+    with pytest.raises(ValueError, match='judge_login'):
+        _gate(forge, head)
+    with pytest.raises(ValueError, match='judge_login'):  # Break-Glass's forge_unreviewed names it as a reason
+        breakglass.unreviewed(forge, head, base=_BASE)

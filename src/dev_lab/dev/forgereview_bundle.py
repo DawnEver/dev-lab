@@ -7,8 +7,10 @@ this way (the serve skips it, :func:`dev_lab.dev.forgereview.review_pull`). User
   :mod:`~dev_lab.dev.reviewbundle` of the PR head, uploads it through the repo's artefact store
   (:func:`~dev_lab.dev.artefacts.store_for`), and posts ONE commit status on the head, :data:`BUNDLE_CONTEXT`:
   its description is the bundle's digest, its target URL the store's :class:`~dev_lab.dev.artefacts.Ref`
-  (:func:`pointer`). The status is a POINTER, never a credential: whoever posts it, the judge trusts nothing in
-  it that it does not verify itself.
+  (:func:`pointer`). The status is a POINTER, never a credential: the judge trusts nothing in it that it does
+  not verify itself. Yet a forged pointer would make the judge post ``REQUEST_CHANGES`` on any head (griefing),
+  so the judge reads only a pointer the forge's CI identity posted
+  (:func:`~dev_lab.dev.reviewgate.ci_posted`) or a declared ``preparers`` login, and logs every other.
 * JUDGE (:func:`judge_pending`) runs on a host holding only its own forge token and model key. For each open,
   non-draft PR into the trusted integration branch whose head carries a pointer and no review of this identity
   yet (idempotent per head), it downloads the bundle, verifies it (:func:`~dev_lab.dev.reviewbundle.load`,
@@ -19,8 +21,10 @@ this way (the serve skips it, :func:`dev_lab.dev.forgereview.review_pull`). User
   ``REQUEST_CHANGES`` naming why; a failure to READ (a forge call, a download, the command) posts nothing and is
   retried on the next run.
 
-The forge's gate is that review (branch protection: one required approval from an allowlist naming the judge's
-login); the judge's login needs PR write and code READ only -- it posts no status.
+The forge's gate is that review: dev-lab's merge, merge-ready and Break-Glass read the declared ``judge_login``'s
+latest verdict at the head (:func:`~dev_lab.dev.forgereview_declared.review_gate`), and the forge's own branch
+protection may require it too. The judge runs only as that declared login; it needs PR write and code READ only --
+it posts no status.
 """
 
 from __future__ import annotations
@@ -54,13 +58,14 @@ from dev_lab.dev.forgereview_declared import (
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import gather
-from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.forgetakeover import runtimes_with
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.reviewbundle import BundleRefused
-from dev_lab.dev.reviewgate import DeclarationUnread
+from dev_lab.dev.reviewgate import VERDICT_STATES, DeclarationUnread, ci_posted
 
 if TYPE_CHECKING:
+    from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
@@ -76,6 +81,7 @@ __all__ = [
     'prepare',
     'ref_of_pointer',
     'reviewed_by',
+    'trusted_pointer',
 ]
 
 #: The commit status naming a head's prepared bundle: description the digest, target URL the store's Ref.
@@ -93,8 +99,6 @@ DEFAULT_TOKEN_FILE: Final = Path('/etc/forge-bot/gitea-token')
 _SCHEME: Final = 'artefact'
 _APPROVE: Final = 'APPROVED'
 _CHANGES: Final = 'REQUEST_CHANGES'
-#: The review states a judge's verdict leaves, as each forge reports them back.
-_VERDICT_STATES: Final = frozenset({'APPROVED', 'REQUEST_CHANGES', 'CHANGES_REQUESTED'})
 
 
 def pointer(ref: Ref) -> str:
@@ -153,14 +157,30 @@ def reviewed_by(client: Client, pull: PullRequest, login: str) -> bool:
     """Whether *login* already left a verdict review on *pull*'s current head: the judge's idempotence."""
     for row in pages(client, f'{client.repo}/pulls/{pull.number}/reviews', {}):
         who = (row.get('user') or {}).get('login')
-        if who == login and row.get('commit_id') == pull.head_sha and row.get('state') in _VERDICT_STATES:
+        if who == login and row.get('commit_id') == pull.head_sha and row.get('state') in VERDICT_STATES:
             return True
     return False
 
 
-def _bundle_of(client: Client, pull: PullRequest, scratch: Path) -> reviewbundle.Bundle | None:
-    """The verified bundle the head's pointer names; ``None`` with no pointer. :class:`BundleRefused` if untrusted."""
-    found = next((one for one in status_list(client, pull.head_sha) if one.context == BUNDLE_CONTEXT), None)
+def trusted_pointer(client: Client, review: Review, statuses: Sequence[CommitStatus]) -> CommitStatus | None:
+    """The latest :data:`BUNDLE_CONTEXT` status (*statuses* newest first) a TRUSTED poster wrote; ``None`` when none.
+
+    Trusted: the forge's CI identity (:func:`~dev_lab.dev.reviewgate.ci_posted`) or a declared ``preparers`` login.
+    Every pointer another login posted is skipped and logged, never judged -- and never shadows a trusted one, so
+    *statuses* is the head's whole history (:func:`~dev_lab.dev.forgestatus.status_history`), not its latest.
+    """
+    for one in statuses:
+        if one.context != BUNDLE_CONTEXT:
+            continue
+        if ci_posted(client, one) or one.creator in review.preparers:
+            return one
+        emit(f'[review] ignored a {BUNDLE_CONTEXT} pointer posted by {one.creator!r}: not the CI or a preparer')
+    return None
+
+
+def _bundle_of(client: Client, review: Review, pull: PullRequest, scratch: Path) -> reviewbundle.Bundle | None:
+    """The verified bundle the head's trusted pointer names; ``None`` with none. :class:`BundleRefused` if bad."""
+    found = trusted_pointer(client, review, status_history(client, pull.head_sha)[::-1])
     if found is None or found.state != 'success':
         return None
     ref = ref_of_pointer(found.url)
@@ -200,7 +220,7 @@ def judge_one(
     with tempfile.TemporaryDirectory(prefix='review-judge-') as scratch:
         where = Path(scratch)
         try:
-            bundle = _bundle_of(client, pull, where)
+            bundle = _bundle_of(client, review, pull, where)
         except BundleRefused as refused:
             return Verdict(_CHANGES, f'**Review bundle refused** for `{pull.head_sha[:12]}`: {refused}')
         if bundle is None:
@@ -245,6 +265,8 @@ def judge_pending(
     if review.where != JUDGE:
         return [f'{integration} declares where = {review.where!r}: the judge reviews no PR of this repo']
     me = client.whoami()
+    if me != review.judge_login:
+        return [f'{integration} declares judge_login = {review.judge_login!r}; this host is {me!r}: it judges nothing']
     said = []
     for pull in pr_list(client):
         if pull.base != integration or pull.draft or not pull.head_sha or reviewed_by(client, pull, me):

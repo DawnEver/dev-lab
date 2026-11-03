@@ -23,10 +23,11 @@ The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
-* its head is REVIEWED (:func:`dev_lab.dev.reviewgate.review_missing`, user ruling 2026-10-31): the latest
-  ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold`` is
-  pending. Absent, reviewing, ``error``, ``failure`` and a success any other login posted all wait -- nothing is
-  advisory; a review that cannot run is re-run by the forge;
+* its head is REVIEWED (:func:`dev_lab.dev.forgereview_declared.review_gate`, user ruling 2026-10-31): the
+  latest ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold``
+  is pending -- or, where the base declares ``where = "judge"``, the declared judge login's latest verdict review
+  at the head is APPROVED. Absent, reviewing, ``error``, ``failure`` and a success any other login posted all
+  wait -- nothing is advisory; a review that cannot run is re-run by the forge;
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
@@ -68,7 +69,7 @@ from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING, waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgereview_declared import load_review
+from dev_lab.dev.forgereview_declared import load_review, review_gate
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITHUB, client_for
@@ -77,16 +78,14 @@ from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.reviewgate import forge_posted, review_missing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
+    from dev_lab.dev.reviewgate import Reviewed
 
 __all__ = [
     'CI_MERGER',
@@ -190,7 +189,7 @@ def decide(
     number: int,
     head: str,
     statuses: Sequence[CommitStatus],
-    posted: Callable[[CommitStatus], bool],
+    reviewed: Reviewed,
 ) -> Decision:
     """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing."""
     into = policy.integration
@@ -201,7 +200,7 @@ def decide(
         load_review(root)
     except ValueError as config:
         missing.append(f'its review config: {config}')
-    if (unreviewed := review_missing(statuses, posted)) is not None:
+    if (unreviewed := reviewed(statuses)) is not None:
         missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
@@ -237,7 +236,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     found = decide(root, policy, branch=branch, number=number, head=head, statuses=statuses,
-                   posted=forge_posted(client, head, base=policy.integration))  # fmt: skip
+                   reviewed=review_gate(client, head, base=policy.integration))  # fmt: skip
     if client.pr_view(number).draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         return Decision((WAITING.format(n=number), *found.missing), found.message)
     return found

@@ -30,6 +30,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     where = "serve"            # WHO reviews: "serve" (a checkout runs `command`) or "judge" (an isolated host runs
                                # `bundle` over a verified review bundle, posting a PR review) -- ONE per repo
     bundle = [...]             # the judge's command over {bundle} (FAMILY_BUNDLE): declared only to differ
+    judge_login = "<login>"    # REQUIRED with where = "judge": the forge login whose PR review gates the merge
+    preparers = []             # logins besides the forge's CI identity whose review/bundle pointer the judge reads
 
 The keys of the retired in-process reviewer (``max_tokens``, ``rules``) are refused by name.
 """
@@ -56,11 +58,19 @@ from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
 from dev_lab.dev.forgereview_scope import Budget
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
+from dev_lab.dev.reviewgate import (
+    DeclarationUnread,
+    forge_posted,
+    head_reviews,
+    judge_missing,
+    manifest_at,
+    status_gate,
+)
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
+    from dev_lab.dev.reviewgate import Reviewed
 
 __all__ = [
     'BUNDLE_FIELD',
@@ -92,6 +102,7 @@ __all__ = [
     'operator_integration',
     'review_at',
     'review_from',
+    'review_gate',
     'stale_after',
     'trusted_integration',
 ]
@@ -204,11 +215,16 @@ class Review:
     reviewers: tuple[str, ...] = ()  # the producer logins whose review rounds every host reads (never any writer)
     where: str = SERVE  # who reviews: SERVE or JUDGE, one per repo
     bundle: tuple[str, ...] = FAMILY_BUNDLE  # the judge's command over {bundle}
+    judge_login: str = ''  # where = JUDGE: the ONE login whose PR review gates the merge, declared, never inferred
+    preparers: tuple[str, ...] = ()  # where = JUDGE: logins besides the CI identity whose bundle pointer is read
 
     def __post_init__(self) -> None:
-        """Refuse a ``where`` outside :data:`WHERE`, a ``bundle`` naming no ``{bundle}``, or a bad duration."""
+        """Refuse a ``where`` outside :data:`WHERE`, a judge with no login, a bad ``bundle`` or duration."""
         if self.where not in WHERE:
             msg = f'where = {self.where!r} is not one of {WHERE}'
+            raise ValueError(msg)
+        if self.where == JUDGE and not self.judge_login:
+            msg = f'where = "{JUDGE}" declares no judge_login: whose review gates the merge is undecided'
             raise ValueError(msg)
         if BUNDLE_FIELD not in self.bundle:
             msg = f'bundle = {list(self.bundle)} names no {BUNDLE_FIELD}: the judge would read no bundle'
@@ -311,6 +327,20 @@ def forge_integration(client: Client) -> str:
 def forge_review(client: Client, integration: str) -> Review:
     """The ``[tool.dev_lab.review]`` *integration* declares, read FRESH from the forge: the judge's review_at."""
     return review_from(manifest_at(client, integration), f'{integration}:pyproject.toml')
+
+
+def review_gate(client: Client, head: str, *, base: str) -> Reviewed:
+    """THE ONE GATE of whether *head* is reviewed, for the merge, merge-ready and Break-Glass alike.
+
+    The mode is the TRUSTED declaration at *base* (:func:`forge_review`): a ``judge`` repo is reviewed when its
+    declared ``judge_login`` approved *head* (:func:`~dev_lab.dev.reviewgate.judge_missing`), a ``serve`` repo when
+    the forge posted a ``tests/review`` success (:func:`~dev_lab.dev.reviewgate.review_missing`).
+    """
+    review = forge_review(client, base)
+    if review.where == JUDGE:
+        reviews = head_reviews(client, head)
+        return lambda statuses: judge_missing(statuses, reviews, head=head, judge=review.judge_login)
+    return status_gate(forge_posted(client, head, base=base))
 
 
 def _default_branch(client: Client) -> str:

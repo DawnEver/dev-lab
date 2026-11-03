@@ -67,6 +67,7 @@ from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgestatus import status_post
 
 if TYPE_CHECKING:
@@ -75,20 +76,29 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
 
+    #: Why the head the statuses (newest first) describe is not reviewed, or ``None``: what a gate answers.
+    type Reviewed = Callable[[Sequence[CommitStatus]], str | None]
+
 __all__ = [
     'ACTIONS_REVIEW',
+    'APPROVED',
     'RERUN',
+    'VERDICT_STATES',
     'DeclarationUnread',
     'RunsUnread',
     'adopts_actions_review',
+    'ci_posted',
     'forge_posted',
     'github_posted',
+    'head_reviews',
     'job_run_url',
+    'judge_missing',
     'manifest_at',
     'post_review',
     'posted_verdicts',
     'review_missing',
     'review_runs',
+    'status_gate',
 ]
 
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
@@ -100,13 +110,28 @@ ACTIONS_REVIEW: Final = 'review.yml'
 #: The event Gitea stores a run of the BASE's workflow under for a PR (``notifier_helper.go``, 1.27).
 REVIEW_EVENT: Final = 'pull_request_target'
 
+#: The PR review state of an approval, and every state a judge's verdict leaves, as each forge reports them back.
+APPROVED: Final = 'APPROVED'
+VERDICT_STATES: Final = frozenset({APPROVED, 'REQUEST_CHANGES', 'CHANGES_REQUESTED'})
+
 #: How many of the repository's runs at a head are read: a head is re-run a handful of times, never this many.
 _RUNS_READ: Final = 50
+
+_NOT_FOUND: Final = 404
 
 
 def github_posted(status: CommitStatus) -> bool:
     """Whether GitHub recorded *status* as its Actions job's: the only creator a job token is given there."""
     return status.creator == ACTIONS_BOT
+
+
+def ci_posted(client: Client, status: CommitStatus) -> bool:
+    """Whether *status* was posted by *client*'s forge's CI identity: GitHub's Actions bot, Gitea's null creator.
+
+    Gitea answers ``creator: null`` for every Actions job's status (module docstring), so on Gitea this admits any
+    Actions job of the repo -- a PR-head workflow's too -- and a deleted user's old post; never a live login.
+    """
+    return github_posted(status) if client.backend is GITHUB else status.creator == ''
 
 
 def _run_path(url: str, owner: str, repo: str) -> str:
@@ -249,6 +274,57 @@ def post_review(client: Client, head: str, *, state: str, description: str, targ
         said.append(state)
 
 
+def status_gate(posted: Callable[[CommitStatus], bool]) -> Reviewed:
+    """The serve-mode gate: :func:`review_missing` over a head's statuses, *posted* telling the forge's own post."""
+    return lambda statuses: review_missing(statuses, posted)
+
+
+def _hold_missing(statuses: Sequence[CommitStatus]) -> str | None:
+    hold = next((one for one in statuses if one.context == HOLD_CONTEXT), None)
+    if hold is not None and hold.state != 'success':
+        return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
+    return None
+
+
+def head_reviews(client: Client, head: str) -> list[dict[str, Any]]:
+    """Every PR review on every pull request whose head the forge says *head* is, as the forge lists them.
+
+    Gitea answers ONE pull (``commits/{sha}/pull``, 404 when none), GitHub a list (``commits/{sha}/pulls``).
+    """
+    if client.backend is GITHUB:
+        listed: Any = client.call('GET', f'{client.repo}/commits/{head}/pulls')
+    else:
+        try:
+            listed = [client.call('GET', f'{client.repo}/commits/{head}/pull')]
+        except ForgeCallFailed as failed:
+            if failed.final != _NOT_FOUND:
+                raise
+            listed = []
+    numbers = [int(pull['number']) for pull in listed or [] if isinstance(pull, dict) and pull.get('number')]
+    return [row for number in numbers for row in pages(client, f'{client.repo}/pulls/{number}/reviews', {})]
+
+
+def judge_missing(
+    statuses: Sequence[CommitStatus], reviews: Sequence[Mapping[str, Any]], *, head: str, judge: str
+) -> str | None:
+    """The judge-mode gate: why *head* is not reviewed by the DECLARED *judge* login, or ``None`` when it is.
+
+    Reviewed when the latest verdict review (:data:`VERDICT_STATES`) *judge* left AT *head* is :data:`APPROVED`
+    and no hold is pending. Another login's approval, one at an older head, or a later ``REQUEST_CHANGES`` waits.
+    """
+    verdicts = [
+        row for row in reviews
+        if (row.get('user') or {}).get('login') == judge and row.get('commit_id') == head
+        and row.get('state') in VERDICT_STATES
+    ]  # fmt: skip
+    latest = max(verdicts, key=lambda row: int(row.get('id') or 0), default=None)
+    if latest is None:
+        return f'no verdict review by the judge {judge!r} at {head[:12]}: the judge reviews a prepared bundle'
+    if latest.get('state') != APPROVED:
+        return f'the judge {judge!r} requested changes at {head[:12]}'
+    return _hold_missing(statuses)
+
+
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:
     """Why the head *statuses* (newest first) describe is not reviewed, or ``None`` when it is.
 
@@ -257,7 +333,7 @@ def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitSta
     latest: dict[str, CommitStatus] = {}
     for one in statuses:
         latest.setdefault(one.context, one)
-    review, hold = latest.get(REVIEW_CONTEXT), latest.get(HOLD_CONTEXT)
+    review = latest.get(REVIEW_CONTEXT)
     if review is None:
         return f'{REVIEW_CONTEXT} is not posted: {RERUN}'
     if review.state != 'success':
@@ -268,6 +344,4 @@ def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitSta
             f"(target {review.url or 'none'}), not by the forge's review job at this head: "
             f"only the forge's own review counts -- {RERUN}"
         )
-    if hold is not None and hold.state != 'success':
-        return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
-    return None
+    return _hold_missing(statuses)
