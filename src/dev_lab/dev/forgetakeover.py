@@ -261,6 +261,7 @@ def _parser() -> argparse.ArgumentParser:
     raising = verbs.add_parser('cap', help="raise one PR's review caps, the reason recorded on the PR (integrator)")
     raising.add_argument('pr', type=int)
     raising.add_argument('--usd', type=float, help='the dollar cap; the month remainder still bounds it')
+    raising.add_argument('--reserve', action='store_true', help='draw on the month reserve (recorded on the PR)')
     raising.add_argument('--rounds', type=int, help='the round cap')
     raising.add_argument('--why', required=True, help='the recorded reason for the raise')
     ruling = verbs.add_parser('adjudicate', help='rule on every pending claim of a thread (the forge runs this)')
@@ -315,7 +316,8 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
     if args.verb == 'dispose':
         return [f'[review] {dispose(origin, args.pr, args.finding, args.why, by=me)}']
     if args.verb == 'cap':
-        return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
+        raised = Raised(args.usd, args.rounds, args.why, reserve=args.reserve)
+        return [f'[review] {raise_cap(origin, args.pr, raised, by=me)}']
     ruled = adjudicate_thread(
         root, origin, review_at(root, base), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
         runtimes=runtimes_with(host_runtimes(), args.runtime),

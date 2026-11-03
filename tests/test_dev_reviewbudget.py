@@ -131,8 +131,57 @@ def test_with_no_spend_report_the_round_cap_alone_holds() -> None:
 
 
 def test_an_unknown_spend_report_schema_is_refused() -> None:
-    with pytest.raises(ValueError, match='schema 2'):
-        Spend.from_report({'schema': 2})
+    with pytest.raises(ValueError, match='schema 1'):
+        Spend.from_report({'schema': 1})
+
+
+# --- the allocation and the reserve (user ruling 2026-11-03) --------------------------------------------------
+
+
+def _report(spent: float = 0.0) -> dict[str, object]:
+    return {'schema': 2, 'budget_usd': 1000.0, 'reserve_usd': 250.0, 'month': '2026-11-01', 'spent_usd': spent,
+            'unpriced_calls': 0, 'month_by_tag': {}, 'window': {'days': 30, 'by_tag': {}}}  # fmt: skip
+
+
+def test_the_report_splits_the_month_into_the_allocated_share_and_the_reserve() -> None:
+    month = Spend.from_report(_report(spent=100.0))
+    assert (month.allocated_usd, month.reserve_usd) == (750.0, 250.0)
+    assert (month.remaining_usd, month.remaining_with_reserve_usd) == (650.0, 900.0)
+
+
+def test_the_initial_cap_is_fitted_against_the_allocated_share_not_the_whole_month() -> None:
+    assert fit(Spend.from_report(_report())).cap_usd == 750.0 / INITIAL_PRS_PER_MONTH
+
+
+def test_once_the_allocated_share_is_spent_a_pr_waits_naming_the_reserve_door() -> None:
+    month = Spend.from_report(_report(spent=750.0))
+    held = gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=month)
+    assert held.state == 'wait'
+    assert held.why.startswith('allocated review budget spent: 750.00/750.00 USD')
+    assert 'forge review cap 7' in held.why
+    assert '--reserve' in held.why
+    under = Spend.from_report(_report(spent=740.0))  # planted control: one step under the share runs
+    assert gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=under).state == 'run'
+
+
+def test_a_raise_that_draws_the_reserve_runs_past_the_allocated_share_up_to_the_month() -> None:
+    month = Spend.from_report(_report(spent=800.0))
+    drawn = Raised(20.0, None, 'the release blocker', reserve=True)
+    got = gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=month, raised=drawn)
+    assert (got.state, got.model) == ('run', None), 'a deliberate draw is not degraded'
+    assert 'reserve' in got.why
+    plain = Raised(20.0, None, 'no draw')  # planted control: a raise without the draw stays in the share
+    assert gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=month, raised=plain).state == 'wait'
+    spent = Spend.from_report(_report(spent=1000.0))
+    over = gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=spent, raised=drawn)
+    assert (over.state, over.why.split(':')[0]) == ('wait', 'monthly review budget spent')
+
+
+def test_the_reserve_draw_is_recorded_in_the_raise_and_read_back() -> None:
+    drawn = Raised(20.0, 2, 'the release blocker', 'DawnEver', reserve=True)
+    assert '"reserve": true' in raise_line(drawn)
+    assert raised_of([raise_line(drawn)]) == drawn
+    assert raised_of([raise_line(Raised(5.0, None, 'plain', 'DawnEver'))]).reserve is False
 
 
 # --- the raise, the tag ----------------------------------------------------------------------------------------

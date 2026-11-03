@@ -11,9 +11,15 @@ THE CAP IS FITTED, NOT GUESSED (:func:`fit`). From the last 90 days of per-PR sp
 Below :data:`MIN_FITTED_PRS` measured PRs the cap is the INITIAL one, ``budget / INITIAL_PRS_PER_MONTH``.
 ``python -m dev_lab.dev.reviewbudget`` prints the fit and the month (``--json`` for a reader).
 
-THE MONTH BOUNDS EVERY CAP (:func:`gate`). A PR's cap -- fitted, or raised by the integrator -- is never above what
-the month has left. Below :data:`DEGRADE_BELOW` of the budget left, a round DEGRADES before anything stops: one
-round per PR (:data:`DEGRADED_ROUNDS`) on the cheaper :data:`DEGRADED_MODEL`. With nothing left, nothing runs.
+THE MONTH IS ALLOCATED, AND A RESERVE IS HELD BACK (user ruling 2026-11-03). ai-lab's report states the month's
+budget and its reserve (the machine file's ``[ai_lab.spend]``: 1000 USD, 250 of it the reserve, the month opening on
+the 1st); the rest is the ALLOCATED share (750). The fit and every ordinary cap work against the allocated share.
+
+THE ALLOCATED SHARE BOUNDS EVERY CAP (:func:`gate`). A PR's cap -- fitted, or raised by the integrator -- is never
+above what the share has left. Below :data:`DEGRADE_BELOW` of it left, a round DEGRADES before anything stops: one
+round per PR (:data:`DEGRADED_ROUNDS`) on the cheaper :data:`DEGRADED_MODEL`. With the share spent, a PR waits
+naming the reserve door. A raise that DRAWS THE RESERVE (``--reserve``, recorded in its ``review-cap`` line) is
+bounded by the whole month instead, and is never degraded: it is a deliberate, recorded spend.
 
 A REACHED CAP WAITS, NAMED. A PR at its round cap or its dollar cap is neither reviewed again nor passed: its
 review status is ``pending`` saying which cap (``budget reached: <spent>/<cap> USD``, ``round cap reached: r/R``)
@@ -73,11 +79,11 @@ __all__ = [
 #: ``ai_lab.budget.TAG_ENV``), like the command's arguments -- dev-lab imports no ai-lab.
 TAG_ENV: Final = 'AI_LAB_SPEND_TAG'
 
-#: The ai-lab spend report version this reader knows.
-SPEND_SCHEMA: Final = 1
+#: The ai-lab spend report version this reader knows: 2 states the reserve.
+SPEND_SCHEMA: Final = 2
 
 #: INITIAL, until :data:`MIN_FITTED_PRS` PRs are measured: about 100 reviewed PRs a month across the family's six
-#: repos (each push re-reviewed, up to five rounds), so a PR's initial cap is 1000/100 = 10 USD -- several full
+#: repos (each push re-reviewed, up to five rounds), so a PR's initial cap is 750/100 = 7.5 USD -- several full
 #: rounds of a 200 kB slice on the family model, and a hard stop on a runaway one.
 INITIAL_PRS_PER_MONTH: Final = 100
 
@@ -87,7 +93,7 @@ MIN_FITTED_PRS: Final = 20
 #: The fitted cap covers this share of measured PRs; the rest wait, named, for a split or a raise.
 CAP_QUANTILE: Final = 0.9
 
-#: Below this share of the monthly budget left, rounds degrade (:data:`DEGRADED_ROUNDS` on :data:`DEGRADED_MODEL`).
+#: Below this share of the allocated budget left, rounds degrade (:data:`DEGRADED_ROUNDS` on :data:`DEGRADED_MODEL`).
 DEGRADE_BELOW: Final = 0.25
 
 #: Rounds per PR while degraded: the first review still runs, its re-reviews wait.
@@ -106,17 +112,28 @@ _RAISED: Final = re.compile(r'<!-- review-cap (?P<json>\{.*?\}) -->', re.DOTALL)
 
 @dataclass(frozen=True)
 class Spend:
-    """ai-lab's spend report: the month against its budget, and the per-PR history a cap is fitted from."""
+    """ai-lab's spend report: the month against its budget and reserve, and the per-PR history a cap is fitted from."""
 
     budget_usd: float
     spent_usd: float
     window_days: int = 1
     window_by_tag: Mapping[str, float] | None = None
     unpriced_calls: int = 0
+    reserve_usd: float = 0.0
+
+    @property
+    def allocated_usd(self) -> float:
+        """The share every ordinary cap works against: the budget less its reserve."""
+        return self.budget_usd - self.reserve_usd
 
     @property
     def remaining_usd(self) -> float:
-        """What the month has left, never below zero."""
+        """What the allocated share has left, never below zero."""
+        return max(0.0, self.allocated_usd - self.spent_usd)
+
+    @property
+    def remaining_with_reserve_usd(self) -> float:
+        """What the whole month has left, the reserve included, never below zero: a reserve draw's bound."""
         return max(0.0, self.budget_usd - self.spent_usd)
 
     def of(self, tag: str) -> float:
@@ -130,7 +147,10 @@ class Spend:
             msg = f'an ai-lab spend report of schema {doc.get("schema")!r}; this reader knows {SPEND_SCHEMA}'
             raise ValueError(msg)
         window = doc['window']
-        return cls(doc['budget_usd'], doc['spent_usd'], window['days'], dict(window['by_tag']), doc['unpriced_calls'])
+        return cls(
+            doc['budget_usd'], doc['spent_usd'], window['days'], dict(window['by_tag']), doc['unpriced_calls'],
+            doc['reserve_usd'],
+        )  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -165,25 +185,26 @@ def fit(spend: Spend) -> Fit:
     """The per-PR cap *spend*'s measured PRs support (the module docstring); the initial one below enough PRs."""
     costs = sorted(usd for tag, usd in (spend.window_by_tag or {}).items() if '#' in tag)
     if len(costs) < MIN_FITTED_PRS:
-        return Fit(spend.budget_usd / INITIAL_PRS_PER_MONTH, INITIAL_PRS_PER_MONTH, len(costs), 'initial')
+        return Fit(spend.allocated_usd / INITIAL_PRS_PER_MONTH, INITIAL_PRS_PER_MONTH, len(costs), 'initial')
     prs_per_month = len(costs) / max(spend.window_days, 1) * _DAYS_PER_MONTH
-    cap = min(_quantile(costs, CAP_QUANTILE), _affordable(costs, prs_per_month, spend.budget_usd))
+    cap = min(_quantile(costs, CAP_QUANTILE), _affordable(costs, prs_per_month, spend.allocated_usd))
     return Fit(cap, prs_per_month, len(costs), 'fitted')
 
 
 @dataclass(frozen=True)
 class Raised:
-    """The integrator's raise of one PR's caps, with its reason and the forge login of its raiser."""
+    """The integrator's raise of one PR's caps: its reason, its raiser's login, and whether it draws the reserve."""
 
     usd: float | None
     rounds: int | None
     why: str
     by: str = ''
+    reserve: bool = False
 
 
 def raise_line(raised: Raised) -> str:
     """The hidden line a ``review-cap`` comment records *raised* by (``>`` escaped)."""
-    doc = {'usd': raised.usd, 'rounds': raised.rounds, 'why': raised.why, 'by': raised.by}
+    doc = {'usd': raised.usd, 'rounds': raised.rounds, 'why': raised.why, 'by': raised.by, 'reserve': raised.reserve}
     return f'<!-- review-cap {json.dumps(doc, ensure_ascii=False).replace(">", "\\u003e")} -->'
 
 
@@ -200,11 +221,12 @@ def _parsed(text: str) -> Raised | None:
     if not isinstance(doc, dict):
         return None
     usd, rounds, why, by = doc.get('usd'), doc.get('rounds'), doc.get('why', ''), doc.get('by', '')
+    reserve = doc.get('reserve', False)
     if not (_number(usd) and (rounds is None or (isinstance(rounds, int) and not isinstance(rounds, bool)))):
         return None
-    if not (isinstance(why, str) and isinstance(by, str)):
+    if not (isinstance(why, str) and isinstance(by, str) and isinstance(reserve, bool)):
         return None
-    return Raised(usd, rounds, why, by)
+    return Raised(usd, rounds, why, by, reserve)
 
 
 def raised_of(bodies: Iterable[str]) -> Raised | None:
@@ -254,13 +276,20 @@ def gate(
     if spend is None:
         cap, model, note = math.inf, None, ''
     else:
-        if spend.remaining_usd <= 0:
+        draws = raised is not None and raised.reserve
+        if spend.remaining_with_reserve_usd <= 0:
             why = f'monthly review budget spent: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD; waits for next month'
             return Gate('wait', why, rounds)
+        if not draws and spend.remaining_usd <= 0:
+            why = (
+                f'allocated review budget spent: {spend.spent_usd:.2f}/{spend.allocated_usd:.2f} USD; draw the '
+                f'{spend.reserve_usd:.2f} USD reserve with {door} --reserve'
+            )
+            return Gate('wait', why, rounds)
         own = raised.usd if raised is not None and raised.usd is not None else fit(spend).cap_usd
-        cap = min(own, spend.remaining_usd)
-        model, note = None, ''
-        if spend.remaining_usd < DEGRADE_BELOW * spend.budget_usd:
+        cap = min(own, spend.remaining_with_reserve_usd if draws else spend.remaining_usd)
+        model, note = None, ' (reserve drawn)' if draws else ''
+        if not draws and spend.remaining_usd < DEGRADE_BELOW * spend.allocated_usd:
             rounds, model, note = min(rounds, DEGRADED_ROUNDS), DEGRADED_MODEL, ' (degraded: month low)'
     if rounds_done >= rounds:
         return Gate('wait', f'round cap reached: {rounds_done}/{rounds} rounds{note}; split the PR, or {door}', rounds)
@@ -304,7 +333,10 @@ def read_spend(runtimes: Mapping[str, Mapping[str, Any]], root: Path) -> Spend |
         return None
     if done.returncode != 0:
         return None
-    return Spend.from_report(json.loads(done.stdout))
+    try:
+        return Spend.from_report(json.loads(done.stdout))
+    except (ValueError, KeyError):  # an ai-lab of another report schema cannot report spend here: rounds cap only
+        return None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -318,7 +350,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     got = fit(spend)
     doc = {
-        'budget_usd': spend.budget_usd, 'spent_usd': spend.spent_usd, 'remaining_usd': spend.remaining_usd,
+        'budget_usd': spend.budget_usd, 'reserve_usd': spend.reserve_usd, 'allocated_usd': spend.allocated_usd,
+        'spent_usd': spend.spent_usd, 'remaining_usd': spend.remaining_usd,
         'unpriced_calls': spend.unpriced_calls, 'cap_usd': got.cap_usd, 'prs_per_month': got.prs_per_month,
         'samples': got.samples, 'source': got.source,
     }  # fmt: skip
@@ -326,7 +359,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(json.dumps(doc, indent=1))
     else:
         emit(
-            f'month: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD spent ({spend.unpriced_calls} unpriced calls)\n'
+            f'month: {spend.spent_usd:.2f}/{spend.allocated_usd:.2f} USD allocated spent, {spend.reserve_usd:.2f} USD '
+            f'reserve of {spend.budget_usd:.2f} ({spend.unpriced_calls} unpriced calls)\n'
             f'per-PR cap: {got.cap_usd:.2f} USD ({got.source}, {got.samples} PRs, {got.prs_per_month:.0f} PRs/month)'
         )
     return 0
