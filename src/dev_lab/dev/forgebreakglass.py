@@ -72,14 +72,16 @@ def wave_main(
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forge breakglass', description=__doc__.splitlines()[0])
     parser.add_argument('action', choices=('open', 'close', 'ack', 'status'))
     parser.add_argument('id', nargs='?', default='', help='ack: the wave (default: the oldest unacknowledged)')
-    parser.add_argument('--hours', type=float, default=0.0, help='open: shorter than the server-declared maximum')
-    parser.add_argument('--max-merges', type=int, default=0, help='open: a tighter cap than the server declares')
+    parser.add_argument('--hours', type=float, default=None, help='open: shorter than the server-declared maximum')
+    parser.add_argument('--max-merges', type=int, default=None, help='open: a tighter cap than the server declares')
     args = parser.parse_args(argv)
     if (config := _endpoint(table)) is None:
         return 2
     request: dict[str, Any] = {'action': args.action}
     if args.action == 'open':
-        request |= {'hours': args.hours, 'max_merges': args.max_merges}
+        request |= {
+            name: value for name, value in (('hours', args.hours), ('max_merges', args.max_merges)) if value is not None
+        }
     if args.action == 'open':
         request['code'] = ask(_PROMPT).strip()
     if args.action == 'ack':

@@ -5,8 +5,13 @@ Every planted control refuses before any forge write.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -48,6 +53,8 @@ class Host:
     alerts: list[tuple[str, str]] = field(default_factory=list)
     clock: list[float] = field(default_factory=lambda: [NOW])
     key: str = KEY
+    #: Seconds every clock read sleeps: widens each read-modify-write window, as a loaded host would.
+    delay: float = 0.0
 
     @property
     def server(self) -> Server:
@@ -55,9 +62,13 @@ class Host:
             self.config,
             lambda _root: self.forge,
             lambda t, d: self.alerts.append((t, d)),
-            lambda: self.clock[0],
+            self._now,
             key=self.key,
         )
+
+    def _now(self) -> float:
+        time.sleep(self.delay)
+        return self.clock[0]
 
     def ask(self, action: str, **fields: object) -> str:
         return self.server.handle(json.dumps({'action': action, **fields}))
@@ -268,3 +279,98 @@ def test_the_lockout_bounds_are_configured(tmp_path: Path) -> None:
         host.ask('open', code=host.code())
     host.later(60)
     assert 'open for' in host.ask('open', code=host.code())
+
+
+def _race(count: int, run: Callable[[], object]) -> None:
+    gate = threading.Barrier(count)
+
+    def one() -> None:
+        gate.wait()
+        with contextlib.suppress(BreakglassRefused):
+            run()
+
+    threads = [threading.Thread(target=one) for _ in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+
+def test_parallel_sessions_spend_one_code_once(host: Host) -> None:
+    valid = host.code()
+    host.delay = 0.02
+    _race(6, lambda: host.ask('open', code=valid))
+    stamp = datetime.fromtimestamp(NOW, UTC).strftime('%Y%m%dT%H%M%SZ')
+    assert [a[0] for a in host.alerts].count(f'break-glass wave {stamp} OPENED') == 1
+
+
+def test_parallel_wrong_codes_cannot_outrun_the_lockout(host: Host) -> None:
+    host.delay = 0.02
+    _race(10, lambda: host.ask('open', code='000000'))
+    assert [a[0] for a in host.alerts].count('break-glass LOCKED OUT') == 1
+    with pytest.raises(BreakglassRefused, match='too many wrong codes'):
+        host.ask('open', code=host.code())
+
+
+def test_an_alert_that_fails_never_loses_the_audit_or_the_merge(host: Host) -> None:
+    host.ask('open', code=host.code())
+
+    def broken(_title: str, _body: str) -> None:
+        unreachable = 'telegram unreachable'
+        raise OSError(unreachable)
+
+    server = host.server
+    server.alert = broken
+    said = server.handle(json.dumps({'action': 'merge', 'repo': 'alpha', 'pr': 7, 'head': HEAD,
+                                     'reason': 'review-bot is down'}))  # fmt: skip
+    assert said.startswith('merged')
+    assert host.config.breakglass is not None
+    outcomes = [json.loads(line)['outcome'] for line in
+                Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()]  # fmt: skip
+    assert 'merged' in outcomes
+    assert any(outcome.startswith('alert failed') for outcome in outcomes)
+
+
+@pytest.mark.parametrize(
+    'fields',
+    [{'hours': 0}, {'hours': -1}, {'hours': float('nan')}, {'hours': 'x'}, {'max_merges': 0}, {'max_merges': 1.5}],
+)
+def test_bad_bounds_are_refused_before_the_code_is_spent(host: Host, fields: dict[str, object]) -> None:
+    valid = host.code()
+    with pytest.raises(BreakglassRefused, match='malformed'):
+        host.ask('open', code=valid, **fields)
+    assert 'open for' in host.ask('open', code=valid)
+
+
+@pytest.mark.parametrize(
+    'fields',
+    [{'pr': 'seven'}, {'pr': 0}, {'head': 'not-a-sha'}, {'repo': ''}, {'reason': 5}],
+)
+def test_a_malformed_merge_is_refused_by_the_parser(host: Host, fields: dict[str, object]) -> None:
+    host.ask('open', code=host.code())
+    with pytest.raises(BreakglassRefused, match='malformed'):
+        host.merge(**fields)
+    assert host.forge.calls == []
+
+
+def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
+    host.ask('open', code=host.code())
+
+    def boom(_root: Path) -> FakeForge:
+        internal = 'internal'
+        raise KeyError(internal)
+
+    server = host.server
+    server.forge_for = boom
+    with pytest.raises(KeyError):
+        server.handle(json.dumps({'action': 'merge', 'repo': 'alpha', 'pr': 7, 'head': HEAD,
+                                  'reason': 'review-bot is down'}))  # fmt: skip
+
+
+def test_a_missing_clone_is_a_refusal_audited_and_alerted(tmp_path: Path) -> None:
+    url, _ = origin(tmp_path)
+    bare = Host(config(tmp_path, [url]))
+    bare.ask('open', code=bare.code())
+    with pytest.raises(BreakglassRefused, match='no clone'):
+        bare.merge()
+    assert any('REFUSED' in a[0] for a in bare.alerts)

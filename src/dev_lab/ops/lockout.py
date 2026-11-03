@@ -2,7 +2,8 @@
 
 User ruling 2026-11-03: 5 and 15 by default, both configured. Persisted in the role's state directory
 (``lockout.json``), so a restart does not reset it; a correct code resets the count; while locked even a correct
-code is refused (and not consumed); the lockout alerts once, when it begins.
+code is refused (and not consumed); the lockout alerts once, when it begins. Its read-modify-write is atomic only
+under the role lock the caller holds (:func:`dev_lab.ops.statelock.exclusive`).
 """
 
 from __future__ import annotations

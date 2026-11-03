@@ -18,6 +18,8 @@ __all__ = ['ENV', 'fingerprint']
 
 #: The variable sshd names its authentication record in.
 ENV: Final = 'SSH_USER_AUTH'
+#: A key's line: method, key type, base64 blob.
+_FIELDS: Final = 3
 
 
 def fingerprint(auth_file: str) -> str:
@@ -28,7 +30,7 @@ def fingerprint(auth_file: str) -> str:
         return ''
     for line in lines:
         parts = line.split()
-        if len(parts) >= 3 and parts[0] == 'publickey':  # noqa: PLR2004 -- method, key type, blob
+        if len(parts) >= _FIELDS and parts[0] == 'publickey':
             try:
                 blob = base64.b64decode(parts[2], validate=True)
             except (ValueError, binascii.Error):

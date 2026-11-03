@@ -2,7 +2,9 @@
 
 THE SECRET NEVER LEAVES THE HOST except once, as the enrolment URI the user scans into an Authenticator app
 (:func:`enrol`). A code is accepted at most once: :func:`accept` persists the time-step it matched and refuses any
-step at or before it, so a code read off a screen or a log cannot be replayed, even inside its own window.
+step at or before it, so a code read off a screen or a log cannot be replayed, even inside its own window. The read
+and the write of that step are one critical section only under the role lock its caller holds
+(:func:`dev_lab.ops.statelock.exclusive`, taken by every break-glass request).
 """
 
 from __future__ import annotations

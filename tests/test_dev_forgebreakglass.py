@@ -35,7 +35,7 @@ class _Recorder:
 def test_open_sends_the_typed_code_and_the_asked_bounds() -> None:
     send = _Recorder()
     assert wave_main(['open', '--hours', '1'], table=_TABLE, ask=lambda _p: ' 123456 ', send=send) == 0
-    assert send.sent == [{'action': 'open', 'hours': 1.0, 'max_merges': 0, 'code': '123456'}]
+    assert send.sent == [{'action': 'open', 'hours': 1.0, 'code': '123456'}]
 
 
 def test_close_and_status_ask_for_no_code() -> None:
