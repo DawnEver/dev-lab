@@ -162,11 +162,16 @@ def door_upgrade(tree: Path) -> int:
 
 
 def _tree_python(tree: Path) -> str:
-    """The interpreter the door synced into *tree* (it holds the NEW pin), else this one."""
+    """The interpreter the door synced into *tree*: it holds the NEW pin.
+
+    Raises RelockFailed when *tree* has no ``.venv``: this interpreter holds the OLD pin, and rendering with it
+    would carry the stale workflow the relock exists to replace.
+    """
     for candidate in (tree / '.venv' / 'Scripts' / 'python.exe', tree / '.venv' / 'bin' / 'python'):
         if candidate.is_file():
             return str(candidate)
-    return sys.executable
+    msg = f'{tree} has no .venv: the render needs the interpreter that holds the new pin; run the lock door first'
+    raise RelockFailed(msg)
 
 
 def rerender(tree: Path) -> int:

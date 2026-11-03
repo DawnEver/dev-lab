@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -39,6 +40,10 @@ def _commit(repo: Path, name: str, when: datetime) -> str:
     _git(repo, 'add', '-A')
     _git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', name, when=when)
     return _git(repo, 'rev-parse', 'HEAD')
+
+
+#: The fixture's dependency is a local bare repo; production admits https only (drift.SCHEMES).
+_LOCAL = ('https', 'file')
 
 
 @pytest.fixture
@@ -74,21 +79,21 @@ def test_a_pin_behind_past_the_bound_is_a_finding_and_a_fresh_one_is_not(
     """PLANTED control: the same census with the pin AT the head finds nothing."""
     url, pinned, head = dependency
     cache = tmp_path / 'cache'
-    lag = drift.lag('dev-lab', url, pinned, cache=cache)
+    lag = drift.lag('dev-lab', url, pinned, cache=cache, schemes=_LOCAL)
     assert (lag.behind, lag.head, lag.since) == (2, head, _NOW - timedelta(days=5))
     (found,) = drift.findings([lag], (), now=_NOW, bound=timedelta(days=2))
     assert found.about == 'dev-lab'
     assert '2 commits behind' in found.body
     assert pinned[:12] in found.body
 
-    fresh = drift.lag('dev-lab', url, head, cache=cache)
+    fresh = drift.lag('dev-lab', url, head, cache=cache, schemes=_LOCAL)
     assert fresh.behind == 0
     assert drift.findings([fresh], (), now=_NOW, bound=timedelta(days=2)) == ()
 
 
 def test_a_pin_behind_inside_the_bound_waits_for_the_relock(dependency: tuple[str, str, str], tmp_path: Path) -> None:
     url, pinned, _ = dependency
-    lag = drift.lag('dev-lab', url, pinned, cache=tmp_path / 'cache')
+    lag = drift.lag('dev-lab', url, pinned, cache=tmp_path / 'cache', schemes=_LOCAL)
     assert drift.findings([lag], (), now=_NOW, bound=timedelta(days=6)) == (), (
         'behind 5 days, bound 6: the relock has time'
     )
@@ -108,7 +113,7 @@ def test_a_host_running_what_its_lock_does_not_pin_is_a_finding() -> None:
 def test_each_finding_is_one_drift_alarm_naming_the_remedy(dependency: tuple[str, str, str], tmp_path: Path) -> None:
     url, pinned, _ = dependency
     (found,) = drift.findings(
-        [drift.lag('dev-lab', url, pinned, cache=tmp_path / 'c')], (), now=_NOW, bound=timedelta(0)
+        [drift.lag('dev-lab', url, pinned, cache=tmp_path / 'c', schemes=_LOCAL)], (), now=_NOW, bound=timedelta(0)
     )
     alarm = drift.alarm_of('https://forge/o/lab-commons', found)
     assert isinstance(alarm, Alarm)
@@ -173,3 +178,55 @@ def test_the_repo_wide_pass_runs_the_census_after_the_relock_and_a_failure_is_sa
     )  # fmt: skip
     assert order == ['relock', 'drift']
     assert said == ['[serve] the drift census did not run: git show failed']
+
+
+@pytest.mark.parametrize(
+    ('url', 'sha'),
+    [
+        ('ext::sh -c touch% /tmp/pwned', 'ab' * 20),
+        ('--upload-pack=touch /tmp/pwned', 'ab' * 20),
+        ('ssh://host/repo.git', 'ab' * 20),
+        ('file:///srv/repo.git', 'ab' * 20),
+        ('https://github.com/DawnEver/dev-lab.git', '--output=/tmp/x'),
+    ],
+)
+def test_a_lock_url_that_is_not_https_or_an_option_is_refused_before_any_fetch(
+    url: str, sha: str, tmp_path: Path
+) -> None:
+    """F-a1b33b2b8004: a ``source.git`` from uv.lock reaches ``git fetch`` only as an https URL, never an option."""
+    with pytest.raises(ValueError, match='refused'):
+        drift.lag('dev-lab', url, sha, cache=tmp_path / 'cache')
+    assert not (tmp_path / 'cache').exists(), 'refused before anything is created'
+
+
+def test_planted_control_an_https_url_passes_the_admission() -> None:
+    drift.admit('https://github.com/DawnEver/dev-lab.git', 'ab' * 20, drift.SCHEMES)
+
+
+def test_the_fetch_puts_the_url_after_a_double_dash_and_allows_only_the_declared_protocols() -> None:
+    argv = drift.fetch_argv(Path('repo.git'), 'dev-lab', 'https://h/x.git', ('https',))
+    assert argv[argv.index('--') + 1] == 'https://h/x.git'
+    assert argv[3:7] == ['-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always']
+
+
+@pytest.mark.parametrize('name', ['../../etc', 'a/b', '..', '-x', 'Dev Lab', 'x/'])
+def test_a_lock_package_name_that_is_not_a_pep503_name_is_refused(name: str) -> None:
+    """F-59acfb5c7833: the name becomes a cache directory, so it must be a canonical PEP 503 name."""
+    text = f'version = 1\n\n[[package]]\nname = "{name}"\nsource = {{ git = "https://h/x.git#ab" }}\n'
+    with pytest.raises(ValueError, match='not a package name'):
+        drift.sources(text)
+
+
+def test_planted_control_a_canonical_name_with_dots_and_dashes_is_kept() -> None:
+    text = 'version = 1\n\n[[package]]\nname = "zope.interface-x"\nsource = { git = "https://h/x.git#ab" }\n'
+    assert drift.sources(text) == {'zope.interface-x': ('https://h/x.git', 'ab')}
+
+
+def test_a_git_timeout_is_an_oserror_so_the_drift_step_stays_contained(monkeypatch, tmp_path: Path) -> None:
+    def hang(*_a: object, **_k: object) -> NoReturn:
+        cmd = 'git'
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(drift._door, 'run', hang)
+    with pytest.raises(OSError, match='timed out'):
+        drift._git(tmp_path, 'status')

@@ -19,7 +19,17 @@ from dev_lab.dev import forgeservesteps, relock
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.relock import PREFIX, Relock, RelockFailed, branch_for, carry, decision, dist_of
+from dev_lab.dev.relock import (
+    PREFIX,
+    Relock,
+    RelockFailed,
+    _tree_python,
+    branch_for,
+    carry,
+    decision,
+    dist_of,
+    rerender,
+)
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -280,3 +290,17 @@ def test_a_render_that_fails_is_a_named_refusal_and_pushes_nothing(world: tuple[
             rerender=lambda _t: 3,
         )  # fmt: skip
     assert (forge.created, _git(origin, 'branch', '--list', f'{PREFIX}-*')) == ([], '')
+
+
+def test_a_tree_without_its_venv_is_refused_not_rendered_with_this_interpreter(tmp_path: Path) -> None:
+    """The running interpreter holds the OLD pin: rendering with it would carry the stale workflow (#71 review)."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    with pytest.raises(RelockFailed, match=r'no \.venv'):
+        rerender(tmp_path)
+
+
+def test_planted_control_a_tree_with_its_venv_renders_with_that_interpreter(tmp_path: Path) -> None:
+    for python in (tmp_path / '.venv' / 'Scripts' / 'python.exe', tmp_path / '.venv' / 'bin' / 'python'):
+        python.parent.mkdir(parents=True, exist_ok=True)
+        python.write_text('', encoding='utf-8')
+    assert Path(_tree_python(tmp_path)).parent.parent == tmp_path / '.venv'

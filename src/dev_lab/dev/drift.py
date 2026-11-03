@@ -26,6 +26,8 @@ PINNED dev-lab (``ciworkflows check``), so a stale render is a stale pin, and th
 from __future__ import annotations
 
 import argparse
+import re
+import subprocess
 import sys
 import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -96,41 +98,75 @@ def _canonical(name: str) -> str:
     return name.lower().replace('_', '-')
 
 
+#: A canonical PEP 503 name: the only shape a lock's package name may take before it names a cache directory.
+_PEP503: Final = re.compile(r'^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$')
+
+#: The URL schemes a lock pin may be fetched over. A lock is repository content, so its URL is untrusted input.
+SCHEMES: Final = ('https',)
+
+
 def sources(lock: str) -> dict[str, tuple[str, str]]:
-    """Package name -> ``(repository url, pinned commit)`` for every package *lock* sources from git."""
+    """Package name -> ``(repository url, pinned commit)`` for every package *lock* sources from git.
+
+    Raises ValueError for a name that is not a canonical PEP 503 name: it becomes a cache directory.
+    """
     pins: dict[str, tuple[str, str]] = {}
     for package in tomllib.loads(lock).get('package', []):
         git = package.get('source', {}).get('git')
         if isinstance(git, str) and '#' in git:
+            name = _canonical(package['name'])
+            if not _PEP503.match(name):
+                msg = f'uv.lock package {name!r} is not a package name (PEP 503); drift refused'
+                raise ValueError(msg)
             url, _, sha = git.rpartition('#')
-            pins[_canonical(package['name'])] = (url.partition('?')[0], sha)
+            pins[name] = (url.partition('?')[0], sha)
     return pins
 
 
+def admit(url: str, sha: str, schemes: tuple[str, ...]) -> None:
+    """Refuse a lock pin that is not a URL over *schemes*, or whose URL or commit could be read as an option."""
+    scheme = url.partition('://')[0] if '://' in url else ''
+    if scheme not in schemes or url.startswith('-') or sha.startswith('-'):
+        msg = f'lock pin {url}#{sha} refused: only {", ".join(schemes)} URLs are fetched'
+        raise ValueError(msg)
+
+
+def fetch_argv(repo: Path, dist: str, url: str, schemes: tuple[str, ...]) -> list[str]:
+    """The commits-only fetch of *url*: only *schemes* allowed, the URL after ``--`` so it is never an option."""
+    allow = [arg for scheme in schemes for arg in ('-c', f'protocol.{scheme}.allow=always')]
+    return [
+        _GIT, '-C', str(repo), '-c', 'protocol.allow=never', *allow,
+        'fetch', '-q', '--filter=tree:0', '--no-tags', '--', url, f'+HEAD:refs/drift/{dist}',
+    ]  # fmt: skip
+
+
 def _git(cwd: Path, *argv: str) -> str:
-    done = _door.run(
-        [_GIT, '-C', str(cwd), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-        check=False, timeout=_GIT_TIMEOUT_S,
-    )  # fmt: skip
+    try:
+        done = _door.run(
+            [_GIT, '-C', str(cwd), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
+            check=False, timeout=_GIT_TIMEOUT_S,
+        )  # fmt: skip
+    except subprocess.TimeoutExpired as why:
+        msg = f'git {" ".join(argv[:2])} timed out after {why.timeout} s in {cwd}'
+        raise OSError(msg) from why
     if done.returncode != 0:
         msg = f'git {" ".join(argv[:2])} failed in {cwd}: {(done.stdout + done.stderr).strip()}'
         raise OSError(msg)
     return done.stdout.strip()
 
 
-def lag(dist: str, url: str, pinned: str, *, cache: Path) -> Lag:
+def lag(dist: str, url: str, pinned: str, *, cache: Path, schemes: tuple[str, ...] = SCHEMES) -> Lag:
     """*pinned* read against the default branch of *url*: commits behind and since when.
 
     The dependency is fetched commits-only (``--filter=tree:0``) into ``cache/<dist>.git``, kept across ticks.
+    A pin that :func:`admit` refuses raises ValueError before anything is created or fetched.
     """
+    admit(url, pinned, schemes)
     repo = cache / f'{dist}.git'
     if not repo.is_dir():
         repo.mkdir(parents=True)
         _git(repo, 'init', '-q', '--bare')
-    report = run_network_verb(
-        [_GIT, '-C', str(repo), 'fetch', '-q', '--filter=tree:0', '--no-tags', url, f'+HEAD:refs/drift/{dist}'],
-        cwd=repo, timeout=300,
-    )  # fmt: skip
+    report = run_network_verb(fetch_argv(repo, dist, url, schemes), cwd=repo, timeout=300)
     if not report.ok:
         msg = f'the fetch of {url} failed: {report.remedy}'
         raise OSError(msg)
