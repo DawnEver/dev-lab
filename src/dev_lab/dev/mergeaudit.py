@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.blobfetch import fetch_blobs
 from dev_lab.dev.breakglass import BREAK_GLASS, empty_reason
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.lanepolicy import policy_at
@@ -223,13 +224,19 @@ def _git(root: Path, *args: str, data: bytes | None = None) -> bytes:
     return done.stdout
 
 
-def _sources(root: Path, sha: str, roots: Sequence[str]) -> dict[str, bytes]:
+def _test_blobs(root: Path, sha: str, roots: Sequence[str]) -> dict[str, str]:
+    """The blob id of every test file of *sha* under *roots*, by path; ``ls-tree`` reads trees only."""
     listed = _git(root, 'ls-tree', '-r', '-z', sha, '--', *roots).split(b'\0')
     blobs: dict[str, str] = {}
     for entry in filter(None, listed):
         meta, _, path = entry.decode('utf-8').partition('\t')
         if meta.split()[1] == 'blob' and _is_test_file(path):
             blobs[path] = meta.split()[2]
+    return blobs
+
+
+def _sources(root: Path, blobs: Mapping[str, str]) -> dict[str, bytes]:
+    """The bytes of *blobs* (path -> blob id) in one ``cat-file --batch``; a partial clone fetched them first."""
     if not blobs:
         return {}
     out = _git(root, 'cat-file', '--batch', data=''.join(f'{oid}\n' for oid in blobs.values()).encode())
@@ -267,7 +274,9 @@ def _audit(
         raise MergeAuditError(msg)
     bases = _git(root, 'merge-base', '--all', *parents).decode().split()
     shas = (*parents, merged, *bases)
-    rows = [_scan(_sources(root, sha, roots)) for sha in shas]
+    trees = [_test_blobs(root, sha, roots) for sha in shas]
+    fetch_blobs(root, (oid for tree in trees for oid in tree.values()))  # else a blobless clone fetches each lazily
+    rows = [_scan(_sources(root, tree)) for tree in trees]
     if not any(rows):
         msg = f'{merge}: no test under {list(roots)} in any of its trees -- a vacuous audit is refused'
         raise MergeAuditError(msg)

@@ -8,10 +8,12 @@ must be NAMED in the merge commit with a one-line reason.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -325,3 +327,42 @@ def test_the_commit_msg_check_accepts_a_break_glass_reason_and_refuses_an_empty_
     message.write_text(f'fix: x\n\n{trailer}', encoding='utf-8')
     assert mergeaudit.main([str(message)]) == code
     assert ('Break-Glass' in capsys.readouterr().err) == bool(code)
+
+
+def _blobless_clone(origin: Path, into: Path) -> Path:
+    _git(origin, 'config', 'uploadpack.allowFilter', 'true')
+    _git(origin, 'config', 'uploadpack.allowAnySHA1InWant', 'true')
+    subprocess.run([_GIT, 'clone', '-q', '--no-checkout', '--filter=blob:none', origin.as_uri(), str(into)], check=True)
+    return into
+
+
+def test_a_blobless_clone_fetches_the_audited_blobs_before_reading_them(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every blob the audit reads is in the clone before ``cat-file --batch`` reads it.
+
+    merge.yml's checkout is blobless, and ``cat-file --batch`` over missing blobs fetches them one round trip each
+    (motronics merge.yml tasks 274/276/277 timed out at 120 s, 2026-11-03).
+    """
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'tests/test_b.py': B}, 'lane adds b')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'tests/test_a.py': A2}, 'main edits a')
+    _git(repo, 'merge', '-q', '-m', 'merge lane', 'lane')
+    head = _git(repo, 'rev-parse', 'HEAD')
+    clone = _blobless_clone(repo, tmp_path_factory.mktemp('blobless') / 'clone')
+    run = mergeaudit._door.run
+    absent: list[str] = []
+
+    def guarded(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:  # noqa: ANN401
+        if argv[3:5] == ['cat-file', '--batch']:
+            check = subprocess.run(
+                [_GIT, '-C', str(clone), 'cat-file', '--batch-check'],
+                input=kwargs['input'], capture_output=True, check=True, env={**os.environ, 'GIT_NO_LAZY_FETCH': '1'},
+            )  # fmt: skip
+            absent.extend(line for line in check.stdout.decode().splitlines() if line.endswith('missing'))
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(mergeaudit._door, 'run', guarded)
+    assert mergeaudit.audit(clone, head, roots=('tests',)) == ()
+    assert absent == []

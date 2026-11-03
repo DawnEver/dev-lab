@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.blobfetch import fetch_blobs
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview_findings import merge_outputs
@@ -163,7 +164,6 @@ def git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
 #: Blob modes a ``--raw`` line carries for file content (regular, executable, symlink); a gitlink is a commit.
 _BLOB_MODES: Final = frozenset({'100644', '100755', '120000'})
 _NO_OBJECT: Final = re.compile(r'0+')
-_FETCH_CHUNK: Final = 500  # object ids per fetch argv, under every platform's command-line limit
 
 
 def prefetch(root: Path, *ranges: str) -> int:
@@ -175,7 +175,7 @@ def prefetch(root: Path, *ranges: str) -> int:
     trees only and fetches nothing. A clone that is not partial (no ``remote.origin.promisor``) asks for nothing.
     """
     if git(root, 'config', '--get', 'remote.origin.promisor', ok=(0, 1))[1].strip() != 'true':
-        return 0
+        return 0  # a full clone: not even the diff runs
     wanted: set[str] = set()
     for range_ in ranges:
         raw = git(root, 'diff', '--raw', '--no-renames', '--abbrev=40', '-z', '--end-of-options', range_)[1]
@@ -185,11 +185,7 @@ def prefetch(root: Path, *ranges: str) -> int:
             old_mode, new_mode, old, new, *_ = meta[1:].split()
             wanted |= {oid for mode, oid in ((old_mode, old), (new_mode, new))
                        if mode in _BLOB_MODES and not _NO_OBJECT.fullmatch(oid)}  # fmt: skip
-    ordered = sorted(wanted)
-    for start in range(0, len(ordered), _FETCH_CHUNK):
-        git(root, '-c', 'fetch.negotiationAlgorithm=noop', 'fetch', '-q', '--no-tags', '--no-write-fetch-head',
-            '--recurse-submodules=no', 'origin', *ordered[start:start + _FETCH_CHUNK])  # fmt: skip
-    return len(ordered)
+    return fetch_blobs(root, wanted)
 
 
 def _ancestor(root: Path, older: str, newer: str) -> bool:
