@@ -112,6 +112,12 @@ VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
         "scancels only this sha's run-<sha12>-<part> tasks busy at full CPU with no result past their bound"
     ),
     ('python', '-m', 'dev_lab.dev.forge', 'watch'): 'read-only: prints a commit verdict until settled or a deadline',
+    # FORGE-DOORS-ARE-CONSENT: the PR lifecycle is the agent's; the forge refuses a bad case, not the classifier.
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'create'): (
+        'opens a DRAFT PR onto integration and advises a stacked or second-session PR (NO-STACKED-PRS)'
+    ),
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'ready'): 'marks a draft PR ready for review (DRAFT-UNTIL-READY)',
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'draft'): 'returns a PR to draft; nothing reviews or merges it',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
         'closes open PRs salvaged into another OPEN, unmerged PR or a commit; never deletes a branch'
