@@ -542,3 +542,16 @@ def test_whoami_always_asks_the_forge_and_only_github_names_the_actions_bot(serv
     assert job.whoami() == ACTIONS_BOT
     _answer('GET', '/user', (200, {'login': 'maintainer'}))
     assert job.whoami() == 'maintainer', 'a PAT can read /user, so it is its user'
+
+
+def test_pull_diff_asks_each_forge_for_its_own_raw_diff(server) -> None:
+    """Gitea: ``pulls/{n}.diff``; GitHub: ``pulls/{n}`` asked for the diff media type. PLANTED CONTROL: a 404 raises."""
+    gitea, github = Forge('forge.example.org', 'o', 'r'), Forge('github.com', 'o', 'r')
+    _answer('GET', '/api/v1/repos/o/r/pulls/7.diff', (200, 'diff --git a/x b/x'))
+    assert _client(gitea, _Loopback(server)).pull_diff(7) == '"diff --git a/x b/x"'  # the fake JSON-encodes
+    assert _Recorder.received[-1]['headers']['Accept'] == 'text/plain'
+    _answer('GET', '/repos/o/r/pulls/7', (200, 'd'))
+    assert _client(github, _Loopback(server)).pull_diff(7) == '"d"'
+    assert _Recorder.received[-1]['headers']['Accept'] == 'application/vnd.github.diff'
+    with pytest.raises(ForgeCallFailed):
+        _client(gitea, _Loopback(server)).pull_diff(8)

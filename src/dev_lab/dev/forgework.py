@@ -159,7 +159,7 @@ class Client:
         return backend_for(self.forge)
 
     def _once(
-        self, method: str, path: str, data: bytes | None, content_type: str, host: str | None
+        self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *, accept: str = ''
     ) -> tuple[int, bytes]:
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
@@ -167,6 +167,8 @@ class Client:
         try:
             sent = {'Authorization': auth, 'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)}
             sent |= dict(backend.headers)
+            if accept:
+                sent['Accept'] = accept
             conn.request(method, path, body=data, headers=sent)
             response = conn.getresponse()
             self.answered = response.getheader('Date') or self.answered
@@ -262,6 +264,23 @@ class Client:
                 Report(('GET', path), (Attempt(1, status or 1, text, self._diagnosis(status, text, path)),), 1)
             )
         return payload
+
+    def pull_diff(self, number: int) -> str:
+        """The forge's OWN unified diff of pull request *number* -- what a review bundle is checked against.
+
+        Gitea serves ``pulls/{n}.diff``; GitHub serves ``pulls/{n}`` as a diff when asked for
+        ``application/vnd.github.diff``. Not retried and not JSON; a refusal raises :class:`ForgeCallFailed`.
+        """
+        github = self.backend is GITHUB
+        path = f'{self.repo}/pulls/{number}' + ('' if github else '.diff')
+        accept = 'application/vnd.github.diff' if github else 'text/plain'
+        status, payload = self._once('GET', path, None, 'application/json', None, accept=accept)
+        if not 0 < status < HTTP_ERROR_FLOOR:
+            text = payload.decode(errors='replace')[:300]
+            raise ForgeCallFailed(
+                Report(('GET', path), (Attempt(1, status or 1, text, self._diagnosis(status, text, path)),), 1)
+            )
+        return payload.decode('utf-8', 'replace')
 
     def _request(
         self, method: str, path: str, data: bytes | None, content_type: str, durable: Durable | None, *, host: str = ''
