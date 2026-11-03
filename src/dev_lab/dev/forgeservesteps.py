@@ -1,4 +1,4 @@
-"""The STEPS one ``forge serve`` tick runs after its rounds: issue-kept alarms, cleanup, hygiene, retention, relock.
+"""The STEPS one ``forge serve`` tick runs after its rounds: alarms, cleanup, hygiene, retention, relock, drift.
 
 Each step is failure-contained -- a forge or disk failure is said or alarmed, never raised into the tick --
 so one broken step never stops the others (:func:`dev_lab.dev.forgeserve.serve` calls them in order).
@@ -16,6 +16,7 @@ from dev_lab.dev import escapes, forgeship, hostalarm, retention
 from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
+from dev_lab.dev.drift import step as drift_step
 from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
 from dev_lab.dev.forgebacklog import alarms as late_reviews
 from dev_lab.dev.forgebacklog import declared_wait
@@ -239,7 +240,8 @@ def repo_wide(
 ) -> None:
     """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgeserve.polls`).
 
-    In order: close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock. A repo that
+    In order: close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock, and the drift
+    census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. A repo that
     declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
     """
     if ci_merges(root):
@@ -253,3 +255,7 @@ def repo_wide(
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
     relock(root, repo, client(root), say=say, alarm=alarm)
+    try:
+        drift_step(root, repo, say=say, alarm=alarm, now=clock())
+    except (OSError, ValueError) as why:
+        say(f'[serve] the drift census did not run: {why}')

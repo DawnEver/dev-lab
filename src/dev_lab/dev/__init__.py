@@ -177,6 +177,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.lockcheck` -- the PIN reading (half of PIN + FRESHNESS): a commit commits ``uv.lock`` and
   every hold below the newest declares its reason; judged on the forge by ``famtests.lockpin``, relocked by ``relock``.
 * :mod:`dev_lab.dev.relock` -- the serve tick relocks a stale integration lock through ONE pull request.
+* :mod:`dev_lab.dev.drift` -- the serve tick alarms a lock pin left behind its dependency, or a host off its lock.
 * :mod:`dev_lab.dev.forgeheadgate` -- ``lock/fresh`` and ``branchset`` statuses on every open PR head,
   each naming its fix.
 * :mod:`dev_lab.dev.lanepolicy` -- the branch names a repo declares in
