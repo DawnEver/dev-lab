@@ -319,11 +319,16 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     )
 
 
+def _unguarded(step: dict[str, Any]) -> dict[str, Any]:
+    """*step* without the guard Gitea's review job adds (the settle step's skip): the shared step itself."""
+    return {key: value for key, value in step.items() if key != 'if'}
+
+
 def _method_steps(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     (tmp_path / 'hub').mkdir()
     jobs = (_base_ci(tmp_path / 'hub')['jobs']['review'], _gitea_review(tmp_path)['jobs']['review'])
     hub, tea = (next(s for s in job['steps'] if s.get('name') == 'Install the review method') for job in jobs)
-    return hub, tea
+    return hub, _unguarded(tea)
 
 
 def test_the_review_method_is_the_ai_lab_the_door_s_dev_lab_lock_pins(tmp_path: Path) -> None:
@@ -542,7 +547,7 @@ def _door_steps(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     (tmp_path / 'hub').mkdir()
     jobs = (_base_ci(tmp_path / 'hub')['jobs']['review'], _gitea_review(tmp_path)['jobs']['review'])
     hub, tea = (next(s for s in job['steps'] if s.get('name') == 'Install the review door') for job in jobs)
-    return hub, tea
+    return hub, _unguarded(tea)
 
 
 def test_the_door_is_the_dev_lab_the_base_s_lock_pins(tmp_path: Path) -> None:
@@ -637,8 +642,8 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     assert 'uv sync' not in render(review)
     (tmp_path / 'hub').mkdir()
     hub = _base_ci(tmp_path / 'hub')['jobs']['review']
-    assert job['steps'][-1] == hub['steps'][-1], 'the review step is one source'
-    install = next(s for s in job['steps'] if s.get('name') == 'Install the review method')
+    assert _unguarded(job['steps'][-1]) == hub['steps'][-1], 'the review step is one source'
+    install = _unguarded(next(s for s in job['steps'] if s.get('name') == 'Install the review method'))
     assert install == next(s for s in hub['steps'] if s.get('name') == 'Install the review method')
     assert '"GITHUB_TOKEN": "${{ github.token }}"' in render(review), 'the job token posts: the forge is its creator'
 
@@ -936,3 +941,39 @@ def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path:
     )
     assert ran.returncode != 0
     assert 'no commit names the door' in ran.stdout + ran.stderr
+
+
+def test_a_pr_with_no_code_is_settled_before_any_clone_or_install(tmp_path: Path) -> None:
+    """Consumer #5514 (2026-11-03): six memory-only pushes paid six mirror clones and venv installs, 100-150 s each.
+
+    The step after reaching the forge runs :mod:`dev_lab.dev.reviewcode` (fetched alone, at the door's locked
+    dev-lab commit) on a bare interpreter; when it settles the head, every later step is skipped.
+    PLANTED CONTROL: a later step without the guard would still clone.
+    """
+    steps = _gitea_review(tmp_path)['jobs']['review']['steps']
+    names = [step.get('name') for step in steps]
+    first = names.index('Settle a PR with no code to review')
+    assert names[:first] == ["Reach the forge on the runner's instance"]
+    settle = steps[first]
+    assert 'src/dev_lab/dev/reviewcode.py' in settle['run']
+    assert 'python3 -I' in settle['run']
+    for text in ('git clone', 'pip install', 'git fetch'):
+        assert text not in settle['run'], text
+    skip = f"${{{{ steps.{settle['id']}.outputs.settled != 'true' }}}}"
+    assert [step.get('if') for step in steps[first + 1 :]] == [skip] * len(steps[first + 1 :])
+    assert settle['env']['PR_NUMBER'] == '${{ github.event.pull_request.number }}'
+
+
+def test_a_use_steps_guard_reaches_every_step_it_expands_to() -> None:
+    shared = {'two': [{'run': 'a'}, {'run': 'b', 'if': '${{ always() }}'}]}
+    job = {'jobs': {'j': {'steps': [{'use-steps': 'two', 'if': '${{ x }}'}]}}}
+    assert expand(job, shared)['jobs']['j']['steps'] == [
+        {'run': 'a', 'if': '${{ x }}'},
+        {'run': 'b', 'if': '${{ (x) && (always()) }}'},
+    ]
+
+
+def test_the_mirror_follows_the_forge_when_it_moves_hosts(tmp_path: Path) -> None:
+    """2026-11-03: after the forge moved hosts every job failed reading the mirror's first-clone origin URL."""
+    run = _fetch_the_head(tmp_path)['run']
+    assert run.index('git -C "$MIRROR" remote set-url origin "$REPO"') < run.index('git -C "$MIRROR" fetch')

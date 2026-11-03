@@ -328,7 +328,8 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # repository has ONE persistent bare blobless mirror, $HOME/mirrors/<owner>/<repo>.git under the runner's HOME; a job
 # updates it incrementally under `flock` on <repo>.git.lock (the kernel drops the lock when a killed job dies; the
 # first run builds it at <repo>.git.new and renames it, so a half-built mirror is never used, and a stale *.lock a
-# killed fetch left is removed while the flock is held). The mirror holds only the forge's BRANCHES -- no PR ref,
+# killed fetch left is removed while the flock is held; its origin is re-pointed at this job's $REPO before every
+# fetch -- 2026-11-03, the forge moved hosts and every job read the first clone's dead URL). The mirror holds only the forge's BRANCHES -- no PR ref,
 # no hook (empty template; every job's git runs core.hooksPath=/dev/null), no credential (the header is the step's
 # GIT_CONFIG_* env, never a config write). The checkout is a `clone --shared` of it in the job's workspace,
 # disposable, re-pointed at the forge as its promisor; the PR head is fetched into the checkout alone.
@@ -365,6 +366,7 @@ mkdir -p "${MIRROR%/*}"
     mv "$MIRROR.new" "$MIRROR"
   fi
   find "$MIRROR" -maxdepth 2 -name '*.lock' -type f -delete
+  git -C "$MIRROR" remote set-url origin "$REPO"
   git -C "$MIRROR" fetch -q --prune --no-tags --filter=blob:none origin '+refs/heads/*:refs/heads/*'
 ) 9>"$MIRROR.lock"
 git clone -q --shared --no-checkout --template= "$MIRROR" .
@@ -415,14 +417,36 @@ UV_PYTHON_DOWNLOADS = "never"
 UV_CONCURRENT_INSTALLS = "1"  # one at a time: the runner is memory-capped
 UV_CONCURRENT_BUILDS = "1"
 
+# NOTHING TO REVIEW IS SETTLED FIRST (2026-11-03, consumer #5514): before any clone or install, a bare python3 runs
+# dev_lab.dev.reviewcode -- fetched alone at the door's locked dev-lab commit -- which posts the review's own
+# ONLY_GENERATED success on a PR holding no code and skips every later step; whatever it cannot read, the review runs.
 ["review.yml".jobs.review]
 runs-on = "review"
 steps = [
     { use-steps = "reach" },
-    { use-steps = "lean" },
-    { use-steps = "door" },
-    { use-steps = "method" },
-    { use-steps = "review" },
+    { name = "Settle a PR with no code to review", id = "code", env = { GITHUB_TOKEN = "${{ github.token }}", PR_NUMBER = "${{ github.event.pull_request.number }}", BASE_SHA = "${{ github.event.pull_request.base.sha }}" }, run = '''
+python3 -I -c 'import os, sys, tomllib, urllib.request
+env = os.environ
+api = env["FORGE_URL"] + "/api/v1/repos/" + env["GITHUB_REPOSITORY"]
+auth = {"Authorization": "token " + env["GITHUB_TOKEN"]}
+def get(url, headers):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as reply:
+        return reply.read().decode("utf-8")
+base, path = env["BASE_SHA"], "src/dev_lab/dev/reviewcode.py"
+lock = tomllib.loads(get(api + "/raw/uv.lock?ref=" + base, auth))
+(source,) = [p["source"] for p in lock.get("package", []) if p["name"] == "dev-lab"] or sys.exit("the base lock pins no dev-lab")
+if "git" in source:
+    text = get(env["FAMILY_SOURCE"] + "dev-lab/raw/" + source["git"].rpartition("#")[2] + "/" + path, {})
+elif source.get("editable") == ".":
+    text = get(api + "/raw/" + path + "?ref=" + base, auth)
+else:
+    sys.exit("dev-lab is locked from %s, not a git revision" % source)
+exec(compile(text, path, "exec"), {"__name__": "__main__"})' || echo "settled=false" >> "$GITHUB_OUTPUT"
+''' },
+    { use-steps = "lean", if = "${{ steps.code.outputs.settled != 'true' }}" },
+    { use-steps = "door", if = "${{ steps.code.outputs.settled != 'true' }}" },
+    { use-steps = "method", if = "${{ steps.code.outputs.settled != 'true' }}" },
+    { use-steps = "review", if = "${{ steps.code.outputs.settled != 'true' }}" },
 ]
 
 # Gitea has no `statuses` scope: POST /statuses/{sha} asks Code write (reqRepoWriter(unit.TypeCode), 1.27), so the
