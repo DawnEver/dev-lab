@@ -22,6 +22,11 @@ from typing import Final, TextIO
 
 from lab_commons.log import emit
 
+from dev_lab.dev.disclosure import details_for
+
+#: How many handed commands the refusal quotes before it counts the rest.
+_SHOWN: Final = 2
+
 __all__ = ['INTERACTIVE_ONLY', 'handed_commands', 'last_assistant_text', 'main', 'refusal']
 
 #: THE ALLOW-SET, ONE PLACE: command prefixes that need a human at a prompt or a browser. Nothing else may
@@ -88,12 +93,16 @@ def refusal(text: str) -> str | None:
     runnable = [c for c in handed_commands(text) if not _interactive(c)]
     if not runnable:
         return None
-    listed = '; '.join(f'`{c}`' for c in runnable)
+    shown = runnable[:_SHOWN]
+    listed = '; '.join(f'`{c[:80]}`' for c in shown) + (
+        f' (+{len(runnable) - len(shown)} more)' if runnable[len(shown) :] else ''
+    )
     return (
-        f'AGENT-RUNS-ITS-OWN-COMMANDS: this turn hands the user a command to run ({listed}). Run it yourself '
-        'through your shell tool, with absolute paths, and report the result. If a guard refused it, follow '
-        "the refusal's remedy -- it names the door an agent uses. Only an interactive login, passphrase or GUI "
-        f'step may go to the user (`! <cmd>`), and only these: {", ".join(INTERACTIVE_ONLY)}.'
+        f'AGENT-RUNS-ITS-OWN-COMMANDS: this turn hands the user a command to run ({listed}); only an interactive '
+        'login may go to the user.\n'
+        "Run it yourself with absolute paths and report the result; if a guard refused it, follow that refusal's "
+        'remedy, and if a permission check refused it, ask the user for the decision rather than the command.\n'
+        f'{details_for("AGENT-RUNS-ITS-OWN-COMMANDS")}'
     )
 
 
