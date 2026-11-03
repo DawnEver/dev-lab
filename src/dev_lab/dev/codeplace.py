@@ -59,6 +59,7 @@ from typing import TextIO
 from lab_commons import launch
 from lab_commons.log import emit
 
+from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
 
@@ -244,8 +245,11 @@ def declared_misplaced(root: Path) -> list[str]:
     return misplaced_code(root, code_roots=placement.code_roots, pruned_paths=placement.pruned_paths)
 
 
-#: How many strays a refusal names before it counts the rest.
-_SHOWN = 20
+#: How many strays a refusal names before it counts the rest -- the first line stays one short line.
+_SHOWN = 3
+#: Where a one-off script and a program's data go: a dated directory of their kind (user ruling 2026-11-03).
+_SCRIPT_HOME = 'scratch/<yy>/<mm>/<dd>/<kind>/'
+_DATA_HOME = 'output/logs/<yy>/<mm>/<dd>/<kind>/'
 
 
 class StrayCensusUnreadable(RuntimeError):
@@ -288,9 +292,12 @@ def declared_strays(root: Path) -> list[str]:
 
 
 def stray_refusal(root: Path) -> str | None:
-    """The ``STRAY-FILE-REFUSED`` message for the checkout *root*, naming each stray and its remedy; ``None`` if clean.
+    """The ``STRAY-FILE-REFUSED`` message for *root* in three lines; ``None`` if clean.
 
-    A checkout that declares no placement is not judged: the adopter's own test reds on the missing table.
+    The first line counts the strays and names a few; the second gives each file ONE exit chosen by its kind --
+    a file under a code root was meant (``git add``), a script is a one-off (``scratch/<yy>/<mm>/<dd>/<kind>/``),
+    anything else is a program's data (``output/logs/...``); the third points at the details. A checkout that
+    declares no placement is not judged: the adopter's own test reds on the missing table.
     """
     try:
         placement = declared_placement(root)
@@ -300,11 +307,14 @@ def stray_refusal(root: Path) -> str | None:
     if not found:
         return None
     shown = ', '.join(found[:_SHOWN]) + (f' (+{len(found) - _SHOWN} more)' if len(found) > _SHOWN else '')
+    meant = [rel for rel in found if rel.startswith(placement.code_roots)]
+    scripts = [rel for rel in found if rel not in meant and Path(rel).suffix.lower() in CODE_SUFFIXES]
+    exits = [f'git add {" ".join(meant[:_SHOWN])}' if meant else '']
+    exits.append(f'{", ".join(scripts[:_SHOWN])} -> {_SCRIPT_HOME}' if scripts else '')
+    exits.append(f'data -> {_DATA_HOME}' if len(found) > len(meant) + len(scripts) else '')
     return (
-        f'STRAY-FILE-REFUSED: {len(found)} untracked file(s) in {root} outside the stray roots '
-        f'{list(placement.stray_roots)}: {shown}. A file you MEANT: `git add` it. An artefact a program wrote: move it '
-        f'to output/logs/<yy>/<mm>/<dd>/<kind>/ and fix the program to write there (a vendor tool writes into its '
-        f'cwd: give it a cwd under output/). A one-off: {placement.scratch}. Never leave it.'
+        f'STRAY-FILE-REFUSED: {len(found)} untracked file(s) outside output/ and scratch/ in {root.as_posix()}: '
+        f'{shown}.\n{"; ".join(one for one in exits if one)}.\n{details_for("STRAY-FILE-REFUSED")}'
     )
 
 

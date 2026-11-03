@@ -23,6 +23,7 @@ from lab_commons.census import Process, processes
 from lab_commons.proc import kill_process_tree
 
 from dev_lab.dev import agenthooks, dep, forgeserve, liverun
+from dev_lab.dev.disclosure import problems
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
 from dev_lab.dev.jsrun import node_path
@@ -159,7 +160,7 @@ def test_the_hook_denies_an_edit_of_a_tree_with_a_live_run_and_names_it(
     assert decision['permissionDecision'] == 'deny'
     reason = decision['permissionDecisionReason']
     assert reason.startswith('TREE-HAS-A-LIVE-RUN:')
-    assert 'pid 4242: python.exe -m app deck run cases/x' in reason
+    assert 'pid 4242 (app)' in reason
     assert 'another worktree' in reason
 
 
@@ -215,7 +216,7 @@ def test_dep_refuses_an_environment_a_live_process_executes_from(tmp_path: Path)
     user = _proc(5151, prefix / _SCRIPTS / _PYTHON, cmd='python -m app deck run cases/x')
     ran: list[object] = []
     port = dep.Port(name='repo', anchor_paths=lambda: (), key=lambda: 'k')
-    with pytest.raises(dep.HeldEnvironmentError, match=r'pid 5151: python -m app deck run'):
+    with pytest.raises(dep.HeldEnvironmentError, match=r'pid 5151 \(app\)'):
         dep._change(
             ['uv', 'sync'], port=port, prefix=str(prefix), python=None, run=ran.append, dry_run=False,
             census=lambda: [user],
@@ -428,3 +429,33 @@ def test_an_argument_whose_stat_raises_is_no_path_and_the_census_survives(
     reader = _proc(9, 'C:/bin/node.exe', cmd=f'node.exe {pipe} {tree / "src"}', cwd='C:/')
     (tree / 'src').mkdir()
     assert liverun.live_runs(tree, census=lambda: (reader,), me=1) == (reader,)
+
+
+# ------------------------------------------------------------------------------------- the refusal's text
+
+
+def test_the_refusal_fits_the_budget_names_the_pid_and_a_short_label_not_the_command_line(tree: Path) -> None:
+
+    long_cmd = 'python.exe -m app deck run cases/x ' + '--flag value ' * 40
+    text = liverun.refusal(tree, [_proc(4242, _venv_python(tree), cmd=long_cmd)])
+    assert problems(text, 'refusal') == []
+    assert 'pid 4242 (app)' in text
+    assert '--flag value' not in text
+    assert 'dev_lab.dev.stoprun --pid 4242' in text
+
+
+def test_a_claude_session_holder_is_a_session_and_is_never_offered_to_stop(tree: Path) -> None:
+
+    session = _proc(46928, 'C:/py/python.exe', cmd='python.exe -m ai_lab.session claude --settings x.json', cwd=tree)
+    text = liverun.refusal(tree, [session])
+    assert problems(text, 'refusal') == []
+    assert 'pid 46928 (a Claude session)' in text
+    assert 'stoprun' not in text
+    assert 'another worktree' in text
+
+
+def test_several_holders_are_counted_not_listed(tree: Path) -> None:
+    runs = [_proc(pid, _venv_python(tree)) for pid in (11, 12, 13)]
+    text = liverun.refusal(tree, runs)
+    assert 'pid 11 (app) and 2 more' in text
+    assert len(text.splitlines()) == 3

@@ -33,6 +33,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_forgedraft.py', 'tests/test_dev_forgework.py'),
     ),
     (
+        'FORGE-DOORS-ARE-CONSENT',
+        (
+            'The forge PR lifecycle verbs (`forge pr create|ready|draft|close-landed|close-superseded`) are checked '
+            'doors rendered as allow rows from `autodoors.VERB_DOORS`; that policy IS the consent, so a main '
+            'session runs them itself and never hands one to the user, and the forge refuses the bad case; '
+            'every `forge pr` verb the docs tell an agent to run is a door, and a subagent opens or readies no PR '
+            '(SUBAGENT-NO-PUSH).'
+        ),
+        ('tests/test_dev_autodoors.py', 'tests/test_dev_hooks.py'),
+    ),
+    (
         'DOCS-ONLY-CARRIES',
         (
             'A head whose diff from its nearest tested ancestor reaches no test footprint runs nothing: its parts and '

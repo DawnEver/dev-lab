@@ -85,7 +85,7 @@ def issues(client: Client, *, state: str = 'all') -> tuple[Mapping[str, Any], ..
     every issue in *state* is read afresh.
     """
     if client.cache_dir is None:
-        listed = pages(client, f'{client.repo}/issues', {'state': state, 'type': 'issues'})
+        listed = pages(client, f'{client.repo}/issues', {'state': state, **dict(client.backend.issues_only)})
         held = {int(raw['number']): raw for raw in listed if not is_pull(raw)}
     else:
         held = _cached_issues(client, client.cache_dir)
@@ -115,11 +115,11 @@ def _cached_issues(client: Client, home: Path) -> dict[int, Mapping[str, Any]]:
         cursor, held = str(saved['cursor']), {int(key): raw for key, raw in saved['issues'].items()}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         cursor, held = '', {}
-    query = {'state': 'all', 'type': 'issues'} | ({'since': cursor} if cursor else {})
+    query = {'state': 'all', **dict(client.backend.issues_only)} | ({'since': cursor} if cursor else {})
     listed = pages(client, f'{client.repo}/issues', query)
     held |= {int(raw['number']): raw for raw in listed if not is_pull(raw)}
     if cursor and _ghosts(client, held):
-        listed = pages(client, f'{client.repo}/issues', {'state': 'all', 'type': 'issues'})
+        listed = pages(client, f'{client.repo}/issues', {'state': 'all', **dict(client.backend.issues_only)})
         held = {int(raw['number']): raw for raw in listed if not is_pull(raw)}
     if client.answered:
         read_at = parsedate_to_datetime(client.answered).astimezone(UTC) - ISSUE_OVERLAP

@@ -12,12 +12,14 @@ from pathlib import Path
 
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import forgeship, hostalarm, retention
+from dev_lab.dev import escapes, forgeship, hostalarm, retention
 from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
 from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
+from dev_lab.dev.forgebacklog import alarms as late_reviews
+from dev_lab.dev.forgebacklog import declared_wait
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgedraft import alarms as idle_drafts
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -102,7 +104,7 @@ def prompt(
     alarm: Callable[[Alarm], object],
     host: str,
 ) -> None:
-    """The integrator's prompts, each child's behind/conflict report, a red scarce part, a held review: an issue each.
+    """The integrator's prompts, each child's behind/conflict report, a red scarce part, a held or late review.
 
     A forge or fetch failure is said, not raised -- and then NO row is reconciled, so a partial derivation
     never closes an issue it merely failed to see.
@@ -127,6 +129,9 @@ def prompt(
                 *held_reviews(built, policy.integration, repo),  # an over-cap head: the integrator's takeover
                 *blocked_reviews(built, policy.integration, repo),  # a blocking finding: fixed, or a claim adjudicated
                 *idle_drafts(root, built, policy.integration, repo, now=forge_now(built)),  # D53: waits on its author
+                *late_reviews(  # a ready head nothing reviewed: the 11-02/03 backlog
+                    built, policy.integration, repo, now=forge_now(built), wait=declared_wait(root)
+                ),
             ],
             alarm=alarm,
         )
@@ -193,11 +198,15 @@ def retain_storage(
 
 
 def pressed(root: Path, repo: str, *, who: str, say: Callable[[str], None], alarm: Callable[[Alarm], object]) -> None:
-    """The host-pressure reading (:func:`dev_lab.dev.hostalarm.step`, ruling D54); a failure to read is said."""
+    """The host-pressure reading (D54) and the escape census (2026-11-03); a failure to read either is said."""
     try:
         hostalarm.step(root, repo, who=who, alarm=alarm)
     except (OSError, ValueError) as why:
         say(f'[serve] the host-pressure reading did not run: {why}')
+    try:
+        escapes.step(repo, alarm=alarm)  # the second repo of a tick finds nothing new: the scan time moved
+    except (OSError, ValueError) as why:
+        say(f'[serve] the escape census did not run: {why}')
 
 
 def relock(

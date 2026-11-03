@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from fnmatch import fnmatchcase
@@ -197,3 +198,25 @@ def test_each_bounded_verb_renders_one_row_naming_its_verb_and_no_sibling_verb()
     assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge serve', g) for g in globs)
     assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.hpchost deploy --remove', g) for g in globs)
     assert promises_raw(' '.join(globs)) == ()
+
+
+#: Where an agent is TOLD to run a forge verb: the docs and the rules registry's prose.
+_TOLD = ('docs-src', 'src/dev_lab/dev/_rule_rows*.py', 'src/dev_lab/dev/forgedraft.py', 'README.md')
+_FORGE_PR_VERB = re.compile(r'forge pr ([a-z][a-z-]*)')
+
+
+def test_every_forge_pr_verb_an_agent_is_told_to_run_is_a_door() -> None:
+    """FORGE-DOORS-ARE-CONSENT: every `forge pr <verb>` the docs tell an agent to run is a VERB_DOORS row.
+
+    So no classifier stands between the agent and it and the user is never handed it (incident 2026-11-04, `pr ready`).
+    """
+    root = Path(__file__).resolve().parents[1]
+    told: set[str] = set()
+    for pattern in _TOLD:
+        for path in root.glob(f'{pattern}/**/*.md' if pattern == 'docs-src' else pattern):
+            told.update(_FORGE_PR_VERB.findall(path.read_text('utf-8')))
+    assert {'create', 'ready', 'close-landed'} <= told, told  # floor: the scan reads the docs
+    doors_ = {argv[3] for _r, *argv in VERB_DOORS if argv[1:3] == ['dev_lab.dev.forge', 'pr']}
+    assert told - doors_ == set()
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
+    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge pr view 3', g) for g in globs)

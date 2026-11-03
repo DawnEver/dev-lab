@@ -177,6 +177,8 @@ _ENFORCED = {
     'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),
     # User ruling 2026-11-01 (D53): an author's unfinished heads each spent a review round.
     'DRAFT-UNTIL-READY': (guard('tests/test_dev_forgedraft.py'),),
+    # User directive 2026-11-04: the classifier refused `forge pr ready` and the user ran it by hand.
+    'FORGE-DOORS-ARE-CONSENT': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
     # Incident 2026-10-27: a hand-rolled Remove-Item -Recurse over a worktree list deleted a main checkout.
     'RECURSIVE-DELETE': (guard('tests/test_dev_delete_row.py'),),
     'DOCS-ONLY-CARRIES': (guard('tests/test_dev_forgecarry.py'), guard('tests/test_dev_forgetick.py')),

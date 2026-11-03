@@ -237,6 +237,16 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str], reviewed: Revi
     return found
 
 
+def rename_remedy(branch: str) -> str:
+    """The ONE exit for a feature on a local branch origin does not hold: rename it to its ``pr/`` name, push that.
+
+    ``fix/x`` becomes ``pr/x`` (the namespace dropped, the feature kept), so P6 and P2 name the same command
+    and the first remedy never walks into the second refusal (2026-11-02, dev-lab #68).
+    """
+    feature = branch.split('/', 1)[-1]
+    return f'rename it and push: `git branch -m {branch} pr/{feature}` then `push -u origin pr/{feature}`'
+
+
 def _undeclared(declared: BranchSet, branch: str) -> list[str]:
     """P6 for a create or update of *branch*: refused unless the branch set admits it."""
     if declared.admits(branch):
@@ -246,7 +256,7 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
     return [
         (
             f'{P6}: origin holds only the declared branches ({names}) and the ephemeral namespaces ({globs}), '
-            f'not {branch}; push the feature as its one pr/<feature> branch, or keep {branch} local'
+            f'not {branch}; {rename_remedy(branch)}'
         )
     ]
 
@@ -313,11 +323,9 @@ def refusals(root: Path, lines: str, *, reviewed: Reviewed = forge_unreviewed) -
             if (judged := _trusted(root, policy, fields[3])) is not None:
                 found += _judge_ref(root, judged, fields, reviewed)
         elif (named := _local(root, fields[0])).startswith(_HEADS) and named != fields[2]:
-            branch = named[len(_HEADS) :]
-            found.append(
-                f'{P2}: the local branch {branch} is published only as {branch}, not {fields[2][len(_HEADS) :]}; '
-                f'push `git push origin {branch}`'
-            )
+            branch, target = named[len(_HEADS) :], fields[2][len(_HEADS) :]
+            exit_text = rename_remedy(branch) if target.startswith('pr/') else f'push `git push origin {branch}`'
+            found.append(f'{P2}: the local branch {branch} is published only as {branch}, not {target}; {exit_text}')
     return found
 
 

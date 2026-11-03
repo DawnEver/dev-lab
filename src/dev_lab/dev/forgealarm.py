@@ -66,6 +66,7 @@ if TYPE_CHECKING:
 __all__ = [
     'AUTH',
     'DRIFT',
+    'ESCAPE',
     'EVENT',
     'FLEET',
     'IDLE',
@@ -124,6 +125,8 @@ PRESSURE: Final = 'pressure'
 #: A lock pin behind its dependency past the bound, or a host running what its lock does not pin
 #: (:mod:`dev_lab.dev.drift`, user ruling 2026-11-03); *about* names the dependency.
 DRIFT: Final = 'drift'
+#: A file written outside every allowed root, found by the tick's census (:mod:`dev_lab.dev.escapes`, 2026-11-03).
+ESCAPE: Final = 'escape'
 
 
 #: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.

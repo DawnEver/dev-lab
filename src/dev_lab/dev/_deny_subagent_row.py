@@ -6,7 +6,8 @@ WHY A SCOPE AND NOT A NEW ENGINE. The hook payload carries ``agent_id`` only ins
 ``agent_type`` -- is never judged by it.
 
 WHAT IT REFUSES: publishing is the main session's. So a subagent may not push (directly or through
-the retry wrapper) and may not skip the hooks (``SKIP=``, PowerShell ``$env:SKIP =``, ``--no-verify``).
+the retry wrapper), open or ready a PR (``forge pr create|ready``),
+and may not skip the hooks (``SKIP=``, PowerShell ``$env:SKIP =``, ``--no-verify``).
 A full tier is not this row's: it refuses EVERYONE outside the forge's producer, at the runner
 (VERDICTS-FROM-THE-FORGE, :func:`dev_lab.dev.producer.full_suite_refusal`). A targeted ``measure``
 stays its own.
@@ -28,6 +29,8 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         r'|(?:sh\s+)?\S*with-retry\.sh\s+push\b'
         # The family retry verb is a push road too (MAIN-SESSION-PUBLISHES admits it for a main session).
         rf'|{_INTERPRETER}-m\s+dev_lab.dev\.netverb\b[^\n]*\spush\b'
+        # Opening or readying a PR publishes too (FORGE-DOORS-ARE-CONSENT admits it for a main session).
+        rf'|{_INTERPRETER}-m\s+dev_lab\.dev\.forge\s+pr\s+(?:create|ready)\b'
         r'|git(?:\.exe)?\b[^\n]*\s--no-verify\b'
         # PowerShell spells the same skip as an environment assignment.
         r"""|SKIP=|\$env:SKIP\s*=)"""
@@ -43,6 +46,8 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         'git -C .claude/worktrees/x push origin lane/x',
         'sh scripts/hooks/with-retry.sh push origin HEAD',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git push origin HEAD',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr create --head pr/x --base integrate/main --title x',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr ready 12',
         'SKIP=ruff git commit -m "x"',
         'git commit --no-verify -m "x"',
         "$env:SKIP='ruff'; git commit -m 'x'",
@@ -53,5 +58,6 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         'git commit -m "push the gate later"',
         'git log --oneline -5',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git fetch origin',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr view 12',
     ),
 }

@@ -179,7 +179,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'SUBAGENT-NO-PUSH',
         (
-            'A subagent never publishes (no push, no skipped hook): it commits on its lane and hands the SHA back '
+            'A subagent never publishes (no push, no PR opened or readied, no skipped hook)'
+            ': it commits on its lane and hands the SHA back '
             'to the main session, which merges and pushes, the forge produces the verdict '
             '(VERDICTS-FROM-THE-FORGE), and a targeted measure of the tests it touched stays its own.'
         ),

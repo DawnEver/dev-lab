@@ -365,3 +365,24 @@ def test_the_installed_guard_still_refuses_a_live_tree_by_its_live_run(live_repo
     reason = run_engine(live_repo / ENGINE_REL, 'git stash', live_repo / RULES_REL, cwd=live_repo)
     assert reason is not None
     assert reason.startswith('TREE-HAS-A-LIVE-RUN:'), reason
+
+
+def test_a_remedy_for_a_checkout_without_a_venv_names_the_sessions_interpreter_not_a_missing_one(
+    tmp_path: Path,
+) -> None:
+    """INCIDENT 2026-11-03: FORGE-WRITE-VIA-CLI in numerics-lab (no .venv) named `<numerics-lab>/.venv/...python`."""
+    session, _ = _repo(tmp_path, rules=tuple(rule for rule in DENY_RULES if rule.id == 'FORGE-WRITE-VIA-CLI'))
+    tail = ('Scripts', 'python.exe') if os.name == 'nt' else ('bin', 'python')
+    python = session.joinpath('.venv', *tail)
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b'')
+    target = tmp_path / 'other'
+    target.mkdir()
+    subprocess.run([_GIT, 'init', '-q'], cwd=target, check=True, capture_output=True, timeout=60)
+    reason = run_engine(
+        session / ENGINE_REL, f'cd {target.as_posix()} && gh pr create', session / RULES_REL, cwd=session
+    )
+    assert reason is not None
+    assert 'FORGE-WRITE-VIA-CLI' in reason
+    assert python.as_posix() in reason
+    assert target.joinpath('.venv').as_posix() not in reason

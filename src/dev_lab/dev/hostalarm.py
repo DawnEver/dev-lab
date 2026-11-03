@@ -52,6 +52,9 @@ CHANNELS: Final = ('email', 'telegram', 'webhook')
 #: One reminder per alarm per agent session within this window (D54).
 REMIND_EVERY: Final = timedelta(minutes=30)
 
+#: Supervision owns a host's pressure while its reading is younger than this many forge ticks.
+SUPERVISED_WITHIN: Final = 3
+
 #: When each session was last reminded of each alarm, beside the state.
 REMINDED_NAME: Final = 'host-alarms-reminded.json'
 
@@ -103,6 +106,21 @@ def hook(stdin: TextIO, *, now: datetime | None = None, state_path: Path | None 
     return 0
 
 
+def _supervised(cadence_s: float) -> bool:
+    """Whether supervision measured this host within :data:`SUPERVISED_WITHIN` ticks: then it owns the reading.
+
+    One host, one measurement (2026-11-03 audit): the Gitea host runs both supervision's ``host_pressure`` and a
+    forge tick, and each sounded the same pressure. Supervision keeps it while it is alive; a dead supervisor's
+    stamp goes stale and the tick takes the host back.
+    """
+    stamp = hostalarms.read().get('measured_by', {}).get(hostalarms.SUPERVISE)
+    try:
+        age = (datetime.now(UTC) - datetime.fromisoformat(str(stamp))).total_seconds()
+    except ValueError:
+        return False
+    return age < SUPERVISED_WITHIN * cadence_s
+
+
 def step(
     root: Path,
     repo: str,
@@ -115,6 +133,8 @@ def step(
     """One tick's reading: measure ``[pressure]`` (default: *root*'s disk), record the state, sound each alarm."""
     table = section('pressure') if table is None else table
     cadence = float(section('schedule').get('tick_minutes', 5)) * 60  # the tick reads at its own cadence
+    if _supervised(cadence):
+        return hostalarms.read()  # ONE OWNER: supervision measures and sounds this host
     declared = Declared.of({'paths': [str(root)], 'interval_s': cadence, **table})
     previous = hostalarms.memo(hostalarms.FORGE)
     owner = str(table.get('owner', hostalarms.AGENTS))
