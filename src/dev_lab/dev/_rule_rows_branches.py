@@ -32,7 +32,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'RECURSIVE-DELETE',
         (
-            'A recursive delete outside regenerable scratch (system temp, an `output/` tree) goes through its '
+            'A recursive delete outside regenerable output (an `output/` tree) goes through its '
             'door -- `branchset --apply`, whose reclaim refuses a main checkout and keeps real work, for a '
             'worktree or branch, else the user -- and the agent guard refuses the raw verb in both shells '
             '(`rm -r`, `Remove-Item -Recurse`, `rmdir /s`, `git worktree remove`, `git clean -x/-d`, '

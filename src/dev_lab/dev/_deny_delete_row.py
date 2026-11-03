@@ -5,7 +5,9 @@ INCIDENT 2026-10-27: an agent hand-built a delete list from ``git worktree list`
 unpushed work and ``output/``, past the recycle bin. The door that decides what is deletable --
 ``branchset --apply`` -> ``reclaim``, which refuses a main checkout and keeps real work -- existed and
 was bypassed. So every raw recursive delete is refused, in both shells, unless EVERY target it names
-is regenerable scratch: system temp, or a path inside an ``output/`` tree (no ``..`` segment).
+is regenerable: a path inside an ``output/`` tree (no ``..`` segment). System temp is NOT one any more
+(user ruling 2026-11-03): nothing is written there (:mod:`dev_lab.dev.writeroots`), so a delete aimed
+at it is aimed outside every write root.
 """
 
 from __future__ import annotations
@@ -21,13 +23,9 @@ def _ci(word: str) -> str:
     return ''.join(f'[{c.lower()}{c.upper()}]' if c.isalpha() else c for c in word)
 
 
-#: A target that is PROVABLY scratch: one token with no whitespace inside its quotes and no `..` anywhere,
-#: under system temp or inside an `output/` tree.
-_SCRATCH = (
-    r"""(?![^\s;&|()]*\.\.)["']?(?:/tmp/|\$\{?(?:TEMP|TMP|TMPDIR)\}?[\\/]|%(?:TEMP|TMP)%[\\/]|\$env:(?:TEMP|TMP)[\\/]"""
-    r"""|(?:[^\s"';&|()]*[\\/])?""" + _ci('AppData') + r'[\\/]' + _ci('Local') + r'[\\/]' + _ci('Temp') + r'[\\/]'
-    r"""|(?:[^\s"';&|()]*[\\/])?output[\\/])[^\s"'\\/;&|()][^\s"';&|()]*["']?(?=\s|$)"""
-)
+#: A target that is PROVABLY regenerable: one token with no whitespace inside its quotes and no `..` anywhere,
+#: inside an `output/` tree.
+_SCRATCH = r"""(?![^\s;&|()]*\.\.)["']?(?:[^\s"';&|()]*[\\/])?output[\\/][^\s"'\\/;&|()][^\s"';&|()]*["']?(?=\s|$)"""
 #: An option word: `-x`, `--x`, or a cmd switch `/s` `/q`.
 _OPTION = r"""(?:-[^\s"';&|()]*|/[a-zA-Z])(?=\s|$)"""
 #: Permitted only when the delete NAMES a target and EVERY word after the verb is an option or scratch.
@@ -70,8 +68,7 @@ RECURSIVE_DELETE: dict[str, object] = {
     'hazard': 'a raw recursive delete judges deletability by hand; on 2026-10-27 one took a MAIN checkout.',
     'remedy': (
         'Worktrees and branches: <venv python> -m dev_lab.dev.branchset --apply (reclaim refuses '
-        'a main checkout and keeps real work). Anything else: ask the user. Scratch under system temp or output/ '
-        'is not refused.'
+        'a main checkout and keeps real work). Anything else: ask the user. A path inside output/ is not refused.'
     ),
     'needs': None,
     'refuses': (
@@ -90,13 +87,14 @@ RECURSIVE_DELETE: dict[str, object] = {
         'git clean -fX',
         'git clean -df',
         'git clean -xf',
-        'python -c \'import shutil; shutil.rmtree(r"C:/work/repo")\'',
-    ),
-    'permits': (
         'rm -rf /tmp/probe',
         'Remove-Item -Recurse -Force $env:TEMP/probe',
         'rmdir /s /q %TEMP%/probe',
+        'python -c \'import shutil; shutil.rmtree(r"C:/work/repo")\'',
+    ),
+    'permits': (
         'rm -rf output/logs/26',
+        'Remove-Item -Recurse -Force C:/work/repo/output/tmp/probe',
         'rm notes.txt',
         'Remove-Item -Force file.txt',
         'rmdir empty-dir',

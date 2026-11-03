@@ -24,14 +24,22 @@ declares it as a row of its own, naming both exits through :func:`staged_scratch
 * the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age_days`` and prints
   NOTHING when there are none -- a reminder that never blocks and costs no tokens when clean.
 
-THE CLI, so a consumer needs no ``scripts/`` adopter: ``pending`` (every one-off, oldest first) and
+SCRIPTS ONLY, DATED (user ruling 2026-11-03). Scratch holds SCRIPTS -- data is output -- at
+``scratch/<yy>/<mm>/<dd>/<kind>/<name>``, made by ``new <kind> <name>`` (:func:`new_scratch`), the one door;
+:func:`is_dated_script` is the shape the write-roots hook (:mod:`dev_lab.dev.writeroots`) holds every other
+scratch write to. :data:`SCRIPT_SUFFIXES` is the one list of what a script is.
+
+THE CLI, so a consumer needs no ``scripts/`` adopter: ``new <kind> <name>`` (prints the made
+path), ``pending`` (every one-off, oldest first) and
 ``discard <paths>`` (delete one-offs; anything outside scratch, or its README, is refused and nothing
 is deleted).
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import json
+import re
 import sys
 import time
 from collections.abc import Iterable
@@ -50,10 +58,13 @@ from dev_lab.dev.codeplace import (
 
 __all__ = [
     'SCRATCH_README',
+    'SCRIPT_SUFFIXES',
     'ScratchCommitted',
     'assert_scratch_never_committed',
     'discard_scratch',
+    'is_dated_script',
     'main',
+    'new_scratch',
     'overdue_declared',
     'overdue_scratch',
     'pending_scratch',
@@ -64,7 +75,7 @@ __all__ = [
 _SECONDS_PER_DAY = 86400.0
 #: How many one-offs the notice names before it elides the rest.
 _SHOWN = 20
-_VERBS = frozenset({'pending', 'discard', 'remind', 'check'})
+_VERBS = frozenset({'new', 'pending', 'discard', 'remind', 'check'})
 
 #: The ONE tracked file under scratch: it anchors the directory and states the two exits.
 SCRATCH_README = 'README.md'
@@ -73,6 +84,45 @@ _EXITS = (
     'PROMOTE it into src/ with tests, or DELETE it (python -m dev_lab.dev.scratch discard <path>); '
     'a finding it produced goes to memory as numbers. scripts/ is not an exit (dev mechanisms only).'
 )
+
+
+#: What a script is: the suffixes scratch admits and output refuses (:mod:`dev_lab.dev.writeroots`).
+SCRIPT_SUFFIXES = frozenset({'.py', '.ps1', '.sh', '.bat', '.cmd', '.js', '.mjs', '.ts', '.jl', '.m', '.r', '.lua'})
+#: ``<yy>/<mm>/<dd>/<kind>/`` then the script, relative to scratch.
+_DATED = re.compile(r'(?P<yy>\d{2})/(?P<mm>\d{2})/(?P<dd>\d{2})/(?P<kind>[a-z0-9][a-z0-9_-]*)/(?:[^/]+/)*[^/]+')
+
+
+def is_dated_script(rel: str) -> bool:
+    """Whether *rel* (relative to scratch, ``/``-separated) is ``<yy>/<mm>/<dd>/<kind>/.../<script>`` on a real date."""
+    found = _DATED.fullmatch(rel)
+    if found is None or Path(rel).suffix.lower() not in SCRIPT_SUFFIXES:
+        return False
+    try:
+        dt.date(2000 + int(found['yy']), int(found['mm']), int(found['dd']))
+    except ValueError:
+        return False
+    return True
+
+
+def new_scratch(kind: str, name: str, *, root: Path, today: tuple[int, int, int] | None = None) -> Path:
+    """Make ``scratch/<yy>/<mm>/<dd>/<kind>/<name>`` (empty) under *root*'s declared scratch and return it.
+
+    Raises:
+        ValueError: *kind* or *name* is not one plain segment, or *name* is not a script.
+
+    """
+    year, month, day = today or dt.datetime.now(tz=dt.UTC).date().timetuple()[:3]
+    rel = f'{year % 100:02d}/{month:02d}/{day:02d}/{kind}/{name}'
+    if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', kind):
+        msg = f'kind {kind!r} must be one lower-case segment ([a-z0-9_-])'
+        raise ValueError(msg)
+    if Path(name).name != name or not is_dated_script(rel):
+        msg = f'{name!r} is not a script ({", ".join(sorted(SCRIPT_SUFFIXES))}): scratch holds scripts, data is output/'
+        raise ValueError(msg)
+    path = root / declared_placement(root).scratch / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(exist_ok=True)
+    return path
 
 
 def pending_scratch(scratch: Path, *, root: Path, now: float | None = None) -> list[tuple[str, float]]:
@@ -189,6 +239,18 @@ def _remind(stdin: TextIO | None) -> int:
     return 0
 
 
+def _new(rest: list[str], root: Path) -> int:
+    if len(rest) != 2:  # noqa: PLR2004 -- exactly <kind> <name>
+        emit('usage: python -m dev_lab.dev.scratch new <kind> <name>')
+        return 2
+    try:
+        emit(str(new_scratch(rest[0], rest[1], root=root)))
+    except ValueError as exc:
+        emit(str(exc))
+        return 2
+    return 0
+
+
 def _verb(mode: str, rest: list[str], root: Path) -> int:
     """``pending``, ``discard <paths>`` and ``check <paths>`` over the checkout *root*."""
     try:
@@ -217,7 +279,7 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``python -m dev_lab.dev.scratch {pending | discard <paths> | remind | check <paths>}``.
+    """``python -m dev_lab.dev.scratch {new <kind> <name> | pending | discard <paths> | remind | check <paths>}``.
 
     Exit 0 on success and from ``remind`` always; 1 from ``check`` on a staged one-off; 2 on a usage
     error or a refused ``discard``.
@@ -226,6 +288,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     if mode not in _VERBS:
         emit(f'usage: python -m dev_lab.dev.scratch {{{" | ".join(sorted(_VERBS))}}} [paths]')
         return 2
+    if mode == 'new':
+        return _new(rest, Path.cwd())
     return _remind(stdin) if mode == 'remind' else _verb(mode, rest, Path.cwd())
 
 

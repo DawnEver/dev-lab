@@ -6,6 +6,7 @@ import io
 import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 from lab_commons import launch
@@ -16,7 +17,9 @@ from dev_lab.dev.scratch import (
     ScratchCommitted,
     assert_scratch_never_committed,
     discard_scratch,
+    is_dated_script,
     main,
+    new_scratch,
     overdue_declared,
     overdue_scratch,
     pending_scratch,
@@ -174,3 +177,30 @@ def test_an_undeclared_checkout_is_not_judged_by_the_row_and_a_verb_says_why(tmp
     assert main(['pending']) == 2
     assert 'pyproject.toml' in capsys.readouterr().out
     assert main(['bogus']) == 2
+
+
+def test_new_makes_the_dated_kind_path_and_refuses_a_non_script(tmp_path, monkeypatch, capsys) -> None:
+    _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    made = new_scratch('probe', 'leak.py', root=tmp_path, today=(2026, 11, 3))
+    assert made == tmp_path / 'scratch' / '26' / '11' / '03' / 'probe' / 'leak.py'
+    assert made.is_file()
+    with pytest.raises(ValueError, match='script'):
+        new_scratch('probe', 'rows.json', root=tmp_path, today=(2026, 11, 3))  # planted: data is output, not scratch
+    with pytest.raises(ValueError, match='kind'):
+        new_scratch('../x', 'a.py', root=tmp_path, today=(2026, 11, 3))  # planted: a kind that escapes
+    assert main(['new', 'probe', 'cli.py']) == 0
+    printed = Path(capsys.readouterr().out.strip())
+    assert printed.is_file()
+    assert printed.parent.name == 'probe'
+    assert printed.parts[-6] == 'scratch'
+    assert main(['new', 'probe']) == 2
+
+
+def test_a_scratch_path_is_a_dated_script_or_it_is_not() -> None:
+    assert is_dated_script('26/11/03/probe/leak.py')
+    assert is_dated_script('26/11/03/probe/sub/run.ps1')
+    assert not is_dated_script('leak.py')  # planted: undated
+    assert not is_dated_script('26/11/03/leak.py')  # planted: no kind
+    assert not is_dated_script('26/13/03/probe/leak.py')  # planted: no such month
+    assert not is_dated_script('26/11/03/probe/rows.json')  # planted: not a script
