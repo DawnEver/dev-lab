@@ -292,3 +292,21 @@ def test_the_staleness_window_follows_the_writer_s_cadence(capsys) -> None:
     hostalarms.record(fast, host='ws', source=hostalarms.FORGE, now=NOW)
     assert _hook('a', NOW + timedelta(minutes=11), capsys) != ''
     assert _hook('b', NOW + timedelta(minutes=13), capsys) == ''
+
+
+def test_a_host_supervision_measures_is_not_measured_again_by_the_forge_tick(tmp_path: Path) -> None:
+    """ONE OWNER: while supervision's reading is fresh, the tick neither measures nor sounds; stale, it does."""
+    hostalarms.record(Measured(), host='gitea', source=hostalarms.SUPERVISE, now=datetime.now(UTC))
+    calls: list[object] = []
+
+    def measuring(*_a: object, **_k: object) -> Measured:
+        calls.append(1)
+        return PRESSED
+
+    raised: list[Alarm] = []
+    hostalarm.step(tmp_path, 'r', who='gitea', alarm=raised.append, table={}, measuring=measuring)
+    assert (calls, raised) == ([], [])
+    hostalarms.record(Measured(), host='gitea', source=hostalarms.SUPERVISE, now=datetime.now(UTC) - timedelta(hours=1))
+    hostalarm.step(tmp_path, 'r', who='gitea', alarm=raised.append, table={}, measuring=measuring)
+    assert calls == [1]
+    assert [a.about for a in raised] == ['disk:/']

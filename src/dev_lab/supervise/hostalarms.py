@@ -123,6 +123,7 @@ def record(
             'alarms': {**kept, **fresh},
             'readings': {**before.get('readings', {}), source: measured.readings},
             'memo': {**before.get('memo', {}), source: measured.memo},
+            'measured_by': {**before.get('measured_by', {}), source: stamp},
         }
         durable_text(path, json.dumps(state, indent=1, sort_keys=True))
     return state
