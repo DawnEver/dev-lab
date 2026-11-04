@@ -31,6 +31,7 @@ from lab_commons.box import hold
 
 from dev_lab.supervise.alert import Delivery, Notifier
 from dev_lab.supervise.component import ActionContext, CheckContext, Registry
+from dev_lab.supervise.config import DEFAULTS
 from dev_lab.supervise.notice import Notice, host_label
 from dev_lab.supervise.policy import decide
 from dev_lab.supervise.process.base import ProcessManager
@@ -248,7 +249,7 @@ def _gather(
         The metrics, the anomalies with their sources stamped, and the completions.
 
     """
-    timeout = int(config.get('cycle', {}).get('check_timeout', 60))
+    timeout = int(config.get('cycle', {}).get('check_timeout', DEFAULTS['cycle']['check_timeout']))
     metrics: dict[str, float] = {}
     anomalies: list[Anomaly] = []
     completions: list[Completion] = []
