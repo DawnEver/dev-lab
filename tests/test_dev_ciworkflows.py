@@ -6,7 +6,6 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 from __future__ import annotations
 
 import ast
-import os
 import re
 import shutil
 import subprocess
@@ -16,10 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _branch_repos import clone_pair
 
 from dev_lab.dev import ciworkflows
-from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
     BY_FORGE,
@@ -48,7 +45,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
 _GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}
-_GITEA_BASE = {'review.yml', 'merge.yml', 'promote.yml'}
+_GITEA_BASE = {'review.yml', 'merge.yml'}
 
 
 def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
@@ -963,72 +960,18 @@ def test_no_credential_or_pr_influence_persists_in_the_mirror(tmp_path: Path) ->
     assert all('refs/pull' not in line for line in mirror_fetches)
 
 
-def test_gitea_promotes_nightly_by_the_same_decision_and_asks_ada_nothing(tmp_path: Path) -> None:
-    """D48-1A on Gitea: a scheduled promote.yml runs `integrate promote` on integration's tip, then sweeps.
+def test_gitea_renders_no_promoter_because_the_host_s_ops_promote_role_owns_gitea_promotion(tmp_path: Path) -> None:
+    """ONE PROMOTER PER REPO: on Gitea, `dev_lab.ops` `[ops.promote]` (a timer on the forge host) promotes the trunk.
 
-    The decision reads git and the forge's statuses alone, so the Gitea host (which cannot reach Ada) runs it.
-    PLANTED CONTROLS: no push or pull_request trigger (never per merge), and no serve/cluster door in any step.
+    A rendered nightly workflow would be a SECOND promoter racing its pushes to main, and would push main on a repo
+    whose host deliberately does not promote it. GitHub keeps its promote job inside ci.yml.
+    PLANTED CONTROL: the GitHub base still promotes.
     """
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
-    found = workflows(tmp_path)['promote.yml']
-    assert set(found['on']) == {'schedule', 'workflow_dispatch'}
-    assert found['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
-    runs = [step.get('run', '') for step in found['jobs']['promote']['steps']]
-    promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$INTEGRATION_SHA"' in run)
-    assert 'git push origin main' in runs[promoted]
-    assert next(i for i, run in enumerate(runs) if 'dev_lab.dev.branchprune sweep' in run) > promoted
-    text = render(found)
-    for door in ('forge serve', 'forgeserve', 'slurm', 'jobparts'):
-        assert door not in text, door
-    assert 'origin/integrate/main' in text, 'the tip of integration, never a pushed sha'
-    assert tmp_path / '.gitea' / 'workflows' / 'promote.yml' in write(tmp_path)
-
-
-def test_gitea_s_promote_checkout_holds_no_branch_so_main_can_move(tmp_path: Path) -> None:
-    """F-1f940a53bf61: Gitea's default branch is main, so a plain clone holds main and promote refuses every night.
-
-    The rendered clone step runs against a bare origin whose HEAD is main; no worktree may then hold a branch.
-    PLANTED CONTROL: the same clone without its detach holds refs/heads/main.
-    """
-    bare, _ = clone_pair(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
-    steps = workflows(tmp_path)['promote.yml']['jobs']['promote']['steps']
-    (fetch,) = [step['run'] for step in steps if step.get('name') == "Fetch integration's commits"]
-    lines = fetch.splitlines()
-    script = '\n'.join(lines[next(i for i, line in enumerate(lines) if line.startswith('git clone')) :])
-    script = script.replace('"$FORGE_URL/${{ github.repository }}.git"', f'"{bare.as_posix()}"')
-    bash = shutil.which('bash')
-    assert bash, 'the job step is a bash script'
-    for name, text in (('job', script), ('plain', script.splitlines()[0])):
-        (tmp_path / name).mkdir()
-        env = {**os.environ, 'GITHUB_ENV': str(tmp_path / f'{name}.env')}
-        subprocess.run([bash, '-c', text], cwd=tmp_path / name, env=env, check=True)
-    assert [name for _, name in worktrees(tmp_path / 'plain') or ()] == ['main'], 'PLANTED CONTROL: it holds main'
-    assert [name for _, name in worktrees(tmp_path / 'job') or ()] == ['detached'], 'main stays free to move'
-
-
-def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path: Path) -> None:
-    """promote.yml runs with no pull request, so no base sha: its door is the lock of the tip it fetched.
-
-    The tip is already merged, so it is trusted as a base is. An empty DOOR_SHA is refused by name, never read as
-    ``git show ":uv.lock"`` against an empty index (F-e460f9e7c527).
-    """
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
-    steps = workflows(tmp_path)['promote.yml']['jobs']['promote']['steps']
-    names = [s.get('name') for s in steps]
-    fetch = steps[names.index("Fetch integration's commits")]
-    door = steps[names.index('Install the review door')]
-    assert names.index("Fetch integration's commits") < names.index('Install the review door')
-    assert 'echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"' in fetch['run']
-    assert 'env.INTEGRATION_SHA' in door['env']['DOOR_SHA']
-    guard = next(line for line in door['run'].splitlines() if line.startswith('[ -n "$DOOR_SHA" ]'))
-    bash = shutil.which('bash')
-    assert bash, 'the door step is bash'
-    ran = subprocess.run(
-        [bash, '-c', guard], env={'DOOR_SHA': ''}, capture_output=True, text=True, encoding='utf-8', check=False
-    )
-    assert ran.returncode != 0
-    assert 'no commit names the door' in ran.stdout + ran.stderr
+    assert base_names('gitea') == {'review.yml', 'merge.yml'}
+    gitea = _hosted(tmp_path / 'gitea', 'https://gitea.example/o/r.git')
+    for name, workflow in workflows(gitea).items():
+        assert 'integrate promote' not in render(workflow), name
+    assert 'promote' in _base_ci(tmp_path)['jobs'], 'PLANTED CONTROL: GitHub promotes inside ci.yml'
 
 
 def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(

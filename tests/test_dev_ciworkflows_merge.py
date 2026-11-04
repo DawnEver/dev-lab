@@ -21,7 +21,7 @@ import pytest
 from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, runner_labels, workflows, write
 from dev_lab.dev.forgemerge import CI_MERGER
 
-_GITEA = ('review.yml', 'promote.yml', CI_MERGER)
+_GITEA = ('review.yml', CI_MERGER)
 
 
 def _gitea(tmp_path: Path) -> dict[str, dict[str, Any]]:
@@ -91,7 +91,7 @@ def test_every_gitea_job_runs_on_a_declared_label_and_review_alone_on_review(tmp
         for job, body in workflow['jobs'].items():
             assert body['runs-on'] in labels, f'{name} {job}: {body["runs-on"]} is no declared label'
             seen[name, job] = body['runs-on']
-    assert seen == {('review.yml', 'review'): 'review', ('promote.yml', 'promote'): LIGHT, (CI_MERGER, 'merge'): LIGHT}
+    assert seen == {('review.yml', 'review'): 'review', (CI_MERGER, 'merge'): LIGHT}
 
 
 def test_no_light_job_installs_the_review_method_or_its_key(tmp_path: Path) -> None:
@@ -115,9 +115,11 @@ def _only(body: dict[str, Any]) -> set[str]:
 
 def test_a_light_door_s_packages_are_every_import_its_verbs_make(tmp_path: Path) -> None:
     """DOOR_ONLY is MEASURED, not trusted: each module a step runs imports only the stdlib, dev_lab and DOOR_ONLY."""
-    jobs = [body for workflow in _gitea(tmp_path).values() for body in workflow['jobs'].values()]
+    tables = '[tool.dev_lab.ci."merge.yml".jobs.merge.env]\nDOOR_ONLY = "lab-commons"\n'
+    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    jobs = [body for workflow in workflows(tmp_path).values() for body in workflow['jobs'].values()]
     narrowed = [body for body in jobs if _only(body)]
-    assert narrowed, 'promote.yml installs only lab-commons beside the door'
+    assert narrowed, 'a repo layer narrows the merge job to lab-commons beside the door'
     for body in narrowed:
         modules = sorted({m for run in _runs(body) for m in re.findall(r'-m (dev_lab\.dev\.\w+)', run)})
         assert modules
