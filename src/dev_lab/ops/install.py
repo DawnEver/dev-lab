@@ -30,6 +30,7 @@ from dev_lab.ops.access import PAM_INCLUDE
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.config import Backup, OpsConfig, Placement
 from dev_lab.ops.sshkey import ENV
+from dev_lab.supervise.daemon import watchdog_seconds
 
 if sys.platform != 'win32':  # the host accounts: POSIX only
     import grp
@@ -161,8 +162,18 @@ def _supervise(config: OpsConfig) -> dict[str, str]:
     serve = shlex.join(
         [config.python, '-m', 'dev_lab.supervise', 'serve', '--project', role.project, '--config', str(config.path)]
     )
-    body = ['Type=simple', *([f'User={role.user}'] if role.user else []), f'ExecStart={serve}', 'Restart=always',
-            'RestartSec=10', *([f'MemoryMax={role.memory_max}'] if role.memory_max else [])]  # fmt: skip
+    # THE DAEMON SPEAKS sd_notify (`supervise.notify`): READY once, WATCHDOG once per cycle. Under
+    # Type=simple nobody listens, and the timeout is the loop's own cycle, never a second literal.
+    body = [
+        'Type=notify',
+        'NotifyAccess=main',
+        f'WatchdogSec={watchdog_seconds(config.merged)}',
+        *([f'User={role.user}'] if role.user else []),
+        f'ExecStart={serve}',
+        'Restart=always',
+        'RestartSec=10',
+        *([f'MemoryMax={role.memory_max}'] if role.memory_max else []),
+    ]
     service = _service(config, role, 'Host supervisor (dev_lab.supervise)', body, network=True,
                        wanted_by='multi-user.target')  # fmt: skip
     return {f'etc/systemd/system/{_SUPERVISE}.service': service}

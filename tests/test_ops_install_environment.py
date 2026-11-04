@@ -223,3 +223,19 @@ def test_entering_is_decided_by_the_users_owner_group_or_other_class(
 def test_an_account_not_yet_made_is_judged_by_the_other_bits() -> None:
     shut = install_module.may_enter(0o750, 0, 1001, None)
     assert (shut, install_module.may_enter(0o751, 0, 1001, None)) == (False, True)
+
+
+@pytest.mark.parametrize(
+    ('cycle', 'watchdog'), [('', 900), ('[cycle]\ninterval = 600\n', 1800), ('[cycle]\ninterval = 1\n', 15)]
+)
+def test_the_supervisor_service_is_watched_on_its_own_cycle(tmp_path: Path, cycle: str, watchdog: int) -> None:
+    """The daemon speaks sd_notify, so the unit is Type=notify and its WatchdogSec is the loop's cycle, derived.
+
+    The planted control is the interval itself: a changed ``cycle.interval`` (or one under the loop's floor) moves
+    WatchdogSec with it, which a second literal in the renderer could not do.
+    """
+    host = load(_host(tmp_path, extra=_SUPERVISE + cycle), environ={}, as_root=True)
+    unit = files(host)['etc/systemd/system/dev-lab-supervise.service']
+    for line in ('Type=notify', 'NotifyAccess=main', f'WatchdogSec={watchdog}', 'Restart=always', 'RestartSec=10'):
+        assert f'{line}\n' in unit
+    assert 'Type=simple' not in unit

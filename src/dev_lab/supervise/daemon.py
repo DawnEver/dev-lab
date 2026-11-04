@@ -57,11 +57,36 @@ from dev_lab.supervise.process.base import ProcessManager
 from dev_lab.supervise.report import summary
 from dev_lab.supervise.state import StateStore
 
-__all__ = ['MIN_INTERVAL', 'Definition', 'Loop', 'definition_signature', 'serve']
+__all__ = [
+    'MIN_INTERVAL',
+    'WATCHDOG_CYCLES',
+    'Definition',
+    'Loop',
+    'definition_signature',
+    'interval',
+    'serve',
+    'watchdog_seconds',
+]
 
 #: The shortest interval a loop will honour. Anything smaller is a supervisor competing with the
 #: service it supervises, which on a two-core host is the service losing.
 MIN_INTERVAL: Final = 5
+
+#: How many cycles the manager waits for a check-in before it calls the loop wedged. A cycle is
+#: its own work plus one interval, so one interval is too tight; three is the slack the
+#: ``heartbeat`` component's own default (900 s against the default 300 s) already grants.
+WATCHDOG_CYCLES: Final = 3
+
+
+def interval(config: dict[str, Any]) -> int:
+    """Return how long the loop waits between cycles: ``cycle.interval``, floored at :data:`MIN_INTERVAL`."""
+    return max(MIN_INTERVAL, int(config.get('cycle', {}).get('interval', 300)))
+
+
+def watchdog_seconds(config: dict[str, Any]) -> int:
+    """Return the ``WatchdogSec=`` a unit serving *config* must declare: :data:`WATCHDOG_CYCLES` intervals."""
+    return WATCHDOG_CYCLES * interval(config)
+
 
 #: What a cycle's result is handed to, for a caller that wants to record it.
 Watcher = Callable[[CycleResult, datetime], None]
@@ -158,7 +183,7 @@ class Loop:
             The configured interval, floored at :data:`MIN_INTERVAL`.
 
         """
-        return max(MIN_INTERVAL, int(self.config.get('cycle', {}).get('interval', 300)))
+        return interval(self.config)
 
     def once(self, clock: datetime | None = None) -> CycleResult | None:
         """Run one cycle, or skip it because another holds the seat.

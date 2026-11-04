@@ -163,7 +163,9 @@ class ProcessManager(Protocol):
         """
         ...
 
-    def run_capped(self, argv: list[str], *, memory_max: str, timeout: int, cwd: str | None = None) -> Ran:
+    def run_capped(
+        self, argv: list[str], *, memory_max: str, timeout: int, cwd: str | None = None, within: int | None = None
+    ) -> Ran:
         """Run a one-off command under a memory ceiling.
 
         The ceiling is the point: a candidate build, an import probe or a migration is exactly the
@@ -175,6 +177,9 @@ class ProcessManager(Protocol):
             memory_max: the ceiling, in the manager's own spelling (``600M`` for a cgroup).
             timeout: seconds to allow before killing the command.
             cwd: working directory, or None for the caller's.
+            within: the seconds the whole call may take, waiting included, or None for the manager's own
+                default. A caller running under a deadline of its own passes what is left of it, so a
+                command that could not START is reported as such before that deadline fires.
 
         Returns:
             What the command produced. A manager that cannot enforce a ceiling says so in *err*
