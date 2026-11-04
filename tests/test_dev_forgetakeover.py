@@ -15,6 +15,7 @@ from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_declared import EMPTY_COMMAND_FIX, PATHS_FIELD, RANGE_FIELD, Review
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose
+from dev_lab.dev.forgereview_job import review_run
 from dev_lab.dev.forgereview_judge import Identity
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import (
@@ -25,7 +26,6 @@ from dev_lab.dev.forgetakeover import (
     ledger_of,
     main,
     pull_for,
-    review_run,
     takeover,
 )
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN

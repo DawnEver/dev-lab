@@ -2,7 +2,7 @@
 
 Step 4 of the branch flow (user ruling 2026-10-19). ONE review on both forges (user ruling 2026-10-29); only who
 TRIGGERS it differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR; on GitHub a workflow
-job runs ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgetakeover.review_run`) for the one PR its event
+job runs ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgereview_job.review_run`) for the one PR its event
 names. Both run the same round (:func:`review_pull`). A job whose review secret is absent -- a fork PR, which
 GitHub never hands a secret -- holds
 the head (:data:`NEEDS_MAINTAINER`) until a maintainer re-runs the forge's review with the secret; nothing new is
@@ -170,7 +170,7 @@ class HostCannot(OSError):
     """The host cannot fill or start the review command: a fact about the HOST, checked before any claim.
 
     The serve tick says it and leaves the head to a capable host; a workflow job -- the ONLY reviewer of its PR
-    -- holds the head for the takeover door and fails (:func:`dev_lab.dev.forgetakeover.review_run`).
+    -- holds the head for the takeover door and fails (:func:`dev_lab.dev.forgereview_job.review_run`).
     """
 
 

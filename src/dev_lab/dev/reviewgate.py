@@ -26,7 +26,7 @@ triggered by ``pull_request_target``, which Gitea detects from the BASE commit (
 PR can neither change what runs nor read the secret -- and a success counts only when, besides the status checks
 above, the latest CONCLUDED run at this head that is that workflow (``event == "pull_request_target"``, ``path``
 ``review.yml@<ref>``, :func:`review_runs`) concluded ``success``. A PR-head workflow can neither create nor alter
-such a run, and the job exits non-zero unless it posted success (:func:`dev_lab.dev.forgetakeover.job_exit`, from
+such a run, and the job exits non-zero unless it posted success (:func:`dev_lab.dev.forgereview_job.job_exit`, from
 what :func:`post_review` recorded in :func:`posted_verdicts`). A run with no conclusion -- queued, running, or
 RE-RUN IN PLACE (Gitea keeps its id and resets its conclusion while it executes) -- decides nothing, and the newest
 run that has one decides. A head whose only review run is being re-run therefore waits for it to conclude: its
@@ -256,7 +256,7 @@ _POSTED: ContextVar[list[str] | None] = ContextVar('posted_verdicts', default=No
 def posted_verdicts() -> Iterator[list[str]]:
     """The states every :func:`post_review` inside the block posts, in order -- what THIS process said.
 
-    The review job's exit is read from it (:func:`dev_lab.dev.forgetakeover.job_exit`): the door that posts is the
+    The review job's exit is read from it (:func:`dev_lab.dev.forgereview_job.job_exit`): the door that posts is the
     one that knows, never a re-read of the head, where a PR-head workflow's null-creator status may stand.
     """
     said: list[str] = []

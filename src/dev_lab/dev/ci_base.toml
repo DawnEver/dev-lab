@@ -140,7 +140,7 @@ pull-requests = "read"
 # The review METHOD is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3,
 # 2026-10-31: "cannot import 'ai_lab.review'", nothing posted): the job installs ai-lab, from this owner's forge,
 # into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
-# the head and fails (forgetakeover.review_run), never exits green with no review.
+# the head and fails (forgereview_job.review_run), never exits green with no review.
 # The method's install and key are the shared `method` steps (below, with `setup`): the review job and the claims
 # workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
 # supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
@@ -388,7 +388,7 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 # workflow from the PR HEAD, so a same-repo PR could rewrite this file to post success itself or print the review
 # key; a pull_request_target workflow is detected from the BASE commit (notifier_helper.go, 1.27), so the BASE's
 # workflow runs -- the PR can neither change what runs nor read the secret -- and reviewgate counts a success only
-# when that run concluded success (the job fails unless it posted success, forgetakeover.job_exit). Safe ONLY because
+# when that run concluded success (the job fails unless it posted success, forgereview_job.job_exit). Safe ONLY because
 # what the job takes from the head is the DIFF, read as data; what it acts on is the base's -- the workflow,
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).

@@ -31,11 +31,8 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import comment_list, pages, pr_list
-from dev_lab.dev.forgereview import HostCannot, hold, review_pull
-from dev_lab.dev.forgereview_claim import live_claim, run_ended
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
 from dev_lab.dev.forgereview_declared import (
-    JUDGE,
     PATHS_FIELD,
     Review,
     command_for,
@@ -48,14 +45,15 @@ from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_ca
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
-from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, pending, upheld
+from dev_lab.dev.forgereview_job import job_exit, review_run
+from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest, client_for
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
@@ -64,8 +62,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'job_exit', 'ledger_of', 'main', 'pull_for',
-    'review_run', 'runtimes_with', 'scope_of', 'takeover',
+    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
+    'runtimes_with', 'scope_of', 'takeover',
 ]  # fmt: skip
 
 
@@ -198,73 +196,9 @@ def takeover(
     return (f'{said} ({len(scope.slices)} slice(s)); {RERUN} for a review that counts',)
 
 
-#: What the hold says when the job's host cannot run the review command: the forge's review is re-run.
-HOST_CANNOT: Final = 'the review job cannot run the review command'
-
 #: The verbs the forge's own jobs run (``review.yml``, ``review-claims.yml``): they ask the forge for the trusted
 #: integration branch, because an Actions checkout sets no ``origin/HEAD``.
 _FORGE_JOBS: Final = frozenset({'run', 'adjudicate'})
-
-
-def review_run(root: Path, client: Client, review: Review, number: int, *, base: str, runner: Runner) -> str:
-    """:func:`review_pull` on PR *number* alone -- what a GitHub workflow job runs for its event's PR; the line.
-
-    The job is the ONLY reviewer of its PR, so a host that cannot run the command is never silent: the head is held
-    until the forge's review is re-run, and :class:`~dev_lab.dev.forgereview.HostCannot` is raised (the job fails).
-
-    The same run then RULES on every claim still pending on the PR (:func:`adjudicate_thread`, as the job's own
-    identity): GitHub runs an ``issue_comment`` workflow only from the default branch, so ``review-claims.yml``
-    cannot rule on a PR whose fix it carries (#11) -- the PR's own ``pull_request`` job can.
-    """
-    pull = client.pr_view(number)
-    if pull.base != base or pull.draft or not pull.head_sha:
-        return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
-    if review.where == JUDGE:  # one mode per repo: the judge host reviews it from a bundle
-        return f'#{number}: not reviewed here -- {base} declares where = "{JUDGE}"'
-    try:
-        said = review_pull(root, client, review, pull, runner) or _stood(client, pull.head_sha, number)
-    except HostCannot as cannot:
-        raise HostCannot(hold(client, pull, f'{HOST_CANNOT}: {cannot}')) from cannot
-    if not pending(trusted_bodies(client, number, review.reviewers)):
-        return said
-    ruled = adjudicate_thread(
-        root, client, review, number, base=base, adjudicator=identity(client, runner.host, serving=runner.serving),
-        run=runner.run, runtimes=runner.runtimes,
-    )  # fmt: skip
-    return '; '.join([said, *ruled])
-
-
-def _stood(client: Client, head: str, number: int) -> str:
-    """What stands on *head* when :func:`review_pull` did nothing: a claim by another run, else its review."""
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if latest is not None and latest.state == 'pending':
-        return f'#{number} {head[:12]}: claimed by another run, which posts the verdict ({latest.description})'
-    return f'#{number} {head[:12]}: already reviewed'
-
-
-def job_exit(
-    client: Client, number: int, posted: Sequence[str], *, base: str, ended: Callable[[str], bool] | None = None
-) -> int:
-    """The review job's exit: ``0`` only when the PR's head is reviewed by what this job did (dev-lab #30).
-
-    Gitea's gate counts a review only when the base's ``pull_request_target`` run concluded success
-    (:mod:`dev_lab.dev.reviewgate`), so a run must FAIL unless it posted success. *posted* is what this job's
-    :func:`~dev_lab.dev.reviewgate.post_review` calls posted, in order
-    (:func:`~dev_lab.dev.reviewgate.posted_verdicts`): its LAST state decides. A job that posted none (a head whose
-    counted review stands, a PR it does not review) exits ``0`` only when the gate itself counts the head's review,
-    or when another Actions run still running holds the head's claim (:func:`live_claim`, *ended* defaulting to
-    :func:`run_ended`): that run posts the verdict, and its conclusion is the one the gate reads.
-    """
-    pull = client.pr_view(number)
-    if pull.base != base:  # not a PR into the trusted integration: never reviewed, so never a success
-        return 1
-    if posted:
-        return 0 if posted[-1] == 'success' else 1
-    head = pull.head_sha
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None) if head else None
-    if live_claim(latest, run_ended(client) if ended is None else ended):
-        return 0
-    return 0 if head and review_missing(status_list(client, head), forge_posted(client, head, base=base)) is None else 1
 
 
 def _parser() -> argparse.ArgumentParser:
