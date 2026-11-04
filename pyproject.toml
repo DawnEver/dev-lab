@@ -253,4 +253,6 @@ ignore = [
 # The plain base render: this repo adds nothing to it.
 [tool.dev_lab.ci."review-claims.yml"]
 
+[tool.dev_lab.ci."merge-tick.yml"]
+
 [tool.dev_lab.ci."ci.yml"]

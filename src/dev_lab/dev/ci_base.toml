@@ -186,6 +186,48 @@ statuses = "write"
 pull-requests = "write"
 actions = "write"
 
+# GITHUB'S MERGE TICK (user ruling 2026-11-04): the parts gate the merge, and a part can settle AFTER ci.yml's
+# merge-ready ran -- a workstation or HPC part, or a late CI part -- so a posted `tests/<part>` re-judges every open PR
+# into integration (`forge merge ready`, no number: the ONE decision) and merges each ready head as the job token, the
+# way Gitea's merge.yml does. TRIGGERS: `status` and `schedule` run the DEFAULT branch's file (integrate/main), never a
+# PR head's, so the merging token runs no head's code; the schedule catches a status the job token posted (it starts
+# no workflow). merge-ready's own decision and a pending claim start nothing. A merge it makes starts no workflow, so
+# it dispatches the merge's smoke run on integrate/main, as merge-ready does.
+["merge-tick.yml"]
+name = "Merge tick"
+
+["merge-tick.yml".on]
+status = {}
+schedule = [{ cron = "*/15 * * * *" }]
+workflow_dispatch = {}
+
+["merge-tick.yml".concurrency]
+group = "merge-tick"
+cancel-in-progress = false
+
+["merge-tick.yml".permissions]
+contents = "read"
+
+["merge-tick.yml".env]
+HEAD_SHA = "${{ github.sha }}"
+FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
+
+["merge-tick.yml".jobs.merge-tick]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
+if = "${{ github.event_name != 'status' || (startsWith(github.event.context, 'tests/') && github.event.context != 'tests/merge-ready' && github.event.state != 'pending') }}"
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready)"; echo "$said"; case "$said" in *"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac' },
+    { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
+]
+
+["merge-tick.yml".jobs.merge-tick.permissions]
+contents = "write"
+statuses = "write"
+pull-requests = "write"
+actions = "write"
+
 # Pushes the fast-forwarded main and deletes every branch integration now contains (LANDED-BRANCHES-SWEPT,
 # closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
 ["ci.yml".jobs.promote]
