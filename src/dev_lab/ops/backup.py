@@ -5,7 +5,9 @@
   user) writes one file into a private work directory, an EMPTY file is refused, and ONE tar of them goes to stdout.
   ``git_mirror`` = every ``mirrors`` repository on any forge, kept as ``git clone --mirror`` in ``mirror_cache`` and
   bundled per repo (``git bundle --all``), plus its pulls, reviews, statuses and issues as JSON when
-  ``mirror_metadata`` is set (:func:`metadata`). A dumper is a function returning its files, so another forge or
+  ``mirror_metadata`` is set (:func:`metadata`). An empty repository contributes no bundle. One mirror that cannot be
+  fetched refuses the WHOLE export, deliberately: the alert names it, and a backup silently missing a repository is
+  the failure this role exists to prevent. A dumper is a function returning its files, so another forge or
   database is one more entry, never a new role.
 * ``ops backup pull`` -- the backup host's timer: ssh with the dedicated key to the export account, unpack into
   ``<dest>/<UTC stamp>/`` (a partial directory until every file is there and non-empty), drop stamped backups older
@@ -33,7 +35,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.ops.config import Backup, mirror_name
+from dev_lab.ops.config import Backup, mirror_host, mirror_name
 
 __all__ = ['DUMPERS', 'STAMP', 'BackupRefused', 'Dumper', 'export', 'git_mirror', 'metadata', 'pull']
 
@@ -96,6 +98,31 @@ def _api_metadata(url: str, token: str) -> Mapping[str, Any]:
     return metadata(Client(forge_of_url(url), token))
 
 
+def _has_refs(mirror: Path) -> bool:
+    listed = _door.run([_GIT, '-C', str(mirror), 'for-each-ref', '--count=1'], check=False, capture_output=True,
+                       text=True, encoding='utf-8', timeout=600)  # fmt: skip
+    if listed.returncode != 0:
+        msg = f'git_mirror {mirror.name}: for-each-ref exited {listed.returncode}'
+        raise BackupRefused(msg)
+    return bool(listed.stdout.strip())
+
+
+def _token(role: Backup, url: str) -> str:
+    """The read token ``mirror_tokens`` declares for *url*'s host, ``''`` (anonymous) when it declares none."""
+    host = mirror_host(url)
+    if not (path := role.mirror_tokens.get(host, '')):
+        return ''
+    try:
+        token = Path(path).read_text(encoding='utf-8').strip()
+    except OSError as unreadable:
+        msg = f'[ops.backup.mirror_tokens] {host} = {path} is unreadable: {type(unreadable).__name__}'
+        raise BackupRefused(msg) from unreadable
+    if not token:
+        msg = f'[ops.backup.mirror_tokens] {host} = {path} is empty: write the read token into it, or drop the key'
+        raise BackupRefused(msg)
+    return token
+
+
 def git_mirror(*, meta: Metadata = _api_metadata) -> Dumper:
     """The ``git_mirror`` dumper; *meta* reads one repository's metadata from its URL and read token."""
 
@@ -110,16 +137,18 @@ def git_mirror(*, meta: Metadata = _api_metadata) -> Dumper:
             if not mirror.is_dir():
                 fetch = [_GIT, 'clone', '--quiet', '--mirror', url, str(mirror)]
             report = run_network_verb(fetch, timeout=6 * 3600)
-            if not report.ok:
-                msg = f'git ... {url} exited {report.returncode}: {report.remedy}'
+            if not report.ok:  # the mirror's name, never its URL or git's stderr: either may carry a credential
+                msg = (
+                    f'git_mirror {name}: {"clone" if "clone" in fetch else "remote update"} exited {report.returncode}'
+                )
                 raise BackupRefused(msg)
-            bundle = tmp / f'{name}.bundle'
-            _checked([_GIT, '-C', str(mirror), 'bundle', 'create', '--quiet', str(bundle), '--all'],
-                     stdout=subprocess.DEVNULL)  # fmt: skip
-            files.append(bundle)
+            if _has_refs(mirror):  # an empty repository has nothing to bundle; its metadata is still read
+                bundle = tmp / f'{name}.bundle'
+                _checked([_GIT, '-C', str(mirror), 'bundle', 'create', '--quiet', str(bundle), '--all'],
+                         stdout=subprocess.DEVNULL)  # fmt: skip
+                files.append(bundle)
             if role.mirror_metadata:
-                token_file = role.mirror_tokens.get(name.split('_', 1)[0], '')
-                token = Path(token_file).read_text(encoding='utf-8').strip() if token_file else ''
+                token = _token(role, url)
                 meta_file = tmp / f'{name}.meta.json'
                 meta_file.write_text(json.dumps(meta(url, token), indent=1, sort_keys=True), encoding='utf-8')
                 files.append(meta_file)

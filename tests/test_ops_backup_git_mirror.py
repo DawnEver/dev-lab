@@ -18,10 +18,16 @@ from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
 from dev_lab.ops.backup import BackupRefused, Dumper, export, git_mirror, metadata
-from dev_lab.ops.config import Backup
+from dev_lab.ops.config import Backup, mirror_host
 from dev_lab.ops.config import mirror_name as slug
 
 _GIT = shutil.which('git') or 'git'
+
+
+@pytest.fixture(autouse=True)
+def _short_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mirrors are named by their URL; a relative one keeps the cache under Windows' path limit."""
+    monkeypatch.chdir(tmp_path)
 
 
 def _git(*argv: str, cwd: Path | None = None) -> str:
@@ -36,7 +42,7 @@ def _origin(tmp: Path, name: str) -> tuple[Path, Path]:
     _commit(work, 'one')
     _git('remote', 'add', 'origin', str(bare), cwd=work)
     _git('push', 'origin', 'main', cwd=work)
-    return bare, work
+    return bare.relative_to(tmp), work
 
 
 def _commit(work: Path, text: str) -> str:
@@ -124,6 +130,7 @@ def test_the_metadata_flag_adds_one_json_per_repo(tmp_path: Path) -> None:
         ({'mirror_cache': ''}, 'mirror_cache'),
         ({'mirrors': ('https://h/o/r.git', 'ssh://git@h/o/r.git')}, 'twice'),
         ({'mirror_tokens': {'other.host': '/t'}}, 'serves no mirror'),
+        ({'mirrors': ('https://user:s3cret@h/o/r.git',)}, 'password'),
     ],
 )
 def test_a_git_mirror_declaration_that_lies_is_refused(kwargs: dict[str, Any], match: str) -> None:
@@ -198,3 +205,66 @@ def test_a_client_without_a_token_reads_anonymously() -> None:
     assert metadata(client) == {'pulls': [], 'issues': []}
     assert sent
     assert not any('Authorization' in headers for headers in sent)
+
+
+def test_a_declared_secret_never_reaches_the_refusal() -> None:
+    with pytest.raises(ValueError, match='password') as refused:
+        Backup(dumpers=('git_mirror',), mirrors=('https://user:s3cret@h/o/r.git',), mirror_cache='/c')
+    assert 's3cret' not in str(refused.value)
+
+
+def test_a_failed_fetch_names_the_mirror_never_its_url(tmp_path: Path) -> None:
+    (tmp_path / 'tmp').mkdir()
+    url = 'https://user@127.0.0.1:9/o/unreachable.git'
+    with pytest.raises(BackupRefused) as refused:
+        _exported(_role(tmp_path, (url,)))
+    assert '127.0.0.1_o_unreachable' in str(refused.value)
+    assert 'user@' not in str(refused.value)
+    assert url not in str(refused.value)
+
+
+def test_mirror_keys_without_the_git_mirror_dumper_are_refused() -> None:
+    with pytest.raises(ValueError, match='names no git_mirror'):
+        Backup(dumpers=('gitea',), mirrors=('https://h/o/r.git',))
+
+
+def test_an_empty_repo_adds_no_bundle(tmp_path: Path) -> None:
+    (tmp_path / 'tmp').mkdir()
+    full, _ = _origin(tmp_path, 'full')
+    empty = Path('forge') / 'empty.git'
+    _git('init', '--bare', str(empty))
+    files = _exported(_role(tmp_path, (str(full), str(empty))))
+    assert sorted(files) == [f'{slug(str(full))}.bundle']
+
+
+def test_the_declared_token_of_the_mirror_host_reaches_the_metadata_read(tmp_path: Path) -> None:
+    secret = tmp_path / 'read.token'
+    secret.write_text('  tok-123' + chr(10), encoding='utf-8')
+    (tmp_path / 'tmp').mkdir()
+    bare, _ = _origin(tmp_path, 'one')
+    tokens: list[str] = []
+
+    def meta(_url: str, token: str) -> Mapping[str, Any]:
+        tokens.append(token)
+        return {}
+
+    role = _role(tmp_path, (str(bare),), mirror_metadata=True, mirror_tokens={mirror_host(str(bare)): str(secret)})
+    _exported(role, git_mirror=git_mirror(meta=meta))
+    assert tokens == ['tok-123']
+
+
+@pytest.mark.parametrize(('content', 'match'), [(None, 'unreadable'), ('  ' + chr(10), 'empty')])
+def test_a_declared_token_file_missing_or_empty_is_refused_by_name(
+    tmp_path: Path, content: str | None, match: str
+) -> None:
+    secret = tmp_path / 'read.token'
+    if content is not None:
+        secret.write_text(content, encoding='utf-8')
+    (tmp_path / 'tmp').mkdir()
+    bare, _ = _origin(tmp_path, 'one')
+    host = mirror_host(str(bare))
+    role = _role(tmp_path, (str(bare),), mirror_metadata=True, mirror_tokens={host: str(secret)})
+    with pytest.raises(BackupRefused, match=match) as refused:
+        _exported(role, git_mirror=git_mirror(meta=lambda _u, _t: {}))
+    assert host in str(refused.value)
+    assert str(secret) in str(refused.value)
