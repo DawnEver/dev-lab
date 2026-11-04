@@ -14,7 +14,7 @@ from lab_commons.log import emit
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.installdoor import floating_requirements
-from dev_lab.dev.lockcheck import TOOLCHAIN, UV_VERSION, newest_stable, pin_stable, unreasoned_holds
+from dev_lab.dev.lockcheck import TOOLCHAIN, UV_VERSION, integration_of, newest_stable, pin_stable, unreasoned_holds
 from dev_lab.dev.venvpath import venv_interpreter
 
 
@@ -186,7 +186,8 @@ def lock_upgrade(
     ``rust-toolchain.toml``, moved to *stable* (user ruling 2026-10-25) -- moves in this step; the
     environment then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`.
     """
-    holds = unreasoned_holds((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    manifest = (root / 'pyproject.toml').read_text(encoding='utf-8')
+    holds = unreasoned_holds(manifest, integration_of(manifest))
     if holds:
         emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
         return 1

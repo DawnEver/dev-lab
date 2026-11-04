@@ -12,6 +12,10 @@ A COMMIT IS REFUSED (:func:`lock_problems`, judged at a sha, never a dirty worki
 * it HOLDS a requirement below the newest -- an upper bound (``<``, ``<=``), an exact pin (``==``, ``===``,
   ``~=``) or a git requirement at a ref -- with no reason: a comment on its line or the comment line above
   (:func:`unreasoned_holds`). A reasoned range is the one way to stay below latest (e.g. ``<3.14``: pyo3 ABI);
+  a git requirement at the declared integration branch (``[tool.dev_lab.integrator] integration``) FOLLOWS that
+  line and is no hold (user ruling 2026-11-04: a family repo depends on its dependencies' integration line);
+* it declares a git requirement or a ``[tool.uv.sources]`` git source naming NO ref, which follows the remote's
+  default branch -- the trunk, never the integration line (:func:`unfollowed`);
 * it commits Rust (a ``Cargo.toml``) without a root ``rust-toolchain.toml`` pinning ONE exact version, never a
   channel name like ``stable`` (user ruling 2026-10-25: the toolchain is pinned exactly like the lock;
   :func:`toolchain_problems`).
@@ -33,20 +37,37 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT
+from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.netverb import Report, run_network_verb
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 __all__ = [
-    'DOOR', 'FRESHENED', 'LOCK', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'lock_problems', 'mount_submodules',
-    'newest_stable', 'pin_stable', 'refreshable', 'stale', 'toolchain_problems', 'unreasoned_holds',
+    'DOOR',
+    'FRESHENED',
+    'LOCK',
+    'REMEDY',
+    'TOOLCHAIN',
+    'UNRESOLVED',
+    'integration_of',
+    'lock_problems',
+    'mount_submodules',
+    'newest_stable',
+    'pin_stable',
+    'refreshable',
+    'stale',
+    'toolchain_problems',
+    'unfollowed',
+    'unreasoned_holds',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
@@ -117,36 +138,101 @@ def _unlocated() -> dict[str, str]:
     return {name: value for name, value in os.environ.items() if name not in _REPOSITORY_LOCATORS}
 
 
-def _holds(text: str) -> bool:
-    """Whether quoted *text* is a requirement (or a bare specifier set) that keeps something below the newest."""
+#: A ``[tool.uv.sources]`` inline table naming a git source, and the keys that name its ref.
+_GIT_SOURCE: Final = re.compile(r'\bgit\s*=\s*["\']')
+_SOURCE_REF: Final = re.compile(r'\b(?P<key>branch|rev|tag)\s*=\s*["\'](?P<ref>[^"\'\n]*)["\']')
+
+
+def integration_of(manifest: str) -> str | None:
+    """The integration branch pyproject text *manifest* declares; ``None`` where it declares no integrator table."""
+    if not declared_table(tomllib.loads(manifest), 'integrator', {}):
+        return None
+    return policy_from(manifest, 'pyproject.toml').integration
+
+
+def _git_ref(text: str) -> str | None:
+    """The ref of quoted requirement *text* when it is a git requirement (``''``: none named), else ``None``."""
     named = _NAME.match(text)
     rest = (named['rest'] if named else text).split(';', 1)[0].strip()
-    if rest.startswith('@'):
-        url = rest[1:].strip()
-        return url.startswith('git+') and '@' in url.removeprefix('git+').split('://', 1)[-1].split('#', 1)[0]
-    if not rest:
+    if not rest.startswith('@'):
+        return None
+    url = rest[1:].strip()
+    if not url.startswith('git+'):
+        return None
+    _, at, ref = url.removeprefix('git+').split('://', 1)[-1].split('#', 1)[0].rpartition('@')
+    return ref if at else ''
+
+
+def _holds(text: str, integration: str | None) -> bool:
+    """Whether quoted *text* is a requirement (or a bare specifier set) that keeps something below the newest.
+
+    A git requirement at *integration* follows that line, so it holds nothing.
+    """
+    ref = _git_ref(text)
+    if ref is not None:
+        return bool(ref) and ref != integration
+    named = _NAME.match(text)
+    rest = (named['rest'] if named else text).split(';', 1)[0].strip()
+    if not rest or rest.startswith('@'):
         return False
     clauses = [_CLAUSE.match(clause) for clause in rest.split(',')]
     return all(clauses) and any(clause['op'] in _HOLDING for clause in clauses if clause)
 
 
-def unreasoned_holds(manifest: str) -> tuple[str, ...]:
+def _source_holds(line: str, integration: str | None) -> bool:
+    """Whether a ``[tool.uv.sources]`` git *line* names a ref other than *integration*."""
+    found = _SOURCE_REF.search(line)
+    return bool(found) and not (found['key'] == 'branch' and found['ref'] == integration)
+
+
+def _reasoned(lines: list[str], index: int, end: int) -> bool:
+    above = lines[index - 1].lstrip() if index else ''
+    return '#' in lines[index][end:] or above.startswith('#')
+
+
+def unreasoned_holds(manifest: str, integration: str | None) -> tuple[str, ...]:
     """Every requirement of pyproject text *manifest* held below the newest with no reason, as ``line N: <text>``.
 
-    A reason is a ``#`` comment on the requirement's own line or the line above it.
+    A reason is a ``#`` comment on the requirement's own line or the line above it. A git requirement or source
+    at *integration* (:func:`integration_of`) follows it and is no hold.
     """
     lines = manifest.splitlines()
     found = []
     for index, line in enumerate(lines):
         if line.lstrip().startswith('#'):
             continue
+        if (
+            _GIT_SOURCE.search(line)
+            and _source_holds(line, integration)
+            and not _reasoned(lines, index, line.rfind('}') + 1)
+        ):
+            found.append(f'line {index + 1}: {line.strip()}')
+            continue
         for match in _QUOTED.finditer(line):
             text = match[1] if match[1] is not None else match[2]
-            if not _holds(text):
-                continue
-            above = lines[index - 1].lstrip() if index else ''
-            if '#' not in line[match.end() :] and not above.startswith('#'):
+            if _holds(text, integration) and not _reasoned(lines, index, match.end()):
                 found.append(f'line {index + 1}: "{text}"')
+    return tuple(found)
+
+
+def unfollowed(manifest: str) -> tuple[str, ...]:
+    """Every git requirement or source of pyproject text *manifest* naming no ref, as ``line N: <text>``.
+
+    A git dependency with no ref follows the remote's DEFAULT branch, the trunk -- never the integration line.
+    """
+    found = []
+    for index, line in enumerate(manifest.splitlines()):
+        if line.lstrip().startswith('#'):
+            continue
+        if _GIT_SOURCE.search(line):
+            if not _SOURCE_REF.search(line):
+                found.append(f'line {index + 1}: {line.strip()}')
+            continue
+        found.extend(
+            f'line {index + 1}: "{text}"'
+            for match in _QUOTED.finditer(line)
+            if _git_ref(text := match[1] if match[1] is not None else match[2]) == ''
+        )
     return tuple(found)
 
 
@@ -270,5 +356,13 @@ def lock_problems(root: Path, sha: str) -> tuple[str, ...]:
     if _git(root, 'cat-file', '-e', f'{sha}:{LOCK}')[0] != 0:
         return (f'{sha[:12]} commits no {LOCK}: its environment would be whatever resolves on the day',)
     _, manifest = _git(root, 'show', f'{sha}:pyproject.toml')
-    holds = tuple(f'{hold} holds a requirement below the newest with no reason' for hold in unreasoned_holds(manifest))
-    return holds + toolchain_problems(root, sha)
+    integration = integration_of(manifest)
+    holds = tuple(
+        f'{hold} holds a requirement below the newest with no reason'
+        for hold in unreasoned_holds(manifest, integration)
+    )
+    trunk = () if integration is None else tuple(
+        f'{line} follows the default branch, not the integration line; name its ref {integration}'
+        for line in unfollowed(manifest)
+    )  # fmt: skip
+    return holds + trunk + toolchain_problems(root, sha)
