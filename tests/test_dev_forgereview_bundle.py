@@ -71,7 +71,7 @@ def _prepare_run(
     path = f'{workflow}@refs/pull/{number}/head'
     return {
         'id': run, 'head_sha': head, 'event': event, 'path': path, 'html_url': _url(run), 'conclusion': conclusion,
-        'started_at': '2026-11-04T10:00:00Z', 'run_attempt': 1,
+        'created': '2026-11-04T10:00:00Z', 'started_at': '2026-11-04T10:00:00Z',
     }  # fmt: skip
 
 
@@ -362,11 +362,11 @@ def _retarget(forge: FakeForge, at: str, *, key: str = 'type', kind: str = 'chan
     ]
 
 
-def _rerun_after(forge: FakeForge, *, attempt: int = 1) -> int:
-    """A later prepare run of PR #7 at 12:00 that attached the same honest bundle; its id."""
+def _later_run(forge: FakeForge, *, created: str | None = '2026-11-04T12:00:00Z', conclusion: str = 'success') -> int:
+    """A newer prepare run of PR #7 (started 12:00) that attached the same honest bundle; its artifact id."""
     ((_, (_, name, data)),) = forge.artifacts.items()
-    later = _prepare_run(forge.pull.head_sha, run=8, conclusion='success')
-    later.update(started_at='2026-11-04T12:00:00Z', run_attempt=attempt)
+    later = _prepare_run(forge.pull.head_sha, run=8, conclusion=conclusion)
+    later.update(created=created, started_at='2026-11-04T12:00:00Z')
     forge.runs.append(later)
     forge.artifacts[950] = (8, name, data)
     return 950
@@ -382,19 +382,34 @@ def test_a_prepare_run_from_before_the_pr_was_retargeted_is_never_read(prepared:
     _retarget(forge, '2026-11-04T11:00:00Z', key=key, kind=kind)
     said, seen = _judged(forge, _findings(None))
     assert (said, seen, forge.downloaded) == ([], [], [])
-    after = _rerun_after(forge)
+    after = _later_run(forge)
     said, _ = _judged(forge, _findings(None))
     assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
     assert forge.downloaded == [after]
 
 
-def test_an_old_run_re_run_after_the_retarget_is_never_read(prepared: Prepared) -> None:
-    """A re-run keeps the old run -- and the workflow it was started from -- under a fresh start time."""
+@pytest.mark.parametrize('created', ['2026-11-04T10:30:00Z', None])
+def test_a_run_not_shown_created_after_the_retarget_is_never_read(prepared: Prepared, created: str | None) -> None:
+    """Queued before the retarget yet STARTED after it -- or with no creation time at all: never approved."""
     forge = prepared.forge
     _retarget(forge, '2026-11-04T11:00:00Z')
-    _rerun_after(forge, attempt=2)
+    _later_run(forge, created=created)
     said, seen = _judged(forge, _findings(None))
     assert (said, seen, forge.verdicts(), forge.downloaded) == ([], [], [], [])
+
+
+def test_a_newer_run_in_flight_blocks_an_older_success(prepared: Prepared) -> None:
+    """The NEWEST run decides even while it runs: never fall through to an older concluded one.
+
+    PLANTED CONTROL: once it concludes success, it is read.
+    """
+    forge = prepared.forge
+    after = _later_run(forge, conclusion='')
+    said, seen = _judged(forge, _findings(None))
+    assert (said, seen, forge.downloaded) == ([], [], [])
+    forge.runs[-1]['conclusion'] = 'success'
+    said, _ = _judged(forge, _findings(None))
+    assert (said, forge.downloaded) == ([f'#7 {forge.pull.head_sha[:12]}: APPROVED'], [after])
 
 
 @pytest.mark.parametrize('timeline', [None, [{'type': 'change_target_branch', 'created_at': 'yesterday'}]])

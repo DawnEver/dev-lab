@@ -9,10 +9,11 @@ reads it only from a source the judge locates itself (D3, F-680a6bd606f0). TWO s
   neither start nor alter -- and CREATED AFTER the PR's last base change in the forge's issue timeline
   (``change_target_branch`` / ``base_ref_changed``): a PR first opened into a branch whose workflow its author
   wrote, then retargeted, keeps that run under the same ref, so it is never a source; a timeline that cannot be
-  read approves nothing. Gitea's run has no creation time, so a FIRST attempt's ``started_at`` stands for it and a
-  re-run (it keeps the old workflow under a fresh start) never counts after a retarget. The newest such run that
-  concluded decides, and only a ``success`` is read: a failed or cancelled run is no source, and a run still
-  going decides nothing. The bundle is that run's OWN artifact
+  read approves nothing. Creation is the run's ``created`` (Gitea) / ``created_at`` (GitHub), never its start --
+  a run queued before the retarget may start after it -- and a run with no creation time is never approved after
+  a retarget. The NEWEST such run decides, even in flight: while it runs nothing is judged (never an older
+  concluded run), and only its ``success`` is read -- a failed or cancelled run is no source.
+  The bundle is that run's OWN artifact
   :data:`ARTIFACT` (:func:`~dev_lab.dev.actionsartifact.run_member`), which only a job of that run can upload
   (its runtime token is scoped to it); no commit status, no URL and no store key is consulted. A PR-head workflow
   can post any status naming any run, and write to any store the job token reaches -- none of it is read.
@@ -223,29 +224,27 @@ def _base_changed(client: Client, number: int) -> datetime | None:
     return max(changed, default=None)
 
 
-def _created(run: Mapping[str, object]) -> datetime:
-    """When *run* was created: ``created_at`` (GitHub), else a FIRST attempt's ``started_at`` (Gitea).
+def _created_after(run: Mapping[str, object], since: datetime | None) -> bool:
+    """Whether *run* was CREATED after *since* (``created`` on Gitea, ``created_at`` on GitHub); no time is no.
 
-    Gitea's run carries no creation time, and a re-run keeps the run -- and the workflow it was started from --
-    under a fresh start time, so a later attempt's start proves nothing: it reads as the epoch.
+    Never its start: a run queued before a retarget can start after it. A re-run keeps its creation time.
     """
-    if run.get('created_at'):
-        return _when(run['created_at'])
-    if int(str(run.get('run_attempt') or 1)) > 1:
-        return datetime.min.replace(tzinfo=UTC)
-    return _when(run.get('started_at'))
+    if since is None:
+        return True
+    stamp = run.get('created') or run.get('created_at')
+    return bool(stamp) and _when(stamp) > since
 
 
 def _prepared_by_run(client: Client, pull: PullRequest) -> reviewbundle.Bundle | None:
-    """The bundle the base's newest CONCLUDED prepare run of *pull* attached to itself, when it succeeded."""
+    """The bundle the base's NEWEST prepare run of *pull* attached to itself, once it concluded success."""
     since = _base_changed(client, pull.number)
-    runs = [
-        run for run in review_runs(client, pull.head_sha, workflow=PREPARE_WORKFLOW, pull=pull.number)
-        if since is None or _created(run) > since
-    ]  # fmt: skip
-    concluded = next((run for run in runs if run.get('conclusion')), None)
-    if concluded is None:
+    newest = next(iter(review_runs(client, pull.head_sha, workflow=PREPARE_WORKFLOW, pull=pull.number)), None)
+    if newest is None or not newest.get('conclusion'):  # none yet, or the newest still going: not judged yet
         return None
+    if not _created_after(newest, since):
+        emit(f'[review] #{pull.number}: prepare run {newest.get("id")} is not shown created after the retarget')
+        return None
+    concluded = newest
     if concluded.get('conclusion') != 'success':
         emit(f'[review] #{pull.number}: prepare run {concluded.get("id")} {concluded.get("conclusion")}: no bundle')
         return None
