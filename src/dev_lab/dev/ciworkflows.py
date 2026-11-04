@@ -11,7 +11,8 @@ and a workflow file the table does not declare is refused as hand-written.
 A WORKFLOW NAMES ITS FORGE. A table's ``forge`` key (:data:`FORGE_KEY`, ``github`` when omitted) places it in that
 forge's directory (:data:`WORKFLOW_DIRS`) and is never rendered: Gitea Actions runs ``.gitea/workflows`` and, once
 that exists, ignores ``.github/workflows``. Both forges' workflows draw on the same ``_steps``, so a step the two
-share -- the review itself -- has one source.
+share -- the review itself -- has one source. A workflow either forge may run keeps what differs in its
+``by-forge`` table (:data:`BY_FORGE`, never rendered): the part named by the merged ``forge`` is merged over the rest.
 
 THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
 rendered) schedules that workflow at it, so GitHub's ci.yml and Gitea's promote.yml promote on one clock.
@@ -27,7 +28,8 @@ no review method and no key (user ruling 2026-11-02). It is never a workflow and
 A JUDGE REPO RENDERS ITS PREPARE WORKFLOW, undeclared: when the repo's ``[tool.dev_lab.review] where = "judge"``, the
 base's :data:`PREPARE` table is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one
 name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that
-name merged over it. Any other repo renders none, and a layer of that name there is refused.
+name merged over it; the layer's ``forge`` picks the forge it runs on (Gitea by default). Any other repo renders
+none, and a layer of that name there is refused.
 
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
@@ -56,6 +58,7 @@ from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
     'BASE_PATH',
+    'BY_FORGE',
     'FORGE_KEY',
     'LIGHT',
     'NIGHTLY_CRON',
@@ -96,6 +99,8 @@ WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('
 
 #: The table key naming the forge a workflow is rendered for; a placement, never part of the rendered workflow.
 FORGE_KEY: Final = 'forge'
+#: The table key holding each forge's part of a workflow either may run; only the chosen forge's is merged in.
+BY_FORGE: Final = 'by-forge'
 #: The table key asking for the nightly schedule; a trigger, never part of the rendered workflow.
 NIGHTLY_KEY: Final = 'nightly'
 #: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
@@ -176,8 +181,10 @@ def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     hosted = hosted_parts(text)
     out = {}
     for name, layer in sorted(declared.items()):
-        workflow = hosted_jobs(expand(merge(base.get(name, {}), layer), shared), hosted)
-        forge = workflow.pop(FORGE_KEY, 'github')
+        merged = merge(base.get(name, {}), layer)
+        forge = merged.pop(FORGE_KEY, 'github')
+        merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
+        workflow = hosted_jobs(expand(merged, shared), hosted)
         if workflow.pop(NIGHTLY_KEY, False):
             workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
         if forge not in WORKFLOW_DIRS:
