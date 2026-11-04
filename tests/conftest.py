@@ -8,6 +8,8 @@ test's own for the same reason: a finished run LEARNS beside it (:mod:`lab_commo
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import Final
 
@@ -17,6 +19,7 @@ from lab_commons.config import CONFIG_ENV
 
 from dev_lab.dev import _dep_project, forgeserve, metrics
 from dev_lab.dev.lockcheck import UV_VERSION
+from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +28,19 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'lab-commons-machine' / 'config.toml'))
     monkeypatch.delenv(INSIDE_ENV, raising=False)  # the verify running these tests is boxed; a test is not
     monkeypatch.delenv(CPU_ENV, raising=False)
+
+
+#: What a CI job's environment carries that no test may inherit: the run id (every simulated review host would
+#: share one run, and a claim naming the reader's own run reads as a killed re-run's), the forge tokens (the
+#: review door refuses them in its environment) and the workflow's ``GIT_CONFIG_COUNT``/``KEY_n``/``VALUE_n``
+#: auth header. A test that means one plants it with ``monkeypatch.setenv``.
+_CI_JOB_ENV: Final = re.compile(r'GITHUB_RUN_ID|GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)|' + '|'.join(FORGE_TOKEN_ENVS))
+
+
+@pytest.fixture(autouse=True)
+def _not_inside_a_ci_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in [k for k in os.environ if _CI_JOB_ENV.fullmatch(k)]:
+        monkeypatch.delenv(name)
 
 
 @pytest.fixture(autouse=True)

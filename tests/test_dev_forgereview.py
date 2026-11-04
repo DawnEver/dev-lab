@@ -65,16 +65,6 @@ _MANIFEST = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _no_inherited_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """These tests simulate review HOSTS, not one Actions run, so none inherits the runner's run id.
-
-    A CI runner's ``GITHUB_RUN_ID`` would make every simulated host share one run, and a claim naming the
-    reader's own run reads as a killed re-run's.
-    """
-    monkeypatch.delenv('GITHUB_RUN_ID', raising=False)
-
-
 def _output(
     *, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), severity: str = 'MEDIUM', **top: object
 ) -> str:
