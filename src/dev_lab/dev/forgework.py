@@ -42,8 +42,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-import lab_commons.launch as _door
-
 from dev_lab.dev import forge as _forge
 from dev_lab.dev._forge_journal import (
     LOOKBACK,
@@ -68,8 +66,6 @@ from dev_lab.dev._forgebackends import (
     backend_for,
 )
 from dev_lab.dev.forge import (
-    _GIT,
-    _GIT_TIMEOUT_S,
     Forge,
     Transport,
     forge_from_remote,
@@ -77,6 +73,8 @@ from dev_lab.dev.forge import (
     forge_transport,
 )
 from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, ForgeCallFailed, diagnose
+from dev_lab.dev.forgememo import ReadMemo
+from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report
 
 __all__ = [
@@ -94,35 +92,12 @@ __all__ = [
     'client_for',
     'comment_of',
     'is_pull',
-    'provenance',
     'pull_of',
     'stored_client',
 ]
 
 #: What GitHub answers a workflow job token asking `/user`: only this answer, from GitHub, names the Actions bot.
 _INTEGRATION: Final = 'Resource not accessible by integration'
-
-#: The separator in the provenance line, spelled once.
-_DOT: Final = ' · '
-
-
-def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
-    """``[<machine> · <agent> · <branch>]`` when both HARNESS vars are set, else ``None``."""
-    machine, agent = env.get('HARNESS_MACHINE', ''), env.get('HARNESS_AGENT', '')
-    if not machine or not agent:
-        return None
-    done = _door.run(
-        [_GIT, 'symbolic-ref', '--short', '-q', 'HEAD'],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
-    branch = done.stdout.strip() if done.returncode == 0 else ''
-    return '[' + _DOT.join(part for part in (machine, agent, branch) if part) + ']'
 
 
 @dataclass
@@ -148,6 +123,8 @@ class Client:
     #: Where this repository's read caches live (:func:`dev_lab.dev.forgepulls.issues`); :func:`client_for`
     #: sets it -- ``None`` reads everything afresh.
     cache_dir: Path | None = None
+    #: The pass memo answering repeated GETs (:class:`~dev_lab.dev.forgememo.ReadMemo`); ``None`` reads afresh.
+    memo: ReadMemo | None = None
     #: Whether :attr:`refresh` was spent, and whether it left the store empty.
     _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
     _gone: bool = dataclasses.field(default=False, init=False, repr=False)
@@ -270,6 +247,10 @@ class Client:
         intent = durable or Durable()
         key = intent.key or write_key(method, host, path, data or b'')
         write = Write(key, method, path, content_type, data or b'', host, intent.probe, time.time(), intent.until)
+        if self.memo is not None and method == 'GET':
+            return self.memo.read((host, path), lambda: self._attempts(write, data))
+        if self.memo is not None:
+            self.memo.clear()
         if method == 'GET' or self.journal is None:
             return self._attempts(write, data)
         write = self.journal.record(write)

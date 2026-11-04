@@ -27,6 +27,7 @@ from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import (
     forgehosts,
+    forgepoller,
     forgeproduce,
     forgerounds,
     forgerun,
@@ -257,7 +258,7 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
-    monkeypatch.setattr(forgeserve, 'elect', lambda _client, **_kw: elected)
+    monkeypatch.setattr(forgepoller, 'elect', lambda _client, **_kw: elected)
     report = forgeserve.serve(
         tmp_path,
         client=_client,
@@ -1085,6 +1086,25 @@ def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch,
         held=lambda *_a, **_k: ran.append('held') or [],
     )
     assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'held']
+
+
+def test_every_repo_wide_step_reads_through_one_pass_memo_and_the_review_through_none(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """2026-11-04: the poller's steps re-read each open PR's statuses once per step; one memo per pass reads once."""
+    given: list = []
+    _serve(
+        monkeypatch,
+        tmp_path,
+        TickReport((), (), ()),
+        close_landed=lambda _root, built, **_k: given.append(built),
+        sweep=lambda _root, built, **_k: given.append(built) or 0,
+        prune=lambda _root, built, **_k: given.append(built) or (),
+    )
+    memos = {id(one.memo) for one in given}
+    assert len(given) == 3
+    assert len(memos) == 1
+    assert given[0].memo is not None
 
 
 def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, tmp_path: Path) -> None:

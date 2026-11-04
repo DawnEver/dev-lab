@@ -25,11 +25,16 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, client_for
 
-__all__ = ['TESTS', 'main', 'settled', 'watch']
+__all__ = ['EVERY_S', 'FLOOR_S', 'TESTS', 'main', 'settled', 'watch']
 
 #: The context prefix a part's verdict is posted under.
 TESTS: Final = 'tests/'
 _DEADLINE: Final = 3
+#: The default poll period, and the fastest ``--every-seconds`` honours. A verdict is claimed on a serve tick
+#: (5 minutes by default) and takes minutes more, so a faster read only re-reads an unchanged list: on
+#: 2026-11-04 one workstation's watches cost a 2-core Gitea host ~19 status reads a minute at 60 s.
+EVERY_S: Final = 120.0
+FLOOR_S: Final = 30.0
 
 
 def settled(statuses: Sequence[CommitStatus]) -> bool:
@@ -78,7 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge watch', description=main.__doc__)
     parser.add_argument('sha')
     parser.add_argument('--deadline-minutes', type=float, default=120.0)
-    parser.add_argument('--every-seconds', type=float, default=60.0)
+    parser.add_argument('--every-seconds', type=float, default=EVERY_S, help=f'poll period (floor {FLOOR_S:g})')
     parser.add_argument('--stream', action='store_true', help='one flushed line per status change, for a Monitor')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
@@ -86,7 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             client_for(Path.cwd()),
             args.sha,
             deadline_s=args.deadline_minutes * 60,
-            every_s=max(args.every_seconds, 5.0),
+            every_s=max(args.every_seconds, FLOOR_S),
             say=lambda line: emit(line, flush=True),
             stream=args.stream,
         )
