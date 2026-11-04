@@ -25,12 +25,8 @@ from dev_lab.dev.forgereview import REVIEW_CONTEXT, review_tick
 from dev_lab.dev.forgereview_declared import LENS_FIELD, PATHS_FIELD, RANGE_FIELD, Review, review_from
 from dev_lab.dev.forgereview_findings import merge_outputs, parse_findings
 from dev_lab.dev.forgereview_scope import (
-    CODE,
     FINDINGS_FIELD,
-    NOT_CODE,
-    ONLY_GENERATED,
     Budget,
-    is_code,
     lens_of,
     own_base,
     plan,
@@ -40,6 +36,7 @@ from dev_lab.dev.forgereview_scope import (
 )
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import HOLD_CONTEXT
+from dev_lab.dev.reviewcode import CODE, NOT_CODE, ONLY_GENERATED, is_code
 
 _SLICED = ('reviewer', '--range', RANGE_FIELD, '--lens', LENS_FIELD, '--paths', PATHS_FIELD)
 _WIDE = Budget(slice_bytes=10**6, total_bytes=10**7)

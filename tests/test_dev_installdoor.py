@@ -178,18 +178,21 @@ _OWN_DOORS: tuple[str, ...] = ('Makefile', '.github/workflows/ci.yml')
 _OWN_DOOR_FLOOR = 5
 
 
-def test_this_repos_own_doors_are_inert_because_it_declares_no_floating_requirement() -> None:
-    """lab-commons IS the kit, so nothing it installs can be held back by a lock -- CHECKED, not said.
+def test_this_repos_own_doors_never_serve_its_floating_review_method_unlocked() -> None:
+    """The rule HAS a subject here since c1bb741f: the ``review`` group declares ai-lab floating -- CHECKED, not said.
 
-    The claim is live rather than decorative: add a bare `git+` requirement to this repo's manifest
-    and the CI `uv sync` above stops being INERT, which is exactly the day the rule acquires a
-    subject here.
+    Until then lab-commons was the kit and nothing here floated, so every door read INERT by the subject
+    being absent; this test said so and named the day it would change. That day came: ``review = ["ai-lab @
+    git+..."]`` leaves the commit to the lock (the relock moves it), so the doors now have a subject. The
+    Makefile's two ``uv pip install -e`` doors RE-RESOLVE (``RESOLVES``, measured 2026-11-03); the CI sync stays
+    INERT. What may never appear is a door that moves the environment on a stale local resolution: the guard
+    refuses UNLOCKED, and the named set below says which delivery a new door added.
     """
     root = Path(__file__).resolve().parents[1]
     names = floating_requirements(root / 'pyproject.toml')
-    assert names == (), f'{list(names)} are declared floating here, so the doors below now have a subject'
+    assert names == ('ai-lab',), f'{list(names)} are declared floating here; re-measure the doors and this pin'
     doors = assert_doors_deliver(root, list(_OWN_DOORS), names, floor=_OWN_DOOR_FLOOR)
-    assert {door.delivery for door in doors} == {Delivery.INERT}
+    assert {door.delivery for door in doors} == {Delivery.INERT, Delivery.RESOLVES}
 
 
 def _plant(root: Path, *, door: str) -> None:
