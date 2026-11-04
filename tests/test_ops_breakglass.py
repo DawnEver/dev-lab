@@ -154,7 +154,7 @@ def test_a_merge_after_expiry_is_refused_and_the_expiry_closes_the_wave(host: Ho
     with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):
         host.merge()
     assert host.forge.calls == []
-    assert any('AUDIT AND ACKNOWLEDGE' in a[0] for a in host.alerts)
+    assert 'audit' in host.ask('status')  # closed by the expiry, before the merge was judged
 
 
 def test_the_client_may_only_shorten_the_window(host: Host) -> None:
@@ -188,6 +188,7 @@ def test_ack_needs_no_code_and_records_who(host: Host) -> None:
 
 def test_the_tick_reminds_an_unacknowledged_audit_once_per_period(host: Host) -> None:
     host.ask('open', code=host.code())
+    host.merge()
     host.ask('close')
     host.alerts.clear()
     host.server.tick()
@@ -311,7 +312,10 @@ def test_parallel_sessions_spend_one_code_once(host: Host) -> None:
     host.delay = 0.02
     _race(6, lambda: host.ask('open', code=valid))
     stamp = datetime.fromtimestamp(NOW, UTC).strftime('%Y%m%dT%H%M%SZ')
-    assert [a[0] for a in host.alerts].count(f'break-glass wave {stamp} OPENED') == 1
+    assert not any('OPENED' in a[0] for a in host.alerts)  # opening is never alerted; the losers are refused
+    assert host.config.breakglass is not None
+    lines = Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()
+    assert [json.loads(line).get('wave') for line in lines if json.loads(line)['outcome'] == 'opened'] == [stamp]
 
 
 def test_parallel_wrong_codes_cannot_outrun_the_lockout(host: Host) -> None:
@@ -476,3 +480,68 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     body = json.dumps(merged['body'])
     assert HEAD in body
     assert 'Break-Glass: review-bot is down' in body
+
+
+# User ruling 2026-11-04: one wave sent three alerts. Opening is audited only; every merge is announced at once; the
+# close/expiry audit and its reminders are sent only for a wave that merged something.
+
+
+def _titles(host: Host) -> list[str]:
+    return [a[0] for a in host.alerts]
+
+
+def _outcomes(host: Host) -> list[str]:
+    assert host.config.breakglass is not None
+    log = Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()
+    return [json.loads(line)['outcome'] for line in log]
+
+
+def _wave_id(host: Host) -> str:
+    return host.ask('status').split()[1][:-1]
+
+
+def test_opening_a_wave_alerts_nothing_and_is_audited(host: Host) -> None:
+    host.ask('open', code=host.code())
+    assert host.alerts == []
+    assert _outcomes(host) == ['opened']
+
+
+def test_a_wave_that_merged_alerts_each_merge_then_its_audit(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    host.ask('close')
+    wave = _wave_id(host)
+    assert _titles(host) == [f'break-glass MERGED {ALPHA}#7', f'break-glass wave {wave} closed: AUDIT AND ACKNOWLEDGE']
+
+
+def test_closing_an_empty_wave_alerts_nothing_and_is_audited(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.ask('close')
+    assert host.alerts == []
+    assert _outcomes(host) == ['opened', 'closed']
+
+
+@pytest.mark.parametrize('merged', [True, False])
+def test_an_expired_wave_alerts_its_audit_only_if_it_merged(host: Host, *, merged: bool) -> None:
+    host.ask('open', code=host.code(), hours=1)
+    if merged:
+        host.merge()
+    host.later(HOUR + 1)
+    host.server.tick()
+    wave = _wave_id(host)
+    audit = [f'break-glass wave {wave} closed: AUDIT AND ACKNOWLEDGE']
+    assert _titles(host) == ([f'break-glass MERGED {ALPHA}#7', *audit] if merged else [])
+    assert _outcomes(host)[-1] == 'closed'
+
+
+@pytest.mark.parametrize('merged', [True, False])
+def test_reminders_only_chase_a_wave_that_merged(host: Host, *, merged: bool) -> None:
+    host.ask('open', code=host.code())
+    if merged:
+        host.merge()
+    host.ask('close')
+    host.alerts.clear()
+    host.later(24 * HOUR)
+    host.server.tick()
+    reminded = [f'break-glass wave {_wave_id(host)} awaits acknowledgement']
+    assert _titles(host) == (reminded if merged else [])

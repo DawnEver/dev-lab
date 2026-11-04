@@ -3,8 +3,9 @@
 User rulings 2026-11-03: the user works in waves, and a single code relayed by an agent is not bound to the PR the
 human saw. So a code OPENS a wave (bounded by a duration and, optionally, a merge cap); merges inside it need no
 code, and the SERVER announces each one as it happens. When the wave closes -- expiry or ``close`` -- one audit
-report of every merge is written and sent. Acknowledging it is a plain recorded acknowledgement (who, when) and
-needs no code; an unacknowledged audit is reminded on the alert channel but NEVER blocks the next wave.
+report of every merge is written, and sent only if the wave merged something (user ruling 2026-11-04; opening and an
+empty wave are logged, never alerted). Acknowledging it is a plain recorded acknowledgement (who, when) and needs no
+code; an unacknowledged audit of a wave that merged is reminded on the alert channel but NEVER blocks the next wave.
 
 Each wave is ``<state>/waves/<id>.json`` with its report beside it as ``<id>.md``; at most one is open.
 """

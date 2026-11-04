@@ -17,18 +17,22 @@ on Gitea an account the protection's merge whitelist admits, or an admin.
 
 One request is one JSON line with an ``action``:
 
-* ``open {code, hours?, max_merges?}`` -- refused while a wave is open (never because an earlier audit is
-  unacknowledged); ``hours`` may only shorten the configured ``wave_hours``, ``max_merges`` only tighten its cap;
+* ``open {code, hours?, max_merges?}`` -- audited, never alerted (the user typed the code); refused while a wave
+  is open (never because an earlier audit is unacknowledged); ``hours`` may only shorten the configured
+  ``wave_hours``, ``max_merges`` only tighten its cap;
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
   declared integration branch, or whose head is not the one shown; then comment, merge at that head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
   owes), announce;
-* ``close`` -- close the open wave: write and send its audit report; ``ack {id?, by}`` -- record who acknowledged
-  an audit (the oldest unacknowledged when no id), no code;
+* ``close`` -- close the open wave: write its audit report, and send it only if the wave merged something;
+  ``ack {id?, by}`` -- record who acknowledged an audit (the oldest unacknowledged when no id), no code;
 * ``status`` -- every wave's state; :meth:`Server.tick` (a timer) closes an expired wave and reminds an
-  unacknowledged audit at most once per ``remind_hours``.
+  unacknowledged audit of a wave that merged at most once per ``remind_hours``.
+
+ALERTS (user ruling 2026-11-04: one wave sent three, too many): opening is audited only; every merge is announced at
+once; the close/expiry audit and its reminders are sent only for a wave that merged -- an empty wave is logged only.
 """
 
 from __future__ import annotations
@@ -196,7 +200,10 @@ class Server:
         waves.save(self.state, held)
         text = waves.report(self.state, held)
         line = {'wave': held.id, 'outcome': 'closed', 'merges': len(held.merges)}
-        self._announce(line, f'break-glass wave {held.id} closed: AUDIT AND ACKNOWLEDGE', text)
+        if held.merges:
+            self._announce(line, f'break-glass wave {held.id} closed: AUDIT AND ACKNOWLEDGE', text)
+        else:  # an empty wave is logged only (user ruling 2026-11-04)
+            self._audit(line)
         return text
 
     def handle(self, line: str) -> str:
@@ -239,8 +246,7 @@ class Server:
         opened = waves.Wave(stamp, now, now + hours * _HOUR, cap)
         waves.save(self.state, opened)
         said = f'wave {opened.id} open for {hours:g} h' + (f', at most {cap} merge(s)' if cap else '')
-        line = {'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap}
-        self._announce(line, f'break-glass wave {opened.id} OPENED', said)
+        self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap})
         return said
 
     def _merge(self, asked: requests.Merge) -> str:
@@ -310,12 +316,12 @@ class Server:
         return '\n'.join(listed) or 'no wave'
 
     def tick(self) -> str:
-        """The timer's step, under the role lock: close an expired wave; remind each unacknowledged audit."""
+        """The timer's step, under the role lock: close an expired wave; remind each unacknowledged wave that merged."""
         with exclusive(self.state):
             self._current()
             for wave in waves.held(self.state):
                 due = (wave.reminded or wave.closed or 0.0) + self.role.remind_hours * _HOUR
-                if wave.state(self.now()) == 'audit' and self.now() >= due:
+                if wave.merges and wave.state(self.now()) == 'audit' and self.now() >= due:
                     wave.reminded = self.now()
                     waves.save(self.state, wave)
                     line = {'wave': wave.id, 'outcome': 'reminded'}
