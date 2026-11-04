@@ -30,6 +30,21 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, Final
 
+__all__ = [
+    'CODE',
+    'NOT_CODE',
+    'ONLY_GENERATED',
+    'REVIEW_CONTEXT',
+    'SETTLED_OUTPUT',
+    'Call',
+    'forge_call',
+    'is_code',
+    'main',
+    'matches',
+    'nothing_to_review',
+    'settle',
+]
+
 #: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
 ONLY_GENERATED: Final = 'nothing to review: every changed file is generated or not code'
 
