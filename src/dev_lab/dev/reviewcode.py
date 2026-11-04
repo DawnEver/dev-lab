@@ -149,6 +149,17 @@ def forge_call(token: str) -> Call:
     return call
 
 
+def _say(line: str) -> None:
+    """*line* on stdout as UTF-8 whatever its encoding; a stream with no ``.buffer`` takes the text."""
+    buffer = getattr(sys.stdout, 'buffer', None)  # bare interpreter: the kit's emit is absent
+    if buffer is None:
+        sys.stdout.write(line + '\n')
+    else:
+        sys.stdout.flush()  # text already queued goes first
+        buffer.write(line.encode('utf-8') + b'\n')
+    sys.stdout.flush()
+
+
 def main(env: Mapping[str, str] | None = None, call: Call | None = None) -> int:
     """The step: settle the event's PR when it holds no code, and write :data:`SETTLED_OUTPUT` to the step output.
 
@@ -163,7 +174,7 @@ def main(env: Mapping[str, str] | None = None, call: Call | None = None) -> int:
         said, why = None, f'not settled ({type(failed).__name__}: {failed}): the review runs'
     else:
         why = said or 'code to review: the review runs'
-    sys.stdout.buffer.write(why.encode('utf-8') + b'\n')  # bare interpreter: the kit's emit is absent
+    _say(why)
     with Path(env['GITHUB_OUTPUT']).open('a', encoding='utf-8') as out:
         out.write(f'{SETTLED_OUTPUT}={"true" if said else "false"}\n')
     return 0

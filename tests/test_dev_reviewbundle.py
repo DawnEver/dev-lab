@@ -57,8 +57,9 @@ def _repo(tmp_path: Path) -> tuple[Path, str, str]:
     (root / _ODD).parent.mkdir()
     (root / _ODD).write_text('q = 6\n', encoding='utf-8')
     run_git(root, 'mv', 'moved.py', 'renamed.py')
-    run_git(root, 'update-index', '--chmod=+x', 'mode.sh')
     run_git(root, 'add', '-A', '.')
+    # after the add: with core.fileMode on (Linux) `add` re-reads the worktree's 0644 and drops an earlier +x
+    run_git(root, 'update-index', '--chmod=+x', 'mode.sh')
     run_git(root, 'commit', '-q', '-m', 'head')
     return root, base, git_out(root, 'rev-parse', 'HEAD')
 
