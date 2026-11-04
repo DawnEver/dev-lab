@@ -20,7 +20,7 @@ def test_watch_ends_when_every_part_is_final() -> None:
     def sleep(_s: float) -> None:
         _post(forge, 'tests/linux', 'success')
 
-    code = watch(forge, SHA, deadline_s=50, every_s=1, say=said.append, clock=lambda: next(ticks), sleep=sleep)
+    code = watch(forge, (SHA,), deadline_s=50, every_s=1, say=said.append, clock=lambda: next(ticks), sleep=sleep)
     assert code == 0
     assert said == ['tests/linux: pending pending', 'tests/linux: success success']
     assert {s['state'] for s in forge.statuses[SHA]} == {'pending', 'success'}, 'watch posted nothing'
@@ -29,7 +29,7 @@ def test_watch_ends_when_every_part_is_final() -> None:
 def test_a_red_settles_with_one_and_a_pending_meets_the_deadline() -> None:
     forge = StateForge()
     _post(forge, 'tests/linux', 'failure')
-    assert watch(forge, SHA, deadline_s=0, every_s=1, say=lambda _l: None) == 1
+    assert watch(forge, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None) == 1
     other = StateForge()
     _post(other, 'tests/linux', 'pending')
-    assert watch(other, SHA, deadline_s=0, every_s=1, say=lambda _l: None, sleep=lambda _s: None) == 3
+    assert watch(other, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None, sleep=lambda _s: None) == 3

@@ -174,3 +174,16 @@ always_run = true
 id = "host-pressure"
 run = ["python", "-m", "dev_lab.dev.hostalarm", "check"]
 always_run = true
+
+# VENV-FOLLOWS-THE-LOCK (user ruling 2026-11-04): a merge or checkout that moved pyproject.toml/uv.lock detaches a
+# re-bootstrap of this checkout's venv (dev_lab.dev.venvfollow); an unchanged lock costs one hash, a live run skips.
+# Both stages are ADVISORY: the merge or checkout is done.
+[[post-merge]]
+id = "venv-follows-lock"
+run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
+always_run = true
+
+[[post-checkout]]
+id = "venv-follows-lock"
+run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
+always_run = true

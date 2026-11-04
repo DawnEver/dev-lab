@@ -317,6 +317,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgewatch',
     'jobparts',
     'pushwatch',
+    'pushstop',
+    'venvfollow',
     'liverun',
     'metrics',
     'monthsummary',

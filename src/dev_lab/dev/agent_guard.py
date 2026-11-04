@@ -132,6 +132,10 @@ HANDBACK_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab
 #: no live ``forge watch <sha>`` watches the pushed head -- never a block.
 PUSHWATCH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushwatch'
 
+#: PUSHED-HEAD-IS-WATCHED, the ``Stop`` half (:mod:`dev_lab.dev.pushstop`, ruling 2026-11-04): a turn does not end
+#: while a head the session pushed is pending with no live watcher, or red (refused once).
+PUSHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushstop'
+
 #: LANDED-BRANCHES-SWEPT (:mod:`dev_lab.dev.branchprune`, ruling 2026-10-29): after a shell call that pushed
 #: integration, a detached ``sweep --local`` deletes every branch and clean worktree integration now contains.
 SWEEP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.branchprune post-push'
@@ -139,6 +143,10 @@ SWEEP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.de
 #: RECLAIM RUNS IN THE WORKFLOW (:mod:`dev_lab.dev.reclaimrun`, ruling 2026-10-27): every session start in a
 #: MAIN checkout detaches a bounded, locked reclaim of landed worktrees and their branches, and returns at once.
 RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.reclaimrun --session-start'
+
+#: VENV-FOLLOWS-THE-LOCK (:mod:`dev_lab.dev.venvfollow`, ruling 2026-11-04): every session start whose checkout's
+#: lock moved since its venv was stamped detaches a re-bootstrap, and returns at once.
+VENVFOLLOW_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.venvfollow --session-start'
 
 #: A PRESSED HOST TELLS ITS AGENTS (:mod:`dev_lab.dev.hostalarm`, ruling D54): the host's disk/memory/CPU alarms as
 #: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
@@ -163,7 +171,7 @@ class Wire:
 #: after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at stop -- a stray is the
 #: state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a census after every
 #: shell call repeated the same block (2026-11-03 audit); the hand-back check at every stop, the main session's and
-#: each subagent's; the background reclaim at session start.
+#: each subagent's; the pushed-head gate at the main session's stop; the background reclaim at session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
     Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True),
@@ -172,8 +180,10 @@ WIRING: Final = (
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
+    Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
+    Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
 )
 
 #: Wires the family once installed and no longer does, as ``(event, marker)``: a re-install removes them, so an old

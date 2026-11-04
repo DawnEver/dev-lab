@@ -303,7 +303,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
 * :mod:`dev_lab.dev.forgepublish` -- ``forge request``: publish a request only when a host could reproduce it.
 * :mod:`dev_lab.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
-* :mod:`dev_lab.dev.forgewatch` -- ``forge watch <sha>``: read-only, a commit's verdicts until settled or a deadline.
+* :mod:`dev_lab.dev.forgewatch` -- ``forge watch <sha>...``: read-only, verdicts until one sha settles or a deadline.
 * :mod:`dev_lab.dev.forgestuck` -- STUCK-RUN-CANCEL: ``forge cancel-stuck <sha>`` scancels only its stuck forge tasks.
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
@@ -444,7 +444,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the command to arm as a Monitor after a push, and an
-  advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``.
+  advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``; it journals each push.
+* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending or red.
+* :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
 * :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.

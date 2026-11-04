@@ -4,9 +4,9 @@ INCIDENT 2026-10-13: a workstation served each repo with the repo's OWN venv, an
 lab-commons whose ``forge serve`` required a retired flag, so it exited 2 every tick -- and the code that
 would have updated it was the code that could not run. A repo's own stale kit cannot own its own update;
 the host's kit does, from outside it (:func:`refresh`): fast-forward the clean checkout to its upstream
-(:func:`follow`), then sync its venv through ``dep --bootstrap`` when it is missing or the content of
-:data:`ENV_INPUTS` differs from the stamp the last successful sync wrote (:func:`sync_venv`) -- so a failed
-sync is retried by the next tick, and an unchanged checkout costs one hash.
+(:func:`follow`), then sync its venv through ``dep --bootstrap`` when :func:`dev_lab.dev.venvfollow.stale` says
+its inputs moved (:func:`sync_venv`) -- so a failed sync is retried by the next tick, and an unchanged checkout
+costs one hash.
 
 Shared by ``workstation deploy`` (its checkout and venv steps) and ``workstation serve`` (every tick).
 A cluster account's tick is the same rule through its own keyed build (:func:`dev_lab.dev.hpchost.tick.tick`).
@@ -14,38 +14,27 @@ A cluster account's tick is the same rule through its own keyed build (:func:`de
 
 from __future__ import annotations
 
-import hashlib
 import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.hpchost.steps import Step
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvfollow import stale, stamp
 
 __all__ = [
-    'ENV_INPUTS',
-    'ENV_STAMP',
     'Moved',
-    'env_key',
     'follow',
     'network',
     'read',
     'refresh',
     'sync_venv',
-    'venv_python',
 ]
-
-
-def venv_python(checkout: Path) -> Path:
-    """The interpreter of *checkout*'s own ``.venv``."""
-    return checkout / venv_interpreter(os_name=os.name)
 
 
 def read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -96,36 +85,17 @@ def _fast_forward(step: Step, git: Sequence[str], name: str) -> Moved:
     return Moved(rc, why=f'cannot fast-forward {head[:12]} -> {upstream[:12]} (exit {rc})' if rc else '')
 
 
-#: The files whose content decides a checkout's environment; the venv is synced when they change.
-ENV_INPUTS: Final = ('pyproject.toml', 'uv.lock')
-#: The key of :data:`ENV_INPUTS` the venv was last synced at, written only after a sync succeeds.
-ENV_STAMP: Final = '.lab-host-env'
-
-
-def env_key(checkout: Path) -> str:
-    """The key of *checkout*'s :data:`ENV_INPUTS` as they are on disk; an absent file keys as empty."""
-    digest = hashlib.sha256()
-    for name in ENV_INPUTS:
-        path = checkout / name
-        digest.update(hashlib.sha256(path.read_bytes() if path.is_file() else b'').digest() + name.encode())
-    return digest.hexdigest()
-
-
 def sync_venv(step: Step, bootstrap: Sequence[str], checkout: Path) -> int:
-    """Sync *checkout*'s venv when it is missing or its stamp names other :data:`ENV_INPUTS`.
-
-    The stamp is written only after the sync succeeded, so a failed sync is retried by the next tick.
-    """
-    key, stamp = env_key(checkout), checkout / '.venv' / ENV_STAMP
-    if venv_python(checkout).is_file() and stamp.is_file() and stamp.read_text(encoding='utf-8') == key:
+    """Sync *checkout*'s venv when :func:`dev_lab.dev.venvfollow.stale`; the stamp only after it succeeded."""
+    key = stale(checkout)
+    if key is None:
         emit(f'  {checkout.name}: .venv current')
         return 0
     # The door's own rule: a primary checkout's environment moves only from that checkout.
     what = f'{checkout.name}: -m dev_lab.dev.dep --bootstrap {checkout}'
     if (rc := step.change(what, [*bootstrap, str(checkout)], cwd=checkout)) or step.dry:
         return rc
-    stamp.parent.mkdir(parents=True, exist_ok=True)
-    stamp.write_text(key, encoding='utf-8')
+    stamp(checkout, key)
     return 0
 
 
