@@ -3,9 +3,11 @@
 The bundle review (:mod:`~dev_lab.dev.forgereview_bundle`) splits here: one side prepares the bundle, the other
 reads it only from a source the judge locates itself (D3, F-680a6bd606f0). TWO sources, and no third:
 
-* THE BASE'S PREPARE RUN (Gitea). The judge lists the runs at the head itself
-  (:func:`~dev_lab.dev.reviewgate.review_runs`): event ``pull_request_target``, path
-  ``<PREPARE_WORKFLOW>@refs/pull/<n>/head`` -- the base's workflow, run for THIS pull request, which a PR head can
+* THE BASE'S PREPARE RUN, on either forge. The judge lists the runs at the head itself
+  (:func:`~dev_lab.dev.reviewgate.review_runs`): event ``pull_request_target``, the base's
+  :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` run for THIS pull request -- Gitea's path
+  ``<PREPARE_WORKFLOW>@refs/pull/<n>/head``, GitHub's ``.github/workflows/<PREPARE_WORKFLOW>`` with ``pull_requests``
+  exactly ``[n]`` (a fork's run names none, so on GitHub a fork PR has no such run) -- which a PR head can
   neither start nor alter -- and CREATED AFTER the PR's last base change in the forge's issue timeline
   (``change_target_branch`` / ``base_ref_changed``): a PR first opened into a branch whose workflow its author
   wrote, then retargeted, keeps that run under the same ref, so it is never a source; a timeline that cannot be
@@ -13,10 +15,10 @@ reads it only from a source the judge locates itself (D3, F-680a6bd606f0). TWO s
   a run queued before the retarget may start after it -- and a run with no creation time is never approved after
   a retarget. The NEWEST such run decides, even in flight: while it runs nothing is judged (never an older
   concluded run), and only its ``success`` is read -- a failed or cancelled run is no source.
-  The bundle is that run's OWN artifact
-  :data:`ARTIFACT` (:func:`~dev_lab.dev.actionsartifact.run_member`), which only a job of that run can upload
-  (its runtime token is scoped to it); no commit status, no URL and no store key is consulted. A PR-head workflow
-  can post any status naming any run, and write to any store the job token reaches -- none of it is read.
+  The bundle is that run's OWN artifact :data:`ARTIFACT` (:func:`~dev_lab.dev.actionsartifact.run_member`, one
+  artifacts API on both forges), which only a job of that run can upload (its runtime token is scoped to it); no
+  commit status, no URL and no store key is consulted. A PR-head workflow can post any status naming any run, and
+  write to any store the job token reaches -- none of it is read.
 * A DECLARED PREPARER (``[tool.dev_lab.review] preparers``): a login the integration branch names, whose
   :data:`BUNDLE_CONTEXT` status the forge records as written by it -- an identity no Actions job is given (the
   declaration refuses the Actions bot, and a Gitea job's status has a null creator). Its pointer names a store
@@ -24,14 +26,16 @@ reads it only from a source the judge locates itself (D3, F-680a6bd606f0). TWO s
   never above :data:`MAX_ARCHIVE_BYTES`, and only :data:`BUNDLE_FILE` out of it, never above
   :data:`MAX_BUNDLE_BYTES`.
 
-Every other pointer is logged and ignored -- on GitHub too, where a same-repository branch's workflow posts as the
-Actions bot: no rendered workflow prepares there, so a bot pointer is never a source.
+Every other pointer is logged and ignored -- GitHub's Actions bot's included, which is never a declared preparer.
+The two forges differ only in the client (:class:`~dev_lab.dev._forgebackends.Backend`): one code path judges both.
 
-PREPARE (:func:`prepare`) holds no reviewer token. Inside a Gitea Actions job it attaches the bundle to its own run
-as :data:`ARTIFACT` and posts nothing; on a preparer's host it uploads through the artefact store the BASE declares
-(:func:`~dev_lab.dev.artefacts.store_for` over ``origin/<base>``'s manifest -- the head is data and never chooses)
-and points the head at it (:func:`pointer`). The workflow is the base's ``_prepare`` table, which
-:mod:`~dev_lab.dev.ciworkflows` renders for every ``where = "judge"`` repo.
+PREPARE (:func:`prepare`) holds no reviewer token and posts nothing from an Actions job. Inside a Gitea Actions job
+it attaches the bundle to its own run as :data:`ARTIFACT`; inside a GitHub Actions job -- whose runtime token a
+``run`` step is never handed -- it writes :data:`BUNDLE_FILE` to ``$RUNNER_TEMP/<ARTIFACT>/``, which the
+workflow's next step, ``actions/upload-artifact``, attaches to the same run. On a preparer's host it uploads
+through the artefact store the BASE declares (:func:`~dev_lab.dev.artefacts.store_for` over ``origin/<base>``'s
+manifest -- the head is data and never chooses) and points the head at it (:func:`pointer`). The workflow is the
+base's ``_prepare`` table, which :mod:`~dev_lab.dev.ciworkflows` renders for every ``where = "judge"`` repo.
 """
 
 from __future__ import annotations
@@ -49,7 +53,6 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import reviewbundle
-from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.actionsartifact import ArtifactRefused, run_member, upload
 from dev_lab.dev.artefacts import (
     ARCHIVE,
@@ -168,8 +171,9 @@ def prepare(
 ) -> str:  # fmt: skip
     """Build PR *number*'s bundle from *root* (a clone holding its head) and publish it; the line.
 
-    Inside a Gitea Actions job (*env*, default the process's) it becomes this run's :data:`ARTIFACT` and nothing is
-    posted: the judge finds the run itself. Anywhere else -- a declared preparer's host -- it goes to the artefact
+    Inside an Actions job (*env*, default the process's) it becomes this run's :data:`ARTIFACT` -- uploaded here on
+    Gitea, written for the workflow's upload step on GitHub -- and nothing is posted: the judge finds the run
+    itself. Anywhere else -- a declared preparer's host -- it goes to the artefact
     store ``origin/<base>`` declares (the head is DATA and never chooses) and the head is pointed at it.
     Refused unless ``origin/<base>`` declares ``where = "judge"``: a ``serve`` repo has no judge to read it (the
     judge re-reads the declaration from the forge, so this is a courtesy, never the check).
@@ -189,6 +193,14 @@ def prepare(
         except ArtifactRefused as refused:
             raise BundleRefused(str(refused)) from None
         return f'{said} attached to this run as artifact {ARTIFACT} ({artifact})'
+    if env.get('GITHUB_ACTIONS') == 'true':
+        if not env.get('RUNNER_TEMP'):
+            msg = 'RUNNER_TEMP is unset: this GitHub Actions job has nowhere to leave the bundle for its upload step'
+            raise BundleRefused(msg)
+        written = Path(env['RUNNER_TEMP']) / ARTIFACT / BUNDLE_FILE
+        written.parent.mkdir(parents=True, exist_ok=True)
+        written.write_bytes(data)
+        return f'{said} written to {written} for the upload step to attach as artifact {ARTIFACT}'
     with tempfile.TemporaryDirectory(prefix='review-bundle-') as scratch:
         tree = Path(scratch) / 'tree'
         tree.mkdir()
@@ -280,7 +292,7 @@ def trusted_bundle(client: Client, review: Review, pull: PullRequest, scratch: P
         BundleRefused: the trusted source holds a bad bundle (too large, unreadable, malformed, unbound).
 
     """
-    if client.backend is not GITHUB and (bundle := _prepared_by_run(client, pull)) is not None:
+    if (bundle := _prepared_by_run(client, pull)) is not None:
         return bundle
     found = _preparer_pointer(client, review, pull)
     return None if found is None else bundle_at(client, pull, found, scratch)

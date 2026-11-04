@@ -22,6 +22,7 @@ from dev_lab.dev import ciworkflows
 from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
+    BY_FORGE,
     NIGHTLY_CRON,
     PREPARE,
     RENDER_COMMAND,
@@ -39,6 +40,7 @@ from dev_lab.dev.ciworkflows import (
     workflows,
     write,
 )
+from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 
@@ -1055,6 +1057,40 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
     for serve in ('', '[tool.dev_lab.review]\nwhere = "serve"\n'):
         (tmp_path / 'pyproject.toml').write_text(serve, encoding='utf-8')
         assert PREPARE_WORKFLOW not in workflows(tmp_path)
+
+
+def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path) -> None:
+    """``forge = "github"`` renders the prepare to ``.github/workflows``, under the same name, event and job.
+
+    GitHub hands a ``run`` step no runtime token, so ``actions/upload-artifact`` attaches the file ``prepare`` leaves
+    to the run, under the very name the judge reads (:data:`~dev_lab.dev.forgereview_pointer.ARTIFACT`). Read-only,
+    no credential kept by the checkout, a fork PR not prepared (no fork run names its PR), no method and no key.
+    PLANTED CONTROL: none of Gitea's part -- the host runner's reach and mirror -- reaches GitHub's render.
+    """
+    layer = f'\n[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]\nforge = "github"\n'
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + layer, encoding='utf-8')
+    prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
+    assert set(prepare['on']) == {REVIEW_EVENT}
+    assert BY_FORGE not in prepare
+    (job,) = prepare['jobs'].values()
+    assert job['permissions'] == {'contents': 'read', 'pull-requests': 'read'}
+    assert job['if'] == '${{ github.event.pull_request.head.repo.full_name == github.repository }}'
+    names = [step.get('name') for step in job['steps']]
+    assert "Reach the forge on the runner's instance" not in names
+    assert 'Fetch the head' not in names
+    checkout, upload = job['steps'][0], job['steps'][-1]
+    assert checkout['with']['persist-credentials'] is False
+    assert names.index('Install the review door') < names.index('Prepare the review bundle') < len(names) - 1
+    assert upload['uses'].startswith('actions/upload-artifact@')
+    assert upload['with']['name'] == ARTIFACT
+    assert upload['with']['path'] == f'${{{{ runner.temp }}}}/{ARTIFACT}/{BUNDLE_FILE}'
+    text = render(prepare)
+    assert 'ANTHROPIC_API_KEY' not in text
+    assert 'Install the review method' not in text
+    assert [path.relative_to(tmp_path).as_posix() for path in write(tmp_path)] == [
+        f'.github/workflows/{PREPARE_WORKFLOW}'
+    ]
+    assert drift(tmp_path) == []
 
 
 def test_a_pr_with_no_code_is_settled_before_any_clone_or_install(tmp_path: Path) -> None:

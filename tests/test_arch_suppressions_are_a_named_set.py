@@ -82,7 +82,12 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'tests/test_dev_forgereview_bundle.py',
         'arg-type',
-        'said = fp.prepare(root, forge, 7, env=_ACTIONS)',
+        'said = fp.prepare(root, forge, 7, env=env)',
+    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        "fp.prepare(on_github.root, on_github.forge, 7, env={'GITHUB_ACTIONS': 'true'})",
     ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
     (
         'tests/test_dev_forgereview_bundle.py',
