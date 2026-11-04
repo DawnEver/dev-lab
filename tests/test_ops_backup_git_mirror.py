@@ -21,6 +21,9 @@ from dev_lab.ops.backup import BackupRefused, Dumper, export, git_mirror, metada
 from dev_lab.ops.config import Backup, mirror_host
 from dev_lab.ops.config import mirror_name as slug
 
+#: A planted password: built into each URL here so no literal credential sits in the tree.
+_PLANTED = 's3cret'
+
 _GIT = shutil.which('git') or 'git'
 
 
@@ -105,7 +108,7 @@ def test_an_unreachable_mirror_refuses_the_export(tmp_path: Path) -> None:
 
 
 def test_slug_drops_scheme_and_credentials_and_keeps_host_owner_repo() -> None:
-    assert slug('https://user:secret@forge.example/owner/name.git') == 'forge.example_owner_name'
+    assert slug(f'https://user:{_PLANTED}@forge.example/owner/name.git') == 'forge.example_owner_name'
     assert slug('git@forge.example:owner/name.git') == 'forge.example_owner_name'
 
 
@@ -130,7 +133,7 @@ def test_the_metadata_flag_adds_one_json_per_repo(tmp_path: Path) -> None:
         ({'mirror_cache': ''}, 'mirror_cache'),
         ({'mirrors': ('https://h/o/r.git', 'ssh://git@h/o/r.git')}, 'twice'),
         ({'mirror_tokens': {'other.host': '/t'}}, 'serves no mirror'),
-        ({'mirrors': ('https://user:s3cret@h/o/r.git',)}, 'password'),
+        ({'mirrors': (f'https://user:{_PLANTED}@h/o/r.git',)}, 'password'),
     ],
 )
 def test_a_git_mirror_declaration_that_lies_is_refused(kwargs: dict[str, Any], match: str) -> None:
@@ -209,7 +212,7 @@ def test_a_client_without_a_token_reads_anonymously() -> None:
 
 def test_a_declared_secret_never_reaches_the_refusal() -> None:
     with pytest.raises(ValueError, match='password') as refused:
-        Backup(dumpers=('git_mirror',), mirrors=('https://user:s3cret@h/o/r.git',), mirror_cache='/c')
+        Backup(dumpers=('git_mirror',), mirrors=(f'https://user:{_PLANTED}@h/o/r.git',), mirror_cache='/c')
     assert 's3cret' not in str(refused.value)
 
 

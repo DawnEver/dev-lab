@@ -230,7 +230,7 @@ def _mirror_parts(url: str) -> list[str]:
 
 #: The ``mirror_*`` keys only the ``git_mirror`` dumper reads.
 _MIRROR_KEYS = ('mirrors', 'mirror_cache', 'mirror_metadata', 'mirror_tokens')
-#: A URL whose userinfo carries a password (``scheme://user:secret@host/...``).
+#: A URL whose userinfo carries a password (``scheme://<user>:<password>@host/...``).
 _PASSWORD = re.compile(r'^[a-z][a-z0-9+.-]*://[^/@]*:[^/@]*@', re.IGNORECASE)
 #: ``[user@]host:path``; a one-letter host is a Windows drive, not a forge.
 _SCP = re.compile(r'^(?:[^@/\\]+@)?(?P<host>[^:/\\]{2,}):(?P<path>.+)$')
