@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.blobfetch import fetch_blobs
+from dev_lab.dev.blobfetch import fetch_blobs, is_partial, missing
 from dev_lab.dev.breakglass import BREAK_GLASS, empty_reason
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.lanepolicy import policy_at
@@ -250,6 +250,20 @@ def _sources(root: Path, blobs: Mapping[str, str]) -> dict[str, bytes]:
     return contents
 
 
+def _fetch_missing(root: Path, merge: str, shas: Sequence[str], wanted: set[str]) -> None:
+    """Fetch the *wanted* blobs a partial clone lacks in one request, else ``cat-file`` fetches each lazily.
+
+    Only the MISSING ones are asked for: a hand-resolved merge's blob exists locally alone, and a forge refuses a
+    want it does not hold. A failed fetch is the audit's refusal, never a crash past its callers.
+    """
+    try:
+        if is_partial(root):
+            fetch_blobs(root, wanted & missing(root, shas))
+    except OSError as error:
+        msg = f'{merge}: could not fetch the test blobs the audit reads -- {error}'
+        raise MergeAuditError(msg) from error
+
+
 def audit(root: Path, merge: str, *, roots: Sequence[str]) -> tuple[Deviation, ...]:
     """The deviations of the two-parent merge commit *merge*, reading test files under *roots*."""
     parents = _git(root, 'rev-list', '--parents', '-n', '1', merge).decode().split()[1:]
@@ -275,7 +289,7 @@ def _audit(
     bases = _git(root, 'merge-base', '--all', *parents).decode().split()
     shas = (*parents, merged, *bases)
     trees = [_test_blobs(root, sha, roots) for sha in shas]
-    fetch_blobs(root, (oid for tree in trees for oid in tree.values()))  # else a blobless clone fetches each lazily
+    _fetch_missing(root, merge, shas, {oid for tree in trees for oid in tree.values()})
     rows = [_scan(_sources(root, tree)) for tree in trees]
     if not any(rows):
         msg = f'{merge}: no test under {list(roots)} in any of its trees -- a vacuous audit is refused'

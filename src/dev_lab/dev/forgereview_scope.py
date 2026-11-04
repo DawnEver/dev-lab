@@ -42,15 +42,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
-import lab_commons.launch as _door
-
-from dev_lab.dev.blobfetch import fetch_blobs
+from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, is_code, matches
-from dev_lab.dev.reviewgitauth import git_env
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -101,8 +98,6 @@ DISPOSED_FIELD: Final = '{disposed}'
 #: The lenses, strictest first: a slice is reviewed under exactly one.
 LENSES: Final = ('strict', 'standard', 'light')
 
-_GIT_TIMEOUT_S: Final = 120
-
 #: ``git diff -M``'s similarity threshold: a delete and an add this alike are one move, sized by its hunks. The
 #: call passes ``-l0``: past git's default rename limit (1000) inexact detection is SKIPPED with a warning, and
 #: a consumer repo's 33-branch merge (1504 adds) read 318 edited moves as deletes plus adds.
@@ -130,18 +125,6 @@ class Scope:
     moved: tuple[str, ...] = ()  # pure moves (new paths): read for their path change, cost ~0
 
 
-def git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
-    """``git *args`` in *root*: its exit code (one of *ok*) and stdout; :class:`OSError` naming any other."""
-    done = _door.run(
-        ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-        timeout=_GIT_TIMEOUT_S, check=False, env=git_env(),
-    )  # fmt: skip
-    if done.returncode not in tuple(ok):
-        msg = f'git {" ".join(args)} failed: {done.stderr.strip()[:300]}'
-        raise OSError(msg)
-    return done.returncode, done.stdout
-
-
 #: Blob modes a ``--raw`` line carries for file content (regular, executable, symlink); a gitlink is a commit.
 _BLOB_MODES: Final = frozenset({'100644', '100755', '120000'})
 _NO_OBJECT: Final = re.compile(r'0+')
@@ -155,8 +138,8 @@ def prefetch(root: Path, *ranges: str) -> int:
     unauthenticated (a consumer repo, 2026-11-01). The door holds the header, so it asks first. ``--raw`` compares
     trees only and fetches nothing. A clone that is not partial (no ``remote.origin.promisor``) asks for nothing.
     """
-    if git(root, 'config', '--get', 'remote.origin.promisor', ok=(0, 1))[1].strip() != 'true':
-        return 0  # a full clone: not even the diff runs
+    if not is_partial(root):
+        return 0
     wanted: set[str] = set()
     for range_ in ranges:
         raw = git(root, 'diff', '--raw', '--no-renames', '--abbrev=40', '-z', '--end-of-options', range_)[1]

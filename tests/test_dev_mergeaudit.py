@@ -342,7 +342,7 @@ def test_a_blobless_clone_fetches_the_audited_blobs_before_reading_them(
     """Every blob the audit reads is in the clone before ``cat-file --batch`` reads it.
 
     merge.yml's checkout is blobless, and ``cat-file --batch`` over missing blobs fetches them one round trip each
-    (motronics merge.yml tasks 274/276/277 timed out at 120 s, 2026-11-03).
+    (a consumer repo's merge.yml audit timed out at 120 s, 2026-11-03).
     """
     _git(repo, 'checkout', '-q', '-b', 'lane')
     _commit(repo, {'tests/test_b.py': B}, 'lane adds b')
@@ -366,3 +366,61 @@ def test_a_blobless_clone_fetches_the_audited_blobs_before_reading_them(
     monkeypatch.setattr(mergeaudit._door, 'run', guarded)
     assert mergeaudit.audit(clone, head, roots=('tests',)) == ()
     assert absent == []
+
+
+def _merged_lane(repo: Path) -> str:
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'tests/test_b.py': B}, 'lane adds b')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'tests/test_a.py': A2}, 'main edits a')
+    _git(repo, 'merge', '-q', '-m', 'merge lane', 'lane')
+    return _git(repo, 'rev-parse', 'HEAD')
+
+
+def test_a_fetch_that_fails_is_the_audits_refusal_not_a_crash(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """A blobless clone whose origin is gone: the audit's callers catch MergeAuditError only."""
+    head = _merged_lane(repo)
+    clone = _blobless_clone(repo, tmp_path_factory.mktemp('gone') / 'clone')
+    _git(clone, 'remote', 'set-url', 'origin', (tmp_path_factory.mktemp('nowhere') / 'none.git').as_uri())
+    with pytest.raises(mergeaudit.MergeAuditError, match='fetch'):
+        mergeaudit.audit(clone, head, roots=('tests',))
+
+
+def test_a_hand_resolved_merge_in_a_blobless_clone_fetches_only_what_is_missing(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resolution's blob exists only locally: a forge refuses a want it does not hold, so it is never asked.
+
+    ``tests/test_b.py`` changes on main alone, so the merge never reads its base blob: that one is missing.
+    """
+    _commit(repo, {'tests/test_b.py': B}, 'base adds b')
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'tests/test_a.py': A3}, 'lane edits a')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(
+        repo, {'tests/test_a.py': A2, 'tests/test_b.py': B + '\n\ndef test_c():\n    assert 2\n'}, 'main edits a, b'
+    )
+    clone = _blobless_clone(repo, tmp_path_factory.mktemp('resolve') / 'clone')
+    _git(clone, 'config', 'user.email', 't@t')
+    _git(clone, 'config', 'user.name', 't')
+    _git(clone, 'checkout', '-q', 'main')
+    subprocess.run([_GIT, '-C', str(clone), 'merge', '-q', 'origin/lane'], capture_output=True, check=False)
+    (clone / 'tests/test_a.py').write_text('def test_a():\n    assert 1 == 4\n', encoding='utf-8')
+    _git(clone, 'add', 'tests/test_a.py')
+    local = _git(clone, 'rev-parse', ':tests/test_a.py')
+    run = mergeaudit._door.run
+    wanted: list[str] = []
+
+    def spy(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:  # noqa: ANN401
+        if 'fetch' in argv:
+            wanted.extend(argv)
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(mergeaudit._door, 'run', spy)
+    problems = mergeaudit.pending(clone, 'merge lane\n')
+    assert wanted, "the parents' blobs are missing, so some are fetched"
+    assert local not in wanted
+    assert problems
+    assert all('test_a' in line for line in problems)
