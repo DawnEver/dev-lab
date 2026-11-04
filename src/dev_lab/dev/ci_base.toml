@@ -157,6 +157,7 @@ steps = [
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = false } },
     { use-steps = "door" },
     { use-steps = "method" },
+    { use-steps = "forge-tokens" },
     { use-steps = "review" },
 ]
 
@@ -227,6 +228,32 @@ contents = "write"
 statuses = "write"
 pull-requests = "write"
 actions = "write"
+
+# THE BATCH RESUME, on the merge tick's ONE cadence (user ruling 2026-11-04: review calls are batched by default): a
+# head whose review batch is still running shows `tests/review` pending "review batch pending"; every scheduled (or
+# dispatched) tick resumes those heads from the batch state on their PR -- polled, never resubmitted -- so a pending
+# batch never waits for a human. A `status` event starts no review. It runs the default branch's file, never a PR
+# head's, with the review method and key as the review job holds them.
+["merge-tick.yml".jobs.review-resume]
+if = "${{ github.event_name != 'status' }}"
+runs-on = "ubuntu-latest"
+env = { HEAD_SHA = "${{ github.sha }}", INTEGRATION_SHA = "${{ github.sha }}" }
+steps = [
+    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
+    { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = false } },
+    { use-steps = "door" },
+    { use-steps = "method" },
+    { use-steps = "forge-tokens" },
+    { name = "Resume the pending review batches", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --batch-pending --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+]
+
+["merge-tick.yml".jobs.review-resume.permissions]
+contents = "read"
+statuses = "write"
+pull-requests = "write"
+issues = "write"
 
 # Pushes the fast-forwarded main and deletes every branch integration now contains (LANDED-BRANCHES-SWEPT,
 # closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
@@ -300,12 +327,14 @@ print(source["git"].rpartition("#")[2])' < "$RUNNER_TEMP/dev-lab/uv.lock") || ex
 # once and removes it before any subprocess: the read token is its git header, the job token its forge client's.
 # The review key (ANTHROPIC_API_KEY) stays in the tests/review env: the reviewer needs it, a separate concern.
 # Whatever the door does, the files die with the step (F-5fd2611e79ea): a self-hosted runner may reuse RUNNER_TEMP.
-review = [
+forge-tokens = [
     { name = "Hand the forge tokens to the door", run = '''umask 077
 mkdir -p "$RUNNER_TEMP/forge-secrets"
 printf '%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" > "$RUNNER_TEMP/forge-secrets/read"
 printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 ''', env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
+]
+review = [
     { name = "tests/review", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
 "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
 ''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
@@ -493,6 +522,7 @@ exec(compile(text, path, "exec"), {"__name__": "__main__"})' || echo "settled=fa
     { use-steps = "lean", if = "${{ steps.code.outputs.settled != 'true' }}" },
     { use-steps = "door", if = "${{ steps.code.outputs.settled != 'true' }}" },
     { use-steps = "method", if = "${{ steps.code.outputs.settled != 'true' }}" },
+    { use-steps = "forge-tokens", if = "${{ steps.code.outputs.settled != 'true' }}" },
     { use-steps = "review", if = "${{ steps.code.outputs.settled != 'true' }}" },
 ]
 
