@@ -1,20 +1,17 @@
-"""THE PROVENANCE STAMP: which machine, agent and branch wrote a forge comment or issue, as one line.
+"""The provenance stamp a created issue, PR body or comment opens with: ``[<machine> · <agent> · <branch>]``.
 
-Split out of :mod:`dev_lab.dev.forgework` by concept: the client SENDS a body, and this module says who the body
-is from (:class:`~dev_lab.dev.forgework.Client` appends it to what it creates).
+Read from the ``HARNESS_*`` variables and the checkout's branch; :func:`dev_lab.dev.forgework.client_for` stamps it.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Final
 
 import lab_commons.launch as _door
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-    from pathlib import Path
 
 __all__ = ['provenance']
 

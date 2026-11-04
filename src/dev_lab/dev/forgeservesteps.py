@@ -238,7 +238,7 @@ def repo_wide(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgeserve.polls`).
+    """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgepoller.polls`).
 
     In order: close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock, and the drift
     census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. A repo that

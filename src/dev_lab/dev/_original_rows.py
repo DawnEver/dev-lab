@@ -361,4 +361,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgereview_pointer',
     # ORIGINAL: split out of `forgework` inside the kit by concept; no consumer held it.
     'forgestamp',
+    # ORIGINAL: the poller pass's read memo (2026-11-04); no consumer polled the forge.
+    'forgememo',
 )

@@ -73,6 +73,7 @@ from dev_lab.dev.forge import (
     forge_transport,
 )
 from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, ForgeCallFailed, diagnose
+from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report
 
@@ -122,6 +123,8 @@ class Client:
     #: Where this repository's read caches live (:func:`dev_lab.dev.forgepulls.issues`); :func:`client_for`
     #: sets it -- ``None`` reads everything afresh.
     cache_dir: Path | None = None
+    #: The pass memo answering repeated GETs (:class:`~dev_lab.dev.forgememo.ReadMemo`); ``None`` reads afresh.
+    memo: ReadMemo | None = None
     #: Whether :attr:`refresh` was spent, and whether it left the store empty.
     _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
     _gone: bool = dataclasses.field(default=False, init=False, repr=False)
@@ -258,6 +261,10 @@ class Client:
         intent = durable or Durable()
         key = intent.key or write_key(method, host, path, data or b'')
         write = Write(key, method, path, content_type, data or b'', host, intent.probe, time.time(), intent.until)
+        if self.memo is not None and method == 'GET':
+            return self.memo.read((host, path), lambda: self._attempts(write, data))
+        if self.memo is not None:
+            self.memo.clear()
         if method == 'GET' or self.journal is None:
             return self._attempts(write, data)
         write = self.journal.record(write)

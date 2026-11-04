@@ -11,7 +11,7 @@ rather than discovered at 04:30.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +57,69 @@ class Breakglass:
 
 
 @dataclass(frozen=True)
+class Offsite:
+    """The off-site copy of each backup: an S3-compatible bucket, written by single PUTs only.
+
+    ``label`` is the first segment of every object key; ``profile`` / ``config_file`` / ``credentials_file`` name the
+    AWS CLI profile and files holding the store's key; ``max_put_bytes`` is the single-PUT limit (5 GB on S3).
+    """
+
+    endpoint: str
+    bucket: str
+    label: str
+    region: str = ''
+    profile: str = ''
+    config_file: str = ''
+    credentials_file: str = ''
+    max_put_bytes: int = 5_000_000_000
+    aws: str = 'aws'
+
+
+@dataclass(frozen=True)
+class Backup:
+    """The backup role, either side or both: EXPORT on the forge host, PULL (and off-site copy) on the backup host.
+
+    Export (``dumpers`` non-empty): the ``account`` whose forced command is ``ops backup export``, the ``keys`` of the
+    pullers, the dumpers' own settings. Pull (``source`` non-empty): ``<account>@<host>`` with a dedicated
+    ``identity`` key, the ``dest`` directory, the ``user`` and ``schedule`` of the timer, ``retention_days``, and an
+    optional ``offsite`` table (:class:`Offsite`).
+    """
+
+    dumpers: tuple[str, ...] = ()
+    account: str = ''
+    keys: tuple[str, ...] = ()
+    tmp: str = ''
+    gitea_binary: str = 'gitea'
+    gitea_config: str = ''
+    gitea_workdir: str = ''
+    gitea_user: str = 'gitea'
+    pg_database: str = ''
+    pg_user: str = 'postgres'
+    source: str = ''
+    identity: str = ''
+    dest: str = ''
+    user: str = 'backup'
+    schedule: str = ''
+    retention_days: int = 14
+    offsite: Offsite | None = None
+
+
+@dataclass(frozen=True)
+class Access:
+    """The troubleshooting account: ssh key AND a TOTP code (pam_oath), sudo limited to declared commands.
+
+    ``keys`` are its ssh keys, ``oath`` the root-only pam_oath users file, ``commands`` what sudo may run (each a full
+    command line, ``*`` as sudoers reads it), ``issuer`` the Authenticator's label.
+    """
+
+    account: str
+    keys: tuple[str, ...] = ()
+    commands: tuple[str, ...] = ()
+    oath: str = '/etc/dev-lab/ops/users.oath'
+    issuer: str = 'forge ops'
+
+
+@dataclass(frozen=True)
 class OpsConfig:
     """The whole ``[ops]`` table, plus the merged configuration it was read from (for ``[alerts]``)."""
 
@@ -67,6 +130,8 @@ class OpsConfig:
     promote: Promote | None
     breakglass: Breakglass | None
     merged: dict[str, Any]
+    backup: Backup | None = None
+    access: Access | None = None
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -82,7 +147,7 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass)](cls: type[T], table: object, where: str) -> T | None:
+def _role[T: (Promote, Breakglass, Backup, Offsite, Access)](cls: type[T], table: object, where: str) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
         return None
     if not isinstance(table, dict):
@@ -125,4 +190,15 @@ def load(path: Path, *, environ: dict[str, str] | None = None) -> OpsConfig:
         promote=_role(Promote, ops.get('promote'), '[ops.promote]'),
         breakglass=_role(Breakglass, ops.get('breakglass'), '[ops.breakglass]'),
         merged=merged,
+        backup=_backup(ops.get('backup')),
+        access=_role(Access, ops.get('access'), '[ops.access]'),
     )
+
+
+def _backup(table: object) -> Backup | None:
+    if not isinstance(table, dict):
+        return _role(Backup, table, '[ops.backup]')
+    rest = {key: value for key, value in table.items() if key != 'offsite'}
+    found = _role(Backup, rest, '[ops.backup]')
+    offsite = _role(Offsite, table.get('offsite'), '[ops.backup.offsite]')
+    return None if found is None else replace(found, offsite=offsite)

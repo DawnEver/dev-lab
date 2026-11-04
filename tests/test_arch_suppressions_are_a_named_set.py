@@ -127,6 +127,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as reply:',
     ): 'opens only the request built above from the FORGE_URL the job declares',
     (
+        'src/dev_lab/dev/forgememo.py',
+        'ANN401',
+        'def read(self, key: tuple[str, str], attempt: Callable[[], Any]) -> Any:',
+    ): "the memo hands back the forge read's parsed JSON unchanged, whose shape is the route it remembers",
+    (
         'src/dev_lab/dev/family.py',
         'ANN401',
         'def declared_table(data: Mapping[str, Any], name: str, default: Any = None) -> Any:',

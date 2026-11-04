@@ -12,6 +12,8 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dev_lab.ops.access import PAM_INCLUDE
+from dev_lab.ops.access import files as access_files
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.sshkey import ENV
 
@@ -82,9 +84,48 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     }
 
 
+def _timer(name: str, what: str, user: str, exec_start: str, schedule: str) -> dict[str, str]:
+    service = (
+        f'[Unit]\nDescription={what} (dev_lab.ops)\nWants=network-online.target\nAfter=network-online.target\n'
+        f'[Service]\nType=oneshot\nUser={user}\nExecStart={exec_start}\nNice=10\n'
+    )
+    timer = (
+        f'[Unit]\nDescription={what} (dev_lab.ops)\n'
+        f'[Timer]\nOnCalendar={schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
+    )
+    return {f'etc/systemd/system/{_UNIT}-{name}.service': service, f'etc/systemd/system/{_UNIT}-{name}.timer': timer}
+
+
+def _backup(config: OpsConfig) -> dict[str, str]:
+    role = config.backup
+    if role is None:
+        return {}
+    rendered: dict[str, str] = {}
+    if role.dumpers:
+        export = _door(config, 'backup', 'export')
+        keys = f'/etc/dev-lab/ops/{role.account}.keys'
+        line = f'restrict,command="sudo -n {export}" '
+        rendered |= {
+            f'etc/ssh/sshd_config.d/62-{_UNIT}-{role.account}.conf': (
+                f'Match User {role.account}\n    AuthorizedKeysFile {keys}\n    ForceCommand sudo -n {export}\n'
+                '    AllowTcpForwarding no\n    AllowAgentForwarding no\n    X11Forwarding no\n    PermitTTY no\n'
+            ),
+            keys.lstrip('/'): ''.join(f'{line}{key}\n' for key in role.keys),
+            f'etc/sudoers.d/{_UNIT}-{role.account}': f'{role.account} ALL=(root) NOPASSWD: {export}\n',
+        }
+    if role.source:
+        if not role.schedule:
+            msg = '[ops.backup] pulls (source is set) but declares no schedule'
+            raise ValueError(msg)
+        rendered |= _timer('backup-pull', 'Pull the forge backup', role.user, _door(config, 'backup', 'pull'),
+                           role.schedule)  # fmt: skip
+    return rendered
+
+
 def files(config: OpsConfig) -> dict[str, str]:
     """Every file the configuration renders, by path relative to the root."""
-    return {**_promote(config), **_breakglass(config)}
+    access = access_files(config.access) if config.access is not None else {}
+    return {**_promote(config), **_breakglass(config), **_backup(config), **access}
 
 
 def _steps(config: OpsConfig) -> tuple[str, ...]:
@@ -101,6 +142,18 @@ def _steps(config: OpsConfig) -> tuple[str, ...]:
                   'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-breakglass-tick.timer']  # fmt: skip
         if not Path(role.totp).is_file():
             steps.append(_door(config, 'breakglass', 'enrol'))
+    if (backup := config.backup) is not None and backup.dumpers:
+        steps += [f'id {backup.account} || useradd --create-home --shell /bin/sh {backup.account}',
+                  f'visudo -cf /etc/sudoers.d/{_UNIT}-{backup.account}', 'sshd -t && systemctl reload ssh']  # fmt: skip
+    if backup is not None and backup.source:
+        steps += [f'id {backup.user} || useradd --system {backup.user}', 'systemctl daemon-reload',
+                  f'systemctl enable --now {_UNIT}-backup-pull.timer']  # fmt: skip
+    if (access := config.access) is not None:
+        steps += ['apt-get install -y libpam-oath', f'id {access.account} || useradd --create-home {access.account}',
+                  f'put `@include {PAM_INCLUDE}` as the first auth line of /etc/pam.d/sshd',
+                  'sshd -t && systemctl reload ssh']  # fmt: skip
+        if not Path(access.oath).is_file():
+            steps.append(_door(config, 'access', 'enrol'))
     return tuple(steps)
 
 

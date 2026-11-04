@@ -127,5 +127,5 @@ def test_a_stdout_with_no_buffer_still_returns_0_and_writes_the_output(
     text = io.StringIO()
     monkeypatch.setattr(sys, 'stdout', text)
     assert main(_env(tmp_path / 'out'), _refused) == 0
-    assert 'refusé' in text.getvalue()
+    assert text.getvalue() == '', 'a text write is what ONE-WRITER-OWNS-THE-CONSOLE refuses'
     assert (tmp_path / 'out').read_text(encoding='utf-8') == 'settled=false\n'

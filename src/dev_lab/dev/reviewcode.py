@@ -20,6 +20,7 @@ it before any install.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
@@ -150,14 +151,16 @@ def forge_call(token: str) -> Call:
 
 
 def _say(line: str) -> None:
-    """*line* on stdout as UTF-8 whatever its encoding; a stream with no ``.buffer`` takes the text."""
-    buffer = getattr(sys.stdout, 'buffer', None)  # bare interpreter: the kit's emit is absent
-    if buffer is None:
-        sys.stdout.write(line + '\n')
-    else:
-        sys.stdout.flush()  # text already queued goes first
-        buffer.write(line.encode('utf-8') + b'\n')
-    sys.stdout.flush()
+    """*line* on stdout as UTF-8 bytes whatever the console's encoding (bare interpreter: the kit's emit is absent).
+
+    A stdout with no byte buffer (a test's ``StringIO``) is not written: a text write is the encoding crash
+    ONE-WRITER-OWNS-THE-CONSOLE refuses, and the step's verdict lives in ``GITHUB_OUTPUT``, not here.
+    """
+    stream = sys.stdout
+    if isinstance(stream, io.TextIOWrapper):
+        stream.flush()  # text already queued goes first
+        stream.buffer.write(line.encode('utf-8') + b'\n')
+        stream.flush()
 
 
 def main(env: Mapping[str, str] | None = None, call: Call | None = None) -> int:
