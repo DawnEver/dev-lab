@@ -15,8 +15,10 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+import pytest
 from _branch_repos import clone_pair
 
+from dev_lab.dev import ciworkflows
 from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
@@ -27,11 +29,13 @@ from dev_lab.dev.ciworkflows import (
     SHARED,
     STAMP,
     USE_STEPS,
+    base_names,
     drift,
     expand,
     main,
     merge,
     render,
+    repo_forge,
     workflows,
     write,
 )
@@ -41,11 +45,21 @@ from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 _ROOT = Path(__file__).resolve().parents[1]
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
+_GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}
+_GITEA_BASE = {'review.yml', 'merge.yml', 'promote.yml'}
+
+
+@pytest.fixture(autouse=True)
+def _a_scratch_repo_is_on_github(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A scratch repo has no remote: it renders as a GitHub repo; this repo's own forge is read from its remote."""
+    real = ciworkflows.repo_forge
+    monkeypatch.setattr(
+        ciworkflows, 'repo_forge', lambda root: 'github' if Path(root).is_relative_to(tmp_path) else real(root)
+    )
+
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    assert set(workflows(_ROOT)) == {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}, (
-        'a floor: an empty table drifts from nothing'
-    )
+    assert set(workflows(_ROOT)) == _GITHUB_BASE, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 
@@ -257,10 +271,48 @@ def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path:
     }
 
 
-def test_a_repo_that_declares_nothing_renders_nothing(tmp_path: Path) -> None:
+def test_the_base_of_each_forge_is_every_base_table_placed_on_it() -> None:
+    assert base_names('github') == _GITHUB_BASE
+    assert base_names('gitea') == _GITEA_BASE
+
+
+@pytest.mark.parametrize(('forge', 'expected'), [('github', _GITHUB_BASE), ('gitea', _GITEA_BASE)])
+def test_a_repo_that_declares_nothing_renders_its_forge_s_whole_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str, expected: set[str]
+) -> None:
+    """The base is never an opt-in a repo can forget: merge-tick and review-claims went undeployed that way."""
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
     (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
-    assert workflows(tmp_path) == {}
-    assert write(tmp_path) == []
+    assert set(workflows(tmp_path)) == expected
+    assert {path.name for path in write(tmp_path)} == expected
+
+
+def test_an_undeclared_github_ci_still_runs_the_nightly_schedule(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
+
+
+def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a full render drifts from nothing; deleting one base file is named."""
+    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    write(tmp_path)
+    assert drift(tmp_path) == []
+    (tmp_path / '.github' / 'workflows' / 'merge-tick.yml').unlink()
+    assert [line for line in drift(tmp_path) if 'merge-tick.yml' in line and 'base workflow' in line]
+
+
+@pytest.mark.parametrize(
+    ('url', 'forge'),
+    [('https://github.com/o/r.git', 'github'), ('https://gitea.example.org/o/r.git', 'gitea')],
+)
+def test_a_repo_s_forge_is_read_from_its_origin(tmp_path: Path, url: str, forge: str) -> None:
+    repo = tmp_path.parent / f'{tmp_path.name}-remote'
+    repo.mkdir()
+    git = shutil.which('git')
+    assert git is not None
+    subprocess.run([git, 'init', '-q', str(repo)], check=True)
+    subprocess.run([git, '-C', str(repo), 'remote', 'add', 'origin', url], check=True)
+    assert repo_forge(repo) == forge
 
 
 def test_a_hand_edit_and_a_hand_written_workflow_are_refused_naming_the_render(tmp_path: Path, capsys) -> None:
@@ -607,14 +659,19 @@ def _gitea_review(tmp_path: Path) -> dict[str, Any]:
     return workflows(tmp_path)['review.yml']
 
 
-def test_a_gitea_workflow_renders_under_dot_gitea_and_its_forge_key_is_not_rendered(tmp_path: Path, capsys) -> None:
+def test_a_gitea_workflow_renders_under_dot_gitea_and_its_forge_key_is_not_rendered(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Gitea runs ``.gitea/workflows`` (and ignores ``.github/workflows`` once it exists): the forge key places it.
 
     PLANTED CONTROL: a hand edit of the Gitea render, and a hand-written Gitea workflow, are refused like GitHub's.
     """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: 'gitea')
     review = _gitea_review(tmp_path)
     assert 'forge' not in review, 'a placement key, never a workflow key'
-    (path,) = write(tmp_path)
+    written = {path.name: path for path in write(tmp_path)}
+    assert set(written) == _GITEA_BASE
+    path = written['review.yml']
     assert path == tmp_path / '.gitea' / 'workflows' / 'review.yml'
     assert not (tmp_path / '.github').exists()
     assert drift(tmp_path) == []
@@ -953,13 +1010,16 @@ def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path:
     assert 'no commit names the door' in ran.stdout + ran.stderr
 
 
-def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(tmp_path: Path) -> None:
+def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``where = "judge"`` renders the BASE's prepare workflow under the ONE name the judge reads its runs by.
 
     ``pull_request_target`` alone (:data:`~dev_lab.dev.reviewgate.REVIEW_EVENT`): the base's definition runs, so a PR
     can neither alter it nor start it as its own. It holds no review method and no key.
     PLANTED CONTROL: a serve repo -- declared or by default -- renders no such workflow.
     """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: 'gitea')
     (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
     prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
     assert set(prepare['on']) == {REVIEW_EVENT}
@@ -969,9 +1029,9 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(tmp_path: Pa
     assert 'ANTHROPIC_API_KEY' not in text
     assert 'Install the review method' not in text
     assert job['runs-on'] in tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS]
-    assert [path.relative_to(tmp_path).as_posix() for path in write(tmp_path)] == [
-        f'.gitea/workflows/{PREPARE_WORKFLOW}'
-    ]
+    assert {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)} == {
+        f'.gitea/workflows/{name}' for name in {PREPARE_WORKFLOW, *_GITEA_BASE}
+    }
     assert drift(tmp_path) == []
     for serve in ('', '[tool.dev_lab.review]\nwhere = "serve"\n'):
         (tmp_path / 'pyproject.toml').write_text(serve, encoding='utf-8')

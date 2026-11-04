@@ -248,11 +248,5 @@ ignore = [
     "SLF001",  # a test that cannot read a private member cannot pin a private invariant
 ]
 
-# THIS REPO'S CI, as TOML: rendered to .github/workflows/ by `python -m dev_lab.dev.ciworkflows render`
-# (the family base is dev_lab/dev/ci_base.toml: the one PR lifecycle, parts -> review -> merge-ready).
-# The plain base render: this repo adds nothing to it.
-[tool.dev_lab.ci."review-claims.yml"]
-
-[tool.dev_lab.ci."merge-tick.yml"]
-
-[tool.dev_lab.ci."ci.yml"]
+# THIS REPO'S CI: the family base (dev_lab/dev/ci_base.toml) as is -- every repo renders its forge's whole
+# base with `python -m dev_lab.dev.ciworkflows render`; this repo declares no [tool.dev_lab.ci] layer.

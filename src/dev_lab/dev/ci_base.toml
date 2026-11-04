@@ -1,9 +1,9 @@
 # THE FAMILY'S GITHUB ACTIONS WORKFLOWS -- the base, as data. Rendered by dev_lab.dev.ciworkflows.
 #
-# A repo OPTS IN to a workflow by declaring its table, `[tool.dev_lab.ci."<file>.yml"]`, in its own
-# pyproject.toml (an empty table takes the base as is); the repo's table is deep-merged over the base
-# (tables merge key by key, any other value replaces). A repo may also declare a workflow the base
-# does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
+# EVERY REPO RENDERS EVERY TABLE HERE PLACED ON ITS FORGE (`forge`, github when omitted; the repo's forge is
+# read from its origin) -- never an opt-in. A repo's `[tool.dev_lab.ci."<file>.yml"]` in its pyproject.toml is
+# deep-merged over the base (tables merge key by key, any other value replaces); it may also render another
+# forge's table, or declare a workflow the base does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
 # parsed back. Re-render with `python -m dev_lab.dev.ciworkflows render`.
 
 # ONE PR LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29). ci.yml is GitHub's half of the model Gitea's
