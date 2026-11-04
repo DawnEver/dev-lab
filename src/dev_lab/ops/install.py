@@ -94,6 +94,21 @@ def _promote(config: OpsConfig) -> dict[str, str]:
     }
 
 
+def _judge(config: OpsConfig) -> dict[str, str]:
+    role = config.judge
+    if role is None:
+        return {}
+    extra = [f'EnvironmentFile={role.environment_file}'] if role.environment_file else []
+    body = ['Type=oneshot', f'User={role.user}', *extra, f'ExecStart={_door(config, "judge")}',
+            f'MemoryMax={role.memory_max}']  # fmt: skip
+    service = _service(config, role, 'Judge every prepared review bundle (dev_lab.ops)', body, network=True)
+    timer = (
+        '[Unit]\nDescription=Bundle-review judge pass (dev_lab.ops)\n'
+        f'[Timer]\nOnCalendar={role.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
+    )
+    return {f'etc/systemd/system/{_UNIT}-judge.service': service, f'etc/systemd/system/{_UNIT}-judge.timer': timer}
+
+
 def _breakglass(config: OpsConfig) -> dict[str, str]:
     role = config.breakglass
     if role is None:
@@ -188,7 +203,14 @@ def files(config: OpsConfig) -> dict[str, str]:
     if config.access is not None:
         secret_file(config)  # refuse two TOTP secrets on one host before anything renders
     access = access_files(config.access) if config.access is not None else {}
-    return {**_promote(config), **_breakglass(config), **_backup(config), **access, **_supervise(config)}
+    return {
+        **_promote(config),
+        **_judge(config),
+        **_breakglass(config),
+        **_backup(config),
+        **access,
+        **_supervise(config),
+    }
 
 
 def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared | None) -> tuple[str, ...]:
@@ -198,6 +220,9 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                   *prepared, 'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-promote.timer']  # fmt: skip
     else:
         steps += prepared
+    if (judged := config.judge) is not None:
+        steps += [f'id {judged.user} || useradd --system --no-create-home {judged.user}', 'systemctl daemon-reload',
+                  f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
     if (role := config.breakglass) is not None:
         steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{role.account}', 'sshd -t && systemctl reload ssh',
@@ -316,13 +341,23 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
         if parent.is_dir() and not _may_enter(parent, role.user):
             where = Path(role.credentials).parent.as_posix()
             steps.append(f'{role.user} cannot enter {where}: move the credential to a directory it may enter')
-    if config.environment_file:
-        declared = _under(root, config.environment_file)
-        if declared.is_file():
-            declared.chmod(0o600)
-        if not _own(chown, declared, 'root', 'root'):
-            steps.append(f'chown root:root {config.environment_file} && chmod 600 {config.environment_file}')
+    if (judge := config.judge) is not None:
+        for token in sorted(set(judge.tokens.values())):
+            steps += _private(root, chown, token, judge.user)
+    environments = [config.environment_file, judge.environment_file if judge is not None else '']
+    for environment in filter(None, environments):
+        steps += _private(root, chown, environment, 'root', 'root')
     return done, steps
+
+
+def _private(root: Path, chown: Chown | None, declared: str, user: str, group: str | None = None) -> list[str]:
+    """Narrow *declared* to 0600 and hand it to *user*; what could not be applied is a next step."""
+    found = _under(root, declared)
+    if found.is_file():
+        found.chmod(0o600)
+    if _own(chown, found, user, group):
+        return []
+    return [f'chown {user}{f":{group}" if group else ""} {declared} && chmod 600 {declared}']
 
 
 def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Rendered:

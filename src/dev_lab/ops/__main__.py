@@ -1,6 +1,7 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``breakglass serve|enrol|tick``, ``backup export|pull``, ``access enrol|adopt``.
+Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``breakglass serve|enrol|tick``, ``backup export|pull``,
+``access enrol|adopt``.
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.ops import access, backup, breakglass, install, offsite, promote, sshkey, totp
+from dev_lab.ops import access, backup, breakglass, install, judge, offsite, promote, sshkey, totp, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
@@ -66,6 +67,32 @@ def _install(config: OpsConfig, root: Path) -> int:
         emit(f'{state:9} {path}')
     emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
     return 0
+
+
+def _promote(config: OpsConfig) -> int:
+    failed = [o for o in promote.run(config) if o.state == 'failed']
+    for outcome in failed:
+        _alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
+    return 1 if failed else 0
+
+
+def _judge(config: OpsConfig) -> int:
+    if config.judge is None:
+        emit(f'[ops] {config.path} enables no [ops.judge]', err=True)
+        return 2
+    failed = [o for o in judge.run(config) if o.state == 'failed']
+    for outcome in failed:
+        _alert(config, f'judge FAILED {outcome.repo}', outcome.detail)
+    return 1 if failed else 0
+
+
+def _upgrade(config: OpsConfig) -> int:
+    if config.upgrade is None:
+        emit(f'[ops] {config.path} enables no [ops.upgrade]', err=True)
+        return 2
+    code, said = upgrade.run(config)
+    emit(f'[ops upgrade] {said}', err=code != 0)
+    return 0 if code == 0 else 1
 
 
 def _read_input(source: str) -> str:
@@ -134,6 +161,10 @@ def _breakglass(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) ->
     return 0
 
 
+#: The verbs that take no argument beyond the configuration.
+_NO_ARGUMENT = {'promote': _promote, 'judge': _judge, 'upgrade': _upgrade}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Route one verb; see the module docstring."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops', description=__doc__.splitlines()[0])
@@ -141,6 +172,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('install').add_argument('--root', type=Path, default=Path('/'))
     verbs.add_parser('promote')
+    verbs.add_parser('judge', help='one judging pass over [ops.judge] repos')
+    verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref; takes no argument')
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'enrol', 'tick'))
     glass.add_argument('--force', action='store_true', help='enrol: replace an existing secret')
@@ -159,11 +192,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.verb == 'install':
         return _install(config, args.root)
-    if args.verb == 'promote':
-        failed = [o for o in promote.run(config) if o.state == 'failed']
-        for outcome in failed:
-            _alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
-        return 1 if failed else 0
+    if args.verb in _NO_ARGUMENT:
+        return _NO_ARGUMENT[args.verb](config)
     if args.verb == 'backup':
         return _backup(config, args.action)
     if args.verb == 'access':

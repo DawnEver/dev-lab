@@ -30,7 +30,7 @@ from typing import Any
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
-__all__ = ['Breakglass', 'OpsConfig', 'Placement', 'Promote', 'Supervise', 'load', 'repo_name']
+__all__ = ['Breakglass', 'Judge', 'OpsConfig', 'Placement', 'Promote', 'Supervise', 'Upgrade', 'load', 'repo_name']
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,6 +53,66 @@ class Promote(Placement):
     schedule: str
     credentials: str
     memory_max: str = '1G'
+
+
+def _served(where: str, repos: tuple[str, ...], tokens: Mapping[str, str]) -> None:
+    """Refuse an empty repo set, one identity twice, a forge naming no token and a token serving no repo."""
+    if not repos:
+        msg = f'{where} serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
+        raise ValueError(msg)
+    identities = [forge_of_url(url).identity for url in repos]
+    if len(set(identities)) != len(identities):
+        msg = f'{where} repos name one repository twice: {identities}'
+        raise ValueError(msg)
+    hosts = {forge_of_url(url).host for url in repos}
+    if untokened := sorted(hosts - set(tokens)):
+        msg = f'{where} forge {", ".join(untokened)} names no token: add it to {where[:-1]}.tokens]'
+        raise ValueError(msg)
+    if unused := sorted(set(tokens) - hosts):
+        msg = f'{where[:-1]}.tokens] {", ".join(unused)} serves no repo in {where} repos'
+        raise ValueError(msg)
+
+
+@dataclass(frozen=True)
+class Judge(Placement):
+    """The bundle-review judge (:mod:`dev_lab.dev.forgereview_bundle`): who runs it, when, on which repos, as whom.
+
+    ``repos`` are the web URLs it judges; ``tokens`` maps each forge host to the ONE file holding the judge's token
+    there (the shape and refusals of :class:`Breakglass`). ``environment_file`` is a root-owned 0600 file carrying the
+    reviewer's model key (e.g. ``ANTHROPIC_API_KEY``), loaded into the judge's unit only.
+    """
+
+    user: str
+    schedule: str
+    repos: tuple[str, ...] = ()
+    tokens: Mapping[str, str] = field(default_factory=dict)
+    environment_file: str = ''
+    memory_max: str = '2G'
+
+    def __post_init__(self) -> None:
+        """Refuse a declaration that lies (see :func:`_served`)."""
+        _served('[ops.judge]', self.repos, self.tokens)
+
+    def token_file(self, url: str) -> str:
+        """The file holding the judge's token on *url*'s forge."""
+        return self.tokens[forge_of_url(url).host]
+
+
+@dataclass(frozen=True)
+class Upgrade:
+    """Where ``upgrade`` takes dev-lab from: the tip of ``ref`` of ``source``, never a caller's choice.
+
+    ``extras`` are dev-lab's own extras; ``packages`` further requirements installed beside it (the judge host's
+    reviewer, ``ai-lab``, which dev-lab declares only as its ``review`` dependency GROUP, which a git requirement
+    cannot carry); ``overrides`` a uv override file; ``uv`` the binary (empty: from ``PATH``).
+    """
+
+    source: str
+    ref: str = 'main'
+    extras: tuple[str, ...] = ()
+    packages: tuple[str, ...] = ()
+    overrides: str = ''
+    uv: str = ''
 
 
 @dataclass(frozen=True)
@@ -90,20 +150,7 @@ class Breakglass(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
-        if not self.repos:
-            msg = '[ops.breakglass] serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
-            raise ValueError(msg)
-        identities = [forge_of_url(url).identity for url in self.repos]
-        if len(set(identities)) != len(identities):
-            msg = f'[ops.breakglass] repos name one repository twice: {identities}'
-            raise ValueError(msg)
-        hosts = {forge_of_url(url).host for url in self.repos}
-        if untokened := sorted(hosts - set(self.tokens)):
-            msg = f'[ops.breakglass] forge {", ".join(untokened)} names no token: add it to [ops.breakglass.tokens]'
-            raise ValueError(msg)
-        if unused := sorted(set(self.tokens) - hosts):
-            msg = f'[ops.breakglass.tokens] {", ".join(unused)} serves no repo in [ops.breakglass] repos'
-            raise ValueError(msg)
+        _served('[ops.breakglass]', self.repos, self.tokens)
 
     def repo(self, identity: str) -> str | None:
         """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
@@ -208,6 +255,8 @@ class OpsConfig:
     backup: Backup | None = None
     access: Access | None = None
     supervise: Supervise | None = None
+    judge: Judge | None = None
+    upgrade: Upgrade | None = None
     environment_file: str = ''
 
     def checkout(self, url: str) -> Path:
@@ -220,7 +269,7 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise)](
+def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Judge, Upgrade)](
     cls: type[T], table: object, where: str
 ) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -309,6 +358,8 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         backup=_backup(ops.get('backup')),
         access=_role(Access, ops.get('access'), '[ops.access]'),
         supervise=_role(Supervise, ops.get('supervise'), '[ops.supervise]'),
+        judge=_role(Judge, ops.get('judge'), '[ops.judge]'),
+        upgrade=_role(Upgrade, ops.get('upgrade'), '[ops.upgrade]'),
         environment_file=environment_file,
     )
 

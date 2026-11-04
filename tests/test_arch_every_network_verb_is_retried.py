@@ -35,6 +35,7 @@ EXEMPT: Final[dict[str, str]] = {
     'src/dev_lab/dev/_dep_project.py': 'builds the `uv sync`/`uv lock` argv _dep_network.run_change routes through '
     'run_network_verb by is_network_verb',
     'src/dev_lab/dev/dep.py': 'pip_argv returns the uv pip argv _dep_network.run_change routes',
+    'src/dev_lab/ops/upgrade.py': 'command returns the uv pip argv _install routes through run_network_verb',
     'src/dev_lab/dev/hpchost/steps.py': 'runs on the cluster host through its own run-or-print Step, whose '
     'refusal the deploy reports per repo',
     'src/dev_lab/dev/hpchost/account.py': 'runs on the cluster host; its ls-remote is a read-access probe whose '
