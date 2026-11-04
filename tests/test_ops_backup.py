@@ -20,11 +20,11 @@ NOW = datetime(2026, 11, 4, 3, 30, tzinfo=UTC)
 STAMP = '20261104T033000Z'
 
 
-def _dumper(name: str, content: bytes) -> Callable[[Backup, Path], Path]:
-    def dump(_role: Backup, tmp: Path) -> Path:
+def _dumper(name: str, content: bytes) -> Callable[[Backup, Path], tuple[Path, ...]]:
+    def dump(_role: Backup, tmp: Path) -> tuple[Path, ...]:
         path = tmp / name
         path.write_bytes(content)
-        return path
+        return (path,)
 
     return dump
 

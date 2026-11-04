@@ -142,7 +142,8 @@ class Client:
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
         conn = self.transport(host or backend.host(self.forge), self.timeout)
         try:
-            sent = {'Authorization': auth, 'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)}
+            sent = {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)}
+            sent |= {'Authorization': auth} if self.token else {}  # no token: an anonymous read of a public repo
             sent |= dict(backend.headers)
             sent |= {'Accept': accept} if accept else {}
             conn.request(method, path, body=data, headers=sent)
