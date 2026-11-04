@@ -123,16 +123,35 @@ def merge(base: dict[str, Any], layer: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _bare(expression: str) -> str:
+    """*expression* without its ``${{ }}`` wrapper, so two guards compose into one."""
+    text = expression.strip()
+    return text[3:-2].strip() if text.startswith('${{') and text.endswith('}}') else text
+
+
 def expand(workflow: dict[str, Any], shared: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     """*workflow* with every ``{use-steps = <name>}`` step replaced by *shared*'s list of that name. PURE.
+
+    A ``use-steps`` entry's ``if`` guards every step it expands to, AND-ed with a step's own.
 
     Raises:
         KeyError: a step names a list no ``_steps`` table declares.
 
     """
 
+    def guarded(step: dict[str, Any], guard: str | None) -> dict[str, Any]:
+        if guard is None:
+            return step
+        if 'if' not in step:
+            return {**step, 'if': guard}
+        return {**step, 'if': f'${{{{ ({_bare(guard)}) && ({_bare(step["if"])}) }}}}'}
+
     def steps(job: dict[str, Any]) -> list[dict[str, Any]]:
-        return [one for step in job['steps'] for one in (shared[step[USE_STEPS]] if USE_STEPS in step else [step])]
+        return [
+            guarded(one, step.get('if')) if USE_STEPS in step else step
+            for step in job['steps']
+            for one in (shared[step[USE_STEPS]] if USE_STEPS in step else [step])
+        ]
 
     if 'jobs' not in workflow:
         return workflow

@@ -14,19 +14,13 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, run_git
+from _forge_state import StateForge
 
 from dev_lab.dev import reviewgitauth
 from dev_lab.dev.forgereview_declared import review_at, trusted_integration
 
 _UNREACHABLE = 'https://forge.invalid/repo.git'
 _MANIFEST = '[tool.dev_lab.integrator]\nintegration = "main"\n\n[tool.dev_lab.review]\nclaim_stale = "2 h"\n'
-
-
-class _Forge:
-    repo = 'repos/o/r'
-
-    def call(self, _method: str, _path: str) -> dict[str, str]:
-        return {'default_branch': 'main'}
 
 
 def _blobless(tmp_path: Path) -> tuple[Path, str]:
@@ -53,6 +47,6 @@ def test_the_door_reads_the_declaration_a_plain_git_show_cannot(
     with pytest.raises(subprocess.CalledProcessError):  # a credential-less read fails here (PLANTED CONTROL)
         run_git(clone, 'show', 'origin/main:pyproject.toml')
     monkeypatch.setattr(reviewgitauth, '_held', {'key': f'url.{uri}.insteadOf', 'value': _UNREACHABLE})
-    assert trusted_integration(clone, _Forge()) == 'main'  # type: ignore[arg-type]
+    assert trusted_integration(clone, StateForge()) == 'main'
     assert review_at(clone, 'main').claim_stale == '2 h'
     assert git_out(clone, 'config', '--get', 'remote.origin.url') == _UNREACHABLE, 'nothing persisted in the clone'

@@ -35,6 +35,7 @@ from lab_commons.log import emit
 from dev_lab.dev import (
     branchnotices,
     forgeauth,
+    forgebreakglass,
     forgedraft,
     forgehosts,
     forgeintegration,
@@ -77,6 +78,7 @@ __all__ = ['ISSUE_VERBS', 'NOUNS', 'PR_VERBS', 'issue_and_pr', 'main']
 
 NOUNS: dict[str, Callable[[list[str]], int]] = {
     'auth': forgeauth.main,
+    'breakglass': forgebreakglass.wave_main,
     'status': forgestatus.main,
     'publish': forgeoutbox.main,
     'records': forgerecords.main,
@@ -103,6 +105,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
 
 #: The ``pr`` verbs owned by a door module of their own; every other ``pr`` verb is the issue/PR door's.
 PR_VERBS: dict[str, Callable[[list[str]], int]] = {
+    'breakglass': forgebreakglass.merge_main,
     'close-landed': prlanded.main,
     'close-superseded': prsuperseded.main,
     'ready': lambda argv: forgedraft.main(['ready', *argv]),
@@ -148,7 +151,8 @@ def _parser() -> argparse.ArgumentParser:
         prog='dev_lab.dev.forge',
         description='issue and PR verbs on the forge',
         epilog=(
-            'also: pr close-landed [N...], pr close-superseded N... --by <M|sha|ref>, '
+            'also: pr breakglass N --reason R, breakglass open|close|ack|status, pr close-landed [N...], '
+            'pr close-superseded N... --by <M|sha|ref>, '
             'issue claim|status N, status post|list SHA; token: auth login|status'
         ),
     )

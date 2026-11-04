@@ -14,7 +14,7 @@ from typing import NoReturn
 
 import pytest
 
-from dev_lab.dev import drift
+from dev_lab.dev import drift, forgeservesteps
 from dev_lab.dev.forgealarm import DRIFT, Alarm
 from dev_lab.dev.lockpins import Installed
 
@@ -160,8 +160,6 @@ def test_the_repo_wide_pass_runs_the_census_after_the_relock_and_a_failure_is_sa
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The census rides the elected poller's repo-wide pass; one that cannot run is said, never a crash."""
-    from dev_lab.dev import forgeservesteps  # noqa: PLC0415 -- the serve steps import the whole forge
-
     order: list[str] = []
     for name in ('serve_close_landed', 'serve_sweep', 'serve_prune', 'serve_records_prune', 'hygiene', 'starved',
                  'prompt'):  # fmt: skip
@@ -203,11 +201,16 @@ def test_a_lock_url_that_is_not_https_or_an_option_is_refused_before_any_fetch(
 
 
 def test_planted_control_an_https_url_passes_the_admission() -> None:
-    drift.admit('https://github.com/DawnEver/dev-lab.git', 'ab' * 20, drift.SCHEMES)
+    drift.require_fetchable('https://github.com/DawnEver/dev-lab.git', 'ab' * 20, drift.SCHEMES)
 
 
-def test_the_fetch_puts_the_url_after_a_double_dash_and_allows_only_the_declared_protocols() -> None:
-    argv = drift.fetch_argv(Path('repo.git'), 'dev-lab', 'https://h/x.git', ('https',))
+def test_the_fetch_puts_the_url_after_a_double_dash_and_allows_only_the_declared_protocols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[list[str]] = []
+    monkeypatch.setattr(drift, 'run_network_verb', lambda argv, **_k: seen.append(argv))
+    drift.fetch(Path('repo.git'), 'dev-lab', 'https://h/x.git', ('https',))
+    (argv,) = seen
     assert argv[argv.index('--') + 1] == 'https://h/x.git'
     assert argv[3:7] == ['-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always']
 

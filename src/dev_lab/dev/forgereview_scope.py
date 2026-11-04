@@ -23,7 +23,7 @@ says why): the method hands the reviewer the change map at the directory level, 
 * GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev.famfiles.GENERATED`) and
   the globs the repo declares (``derived``). Their generator is reviewed, not its output.
 * CODE ONLY (user ruling 2026-10-29): a review reads what executes -- source, tests, scripts, and the build and
-  workflow config that runs -- never prose or data. :data:`CODE` and :data:`NOT_CODE` are that one classification
+  workflow config that runs -- never prose or data. :func:`dev_lab.dev.reviewcode.is_code` is that one classification
   (a repo overrides either: ``code``, ``not_code``); the caps and slices count code bytes only, and the comment
   says how many changed files were outside (:attr:`Scope.outside`). A 33-branch merge was held at 127 MB that
   was almost all memory, attic, docs and logs.
@@ -39,28 +39,23 @@ import json
 import re
 import tempfile
 from dataclasses import dataclass
-from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
-import lab_commons.launch as _door
-
+from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
-from dev_lab.dev.reviewgitauth import git_env
+from dev_lab.dev.reviewcode import CODE, NOT_CODE, is_code, matches
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
 __all__ = [
-    'CODE',
     'DISPOSED_FIELD',
     'FINDINGS_FIELD',
     'LENSES',
-    'NOT_CODE',
-    'ONLY_GENERATED',
     'PRINCIPLES_FIELD',
     'SUMMARY_FIELD',
     'WHOLE',
@@ -69,7 +64,6 @@ __all__ = [
     'Slice',
     'gather',
     'git',
-    'is_code',
     'landed_base',
     'lens_of',
     'own_base',
@@ -84,21 +78,6 @@ __all__ = [
 #: The lens of the ONE slice an oversize head is reviewed as: no paths, so the method maps the whole range at the
 #: directory level and the reviewer reads what it chooses (D123, user ruling 2026-10-31).
 WHOLE: Final = 'standard'
-
-#: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
-ONLY_GENERATED: Final = 'nothing to review: every changed file is generated or not code'
-
-#: What executes, by glob: a changed file is reviewed only if it matches one and no :data:`NOT_CODE` glob.
-CODE: Final = (
-    '**/*.py', '**/*.pyi', '**/*.rs', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.ts', '**/*.tsx', '**/*.sh',
-    '**/*.ps1', '**/*.bat', '**/*.cmd', '**/*.c', '**/*.h', '**/*.cpp', '**/*.hpp', '**/*.toml', '**/*.yml',
-    '**/*.yaml', '**/*.cfg', '**/*.ini', '**/Makefile', '**/Dockerfile', '**/justfile',
-)  # fmt: skip
-
-#: Never code though its extension says so: agent memory, archived code, and golden reference data (a consumer repo
-#: golden is a TOML of measured values, 15 MB each). Each glob is narrow -- a hook under ``.claude/``, a ``logs``
-#: package or a ``golden_*.py`` module executes and is read.
-NOT_CODE: Final = ('**/.claude/memory/**', 'attic/**', '**/golden*.toml')
 
 #: In the ``synthesis`` command: replaced by the merged slice findings' path.
 FINDINGS_FIELD: Final = '{findings}'
@@ -118,8 +97,6 @@ DISPOSED_FIELD: Final = '{disposed}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.
 LENSES: Final = ('strict', 'standard', 'light')
-
-_GIT_TIMEOUT_S: Final = 120
 
 #: ``git diff -M``'s similarity threshold: a delete and an add this alike are one move, sized by its hunks. The
 #: call passes ``-l0``: past git's default rename limit (1000) inexact detection is SKIPPED with a warning, and
@@ -148,22 +125,9 @@ class Scope:
     moved: tuple[str, ...] = ()  # pure moves (new paths): read for their path change, cost ~0
 
 
-def git(root: Path, *args: str, ok: Iterable[int] = (0,)) -> tuple[int, str]:
-    """``git *args`` in *root*: its exit code (one of *ok*) and stdout; :class:`OSError` naming any other."""
-    done = _door.run(
-        ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-        timeout=_GIT_TIMEOUT_S, check=False, env=git_env(),
-    )  # fmt: skip
-    if done.returncode not in tuple(ok):
-        msg = f'git {" ".join(args)} failed: {done.stderr.strip()[:300]}'
-        raise OSError(msg)
-    return done.returncode, done.stdout
-
-
 #: Blob modes a ``--raw`` line carries for file content (regular, executable, symlink); a gitlink is a commit.
 _BLOB_MODES: Final = frozenset({'100644', '100755', '120000'})
 _NO_OBJECT: Final = re.compile(r'0+')
-_FETCH_CHUNK: Final = 500  # object ids per fetch argv, under every platform's command-line limit
 
 
 def prefetch(root: Path, *ranges: str) -> int:
@@ -174,7 +138,7 @@ def prefetch(root: Path, *ranges: str) -> int:
     unauthenticated (a consumer repo, 2026-11-01). The door holds the header, so it asks first. ``--raw`` compares
     trees only and fetches nothing. A clone that is not partial (no ``remote.origin.promisor``) asks for nothing.
     """
-    if git(root, 'config', '--get', 'remote.origin.promisor', ok=(0, 1))[1].strip() != 'true':
+    if not is_partial(root):
         return 0
     wanted: set[str] = set()
     for range_ in ranges:
@@ -185,11 +149,7 @@ def prefetch(root: Path, *ranges: str) -> int:
             old_mode, new_mode, old, new, *_ = meta[1:].split()
             wanted |= {oid for mode, oid in ((old_mode, old), (new_mode, new))
                        if mode in _BLOB_MODES and not _NO_OBJECT.fullmatch(oid)}  # fmt: skip
-    ordered = sorted(wanted)
-    for start in range(0, len(ordered), _FETCH_CHUNK):
-        git(root, '-c', 'fetch.negotiationAlgorithm=noop', 'fetch', '-q', '--no-tags', '--no-write-fetch-head',
-            '--recurse-submodules=no', 'origin', *ordered[start:start + _FETCH_CHUNK])  # fmt: skip
-    return len(ordered)
+    return fetch_blobs(root, wanted)
 
 
 def _ancestor(root: Path, older: str, newer: str) -> bool:
@@ -258,36 +218,16 @@ def _tree(root: Path, commit: str) -> str:
     return git(root, 'rev-parse', f'{commit}^{{tree}}')[1].strip()
 
 
-def _whole(parts: Sequence[str], pattern: Sequence[str]) -> bool:
-    """Whether *parts* match *pattern* segment by segment: ``**`` spans any number of segments."""
-    if not pattern:
-        return not parts
-    if pattern[0] == '**':
-        return any(_whole(parts[i:], pattern[1:]) for i in range(len(parts) + 1))
-    return bool(parts) and fnmatchcase(parts[0], pattern[0]) and _whole(parts[1:], pattern[1:])
-
-
-def _matches(path: str, globs: Iterable[str]) -> bool:
-    """Whole-path glob match (``PurePath.full_match`` semantics, which needs 3.13; this repo declares 3.12)."""
-    parts = path.split('/')
-    return any(_whole(parts, glob.split('/')) for glob in globs)
-
-
 def reviewable(path: str, derived: Iterable[str]) -> bool:
     """Whether *path* is read: not a family render, not a declared *derived* glob."""
-    return path not in GENERATED and not _matches(path, derived)
-
-
-def is_code(path: str, code: Iterable[str], not_code: Iterable[str]) -> bool:
-    """Whether *path* executes: it matches a *code* glob and no *not_code* one."""
-    return _matches(path, code) and not _matches(path, not_code)
+    return path not in GENERATED and not matches(path, derived)
 
 
 def lens_of(path: str, strict: Iterable[str], light: Iterable[str]) -> str:
     """The lens *path* earns: ``strict`` first, then ``light``, else ``standard``."""
-    if _matches(path, strict):
+    if matches(path, strict):
         return 'strict'
-    return 'light' if _matches(path, light) else 'standard'
+    return 'light' if matches(path, light) else 'standard'
 
 
 def _diff(root: Path, reviewed: str) -> tuple[dict[str, int], dict[str, str], tuple[str, ...]]:
