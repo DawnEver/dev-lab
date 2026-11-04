@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.forgecarry import RUNNING, docs_only
+from dev_lab.dev.forgereview_batch import BATCH_PENDING
 from dev_lab.dev.forgestatus import CARRIED_FROM, status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import forge_posted, post_review
@@ -105,6 +106,9 @@ def claimable(
 ) -> bool:
     """Whether a head whose review status is *status* may be claimed: none, a released, stale or ended claim.
 
+    A head whose batch is pending (:data:`~dev_lab.dev.forgereview_batch.BATCH_PENDING`) is claimable at once: its
+    state is on the PR, so whoever claims it resumes the batch, never resubmits it.
+
     A claim is ended when the run it names has ended (*ended*, :func:`run_ended`); one naming no run is not.
 
     A host that could not run the review (:data:`HOST_UNABLE`) is the host's fault, never the head's.
@@ -113,7 +117,7 @@ def claimable(
         return True
     if status.state != 'pending':
         return False
-    if status.description.startswith((RELEASED, CAPPED)):
+    if status.description.startswith((RELEASED, CAPPED, BATCH_PENDING)):
         return True
     if (claim := _CLAIM.match(status.description)) is None:
         return False  # takeover pending, or any other pending: not ours to take

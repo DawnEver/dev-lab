@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
@@ -31,7 +32,8 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import comment_list, pages, pr_list
-from dev_lab.dev.forgereview_command import Runner, can_start, run_command
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
+from dev_lab.dev.forgereview_command import ReviewPending, Runner, can_start, run_command
 from dev_lab.dev.forgereview_declared import (
     PATHS_FIELD,
     Review,
@@ -45,7 +47,7 @@ from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_ca
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
-from dev_lab.dev.forgereview_job import job_exit, review_run
+from dev_lab.dev.forgereview_job import job_exit, resume_batches, review_run
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
@@ -175,10 +177,28 @@ def takeover(
         msg = f'{head[:12]} is already reviewed by the forge: nothing to take over'
         raise TakeoverRefused(msg)
     scope = scope_of(root, client, review, head, base=base, pull=pull)
-    since = landed_base(root, base, head)
     thread = pull if pull is not None else ledger_of(client, head, base)
-    argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
-    synth = command_for(review, scope.range, runtimes, synthesis=True)
+    with held_state(client, thread.number, head, trusted_logins(client)) as state:
+        try:
+            said = _taken(root, client, review, head, scope=scope, thread=thread, base=base, host=host,
+                          run=within(run, datetime.now(UTC) + wait_of(review)), runtimes=runtimes,
+                          batching=batch_args(review, state))  # fmt: skip
+        except ReviewPending as waiting:  # nothing is posted: the same takeover, run again, resumes the batch
+            msg = f'{BATCH_PENDING} {waiting}; run the takeover again to resume it'
+            raise TakeoverRefused(msg) from waiting
+    return (f'{said} ({len(scope.slices)} slice(s)); {RERUN} for a review that counts',)
+
+
+def _taken(
+    root: Path, client: Client, review: Review, head: str, *, scope: Scope, thread: PullRequest, base: str,
+    host: str, run: Callable[[Sequence[str], Path], str], runtimes: Mapping[str, Mapping[str, Any]],
+    batching: Sequence[str],
+) -> str:  # fmt: skip
+    """The takeover's round over *scope*, posted on *thread*; the line said."""
+    since = landed_base(root, base, head)
+    argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens, batching=batching)
+             for s in scope.slices]  # fmt: skip
+    synth = command_for(review, scope.range, runtimes, synthesis=True, batching=batching)
     gone = upheld(
         trusted_bodies(client, thread.number, review.reviewers)
     )  # upheld claims only: a trailer never reaches the engine
@@ -187,13 +207,12 @@ def takeover(
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         msg = f'no reviewer returned findings ({kinds}); nothing is posted'
         raise TakeoverRefused(msg)
-    said = post_round(
+    return post_round(
         root, client, thread, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover',
         outside=scope.outside, authored=trailed(root, since, head), judged=judge_for(root, review, scope.range, run,
-        runtimes), reviewer=identity(client, host), authors=sessions(root, since, head), emergency=True,
-        reviewers=review.reviewers,
+        runtimes, batching=batching), reviewer=identity(client, host), authors=sessions(root, since, head),
+        emergency=True, reviewers=review.reviewers,
     )  # fmt: skip
-    return (f'{said} ({len(scope.slices)} slice(s)); {RERUN} for a review that counts',)
 
 
 #: The verbs the forge's own jobs run (``review.yml``, ``review-claims.yml``): they ask the forge for the trusted
@@ -229,7 +248,12 @@ def _parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     verbs.add_parser('blocked', help='list the heads a blocking finding holds, with their ids and the door')
     running = verbs.add_parser('run', help="review one PR's head: what a GitHub workflow job runs for its event")
-    running.add_argument('--pr', type=int, required=True)
+    which = running.add_mutually_exclusive_group(required=True)
+    which.add_argument('--pr', type=int)
+    which.add_argument(
+        '--batch-pending', action='store_true',
+        help='resume every open head whose review batch is pending, from its PR (the scheduled job runs this)',
+    )  # fmt: skip
     running.add_argument(
         '--secret-env', action='append', default=[], metavar='NAME',
         help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer',
@@ -280,6 +304,23 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
     return [f'[review] {one}' for one in ruled]
 
 
+def _job(
+    args: argparse.Namespace, root: Path, origin: Client, base: str, *, run: Callable[[Sequence[str], Path], str],
+    ready: Callable[[Sequence[str], Path], str | None], fetch: Callable[[Path, int], object],
+) -> int:  # fmt: skip
+    """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
+    runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready,
+                    secret=all(os.environ.get(name) for name in args.secret_env), verifies=True)  # fmt: skip
+    review = review_at(root, base)
+    if args.batch_pending:
+        for one in resume_batches(root, origin, review, base=base, runner=runner, fetch=fetch):
+            emit(f'[review] {one}')
+        return 0
+    with posted_verdicts() as said:
+        emit(f'[review] {review_run(root, origin, review, args.pr, base=base, runner=runner)}')
+    return job_exit(origin, args.pr, said, base=base)
+
+
 def main(
     argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None,
     run: Callable[[Sequence[str], Path], str] = run_command,
@@ -303,18 +344,7 @@ def main(
         job = args.verb in _FORGE_JOBS
         base = trusted_integration(root, origin) if job else operator_integration(root)
         if args.verb == 'run':
-            secret = all(os.environ.get(name) for name in args.secret_env)
-            runner = Runner(
-                this_machine(),
-                runtimes_with(host_runtimes(), args.runtime),
-                run=run,
-                ready=ready,
-                secret=secret,
-                verifies=True,
-            )
-            with posted_verdicts() as said:
-                emit(f'[review] {review_run(root, origin, review_at(root, base), args.pr, base=base, runner=runner)}')
-            return job_exit(origin, args.pr, said, base=base)
+            return _job(args, root, origin, base, run=run, ready=ready, fetch=pull_in)
         if args.verb in {'held', 'blocked', 'dispose', 'cap', 'adjudicate'}:
             said = _listed(args, root, origin, base, run)
             for one in said:

@@ -1,8 +1,11 @@
 """GitHub and Gitea Actions workflows, declared in TOML and RENDERED -- YAML only because the forges force it.
 
 ONE SOURCE PER LAYER: the family base is ``ci_base.toml`` beside this module; a repo's layer is
-``[tool.dev_lab.ci."<file>.yml"]`` in its ``pyproject.toml``. A repo opts in to a base workflow by
-declaring its table (empty takes the base as is) and may declare workflows of its own. The layers are
+``[tool.dev_lab.ci."<file>.yml"]`` in its ``pyproject.toml``. EVERY REPO RENDERS ITS FORGE'S WHOLE BASE
+(:func:`base_names`: each base table placed on the forge :func:`repo_forge` reads from ``origin``, else from the
+repo's declared tables) -- never an opt-in
+a repo can forget, which is how merge-tick and review-claims went undeployed outside dev-lab (2026-11-04). A repo's
+table layers over a base workflow, renders another forge's base workflow, or declares one of its own. The layers are
 deep-merged (tables key by key; anything else replaces) and each workflow is written to
 ``.github/workflows/<file>.yml`` as JSON -- JSON is YAML, so the stdlib renders it and no YAML library
 is needed. Nothing ever parses a workflow back: the drift check compares RENDERED BYTES to the file,
@@ -11,10 +14,11 @@ and a workflow file the table does not declare is refused as hand-written.
 A WORKFLOW NAMES ITS FORGE. A table's ``forge`` key (:data:`FORGE_KEY`, ``github`` when omitted) places it in that
 forge's directory (:data:`WORKFLOW_DIRS`) and is never rendered: Gitea Actions runs ``.gitea/workflows`` and, once
 that exists, ignores ``.github/workflows``. Both forges' workflows draw on the same ``_steps``, so a step the two
-share -- the review itself -- has one source.
+share -- the review itself -- has one source. A workflow either forge may run keeps what differs in its
+``by-forge`` table (:data:`BY_FORGE`, never rendered): the part named by the merged ``forge`` is merged over the rest.
 
 THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
-rendered) schedules that workflow at it, so GitHub's ci.yml and Gitea's promote.yml promote on one clock.
+rendered) schedules that workflow at it. Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
 
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
@@ -27,7 +31,8 @@ no review method and no key (user ruling 2026-11-02). It is never a workflow and
 A JUDGE REPO RENDERS ITS PREPARE WORKFLOW, undeclared: when the repo's ``[tool.dev_lab.review] where = "judge"``, the
 base's :data:`PREPARE` table is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one
 name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that
-name merged over it. Any other repo renders none, and a layer of that name there is refused.
+name merged over it; the layer's ``forge`` picks the forge it runs on (Gitea by default). Any other repo renders
+none, and a layer of that name there is refused.
 
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
@@ -36,7 +41,8 @@ THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
 never a floating branch, and never the PR head's own lock (F-76c85dbc4b77).
 
-``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift.
+``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift -- a base workflow
+missing from disk among them.
 """
 
 from __future__ import annotations
@@ -49,13 +55,16 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev._forgebackends import backend_for
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgereview_declared import JUDGE, load_review
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
     'BASE_PATH',
+    'BY_FORGE',
     'FORGE_KEY',
     'LIGHT',
     'NIGHTLY_CRON',
@@ -67,10 +76,12 @@ __all__ = [
     'STAMP',
     'USE_STEPS',
     'WORKFLOW_DIRS',
+    'base_names',
     'drift',
     'expand',
     'merge',
     'render',
+    'repo_forge',
     'runner_labels',
     'workflows',
     'write',
@@ -96,6 +107,8 @@ WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('
 
 #: The table key naming the forge a workflow is rendered for; a placement, never part of the rendered workflow.
 FORGE_KEY: Final = 'forge'
+#: The table key holding each forge's part of a workflow either may run; only the chosen forge's is merged in.
+BY_FORGE: Final = 'by-forge'
 #: The table key asking for the nightly schedule; a trigger, never part of the rendered workflow.
 NIGHTLY_KEY: Final = 'nightly'
 #: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
@@ -159,12 +172,59 @@ def expand(workflow: dict[str, Any], shared: dict[str, list[dict[str, Any]]]) ->
     return {**workflow, 'jobs': jobs}
 
 
+def _declared(root: Path) -> tuple[str, dict[str, Any]]:
+    """*root*'s ``pyproject.toml`` text (empty when absent) and its ``[tool.dev_lab.ci]`` tables."""
+    pyproject = root / 'pyproject.toml'
+    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
+    return text, dict(declared_table(tomllib.loads(text), 'ci', {}))
+
+
+def repo_forge(root: Path) -> str:
+    """The forge *root* is hosted on (``github`` or ``gitea``): its ``origin`` remote, else its declarations.
+
+    With no ``origin`` (a checkout before its push, a scratch repo) the forge is the one every workflow the repo
+    declares is placed on (its own ``forge`` key, else the base table's). None, or more than one, is refused.
+
+    Raises:
+        ValueError: no ``origin`` and the declarations name no single forge.
+
+    """
+    try:
+        return backend_for(forge_from_remote(root)).name
+    except UnreadableRemote:
+        pass
+    base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
+    forges = {
+        layer.get(FORGE_KEY, base.get(name, {}).get(FORGE_KEY, 'github'))
+        for name, layer in _declared(root)[1].items()
+        if name != SHARED
+    }
+    if len(forges) != 1:
+        msg = (
+            f'{root}: no `origin` remote and its [tool.dev_lab.ci] tables name {sorted(forges) or "no"} forge(s) -- '
+            f'add the `origin` remote, or declare a workflow placed on the one forge it is hosted on'
+        )
+        raise ValueError(msg)
+    (forge,) = forges
+    return forge
+
+
+def base_names(forge: str) -> set[str]:
+    """Every base workflow placed on *forge*: what every repo hosted there renders, declared or not."""
+    base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
+    return {
+        name
+        for name, table in base.items()
+        if not name.startswith('_') and isinstance(table, dict) and table.get(FORGE_KEY, 'github') == forge
+    }
+
+
 def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     """Every workflow *root* declares, by file name: its forge's directory and the workflow, base merged under."""
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
-    pyproject = root / 'pyproject.toml'
-    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
-    declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
+    text, declared = _declared(root)
+    for name in base_names(repo_forge(root)):
+        declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
     prepare = base.pop(PREPARE)
     if load_review(root).where == JUDGE:
@@ -176,8 +236,10 @@ def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     hosted = hosted_parts(text)
     out = {}
     for name, layer in sorted(declared.items()):
-        workflow = hosted_jobs(expand(merge(base.get(name, {}), layer), shared), hosted)
-        forge = workflow.pop(FORGE_KEY, 'github')
+        merged = merge(base.get(name, {}), layer)
+        forge = merged.pop(FORGE_KEY, 'github')
+        merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
+        workflow = hosted_jobs(expand(merged, shared), hosted)
         if workflow.pop(NIGHTLY_KEY, False):
             workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
         if forge not in WORKFLOW_DIRS:
@@ -200,11 +262,12 @@ def render(workflow: dict[str, Any]) -> str:
 def drift(root: Path) -> list[str]:
     """Every rendered workflow that differs from its file, and every workflow file nobody declared."""
     declared = _placed(root)
+    base = base_names(repo_forge(root))
     out = []
     for name, (directory, workflow) in declared.items():
         path = root / directory / name
         if not path.is_file():
-            out.append(f'{path}: declared and not rendered')
+            out.append(f'{path}: {"a base workflow" if name in base else "declared"} and not rendered')
         elif path.read_text(encoding='utf-8') != render(workflow):
             out.append(f'{path}: differs from its TOML (hand-edited, or the TOML moved without a render)')
     for directory in WORKFLOW_DIRS.values():

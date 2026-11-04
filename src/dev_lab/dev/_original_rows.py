@@ -362,6 +362,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgereview_bundle',
     'forgereview_pointer',
     'forgereview_job',  # an in-kit split of forgetakeover: the forge's review job
+    'forgereview_batch',  # the Batch API resume of a pending review, new here
     'actionsartifact',  # an Actions run's own artifact, new here
     # ORIGINAL: split out of `forgework` inside the kit by concept; no consumer held it.
     'forgestamp',

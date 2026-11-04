@@ -58,6 +58,14 @@ class Backend:
     #: What the issue listing adds to exclude pulls server-side: Gitea's ``type=issues``. GitHub has no such
     #: parameter (it answers 422), so its listing filters pulls client-side (:func:`dev_lab.dev.forgepulls.is_pull`).
     issues_only: tuple[tuple[str, str], ...] = (('type', 'issues'),)
+    #: The ``path`` an Actions run of the base's workflow ``{workflow}`` for pull request ``{pull}`` is listed with:
+    #: Gitea's ``<file>@refs/pull/<n>/head`` names the pull request; GitHub's is the workflow file alone.
+    run_path: str = '{workflow}@refs/pull/{pull}/head'
+    #: Whether a run names its pull request in ``pull_requests`` instead of its ``path`` (GitHub).
+    run_pulls_listed: bool = False
+    #: A pull request's unified diff: the suffix on ``pulls/{n}`` and the ``Accept`` it is asked with -- Gitea's
+    #: ``pulls/{n}.diff``, GitHub's ``pulls/{n}`` as ``application/vnd.github.diff``.
+    diff_at: tuple[str, str] = ('.diff', 'text/plain')
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -95,6 +103,9 @@ GITHUB: Final = Backend(
     actions_login=ACTIONS_BOT,
     writer_permissions=frozenset({'admin', 'maintain', 'write'}),
     issues_only=(),
+    run_path='.github/workflows/{workflow}',
+    run_pulls_listed=True,
+    diff_at=('', 'application/vnd.github.diff'),
     headers=(
         ('Accept', 'application/vnd.github+json'),
         ('X-GitHub-Api-Version', '2022-11-28'),

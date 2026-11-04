@@ -99,6 +99,10 @@ __all__ = [
 #: What GitHub answers a workflow job token asking `/user`: only this answer, from GitHub, names the Actions bot.
 _INTEGRATION: Final = 'Resource not accessible by integration'
 
+#: How many redirects a download follows: GitHub's artifact zip answers one, to a signed storage URL.
+_REDIRECTS: Final = 3
+_OCTETS: Final = 'application/octet-stream'
+
 
 @dataclass
 class Client:
@@ -129,6 +133,8 @@ class Client:
     _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
     _gone: bool = dataclasses.field(default=False, init=False, repr=False)
     _kept: bool = dataclasses.field(default=False, init=False, repr=False)
+    #: The ``Location`` of the latest answer, ``''`` when it named none: where a redirect points.
+    _location: str = dataclasses.field(default='', init=False, repr=False)
 
     @property
     def backend(self) -> Backend:
@@ -136,19 +142,21 @@ class Client:
         return backend_for(self.forge)
 
     def _once(
-        self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *, accept: str = ''
-    ) -> tuple[int, bytes]:
+        self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *,
+        accept: str = '', authed: bool = True,
+    ) -> tuple[int, bytes]:  # fmt: skip
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
         conn = self.transport(host or backend.host(self.forge), self.timeout)
         try:
-            sent = {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)}
-            sent |= {'Authorization': auth} if self.token else {}  # no token: an anonymous read of a public repo
-            sent |= dict(backend.headers)
+            # authed: no credential follows a redirect; no token: an anonymous read of a public repo
+            sent = {'Authorization': auth} if authed and self.token else {}
+            sent |= {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)} | dict(backend.headers)
             sent |= {'Accept': accept} if accept else {}
             conn.request(method, path, body=data, headers=sent)
             response = conn.getresponse()
             self.answered = response.getheader('Date') or self.answered
+            self._location = response.getheader('Location') or ''
             return response.status, response.read()
         finally:
             conn.close()
@@ -230,25 +238,32 @@ class Client:
     def download(self, url: str) -> bytes:
         """The raw bytes at an attachment's download *url*, fetched with this client's credential.
 
-        The caller verifies what it got (:mod:`dev_lab.dev.artefacts` checks sha256).
+        The caller verifies what it got (:mod:`dev_lab.dev.artefacts` checks sha256). A redirect (GitHub's artifact
+        zip answers one, to a signed storage URL) is followed WITHOUT the credential, at most :data:`_REDIRECTS`
+        times: the signed URL is its own authority, and the token never leaves the forge's API.
         """
-        parts = urllib.parse.urlsplit(url)
-        return self._raw('GET', parts.path + (f'?{parts.query}' if parts.query else ''), host=parts.netloc or None)
+        authed = True
+        for _ in range(_REDIRECTS + 1):
+            parts = urllib.parse.urlsplit(url)
+            path = parts.path + (f'?{parts.query}' if parts.query else '')
+            payload = self._raw('GET', path, host=parts.netloc or None, authed=authed)
+            if not self._location:
+                return payload
+            url, authed = urllib.parse.urljoin(url, self._location), False
+        refused = Attempt(1, HTTP_ERROR_FLOOR, f'more than {_REDIRECTS} redirects', Diagnosis.FORGE_REFUSED)
+        raise ForgeCallFailed(Report(('GET', url), (refused,), 1))
 
     def pull_diff(self, number: int) -> str:
         """The forge's OWN unified diff of pull request *number* -- what a review bundle is checked against.
 
-        Gitea serves ``pulls/{n}.diff``; GitHub serves ``pulls/{n}`` as a diff when asked for
-        ``application/vnd.github.diff``.
+        Where and how it is asked for is the backend's (:attr:`~dev_lab.dev._forgebackends.Backend.diff_at`).
         """
-        github = self.backend is GITHUB
-        path = f'{self.repo}/pulls/{number}' + ('' if github else '.diff')
-        accept = 'application/vnd.github.diff' if github else 'text/plain'
-        return self._raw('GET', path, accept=accept).decode('utf-8', 'replace')
+        suffix, accept = self.backend.diff_at
+        return self._raw('GET', f'{self.repo}/pulls/{number}{suffix}', accept=accept).decode('utf-8', 'replace')
 
-    def _raw(self, method: str, path: str, *, host: str | None = None, accept: str = '') -> bytes:
+    def _raw(self, method: str, path: str, *, host: str | None = None, accept: str = '', authed: bool = True) -> bytes:
         """One call's raw answer: not retried and not JSON; a refusal raises :class:`ForgeCallFailed`."""
-        status, payload = self._once(method, path, None, 'application/octet-stream', host, accept=accept)
+        status, payload = self._once(method, path, None, _OCTETS, host, accept=accept, authed=authed)
         if not 0 < status < HTTP_ERROR_FLOOR:
             text = payload.decode(errors='replace')[:300]
             diagnosis = self._diagnosis(status, text, path)

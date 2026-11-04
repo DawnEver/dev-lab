@@ -10,9 +10,12 @@ Every service it renders -- the roles' and the supervisor's own (``[ops.supervis
 place it. The sudo-reached verbs get no sudoers ``env_keep`` for that file: they read it themselves as root, so the
 secrets never pass through the invoking account and that account cannot override them.
 
-It also PREPARES what the promote run needs: it creates an absent clone ``home`` (0750) and, given a ``chown`` (the
-door passes one when it runs as root), hands the promote user that home and its credential (0600), and makes the
-environment file root's, 0600. What it cannot apply -- no root, no account yet, no file yet -- is a next step. It
+It also PREPARES what the roles need: it creates the keys directory (root's, 0755) when a role renders keys, puts
+the ``[ops.access]`` PAM include into the sshd stack (:func:`dev_lab.ops.access.ensure_include`, refusing a stack of
+another shape before writing anything), and for the promote run it creates an absent clone ``home`` (0750) and,
+given a ``chown`` (the door passes one when it runs as root), hands the promote user that home and its credential
+(0600), and makes the environment file root's, 0600. What it cannot apply -- no root, no account yet, no file
+yet -- is a next step. It
 NEVER re-owns or widens a directory it did not create: an existing home is left as it is, and a credential directory
 the promote user cannot enter is named in a next step, never opened.
 """
@@ -26,10 +29,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dev_lab.ops.access import PAM_INCLUDE
+from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.config import Backup, OpsConfig, Placement
 from dev_lab.ops.sshkey import ENV
+from dev_lab.ops.totp import write_private
 from dev_lab.supervise.daemon import watchdog_seconds
 
 if sys.platform != 'win32':  # the host accounts: POSIX only
@@ -94,7 +98,7 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     role = config.breakglass
     if role is None:
         return {}
-    keys = f'/etc/dev-lab/ops/{role.account}.keys'
+    keys = keys_file(role.account)
     serve = _door(config, 'breakglass', 'serve')
     sshd = (
         f'Match User {role.account}\n    AuthorizedKeysFile {keys}\n'
@@ -137,7 +141,7 @@ def _backup(config: OpsConfig) -> dict[str, str]:
     rendered: dict[str, str] = {}
     if role.dumpers:
         export = _door(config, 'backup', 'export')
-        keys = f'/etc/dev-lab/ops/{role.account}.keys'
+        keys = keys_file(role.account)
         line = f'restrict,command="sudo -n {export}" '
         rendered |= {
             f'etc/ssh/sshd_config.d/62-{_UNIT}-{role.account}.conf': (
@@ -181,11 +185,13 @@ def _supervise(config: OpsConfig) -> dict[str, str]:
 
 def files(config: OpsConfig) -> dict[str, str]:
     """Every file the configuration renders, by path relative to the root."""
+    if config.access is not None:
+        secret_file(config)  # refuse two TOTP secrets on one host before anything renders
     access = access_files(config.access) if config.access is not None else {}
     return {**_promote(config), **_breakglass(config), **_backup(config), **access, **_supervise(config)}
 
 
-def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
+def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared | None) -> tuple[str, ...]:
     steps = []
     if config.promote is not None:
         steps += [f'id {config.promote.user} || useradd --system --home-dir {config.home} {config.promote.user}',
@@ -196,7 +202,7 @@ def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
         steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{role.account}', 'sshd -t && systemctl reload ssh',
                   'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-breakglass-tick.timer']  # fmt: skip
-        if not Path(role.totp).is_file():
+        if not _under(root, role.totp).is_file():
             steps.append(_door(config, 'breakglass', 'enrol'))
     if (backup := config.backup) is not None and backup.dumpers:
         steps += [f'id {backup.account} || useradd --create-home --shell /bin/sh {backup.account}',
@@ -204,12 +210,14 @@ def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
     if backup is not None and backup.source:
         steps += [f'id {backup.user} || useradd --system {backup.user}', 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-backup-pull.timer']  # fmt: skip
-    if (access := config.access) is not None:
-        steps += ['apt-get install -y libpam-oath', f'id {access.account} || useradd --create-home {access.account}',
-                  f'put `@include {PAM_INCLUDE}` as the first auth line of /etc/pam.d/sshd',
+    if (role := config.access) is not None:
+        steps += ['apt-get install -y libpam-oath', f'id {role.account} || useradd --create-home {role.account}',
                   'sshd -t && systemctl reload ssh']  # fmt: skip
-        if not Path(access.oath).is_file():
-            steps.append(_door(config, 'access', 'enrol'))
+        if access is not None and access.needs_secret:
+            steps.append(
+                f'{_door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
+                f'secret: {_door(config, "access", "adopt", "--secret-file", "-")})'
+            )
     if config.supervise is not None:
         steps += ['systemctl daemon-reload', f'systemctl enable --now {_SUPERVISE}.service']
     return tuple(steps)
@@ -273,6 +281,18 @@ def _own(chown: Chown | None, path: Path, user: str | None, group: str | None) -
     return True
 
 
+def _keys_dir(root: Path, chown: Chown | None, done: dict[str, str]) -> list[str]:
+    """Create :data:`KEYS_DIR` (root's, 0755) when absent; an existing one is the host's, never re-owned."""
+    keys = _under(root, KEYS_DIR)
+    if keys.is_dir():
+        done[keys.relative_to(root).as_posix()] = 'unchanged'
+        return []
+    done[keys.relative_to(root).as_posix()] = 'created'
+    keys.mkdir(parents=True)
+    keys.chmod(0o755)
+    return [] if _own(chown, keys, 'root', 'root') else [f'chown root:root {KEYS_DIR}']
+
+
 def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[str, str], list[str]]:
     """Create the clone home (only if absent), hand the promote user it and the credential, make the env file root's."""
     done: dict[str, str] = {}
@@ -308,17 +328,36 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
 def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Rendered:
     """Write :func:`files` under *root*, each only when its content differs; sudoers and keys at mode 0440/0644.
 
+    The ``[ops.access]`` pam_oath users file is derived here (mode 600) from the host's one TOTP secret, once it exists.
+
+    Raises:
+        ValueError: ``[ops.access]`` is declared and the sshd PAM stack is absent or of an unexpected shape, or the
+            host declares two TOTP secrets.
+
     Then prepare the promote home, its credential and the environment file (see the module docstring): *chown* is
     applied where given, and what it could not apply is a next step.
+
     """
+    rendered = files(config)
+    # refuses an unexpected PAM stack (or two secrets) before anything is written
+    access = prepare(config, root) if config.access is not None else None
+    private = access.private if access is not None else {}
+    rendered |= (access.public if access is not None else {}) | private
     done, prepared = _prepare(config, root, chown)
-    for relative, content in files(config).items():
+    if config.breakglass is not None or config.access is not None or (config.backup and config.backup.dumpers):
+        prepared += _keys_dir(root, chown, done)
+    for relative, content in rendered.items():
         target = root / relative
         if target.is_file() and target.read_text(encoding='utf-8') == content:
+            if relative in private:  # a secret is narrowed even when its content already matches
+                target.chmod(0o600)
             done[relative] = 'unchanged'
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding='utf-8', newline='\n')
-        target.chmod(0o440 if 'sudoers.d' in relative else 0o644)
+        if relative in private:  # 600 before a byte is written: never a readable window
+            write_private(target, content)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding='utf-8', newline='\n')
+            target.chmod(0o440 if 'sudoers.d' in relative else 0o644)
         done[relative] = 'written'
-    return Rendered(done, _steps(config, prepared))
+    return Rendered(done, _steps(config, root, prepared, access))

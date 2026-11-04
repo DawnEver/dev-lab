@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import threading
 from collections.abc import Callable, Iterator
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
@@ -103,6 +104,12 @@ class Recorder(BaseHTTPRequestHandler):
         status, payload = queue.pop(0) if len(queue) > 1 else queue[0]
         if status is None:  # APPLIED, then the response is lost: the connection drops unanswered
             self.close_connection = True
+            return
+        if HTTPStatus.MULTIPLE_CHOICES <= status < HTTPStatus.BAD_REQUEST:  # a redirect: its payload is the Location
+            self.send_response(status)
+            self.send_header('Location', payload)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
             return
         encoded = b'' if payload is None else json.dumps(payload).encode()
         self.send_response(status)

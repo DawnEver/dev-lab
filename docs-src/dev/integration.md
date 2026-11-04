@@ -212,6 +212,9 @@ derived = []               # generated-file globs beyond famfiles.GENERATED
 strict = ["**/hooks/**", "**/rules/**", "tests/architecture/**", "**/contracts/**"]  # the default
 light = ["docs-src/**", "**/.claude/memory/**", "**/*.md"]                          # the default
 claim_stale = "1 h"        # the default
+batch = true               # the default (forgereview_batch.FAMILY_BATCH): model calls via the vendor batch endpoint
+on_expiry = "sync"         # the default: a batch request expired at 24 h is answered at once ("fail": a failed reviewer)
+batch_wait = "20 min"      # the default: what one round waits on its batches before it posts pending
 ```
 
 Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
@@ -222,7 +225,11 @@ released claim (`released by ...`) or a claim older than `claim_stale` (default 
 own 30 min timeout): a host that died mid-review never blocks a head for good.
 
 Undeclared, nothing is reviewed. Exit 2 is the command's named refusal (bad method, version or range): its
-stderr reason is the `error` status.
+stderr reason is the `error` status. Exit 75 is a model BATCH still running (`{batch}`, user ruling 2026-11-04):
+no verdict -- `tests/review` is `pending` `review batch pending, merge waits: ...` naming the batch, its state
+(batch ids, no reply, no key) is a `review-batch` comment on the PR, and the next run of that head (a tick, a job
+re-run, a takeover, the judge's next tick, `forge review adjudicate`) resumes it instead of resubmitting
+(`forgereview_batch`).
 
 The in-process reviewer's keys (`model`, `max_tokens`, `rules`) and its machine-file capability are retired
 and refused by name (`lab_commons.hpc.retired`).

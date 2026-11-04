@@ -28,7 +28,10 @@ dependencies = [
 # the code under test uses require/fs/process, DecompressionStream, TextDecoder, atob and timers, which a
 # bare QuickJS or V8 isolate does not provide. TEST/DEV ONLY (user ruling 2026-10-28): a consumer takes
 # it as `dev-lab[test]` in its dev extra, never in a runtime dependency (famtests.hostnode refuses that).
-test = ["nodejs-wheel-binaries"]
+test = ["nodejs-wheel-binaries", "dev-lab[ops]"]
+# A FORGE HOST'S extra (dev_lab.ops): `access enrol` / `breakglass enrol` draw the otpauth QR on the enrolling
+# terminal with segno (pure Python, no dependencies of its own). The test extra carries it so the QR is tested.
+ops = ["segno"]
 
 [dependency-groups]
 # THE REVIEW METHOD the CI review jobs run (ci_base.toml `method` steps): dev-lab is the code that calls it, so this
@@ -248,11 +251,5 @@ ignore = [
     "SLF001",  # a test that cannot read a private member cannot pin a private invariant
 ]
 
-# THIS REPO'S CI, as TOML: rendered to .github/workflows/ by `python -m dev_lab.dev.ciworkflows render`
-# (the family base is dev_lab/dev/ci_base.toml: the one PR lifecycle, parts -> review -> merge-ready).
-# The plain base render: this repo adds nothing to it.
-[tool.dev_lab.ci."review-claims.yml"]
-
-[tool.dev_lab.ci."merge-tick.yml"]
-
-[tool.dev_lab.ci."ci.yml"]
+# THIS REPO'S CI: the family base (dev_lab/dev/ci_base.toml) as is -- every repo renders its forge's whole
+# base with `python -m dev_lab.dev.ciworkflows render`; this repo declares no [tool.dev_lab.ci] layer.

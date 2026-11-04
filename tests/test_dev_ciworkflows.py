@@ -6,7 +6,6 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 from __future__ import annotations
 
 import ast
-import os
 import re
 import shutil
 import subprocess
@@ -15,11 +14,12 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from _branch_repos import clone_pair
+import pytest
 
-from dev_lab.dev.checkout import worktrees
+from dev_lab.dev import ciworkflows
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
+    BY_FORGE,
     NIGHTLY_CRON,
     PREPARE,
     RENDER_COMMAND,
@@ -27,25 +27,38 @@ from dev_lab.dev.ciworkflows import (
     SHARED,
     STAMP,
     USE_STEPS,
+    base_names,
     drift,
     expand,
     main,
     merge,
     render,
+    repo_forge,
     workflows,
     write,
 )
+from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 
 _ROOT = Path(__file__).resolve().parents[1]
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
+_GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}
+_GITEA_BASE = {'review.yml', 'merge.yml'}
+
+
+def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
+    """*root* as a git repo whose ``origin`` is *url*: the one fact a repo's forge is read from."""
+    git = shutil.which('git')
+    assert git is not None
+    subprocess.run([git, 'init', '-q', str(root)], check=True)
+    subprocess.run([git, '-C', str(root), 'remote', 'add', 'origin', url], check=True)
+    return root
+
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    assert set(workflows(_ROOT)) == {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}, (
-        'a floor: an empty table drifts from nothing'
-    )
+    assert set(workflows(_ROOT)) == _GITHUB_BASE, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 
@@ -257,10 +270,64 @@ def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path:
     }
 
 
-def test_a_repo_that_declares_nothing_renders_nothing(tmp_path: Path) -> None:
+def test_the_base_of_each_forge_is_every_base_table_placed_on_it() -> None:
+    assert base_names('github') == _GITHUB_BASE
+    assert base_names('gitea') == _GITEA_BASE
+
+
+@pytest.mark.parametrize(('forge', 'expected'), [('github', _GITHUB_BASE), ('gitea', _GITEA_BASE)])
+def test_a_repo_that_declares_nothing_renders_its_forge_s_whole_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str, expected: set[str]
+) -> None:
+    """The base is never an opt-in a repo can forget: merge-tick and review-claims went undeployed that way."""
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
     (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
-    assert workflows(tmp_path) == {}
-    assert write(tmp_path) == []
+    assert set(workflows(tmp_path)) == expected
+    assert {path.name for path in write(tmp_path)} == expected
+
+
+def test_an_undeclared_github_ci_still_runs_the_nightly_schedule(tmp_path: Path) -> None:
+    _hosted(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
+
+
+def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a full render drifts from nothing; deleting one base file is named."""
+    _hosted(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    write(tmp_path)
+    assert drift(tmp_path) == []
+    (tmp_path / '.github' / 'workflows' / 'merge-tick.yml').unlink()
+    assert [line for line in drift(tmp_path) if 'merge-tick.yml' in line and 'base workflow' in line]
+
+
+@pytest.mark.parametrize(
+    ('tables', 'forge'),
+    [('[tool.dev_lab.ci."ci.yml"]\n', 'github'), ('[tool.dev_lab.ci."merge.yml"]\n', 'gitea')],
+)
+def test_with_no_origin_the_forge_is_the_one_the_declared_tables_are_placed_on(
+    tmp_path: Path, tables: str, forge: str
+) -> None:
+    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    assert repo_forge(tmp_path) == forge
+
+
+@pytest.mark.parametrize('tables', ['', '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."merge.yml"]\n'])
+def test_with_no_origin_and_no_single_declared_forge_the_render_is_refused_naming_the_remedy(
+    tmp_path: Path, tables: str
+) -> None:
+    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    with pytest.raises(ValueError, match='add the `origin` remote'):
+        workflows(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ('url', 'forge'),
+    [('https://github.com/o/r.git', 'github'), ('https://gitea.example.org/o/r.git', 'gitea')],
+)
+def test_a_repo_s_forge_is_read_from_its_origin(tmp_path: Path, url: str, forge: str) -> None:
+    assert repo_forge(_hosted(tmp_path, url)) == forge
 
 
 def test_a_hand_edit_and_a_hand_written_workflow_are_refused_naming_the_render(tmp_path: Path, capsys) -> None:
@@ -371,6 +438,7 @@ def test_every_job_installing_the_method_installs_the_door_first(tmp_path: Path)
     """The method reads the door's dev-lab lock, so a job without the door before it has no ai-lab to install."""
     names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
     tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + tables, encoding='utf-8')
     all_jobs = [(f'{w}:{j}', job) for w, flow in workflows(tmp_path).items() for j, job in flow['jobs'].items()]
     users = 0
@@ -607,14 +675,19 @@ def _gitea_review(tmp_path: Path) -> dict[str, Any]:
     return workflows(tmp_path)['review.yml']
 
 
-def test_a_gitea_workflow_renders_under_dot_gitea_and_its_forge_key_is_not_rendered(tmp_path: Path, capsys) -> None:
+def test_a_gitea_workflow_renders_under_dot_gitea_and_its_forge_key_is_not_rendered(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Gitea runs ``.gitea/workflows`` (and ignores ``.github/workflows`` once it exists): the forge key places it.
 
     PLANTED CONTROL: a hand edit of the Gitea render, and a hand-written Gitea workflow, are refused like GitHub's.
     """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: 'gitea')
     review = _gitea_review(tmp_path)
     assert 'forge' not in review, 'a placement key, never a workflow key'
-    (path,) = write(tmp_path)
+    written = {path.name: path for path in write(tmp_path)}
+    assert set(written) == _GITEA_BASE
+    path = written['review.yml']
     assert path == tmp_path / '.gitea' / 'workflows' / 'review.yml'
     assert not (tmp_path / '.github').exists()
     assert drift(tmp_path) == []
@@ -734,13 +807,14 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
     ``git+ai-lab.git@...`` and the install fails; enumerating the renders, not naming the workflows, keeps a
     fourth from slipping past.
     """
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
         encoding='utf-8',
     )
     rendered = workflows(tmp_path)
     readers = {name for name, workflow in rendered.items() if '${FAMILY_SOURCE}' in render(workflow)}
-    assert readers == {'ci.yml', 'review.yml', 'review-claims.yml'}
+    assert readers == {'ci.yml', 'merge-tick.yml', 'review.yml', 'review-claims.yml'}  # merge-tick: GitHub's base
     for name in readers:
         assert rendered[name]['env'].get('FAMILY_SOURCE'), f'{name} reads FAMILY_SOURCE but declares none'
         assert 'FAMILY_SOURCE:-' not in render(rendered[name]), f'{name}: a second source'
@@ -767,6 +841,7 @@ def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None
 
 
 def _full_adoption(tmp_path: Path) -> dict[str, Any]:
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
         encoding='utf-8',
@@ -885,81 +960,30 @@ def test_no_credential_or_pr_influence_persists_in_the_mirror(tmp_path: Path) ->
     assert all('refs/pull' not in line for line in mirror_fetches)
 
 
-def test_gitea_promotes_nightly_by_the_same_decision_and_asks_ada_nothing(tmp_path: Path) -> None:
-    """D48-1A on Gitea: a scheduled promote.yml runs `integrate promote` on integration's tip, then sweeps.
+def test_gitea_renders_no_promoter_because_the_host_s_ops_promote_role_owns_gitea_promotion(tmp_path: Path) -> None:
+    """ONE PROMOTER PER REPO: on Gitea, `dev_lab.ops` `[ops.promote]` (a timer on the forge host) promotes the trunk.
 
-    The decision reads git and the forge's statuses alone, so the Gitea host (which cannot reach Ada) runs it.
-    PLANTED CONTROLS: no push or pull_request trigger (never per merge), and no serve/cluster door in any step.
+    A rendered nightly workflow would be a SECOND promoter racing its pushes to main, and would push main on a repo
+    whose host deliberately does not promote it. GitHub keeps its promote job inside ci.yml.
+    PLANTED CONTROL: the GitHub base still promotes.
     """
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
-    found = workflows(tmp_path)['promote.yml']
-    assert set(found['on']) == {'schedule', 'workflow_dispatch'}
-    assert found['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
-    runs = [step.get('run', '') for step in found['jobs']['promote']['steps']]
-    promoted = next(i for i, run in enumerate(runs) if 'dev_lab.dev.integrate promote "$INTEGRATION_SHA"' in run)
-    assert 'git push origin main' in runs[promoted]
-    assert next(i for i, run in enumerate(runs) if 'dev_lab.dev.branchprune sweep' in run) > promoted
-    text = render(found)
-    for door in ('forge serve', 'forgeserve', 'slurm', 'jobparts'):
-        assert door not in text, door
-    assert 'origin/integrate/main' in text, 'the tip of integration, never a pushed sha'
-    assert tmp_path / '.gitea' / 'workflows' / 'promote.yml' in write(tmp_path)
+    assert base_names('gitea') == {'review.yml', 'merge.yml'}
+    gitea = _hosted(tmp_path / 'gitea', 'https://gitea.example/o/r.git')
+    for name, workflow in workflows(gitea).items():
+        assert 'integrate promote' not in render(workflow), name
+    assert 'promote' in _base_ci(tmp_path)['jobs'], 'PLANTED CONTROL: GitHub promotes inside ci.yml'
 
 
-def test_gitea_s_promote_checkout_holds_no_branch_so_main_can_move(tmp_path: Path) -> None:
-    """F-1f940a53bf61: Gitea's default branch is main, so a plain clone holds main and promote refuses every night.
-
-    The rendered clone step runs against a bare origin whose HEAD is main; no worktree may then hold a branch.
-    PLANTED CONTROL: the same clone without its detach holds refs/heads/main.
-    """
-    bare, _ = clone_pair(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
-    steps = workflows(tmp_path)['promote.yml']['jobs']['promote']['steps']
-    (fetch,) = [step['run'] for step in steps if step.get('name') == "Fetch integration's commits"]
-    lines = fetch.splitlines()
-    script = '\n'.join(lines[next(i for i, line in enumerate(lines) if line.startswith('git clone')) :])
-    script = script.replace('"$FORGE_URL/${{ github.repository }}.git"', f'"{bare.as_posix()}"')
-    bash = shutil.which('bash')
-    assert bash, 'the job step is a bash script'
-    for name, text in (('job', script), ('plain', script.splitlines()[0])):
-        (tmp_path / name).mkdir()
-        env = {**os.environ, 'GITHUB_ENV': str(tmp_path / f'{name}.env')}
-        subprocess.run([bash, '-c', text], cwd=tmp_path / name, env=env, check=True)
-    assert [name for _, name in worktrees(tmp_path / 'plain') or ()] == ['main'], 'PLANTED CONTROL: it holds main'
-    assert [name for _, name in worktrees(tmp_path / 'job') or ()] == ['detached'], 'main stays free to move'
-
-
-def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path: Path) -> None:
-    """promote.yml runs with no pull request, so no base sha: its door is the lock of the tip it fetched.
-
-    The tip is already merged, so it is trusted as a base is. An empty DOOR_SHA is refused by name, never read as
-    ``git show ":uv.lock"`` against an empty index (F-e460f9e7c527).
-    """
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."promote.yml"]\n', encoding='utf-8')
-    steps = workflows(tmp_path)['promote.yml']['jobs']['promote']['steps']
-    names = [s.get('name') for s in steps]
-    fetch = steps[names.index("Fetch integration's commits")]
-    door = steps[names.index('Install the review door')]
-    assert names.index("Fetch integration's commits") < names.index('Install the review door')
-    assert 'echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"' in fetch['run']
-    assert 'env.INTEGRATION_SHA' in door['env']['DOOR_SHA']
-    guard = next(line for line in door['run'].splitlines() if line.startswith('[ -n "$DOOR_SHA" ]'))
-    bash = shutil.which('bash')
-    assert bash, 'the door step is bash'
-    ran = subprocess.run(
-        [bash, '-c', guard], env={'DOOR_SHA': ''}, capture_output=True, text=True, encoding='utf-8', check=False
-    )
-    assert ran.returncode != 0
-    assert 'no commit names the door' in ran.stdout + ran.stderr
-
-
-def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(tmp_path: Path) -> None:
+def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``where = "judge"`` renders the BASE's prepare workflow under the ONE name the judge reads its runs by.
 
     ``pull_request_target`` alone (:data:`~dev_lab.dev.reviewgate.REVIEW_EVENT`): the base's definition runs, so a PR
     can neither alter it nor start it as its own. It holds no review method and no key.
     PLANTED CONTROL: a serve repo -- declared or by default -- renders no such workflow.
     """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: 'gitea')
     (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
     prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
     assert set(prepare['on']) == {REVIEW_EVENT}
@@ -969,13 +993,46 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(tmp_path: Pa
     assert 'ANTHROPIC_API_KEY' not in text
     assert 'Install the review method' not in text
     assert job['runs-on'] in tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS]
-    assert [path.relative_to(tmp_path).as_posix() for path in write(tmp_path)] == [
-        f'.gitea/workflows/{PREPARE_WORKFLOW}'
-    ]
+    assert {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)} == {
+        f'.gitea/workflows/{name}' for name in {PREPARE_WORKFLOW, *_GITEA_BASE}
+    }
     assert drift(tmp_path) == []
     for serve in ('', '[tool.dev_lab.review]\nwhere = "serve"\n'):
         (tmp_path / 'pyproject.toml').write_text(serve, encoding='utf-8')
         assert PREPARE_WORKFLOW not in workflows(tmp_path)
+
+
+def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path) -> None:
+    """``forge = "github"`` renders the prepare to ``.github/workflows``, under the same name, event and job.
+
+    GitHub hands a ``run`` step no runtime token, so ``actions/upload-artifact`` attaches the file ``prepare`` leaves
+    to the run, under the very name the judge reads (:data:`~dev_lab.dev.forgereview_pointer.ARTIFACT`). Read-only,
+    no credential kept by the checkout, a fork PR not prepared (no fork run names its PR), no method and no key.
+    PLANTED CONTROL: none of Gitea's part -- the host runner's reach and mirror -- reaches GitHub's render.
+    """
+    layer = f'\n[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]\nforge = "github"\n'
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + layer, encoding='utf-8')
+    prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
+    assert set(prepare['on']) == {REVIEW_EVENT}
+    assert BY_FORGE not in prepare
+    (job,) = prepare['jobs'].values()
+    assert job['permissions'] == {'contents': 'read', 'pull-requests': 'read'}
+    assert job['if'] == '${{ github.event.pull_request.head.repo.full_name == github.repository }}'
+    names = [step.get('name') for step in job['steps']]
+    assert "Reach the forge on the runner's instance" not in names
+    assert 'Fetch the head' not in names
+    checkout, upload = job['steps'][0], job['steps'][-1]
+    assert checkout['with']['persist-credentials'] is False
+    assert names.index('Install the review door') < names.index('Prepare the review bundle') < len(names) - 1
+    assert upload['uses'].startswith('actions/upload-artifact@')
+    assert upload['with']['name'] == ARTIFACT
+    assert upload['with']['path'] == f'${{{{ runner.temp }}}}/{ARTIFACT}/{BUNDLE_FILE}'
+    text = render(prepare)
+    assert 'ANTHROPIC_API_KEY' not in text
+    assert 'Install the review method' not in text
+    written = {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)}
+    assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE, PREPARE_WORKFLOW)}
+    assert drift(tmp_path) == []
 
 
 def test_a_pr_with_no_code_is_settled_before_any_clone_or_install(tmp_path: Path) -> None:
@@ -1026,7 +1083,7 @@ def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: P
     tick = workflows(tmp_path)['merge-tick.yml']
     assert {'status', 'schedule', 'workflow_dispatch'} <= set(tick['on'])
     assert not {'pull_request', 'pull_request_target'} & set(tick['on']), 'a merging token never runs a PR head'
-    (job,) = tick['jobs'].values()
+    job = tick['jobs']['merge-tick']
     gate = job['if']
     assert "startsWith(github.event.context, 'tests/')" in gate
     assert "github.event.context != 'tests/merge-ready'" in gate

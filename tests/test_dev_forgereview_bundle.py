@@ -3,11 +3,13 @@
 The judge trusts nothing the producer wrote that it can read or derive from the forge (D3), and takes WHICH bundle
 to read from nothing a PR-head job can write (F-680a6bd606f0). PLANTED CONTROLS: the honest prepared head -- its
 bundle the base's successful prepare run's own artifact -- is APPROVED, and against it a newer null-creator pointer
-naming that very run, a run of another workflow, event or pull request, a prepare run that failed or was cancelled,
-and a GitHub bot pointer are each never read; a tampered forge diff, another merge base, a Ref not bound to the head,
-a corrupt artifact and a binary code file are each REQUEST_CHANGES; a failure to read posts nothing and never stops
-the next PR; a blocking finding is REQUEST_CHANGES; a head already judged is not judged again; a ``serve`` repo is
-never judged and a ``judge`` repo is never served; a reviewer that did not run posts nothing.
+naming that very run, a run of another workflow, event or pull request (on GitHub also a fork's run, which names no
+pull request, and a run naming two), a prepare run that failed or was cancelled, and a GitHub bot pointer are each
+never read -- the run's artifact on BOTH forges, each through its own fake; a tampered forge diff,
+another merge base, a Ref not bound to the head, a corrupt artifact and a binary code file are each REQUEST_CHANGES;
+a failure to read posts nothing and never stops the next PR; a blocking finding is REQUEST_CHANGES; a head
+already judged is not judged again; a ``serve`` repo is never judged and a ``judge`` repo is never served; a reviewer
+that did not run posts nothing.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from _forge_fake import git_out, run_git
 from dev_lab.dev import forgereview_bundle as fb
 from dev_lab.dev import forgereview_pointer as fp
 from dev_lab.dev._forge_records import PullRequest
-from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
+from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB, Backend
 from dev_lab.dev.actionsartifact import zipped
 from dev_lab.dev.artefacts import Config, FolderStore, Ref, pack
 from dev_lab.dev.forge import Forge
@@ -38,7 +40,14 @@ _JUDGE_TOML = '[tool.dev_lab.integrator]\nintegration = "main"\n' + _JUDGED
 _PREPARER = _JUDGE_TOML + 'preparers = ["prep-bot"]\n'
 _RUNTIMES = {'ai_lab': {'python': 'py'}}
 _POISONED = 'b' * 40
-_ACTIONS = {'GITEA_ACTIONS': 'true'}  # prepare inside a Gitea Actions job
+_ACTIONS = {'GITEA_ACTIONS': 'true', 'GITHUB_ACTIONS': 'true'}  # prepare inside a Gitea Actions job
+#: Each forge as the judge's client reaches it: its host, and its repository's API collection.
+_FORGES = {
+    GITEA: (Forge('forge.example.org', 'o', 'r'), '/api/v1/repos/o/r'),
+    GITHUB: (Forge('github.com', 'o', 'r'), '/repos/o/r'),
+}
+#: The key each forge stamps a run's CREATION under.
+_CREATED = {GITEA: 'created', GITHUB: 'created_at'}
 
 
 def _findings(severity: str | None, *, statuses: tuple[str, ...] = ('ok',)) -> str:
@@ -64,15 +73,21 @@ def _url(run: int) -> str:
 
 def _prepare_run(
     head: str, *, number: int = 7, run: int = 0, event: str = 'pull_request_target', conclusion: str = '',
-    workflow: str = PREPARE_WORKFLOW,
+    workflow: str = PREPARE_WORKFLOW, backend: Backend = GITEA, pulls: list[int] | None = None,
 ) -> dict[str, Any]:  # fmt: skip
-    """A run at *head* as Gitea lists it; by default the base's prepare run of PR *number*, still going."""
+    """A run at *head* as *backend* lists it; by default the base's prepare run of PR *number*, still going.
+
+    Gitea names the pull request in the run's ``path`` and stamps ``created``; GitHub lists the workflow file alone,
+    the pull requests (*pulls*, default ``[number]``) in ``pull_requests``, and stamps ``created_at``.
+    """
     run = run or number
+    shared = {'id': run, 'head_sha': head, 'event': event, 'html_url': _url(run), 'conclusion': conclusion}
+    if backend is GITHUB:
+        listed = [{'number': one, 'head': {'sha': head}} for one in ([number] if pulls is None else pulls)]
+        path = f'.github/workflows/{workflow}'
+        return {**shared, 'path': path, 'pull_requests': listed, _CREATED[GITHUB]: '2026-11-04T10:00:00Z'}
     path = f'{workflow}@refs/pull/{number}/head'
-    return {
-        'id': run, 'head_sha': head, 'event': event, 'path': path, 'html_url': _url(run), 'conclusion': conclusion,
-        'created': '2026-11-04T10:00:00Z', 'started_at': '2026-11-04T10:00:00Z',
-    }  # fmt: skip
+    return {**shared, 'path': path, _CREATED[GITEA]: '2026-11-04T10:00:00Z', 'started_at': '2026-11-04T10:00:00Z'}
 
 
 @dataclass
@@ -94,6 +109,8 @@ class FakeForge:
     downloaded: list[int] = field(default_factory=list)
     #: Each pull's issue timeline as the forge lists it; ``None`` is a timeline the forge will not serve.
     timelines: dict[int, list[dict[str, Any]] | None] = field(default_factory=dict)
+    #: Every GET path the judge asked, query included.
+    asked: list[str] = field(default_factory=list)
     forge: Forge = field(default_factory=lambda: Forge('forge.example.org', 'o', 'r'))
     backend: Any = GITEA
     repo: str = '/api/v1/repos/o/r'
@@ -130,6 +147,8 @@ class FakeForge:
 
     def call(self, method: str, path: str, body: dict[str, Any] | None = None, durable: object = None) -> Any:  # noqa: ANN401
         del durable
+        if method == 'GET':
+            self.asked.append(path)
         path = path.partition('?')[0]
         return self._post(path, body or {}) if method == 'POST' else self._get(path)
 
@@ -137,7 +156,8 @@ class FakeForge:
         if path.endswith('/reviews'):
             number = int(path.split('/')[-2])
             rows = self.reviews.setdefault(number, [])
-            rows.append({'id': len(rows) + 1, 'user': {'login': self.login}, 'state': body['event'], **body})
+            state = {'APPROVE': 'APPROVED'}.get(body['event'], body['event'])  # GitHub's event names its verb
+            rows.append({'id': len(rows) + 1, 'user': {'login': self.login}, 'state': state, **body})
             return rows[-1]
         rows = self.statuses.setdefault(path.rsplit('/', 1)[1], [])
         creator = None if self.poster is None else {'login': self.poster}
@@ -160,6 +180,8 @@ class FakeForge:
             answers[f'{self.repo}/actions/runs/{run["id"]}/artifacts'] = {'artifacts': rows, 'total_count': len(rows)}
         for number, one in self._pulls().items():
             answers[f'{self.repo}/pulls/{number}'] = {'merge_base': self.merge_base}
+            compare = f'{self.repo}/compare/{one.base}...{one.head_sha}'
+            answers[compare] = {'merge_base_commit': {'sha': self.merge_base}}
             answers[f'{self.repo}/pulls/{number}/reviews'] = list(self.reviews.get(number, []))
             answers[f'{self.repo}/issues/{number}/comments'] = []
             answers[f'{self.repo}/issues/{number}/timeline'] = self.timelines.get(number, [])
@@ -219,8 +241,13 @@ def _prepared(
     *,
     configs: list[Config] | None = None,
     hosted: bool = False,
+    backend: Backend = GITEA,
 ) -> Prepared:
-    """PR #7 prepared by the base's prepare run (its own artifact) -- or, *hosted*, by the declared preparer."""
+    """PR #7 prepared by the base's prepare run (its own artifact) on *backend* -- or, *hosted*, by the preparer.
+
+    On Gitea the run's job uploads the artifact itself; on GitHub ``prepare`` writes the bundle where the
+    workflow's upload step takes it from, and that step attaches it to the run.
+    """
     store = FolderStore(tmp_path / 'store', 'r')
     fetched: list[str] = []
 
@@ -241,19 +268,30 @@ def _prepared(
         forge = FakeForge(pull, diffs, base, manifest=_PREPARER, poster='prep-bot')
         said = fp.prepare(root, forge, 7, env={})  # type: ignore[arg-type]
     else:
-        run = _prepare_run(head)
-        forge = FakeForge(pull, diffs, base, runs=[run])
+        run = _prepare_run(head, backend=backend)
+        where, repo = _FORGES[backend]
+        forge = FakeForge(pull, diffs, base, runs=[run], forge=where, backend=backend, repo=repo)
         monkeypatch.setattr(fp, 'upload', lambda name, members, **_env: forge.attach(run['id'], name, dict(members)))
-        said = fp.prepare(root, forge, 7, env=_ACTIONS)  # type: ignore[arg-type]
+        temp = tmp_path / 'runner-temp'
+        env = {'GITHUB_ACTIONS': 'true', 'RUNNER_TEMP': str(temp)} if backend is GITHUB else _ACTIONS
+        said = fp.prepare(root, forge, 7, env=env)  # type: ignore[arg-type]
+        if backend is GITHUB:  # the workflow's actions/upload-artifact step attaches what prepare left
+            forge.attach(run['id'], fp.ARTIFACT, {fp.BUNDLE_FILE: (temp / fp.ARTIFACT / fp.BUNDLE_FILE).read_bytes()})
         run['conclusion'] = 'success'
     assert said.startswith(f'#7 {head[:12]}: bundle sha256:')
     return Prepared(forge, root, store, fetched)
 
 
+@pytest.fixture(params=[GITEA, GITHUB], ids=['gitea', 'github'])
+def prepared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> Prepared:
+    """A PR head prepared by the base's prepare run on each forge: its bundle that run's artifact, nothing posted."""
+    return _prepared(tmp_path, monkeypatch, *_repo(tmp_path), backend=request.param)
+
+
 @pytest.fixture
-def prepared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Prepared:
-    """A PR head prepared by the base's prepare run: its bundle that run's own artifact, nothing posted."""
-    return _prepared(tmp_path, monkeypatch, *_repo(tmp_path))
+def on_github(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Prepared:
+    """A PR head prepared by the base's prepare run on GitHub."""
+    return _prepared(tmp_path, monkeypatch, *_repo(tmp_path), backend=GITHUB)
 
 
 @pytest.fixture
@@ -297,6 +335,12 @@ def test_prepare_in_actions_attaches_the_bundle_to_its_own_run_and_posts_nothing
     assert prepared.store.list(None) == ()
 
 
+def test_prepare_in_a_github_job_with_nowhere_to_leave_the_bundle_is_refused(on_github: Prepared) -> None:
+    """PLANTED CONTROL: the same job with RUNNER_TEMP set prepared the fixture's bundle."""
+    with pytest.raises(BundleRefused, match='RUNNER_TEMP'):
+        fp.prepare(on_github.root, on_github.forge, 7, env={'GITHUB_ACTIONS': 'true'})  # type: ignore[arg-type]
+
+
 def test_a_preparer_s_host_points_the_head_at_its_stored_bundle(hosted: Prepared) -> None:
     (status,) = hosted.forge.statuses[hosted.forge.pull.head_sha]
     assert (status['context'], status['state']) == (fp.BUNDLE_CONTEXT, 'success')
@@ -309,7 +353,7 @@ def test_the_judge_approves_a_clean_head_once_reading_the_forges_diff(prepared: 
     said, seen = _judged(forge, _findings(None), read=read)
     assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
     (review,) = forge.verdicts()
-    assert (review['event'], review['commit_id']) == ('APPROVED', forge.pull.head_sha)
+    assert (review['state'], review['commit_id']) == ('APPROVED', forge.pull.head_sha)
     (argv,) = seen
     assert argv[:4] == ('py', '-m', 'ai_lab.review', '--bundle')
     assert '--pr-body' in argv
@@ -346,7 +390,7 @@ def test_a_forged_newer_pointer_naming_the_honest_run_is_never_what_the_judge_re
 def test_a_prepare_run_that_did_not_succeed_is_no_source(prepared: Prepared, conclusion: str) -> None:
     """Its artifact exists, and an OLDER run succeeded: the newest concluded run decides, and it did not succeed."""
     forge = prepared.forge
-    newer = _prepare_run(forge.pull.head_sha, run=8, conclusion=conclusion)
+    newer = _prepare_run(forge.pull.head_sha, run=8, conclusion=conclusion, backend=forge.backend)
     forge.runs.append(newer)
     forge.attach(8, fp.ARTIFACT, {fp.BUNDLE_FILE: b'{}'})
     forge.runs.sort(key=lambda run: -run['id'])
@@ -365,8 +409,8 @@ def _retarget(forge: FakeForge, at: str, *, key: str = 'type', kind: str = 'chan
 def _later_run(forge: FakeForge, *, created: str | None = '2026-11-04T12:00:00Z', conclusion: str = 'success') -> int:
     """A newer prepare run of PR #7 (started 12:00) that attached the same honest bundle; its artifact id."""
     ((_, (_, name, data)),) = forge.artifacts.items()
-    later = _prepare_run(forge.pull.head_sha, run=8, conclusion=conclusion)
-    later.update(created=created, started_at='2026-11-04T12:00:00Z')
+    later = _prepare_run(forge.pull.head_sha, run=8, conclusion=conclusion, backend=forge.backend)
+    later.update({_CREATED[forge.backend]: created, 'started_at': '2026-11-04T12:00:00Z'})
     forge.runs.append(later)
     forge.artifacts[950] = (8, name, data)
     return 950
@@ -440,9 +484,39 @@ def test_an_artifact_of_any_run_but_the_bases_prepare_run_of_this_pull_is_never_
     prepared: Prepared, run: dict[str, Any]
 ) -> None:
     forge = prepared.forge
-    forge.runs[0].update(_prepare_run(forge.pull.head_sha, run=forge.runs[0]['id'], conclusion='success', **run))
+    head, ident = forge.pull.head_sha, forge.runs[0]['id']
+    forge.runs[0] = _prepare_run(head, run=ident, conclusion='success', backend=forge.backend, **run)
     said, seen = _judged(forge, _findings(None))
     assert (said, seen, forge.verdicts(), forge.downloaded) == ([], [], [], [])
+
+
+@pytest.mark.parametrize(
+    'pulls',
+    [
+        [],  # a fork's run: GitHub lists no pull request on it, so nothing binds it to this one
+        [7, 8],  # a run naming two pull requests is bound to neither
+    ],
+)
+def test_a_github_run_that_does_not_name_this_pull_alone_is_never_read(on_github: Prepared, pulls: list[int]) -> None:
+    """GitHub names a run's pull requests apart from its path; only ``[this one]`` binds it.
+
+    PLANTED CONTROL: the honest run names ``[7]`` and is approved.
+    """
+    forge = on_github.forge
+    head, ident = forge.pull.head_sha, forge.runs[0]['id']
+    forge.runs[0] = _prepare_run(head, run=ident, conclusion='success', backend=GITHUB, pulls=pulls)
+    said, seen = _judged(forge, _findings(None))
+    assert (said, seen, forge.verdicts(), forge.downloaded) == ([], [], [], [])
+    forge.runs[0] = _prepare_run(head, run=ident, conclusion='success', backend=GITHUB)
+    said, _ = _judged(forge, _findings(None))
+    assert said == [f'#7 {head[:12]}: APPROVED']
+
+
+def test_the_runs_are_listed_with_each_forges_own_page_size(prepared: Prepared) -> None:
+    forge = prepared.forge
+    _judged(forge, _findings(None))
+    (listing,) = [path for path in forge.asked if path.startswith(f'{forge.repo}/actions/runs?')]
+    assert f'&{forge.backend.page_param}=' in listing
 
 
 def test_a_bad_artifact_of_the_honest_run_is_request_changes(prepared: Prepared) -> None:
@@ -543,7 +617,7 @@ def _poison(prepared: Prepared, *, diff: str | None) -> None:
     """PR #6 (listed first) was prepared by its trusted run into an artifact with no bundle.json; *diff* its diff."""
     forge = prepared.forge
     forge.others.append(PullRequest(6, 'p', 'open', '', 'u', 'a', 'pr/p', 'main', head_sha=_POISONED))
-    forge.runs.append(_prepare_run(_POISONED, number=6, conclusion='success'))
+    forge.runs.append(_prepare_run(_POISONED, number=6, conclusion='success', backend=forge.backend))
     forge.attach(6, fp.ARTIFACT, {'other.txt': b'{}'})
     if diff is not None:
         forge.diffs[6] = diff
@@ -627,7 +701,7 @@ def test_a_null_creator_pointer_is_never_read(hosted: Prepared) -> None:
 
 
 def test_a_github_bot_pointer_is_never_read(hosted: Prepared) -> None:
-    """On GitHub a same-repository branch's workflow posts as the Actions bot: no rendered workflow prepares there."""
+    """On GitHub a same-repository branch's workflow posts as the Actions bot, which is never a declared preparer."""
     forge = hosted.forge
     forge.backend = GITHUB
     forge.statuses[forge.pull.head_sha][0]['creator'] = {'login': ACTIONS_BOT}

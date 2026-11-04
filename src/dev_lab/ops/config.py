@@ -241,12 +241,17 @@ class Access:
     """The troubleshooting account: ssh key AND a TOTP code (pam_oath), sudo limited to declared commands.
 
     ``keys`` are its ssh keys, ``oath`` the root-only pam_oath users file, ``commands`` what sudo may run (each a full
-    command line, ``*`` as sudoers reads it), ``issuer`` the Authenticator's label.
+    command line, ``*`` as sudoers reads it), ``issuer`` the Authenticator's label. ``permit_open`` is the
+    ``host:port`` targets the account may forward to (``ssh -J`` through this host); empty, it forwards nothing.
+    ``totp`` is the host's ONE TOTP secret (base32, root 600); empty, the break-glass role's ``totp`` is it. ``oath``
+    is DERIVED from it at install, never a second secret.
     """
 
     account: str
     keys: tuple[str, ...] = ()
     commands: tuple[str, ...] = ()
+    permit_open: tuple[str, ...] = ()
+    totp: str = ''
     oath: str = '/etc/dev-lab/ops/users.oath'
     issuer: str = 'forge ops'
 
