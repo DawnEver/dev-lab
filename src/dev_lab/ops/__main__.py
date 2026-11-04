@@ -1,4 +1,6 @@
-"""``python -m dev_lab.ops --config <toml> install|promote|breakglass serve|enrol|tick``: the one door.
+"""``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
+
+Verbs: ``install``, ``promote``, ``breakglass serve|enrol|tick``, ``backup export|pull``, ``access enrol``.
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -10,13 +12,14 @@ import os
 import sys
 import time
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from lab_commons.log import emit
 
 from dev_lab.dev.forgemerge import merge
 from dev_lab.dev.forgework import client_for
-from dev_lab.ops import breakglass, install, promote, sshkey, totp
+from dev_lab.ops import access, backup, breakglass, install, offsite, promote, sshkey, totp
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
@@ -50,6 +53,35 @@ class _ForgeAs:
 
     def merge(self, number: int, *, head: str, message: str) -> None:
         merge(self._client, number, head=head, message=message, delete_branch=False)
+
+
+def _access(config: OpsConfig, *, force: bool) -> int:
+    if config.access is None:
+        emit(f'[ops] {config.path} enables no [ops.access]', err=True)
+        return 2
+    emit(access.enrol(config.access, force=force))
+    return 0
+
+
+def _backup(config: OpsConfig, verb: str) -> int:
+    role = config.backup
+    if role is None or not (role.dumpers if verb == 'export' else role.source):
+        emit(f'[ops] {config.path} declares no backup {verb} side', err=True)
+        return 2
+    try:
+        if verb == 'export':
+            backup.export(role, sys.stdout.buffer)
+            return 0
+        kept = backup.pull(role, datetime.now(UTC))
+        files = sorted(path for path in kept.iterdir())
+        if role.offsite is not None:
+            offsite.upload(role.offsite, offsite.AwsCli(role.offsite), kept.name, files)
+        emit(f'[ops backup] kept {kept} ({len(files)} file(s))' + (', off-site copied' if role.offsite else ''))
+    except (backup.BackupRefused, OSError, ValueError) as failed:
+        emit(f'[ops backup] {failed}', err=True)
+        _alert(config, f'backup {verb} FAILED', str(failed))
+        return 1
+    return 0
 
 
 def _breakglass(config: OpsConfig, verb: str, *, force: bool) -> int:
@@ -90,6 +122,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'enrol', 'tick'))
     glass.add_argument('--force', action='store_true', help='enrol: replace an existing secret')
+    verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
+    opened = verbs.add_parser('access')
+    opened.add_argument('action', choices=('enrol',))
+    opened.add_argument('--force', action='store_true', help='replace an existing secret')
     args = parser.parse_args(argv)
     try:
         config = load(args.config)
@@ -107,6 +143,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         for outcome in failed:
             _alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
         return 1 if failed else 0
+    if args.verb == 'backup':
+        return _backup(config, args.action)
+    if args.verb == 'access':
+        return _access(config, force=args.force)
     return _breakglass(config, args.action, force=args.force)
 
 
