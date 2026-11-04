@@ -94,6 +94,7 @@ __all__ = [
     'STRICT',
     'WHERE',
     'Review',
+    'base_manifest',
     'command_for',
     'forge_integration',
     'forge_review',
@@ -386,6 +387,15 @@ def review_at(root: Path, base: str) -> Review:
     the working tree), so the serve's tick reads no forge before it knows its host can run the command. An
     unreadable base declaration refuses (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back.
     """
+    return review_from(*base_manifest(root, base))
+
+
+def base_manifest(root: Path, base: str) -> tuple[str, str]:
+    """``origin/<base>``'s ``pyproject.toml`` in *root* and where it was read: what a PR's job may TRUST.
+
+    Read from git, never the working tree (the PR head's); unreadable or empty refuses
+    (:class:`~dev_lab.dev.reviewgate.DeclarationUnread`), never falls back.
+    """
     where = f'origin/{base}:pyproject.toml'
     try:
         text = _manifest_at(root, f'origin/{base}')
@@ -395,7 +405,7 @@ def review_at(root: Path, base: str) -> Review:
     if not text.strip():
         msg = f'{where} is empty'
         raise DeclarationUnread(msg)
-    return review_from(text, where)
+    return text, where
 
 
 def _manifest_at(root: Path, rev: str) -> str:

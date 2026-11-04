@@ -67,7 +67,7 @@ from dev_lab.dev.artefacts import (
     ArtefactRefused,
     Ref,
     check_key,
-    load_config,
+    config_from,
     object_key,
     pack,
     resolve,
@@ -81,10 +81,11 @@ from dev_lab.dev.forgereview_command import run_command
 from dev_lab.dev.forgereview_declared import (
     JUDGE,
     Review,
+    base_manifest,
     command_for,
     forge_integration,
     forge_review,
-    review_at,
+    review_from,
 )
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
 from dev_lab.dev.forgereview_judge import upheld
@@ -210,10 +211,12 @@ def prepare(root: Path, client: Client, number: int, *, now: Callable[[], dateti
     """Build PR *number*'s bundle from *root* (a clone holding its head), store it, point the head at it; the line.
 
     Refused unless ``origin/<base>`` declares ``where = "judge"``: a ``serve`` repo has no judge to read it (the
-    judge re-reads the declaration from the forge, so this is a courtesy, never the check).
+    judge re-reads the declaration from the forge, so this is a courtesy, never the check). The artefact store is
+    the one ``origin/<base>`` declares too -- the head is DATA and never chooses where its bundle goes.
     """
     pull = client.pr_view(number)
-    if review_at(root, pull.base).where != JUDGE:
+    manifest = base_manifest(root, pull.base)
+    if review_from(*manifest).where != JUDGE:
         msg = f'#{number}: the base does not declare [tool.dev_lab.review] where = "{JUDGE}": no judge reads it'
         raise BundleRefused(msg)
     bundle = reviewbundle.prepare(root, repo=client.forge.repo, pull=pull)
@@ -223,7 +226,7 @@ def prepare(root: Path, client: Client, number: int, *, now: Callable[[], dateti
         tree.mkdir()
         (tree / BUNDLE_FILE).write_bytes(data)
         archive = pack(tree, [tree / BUNDLE_FILE], Path(scratch) / f'bundle{ARCHIVE}')
-        store = store_for(load_config(root), client, client.forge.repo, size=archive.stat().st_size)
+        store = store_for(config_from(*manifest), client, client.forge.repo, size=archive.stat().st_size)
         ident = run_id(pull.head_sha, _PLATFORM, digest.removeprefix('sha256:')[:_DIGEST_ID], now())
         ref = store.put(ident, archive)
     target = pointer(ref, run=job_run_url(client))

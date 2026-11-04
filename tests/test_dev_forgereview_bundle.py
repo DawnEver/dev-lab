@@ -23,7 +23,7 @@ from _forge_fake import git_out, run_git
 from dev_lab.dev import forgereview_bundle as fb
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev._forgebackends import GITEA
-from dev_lab.dev.artefacts import FolderStore, Ref, pack, run_id
+from dev_lab.dev.artefacts import Config, FolderStore, Ref, pack, run_id
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, JUDGE, Review, command_for, review_from
@@ -167,7 +167,15 @@ class Prepared:
     fetched: list[str]
 
 
-def _prepared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root: Path, base: str, head: str) -> Prepared:
+def _prepared(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    root: Path,
+    base: str,
+    head: str,
+    *,
+    configs: list[Config] | None = None,
+) -> Prepared:
     store = FolderStore(tmp_path / 'store', 'r')
     fetched: list[str] = []
 
@@ -175,7 +183,12 @@ def _prepared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root: Path, base:
         fetched.append(entry['ref'])
         return store.get(Ref.of(entry), dest)
 
-    monkeypatch.setattr(fb, 'store_for', lambda *_a, **_k: store)
+    def store_for(config: Config, *_a: object, **_k: object) -> FolderStore:
+        if configs is not None:
+            configs.append(config)
+        return store
+
+    monkeypatch.setattr(fb, 'store_for', store_for)
     monkeypatch.setattr(fb, 'resolve', resolve)
     monkeypatch.setattr(fb, 'job_run_url', lambda _client: _RUN)
     pull = PullRequest(7, 't', 'open', 'the body', 'u', 'a', 'pr/x', 'main', head_sha=head)
@@ -427,3 +440,23 @@ def test_a_host_that_is_not_the_declared_judge_judges_nothing(prepared: Prepared
     said, seen = _judged(forge, _findings(None))
     assert (seen, forge.verdicts()) == ([], [])
     assert 'judge_login' in said[0]
+
+
+def test_prepare_stores_where_the_base_declares_never_where_the_head_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The head is DATA: its ``[tool.lab_commons.artefacts]`` cannot choose the store the bundle goes to.
+
+    PLANTED CONTROL: the head declares a folder store; the base declares none, so the forge's store is used.
+    """
+    root, base, _ = _repo(tmp_path)
+    head_toml = (
+        _JUDGE_TOML + f'\n[tool.lab_commons.artefacts]\nbackend = "folder"\nremote = "{tmp_path.as_posix()}/x"\n'
+    )
+    (root / 'pyproject.toml').write_text(head_toml, encoding='utf-8')
+    run_git(root, 'commit', '-q', '-am', 'the head names its own store')
+    head = git_out(root, 'rev-parse', 'HEAD')
+    configs: list[Config] = []
+    prepared = _prepared(tmp_path, monkeypatch, root, base, head, configs=configs)
+    assert configs == [Config()]
+    assert fb.ref_of_pointer(prepared.forge.statuses[head][0]['target_url']).backend == 'folder'
