@@ -378,6 +378,7 @@ def test_ai_lab_ref_is_gone_everywhere() -> None:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=False,
     ).stdout.split()
     assert hits == []
@@ -405,6 +406,7 @@ def test_the_review_group_stays_out_of_the_door_and_every_consumer() -> None:
         ],
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=True,
     ).stdout
     assert 'ai-lab' not in exported, "the door's export excludes the group"
