@@ -4,8 +4,8 @@
 trunk, pushes through the given credential store), fetches it and points ``origin/HEAD`` at the forge's default
 branch. :func:`declared` reads the repo's own lane declaration at :data:`DECLARED_AT` -- the one place the roles learn
 the trunk and integration branch names -- and raises :class:`CloneUnusable` naming the remedy when the clone is
-missing or its declaration cannot be read. The promote role syncs; break-glass only reads (it runs as root and must
-not create clones the promote user then cannot write).
+missing or its declaration cannot be read. Only the promote role uses them; break-glass reads each declaration from
+its forge (:mod:`dev_lab.ops.breakglass`).
 """
 
 from __future__ import annotations

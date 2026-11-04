@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
+from dev_lab.dev.forge import forge_of_url
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = ['Breakglass', 'OpsConfig', 'Placement', 'Promote', 'Supervise', 'load', 'repo_name']
@@ -55,7 +57,14 @@ class Promote(Placement):
 
 @dataclass(frozen=True)
 class Breakglass(Placement):
-    """The emergency merge: the restricted account and its keys, the bypass identity, the TOTP secret, the waves.
+    """The emergency merge: the restricted account and its keys, the repos it serves, a token per forge, the waves.
+
+    ``repos`` are the clone URLs it may merge into -- ITS OWN set, never ``[ops] repos`` (what promote fetches): a
+    forge host may break glass on repos it does not promote, on any forge. Each URL names its forge (the host);
+    ``tokens`` maps each forge host to the ONE file holding that forge's break-glass token, so every repo on that
+    forge merges as that identity. A repo is named by its full identity ``<host>/<owner>/<repo>``
+    (:attr:`dev_lab.dev.forge.Forge.identity`), so one name on two forges or two owners is two repos. A repo whose
+    forge names no token, a token no repo uses, an empty set and one identity twice are refused at load.
 
     ``state`` is a directory (the wave, its reports, the last accepted TOTP step); ``wave_hours`` the longest wave a
     code opens; ``max_merges`` its cap (``0`` = none); ``tick`` when the timer closes expired waves and reminds
@@ -64,10 +73,11 @@ class Breakglass(Placement):
     """
 
     account: str
-    token: str
     totp: str
     state: str
     log: str
+    repos: tuple[str, ...] = ()
+    tokens: Mapping[str, str] = field(default_factory=dict)
     keys: tuple[str, ...] = ()
     min_reason: int = 10
     issuer: str = 'forge break-glass'
@@ -77,6 +87,31 @@ class Breakglass(Placement):
     remind_hours: float = 24.0
     lockout_after: int = 5
     lockout_minutes: float = 15.0
+
+    def __post_init__(self) -> None:
+        """Refuse a declaration that lies (see the class docstring)."""
+        if not self.repos:
+            msg = '[ops.breakglass] serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
+            raise ValueError(msg)
+        identities = [forge_of_url(url).identity for url in self.repos]
+        if len(set(identities)) != len(identities):
+            msg = f'[ops.breakglass] repos name one repository twice: {identities}'
+            raise ValueError(msg)
+        hosts = {forge_of_url(url).host for url in self.repos}
+        if untokened := sorted(hosts - set(self.tokens)):
+            msg = f'[ops.breakglass] forge {", ".join(untokened)} names no token: add it to [ops.breakglass.tokens]'
+            raise ValueError(msg)
+        if unused := sorted(set(self.tokens) - hosts):
+            msg = f'[ops.breakglass.tokens] {", ".join(unused)} serves no repo in [ops.breakglass] repos'
+            raise ValueError(msg)
+
+    def repo(self, identity: str) -> str | None:
+        """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
+        return next((url for url in self.repos if forge_of_url(url).identity == identity), None)
+
+    def token_file(self, url: str) -> str:
+        """The file holding the break-glass token of *url*'s forge."""
+        return self.tokens[forge_of_url(url).host]
 
 
 @dataclass(frozen=True)
@@ -173,10 +208,6 @@ class OpsConfig:
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
         return self.home / repo_name(url)
-
-    def repo(self, name: str) -> str | None:
-        """The clone URL whose repository is called *name*, else ``None``."""
-        return next((url for url in self.repos if repo_name(url) == name), None)
 
 
 def repo_name(url: str) -> str:

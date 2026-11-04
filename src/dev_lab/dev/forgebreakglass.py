@@ -25,8 +25,8 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
+from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgework import Client, client_for
-from dev_lab.dev.metrics import repo_of
 
 __all__ = ['TABLE', 'merge_main', 'wave_main']
 
@@ -108,7 +108,7 @@ def merge_main(
         return 2
     root = Path.cwd() if cwd is None else cwd
     pull = (client or client_for(root)).pr_view(args.number)
-    repo = repo_of(root).rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
+    repo = forge_from_remote(root).identity  # host/owner/name: never typed, never ambiguous across forges
     emit(f'BREAK-GLASS {repo}#{pull.number} [{pull.state}] {pull.title}: {pull.head} -> {pull.base} at {pull.head_sha}')
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
     return _answer(send, config, request)

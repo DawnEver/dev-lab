@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import shlex
 import stat
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +31,11 @@ from dev_lab.ops.access import files as access_files
 from dev_lab.ops.config import Backup, OpsConfig, Placement
 from dev_lab.ops.sshkey import ENV
 
-__all__ = ['Chown', 'Rendered', 'files', 'install']
+if sys.platform != 'win32':  # the host accounts: POSIX only
+    import grp
+    import pwd
+
+__all__ = ['Account', 'Chown', 'Rendered', 'account_of', 'files', 'install', 'may_enter']
 
 _UNIT = 'dev-lab-ops'
 #: The supervisor's own service.
@@ -176,9 +181,6 @@ def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
                   *prepared, 'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-promote.timer']  # fmt: skip
     else:
         steps += prepared
-    if config.breakglass is not None and config.promote is not None:
-        # the root-run break-glass reads the declaration from the clones the promote user owns
-        steps.append(f'git config --system --add safe.directory "{config.home}/*"')
     if (role := config.breakglass) is not None:
         steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{role.account}', 'sshd -t && systemctl reload ssh',
@@ -207,8 +209,46 @@ def _under(root: Path, path: Path | str) -> Path:
     return root / path.relative_to(path.anchor)
 
 
-def _others_may_enter(path: Path) -> bool:
-    return bool(path.stat().st_mode & stat.S_IXOTH)
+@dataclass(frozen=True)
+class Account:
+    """A host account as the kernel judges access: its uid and every gid it holds (primary and supplementary)."""
+
+    uid: int
+    gids: frozenset[int]
+
+
+def account_of(user: str) -> Account | None:
+    """*user*'s :class:`Account` on this host, ``None`` where it does not exist yet (or the host has no ``pwd``)."""
+    if sys.platform == 'win32':  # a Windows render has no accounts to judge
+        return None
+    try:
+        entry = pwd.getpwnam(user)
+    except KeyError:
+        return None
+    supplementary = {group.gr_gid for group in grp.getgrall() if user in group.gr_mem}
+    return Account(entry.pw_uid, frozenset({entry.pw_gid, *supplementary}))
+
+
+def may_enter(mode: int, uid: int, gid: int, account: Account | None) -> bool:
+    """Whether *account* may enter a directory of *mode* owned ``uid:gid``: ONE class decides, as the kernel does.
+
+    Root enters anything; the owner is judged by the owner bits alone, a member of the group by the group bits, anyone
+    else by the other bits. An account not made yet (``None``) holds no ownership or membership: the other bits.
+    """
+    if account is None:
+        return bool(mode & stat.S_IXOTH)
+    if account.uid == 0:
+        return True
+    if account.uid == uid:
+        return bool(mode & stat.S_IXUSR)
+    if gid in account.gids:
+        return bool(mode & stat.S_IXGRP)
+    return bool(mode & stat.S_IXOTH)
+
+
+def _may_enter(path: Path, user: str) -> bool:
+    found = path.stat()
+    return may_enter(found.st_mode, found.st_uid, found.st_gid, account_of(user))
 
 
 def _own(chown: Chown | None, path: Path, user: str | None, group: str | None) -> bool:
@@ -242,7 +282,7 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
         if not _own(chown, credential, role.user, None):
             steps.append(f'chown {role.user} {role.credentials} && chmod 600 {role.credentials}')
         parent = credential.parent
-        if parent.is_dir() and not _others_may_enter(parent):
+        if parent.is_dir() and not _may_enter(parent, role.user):
             where = Path(role.credentials).parent.as_posix()
             steps.append(f'{role.user} cannot enter {where}: move the credential to a directory it may enter')
     if config.environment_file:
