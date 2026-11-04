@@ -148,7 +148,7 @@ def main(env: Mapping[str, str] | None = None, call: Call | None = None) -> int:
         said, why = None, f'not settled ({type(failed).__name__}: {failed}): the review runs'
     else:
         why = said or 'code to review: the review runs'
-    sys.stdout.write(why + '\n')
+    sys.stdout.buffer.write(why.encode('utf-8') + b'\n')  # bare interpreter: the kit's emit is absent
     with Path(env['GITHUB_OUTPUT']).open('a', encoding='utf-8') as out:
         out.write(f'{SETTLED_OUTPUT}={"true" if said else "false"}\n')
     return 0
