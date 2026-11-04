@@ -2,10 +2,10 @@
 
 User rulings 2026-11-03: the user works in waves, and a single code relayed by an agent is not bound to the PR the
 human saw. So a code OPENS a wave (bounded by a duration and, optionally, a merge cap); merges inside it need no
-code, and the SERVER announces each one as it happens. When the wave closes -- expiry or ``close`` -- one audit
-report of every merge is written, and sent only if the wave merged something (user ruling 2026-11-04; opening and an
-empty wave are logged, never alerted). Acknowledging it is a plain recorded acknowledgement (who, when) and needs no
-code; an unacknowledged audit of a wave that merged is reminded on the alert channel but NEVER blocks the next wave.
+code. When the wave ENDS -- ``close``, its merge cap reached, or expiry -- one report of every merge is written, and
+it is the wave's ONE alert, sent only if the wave merged something (user rulings 2026-11-04: no alert per merge, none
+for opening or an empty wave, no reminder). ``summarized`` records that a channel delivered it, so it is sent once.
+Acknowledging it is a plain recorded acknowledgement (who, when), needs no code and NEVER blocks the next wave.
 
 Each wave is ``<state>/waves/<id>.json`` with its report beside it as ``<id>.md``; at most one is open.
 """
@@ -40,7 +40,7 @@ class Merge:
 
 @dataclass
 class Wave:
-    """One wave; ``closed`` / ``acked`` / ``reminded`` are times, ``None`` while not yet."""
+    """One wave; ``closed`` / ``acked`` / ``summarized`` are times, ``None`` while not yet; ``key`` opened it."""
 
     id: str
     opened: float
@@ -50,7 +50,9 @@ class Wave:
     closed: float | None = None
     acked: float | None = None
     acked_by: str = ''
-    reminded: float | None = None
+    summarized: float | None = None
+    #: The fingerprint of the ssh key that opened it (:mod:`dev_lab.ops.sshkey`).
+    key: str = ''
 
     def state(self, now: float) -> str:
         """``open``, ``expired`` (closing is due), ``audit`` (closed, unacknowledged) or ``acknowledged``."""
@@ -73,6 +75,9 @@ def held(state: Path) -> list[Wave]:
     for path in sorted(_dir(state).glob('*.json')):
         data: dict[str, Any] = json.loads(path.read_text(encoding='utf-8'))
         data['merges'] = [Merge(**merge) for merge in data.get('merges', [])]
+        if 'reminded' in data:  # upgrade on read: that format alerted on close, so a closed wave was summarized
+            del data['reminded']
+            data['summarized'] = data.get('closed')
         found.append(Wave(**data))
     return found
 
@@ -91,12 +96,10 @@ def report(state: Path, wave: Wave) -> str:
     lines = [
         f'# Break-glass wave {wave.id}',
         '',
-        f'- opened {_iso(wave.opened)}, closed {_iso(wave.closed or wave.expires)}, {len(wave.merges)} merge(s)',
+        f'- opened {_iso(wave.opened)} by key {wave.key or "unknown"}, ended {_iso(wave.closed or wave.expires)}, '
+        f'{len(wave.merges)} merge(s)' + ('' if wave.merges else ': no merge'),
         '',
-        *(
-            f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head[:12]} by key {m.key or "unknown"}: {m.reason}'
-            for m in wave.merges
-        ),
+        *(f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head} by key {m.key or "unknown"}: {m.reason}' for m in wave.merges),
         '',
         f'Acknowledge: `python -m dev_lab.dev.forge breakglass ack {wave.id}`.',
     ]

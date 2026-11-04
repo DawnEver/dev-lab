@@ -3,7 +3,7 @@
 sshd's ``ExposeAuthInfo yes`` (rendered by :mod:`dev_lab.ops.install`) writes the methods that authenticated the
 session to a file it names in ``$SSH_USER_AUTH`` -- one ``publickey <type> <base64 blob>`` line for a key. The
 sudoers line keeps that one variable, so the root-run role reads it and records the key's ``SHA256:`` fingerprint
-(the form ``ssh-keygen -l`` and sshd's log print) in the announcement, the wave and the audit report.
+(the form ``ssh-keygen -l`` and sshd's log print) in the wave and its summary (the audit report).
 """
 
 from __future__ import annotations

@@ -26,8 +26,9 @@ from dev_lab.supervise.notice import Context, Notice, host_label
 __all__ = ['main']
 
 
-def _alert(config: OpsConfig, title: str, detail: str) -> None:
-    Notifier(config.merged).send(
+def _alert(config: OpsConfig, title: str, detail: str) -> bool:
+    """Send *title* on every configured channel; whether any delivered it."""
+    deliveries = Notifier(config.merged).send(
         Notice(
             title,
             host=host_label(config.merged.get('notify', {})),
@@ -35,6 +36,7 @@ def _alert(config: OpsConfig, title: str, detail: str) -> None:
             findings=(detail,),
         )
     )
+    return any(delivery.ok for delivery in deliveries)
 
 
 def _secret(path: str) -> str:
