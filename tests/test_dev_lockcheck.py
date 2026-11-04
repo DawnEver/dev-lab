@@ -30,7 +30,6 @@ from dev_lab.dev.lockcheck import (
     newest_stable,
     pin_stable,
     stale,
-    unfollowed,
     unreasoned_holds,
 )
 from dev_lab.dev.relock import detached_worktree
@@ -183,61 +182,12 @@ def test_a_hold_names_its_reason_on_its_line_or_the_line_above() -> None:
         'install = "uv sync --frozen --all-extras"  # a reason-free non-requirement\n'
         'y = ["e<2"]  # held: e 2 drops Windows\n'
     )
-    assert unreasoned_holds(text, None) == (
+    assert unreasoned_holds(text) == (
         'line 1: ">=3.13,<3.14"',
         'line 4: "b==2"',
         'line 4: "c~=1.0  ; python_version < \'3.13\'"',
         f'line 5: "lab @ git+https://h/o/lab.git@{"a" * 40}"',
     )
-
-
-_INTEGRATED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
-
-
-def test_a_git_requirement_at_the_integration_branch_follows_it_and_holds_nothing() -> None:
-    """User ruling 2026-11-04: family deps follow integrate/main. PLANTED: another ref is still a hold."""
-    text = (
-        'x = ["lab @ git+https://h/o/lab.git@integrate/main", "kit @ git+https://h/o/kit.git@v1"]\n'
-        'lab = { git = "https://h/o/lab.git", branch = "integrate/main" }\n'
-        'kit = { git = "https://h/o/kit.git", rev = "' + 'a' * 40 + '" }\n'
-        'ok = { git = "https://h/o/ok.git", tag = "v2" }  # held: v3 drops Windows\n'
-    )
-    assert unreasoned_holds(text, 'integrate/main') == (
-        'line 1: "kit @ git+https://h/o/kit.git@v1"',
-        f'line 3: kit = {{ git = "https://h/o/kit.git", rev = "{"a" * 40}" }}',
-    )
-    assert len(unreasoned_holds(text, None)) == 4, 'CONTROL: undeclared, the integration ref is a hold too'
-
-
-def test_a_git_dependency_naming_no_ref_follows_the_trunk_and_is_refused() -> None:
-    """A bare git requirement or source tracks the remote's default branch (main), never the integration line."""
-    text = (
-        'x = ["lab @ git+https://h/o/lab.git", "kit @ git+https://h/o/kit.git@integrate/main", "dep>=1"]\n'
-        'lab = { git = "https://h/o/lab.git" }\n'
-        'kit = { git = "https://h/o/kit.git", branch = "integrate/main" }\n'
-        '# lab = { git = "https://h/o/lab.git" }\n'
-    )
-    assert unfollowed(text) == (
-        'line 1: "lab @ git+https://h/o/lab.git"',
-        'line 2: lab = { git = "https://h/o/lab.git" }',
-    )
-
-
-def test_a_repo_declaring_its_integration_is_refused_a_trunk_dependency(tmp_path: Path) -> None:
-    """PLANTED: a bare family dep reds the pin naming the remedy; @integration greens it."""
-    root = tmp_path / 'r'
-    root.mkdir()
-    _git(root, 'init', '-q', '-b', 'main')
-    manifest = '[project]\nname = "x"\nversion = "0"\ndependencies = ["lab @ git+https://h/o/lab.git{}"]\n'
-    bare = _commit(root, {'uv.lock': 'version = 1\n', 'pyproject.toml': manifest.format('') + _INTEGRATED})
-    assert lock_problems(root, bare) == (
-        (
-            'line 4: "lab @ git+https://h/o/lab.git" follows the default branch, not the integration line;'
-            ' name its ref integrate/main'
-        ),
-    )
-    followed = _commit(root, {'pyproject.toml': manifest.format('@integrate/main') + _INTEGRATED})
-    assert lock_problems(root, followed) == ()
 
 
 def test_no_family_pre_push_row_reads_the_lock_or_the_branch_set() -> None:
