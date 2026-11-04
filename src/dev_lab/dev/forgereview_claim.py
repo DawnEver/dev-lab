@@ -2,7 +2,10 @@
 
 :mod:`dev_lab.dev.forgereview` claims a head (:data:`CLAIMED`) before it runs the command; every other host skips
 it until the claim is released, goes stale, or the host posts :data:`HOST_UNABLE` -- a fact about the host, so the
-head stays claimable.
+head stays claimable. A claim posted by an Actions job names its run (:func:`claim_of`), and a claim whose run has
+ENDED is free at once (:func:`run_ended`): a cancelled run never releases its claim -- the runner kills the job
+without running a trap or an ``always()`` step it could post from -- so the forge's record of the run is the one
+signal that survives a cancellation (2026-11-04, dev-lab #79: a claim held its head 10 h until it went stale).
 
 A PURE SYNC carries its reviewed head's verdict (D52, user ruling 2026-11-01; :func:`synced`): only a success the
 gate itself counts at that head (:func:`counted_success`, the gate's own :func:`~dev_lab.dev.reviewgate.forge_posted`)
@@ -11,9 +14,10 @@ is carried, so no planted or self-posted status can be inherited.
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgestatus import CARRIED_FROM, status_list
@@ -21,15 +25,15 @@ from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import forge_posted, post_review
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'CAPPED', 'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'PURE_SYNC', 'RELEASED', 'claimable', 'counted_success',
-    'passed', 'standing', 'synced', 'unable',
+    'CAPPED', 'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'PURE_SYNC', 'RELEASED', 'claim_of', 'claimable',
+    'counted_success', 'live_claim', 'passed', 'run_ended', 'standing', 'synced', 'unable',
 ]  # fmt: skip
 
 #: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
@@ -46,7 +50,48 @@ HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 #: merge waits, and the head stays claimable so a raised cap or a new month is read on the next tick.
 CAPPED: Final = 'review capped, merge waits:'
 
-_CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
+_CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing(?: \(run (?P<run>\d+)\))?')
+
+
+def _never(_run: str) -> bool:
+    return False
+
+
+def claim_of(host: str, at: datetime, env: Mapping[str, str] | None = None) -> str:
+    """The :data:`CLAIMED` description *host* posts at *at*; inside an Actions job it names the job's run."""
+    run = (os.environ if env is None else env).get('GITHUB_RUN_ID', '')
+    named = f' (run {run})' if run.isdigit() else ''
+    return f'{CLAIMED} {host} at {at.isoformat(timespec="seconds")}, reviewing{named}'
+
+
+def run_ended(client: Client, env: Mapping[str, str] | None = None) -> Callable[[str], bool]:
+    """Whether the Actions run a claim names has ended, read from *client*'s forge (``GET .../actions/runs/{id}``).
+
+    This job's OWN run id is ended too: a re-run reuses the id, so its claim is an earlier, killed attempt's.
+    A run the forge cannot answer for is NOT ended -- the claim then holds until it goes stale, as before.
+    """
+    own = (os.environ if env is None else env).get('GITHUB_RUN_ID', '')
+
+    def ended(run: str) -> bool:
+        if run == own:
+            return True
+        try:
+            answer: Any = client.call('GET', f'{client.repo}/actions/runs/{run}')
+        except OSError:
+            return False
+        if not isinstance(answer, dict):
+            return False
+        return bool(answer.get('conclusion')) or answer.get('status') == 'completed'
+
+    return ended
+
+
+def live_claim(status: CommitStatus | None, ended: Callable[[str], bool]) -> bool:
+    """Whether *status* is a claim by an Actions run the forge records as still running: that run posts the verdict."""
+    if status is None or status.state != 'pending' or (claim := _CLAIM.match(status.description)) is None:
+        return False
+    return bool(claim['run']) and not ended(claim['run'])
+
 
 #: Why a pure sync's status carries (D52): ``carried from <sha12>: pure sync``, as a docs-only carry names its source.
 PURE_SYNC: Final = 'pure sync'
@@ -55,8 +100,12 @@ PURE_SYNC: Final = 'pure sync'
 DESCRIPTION: Final = 240
 
 
-def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> bool:
-    """Whether a head whose review status is *status* may be claimed: none, a released or stale claim, or a host unable.
+def claimable(
+    status: CommitStatus | None, now: datetime, stale: timedelta, ended: Callable[[str], bool] = _never
+) -> bool:
+    """Whether a head whose review status is *status* may be claimed: none, a released, stale or ended claim.
+
+    A claim is ended when the run it names has ended (*ended*, :func:`run_ended`); one naming no run is not.
 
     A host that could not run the review (:data:`HOST_UNABLE`) is the host's fault, never the head's.
     """
@@ -72,24 +121,30 @@ def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> b
         at = datetime.fromisoformat(claim['at'])
     except ValueError:
         return True  # an unreadable claim cannot hold a head forever
-    return now - at >= stale
+    return now - at >= stale or (bool(claim['run']) and ended(claim['run']))
 
 
-def standing(client: Client, now: datetime, stale: timedelta) -> Callable[[str], CommitStatus | str]:
+def standing(
+    client: Client, now: datetime, stale: timedelta, ended: Callable[[str], bool] = _never
+) -> Callable[[str], CommitStatus | str]:
     """A sha's review as :func:`dev_lab.dev.forgecarry.docs_only` reads it: posted, live claim, else none."""
 
     def stood(sha: str) -> CommitStatus | str:
         latest = next((one for one in status_list(client, sha) if one.context == REVIEW_CONTEXT), None)
         if latest is not None and latest.state == 'success':
             return latest
-        return RUNNING if latest is not None and latest.state == 'pending' and not claimable(latest, now, stale) else ''
+        return (
+            RUNNING
+            if latest is not None and latest.state == 'pending' and not claimable(latest, now, stale, ended)
+            else ''
+        )
 
     return stood
 
 
 def passed(
     root: Path, client: Client, head: str, now: datetime, stale: timedelta, *,
-    counted: Callable[[CommitStatus], bool] | None = None,
+    counted: Callable[[CommitStatus], bool] | None = None, ended: Callable[[str], bool] = _never,
 ) -> str | None:  # fmt: skip
     """Why *head* is not reviewed now: ``''`` its own review is posted or held, else what carries; ``None``: review it.
 
@@ -99,9 +154,9 @@ def passed(
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
     if latest is not None and latest.state == 'success' and counted is not None and not counted(latest):
         latest = None
-    if not claimable(latest, now, stale):
+    if not claimable(latest, now, stale, ended):
         return ''
-    carry = docs_only(root, head, standing(client, now, stale), data_waits=False)
+    carry = docs_only(root, head, standing(client, now, stale, ended), data_waits=False)
     if carry is not None and carry.verdict is not None:
         why = f'{carry.hold}: the review of {carry.source[:12]} stands'[:DESCRIPTION]
         post_review(client, head, state=carry.verdict.state, description=why, target_url=carry.verdict.url)

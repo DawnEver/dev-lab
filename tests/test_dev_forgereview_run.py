@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,13 +23,14 @@ from dev_lab.dev import blobfetch, forgereview_rounds, forgereview_scope, review
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
+from dev_lab.dev.forgereview_claim import claim_of
 from dev_lab.dev.forgereview_command import ReviewUnsupported, Runner, run_command
 from dev_lab.dev.forgereview_declared import review_at
 from dev_lab.dev.forgereview_dispose import dispose
 from dev_lab.dev.forgereview_judge import Identity
 from dev_lab.dev.forgereview_rounds import Ledger, ledger_of, trusted_bodies
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgetakeover import held, main, review_run, runtimes_with
+from dev_lab.dev.forgetakeover import held, job_exit, main, review_run, runtimes_with
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import HOLD_CONTEXT
@@ -552,3 +554,65 @@ def test_a_declared_reviewers_ledger_is_read_by_a_job_of_another_login() -> None
         assert (seen is not None and seen.round == 3) is read, author
         assert all('round text' not in body and 'review-adjudication' not in body for body in bodies)
         assert any(marker(Marker.REVIEW, head) in body for body in bodies) is read
+
+
+def _claimed(forge: StateForge, head: str, *, conclusion: str, age: timedelta = timedelta(0)) -> str:
+    """Plant a claim on *head* by an Actions run that concluded *conclusion* (``''``: still running); its id."""
+    run_id, _url = forge.add_run(head, event='pull_request', path='ci.yml@refs/pull/1/head', conclusion=conclusion)
+    named = claim_of('gone', datetime.now(UTC) - age, {'GITHUB_RUN_ID': str(run_id)})
+    status_post(forge, head, context=REVIEW_CONTEXT, state='pending', description=named)
+    return str(run_id)
+
+
+@pytest.mark.parametrize('conclusion', ['cancelled', 'failure'])
+def test_a_claim_whose_run_ended_is_taken_over_at_once(tmp_path: Path, monkeypatch, conclusion: str) -> None:
+    """dev-lab #79: a run cancelled after its claim never releases it; the next run reads the run and takes over.
+
+    PLANTED CONTROL: the same claim by a run still in progress is respected (no command, exit 0, said as a claim).
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
+    monkeypatch.setenv('GITHUB_RUN_ID', '99999')
+    _claimed(forge, head, conclusion=conclusion)
+    command = FakeCommand()
+    review_run(work, forge, _DECLARED, number, base='integrate/main', runner=Runner('r', run=command, ready=_can))
+    assert len(command.ran) == 1, 'an ended run cannot post its verdict: the head is reviewed now'
+    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'success'
+
+    (tmp_path / 'control').mkdir()
+    other_work, other_head = _work(tmp_path / 'control')
+    control, other = _forge(other_head)
+    control.login = ACTIONS_BOT
+    _claimed(control, other_head, conclusion='')
+    idle = FakeCommand()
+    runner = Runner('r', run=idle, ready=_can)
+    said = review_run(other_work, control, _DECLARED, other, base='integrate/main', runner=runner)
+    assert idle.ran == [], 'a live run holds its claim'
+    assert 'claimed by another run' in said
+    assert 'already reviewed' not in said, 'a claimed head is not a reviewed one'
+    assert job_exit(control, other, [], base='integrate/main') == 0, 'the live claim holder posts the verdict'
+
+
+def test_a_stale_claim_is_still_taken_over_and_a_serve_claim_names_no_run(tmp_path: Path, monkeypatch) -> None:
+    """A live run's claim older than ``claim_stale`` is free (the stale rule stands); a serve claim names no run."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
+    _claimed(forge, head, conclusion='', age=timedelta(hours=2))
+    command = FakeCommand()
+    review_run(work, forge, _DECLARED, number, base='integrate/main', runner=Runner('r', run=command, ready=_can))
+    assert len(command.ran) == 1
+    monkeypatch.delenv('GITHUB_RUN_ID', raising=False)
+    assert claim_of('box', datetime.now(UTC)).endswith(', reviewing')
+
+
+def test_a_rerun_takes_over_the_claim_of_its_own_earlier_attempt(tmp_path: Path, monkeypatch) -> None:
+    """``gh run rerun`` keeps the run id, and the run reads in progress: a claim naming this job's own run is ended."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    forge.login = ACTIONS_BOT
+    monkeypatch.setenv('GITHUB_RUN_ID', _claimed(forge, head, conclusion=''))
+    command = FakeCommand()
+    review_run(work, forge, _DECLARED, number, base='integrate/main', runner=Runner('r', run=command, ready=_can))
+    assert len(command.ran) == 1
