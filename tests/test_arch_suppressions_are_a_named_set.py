@@ -212,6 +212,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'import fcntl',
     ): 'the POSIX lock primitive: fcntl exists only on POSIX, so a top-level import breaks Windows',
     (
+        'src/dev_lab/ops/totp.py',
+        'PLC0415',
+        'import segno',
+    ): 'segno is the ops extra: only the enrolling host draws a QR; a consumer reading codes never installs it',
+    (
         'tests/test_dev_githooks.py',
         'PLC0415',
         'import os',

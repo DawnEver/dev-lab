@@ -1,6 +1,6 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``breakglass serve|enrol|tick``, ``backup export|pull``, ``access enrol``.
+Verbs: ``install``, ``promote``, ``breakglass serve|enrol|tick``, ``backup export|pull``, ``access enrol|adopt``.
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -41,11 +41,45 @@ def _secret(path: str) -> str:
     return Path(path).read_text(encoding='utf-8').strip()
 
 
-def _access(config: OpsConfig, *, force: bool) -> int:
+def _show(link: str, *, uri_only: bool) -> None:
+    """The enrolment to the enrolling terminal only (stdout, never a log): a QR to scan, or the bare URI."""
+    if uri_only:
+        emit(link)
+        return
+    emit(totp.qr(link))
+    emit('[ops] scan this QR into the Authenticator; it is shown once (--uri prints the bare URI instead)', err=True)
+
+
+def _install(config: OpsConfig, root: Path) -> int:
+    as_root = sys.platform != 'win32' and os.geteuid() == 0
+    try:
+        done = install.install(config, root, chown=shutil.chown if as_root else None)
+    except ValueError as refused:
+        emit(f'[ops install] refused: {refused}', err=True)
+        return 2
+    for path, state in done.paths.items():
+        emit(f'{state:9} {path}')
+    emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
+    return 0
+
+
+def _read_input(source: str) -> str:
+    """A secret from a file, or stdin for ``-``: never an argument, which a process listing would show."""
+    return sys.stdin.read() if source == '-' else Path(source).read_text(encoding='utf-8')
+
+
+def _access(config: OpsConfig, action: str, *, force: bool, uri_only: bool, secret_from: str) -> int:
     if config.access is None:
         emit(f'[ops] {config.path} enables no [ops.access]', err=True)
         return 2
-    emit(access.enrol(config.access, force=force))
+    try:
+        if action == 'adopt':
+            emit(access.adopt(config, _read_input(secret_from)))
+        else:
+            _show(access.enrol(config, force=force), uri_only=uri_only)
+    except (totp.TotpRefused, ValueError, OSError) as refused:
+        emit(f'[ops access] refused: {refused}', err=True)
+        return 2
     return 0
 
 
@@ -70,17 +104,14 @@ def _backup(config: OpsConfig, verb: str) -> int:
     return 0
 
 
-def _breakglass(config: OpsConfig, verb: str, *, force: bool) -> int:
+def _breakglass(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) -> int:
     role = config.breakglass
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
         return 2
     if verb == 'enrol':
         secret = totp.enrol(Path(role.totp), force=force)
-        emit(totp.uri(secret, issuer=role.issuer, account=role.account))
-        emit(
-            '[ops] scan this URI (e.g. `qrencode -t ANSIUTF8 <uri>`) into the Authenticator; it is shown once', err=True
-        )
+        _show(totp.uri(secret, issuer=role.issuer, account=role.account), uri_only=uri_only)
         return 0
     server = breakglass.Server(
         config,
@@ -108,10 +139,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'enrol', 'tick'))
     glass.add_argument('--force', action='store_true', help='enrol: replace an existing secret')
+    glass.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
     verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
     opened = verbs.add_parser('access')
-    opened.add_argument('action', choices=('enrol',))
+    opened.add_argument('action', choices=('enrol', 'adopt'))
     opened.add_argument('--force', action='store_true', help='replace an existing secret')
+    opened.add_argument('--uri', action='store_true', help='print the otpauth URI, not its QR')
+    opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")
     args = parser.parse_args(argv)
     try:
         config = load(args.config)
@@ -119,12 +153,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'[ops] {bad}', err=True)
         return 2
     if args.verb == 'install':
-        as_root = sys.platform != 'win32' and os.geteuid() == 0
-        done = install.install(config, args.root, chown=shutil.chown if as_root else None)
-        for path, state in done.paths.items():
-            emit(f'{state:9} {path}')
-        emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
-        return 0
+        return _install(config, args.root)
     if args.verb == 'promote':
         failed = [o for o in promote.run(config) if o.state == 'failed']
         for outcome in failed:
@@ -133,8 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.verb == 'backup':
         return _backup(config, args.action)
     if args.verb == 'access':
-        return _access(config, force=args.force)
-    return _breakglass(config, args.action, force=args.force)
+        return _access(config, args.action, force=args.force, uri_only=args.uri, secret_from=args.secret_file)
+    return _breakglass(config, args.action, force=args.force, uri_only=args.uri)
 
 
 if __name__ == '__main__':

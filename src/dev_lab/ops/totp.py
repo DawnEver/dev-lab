@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import os
 import secrets
 import struct
@@ -19,7 +20,19 @@ from pathlib import Path
 from typing import Final
 from urllib.parse import quote
 
-__all__ = ['DIGITS', 'STEP', 'WINDOW', 'TotpRefused', 'accept', 'code_at', 'enrol', 'uri']
+__all__ = [
+    'DIGITS',
+    'STEP',
+    'WINDOW',
+    'TotpRefused',
+    'accept',
+    'adopt',
+    'code_at',
+    'enrol',
+    'qr',
+    'uri',
+    'write_private',
+]
 
 #: Seconds per time-step (RFC 6238 default; every Authenticator app's).
 STEP: Final = 30
@@ -27,6 +40,8 @@ STEP: Final = 30
 DIGITS: Final = 6
 #: Steps of clock skew accepted either side of now.
 WINDOW: Final = 1
+#: The fewest secret bits an adopted secret may carry (RFC 4226 floor is 128; Authenticator exports reach 80).
+_MIN_BITS: Final = 80
 
 
 class TotpRefused(ValueError):
@@ -92,14 +107,60 @@ def uri(secret: str, *, issuer: str, account: str) -> str:
     return f'otpauth://totp/{label}?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits={DIGITS}&period={STEP}'
 
 
+def qr(text: str) -> str:
+    """*text* as a QR code drawn in half-block characters, light modules as blocks (a dark terminal's colours).
+
+    Needs the ``dev-lab[ops]`` extra (segno). Shown ONLY on the terminal that enrolled: it carries the secret, so
+    it is returned for stdout, never logged.
+    """
+    import segno  # noqa: PLC0415 -- the ops extra: a consumer importing totp for codes never needs it
+
+    out = io.StringIO()
+    segno.make(text, error='m').terminal(out=out, compact=True)
+    return out.getvalue()
+
+
 def enrol(secret_file: Path, *, force: bool = False) -> str:
     """Generate a 160-bit secret into *secret_file* (mode 600) and return it; refuse to replace one unless *force*."""
     if secret_file.is_file() and secret_file.read_text(encoding='utf-8').strip() and not force:
         msg = f'{secret_file} already holds a secret; --force replaces it (the old Authenticator entry stops working)'
         raise TotpRefused(msg)
     secret = base64.b32encode(secrets.token_bytes(20)).decode().rstrip('=')
-    secret_file.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(secret_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, 'w', encoding='utf-8') as out:
-        out.write(secret + '\n')
+    write_private(secret_file, secret + '\n')
     return secret
+
+
+def adopt(secret_file: Path, secret: str) -> bool:
+    """Place an EXISTING secret (one the user's Authenticator already holds) at *secret_file*, mode 600.
+
+    Returns whether it wrote: the same secret already there is a no-op. Never echoes the secret.
+
+    Raises:
+        TotpRefused: *secret* is not base32 of at least 80 bits, or *secret_file* holds a different secret.
+
+    """
+    secret = secret.strip().upper().rstrip('=')
+    try:
+        bits = len(_key(secret)) * 8
+    except (ValueError, base64.binascii.Error):
+        bits = 0
+    if bits < _MIN_BITS:
+        msg = f'the adopted secret is not base32 of at least {_MIN_BITS} bits'
+        raise TotpRefused(msg)
+    held = secret_file.read_text(encoding='utf-8').strip().upper() if secret_file.is_file() else ''
+    if held == secret:
+        return False
+    if held:
+        msg = f'{secret_file} already holds a different secret; a host has ONE TOTP secret, refusing to replace it'
+        raise TotpRefused(msg)
+    write_private(secret_file, secret + '\n')
+    return True
+
+
+def write_private(path: Path, text: str) -> None:
+    """Write *text* to *path* created mode 600 (and re-narrowed to 600 if it existed), making its parent."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, 'w', encoding='utf-8') as out:
+        out.write(text)
+    path.chmod(0o600)
