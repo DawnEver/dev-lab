@@ -259,7 +259,9 @@ class SystemdProcessManager:
             return Ran(code=0, out='already gone')
         return self.runner([self.systemctl, 'stop', name], 120, None)
 
-    def run_capped(self, argv: list[str], *, memory_max: str, timeout: int, cwd: str | None = None) -> Ran:
+    def run_capped(
+        self, argv: list[str], *, memory_max: str, timeout: int, cwd: str | None = None, within: int | None = None
+    ) -> Ran:
         """Run *argv* in the box under a memory ceiling (the module docstring).
 
         ``timeout`` is the claim's WALL, so the box kills the command's whole tree within its own
@@ -271,19 +273,21 @@ class SystemdProcessManager:
             memory_max: the ceiling, e.g. ``600M``.
             timeout: seconds to allow the command.
             cwd: working directory, or None for the caller's.
+            within: the call's whole budget; the queue wait is what is left of it after the wall and
+                :data:`_GRACE` (floored at 0), else :data:`CAPPED_QUEUE_S`. A wait that outlived the
+                caller's deadline turned every refusal into the caller's timeout.
 
         Returns:
             What the command produced.
 
         """
+        queue = CAPPED_QUEUE_S if within is None else max(0, within - timeout - _GRACE)
         demand = Demand(cpu=CAPPED_CPU, mem_gb=ceiling_gb(memory_max))
         what = f'supervise: {" ".join(argv)}'[:120]
         with tempfile.TemporaryDirectory(prefix='lab-supervise-box-') as scratch:
             record = Path(scratch) / 'outcome.json'
-            boxed = command(
-                argv, demand, timeout, CAPPED_QUEUE_S, key=f'supervise:{argv[0]}', what=what, outcome=record
-            )
-            return judged(self.runner(boxed, timeout + CAPPED_QUEUE_S + _GRACE, cwd), record)
+            boxed = command(argv, demand, timeout, queue, key=f'supervise:{argv[0]}', what=what, outcome=record)
+            return judged(self.runner(boxed, timeout + queue + _GRACE, cwd), record)
 
 
 def judged(ran: Ran, record: Path) -> Ran:

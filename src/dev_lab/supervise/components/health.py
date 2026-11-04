@@ -9,10 +9,12 @@ counted as reachable.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
 
 from dev_lab.supervise.component import CheckContext, Component
+from dev_lab.supervise.config import DEFAULTS
 from dev_lab.supervise.transport import OK_CEILING, OK_FLOOR, Transport, fetch_json, scheme_transport
 from dev_lab.supervise.verdict import Anomaly, CheckResult, Severity, condition_digest
 
@@ -169,17 +171,24 @@ class ShellProbe(Component):
 
         """
         result = CheckResult()
+        # THE PROBES SHARE THE LOOP'S `cycle.check_timeout`, run one after another, so each is handed
+        # what is left of it: a probe the box could not admit then reports the refusal, instead of
+        # the loop's timeout firing first and naming every refusal `shell_probe:timeout`.
+        deadline = time.monotonic() + int(
+            ctx.shared.get('cycle', {}).get('check_timeout', DEFAULTS['cycle']['check_timeout'])
+        )
         for probe in ctx.config.get('probes', []):
-            result.anomalies.extend(self._one(ctx, probe, result))
+            result.anomalies.extend(self._one(ctx, probe, result, int(deadline - time.monotonic())))
         return result
 
-    def _one(self, ctx: CheckContext, probe: dict[str, Any], result: CheckResult) -> list[Anomaly]:
+    def _one(self, ctx: CheckContext, probe: dict[str, Any], result: CheckResult, within: int) -> list[Anomaly]:
         """Run one probe, recording its value, and return what is wrong with it.
 
         Args:
             ctx: the check context.
             probe: the probe's table.
             result: the result being built, so a value can be recorded.
+            within: the seconds left of the check's budget.
 
         Returns:
             The anomalies this probe produced.
@@ -205,6 +214,7 @@ class ShellProbe(Component):
             ['sh', '-c', command],
             memory_max=str(ctx.shared.get('cycle', {}).get('command_ceiling', '400M')),
             timeout=int(probe.get('timeout', 10)),
+            within=within,
         )
         if not ran.ok and not probe.get('ignore_errors'):
             return [

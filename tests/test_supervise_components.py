@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import http.client
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from _box_fake import boxed_as_run
+from _box_fake import boxed_as_run, record
+from lab_commons.box import Refused
 
 from dev_lab.supervise.alert import Transport
 from dev_lab.supervise.component import CheckContext
@@ -20,6 +22,7 @@ from dev_lab.supervise.components.progress import ProgressTracker
 from dev_lab.supervise.components.resources import RAM_CRITICAL, DiskUsage, LogScanner, _one_process
 from dev_lab.supervise.process import SystemdProcessManager
 from dev_lab.supervise.process.base import Ran
+from dev_lab.supervise.process.systemd import CAPPED_QUEUE_S
 from dev_lab.supervise.transport import fetch_json
 from dev_lab.supervise.verdict import Severity
 
@@ -399,3 +402,40 @@ def test_a_filesystem_reporting_no_size_is_not_an_empty_one(monkeypatch: pytest.
     result = DiskUsage().check(_ctx({'paths': [{'path': '/', 'name': 'x'}]}))
     assert 'disk_unmeasurable' in [one.kind for one in result.anomalies]
     assert 'x_percent' not in result.metrics, 'a size nobody could read was reported as zero'
+
+
+def test_a_probe_the_box_refuses_reports_the_refusal_within_the_check_timeout() -> None:
+    """THE REGRESSION (forge-amd2, 2026-11-04): an admission refusal is reported AS a refusal.
+
+    A 120 s admission wait outlived the loop's 60 s check, so a refusal read
+    as `shell_probe:timeout`. The probe's queue is what is left of `cycle.check_timeout` after its wall and the grace.
+    """
+    seen: list[tuple[list[str], int]] = []
+
+    def run(argv: list[str], allowed: int, _cwd: str | None) -> Ran:
+        seen.append((argv, allowed))
+        record(argv, Refused('lacking cpu (1 asked, 0.957633 free)'))
+        return Ran(code=0)
+
+    ctx = _ctx(
+        {'probes': [{'name': 'gitea', 'command': 'curl x', 'timeout': 20}]}, shared={'cycle': {'check_timeout': 60}}
+    )
+    ctx = replace(ctx, manager=SystemdProcessManager(runner=run))
+    [anomaly] = ShellProbe().check(ctx).anomalies
+    assert 'box refused' in anomaly.message
+    assert ':timeout' not in anomaly.signature
+    argv, allowed = seen[0]
+    assert int(argv[argv.index('--queue-s') + 1]) <= 60 - 20, 'the wait must end before the check does'
+    assert allowed <= 60, 'the whole call fits inside the check timeout'
+
+
+def test_a_capped_run_without_a_deadline_keeps_the_managers_queue() -> None:
+    """PLANTED CONTROL: a remedy or build hands no deadline and still waits the manager's own queue."""
+    seen: list[list[str]] = []
+
+    def run(argv: list[str], _allowed: int, _cwd: str | None) -> Ran:
+        seen.append(argv)
+        return boxed_as_run(argv, Ran(code=0))
+
+    SystemdProcessManager(runner=run).run_capped(['true'], memory_max='200M', timeout=20)
+    assert seen[0][seen[0].index('--queue-s') + 1] == str(CAPPED_QUEUE_S)

@@ -75,7 +75,9 @@ class _Scripted:
         self.restarts.append(unit)
         return self.responses.get('restart', Ran(code=0))
 
-    def run_capped(self, argv: list[str], *, memory_max: str, timeout: int, cwd: str | None = None) -> Ran:
+    def run_capped(
+        self, argv: list[str], *, memory_max: str, timeout: int, cwd: str | None = None, within: int | None = None
+    ) -> Ran:
         """Record and answer a command."""
         return self._answer(argv)
 
