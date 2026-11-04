@@ -57,6 +57,8 @@ class StateForge(Client):
         #: ``pyproject.toml`` at every ref (default: it adopts the Actions review), ``pyproject_at`` overriding one ref.
         self.pyproject = '[tool.dev_lab.ci."review.yml"]\n'
         self.pyproject_at: dict[str, str | None] = {}  # ``None``: the file is absent at that ref
+        #: Every PR review by pull number, as ``GET .../pulls/{n}/reviews`` lists them (:meth:`add_review`).
+        self.reviews: dict[int, list[dict[str, Any]]] = {}
 
     def add_run(
         self, head: str, *, repo: str = 'o/r', event: str = 'pull_request_target',
@@ -73,6 +75,23 @@ class StateForge(Client):
             {'id': run_id, 'head_sha': head, 'html_url': url, 'event': event, 'path': path, 'conclusion': conclusion}
         )
         return run_id, url
+
+    def add_review(self, number: int, *, login: str, state: str, commit: str) -> None:
+        """*login*'s PR review on pull *number* at *commit*, ids ascending as the forge assigns them."""
+        self._next_comment += 1
+        row = {'id': self._next_comment, 'user': {'login': login}, 'state': state, 'commit_id': commit}
+        self.reviews.setdefault(number, []).append(row)
+
+    def _pulls_of(self, sha: str) -> list[dict[str, Any]]:
+        return [pull for pull in self.pulls.values() if pull['head']['sha'] == sha]
+
+    def _pull_of(self, sha: str) -> dict[str, Any]:
+        """Gitea's ``commits/{sha}/pull``: the one pull at *sha*, else a 404."""
+        found = self._pulls_of(sha)
+        if not found:
+            missing = Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED)
+            raise ForgeCallFailed(Report(('GET', 'commit pull'), (missing,), 1))
+        return found[-1]
 
     def _runs(self, query: dict[str, str]) -> dict[str, Any]:
         mine = [r for r in self.runs if f'/{self.forge.owner}/{self.forge.repo}/' in r['html_url']]
@@ -135,7 +154,7 @@ class StateForge(Client):
         page = int(query.get('page', '1'))
         return items[(page - 1) * size : page * size]
 
-    def _shape(self, route: str) -> tuple[str, str]:
+    def _shape(self, route: str) -> tuple[str, str]:  # noqa: PLR0911 -- one return per route family
         """The route's kind and the key in it (a number or a sha; ``''`` when none)."""
         api = self.repo
         fixed = {
@@ -156,6 +175,9 @@ class StateForge(Client):
         ):
             if route.startswith(prefix):
                 return kind, route.removeprefix(prefix)
+        if route.startswith(f'{api}/commits/') and route.endswith(('/pull', '/pulls')):
+            sha, _, tail = route.removeprefix(f'{api}/commits/').partition('/')
+            return f'commit_{tail}', sha
         if route.startswith(f'{api}/commits/') and route.endswith('/statuses'):  # GitHub's list, with creators
             return 'statuses', route.removeprefix(f'{api}/commits/').removesuffix('/statuses')
         if route.startswith(f'{api}/pulls/'):
@@ -163,6 +185,7 @@ class StateForge(Client):
             number, _, tail = rest.partition('/')
             # gitea's ``pulls/{base}/{head}`` is the newest PR of that pair
             kind = 'pull_pair' if not number.isdigit() else 'merge' if tail == 'merge' else 'pull'
+            kind = 'reviews' if tail == 'reviews' else kind
             return kind, rest if kind == 'pull_pair' else number
         head, _, tail = route.removeprefix(f'{api}/issues/').partition('/')
         if head == 'comments':
@@ -305,6 +328,9 @@ class StateForge(Client):
             ('GET', 'pulls'): lambda: self._pulls_listed(query),
             ('POST', 'pulls'): lambda: self._create_pull(sent),
             ('GET', 'pull'): lambda: self.pulls[number],
+            ('GET', 'reviews'): lambda: self._page(self.reviews.get(number, []), query),
+            ('GET', 'commit_pull'): lambda: self._pull_of(key),
+            ('GET', 'commit_pulls'): lambda: self._pulls_of(key),
             ('GET', 'pull_pair'): lambda: self._pull_pair(key),
             ('PATCH', 'pull'): lambda: self._edit_pull(number, sent),
             ('POST', 'merge'): lambda: self._merge(number, sent),

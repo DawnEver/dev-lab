@@ -179,6 +179,11 @@ class Forge:
     repo: str
 
     @property
+    def identity(self) -> str:
+        """``<host>/<owner>/<repo>``: the repository's one name across every forge (a mirror's twin differs by host)."""
+        return f'{self.host}/{self.owner}/{self.repo}'
+
+    @property
     def api(self) -> str:
         """The API root this forge family publishes."""
         return '/api/v1'

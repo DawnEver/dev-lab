@@ -38,9 +38,9 @@ __all__ = [
 ]
 
 #: The git hook types the family runs, in the order a commit then a push meets them.
-STAGES: Final[tuple[str, ...]] = ('pre-commit', 'commit-msg', 'post-commit', 'pre-push')
+STAGES: Final[tuple[str, ...]] = ('pre-commit', 'commit-msg', 'post-commit', 'pre-push', 'post-merge', 'post-checkout')
 #: Stages that run after git has done the act: a row there only speaks, and never changes the exit status.
-ADVISORY: Final = frozenset({'post-commit'})
+ADVISORY: Final = frozenset({'post-commit', 'post-merge', 'post-checkout'})
 
 #: The family base, as data.
 BASE_PATH: Final = Path(__file__).resolve().parent / 'base.toml'

@@ -101,6 +101,7 @@ __all__ = [
     'check_rclone_config',
     'clean',
     'collect',
+    'config_from',
     'large_store',
     'load_config',
     'object_key',
@@ -242,7 +243,12 @@ class Config:
 def load_config(root: Path) -> Config:
     """The repo's table, validated; no table is :class:`Config` (forge only)."""
     pyproject = root / 'pyproject.toml'
-    raw = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
+    return config_from(pyproject.read_text(encoding='utf-8') if pyproject.is_file() else '', str(pyproject))
+
+
+def config_from(text: str, where: str) -> Config:
+    """The table of the manifest *text* (read from *where*, named in a refusal), validated; none is forge only."""
+    raw = tomllib.loads(text)
     table = raw.get('tool', {}).get('lab_commons', {}).get('artefacts', {})
     known = {field.name for field in dataclasses.fields(Config)}
     problems = [f'unknown key {key!r}' for key in sorted(set(table) - known)]
@@ -260,7 +266,7 @@ def load_config(root: Path) -> Config:
     if config.retain_days < 1 or config.cap_gb < 0:
         problems.append('retain_days must be >= 1 and cap_gb >= 0')
     if problems:
-        msg = f'{pyproject} [{_TABLE}]: {"; ".join(problems)}'
+        msg = f'{where} [{_TABLE}]: {"; ".join(problems)}'
         raise ArtefactRefused(msg)
     return config
 

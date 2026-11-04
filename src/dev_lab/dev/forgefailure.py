@@ -40,8 +40,8 @@ class ForgeCallFailed(OSError):
     def __init__(self, report: Report, *, credential_gone: bool = False, credential_kept: bool = False) -> None:
         """Carry the report; on a 401/403 the message adds what the credential check and refresh MEASURED.
 
-        *credential_gone*: the refresh left the store holding no credential -- a re-login fixes it.
-        *credential_kept*: the store cannot refresh, so the refused credential was kept -- a re-login may fix it.
+        *credential_gone*: the refresh left the store holding no credential -- retried and measured, never a re-login.
+        *credential_kept*: the store cannot refresh, so the refused credential was kept -- retried and measured.
         """
         last = report.attempts[-1].returncode if report.attempts else 0
         said = _forge.AUTH_TRANSIENT

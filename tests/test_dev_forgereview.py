@@ -48,7 +48,7 @@ from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
-from dev_lab.dev.reviewgate import github_posted
+from dev_lab.dev.reviewgate import github_posted, status_gate
 
 _LANE_POLICY = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -63,6 +63,16 @@ _MANIFEST = (
     "quiet = '0 s'\n"  # the step reviews at once; the debounce has its own test
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_inherited_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests simulate review HOSTS, not one Actions run, so none inherits the runner's run id.
+
+    A CI runner's ``GITHUB_RUN_ID`` would make every simulated host share one run, and a claim naming the
+    reader's own run reads as a killed re-run's.
+    """
+    monkeypatch.delenv('GITHUB_RUN_ID', raising=False)
 
 
 def _output(
@@ -195,7 +205,9 @@ def test_an_empty_command_names_the_fix_at_the_merge_and_at_the_takeover(tmp_pat
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     green = (_status('tests/base', 'success', 'scope=full'), _status('tests/security', 'success', 'nothing found'),
              _status(REVIEW_CONTEXT, 'success', 'reviewed'))  # fmt: skip
-    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=green, posted=github_posted)
+    found = decide(
+        work, policy, branch='pr/x', number=1, head=head, statuses=green, reviewed=status_gate(github_posted)
+    )
     assert not found.ready
     assert any(EMPTY_COMMAND_FIX in line for line in found.missing), found.missing
     said: list[str] = []
@@ -523,7 +535,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     assert {field.name for field in dataclasses.fields(Review)} == {
         'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code', 'reviewers', 'backlog',
-        'claim_stale', 'max_rounds', 'quiet',
+        'claim_stale', 'max_rounds', 'quiet', 'where', 'bundle', 'judge_login', 'preparers',
     }  # fmt: skip
 
 
@@ -605,7 +617,9 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
 
     def ready(*review: tuple[str, str]) -> bool:
         statuses = (passed, secured, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
-        return decide(work, policy, branch='pr/x', number=1, head=head, statuses=statuses, posted=github_posted).ready
+        return decide(
+            work, policy, branch='pr/x', number=1, head=head, statuses=statuses, reviewed=status_gate(github_posted)
+        ).ready
 
     assert not ready(('failure', 'review round 1: 1 blocking finding(s) open'))
     assert not ready()
@@ -625,7 +639,7 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     over = NEEDS_MAINTAINER
     held = (_status(HOLD_CONTEXT, 'pending', over), _status(REVIEW_CONTEXT, 'success', 'reviewed'), passed)
-    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held, posted=github_posted)
+    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held, reviewed=status_gate(github_posted))
     assert not found.ready
     assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
@@ -636,9 +650,13 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
         passed,
         secured,
     )
-    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released, posted=github_posted).ready
+    assert decide(
+        work, policy, branch='pr/x', number=1, head=head, statuses=released, reviewed=status_gate(github_posted)
+    ).ready
     worded = (_status(REVIEW_CONTEXT, 'success', NEEDS_MAINTAINER), passed, secured)
-    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded, posted=github_posted).ready
+    assert decide(
+        work, policy, branch='pr/x', number=1, head=head, statuses=worded, reviewed=status_gate(github_posted)
+    ).ready
 
 
 # --- the declaration ---------------------------------------------------------------------------------

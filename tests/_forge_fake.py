@@ -123,6 +123,10 @@ class Recorder(BaseHTTPRequestHandler):
         """Recorded then answered."""
         self._serve('PATCH')
 
+    def do_PUT(self) -> None:
+        """Recorded then answered."""
+        self._serve('PUT')
+
     def do_DELETE(self) -> None:
         """Recorded then answered."""
         self._serve('DELETE')

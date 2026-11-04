@@ -65,6 +65,41 @@ Site = tuple[str, str, str]
 #: so both rows are declared below rather than any number being edited down to meet the tree.
 ALLOWED: Final[dict[Site, str]] = {
     (
+        'tests/_forge_state.py',
+        'PLR0911',
+        'def _shape(self, route: str) -> tuple[str, str]:',
+    ): "the fake forge's router: one return per Gitea route family, a table the forge's own URL shapes dictate",
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'ANN401',
+        'def call(self, method: str, path: str, body: dict[str, Any] | None = None, durable: object = None) -> Any:',
+    ): "the fake overrides Client.call, whose answer is the endpoint's parsed JSON: its shape is the route",
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'ANN401',
+        'def _get(self, path: str) -> Any:',
+    ): "the fake's GET router returns each endpoint's parsed JSON, whose shape is the route",
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        'said = fp.prepare(root, forge, 7, env=_ACTIONS)',
+    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        'said = fp.prepare(root, forge, 7, env={})',
+    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        'return fb.judge_pending(forge, runtimes=_RUNTIMES, run=run), seen',
+    ): 'a FakeForge stands in for the Client the judge takes: a test double, not a subclass the type checker can see',
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        "assert review_tick(tmp_path, object(), review, base='main', host='h') == ()",
+    ): 'PLANTED CONTROL: a bare object() as the client proves a judge base returns before any forge call',
+    (
         'tests/test_dev_forgetick.py',
         'FBT001',
         'claimed: bool,',
@@ -87,6 +122,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'except Exception as failed:',
     ): 'the pre-clone settle never fails the job: any fact it cannot read means the full review runs',
     (
+        'src/dev_lab/dev/actionsartifact.py',
+        'S310',
+        'request = urllib.request.Request(url, data=body, method=method, headers=dict(headers))',
+    ): "the runner's own results URL or the upload URL it signed, refused above unless http(s)",
+    (
+        'src/dev_lab/dev/actionsartifact.py',
+        'S310',
+        'with urllib.request.urlopen(request, timeout=60) as answer:',
+    ): 'opens only the request built above, its scheme checked',
+    (
         'src/dev_lab/dev/reviewcode.py',
         'S310',
         'request = urllib.request.Request(url, data=data, method=method)',
@@ -96,6 +141,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'S310',
         'with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as reply:',
     ): 'opens only the request built above from the FORGE_URL the job declares',
+    (
+        'src/dev_lab/dev/forgememo.py',
+        'ANN401',
+        'def read(self, key: tuple[str, str], attempt: Callable[[], Any]) -> Any:',
+    ): "the memo hands back the forge read's parsed JSON unchanged, whose shape is the route it remembers",
     (
         'src/dev_lab/dev/family.py',
         'ANN401',

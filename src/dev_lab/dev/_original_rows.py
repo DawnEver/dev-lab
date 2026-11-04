@@ -317,6 +317,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgewatch',
     'jobparts',
     'pushwatch',
+    'pushstop',
+    'venvfollow',
     'liverun',
     'metrics',
     'monthsummary',
@@ -350,4 +352,19 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgebacklog',  # a ready head unreviewed past the bound pages once, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',
+    # ORIGINAL: the blobless-clone prefetch, the break-glass client and the review-code classification are
+    # forge mechanisms new to the family; no consumer held one.
+    'blobfetch',
+    'forgebreakglass',
+    'reviewcode',
+    # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
+    'reviewbundle',
+    'forgereview_bundle',
+    'forgereview_pointer',
+    'forgereview_job',  # an in-kit split of forgetakeover: the forge's review job
+    'actionsartifact',  # an Actions run's own artifact, new here
+    # ORIGINAL: split out of `forgework` inside the kit by concept; no consumer held it.
+    'forgestamp',
+    # ORIGINAL: the poller pass's read memo (2026-11-04); no consumer polled the forge.
+    'forgememo',
 )

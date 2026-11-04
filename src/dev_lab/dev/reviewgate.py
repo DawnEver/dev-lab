@@ -26,7 +26,7 @@ triggered by ``pull_request_target``, which Gitea detects from the BASE commit (
 PR can neither change what runs nor read the secret -- and a success counts only when, besides the status checks
 above, the latest CONCLUDED run at this head that is that workflow (``event == "pull_request_target"``, ``path``
 ``review.yml@<ref>``, :func:`review_runs`) concluded ``success``. A PR-head workflow can neither create nor alter
-such a run, and the job exits non-zero unless it posted success (:func:`dev_lab.dev.forgetakeover.job_exit`, from
+such a run, and the job exits non-zero unless it posted success (:func:`dev_lab.dev.forgereview_job.job_exit`, from
 what :func:`post_review` recorded in :func:`posted_verdicts`). A run with no conclusion -- queued, running, or
 RE-RUN IN PLACE (Gitea keeps its id and resets its conclusion while it executes) -- decides nothing, and the newest
 run that has one decides. A head whose only review run is being re-run therefore waits for it to conclude: its
@@ -67,6 +67,7 @@ from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgestatus import status_post
 
 if TYPE_CHECKING:
@@ -75,20 +76,31 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
 
+    #: Why the head the statuses (newest first) describe is not reviewed, or ``None``: what a gate answers.
+    type Reviewed = Callable[[Sequence[CommitStatus]], str | None]
+
 __all__ = [
     'ACTIONS_REVIEW',
+    'APPROVED',
+    'PREPARE_WORKFLOW',
     'RERUN',
+    'VERDICT_STATES',
     'DeclarationUnread',
     'RunsUnread',
     'adopts_actions_review',
     'forge_posted',
     'github_posted',
+    'head_reviews',
     'job_run_url',
+    'judge_missing',
     'manifest_at',
     'post_review',
     'posted_verdicts',
     'review_missing',
     'review_runs',
+    'run_path',
+    'standing_verdicts',
+    'status_gate',
 ]
 
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
@@ -97,11 +109,21 @@ RERUN: Final = "re-run the forge's review of the head (the PR's review job)"
 #: The ``[tool.dev_lab.ci]`` workflow whose declaration adopts Gitea Actions as the forge's reviewer.
 ACTIONS_REVIEW: Final = 'review.yml'
 
+#: The base's workflow whose run posts a judge repo's bundle pointer on Gitea (:mod:`~dev_lab.dev.forgereview_pointer`);
+#: :mod:`~dev_lab.dev.ciworkflows` renders it under this name, the one the judge lists runs by.
+PREPARE_WORKFLOW: Final = 'review-prepare.yml'
+
 #: The event Gitea stores a run of the BASE's workflow under for a PR (``notifier_helper.go``, 1.27).
 REVIEW_EVENT: Final = 'pull_request_target'
 
+#: The PR review state of an approval, and every state a judge's verdict leaves, as each forge reports them back.
+APPROVED: Final = 'APPROVED'
+VERDICT_STATES: Final = frozenset({APPROVED, 'REQUEST_CHANGES', 'CHANGES_REQUESTED'})
+
 #: How many of the repository's runs at a head are read: a head is re-run a handful of times, never this many.
 _RUNS_READ: Final = 50
+
+_NOT_FOUND: Final = 404
 
 
 def github_posted(status: CommitStatus) -> bool:
@@ -109,7 +131,7 @@ def github_posted(status: CommitStatus) -> bool:
     return status.creator == ACTIONS_BOT
 
 
-def _run_path(url: str, owner: str, repo: str) -> str:
+def run_path(url: str, owner: str, repo: str) -> str:
     """``/<owner>/<repo>/actions/runs/<n>`` named in *url* (absolute or relative), lower-cased; ``''`` when none."""
     found = re.search(
         rf'/{re.escape(owner)}/{re.escape(repo)}/actions/runs/\d+(?=/|$)', urlsplit(url).path, re.IGNORECASE
@@ -149,11 +171,15 @@ def adopts_actions_review(client: Client, ref: str) -> bool:
     return ACTIONS_REVIEW in declared_table(tomllib.loads(manifest_at(client, ref)), 'ci', {})
 
 
-def review_runs(client: Client, head: str) -> list[dict[str, Any]]:
-    """The runs of the base's :data:`ACTIONS_REVIEW` at *head*, newest first, as the forge lists them.
+def review_runs(
+    client: Client, head: str, *, workflow: str = ACTIONS_REVIEW, pull: int | None = None
+) -> list[dict[str, Any]]:
+    """The runs of the base's *workflow* (:data:`ACTIONS_REVIEW`) at *head*, newest first, as the forge lists them.
 
     Only a :data:`REVIEW_EVENT` run whose ``path`` is ``review.yml@<ref>`` (Gitea's converter:
     ``fmt.Sprintf("%s@%s", run.WorkflowID, run.Ref)``, the entry file's name) -- the one workflow a PR cannot edit.
+    Given *pull*, only a run of THAT pull request: ``<ref>`` is its ``refs/pull/<n>/head``, so a second PR of the
+    same head into a branch whose workflow its author wrote is never one of them.
     """
     listed: Any = client.call('GET', f'{client.repo}/actions/runs?head_sha={head}&limit={_RUNS_READ}')
     runs = (listed or {}).get('workflow_runs') if isinstance(listed, dict) else None
@@ -163,9 +189,13 @@ def review_runs(client: Client, head: str) -> list[dict[str, Any]]:
     honest = [
         run for run in runs
         if run.get('head_sha') == head and run.get('event') == REVIEW_EVENT
-        and str(run.get('path') or '').startswith(f'{ACTIONS_REVIEW}@')
+        and _of_workflow(str(run.get('path') or ''), workflow, pull)
     ]  # fmt: skip
     return sorted(honest, key=lambda run: int(run.get('id') or 0), reverse=True)
+
+
+def _of_workflow(path: str, workflow: str, pull: int | None) -> bool:
+    return path == f'{workflow}@refs/pull/{pull}/head' if pull is not None else path.startswith(f'{workflow}@')
 
 
 def forge_posted(client: Client, head: str, *, base: str) -> Callable[[CommitStatus], bool]:
@@ -188,14 +218,14 @@ def forge_posted(client: Client, head: str, *, base: str) -> Callable[[CommitSta
         if not read:
             runs = review_runs(client, head)
             concluded = next((run for run in runs if run.get('conclusion')), None)
-            paths = frozenset(path for run in runs if (path := _run_path(run.get('html_url') or '', owner, repo)))
+            paths = frozenset(path for run in runs if (path := run_path(run.get('html_url') or '', owner, repo)))
             read.append((paths, concluded is not None and concluded.get('conclusion') == 'success'))
         return read[0]
 
     def posted(status: CommitStatus) -> bool:
         if status.creator != '':
             return False
-        named = _run_path(status.url, owner, repo)
+        named = run_path(status.url, owner, repo)
         if not named:
             return False
         paths, succeeded = at_head()
@@ -226,7 +256,7 @@ _POSTED: ContextVar[list[str] | None] = ContextVar('posted_verdicts', default=No
 def posted_verdicts() -> Iterator[list[str]]:
     """The states every :func:`post_review` inside the block posts, in order -- what THIS process said.
 
-    The review job's exit is read from it (:func:`dev_lab.dev.forgetakeover.job_exit`): the door that posts is the
+    The review job's exit is read from it (:func:`dev_lab.dev.forgereview_job.job_exit`): the door that posts is the
     one that knows, never a re-read of the head, where a PR-head workflow's null-creator status may stand.
     """
     said: list[str] = []
@@ -249,6 +279,67 @@ def post_review(client: Client, head: str, *, state: str, description: str, targ
         said.append(state)
 
 
+def status_gate(posted: Callable[[CommitStatus], bool]) -> Reviewed:
+    """The serve-mode gate: :func:`review_missing` over a head's statuses, *posted* telling the forge's own post."""
+    return lambda statuses: review_missing(statuses, posted)
+
+
+def _hold_missing(statuses: Sequence[CommitStatus]) -> str | None:
+    hold = next((one for one in statuses if one.context == HOLD_CONTEXT), None)
+    if hold is not None and hold.state != 'success':
+        return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
+    return None
+
+
+def head_reviews(client: Client, head: str) -> list[dict[str, Any]]:
+    """Every PR review on every pull request whose head the forge says *head* is, as the forge lists them.
+
+    Gitea answers ONE pull (``commits/{sha}/pull``, 404 when none), GitHub a list (``commits/{sha}/pulls``).
+    """
+    if client.backend is GITHUB:
+        listed: Any = client.call('GET', f'{client.repo}/commits/{head}/pulls')
+    else:
+        try:
+            listed = [client.call('GET', f'{client.repo}/commits/{head}/pull')]
+        except ForgeCallFailed as failed:
+            if failed.final != _NOT_FOUND:
+                raise
+            listed = []
+    numbers = [int(pull['number']) for pull in listed or [] if isinstance(pull, dict) and pull.get('number')]
+    return [row for number in numbers for row in pages(client, f'{client.repo}/pulls/{number}/reviews', {})]
+
+
+def standing_verdicts(reviews: Sequence[Mapping[str, Any]], *, login: str, head: str) -> list[Mapping[str, Any]]:
+    """*login*'s verdict reviews (:data:`VERDICT_STATES`) at *head* that stand: neither dismissed nor stale.
+
+    Gitea keeps a dismissed review's state and marks it ``dismissed``, and marks one ``stale`` once the head moves;
+    GitHub reports a dismissal as the state ``DISMISSED``, never a verdict state.
+    """
+    return [
+        row for row in reviews
+        if (row.get('user') or {}).get('login') == login and row.get('commit_id') == head
+        and row.get('state') in VERDICT_STATES and not row.get('dismissed') and not row.get('stale')
+    ]  # fmt: skip
+
+
+def judge_missing(
+    statuses: Sequence[CommitStatus], reviews: Sequence[Mapping[str, Any]], *, head: str, judge: str
+) -> str | None:
+    """The judge-mode gate: why *head* is not reviewed by the DECLARED *judge* login, or ``None`` when it is.
+
+    Reviewed when the latest standing verdict review (:func:`standing_verdicts`) *judge* left AT *head* is
+    :data:`APPROVED` and no hold is pending. Another login's approval, one at an older head, a dismissed or stale
+    one, or a later ``REQUEST_CHANGES`` waits.
+    """
+    verdicts = standing_verdicts(reviews, login=judge, head=head)
+    latest = max(verdicts, key=lambda row: int(row.get('id') or 0), default=None)
+    if latest is None:
+        return f'no verdict review by the judge {judge!r} at {head[:12]}: the judge reviews a prepared bundle'
+    if latest.get('state') != APPROVED:
+        return f'the judge {judge!r} requested changes at {head[:12]}'
+    return _hold_missing(statuses)
+
+
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:
     """Why the head *statuses* (newest first) describe is not reviewed, or ``None`` when it is.
 
@@ -257,7 +348,7 @@ def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitSta
     latest: dict[str, CommitStatus] = {}
     for one in statuses:
         latest.setdefault(one.context, one)
-    review, hold = latest.get(REVIEW_CONTEXT), latest.get(HOLD_CONTEXT)
+    review = latest.get(REVIEW_CONTEXT)
     if review is None:
         return f'{REVIEW_CONTEXT} is not posted: {RERUN}'
     if review.state != 'success':
@@ -268,6 +359,4 @@ def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitSta
             f"(target {review.url or 'none'}), not by the forge's review job at this head: "
             f"only the forge's own review counts -- {RERUN}"
         )
-    if hold is not None and hold.state != 'success':
-        return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
-    return None
+    return _hold_missing(statuses)

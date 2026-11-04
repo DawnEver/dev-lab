@@ -492,8 +492,10 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 
 ### Watching a sha, and cancelling its stuck tasks
 
-`python -m dev_lab.dev.forge watch <sha> [--deadline-minutes M]` only reads: it prints each `tests/<part>`
-change until every part is final (exit 0 green, 1 red) or the deadline passes (exit 3).
+`python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M] [--stream]` only reads: it prints each
+`tests/<part>` change until the first listed sha has every part final (exit 0 green, 1 red) or the deadline
+passes (exit 3). A session that pushed arms it as a Monitor: the `Stop` hook (`dev_lab.dev.pushstop`) refuses
+to end a turn while a head the session pushed is pending with no live watch, or red.
 
 `python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]`, run in the repo's checkout,
 scancels only the full sha's `run-<sha12>-<part>` tasks that are busy (90 % CPU or more) with no new test line in
@@ -520,6 +522,18 @@ the severity in words, the host, and what is wrong (a metric's value against its
 the context (repository, PR, branch, commit, run, service, since/last) and the remedy. The agent hook and the
 email's plain part carry that Markdown; Telegram and the email's HTML part render it. The host is
 `[notify] host_label` in the machine file (absent: the hostname).
+
+## A review judged on its own host: `forge review prepare` / `judge`
+
+A repo whose integration branch declares `[tool.dev_lab.review] where = "judge"` is reviewed by an isolated judge
+host and never by `forge serve` (one mode per repo). The runner runs
+`python -m dev_lab.dev.forge review prepare --pr <n>` (no reviewer token): it attaches the
+review bundle to its own run as the `review-bundle` artifact, which the judge finds by listing the base's prepare
+runs itself (a declared preparer's host instead stores it and points the head at it). The judge host
+runs `python -m dev_lab.dev.forge review judge --url <repo web url> [--token-file <path>] [--runtime ai_lab.python=<py>]`
+on a timer: it verifies each pointed-at bundle against the forge's own diff, reads the declaration fresh from the
+integration branch, and posts one PR review per head as its own login. The mechanism is the module docstring of
+`dev_lab.dev.forgereview_bundle`.
 
 ## Records and the outbox
 
@@ -589,9 +603,10 @@ THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 
 - The forge API client does the same (`dev_lab.dev.forgecred.refresh_credential`): on a 401 that `GET /user`
   confirms it rejects the refused secret, fills again and retries the call once with the refreshed token.
 - Only a refusal AFTER that refresh is permanent, and it does NOT ask for `auth login`: the account, its scopes
-  or the forge refuse a credential that was just refreshed, so report the output. `auth login` is named only
-  when the refresh leaves the store EMPTY -- a plain stored token has no refresh token, so the reject removes it.
-- So the forge never needs a re-login on an OAuth box. Never run `auth login` because of one 401.
+  or the forge refuse a credential that was just refreshed, so retry, measure with `auth status`, and report the
+  output. Even a refresh that leaves the store reading empty is answered that way: a credential existed.
+- So the forge never needs a re-login (ruling 2026-10-18). Never run `auth login` because of a 401/403; only a
+  box that never held a credential is told to log in.
 
 ## Protecting `main` on the server
 

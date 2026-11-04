@@ -34,6 +34,8 @@ from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgememo import ReadMemo
+from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.forgework import (
     ACTIONS_BOT,
     GITEA,
@@ -44,7 +46,6 @@ from dev_lab.dev.forgework import (
     PullRequest,
     backend_for,
     client_for,
-    provenance,
 )
 from dev_lab.dev.netverb import Diagnosis, Disposition
 
@@ -286,12 +287,14 @@ def test_a_refusal_that_survives_the_refresh_is_refused_and_never_names_a_re_log
     assert 'refresh' in str(caught.value)
 
 
-def test_a_refresh_that_leaves_no_credential_names_the_one_command_that_stores_one(server, tmp_path) -> None:
+def test_a_refresh_that_leaves_the_store_empty_is_retried_and_measured_never_a_re_login(server, tmp_path) -> None:
+    """Ruling 2026-10-18: a credential EXISTED, so the remedy is a retry and ``auth status``, never ``auth login``."""
     _Recorder.accept = lambda _header: False
     with pytest.raises(ForgeCallFailed) as caught:
         _stored_client(server, tmp_path, fresh='').call('GET', _STATUSES)
     assert caught.value.credential_refused
-    assert 'auth login' in str(caught.value)
+    assert 'auth login' not in str(caught.value)
+    assert 'auth status' in str(caught.value)
 
 
 # --------------------------------------------------------------------------------------------
@@ -542,3 +545,61 @@ def test_whoami_always_asks_the_forge_and_only_github_names_the_actions_bot(serv
     assert job.whoami() == ACTIONS_BOT
     _answer('GET', '/user', (200, {'login': 'maintainer'}))
     assert job.whoami() == 'maintainer', 'a PAT can read /user, so it is its user'
+
+
+def test_pull_diff_asks_each_forge_for_its_own_raw_diff(server) -> None:
+    """Gitea: ``pulls/{n}.diff``; GitHub: ``pulls/{n}`` asked for the diff media type. PLANTED CONTROL: a 404 raises."""
+    gitea, github = Forge('forge.example.org', 'o', 'r'), Forge('github.com', 'o', 'r')
+    _answer('GET', '/api/v1/repos/o/r/pulls/7.diff', (200, 'diff --git a/x b/x'))
+    assert _client(gitea, _Loopback(server)).pull_diff(7) == '"diff --git a/x b/x"'  # the fake JSON-encodes
+    assert _Recorder.received[-1]['headers']['Accept'] == 'text/plain'
+    _answer('GET', '/repos/o/r/pulls/7', (200, 'd'))
+    assert _client(github, _Loopback(server)).pull_diff(7) == '"d"'
+    assert _Recorder.received[-1]['headers']['Accept'] == 'application/vnd.github.diff'
+    with pytest.raises(ForgeCallFailed):
+        _client(gitea, _Loopback(server)).pull_diff(8)
+
+
+# --------------------------------------------------------------------------------------------
+# the pass-scoped read memo (2026-11-04: the poller re-read each head's statuses once per step)
+
+
+def _gets(path: str) -> int:
+    return sum(1 for r in _Recorder.received if r['method'] == 'GET' and r['path'] == path)
+
+
+def test_a_memo_answers_a_repeated_read_from_the_first_answer(server) -> None:
+    """Five steps reading one head's statuses in one pass cost one request, not five."""
+    _answer('GET', _STATUSES, *[(200, [{'id': 1, 'context': 'tests/x'}])] * 5)
+    client = _client(Forge('f.example', 'o', 'r'), _Loopback(server))
+    client.memo = ReadMemo()
+    read = [client.call('GET', _STATUSES) for _ in range(5)]
+    assert _gets(_STATUSES) == 1
+    assert all(one == [{'id': 1, 'context': 'tests/x'}] for one in read)
+
+
+def test_a_memo_hands_out_copies_so_a_caller_cannot_edit_the_next_answer(server) -> None:
+    _answer('GET', _STATUSES, (200, [{'id': 1}]))
+    client = _client(Forge('f.example', 'o', 'r'), _Loopback(server))
+    client.memo = ReadMemo()
+    client.call('GET', _STATUSES).append({'id': 2})
+    assert client.call('GET', _STATUSES) == [{'id': 1}]
+
+
+def test_a_write_through_the_memo_forgets_every_read_so_the_next_read_sees_it(server) -> None:
+    _answer('GET', _STATUSES, (200, []), (200, [{'id': 1}]))
+    _answer('POST', _STATUSES, (201, {'id': 1}))
+    client = _client(Forge('f.example', 'o', 'r'), _Loopback(server))
+    client.memo = ReadMemo()
+    assert client.call('GET', _STATUSES) == []
+    client.call('POST', _STATUSES, {'state': 'success'})
+    assert client.call('GET', _STATUSES) == [{'id': 1}]
+    assert _gets(_STATUSES) == 2
+
+
+def test_planted_control_without_a_memo_every_read_is_a_request(server) -> None:
+    _answer('GET', _STATUSES, *[(200, [])] * 3)
+    client = _client(Forge('f.example', 'o', 'r'), _Loopback(server))
+    for _ in range(3):
+        client.call('GET', _STATUSES)
+    assert _gets(_STATUSES) == 3

@@ -5,21 +5,25 @@ Every planted control refuses before any forge write.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
-from _ops_fixtures import NOW, code, config, git, origin
+from _forge_fake import Loopback, Recorder, answer, serve
+from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 
 from dev_lab.dev.breakglass import reason
-from dev_lab.ops.breakglass import BreakglassRefused, Server
-from dev_lab.ops.config import OpsConfig
+from dev_lab.dev.reviewgate import DeclarationUnread
+from dev_lab.ops.breakglass import BreakglassRefused, ClientForge, Server, merge_message
+from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.totp import STEP
 
 HEAD = 'a' * 40
@@ -33,6 +37,14 @@ class FakeForge:
     base: str = 'integrate/main'
     head: str = HEAD
     calls: list[tuple[str, int, str]] = field(default_factory=list)
+    #: The repo's ``pyproject.toml`` at its default branch; ``None`` plants one the forge cannot serve.
+    manifest: str | None = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+
+    def declaration(self) -> str:
+        if self.manifest is None:
+            unread = 'pyproject.toml at main cannot be read: 404'
+            raise DeclarationUnread(unread)
+        return self.manifest
 
     def pull(self, number: int) -> tuple[str, str, str]:
         del number
@@ -51,6 +63,8 @@ class Host:
     config: OpsConfig
     forge: FakeForge = field(default_factory=FakeForge)
     alerts: list[tuple[str, str]] = field(default_factory=list)
+    #: Each repository URL the server asked a forge for.
+    asked: list[str] = field(default_factory=list)
     clock: list[float] = field(default_factory=lambda: [NOW])
     key: str = KEY
     #: Seconds every clock read sleeps: widens each read-modify-write window, as a loaded host would.
@@ -60,11 +74,15 @@ class Host:
     def server(self) -> Server:
         return Server(
             self.config,
-            lambda _root: self.forge,
+            self._forge,
             lambda t, d: self.alerts.append((t, d)),
             self._now,
             key=self.key,
         )
+
+    def _forge(self, url: str) -> FakeForge:
+        self.asked.append(url)
+        return self.forge
 
     def _now(self) -> float:
         time.sleep(self.delay)
@@ -74,9 +92,7 @@ class Host:
         return self.server.handle(json.dumps({'action': action, **fields}))
 
     def merge(self, **overrides: object) -> str:
-        return self.ask(
-            'merge', **{'repo': 'alpha', 'pr': 7, 'head': HEAD, 'reason': 'review-bot is down', **overrides}
-        )
+        return self.ask('merge', **{'repo': ALPHA, 'pr': 7, 'head': HEAD, 'reason': 'review-bot is down', **overrides})
 
     def later(self, seconds: float) -> None:
         self.clock[0] += seconds
@@ -87,22 +103,19 @@ class Host:
 
 @pytest.fixture
 def host(tmp_path: Path) -> Host:
-    url, _ = origin(tmp_path)
-    built = config(tmp_path, [url], extra='wave_hours = 4.0\nmax_merges = 3')
-    git(tmp_path, 'clone', '-q', url, str(built.checkout(url)))
-    return Host(built)
+    return Host(config(tmp_path, [], extra='wave_hours = 4.0\nmax_merges = 3'))
 
 
 def test_a_wave_merges_without_a_code_announces_each_merge_and_audits_on_close(host: Host) -> None:
     assert 'open for 4 h, at most 3' in host.ask('open', code=host.code())
-    assert host.merge().startswith('merged alpha#7')
+    assert host.merge().startswith(f'merged {ALPHA}#7')
     assert [call[0] for call in host.forge.calls] == ['comment', 'merge']
     assert reason(host.forge.calls[1][2]) == 'review-bot is down'  # the existing Break-Glass notice reads it
-    merged = [a for a in host.alerts if a[0] == 'break-glass MERGED alpha#7']
+    merged = [a for a in host.alerts if a[0] == f'break-glass MERGED {ALPHA}#7']
     assert HEAD in merged[0][1]  # the SERVER's announcement names the head that actually merged
     assert KEY in merged[0][1]  # ... and the ssh key that asked for it
     report = host.ask('close')
-    assert f'alpha#7 at aaaaaaaaaaaa by key {KEY}: review-bot is down' in report
+    assert f'{ALPHA}#7 at aaaaaaaaaaaa by key {KEY}: review-bot is down' in report
     assert 'awaits acknowledgement' not in report
     assert 'audit' in host.ask('status')
 
@@ -190,7 +203,7 @@ def test_the_tick_reminds_an_unacknowledged_audit_once_per_period(host: Host) ->
 @pytest.mark.parametrize(
     ('overrides', 'forge', 'why'),
     [
-        ({'repo': 'beta'}, FakeForge(), 'not a repository this host serves'),
+        ({'repo': 'alpha'}, FakeForge(), 'not a repository this host serves'),
         ({'reason': 'short'}, FakeForge(), 'at least 10'),
         ({}, FakeForge(state='closed'), 'closed, not open'),
         ({}, FakeForge(base='main'), 'not the integration branch integrate/main'),
@@ -270,10 +283,7 @@ def test_a_right_code_resets_the_count(host: Host) -> None:
 
 
 def test_the_lockout_bounds_are_configured(tmp_path: Path) -> None:
-    url, _ = origin(tmp_path)
-    built = config(tmp_path, [url], extra='lockout_after = 2\nlockout_minutes = 1')
-    git(tmp_path, 'clone', '-q', url, str(built.checkout(url)))
-    host = Host(built)
+    host = Host(config(tmp_path, [], extra='lockout_after = 2\nlockout_minutes = 1'))
     _wrong(host, 2)
     with pytest.raises(BreakglassRefused, match='too many wrong codes'):
         host.ask('open', code=host.code())
@@ -321,7 +331,7 @@ def test_an_alert_that_fails_never_loses_the_audit_or_the_merge(host: Host) -> N
 
     server = host.server
     server.alert = broken
-    said = server.handle(json.dumps({'action': 'merge', 'repo': 'alpha', 'pr': 7, 'head': HEAD,
+    said = server.handle(json.dumps({'action': 'merge', 'repo': ALPHA, 'pr': 7, 'head': HEAD,
                                      'reason': 'review-bot is down'}))  # fmt: skip
     assert said.startswith('merged')
     assert host.config.breakglass is not None
@@ -363,14 +373,106 @@ def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
     server = host.server
     server.forge_for = boom
     with pytest.raises(KeyError):
-        server.handle(json.dumps({'action': 'merge', 'repo': 'alpha', 'pr': 7, 'head': HEAD,
+        server.handle(json.dumps({'action': 'merge', 'repo': ALPHA, 'pr': 7, 'head': HEAD,
                                   'reason': 'review-bot is down'}))  # fmt: skip
 
 
-def test_a_missing_clone_is_a_refusal_audited_and_alerted(tmp_path: Path) -> None:
-    url, _ = origin(tmp_path)
-    bare = Host(config(tmp_path, [url]))
-    bare.ask('open', code=bare.code())
-    with pytest.raises(BreakglassRefused, match='no clone'):
-        bare.merge()
-    assert any('REFUSED' in a[0] for a in bare.alerts)
+def test_an_unreadable_declaration_is_a_refusal_audited_and_alerted(host: Host) -> None:
+    host.forge = FakeForge(manifest=None)
+    host.ask('open', code=host.code())
+    with pytest.raises(BreakglassRefused, match='cannot be read'):
+        host.merge()
+    assert host.forge.calls == []
+    assert any('REFUSED' in a[0] for a in host.alerts)
+
+
+def test_each_repo_is_merged_on_its_own_forge(host: Host) -> None:
+    host.ask('open', code=host.code())
+    assert 'merged github.com/owner/alpha#7' in host.merge(repo=MIRROR)
+    host.merge(repo=ALPHA)
+    assert host.asked == [GLASS[1], GLASS[0]]  # one name, two forges: each merged on its own
+
+
+def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) -> None:
+    promoted = 'https://gitea.example/owner/beta.git'
+    planted = Host(config(tmp_path, [promoted]))
+    planted.ask('open', code=planted.code())
+    with pytest.raises(BreakglassRefused, match='beta is not a repository'):
+        planted.merge(repo='gitea.example/owner/beta')
+    planted.merge(repo=MIRROR)  # control: a repo break-glass declares, promoted here or not
+
+
+@pytest.mark.parametrize(
+    ('bad', 'why'),
+    [
+        ({'tokens': {'gitea.example': 't'}}, 'github.com names no token'),  # planted: a forge with no token
+        ({'tokens': {'gitea.example': 't', 'github.com': 'g', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
+        ({'repos': (*GLASS, 'https://gitea.example/owner/alpha')}, 'twice'),  # the exact same identity again
+        ({'repos': ()}, 'serves no repo'),
+    ],
+)
+def test_a_break_glass_declaration_that_lies_is_refused_at_load(
+    tmp_path: Path, bad: dict[str, object], why: str
+) -> None:
+    built = config(tmp_path, [])
+    assert built.breakglass is not None
+    table: dict[str, Any] = {'account': 'b', 'totp': 't', 'state': 's', 'log': 'l', 'repos': GLASS,
+             'tokens': {'gitea.example': 't', 'github.com': 'g'}, **bad}  # fmt: skip
+    with pytest.raises(ValueError, match=why):
+        Breakglass(**table)
+
+
+def test_one_name_on_two_forges_or_owners_is_two_repos(tmp_path: Path) -> None:
+    other = 'https://github.com/someone/alpha.git'
+    built = config(tmp_path, [], glass=(*GLASS, other))
+    assert built.breakglass is not None
+    assert [built.breakglass.repo(i) for i in (ALPHA, MIRROR, 'github.com/someone/alpha')] == [*GLASS, other]
+    assert built.breakglass.repo('alpha') is None
+
+
+def test_each_forge_names_its_token_once(host: Host) -> None:
+    role = host.config.breakglass
+    assert role is not None
+    assert role.token_file(GLASS[1]) == role.tokens['github.com']
+    assert role.token_file(GLASS[0]) == role.tokens['gitea.example']
+    assert role.token_file(GLASS[0]) != role.token_file(GLASS[1])
+
+
+@pytest.fixture
+def loopback() -> Iterator[Loopback]:
+    for httpd in serve():
+        yield Loopback(httpd)
+
+
+@pytest.mark.parametrize(
+    ('url', 'api', 'prefix', 'auth', 'merge'),
+    [
+        ('https://github.com/owner/gamma.git', 'api.github.com', '/repos/owner/gamma', 'Bearer', 'PUT'),
+        ('https://gitea.example/owner/alpha.git', 'gitea.example', '/api/v1/repos/owner/alpha', 'token', 'POST'),
+    ],
+)
+def test_the_client_forge_reads_and_merges_on_either_backend(
+    loopback: Loopback, url: str, api: str, *, prefix: str, auth: str, merge: str
+) -> None:
+    pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
+            'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'}}  # fmt: skip
+    manifest = base64.b64encode(b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n').decode()
+    answer('GET', prefix, (200, {'default_branch': 'main'}))
+    answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
+    answer('GET', f'{prefix}/pulls/7', (200, pull))
+    answer('POST', f'{prefix}/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}))
+    answer(merge, f'{prefix}/pulls/7/merge', (200, {'merged': True}))
+    forge = ClientForge(url, 'secret', transport=loopback)
+    assert 'integrate/main' in forge.declaration()
+    assert forge.pull(7) == ('open', 'integrate/main', HEAD)
+    forge.comment(7, 'BREAK-GLASS')
+    forge.merge(7, head=HEAD, message=merge_message(7, 'integrate/main', 'review-bot is down', 'w'))
+    assert set(loopback.asked) == {api}
+    sent = Recorder.received
+    assert {r['headers']['Authorization'] for r in sent} == {f'{auth} secret'}
+    assert sent[1]['path'] == f'{prefix}/contents/pyproject.toml?ref=main'
+    merged = sent[-1]
+    assert (merged['method'], merged['path']) == (merge, f'{prefix}/pulls/7/merge')
+    body = json.dumps(merged['body'])
+    assert HEAD in body
+    assert 'Break-Glass: review-bot is down' in body

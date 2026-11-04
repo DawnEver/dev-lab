@@ -299,11 +299,13 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
 * :mod:`dev_lab.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`dev_lab.dev.forgefailure` -- how a forge answer reads: an answer, transient, a refused call or credential.
-* :mod:`dev_lab.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``; ``HARNESS_*`` stamp.
+* :mod:`dev_lab.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``.
+* :mod:`dev_lab.dev.forgestamp` -- the ``HARNESS_*`` provenance line a created body opens with.
+* :mod:`dev_lab.dev.forgememo` -- one poller pass's forge reads, answered once (a write empties it).
 * :mod:`dev_lab.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
 * :mod:`dev_lab.dev.forgepublish` -- ``forge request``: publish a request only when a host could reproduce it.
 * :mod:`dev_lab.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
-* :mod:`dev_lab.dev.forgewatch` -- ``forge watch <sha>``: read-only, a commit's verdicts until settled or a deadline.
+* :mod:`dev_lab.dev.forgewatch` -- ``forge watch <sha>...``: read-only, verdicts until one sha settles or a deadline.
 * :mod:`dev_lab.dev.forgestuck` -- STUCK-RUN-CANCEL: ``forge cancel-stuck <sha>`` scancels only its stuck forge tasks.
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
@@ -379,12 +381,17 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose`` records a claim; ``adjudicate`` rules on it.
 * :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
   by an independent reviewer, never the head's author session.
+* :mod:`dev_lab.dev.reviewbundle` -- a PR head's review bundle: the changed files both sides, checked against the forge.
+* :mod:`dev_lab.dev.forgereview_pointer` -- where the judge's bundle comes from: the prepare run's artifact, a preparer.
+* :mod:`dev_lab.dev.actionsartifact` -- an artifact only its own Actions run can attach, and what a reader takes of it.
+* :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review prepare`` / ``judge``: the judge host's review of a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
 * :mod:`dev_lab.dev.forgerunshow` -- what a cluster run learned, published on the forge for ``forge run show``.
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: an ADVISORY session review; never the gate (D11).
+* :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
@@ -444,7 +451,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the command to arm as a Monitor after a push, and an
-  advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``.
+  advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``; it journals each push.
+* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending or red.
+* :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
 * :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.
