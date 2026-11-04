@@ -69,7 +69,10 @@ def _prepare_run(
     """A run at *head* as Gitea lists it; by default the base's prepare run of PR *number*, still going."""
     run = run or number
     path = f'{workflow}@refs/pull/{number}/head'
-    return {'id': run, 'head_sha': head, 'event': event, 'path': path, 'html_url': _url(run), 'conclusion': conclusion}
+    return {
+        'id': run, 'head_sha': head, 'event': event, 'path': path, 'html_url': _url(run), 'conclusion': conclusion,
+        'started_at': '2026-11-04T10:00:00Z', 'run_attempt': 1,
+    }  # fmt: skip
 
 
 @dataclass
@@ -89,6 +92,8 @@ class FakeForge:
     #: Every Actions artifact by id: the run it is attached to, its name, its zip.
     artifacts: dict[int, tuple[int, str, bytes]] = field(default_factory=dict)
     downloaded: list[int] = field(default_factory=list)
+    #: Each pull's issue timeline as the forge lists it; ``None`` is a timeline the forge will not serve.
+    timelines: dict[int, list[dict[str, Any]] | None] = field(default_factory=dict)
     forge: Forge = field(default_factory=lambda: Forge('forge.example.org', 'o', 'r'))
     backend: Any = GITEA
     repo: str = '/api/v1/repos/o/r'
@@ -157,8 +162,12 @@ class FakeForge:
             answers[f'{self.repo}/pulls/{number}'] = {'merge_base': self.merge_base}
             answers[f'{self.repo}/pulls/{number}/reviews'] = list(self.reviews.get(number, []))
             answers[f'{self.repo}/issues/{number}/comments'] = []
+            answers[f'{self.repo}/issues/{number}/timeline'] = self.timelines.get(number, [])
             answers[f'{self.repo}/statuses/{one.head_sha}'] = list(self.statuses.get(one.head_sha, []))
             answers[f'{self.repo}/commits/{one.head_sha}/statuses'] = list(self.statuses.get(one.head_sha, []))
+        if answers[path] is None:
+            msg = f'the forge serves nothing at {path}'
+            raise OSError(msg)
         return answers[path]
 
     def verdicts(self, number: int = 7) -> list[dict[str, Any]]:
@@ -343,6 +352,60 @@ def test_a_prepare_run_that_did_not_succeed_is_no_source(prepared: Prepared, con
     forge.runs.sort(key=lambda run: -run['id'])
     said, seen = _judged(forge, _findings(None))
     assert (said, seen, forge.verdicts(), forge.downloaded) == ([], [], [], [])
+
+
+def _retarget(forge: FakeForge, at: str, *, key: str = 'type', kind: str = 'change_target_branch') -> None:
+    """The PR's base was changed at *at* (Gitea's ``change_target_branch``; GitHub's ``base_ref_changed``)."""
+    forge.timelines[7] = [
+        {'id': 1, key: 'comment', 'created_at': '2026-11-04T09:00:00Z'},
+        {key: kind, 'created_at': at},
+    ]
+
+
+def _rerun_after(forge: FakeForge, *, attempt: int = 1) -> int:
+    """A later prepare run of PR #7 at 12:00 that attached the same honest bundle; its id."""
+    ((_, (_, name, data)),) = forge.artifacts.items()
+    later = _prepare_run(forge.pull.head_sha, run=8, conclusion='success')
+    later.update(started_at='2026-11-04T12:00:00Z', run_attempt=attempt)
+    forge.runs.append(later)
+    forge.artifacts[950] = (8, name, data)
+    return 950
+
+
+@pytest.mark.parametrize(('key', 'kind'), [('type', 'change_target_branch'), ('event', 'base_ref_changed')])
+def test_a_prepare_run_from_before_the_pr_was_retargeted_is_never_read(prepared: Prepared, key: str, kind: str) -> None:
+    """Opened into a branch whose prepare workflow its author wrote, then retargeted: that run proves nothing.
+
+    PLANTED CONTROL: a run created after the retarget is read and approved.
+    """
+    forge = prepared.forge
+    _retarget(forge, '2026-11-04T11:00:00Z', key=key, kind=kind)
+    said, seen = _judged(forge, _findings(None))
+    assert (said, seen, forge.downloaded) == ([], [], [])
+    after = _rerun_after(forge)
+    said, _ = _judged(forge, _findings(None))
+    assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
+    assert forge.downloaded == [after]
+
+
+def test_an_old_run_re_run_after_the_retarget_is_never_read(prepared: Prepared) -> None:
+    """A re-run keeps the old run -- and the workflow it was started from -- under a fresh start time."""
+    forge = prepared.forge
+    _retarget(forge, '2026-11-04T11:00:00Z')
+    _rerun_after(forge, attempt=2)
+    said, seen = _judged(forge, _findings(None))
+    assert (said, seen, forge.verdicts(), forge.downloaded) == ([], [], [], [])
+
+
+@pytest.mark.parametrize('timeline', [None, [{'type': 'change_target_branch', 'created_at': 'yesterday'}]])
+def test_a_timeline_that_cannot_be_read_approves_nothing(
+    prepared: Prepared, timeline: list[dict[str, Any]] | None
+) -> None:
+    forge = prepared.forge
+    forge.timelines[7] = timeline
+    said, seen = _judged(forge, _findings(None))
+    assert (seen, forge.verdicts(), forge.downloaded) == ([], [], [])
+    assert 'not judged' in said[0] or 'retried' in said[0]
 
 
 def test_a_prepare_run_still_going_decides_nothing(prepared: Prepared) -> None:

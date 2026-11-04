@@ -6,8 +6,13 @@ reads it only from a source the judge locates itself (D3, F-680a6bd606f0). TWO s
 * THE BASE'S PREPARE RUN (Gitea). The judge lists the runs at the head itself
   (:func:`~dev_lab.dev.reviewgate.review_runs`): event ``pull_request_target``, path
   ``<PREPARE_WORKFLOW>@refs/pull/<n>/head`` -- the base's workflow, run for THIS pull request, which a PR head can
-  neither start nor alter. The newest such run that concluded decides, and only a ``success`` is read: a failed or
-  cancelled run is no source, and a run still going decides nothing. The bundle is that run's OWN artifact
+  neither start nor alter -- and CREATED AFTER the PR's last base change in the forge's issue timeline
+  (``change_target_branch`` / ``base_ref_changed``): a PR first opened into a branch whose workflow its author
+  wrote, then retargeted, keeps that run under the same ref, so it is never a source; a timeline that cannot be
+  read approves nothing. Gitea's run has no creation time, so a FIRST attempt's ``started_at`` stands for it and a
+  re-run (it keeps the old workflow under a fresh start) never counts after a retarget. The newest such run that
+  concluded decides, and only a ``success`` is read: a failed or cancelled run is no source, and a run still
+  going decides nothing. The bundle is that run's OWN artifact
   :data:`ARTIFACT` (:func:`~dev_lab.dev.actionsartifact.run_member`), which only a job of that run can upload
   (its runtime token is scoped to it); no commit status, no URL and no store key is consulted. A PR-head workflow
   can post any status naming any run, and write to any store the job token reaches -- none of it is read.
@@ -60,10 +65,11 @@ from dev_lab.dev.artefacts import (
     store_for,
 )
 from dev_lab.dev.artefactstores import MB, parsed_run_id
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgereview_declared import JUDGE, Review, base_manifest, review_from
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.reviewbundle import BundleRefused
-from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, review_runs
+from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, RunsUnread, review_runs
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -85,6 +91,9 @@ __all__ = [
 
 #: The artifact the base's prepare run attaches the bundle to, on its own run.
 ARTIFACT: Final = 'review-bundle'
+
+#: A base-branch change in an issue timeline: Gitea's ``type``, GitHub's ``event``.
+_BASE_CHANGED: Final = frozenset({'change_target_branch', 'base_ref_changed'})
 
 #: The commit status naming a head's prepared bundle: description the digest, target URL the store's Ref.
 BUNDLE_CONTEXT: Final = 'review/bundle'
@@ -192,9 +201,48 @@ def prepare(
     return f'{said} stored as {ref.backend}:{ref.key}'
 
 
+def _when(stamp: object) -> datetime:
+    """An aware forge timestamp; anything else is :class:`~dev_lab.dev.reviewgate.RunsUnread` (never a pass)."""
+    try:
+        when = datetime.fromisoformat(str(stamp))
+    except ValueError:
+        when = None
+    if when is None or when.tzinfo is None:
+        msg = f'the forge answered no timestamp: {str(stamp)[:40]!r}'
+        raise RunsUnread(msg)
+    return when
+
+
+def _base_changed(client: Client, number: int) -> datetime | None:
+    """When PR *number*'s base branch last changed, from the forge's issue timeline; ``None`` when it never did."""
+    events = pages(client, f'{client.repo}/issues/{number}/timeline', {})
+    changed = [
+        _when(event.get('created_at')) for event in events
+        if isinstance(event, dict) and (event.get('type') or event.get('event')) in _BASE_CHANGED
+    ]  # fmt: skip
+    return max(changed, default=None)
+
+
+def _created(run: Mapping[str, object]) -> datetime:
+    """When *run* was created: ``created_at`` (GitHub), else a FIRST attempt's ``started_at`` (Gitea).
+
+    Gitea's run carries no creation time, and a re-run keeps the run -- and the workflow it was started from --
+    under a fresh start time, so a later attempt's start proves nothing: it reads as the epoch.
+    """
+    if run.get('created_at'):
+        return _when(run['created_at'])
+    if int(str(run.get('run_attempt') or 1)) > 1:
+        return datetime.min.replace(tzinfo=UTC)
+    return _when(run.get('started_at'))
+
+
 def _prepared_by_run(client: Client, pull: PullRequest) -> reviewbundle.Bundle | None:
     """The bundle the base's newest CONCLUDED prepare run of *pull* attached to itself, when it succeeded."""
-    runs = review_runs(client, pull.head_sha, workflow=PREPARE_WORKFLOW, pull=pull.number)
+    since = _base_changed(client, pull.number)
+    runs = [
+        run for run in review_runs(client, pull.head_sha, workflow=PREPARE_WORKFLOW, pull=pull.number)
+        if since is None or _created(run) > since
+    ]  # fmt: skip
     concluded = next((run for run in runs if run.get('conclusion')), None)
     if concluded is None:
         return None
