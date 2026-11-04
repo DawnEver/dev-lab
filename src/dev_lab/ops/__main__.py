@@ -46,7 +46,12 @@ def _show(link: str, *, uri_only: bool) -> None:
     if uri_only:
         emit(link)
         return
-    emit(totp.qr(link))
+    drawn = totp.qr(link)
+    if drawn is None:
+        emit(link)
+        emit('[ops] no QR: install dev-lab[ops] (segno) to draw one; scan or type this URI, it is shown once', err=True)
+        return
+    emit(drawn)
     emit('[ops] scan this QR into the Authenticator; it is shown once (--uri prints the bare URI instead)', err=True)
 
 

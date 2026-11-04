@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import stat
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ from dev_lab.ops.__main__ import main
 from dev_lab.ops.access import adopt, enrol, ensure_include, oath_users, secret_file
 from dev_lab.ops.config import Access, load
 from dev_lab.ops.install import files, install
-from dev_lab.ops.totp import TotpRefused
+from dev_lab.ops.totp import TotpRefused, write_private
 
 
 def _config(tmp_path: Path, tables: str) -> Path:
@@ -282,7 +283,7 @@ def test_access_forwards_nothing_unless_permit_open_names_targets(tmp_path: Path
     assert 'PermitOpen' not in plain
 
 
-@pytest.mark.parametrize('target', ['10.0.1.222', 'any', '10.0.1.222:22 extra:1', 'h:22\\nMatch all'])
+@pytest.mark.parametrize('target', ['10.0.1.222', 'any', '10.0.1.222:22 extra:1', 'h:0', 'h:70000', 'h:22\\nMatch all'])
 def test_a_permit_open_target_that_is_not_host_port_is_refused(tmp_path: Path, target: str) -> None:
     config = load(_host(tmp_path, f'permit_open = ["{target}"]\n'), environ={})
     with pytest.raises(ValueError, match='host:port'):
@@ -302,3 +303,71 @@ def test_access_enrol_draws_a_qr_on_stdout_and_uri_prints_only_the_uri(
     assert 'reused' in capsys.readouterr().err
     assert main(['--config', str(path), 'access', 'enrol', '--force', '--uri']) == 0
     assert capsys.readouterr().out.startswith('otpauth://totp/')
+
+
+def test_a_preexisting_world_readable_users_file_is_narrowed_even_when_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _pam_root(tmp_path)
+    phone = 'JBSWY3DPEHPK3PXP'
+    (root / 'etc/breakglass').mkdir(parents=True)
+    (root / 'etc/breakglass/totp').write_text(phone + '\n', encoding='utf-8')
+    config = load(_config(tmp_path, _ACCESS + 'totp = "/etc/breakglass/totp"\n'), environ={})
+    oath = root / 'etc/dev-lab/ops/users.oath'
+    oath.parent.mkdir(parents=True)
+    oath.write_text(oath_users(Access(account='ops'), phone), encoding='utf-8')
+    oath.chmod(0o644)
+    narrowed: list[tuple[Path, int]] = []
+    real = Path.chmod
+    monkeypatch.setattr(Path, 'chmod', lambda path, mode: (narrowed.append((path, mode)), real(path, mode))[1])
+    assert install(config, root).paths['etc/dev-lab/ops/users.oath'] == 'unchanged'
+    assert (oath, 0o600) in narrowed
+    if sys.platform != 'win32':
+        assert stat.S_IMODE(oath.stat().st_mode) == 0o600
+
+
+def test_write_private_narrows_before_a_byte_is_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target = tmp_path / 'secret'
+    target.write_text('old', encoding='utf-8')
+    target.chmod(0o644)
+    seen: list[int] = []  # the file's size when the mode was narrowed
+    if sys.platform != 'win32':  # POSIX narrows the descriptor; Windows has no fchmod
+        real = os.fchmod
+        monkeypatch.setattr(os, 'fchmod', lambda fd, mode: (seen.append(os.fstat(fd).st_size), real(fd, mode))[1])
+    else:
+        real_chmod = Path.chmod
+        monkeypatch.setattr(
+            Path, 'chmod', lambda path, mode: (seen.append(path.stat().st_size), real_chmod(path, mode))[1]
+        )
+    write_private(target, 'NEWSECRET\n')
+    assert seen == [0]
+    assert target.read_text(encoding='utf-8') == 'NEWSECRET\n'
+    if sys.platform != 'win32':
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize('role', ['access', 'breakglass'])
+def test_enrol_without_segno_prints_the_uri_and_still_enrols(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, role: str
+) -> None:
+    monkeypatch.setitem(sys.modules, 'segno', None)
+    glass = _GLASS.replace('/etc/breakglass/totp', (tmp_path / 'totp').as_posix())
+    path = _host(tmp_path, glass) if role == 'breakglass' else _host(tmp_path)
+    assert main(['--config', str(path), role, 'enrol']) == 0
+    said = capsys.readouterr()
+    assert said.out.startswith('otpauth://totp/')
+    assert 'dev-lab[ops]' in said.err
+    assert (tmp_path / 'totp').read_text(encoding='utf-8').strip() in said.out
+
+
+def test_the_enrol_next_step_reads_the_secret_under_the_root(tmp_path: Path) -> None:
+    root = _pam_root(tmp_path)
+    config = load(_config(tmp_path, _ACCESS + 'totp = "/etc/dev-lab/ops/totp"\n'), environ={})
+    assert any('access enrol' in step for step in install(config, root).next_steps)
+    (root / 'etc/dev-lab/ops/totp').write_text('JBSWY3DPEHPK3PXP\n', encoding='utf-8')
+    assert not any('access enrol' in step for step in install(config, root).next_steps)
+
+
+def test_permit_open_accepts_the_highest_port(tmp_path: Path) -> None:
+    sshd = files(load(_host(tmp_path, 'permit_open = ["h:65535", "h:1"]\n'), environ={}))
+    assert 'PermitOpen h:65535 h:1' in sshd['etc/ssh/sshd_config.d/61-dev-lab-ops-ops.conf']

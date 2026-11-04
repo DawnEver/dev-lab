@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -33,12 +34,14 @@ __all__ = [
     'KEYS_DIR',
     'PAM_INCLUDE',
     'PAM_SSHD',
+    'Prepared',
     'adopt',
     'enrol',
     'ensure_include',
     'files',
     'keys_file',
     'oath_users',
+    'prepare',
     'secret_file',
 ]
 
@@ -50,9 +53,57 @@ _COMMON_AUTH: Final = '@include common-auth'
 #: Where every role's ssh keys live: root's, 0755, so sshd's StrictModes accepts it.
 KEYS_DIR: Final = '/etc/dev-lab/ops'
 #: One ``PermitOpen`` target: a host (name, IPv4, or bracketed IPv6) and a port.
-_HOST_PORT: Final = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+):[0-9]{1,5}')
+_HOST_PORT: Final = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+):([0-9]{1,5})')
+#: The highest TCP port (0 is no port).
+_MAX_PORT: Final = 65535
 #: Characters a sudoers command list cannot carry unescaped.
 _SUDOERS_UNSAFE: Final = frozenset(',:=\\\n')
+
+
+def _is_host_port(target: str) -> bool:
+    found = _HOST_PORT.fullmatch(target)
+    return found is not None and 1 <= int(found.group(2)) <= _MAX_PORT
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """What access adds to an install under a root.
+
+    ``public`` files (0644), ``private`` ones (root 600, they carry a secret), and whether the host's one TOTP secret
+    is still missing there (its next step is enrol or adopt).
+    """
+
+    public: dict[str, str]
+    private: dict[str, str]
+    needs_secret: bool
+
+
+def prepare(config: OpsConfig, root: Path) -> Prepared:
+    """The sshd PAM stack with the include, and the users file derived from the secret -- both read UNDER *root*.
+
+    Raises:
+        ValueError: the PAM stack is absent or of an unexpected shape (:func:`ensure_include`), or two secrets.
+
+    """
+    role = _role(config)
+    stack = _under(root, PAM_SSHD)
+    if not stack.is_file():
+        msg = f'{PAM_SSHD} is absent under {root}; [ops.access] needs the sshd PAM stack to include its file'
+        raise ValueError(msg)
+    text = stack.read_text(encoding='utf-8')
+    public = {_relative(root, stack): ensure_include(text) or text}
+    held = _under(root, secret_file(config))
+    secret = held.read_text(encoding='utf-8').strip() if held.is_file() else ''
+    private = {_relative(root, _under(root, role.oath)): oath_users(role, secret)} if secret else {}
+    return Prepared(public, private, needs_secret=not secret)
+
+
+def _under(root: Path, path: str) -> Path:
+    return root / Path(path).relative_to(Path(path).anchor)
+
+
+def _relative(root: Path, path: Path) -> str:
+    return path.relative_to(root).as_posix()
 
 
 def keys_file(account: str) -> str:
@@ -68,7 +119,7 @@ def files(role: Access) -> dict[str, str]:
             target is not one ``host:port``.
 
     """
-    if wrong := [target for target in role.permit_open if not _HOST_PORT.fullmatch(target)]:
+    if wrong := [target for target in role.permit_open if not _is_host_port(target)]:
         msg = f'[ops.access] permit_open targets must each be host:port: {wrong}'
         raise ValueError(msg)
     if bad := [command for command in role.commands if _SUDOERS_UNSAFE & set(command)]:

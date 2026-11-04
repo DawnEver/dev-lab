@@ -16,6 +16,7 @@ import io
 import os
 import secrets
 import struct
+import sys
 from pathlib import Path
 from typing import Final
 from urllib.parse import quote
@@ -107,13 +108,17 @@ def uri(secret: str, *, issuer: str, account: str) -> str:
     return f'otpauth://totp/{label}?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits={DIGITS}&period={STEP}'
 
 
-def qr(text: str) -> str:
+def qr(text: str) -> str | None:
     """*text* as a QR code drawn in half-block characters, light modules as blocks (a dark terminal's colours).
 
-    Needs the ``dev-lab[ops]`` extra (segno). Shown ONLY on the terminal that enrolled: it carries the secret, so
-    it is returned for stdout, never logged.
+    Needs the ``dev-lab[ops]`` extra (segno); without it, ``None`` -- the caller prints the URI instead, so an
+    enrolment never dies over its picture. Shown ONLY on the terminal that enrolled: it carries the secret, so it is
+    returned for stdout, never logged.
     """
-    import segno  # noqa: PLC0415 -- the ops extra: a consumer importing totp for codes never needs it
+    try:
+        import segno  # noqa: PLC0415 -- the ops extra: a consumer importing totp for codes never needs it
+    except ImportError:
+        return None
 
     out = io.StringIO()
     segno.make(text, error='m').terminal(out=out, compact=True)
@@ -158,9 +163,16 @@ def adopt(secret_file: Path, secret: str) -> bool:
 
 
 def write_private(path: Path, text: str) -> None:
-    """Write *text* to *path* created mode 600 (and re-narrowed to 600 if it existed), making its parent."""
+    """Write *text* to *path* at mode 600, making its parent; the mode is narrowed BEFORE a byte is written.
+
+    ``O_CREAT``'s mode covers only a new file: an existing one keeps its bits, so the open descriptor is narrowed
+    (``fchmod``; Windows, which has none, by path) before the secret reaches it -- no readable window.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    if sys.platform != 'win32':  # POSIX narrows the descriptor; Windows has no fchmod
+        os.fchmod(descriptor, 0o600)
+    else:
+        path.chmod(0o600)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as out:
         out.write(text)
-    path.chmod(0o600)

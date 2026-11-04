@@ -29,10 +29,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dev_lab.ops.access import KEYS_DIR, PAM_SSHD, ensure_include, keys_file, oath_users, secret_file
+from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.config import Backup, OpsConfig, Placement
 from dev_lab.ops.sshkey import ENV
+from dev_lab.ops.totp import write_private
 from dev_lab.supervise.daemon import watchdog_seconds
 
 if sys.platform != 'win32':  # the host accounts: POSIX only
@@ -190,7 +191,7 @@ def files(config: OpsConfig) -> dict[str, str]:
     return {**_promote(config), **_breakglass(config), **_backup(config), **access, **_supervise(config)}
 
 
-def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
+def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared | None) -> tuple[str, ...]:
     steps = []
     if config.promote is not None:
         steps += [f'id {config.promote.user} || useradd --system --home-dir {config.home} {config.promote.user}',
@@ -201,7 +202,7 @@ def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
         steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{role.account}', 'sshd -t && systemctl reload ssh',
                   'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-breakglass-tick.timer']  # fmt: skip
-        if not Path(role.totp).is_file():
+        if not _under(root, role.totp).is_file():
             steps.append(_door(config, 'breakglass', 'enrol'))
     if (backup := config.backup) is not None and backup.dumpers:
         steps += [f'id {backup.account} || useradd --create-home --shell /bin/sh {backup.account}',
@@ -209,10 +210,10 @@ def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
     if backup is not None and backup.source:
         steps += [f'id {backup.user} || useradd --system {backup.user}', 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-backup-pull.timer']  # fmt: skip
-    if (access := config.access) is not None:
-        steps += ['apt-get install -y libpam-oath', f'id {access.account} || useradd --create-home {access.account}',
+    if (role := config.access) is not None:
+        steps += ['apt-get install -y libpam-oath', f'id {role.account} || useradd --create-home {role.account}',
                   'sshd -t && systemctl reload ssh']  # fmt: skip
-        if not Path(secret_file(config)).is_file():
+        if access is not None and access.needs_secret:
             steps.append(
                 f'{_door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
                 f'secret: {_door(config, "access", "adopt", "--secret-file", "-")})'
@@ -338,29 +339,25 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
 
     """
     rendered = files(config)
-    private: set[str] = set()  # carries a secret: root 600
-    if config.access is not None:  # refuse an unexpected PAM stack before anything is written
-        stack = _under(root, PAM_SSHD)
-        if not stack.is_file():
-            msg = f'{PAM_SSHD} is absent under {root}; [ops.access] needs the sshd PAM stack to include its file'
-            raise ValueError(msg)
-        text = stack.read_text(encoding='utf-8')
-        rendered[stack.relative_to(root).as_posix()] = ensure_include(text) or text
-        held = _under(root, secret_file(config))
-        if held.is_file() and (secret := held.read_text(encoding='utf-8').strip()):  # derived, never generated
-            oath = _under(root, config.access.oath).relative_to(root).as_posix()
-            private.add(oath)
-            rendered[oath] = oath_users(config.access, secret)
+    # refuses an unexpected PAM stack (or two secrets) before anything is written
+    access = prepare(config, root) if config.access is not None else None
+    private = access.private if access is not None else {}
+    rendered |= (access.public if access is not None else {}) | private
     done, prepared = _prepare(config, root, chown)
     if config.breakglass is not None or config.access is not None or (config.backup and config.backup.dumpers):
         prepared += _keys_dir(root, chown, done)
     for relative, content in rendered.items():
         target = root / relative
         if target.is_file() and target.read_text(encoding='utf-8') == content:
+            if relative in private:  # a secret is narrowed even when its content already matches
+                target.chmod(0o600)
             done[relative] = 'unchanged'
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding='utf-8', newline='\n')
-        target.chmod(0o600 if relative in private else 0o440 if 'sudoers.d' in relative else 0o644)
+        if relative in private:  # 600 before a byte is written: never a readable window
+            write_private(target, content)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding='utf-8', newline='\n')
+            target.chmod(0o440 if 'sudoers.d' in relative else 0o644)
         done[relative] = 'written'
-    return Rendered(done, _steps(config, prepared))
+    return Rendered(done, _steps(config, root, prepared, access))
