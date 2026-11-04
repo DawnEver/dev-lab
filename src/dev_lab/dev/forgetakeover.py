@@ -32,6 +32,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import comment_list, pages, pr_list
 from dev_lab.dev.forgereview import HostCannot, hold, review_pull
+from dev_lab.dev.forgereview_claim import live_claim, run_ended
 from dev_lab.dev.forgereview_command import Runner, can_start, run_command
 from dev_lab.dev.forgereview_declared import (
     PATHS_FIELD,
@@ -53,7 +54,7 @@ from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan,
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest, client_for
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.platformparts import HOLD_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
@@ -214,7 +215,7 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     if pull.base != base or pull.draft or not pull.head_sha:
         return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
     try:
-        said = review_pull(root, client, review, pull, runner) or f'#{number} {pull.head_sha[:12]}: already reviewed'
+        said = review_pull(root, client, review, pull, runner) or _stood(client, pull.head_sha, number)
     except HostCannot as cannot:
         raise HostCannot(hold(client, pull, f'{HOST_CANNOT}: {cannot}')) from cannot
     if not pending(trusted_bodies(client, number, review.reviewers)):
@@ -226,14 +227,26 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     return '; '.join([said, *ruled])
 
 
-def job_exit(client: Client, number: int, posted: Sequence[str], *, base: str) -> int:
+def _stood(client: Client, head: str, number: int) -> str:
+    """What stands on *head* when :func:`review_pull` did nothing: a claim by another run, else its review."""
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if latest is not None and latest.state == 'pending':
+        return f'#{number} {head[:12]}: claimed by another run, which posts the verdict ({latest.description})'
+    return f'#{number} {head[:12]}: already reviewed'
+
+
+def job_exit(
+    client: Client, number: int, posted: Sequence[str], *, base: str, ended: Callable[[str], bool] | None = None
+) -> int:
     """The review job's exit: ``0`` only when the PR's head is reviewed by what this job did (dev-lab #30).
 
     Gitea's gate counts a review only when the base's ``pull_request_target`` run concluded success
     (:mod:`dev_lab.dev.reviewgate`), so a run must FAIL unless it posted success. *posted* is what this job's
     :func:`~dev_lab.dev.reviewgate.post_review` calls posted, in order
     (:func:`~dev_lab.dev.reviewgate.posted_verdicts`): its LAST state decides. A job that posted none (a head whose
-    counted review stands, a PR it does not review) exits ``0`` only when the gate itself counts the head's review.
+    counted review stands, a PR it does not review) exits ``0`` only when the gate itself counts the head's review,
+    or when another Actions run still running holds the head's claim (:func:`live_claim`, *ended* defaulting to
+    :func:`run_ended`): that run posts the verdict, and its conclusion is the one the gate reads.
     """
     pull = client.pr_view(number)
     if pull.base != base:  # not a PR into the trusted integration: never reviewed, so never a success
@@ -241,6 +254,9 @@ def job_exit(client: Client, number: int, posted: Sequence[str], *, base: str) -
     if posted:
         return 0 if posted[-1] == 'success' else 1
     head = pull.head_sha
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None) if head else None
+    if live_claim(latest, run_ended(client) if ended is None else ended):
+        return 0
     return 0 if head and review_missing(status_list(client, head), forge_posted(client, head, base=base)) is None else 1
 
 

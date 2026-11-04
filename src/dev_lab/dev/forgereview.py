@@ -99,7 +99,16 @@ from typing import TYPE_CHECKING, Any, Final
 from dev_lab.dev import forgereview_scope
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgereview_claim import CAPPED, CLAIMED, DESCRIPTION, counted_success, passed, synced, unable
+from dev_lab.dev.forgereview_claim import (
+    CAPPED,
+    DESCRIPTION,
+    claim_of,
+    counted_success,
+    passed,
+    run_ended,
+    synced,
+    unable,
+)  # fmt: skip
 from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
 from dev_lab.dev.forgereview_declared import PATHS_FIELD, Review, command_for, judge_for, review_at
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
@@ -280,7 +289,9 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     """
     head, target = pull.head_sha, f'origin/{pull.base}'
     counted = forge_posted(client, head, base=pull.base) if runner.verifies else None
-    if (stands := passed(root, client, head, runner.clock(), review.stale, counted=counted)) is not None:
+    if (
+        stands := passed(root, client, head, runner.clock(), review.stale, counted=counted, ended=run_ended(client))
+    ) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     # the forge's own rounds only: a pasted marker naming an unreviewed sha would shrink the range or seed a carry
     done = reviewed_heads(trusted_bodies(client, pull.number, review.reviewers))
@@ -321,8 +332,7 @@ def _command_round(
     me = identity(client, runner.host, serving=runner.serving)
     ruling(me, f'reviewing #{pull.number}')
     self_review(me, sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
-    claim = f'{CLAIMED} {runner.host} at {clock().isoformat(timespec="seconds")}, reviewing'
-    post_review(client, head, state='pending', description=claim)
+    post_review(client, head, state='pending', description=claim_of(runner.host, clock()))
     before = _tagged(root, pull, runner)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
