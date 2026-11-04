@@ -47,7 +47,7 @@ from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_ca
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
-from dev_lab.dev.forgereview_job import job_exit, review_run
+from dev_lab.dev.forgereview_job import job_exit, resume_batches, review_run
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
@@ -248,7 +248,12 @@ def _parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     verbs.add_parser('blocked', help='list the heads a blocking finding holds, with their ids and the door')
     running = verbs.add_parser('run', help="review one PR's head: what a GitHub workflow job runs for its event")
-    running.add_argument('--pr', type=int, required=True)
+    which = running.add_mutually_exclusive_group(required=True)
+    which.add_argument('--pr', type=int)
+    which.add_argument(
+        '--batch-pending', action='store_true',
+        help='resume every open head whose review batch is pending, from its PR (the scheduled job runs this)',
+    )  # fmt: skip
     running.add_argument(
         '--secret-env', action='append', default=[], metavar='NAME',
         help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer',
@@ -299,6 +304,23 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
     return [f'[review] {one}' for one in ruled]
 
 
+def _job(
+    args: argparse.Namespace, root: Path, origin: Client, base: str, *, run: Callable[[Sequence[str], Path], str],
+    ready: Callable[[Sequence[str], Path], str | None], fetch: Callable[[Path, int], object],
+) -> int:  # fmt: skip
+    """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
+    runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready,
+                    secret=all(os.environ.get(name) for name in args.secret_env), verifies=True)  # fmt: skip
+    review = review_at(root, base)
+    if args.batch_pending:
+        for one in resume_batches(root, origin, review, base=base, runner=runner, fetch=fetch):
+            emit(f'[review] {one}')
+        return 0
+    with posted_verdicts() as said:
+        emit(f'[review] {review_run(root, origin, review, args.pr, base=base, runner=runner)}')
+    return job_exit(origin, args.pr, said, base=base)
+
+
 def main(
     argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None,
     run: Callable[[Sequence[str], Path], str] = run_command,
@@ -322,18 +344,7 @@ def main(
         job = args.verb in _FORGE_JOBS
         base = trusted_integration(root, origin) if job else operator_integration(root)
         if args.verb == 'run':
-            secret = all(os.environ.get(name) for name in args.secret_env)
-            runner = Runner(
-                this_machine(),
-                runtimes_with(host_runtimes(), args.runtime),
-                run=run,
-                ready=ready,
-                secret=secret,
-                verifies=True,
-            )
-            with posted_verdicts() as said:
-                emit(f'[review] {review_run(root, origin, review_at(root, base), args.pr, base=base, runner=runner)}')
-            return job_exit(origin, args.pr, said, base=base)
+            return _job(args, root, origin, base, run=run, ready=ready, fetch=pull_in)
         if args.verb in {'held', 'blocked', 'dispose', 'cap', 'adjudicate'}:
             said = _listed(args, root, origin, base, run)
             for one in said:

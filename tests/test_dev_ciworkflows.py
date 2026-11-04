@@ -1026,7 +1026,7 @@ def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: P
     tick = workflows(tmp_path)['merge-tick.yml']
     assert {'status', 'schedule', 'workflow_dispatch'} <= set(tick['on'])
     assert not {'pull_request', 'pull_request_target'} & set(tick['on']), 'a merging token never runs a PR head'
-    (job,) = tick['jobs'].values()
+    job = tick['jobs']['merge-tick']
     gate = job['if']
     assert "startsWith(github.event.context, 'tests/')" in gate
     assert "github.event.context != 'tests/merge-ready'" in gate
