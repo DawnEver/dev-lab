@@ -287,12 +287,14 @@ def test_a_refusal_that_survives_the_refresh_is_refused_and_never_names_a_re_log
     assert 'refresh' in str(caught.value)
 
 
-def test_a_refresh_that_leaves_no_credential_names_the_one_command_that_stores_one(server, tmp_path) -> None:
+def test_a_refresh_that_leaves_the_store_empty_is_retried_and_measured_never_a_re_login(server, tmp_path) -> None:
+    """Ruling 2026-10-18: a credential EXISTED, so the remedy is a retry and ``auth status``, never ``auth login``."""
     _Recorder.accept = lambda _header: False
     with pytest.raises(ForgeCallFailed) as caught:
         _stored_client(server, tmp_path, fresh='').call('GET', _STATUSES)
     assert caught.value.credential_refused
-    assert 'auth login' in str(caught.value)
+    assert 'auth login' not in str(caught.value)
+    assert 'auth status' in str(caught.value)
 
 
 # --------------------------------------------------------------------------------------------

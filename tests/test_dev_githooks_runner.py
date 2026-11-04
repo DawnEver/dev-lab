@@ -56,7 +56,7 @@ class _Recorder:
 
 def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     table = merge(base_rows(), {})
-    assert set(table) == {'pre-commit', 'commit-msg', 'pre-push', 'post-commit'}
+    assert set(table) == {'pre-commit', 'commit-msg', 'pre-push', 'post-commit', 'post-merge', 'post-checkout'}
     assert {hook.id for hook in table['post-commit']} == {'host-pressure', 'pr-notices', 'stray-files'}
     # LOCAL KEEPS IRREVERSIBLE HARM AND SECOND-SCALE CHECKS (toolchain plan P3): history that only grows,
     # the published ref. The lock pin and freshness, the branch set and PR admission are the forge's.
@@ -114,7 +114,7 @@ def test_a_declaration_the_runner_cannot_honour_raises(stage: str, row: dict, ne
 
 def test_a_stage_git_runs_and_the_family_does_not_raises(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[[tool.dev_lab.hooks.post-merge]]\nid = "x"\nrun = ["a"]\n', encoding='utf-8'
+        '[[tool.dev_lab.hooks.post-rewrite]]\nid = "x"\nrun = ["a"]\n', encoding='utf-8'
     )
     with pytest.raises(HookTableError, match='unknown hook stage'):
         hook_table(tmp_path)

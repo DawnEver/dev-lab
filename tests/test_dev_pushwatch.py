@@ -11,7 +11,7 @@ from _branch_repos import clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev import forgecli, netverb, pushwatch
+from dev_lab.dev import forgecli, netverb, pushstop, pushwatch
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgewatch import watch
 from dev_lab.dev.pushwatch import RULE, pushed_ref, reminder, watch_command, watched
@@ -58,7 +58,7 @@ def test_the_stream_prints_one_line_per_status_change_and_exits_0_green_1_red_3_
     _post(forge, sha, 'tests/review', 'pending')
     clock = _Clock(forge, sha, [('tests/review', 'success'), ('tests/review', 'success'), *script])
     said: list[str] = []
-    done = watch(forge, sha, deadline_s=6, every_s=5, say=said.append, clock=clock, sleep=clock.sleep, stream=True)
+    done = watch(forge, (sha,), deadline_s=6, every_s=5, say=said.append, clock=clock, sleep=clock.sleep, stream=True)
     assert done == code
     assert said[:3] == [
         f'{sha[:12]} tests/base pending',
@@ -140,3 +140,97 @@ def test_forge_pr_create_prints_the_monitor_command_for_the_pr_head(tmp_path: Pa
     argv = ['pr', 'create', '--title', 't', '--head', 'pr/w', '--base', 'integrate/main']
     assert forgecli.issue_and_pr(argv, cwd=work, env={}) == 0
     assert watch_command(head) in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------------------------
+# A PUSHED PR IS WATCHED (user ruling 2026-11-04): the session's pushes are journalled, and a Stop is refused while one
+# is pending with no live watcher, or red.
+
+
+def _hook(work: Path, command: str, session: str = 's1') -> None:
+    payload = {'hook_event_name': 'PostToolUse', 'cwd': str(work), 'session_id': session,
+               'tool_input': {'command': command}}  # fmt: skip
+    assert pushwatch.main([], stdin=io.StringIO(json.dumps(payload)), processes=lambda: ()) == 0
+
+
+def _stop(work: Path, forge: StateForge, live: list[str], *, again: bool = False, session: str = 's1') -> dict | None:
+    payload = {'hook_event_name': 'Stop', 'cwd': str(work), 'session_id': session, 'stop_hook_active': again}
+    out = io.StringIO()
+    code = pushstop.main(
+        [], stdin=io.StringIO(json.dumps(payload)), processes=lambda: live, client=lambda _r: forge, out=out
+    )
+    assert code == 0, 'a hook never exits nonzero'
+    return json.loads(out.getvalue()) if out.getvalue().strip() else None
+
+
+def test_a_push_is_journalled_per_session_and_a_later_push_of_the_same_ref_replaces_it(tmp_path: Path, capsys) -> None:
+    work, head = _work(tmp_path)
+    _hook(work, 'git push origin HEAD')
+    assert set(pushwatch.pushed_by(work, 's1').values()) == {head}
+    run_git(work, 'commit', '-q', '--allow-empty', '-m', 'next')
+    newer = git_out(work, 'rev-parse', 'HEAD')
+    _hook(work, 'git push origin HEAD')
+    assert set(pushwatch.pushed_by(work, 's1').values()) == {newer}, "the superseded head is no longer the session's"
+    assert pushwatch.pushed_by(work, 'other') == {}, 'PLANTED CONTROL: another session pushed nothing'
+    capsys.readouterr()
+
+
+def test_a_stop_is_refused_while_a_pushed_head_is_pending_and_unwatched_naming_the_watch_command(
+    tmp_path: Path,
+) -> None:
+    """PLANTED CONTROL: the same pending head with a live watcher lets the turn end; so does a green one."""
+    work, head = _work(tmp_path)
+    _hook(work, 'git push origin HEAD')
+    forge = StateForge()
+    _post(forge, head, 'tests/base', 'pending')
+    block = _stop(work, forge, [])
+    assert block is not None
+    assert block['decision'] == 'block'
+    assert RULE in block['reason']
+    assert watch_command(head) in block['reason']
+    assert _stop(work, forge, [], again=True) is not None, (
+        'an unwatched pending head blocks every time: arming is cheap'
+    )
+    assert _stop(work, forge, [watch_command(head)]) is None
+    _post(forge, head, 'tests/base', 'success')
+    assert _stop(work, forge, []) is None
+
+
+def test_a_red_pushed_head_refuses_the_stop_once_and_names_where_to_read_it(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    _hook(work, 'git push origin HEAD')
+    forge = StateForge()
+    _post(forge, head, 'tests/base', 'failure')
+    block = _stop(work, forge, [])
+    assert block is not None
+    assert head[:12] in block['reason']
+    assert 'forge status list' in block['reason']
+    assert _stop(work, forge, [], again=True) is None, 'a red may need the user: refused once, never a loop'
+
+
+def test_a_session_that_pushed_nothing_or_a_forge_that_cannot_answer_ends_the_turn(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    assert _stop(work, StateForge(), []) is None
+    _hook(work, 'git push origin HEAD')
+
+    def boom(_root: Path) -> StateForge:
+        msg = 'no forge'
+        raise ValueError(msg)
+
+    payload = {'hook_event_name': 'Stop', 'cwd': str(work), 'session_id': 's1'}
+    out = io.StringIO()
+    assert pushstop.main([], stdin=io.StringIO(json.dumps(payload)), processes=lambda: (), client=boom, out=out) == 0
+    assert out.getvalue() == '', 'an unreadable fact is silence'
+    assert head in pushwatch.pushed_by(work, 's1').values()
+
+
+def test_one_watch_takes_many_heads_and_ends_on_the_first_that_settles() -> None:
+    forge, first, second = StateForge(), 'd' * 40, 'e' * 40
+    _post(forge, first, 'tests/base', 'pending')
+    _post(forge, second, 'tests/base', 'pending')
+    clock = _Clock(forge, second, [('tests/base', 'failure')])
+    said: list[str] = []
+    assert watch(forge, (first, second), deadline_s=9, every_s=5, say=said.append, clock=clock, sleep=clock.sleep,
+                 stream=True) == 1  # fmt: skip
+    assert said[-1] == f'{second[:12]} red'
+    assert watched(second, [f'python -m dev_lab.dev.forge watch {first} {second[:8]} --stream'])

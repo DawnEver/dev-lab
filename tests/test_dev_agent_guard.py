@@ -291,6 +291,8 @@ _PUSHWATCH = {'type': 'command', 'command': agent_guard.PUSHWATCH_COMMAND}
 _SWEEP = {'type': 'command', 'command': agent_guard.SWEEP_COMMAND}
 #: A PRESSED HOST TELLS ITS AGENTS (D54): after every shell call, and on each prompt.
 _PRESSURE = {'type': 'command', 'command': agent_guard.PRESSURE_COMMAND}
+#: PUSHED-HEAD-IS-WATCHED, the Stop half (ruling 2026-11-04): after the hand-back check.
+_PUSHSTOP = {'type': 'command', 'command': agent_guard.PUSHSTOP_COMMAND}
 
 
 def test_the_install_wires_the_stray_census_once_at_stop() -> None:
@@ -299,7 +301,7 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
     assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
     assert agent_guard.PUSHWATCH_COMMAND.startswith('node ')
@@ -324,7 +326,12 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
         }
     ]
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
-    assert once['hooks']['Stop'] == [planted['hooks']['Stop'][0], {'hooks': [stray]}, {'hooks': [handback]}]
+    assert once['hooks']['Stop'] == [
+        planted['hooks']['Stop'][0],
+        {'hooks': [stray]},
+        {'hooks': [handback]},
+        {'hooks': [_PUSHSTOP]},
+    ]
     assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
 
 
@@ -336,7 +343,7 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
 
 
 def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:
@@ -365,7 +372,7 @@ def test_the_hand_back_check_is_wired_at_every_stop_through_the_launcher() -> No
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
     after = agent_guard.wire_settings({})
     assert after['hooks']['SubagentStop'] == [{'hooks': [handback]}]
-    assert handback in after['hooks']['Stop'][-1]['hooks']
+    assert any(handback in entry['hooks'] for entry in after['hooks']['Stop'])
     assert agent_guard.HANDBACK_COMMAND.startswith('node ')
     assert '.venv' not in agent_guard.HANDBACK_COMMAND
     del after['hooks']['SubagentStop']
@@ -421,3 +428,14 @@ def test_a_retired_wire_is_removed_from_an_installed_settings_file() -> None:
     assert after['hooks']['PostToolUse'] == [
         {'matcher': 'Bash|PowerShell', 'hooks': [foreign, _PUSHWATCH, _SWEEP, _PRESSURE]}
     ]
+
+
+def test_the_pushed_head_gate_stops_the_main_session_and_the_venv_follow_starts_it() -> None:
+    """Rulings 2026-11-04: the pushed-head gate at Stop (never a subagent's), the venv follow at SessionStart."""
+    after = agent_guard.wire_settings({})
+    assert any(_PUSHSTOP in entry['hooks'] for entry in after['hooks']['Stop'])
+    assert all(_PUSHSTOP not in entry['hooks'] for entry in after['hooks']['SubagentStop'])
+    follow = {'type': 'command', 'command': agent_guard.VENVFOLLOW_COMMAND}
+    assert any(follow in entry['hooks'] for entry in after['hooks']['SessionStart'])
+    assert 'dev_lab.dev.venvfollow --session-start' in agent_guard.VENVFOLLOW_COMMAND
+    assert agent_guard.PUSHSTOP_COMMAND.startswith('node ')

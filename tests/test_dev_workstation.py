@@ -24,7 +24,7 @@ from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import hostrefresh, servetask, workstation, workstationfile, workstationregistry
+from dev_lab.dev import hostrefresh, servetask, venvfollow, workstation, workstationfile, workstationregistry
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.hpchost.spec import host_serve_argv
 from dev_lab.dev.servelock import held
@@ -601,7 +601,7 @@ def test_a_new_committed_lock_rebootstraps_a_served_venv_and_no_remote_is_asked(
         encoding='utf-8',
     )
     (checkout / 'uv.lock').write_text('rev = "1"\n', encoding='utf-8')
-    python = hostrefresh.venv_python(checkout)
+    python = venvfollow.venv_python(checkout)
     python.parent.mkdir(parents=True)
     python.write_text('', encoding='utf-8')
     ran: list[str] = []

@@ -75,11 +75,12 @@ from dev_lab.dev.forgealarm import RUN, Alarm, sound
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.hostrefresh import ENV_STAMP, Moved, follow, network, read, refresh, sync_venv, venv_python
+from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv
 from dev_lab.dev.hpchost.spec import KIT
 from dev_lab.dev.hpchost.steps import Step, Tools
 from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
+from dev_lab.dev.venvfollow import ENV_STAMP, venv_python
 from dev_lab.dev.workstationfile import ROLES, capabilities, machine_file, role_refusal, role_tables, template
 from dev_lab.dev.workstationprobe import CREDENTIAL_REMEDY, com_server, missing, refused_credentials
 from dev_lab.dev.workstationregistry import NoRegistry, forge_refusal, this_computer

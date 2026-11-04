@@ -54,7 +54,14 @@ def repo(tmp_path: Path) -> Path:
 def test_a_missing_shim_is_reported_absent_and_the_checkout_unprotected(repo: Path, capsys) -> None:
     """PLANTED CONTROL: nothing installed -- every declared stage must name itself absent."""
     report = hook_installation(repo)
-    assert {stage.stage for stage in report.stages} == {'pre-commit', 'commit-msg', 'post-commit', 'pre-push'}
+    assert {stage.stage for stage in report.stages} == {
+        'pre-commit',
+        'commit-msg',
+        'post-commit',
+        'pre-push',
+        'post-merge',
+        'post-checkout',
+    }
     assert {stage.status for stage in report.stages} == {ABSENT}
     assert report.verdict == UNPROTECTED
     assert report_installation(['--repo', str(repo)]) == 1
@@ -135,7 +142,10 @@ def test_somebody_elses_hook_is_refused_and_left_alone(repo: Path) -> None:
 
 def test_the_stage_pin_reds_in_both_directions(repo: Path) -> None:
     assert_stages_are_declared(
-        root=repo, declared_stages=frozenset({'pre-commit', 'commit-msg', 'post-commit', 'pre-push'})
+        root=repo,
+        declared_stages=frozenset(
+            {'pre-commit', 'commit-msg', 'post-commit', 'pre-push', 'post-merge', 'post-checkout'}
+        ),
     )
     with pytest.raises(AssertionError, match='Added and not pinned'):
         assert_stages_are_declared(root=repo, declared_stages=frozenset({'pre-commit', 'commit-msg'}))
