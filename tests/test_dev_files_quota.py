@@ -76,7 +76,7 @@ def test_a_supply_that_states_no_files_refuses_a_files_demand() -> None:
 
 
 def test_a_measured_file_cost_replaces_the_prior() -> None:
-    learned.record_run(REPO, learned.SLURM, (), learned.Run(0.0, 1.0, 1.0, files=1200.0))
+    learned.record_run(REPO, learned.SLURM, (), learned.Run(0.0, 1.0, 1.0, files=1200.0), ended=learned.EXITED)
     assert learned.cluster_demand(REPO)(frozenset())['files'] == 1200.0
     assert learned.box_demand(REPO, frozenset(), cpu=1, mem_gb=1)['files'] == 0.0, 'a box part has no file quota'
 

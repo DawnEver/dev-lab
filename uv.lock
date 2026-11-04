@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 [[package]]
 name = "ai-lab"
 version = "0.0.1.dev280+g9966c578c"
-source = { git = "https://github.com/DawnEver/ai-lab.git?rev=integrate%2Fmain#9966c578cd525fa6233c3faf8107b71b3d38e824" }
+source = { git = "https://github.com/DawnEver/ai-lab.git#9966c578cd525fa6233c3faf8107b71b3d38e824" }
 dependencies = [
     { name = "lab-commons", extra = ["paths"] },
 ]
@@ -237,7 +237,7 @@ review = [
 [package.metadata]
 requires-dist = [
     { name = "commitizen" },
-    { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://github.com/DawnEver/lab-commons.git?branch=integrate%2Fmain" },
+    { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://github.com/DawnEver/lab-commons.git" },
     { name = "nodejs-wheel-binaries", marker = "extra == 'test'" },
     { name = "pytest" },
     { name = "pytest-mock" },
@@ -247,7 +247,7 @@ requires-dist = [
 provides-extras = ["test"]
 
 [package.metadata.requires-dev]
-review = [{ name = "ai-lab", git = "https://github.com/DawnEver/ai-lab.git?rev=integrate%2Fmain" }]
+review = [{ name = "ai-lab", git = "https://github.com/DawnEver/ai-lab.git" }]
 
 [[package]]
 name = "flexcache"
