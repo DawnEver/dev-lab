@@ -46,7 +46,7 @@ def _latest(forge: object, sha: str, context: str) -> object:
     return next(one for one in status_list(forge, sha) if one.context == context)
 
 
-def _held(tmp_path: Path) -> tuple[Path, object, int, str]:
+def _held(tmp_path: Path) -> tuple[Path, StateForge, int, str]:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     secretless = Runner('runner-1', run=FakeCommand(), ready=lambda _a, _r: None, secret=False)
@@ -307,7 +307,7 @@ def test_the_offline_verbs_name_the_integration_without_asking_the_forge(
     PLANTED control: the forge names no default branch, which refuses the ``run`` verb (the review job's lookup).
     """
     work, forge, _, head = _held(tmp_path)
-    forge.default_branch = ''  # type: ignore[attr-defined]
+    forge.default_branch = ''
     run_git(work, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/integrate/main')
     assert main(['plan', head], cwd=work, client=forge, fetch=lambda _r, _n: None) == 0
     assert 'x.py' in capsys.readouterr().out
