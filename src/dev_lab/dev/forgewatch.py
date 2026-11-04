@@ -25,6 +25,7 @@ from lab_commons.log import emit
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.pushwatch import record_deadline
 
 __all__ = ['EVERY_S', 'FLOOR_S', 'TESTS', 'main', 'settled', 'watch']
 
@@ -90,7 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--stream', action='store_true', help='one flushed line per status change, for a Monitor')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
-        return watch(
+        done = watch(
             client_for(Path.cwd()),
             args.sha,
             deadline_s=args.deadline_minutes * 60,
@@ -101,3 +102,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ForgeCallFailed, ValueError) as failed:
         emit(f'watch: {failed}', err=True)
         return 2
+    if done == _DEADLINE:  # the Stop gate releases a head whose watch ran out (pushstop)
+        for sha in args.sha:
+            record_deadline(Path.cwd(), sha)
+    return done

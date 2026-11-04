@@ -23,6 +23,7 @@ import re
 import shlex
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
@@ -38,12 +39,15 @@ if TYPE_CHECKING:
 __all__ = [
     'RULE',
     'arm_line',
+    'deadline_reached',
     'main',
+    'pushed_at',
     'pushed_by',
     'pushed_head',
     'pushed_ref',
     'pushed_sha',
     'record',
+    'record_deadline',
     'reminder',
     'watch_command',
     'watched',
@@ -75,6 +79,9 @@ _DELETES: Final = frozenset({'-d', '--delete', '--prune', '--mirror', '--tags'})
 
 #: The directory, in a checkout's own git dir, holding one ``{ref: sha}`` journal per session.
 JOURNAL_DIR: Final = 'dev-lab-pushed'
+
+#: The file in :data:`JOURNAL_DIR` recording each sha whose ``forge watch`` ran to its deadline unsettled.
+DEADLINES: Final = 'deadlines.json'
 
 #: A session id is a file name here: anything else is refused rather than escaped.
 _SESSION: Final = re.compile(r'^[\w.-]{1,128}$')
@@ -166,24 +173,58 @@ def _journal(root: Path, session: str) -> Path | None:
     return Path(git_dir) / JOURNAL_DIR / f'{session}.json'
 
 
-def pushed_by(root: Path, session: str) -> dict[str, str]:
-    """The heads *session* pushed from the checkout at *root*, ``{ref: sha}``; empty when it pushed none."""
-    path = _journal(root, session)
+def _read(path: Path | None) -> dict:
     try:
         table = json.loads(path.read_text(encoding='utf-8')) if path is not None else {}
     except (OSError, ValueError):
         return {}
-    return {str(k): str(v) for k, v in table.items()} if isinstance(table, dict) else {}
+    return table if isinstance(table, dict) else {}
 
 
-def record(root: Path, session: str, ref: str, sha: str) -> None:
-    """Journal that *session* pushed *sha* as *ref*: a later push of the same ref replaces the head."""
+def _write(path: Path, table: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(table, indent=1, sort_keys=True), encoding='utf-8')
+
+
+def _pushes(root: Path, session: str) -> dict[str, dict]:
+    """The journal, ``{ref: {'sha': sha, 'at': epoch seconds}}``; a row of any other shape is not read."""
+    rows = _read(_journal(root, session)).items()
+    return {str(ref): row for ref, row in rows if isinstance(row, dict) and isinstance(row.get('sha'), str)}
+
+
+def pushed_by(root: Path, session: str) -> dict[str, str]:
+    """The heads *session* pushed from the checkout at *root*, ``{ref: sha}``; empty when it pushed none."""
+    return {ref: row['sha'] for ref, row in _pushes(root, session).items()}
+
+
+def pushed_at(root: Path, session: str) -> dict[str, float]:
+    """When *session* last pushed each of its heads, ``{sha: epoch seconds}``."""
+    return {row['sha']: float(row.get('at') or 0.0) for row in _pushes(root, session).values()}
+
+
+def record(root: Path, session: str, ref: str, sha: str, *, at: float | None = None) -> None:
+    """Journal that *session* pushed *sha* as *ref* at *at* (now): a later push of the same ref replaces the head."""
     path = _journal(root, session)
     if path is None:
         return
-    table = {**pushed_by(root, session), ref: sha}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(table, indent=1, sort_keys=True), encoding='utf-8')
+    row = {'sha': sha, 'at': time.time() if at is None else at}
+    _write(path, {**_pushes(root, session), ref: row})
+
+
+def _deadlines(root: Path) -> Path | None:
+    git_dir = _git(root, 'rev-parse', '--absolute-git-dir')
+    return Path(git_dir) / JOURNAL_DIR / DEADLINES if git_dir else None
+
+
+def record_deadline(root: Path, sha: str) -> None:
+    """Record that a ``forge watch`` of *sha* ran to its deadline unsettled (any session's watch)."""
+    if (path := _deadlines(root)) is not None:
+        _write(path, {**_read(path), sha: time.time()})
+
+
+def deadline_reached(root: Path) -> frozenset[str]:
+    """Every sha a ``forge watch`` in this checkout ran to its deadline unsettled."""
+    return frozenset(str(sha) for sha in _read(_deadlines(root)))
 
 
 def _record_push(root: Path, command: str, session: str) -> None:
