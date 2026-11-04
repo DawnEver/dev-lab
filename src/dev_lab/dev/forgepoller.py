@@ -27,19 +27,19 @@ runs, its card -- every host still does: claims go through commit statuses, as b
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.forgeclaim import forge_now
-from dev_lab.dev.forgehosts import hosts_issue
-from dev_lab.dev.forgepulls import Marker, comment_list, marker
+from dev_lab.dev.forgehosts import HostsIssueLost, hosts_issue
+from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, marker
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, Comment
 
-__all__ = ['Lease', 'elect', 'lease_of']
+__all__ = ['POLL_LEASE_TICKS', 'Lease', 'elect', 'lease_of', 'polls']
 
 _FIELDS: Final = re.compile(r'^holder: (?P<holder>\S+)\s*\nuntil: (?P<until>\S+)\s*$', re.MULTILINE)
 
@@ -107,3 +107,18 @@ def elect(client: Client, *, host: str, ttl: timedelta) -> tuple[bool, str]:
             client.call('DELETE', f'{client.repo}/issues/comments/{comment.id}')
     holder = back[0][1].holder if back else host
     return holder == host, holder
+
+
+#: How many tick periods a poller lease outlives its last renewal (:mod:`dev_lab.dev.forgepoller`).
+POLL_LEASE_TICKS = 3
+
+
+def polls(built: Client, host: str, ttl: timedelta, say: Callable[[str], None]) -> bool:
+    """Whether *host* runs the repo-wide poll this tick (:func:`elect`); never if unreadable."""
+    try:
+        here, holder = elect(built, host=host, ttl=ttl)
+    except (OSError, ListingIncomplete, HostsIssueLost) as failed:
+        say(f'[serve] no repo-wide poll this tick: the poller lease could not be read: {failed}')
+        return False
+    say(f'[serve] poller: {holder}' + ('' if here else '; this host claims and produces only'))
+    return here

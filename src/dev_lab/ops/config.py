@@ -7,21 +7,44 @@ owner and repository name come from each clone URL, the trunk and integration br
 
 A role absent from the file is disabled; a role present is validated whole, so a typo is refused at load
 rather than discovered at 04:30.
+
+THE HOST'S SECRETS ARRIVE THROUGH ONE DECLARED FILE. ``[ops] environment_file`` names a root-owned, mode-0600 file
+of ``KEY=VALUE`` lines (systemd's ``EnvironmentFile=`` format) carrying the ``SUPERVISE_*`` overrides -- above all the
+alert channels' secrets. Every rendered unit carries ``EnvironmentFile=``, which systemd (PID 1, as root) reads into
+the service's environment -- so a NON-ROOT verb (promote, backup pull, a supervisor with a ``user``) never re-reads
+the root-only file; it requires that some ``SUPERVISE_*`` variable arrived. A ROOT verb -- above all one reached
+through ``sudo`` (break-glass serve, backup export), whose environment sudo reset -- folds the file in itself, the file
+winning over the process environment so a caller cannot switch a channel off. Either way a declared environment
+that did not arrive refuses the verb rather than letting it run with its alerts silently off.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, replace
+import os
+import sys
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
-from dev_lab.supervise.config import load_config
+from dev_lab.supervise.config import ENV_PREFIX, load_config
 
-__all__ = ['Breakglass', 'OpsConfig', 'Promote', 'load', 'repo_name']
+__all__ = ['Breakglass', 'OpsConfig', 'Placement', 'Promote', 'Supervise', 'load', 'repo_name']
+
+
+@dataclass(frozen=True, kw_only=True)
+class Placement:
+    """Where a role's systemd service sits: its ``Slice=``, and the units it is ordered ``After=`` and ``Wants=``.
+
+    Every role that renders a service carries these keys; each defaults to none, which leaves systemd's own default.
+    """
+
+    slice: str = ''
+    after: tuple[str, ...] = field(default=())
+    wants: tuple[str, ...] = field(default=())
 
 
 @dataclass(frozen=True)
-class Promote:
+class Promote(Placement):
     """The nightly trunk promotion: who runs it, when, and the credential it pushes with."""
 
     user: str
@@ -31,7 +54,7 @@ class Promote:
 
 
 @dataclass(frozen=True)
-class Breakglass:
+class Breakglass(Placement):
     """The emergency merge: the restricted account and its keys, the bypass identity, the TOTP secret, the waves.
 
     ``state`` is a directory (the wave, its reports, the last accepted TOTP step); ``wave_hours`` the longest wave a
@@ -76,7 +99,7 @@ class Offsite:
 
 
 @dataclass(frozen=True)
-class Backup:
+class Backup(Placement):
     """The backup role, either side or both: EXPORT on the forge host, PULL (and off-site copy) on the backup host.
 
     Export (``dumpers`` non-empty): the ``account`` whose forced command is ``ops backup export``, the ``keys`` of the
@@ -120,6 +143,18 @@ class Access:
 
 
 @dataclass(frozen=True)
+class Supervise(Placement):
+    """The host's supervisor daemon (:mod:`dev_lab.supervise`), serving ``project`` with this same file as config.
+
+    ``user`` empty runs it as root (its remedies restart services); ``memory_max`` empty sets no ceiling.
+    """
+
+    project: str
+    user: str = ''
+    memory_max: str = ''
+
+
+@dataclass(frozen=True)
 class OpsConfig:
     """The whole ``[ops]`` table, plus the merged configuration it was read from (for ``[alerts]``)."""
 
@@ -132,6 +167,8 @@ class OpsConfig:
     merged: dict[str, Any]
     backup: Backup | None = None
     access: Access | None = None
+    supervise: Supervise | None = None
+    environment_file: str = ''
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -147,7 +184,9 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Backup, Offsite, Access)](cls: type[T], table: object, where: str) -> T | None:
+def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise)](
+    cls: type[T], table: object, where: str
+) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
         return None
     if not isinstance(table, dict):
@@ -167,13 +206,54 @@ def _role[T: (Promote, Breakglass, Backup, Offsite, Access)](cls: type[T], table
         raise ValueError(msg) from missing
 
 
-def load(path: Path, *, environ: dict[str, str] | None = None) -> OpsConfig:
-    """Read *path*'s ``[ops]`` table; refuse a missing table, a repo list with a duplicate name, or a bad role."""
+def _environment(path: Path) -> dict[str, str]:
+    """The ``KEY=VALUE`` lines of a declared environment file; refuse one unreadable or not an assignment."""
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError as unreadable:
+        msg = f'[ops] environment_file {path} is declared but unreadable ({unreadable}); refusing, alerts would be off'
+        raise ValueError(msg) from unreadable
+    found: dict[str, str] = {}
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(('#', ';')):
+            continue
+        key, sep, value = stripped.partition('=')
+        if not sep or not key.strip():
+            msg = f'[ops] environment_file {path}:{number} is not a KEY=VALUE line'
+            raise ValueError(msg)
+        value = value.strip()
+        if len(value) > 1 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        found[key.strip()] = value
+    return found
+
+
+def _is_root() -> bool:
+    return sys.platform != 'win32' and os.geteuid() == 0
+
+
+def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None) -> OpsConfig:
+    """Read *path*'s ``[ops]`` table and its environment (see the module docstring).
+
+    *as_root* defaults to the process's own euid. Refuses a missing table, a declared environment that did not
+    arrive (root: the file unreadable; non-root: no ``SUPERVISE_*`` variable), a duplicate repo name, a bad role.
+    """
     merged = load_config(path, environ=environ)
     ops = merged.get('ops')
     if not isinstance(ops, dict):
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
+    if environment_file := str(ops.get('environment_file', '')):
+        process = dict(os.environ if environ is None else environ)
+        if _is_root() if as_root is None else as_root:
+            merged = load_config(path, environ=process | _environment(Path(environment_file)))
+        elif not any(name.startswith(ENV_PREFIX) for name in process):
+            msg = (
+                f'[ops] environment_file {environment_file} is declared but no {ENV_PREFIX}* variable reached this '
+                'non-root process (its unit must carry EnvironmentFile=); refusing, alerts would be off'
+            )
+            raise ValueError(msg)
     repos = tuple(ops.get('repos', ()))
     names = [repo_name(url) for url in repos]
     if len(set(names)) != len(names):
@@ -192,6 +272,8 @@ def load(path: Path, *, environ: dict[str, str] | None = None) -> OpsConfig:
         merged=merged,
         backup=_backup(ops.get('backup')),
         access=_role(Access, ops.get('access'), '[ops.access]'),
+        supervise=_role(Supervise, ops.get('supervise'), '[ops.supervise]'),
+        environment_file=environment_file,
     )
 
 
