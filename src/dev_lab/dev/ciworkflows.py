@@ -26,7 +26,7 @@ no review method and no key (user ruling 2026-11-02). It is never a workflow and
 
 A JUDGE REPO RENDERS ITS PREPARE WORKFLOW, undeclared: when the repo's ``[tool.dev_lab.review] where = "judge"``, the
 base's :data:`PREPARE` table is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one
-name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_pointer`) -- a repo layer of that
+name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that
 name merged over it. Any other repo renders none, and a layer of that name there is refused.
 
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):

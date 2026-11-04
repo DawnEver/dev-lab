@@ -171,11 +171,15 @@ def adopts_actions_review(client: Client, ref: str) -> bool:
     return ACTIONS_REVIEW in declared_table(tomllib.loads(manifest_at(client, ref)), 'ci', {})
 
 
-def review_runs(client: Client, head: str, *, workflow: str = ACTIONS_REVIEW) -> list[dict[str, Any]]:
+def review_runs(
+    client: Client, head: str, *, workflow: str = ACTIONS_REVIEW, pull: int | None = None
+) -> list[dict[str, Any]]:
     """The runs of the base's *workflow* (:data:`ACTIONS_REVIEW`) at *head*, newest first, as the forge lists them.
 
     Only a :data:`REVIEW_EVENT` run whose ``path`` is ``review.yml@<ref>`` (Gitea's converter:
     ``fmt.Sprintf("%s@%s", run.WorkflowID, run.Ref)``, the entry file's name) -- the one workflow a PR cannot edit.
+    Given *pull*, only a run of THAT pull request: ``<ref>`` is its ``refs/pull/<n>/head``, so a second PR of the
+    same head into a branch whose workflow its author wrote is never one of them.
     """
     listed: Any = client.call('GET', f'{client.repo}/actions/runs?head_sha={head}&limit={_RUNS_READ}')
     runs = (listed or {}).get('workflow_runs') if isinstance(listed, dict) else None
@@ -185,9 +189,13 @@ def review_runs(client: Client, head: str, *, workflow: str = ACTIONS_REVIEW) ->
     honest = [
         run for run in runs
         if run.get('head_sha') == head and run.get('event') == REVIEW_EVENT
-        and str(run.get('path') or '').startswith(f'{workflow}@')
+        and _of_workflow(str(run.get('path') or ''), workflow, pull)
     ]  # fmt: skip
     return sorted(honest, key=lambda run: int(run.get('id') or 0), reverse=True)
+
+
+def _of_workflow(path: str, workflow: str, pull: int | None) -> bool:
+    return path == f'{workflow}@refs/pull/{pull}/head' if pull is not None else path.startswith(f'{workflow}@')
 
 
 def forge_posted(client: Client, head: str, *, base: str) -> Callable[[CommitStatus], bool]:

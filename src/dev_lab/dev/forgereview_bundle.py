@@ -4,14 +4,14 @@ A repo whose integration branch declares ``[tool.dev_lab.review] where = "judge"
 this way (the serve skips it, :func:`dev_lab.dev.forgereview.review_pull`). User decisions 2026-11-03; the judge
 trusts NOTHING the producer wrote that it can read or derive from the forge (D3):
 
-* PREPARE writes a bundle and a POINTER to it on the head; the pointer's contract -- what is written, who may
-  write it, what of it is read -- is :mod:`~dev_lab.dev.forgereview_pointer`.
+* PREPARE writes a bundle; where it goes, and the only two sources the judge reads one from -- the base's prepare
+  run's own artifact, or a declared preparer's bound pointer -- is :mod:`~dev_lab.dev.forgereview_pointer`.
 * JUDGE (:func:`judge_pending`) runs on a host holding only its own forge token and model key, as the declared
-  ``judge_login``. For each open, non-draft PR into the trusted integration branch whose head carries a TRUSTED
-  pointer (:func:`~dev_lab.dev.forgereview_pointer.trusted_pointer`) and no standing verdict of this identity yet
-  (idempotent per head):
+  ``judge_login``. For each open, non-draft PR into the trusted integration branch whose head has a bundle from a
+  TRUSTED source (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) and no standing verdict of this
+  identity yet (idempotent per head):
 
-  - it reads only the bundle a bound Ref names (:func:`~dev_lab.dev.forgereview_pointer.bundle_at`);
+  - it reads only the bundle that source holds, located by data the judge derives itself, never by a status;
   - it verifies the bundle (:func:`~dev_lab.dev.reviewbundle.load`, :func:`~dev_lab.dev.reviewbundle.current`
     against the FORGE's merge base, :func:`~dev_lab.dev.reviewbundle.matches_forge` against the forge's own diff);
   - it reads the declaration FRESH from the forge's integration branch, the disposals the forge records on the PR
@@ -59,7 +59,7 @@ from dev_lab.dev.forgereview_declared import (
 )
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
 from dev_lab.dev.forgereview_judge import upheld
-from dev_lab.dev.forgereview_pointer import bundle_at, prepare, trusted_pointer
+from dev_lab.dev.forgereview_pointer import prepare, trusted_bundle
 from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import gather, is_code
@@ -174,12 +174,11 @@ def judge_one(
     with tempfile.TemporaryDirectory(prefix='review-judge-') as scratch:
         where = Path(scratch)
         try:
-            found = trusted_pointer(client, review, pull)
-            if found is None or found.state != 'success':
+            bundle = trusted_bundle(client, review, pull, where)
+            if bundle is None:
                 return None
             diff, merge_base = client.pull_diff(pull.number), forge_merge_base(client, pull)
             gone = upheld(trusted_bodies(client, pull.number, review.reviewers))
-            bundle = bundle_at(client, pull, found, where)
             reviewbundle.current(bundle, pull, repo=client.forge.repo, merge_base=merge_base)
             reviewbundle.matches_forge(bundle, diff)
         except BundleRefused as refused:
@@ -244,7 +243,7 @@ def judge_pending(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge review', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
-    making = verbs.add_parser('prepare', help="build a PR head's review bundle, store it, point the head at it")
+    making = verbs.add_parser('prepare', help="build a PR head's review bundle and publish it to the judge")
     making.add_argument('--pr', type=int, required=True)
     making.add_argument('--repo', type=Path, help='the clone holding the head (default: the working directory)')
     judging = verbs.add_parser('judge', help='review every prepared head as this host, posting PR reviews')

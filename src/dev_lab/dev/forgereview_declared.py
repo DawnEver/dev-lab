@@ -31,7 +31,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
                                # `bundle` over a verified review bundle, posting a PR review) -- ONE per repo
     bundle = [...]             # the judge's command over {bundle} (FAMILY_BUNDLE): declared only to differ
     judge_login = "<login>"    # REQUIRED with where = "judge": the forge login whose PR review gates the merge
-    preparers = []             # logins besides the forge's CI identity whose review/bundle pointer the judge reads
+    preparers = []             # logins (never the Actions bot) whose review/bundle pointer the judge reads
 
 The keys of the retired in-process reviewer (``max_tokens``, ``rules``) are refused by name.
 """
@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.units import Q_
 
 from dev_lab.dev import forgereview_scope, reviewcode
+from dev_lab.dev._forgebackends import ACTIONS_BOT
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_command import ReviewUnsupported
 from dev_lab.dev.forgereview_findings import Finding
@@ -217,7 +218,7 @@ class Review:
     where: str = SERVE  # who reviews: SERVE or JUDGE, one per repo
     bundle: tuple[str, ...] = FAMILY_BUNDLE  # the judge's command over {bundle}
     judge_login: str = ''  # where = JUDGE: the ONE login whose PR review gates the merge, declared, never inferred
-    preparers: tuple[str, ...] = ()  # where = JUDGE: logins besides the CI identity whose bundle pointer is read
+    preparers: tuple[str, ...] = ()  # where = JUDGE: logins (never the Actions bot) whose bundle pointer is read
 
     def __post_init__(self) -> None:
         """Refuse a ``where`` outside :data:`WHERE`, a judge with no login, a bad ``bundle`` or duration."""
@@ -229,6 +230,9 @@ class Review:
             raise ValueError(msg)
         if BUNDLE_FIELD not in self.bundle:
             msg = f'bundle = {list(self.bundle)} names no {BUNDLE_FIELD}: the judge would read no bundle'
+            raise ValueError(msg)
+        if forged := {ACTIONS_BOT, ''} & set(self.preparers):
+            msg = f'preparers = {sorted(forged)}: an identity every Actions job posts as is no preparer'
             raise ValueError(msg)
         stale_after(self)
         _duration('quiet', self.quiet)

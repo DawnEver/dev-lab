@@ -1,34 +1,41 @@
-"""THE BUNDLE POINTER: what ``forge review prepare`` writes on a PR head, and what the judge will believe of it.
+"""WHERE THE JUDGE'S BUNDLE COMES FROM: never from anything a PR-head job can write.
 
-The bundle review (:mod:`~dev_lab.dev.forgereview_bundle`) splits at this pointer: one side writes it, the
-other trusts it only after deriving everything it can from the forge itself (D3).
+The bundle review (:mod:`~dev_lab.dev.forgereview_bundle`) splits here: one side prepares the bundle, the other
+reads it only from a source the judge locates itself (D3, F-680a6bd606f0). TWO sources, and no third:
 
-* PREPARE (:func:`prepare`) runs where the PR's code may run and holds no reviewer token. It builds the
-  :mod:`~dev_lab.dev.reviewbundle` of the PR head, uploads it through the artefact store the BASE declares
-  (:func:`~dev_lab.dev.artefacts.store_for` over ``origin/<base>``'s manifest -- the head is data and never
-  chooses), and posts ONE commit status on the head, :data:`BUNDLE_CONTEXT`: its description is the bundle's
-  digest, its target URL the store's :class:`~dev_lab.dev.artefacts.Ref` and the run that prepared it
-  (:func:`pointer`). The status is a POINTER, never a credential.
-* READ (:func:`bundle_at`): only a Ref BOUND to that head and digest in the store layout the judge derives itself
-  (:func:`bound_ref`), never above :data:`MAX_ARCHIVE_BYTES`, and only :data:`BUNDLE_FILE` out of it, never above
+* THE BASE'S PREPARE RUN (Gitea). The judge lists the runs at the head itself
+  (:func:`~dev_lab.dev.reviewgate.review_runs`): event ``pull_request_target``, path
+  ``<PREPARE_WORKFLOW>@refs/pull/<n>/head`` -- the base's workflow, run for THIS pull request, which a PR head can
+  neither start nor alter. The newest such run that concluded decides, and only a ``success`` is read: a failed or
+  cancelled run is no source, and a run still going decides nothing. The bundle is that run's OWN artifact
+  :data:`ARTIFACT` (:func:`~dev_lab.dev.actionsartifact.run_member`), which only a job of that run can upload
+  (its runtime token is scoped to it); no commit status, no URL and no store key is consulted. A PR-head workflow
+  can post any status naming any run, and write to any store the job token reaches -- none of it is read.
+* A DECLARED PREPARER (``[tool.dev_lab.review] preparers``): a login the integration branch names, whose
+  :data:`BUNDLE_CONTEXT` status the forge records as written by it -- an identity no Actions job is given (the
+  declaration refuses the Actions bot, and a Gitea job's status has a null creator). Its pointer names a store
+  :class:`~dev_lab.dev.artefacts.Ref` the judge reads only when BOUND (:func:`bound_ref`) to the head and digest,
+  never above :data:`MAX_ARCHIVE_BYTES`, and only :data:`BUNDLE_FILE` out of it, never above
   :data:`MAX_BUNDLE_BYTES`.
 
-WHO MAY POINT (:func:`trusted_pointer`): a declared ``preparers`` login, or the forge's CI identity -- on GitHub its
-Actions bot; on Gitea, whose Actions statuses all carry a null creator, only a pointer naming a run of the BASE's
-:data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` at this head (``pull_request_target``,
-:func:`~dev_lab.dev.reviewgate.review_runs`), which a PR head can neither start nor alter. Every
-other pointer is logged and ignored. RESIDUAL, on record: on GitHub a same-repository branch's own workflow posts
-as the same bot; what it could point at is still verified by the judge. The workflow is the base's ``_prepare``
-table, which :mod:`~dev_lab.dev.ciworkflows` renders for every ``where = "judge"`` repo.
+Every other pointer is logged and ignored -- on GitHub too, where a same-repository branch's workflow posts as the
+Actions bot: no rendered workflow prepares there, so a bot pointer is never a source.
+
+PREPARE (:func:`prepare`) holds no reviewer token. Inside a Gitea Actions job it attaches the bundle to its own run
+as :data:`ARTIFACT` and posts nothing; on a preparer's host it uploads through the artefact store the BASE declares
+(:func:`~dev_lab.dev.artefacts.store_for` over ``origin/<base>``'s manifest -- the head is data and never chooses)
+and points the head at it (:func:`pointer`). The workflow is the base's ``_prepare`` table, which
+:mod:`~dev_lab.dev.ciworkflows` renders for every ``where = "judge"`` repo.
 """
 
 from __future__ import annotations
 
+import os
 import tarfile
 import tempfile
 import urllib.parse
 import zlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
@@ -37,6 +44,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev._forgebackends import GITHUB
+from dev_lab.dev.actionsartifact import ArtifactRefused, run_member, upload
 from dev_lab.dev.artefacts import (
     ARCHIVE,
     ATTACHMENT_LIMIT_MB,
@@ -55,13 +63,14 @@ from dev_lab.dev.artefactstores import MB, parsed_run_id
 from dev_lab.dev.forgereview_declared import JUDGE, Review, base_manifest, review_from
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.reviewbundle import BundleRefused
-from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, github_posted, job_run_url, review_runs, run_path
+from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, review_runs
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
+    'ARTIFACT',
     'BUNDLE_CONTEXT',
     'BUNDLE_FILE',
     'MAX_ARCHIVE_BYTES',
@@ -71,8 +80,11 @@ __all__ = [
     'pointer',
     'prepare',
     'ref_of_pointer',
-    'trusted_pointer',
+    'trusted_bundle',
 ]
+
+#: The artifact the base's prepare run attaches the bundle to, on its own run.
+ARTIFACT: Final = 'review-bundle'
 
 #: The commit status naming a head's prepared bundle: description the digest, target URL the store's Ref.
 BUNDLE_CONTEXT: Final = 'review/bundle'
@@ -94,13 +106,10 @@ _DIGEST_ID: Final = 16
 
 _SCHEME: Final = 'artefact'
 
-_RUN_FIELD: Final = 'run'
 
-
-def pointer(ref: Ref, *, run: str = '') -> str:
-    """*ref* (and the *run* that prepared it) as the status's target URL: ``artefact:?backend=..&ref=..&run=..``."""
-    fields = ref.manifest() | ({_RUN_FIELD: run} if run else {})
-    return f'{_SCHEME}:?{urllib.parse.urlencode(fields)}'
+def pointer(ref: Ref) -> str:
+    """*ref* as a preparer's status target URL: ``artefact:?backend=..&ref=..``."""
+    return f'{_SCHEME}:?{urllib.parse.urlencode(ref.manifest())}'
 
 
 def _fields(url: str) -> dict[str, str]:
@@ -143,13 +152,19 @@ def bound_ref(ref: Ref, *, repo: str, head: str, digest: str) -> None:
         raise BundleRefused(msg)
 
 
-def prepare(root: Path, client: Client, number: int, *, now: Callable[[], datetime] = lambda: datetime.now(UTC)) -> str:
-    """Build PR *number*'s bundle from *root* (a clone holding its head), store it, point the head at it; the line.
+def prepare(
+    root: Path, client: Client, number: int, *,
+    env: Mapping[str, str] | None = None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> str:  # fmt: skip
+    """Build PR *number*'s bundle from *root* (a clone holding its head) and publish it; the line.
 
+    Inside a Gitea Actions job (*env*, default the process's) it becomes this run's :data:`ARTIFACT` and nothing is
+    posted: the judge finds the run itself. Anywhere else -- a declared preparer's host -- it goes to the artefact
+    store ``origin/<base>`` declares (the head is DATA and never chooses) and the head is pointed at it.
     Refused unless ``origin/<base>`` declares ``where = "judge"``: a ``serve`` repo has no judge to read it (the
-    judge re-reads the declaration from the forge, so this is a courtesy, never the check). The artefact store is
-    the one ``origin/<base>`` declares too -- the head is DATA and never chooses where its bundle goes.
+    judge re-reads the declaration from the forge, so this is a courtesy, never the check).
     """
+    env = os.environ if env is None else env
     pull = client.pr_view(number)
     manifest = base_manifest(root, pull.base)
     if review_from(*manifest).where != JUDGE:
@@ -157,6 +172,13 @@ def prepare(root: Path, client: Client, number: int, *, now: Callable[[], dateti
         raise BundleRefused(msg)
     bundle = reviewbundle.prepare(root, repo=client.forge.repo, pull=pull)
     data, digest = reviewbundle.dump(bundle)
+    said = f'#{number} {pull.head_sha[:12]}: bundle {digest[:19]}'
+    if env.get('GITEA_ACTIONS') == 'true':
+        try:
+            artifact = upload(ARTIFACT, {BUNDLE_FILE: data}, env=env)
+        except ArtifactRefused as refused:
+            raise BundleRefused(str(refused)) from None
+        return f'{said} attached to this run as artifact {ARTIFACT} ({artifact})'
     with tempfile.TemporaryDirectory(prefix='review-bundle-') as scratch:
         tree = Path(scratch) / 'tree'
         tree.mkdir()
@@ -165,38 +187,56 @@ def prepare(root: Path, client: Client, number: int, *, now: Callable[[], dateti
         store = store_for(config_from(*manifest), client, client.forge.repo, size=archive.stat().st_size)
         ident = run_id(pull.head_sha, _PLATFORM, digest.removeprefix('sha256:')[:_DIGEST_ID], now())
         ref = store.put(ident, archive)
-    target = pointer(ref, run=job_run_url(client))
+    target = pointer(ref)
     status_post(client, pull.head_sha, context=BUNDLE_CONTEXT, state='success', description=digest, target_url=target)
-    return f'#{number} {pull.head_sha[:12]}: bundle {digest[:19]} stored as {ref.backend}:{ref.key}'
+    return f'{said} stored as {ref.backend}:{ref.key}'
 
 
-def trusted_pointer(client: Client, review: Review, pull: PullRequest) -> CommitStatus | None:
-    """The latest :data:`BUNDLE_CONTEXT` status on *pull*'s head a TRUSTED poster wrote; ``None`` when none.
+def _prepared_by_run(client: Client, pull: PullRequest) -> reviewbundle.Bundle | None:
+    """The bundle the base's newest CONCLUDED prepare run of *pull* attached to itself, when it succeeded."""
+    runs = review_runs(client, pull.head_sha, workflow=PREPARE_WORKFLOW, pull=pull.number)
+    concluded = next((run for run in runs if run.get('conclusion')), None)
+    if concluded is None:
+        return None
+    if concluded.get('conclusion') != 'success':
+        emit(f'[review] #{pull.number}: prepare run {concluded.get("id")} {concluded.get("conclusion")}: no bundle')
+        return None
+    try:
+        data = run_member(
+            client, int(concluded['id']), artifact=ARTIFACT, member=BUNDLE_FILE,
+            limit=MAX_ARCHIVE_BYTES, member_limit=MAX_BUNDLE_BYTES,
+        )  # fmt: skip
+    except ArtifactRefused as refused:
+        raise BundleRefused(str(refused)) from None
+    return None if data is None else reviewbundle.load(data, reviewbundle.digest_of(data))
 
-    Read over the head's whole history (:func:`~dev_lab.dev.forgestatus.status_history`), newest first, so an
-    untrusted pointer -- logged and skipped -- never shadows a trusted one (module docstring: WHO MAY POINT).
+
+def _preparer_pointer(client: Client, review: Review, pull: PullRequest) -> CommitStatus | None:
+    """The latest :data:`BUNDLE_CONTEXT` ``success`` on *pull*'s head a declared preparer wrote; ``None`` when none.
+
+    Read over the head's whole history (:func:`~dev_lab.dev.forgestatus.status_history`), newest first, so another
+    poster's pointer -- logged and skipped -- never shadows a preparer's.
     """
-    owner, repo = client.forge.owner, client.forge.repo
-    runs: list[frozenset[str]] = []
-
-    def prepared_here(status: CommitStatus) -> bool:
-        if client.backend is GITHUB:
-            return github_posted(status)
-        if status.creator != '':
-            return False
-        if not runs:
-            listed = review_runs(client, pull.head_sha, workflow=PREPARE_WORKFLOW)
-            runs.append(frozenset(path for one in listed if (path := run_path(one.get('html_url') or '', owner, repo))))
-        named = run_path(_fields(status.url).get(_RUN_FIELD, ''), owner, repo)
-        return bool(named) and named in runs[0]
-
     for one in reversed(status_history(client, pull.head_sha)):
         if one.context != BUNDLE_CONTEXT:
             continue
-        if one.creator in review.preparers or prepared_here(one):
+        if one.creator in review.preparers and one.state == 'success':
             return one
         emit(f'[review] #{pull.number}: ignored a {BUNDLE_CONTEXT} pointer by {one.creator or "a null creator"}')
     return None
+
+
+def trusted_bundle(client: Client, review: Review, pull: PullRequest, scratch: Path) -> reviewbundle.Bundle | None:
+    """*pull*'s head's bundle from a TRUSTED source (module docstring), loaded; ``None`` while there is none.
+
+    Raises:
+        BundleRefused: the trusted source holds a bad bundle (too large, unreadable, malformed, unbound).
+
+    """
+    if client.backend is not GITHUB and (bundle := _prepared_by_run(client, pull)) is not None:
+        return bundle
+    found = _preparer_pointer(client, review, pull)
+    return None if found is None else bundle_at(client, pull, found, scratch)
 
 
 def _member(archive: Path) -> bytes:
