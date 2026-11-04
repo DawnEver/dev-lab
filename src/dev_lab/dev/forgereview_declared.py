@@ -32,9 +32,9 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     bundle = [...]             # the judge's command over {bundle} (FAMILY_BUNDLE): declared only to differ
     judge_login = "<login>"    # REQUIRED with where = "judge": the forge login whose PR review gates the merge
     preparers = []             # logins (never the Actions bot) whose review/bundle pointer the judge reads
-    batch = true               # FAMILY_BATCH: model calls through the vendor batch endpoint ({batch}); false: at once
+    batch = true               # FAMILY_BATCH: model calls via the vendor batch endpoint ({batch}); false: at once
     on_expiry = "sync"         # a request the batch let expire (24 h): answered at once ("sync") or failed ("fail")
-    batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one round waits this long on its batches, then posts pending
+    batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one round waits this long on its batches, then pending
 
 The keys of the retired in-process reviewer (``max_tokens``, ``rules``) are refused by name.
 """
@@ -52,17 +52,10 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.units import Q_
 
+from dev_lab.dev import forgereview_batch as batching_
 from dev_lab.dev import forgereview_scope, reviewcode
 from dev_lab.dev._forgebackends import ACTIONS_BOT
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forgereview_batch import (
-    BATCH_FIELD,
-    DEFAULT_BATCH_WAIT,
-    FAMILY_BATCH,
-    FAMILY_ON_EXPIRY,
-    NO_BATCH,
-    ON_EXPIRY,
-)
 from dev_lab.dev.forgereview_command import ReviewUnsupported
 from dev_lab.dev.forgereview_findings import Finding
 from dev_lab.dev.forgereview_judge import Judge, Verdict, judge
@@ -146,7 +139,7 @@ FAMILY_COMMAND: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
     '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
     '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
-    '--disposed', forgereview_scope.DISPOSED_FIELD, BATCH_FIELD,
+    '--disposed', forgereview_scope.DISPOSED_FIELD, batching_.BATCH_FIELD,
 )  # fmt: skip
 
 #: The family's JUDGE (:mod:`dev_lab.dev.forgereview_judge`): ai-lab re-judges open findings and adjudicates
@@ -154,7 +147,7 @@ FAMILY_COMMAND: Final = (
 FAMILY_JUDGE: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review.judge', '--range', RANGE_FIELD, '--model', MODEL_FIELD,
     '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD,
-    '--findings', forgereview_scope.FINDINGS_FIELD, BATCH_FIELD,
+    '--findings', forgereview_scope.FINDINGS_FIELD, batching_.BATCH_FIELD,
 )  # fmt: skip
 
 #: The placeholder the judge's bundle command carries (:data:`dev_lab.dev.reviewbundle.BUNDLE_FIELD`).
@@ -165,7 +158,7 @@ BUNDLE_FIELD: Final = '{bundle}'
 FAMILY_BUNDLE: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--bundle', BUNDLE_FIELD, '--model', MODEL_FIELD,
     '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
-    '--disposed', forgereview_scope.DISPOSED_FIELD, BATCH_FIELD,
+    '--disposed', forgereview_scope.DISPOSED_FIELD, batching_.BATCH_FIELD,
 )  # fmt: skip
 
 #: WHO reviews a repo's PRs (``where``): a serve host or the Actions job over a checkout, or the judge host over a
@@ -230,9 +223,9 @@ class Review:
     bundle: tuple[str, ...] = FAMILY_BUNDLE  # the judge's command over {bundle}
     judge_login: str = ''  # where = JUDGE: the ONE login whose PR review gates the merge, declared, never inferred
     preparers: tuple[str, ...] = ()  # where = JUDGE: logins (never the Actions bot) whose bundle pointer is read
-    batch: bool = FAMILY_BATCH  # model calls through the vendor batch endpoint; False: at once (forgereview_batch)
-    on_expiry: str = FAMILY_ON_EXPIRY  # an expired batch request: one of ON_EXPIRY
-    batch_wait: str = DEFAULT_BATCH_WAIT  # a duration: what one round waits on its batches before it posts pending
+    batch: bool = batching_.FAMILY_BATCH  # via the vendor batch endpoint; False: at once (forgereview_batch)
+    on_expiry: str = batching_.FAMILY_ON_EXPIRY  # an expired batch request: one of batching_.ON_EXPIRY
+    batch_wait: str = batching_.DEFAULT_BATCH_WAIT  # a duration: one round waits this long, then posts pending
 
     def __post_init__(self) -> None:
         """Refuse a ``where`` outside :data:`WHERE`, a judge with no login, a bad ``bundle`` or duration."""
@@ -248,11 +241,9 @@ class Review:
         if forged := {ACTIONS_BOT, ''} & set(self.preparers):
             msg = f'preparers = {sorted(forged)}: an identity every Actions job posts as is no preparer'
             raise ValueError(msg)
-        if self.on_expiry not in ON_EXPIRY:
-            msg = f'on_expiry = {self.on_expiry!r} is not one of {ON_EXPIRY}'
-            raise ValueError(msg)
+        batching_.check_expiry(self.on_expiry)
         stale_after(self)
-        _duration('batch_wait', self.batch_wait)
+        batching_.wait_of(self)
         _duration('quiet', self.quiet)
         _duration('backlog', self.backlog)
 
@@ -260,11 +251,6 @@ class Review:
     def quiet_for(self) -> timedelta:
         """``quiet`` as a :class:`~datetime.timedelta`."""
         return _duration('quiet', self.quiet)
-
-    @property
-    def batch_wait_for(self) -> timedelta:
-        """``batch_wait`` as a :class:`~datetime.timedelta`."""
-        return _duration('batch_wait', self.batch_wait)
 
     @property
     def backlog_for(self) -> timedelta:
@@ -466,7 +452,7 @@ def _duration(key: str, value: str) -> timedelta:
 def command_for(
     review: Review, reviewed: str, runtimes: Mapping[str, Mapping[str, Any]], *,
     paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False, judge: bool = False,
-    bundle: bool = False, batching: Sequence[str] = NO_BATCH,
+    bundle: bool = False, batching: Sequence[str] = batching_.NO_BATCH,
 ) -> list[str]:  # fmt: skip
     """The declared command (or *synthesis*), every placeholder replaced: the range, the slice, this host's values.
 
@@ -487,7 +473,7 @@ def command_for(
     def filled(arg: str) -> list[str]:
         if arg == PATHS_FIELD:
             return list(paths)
-        if arg == BATCH_FIELD:
+        if arg == batching_.BATCH_FIELD:
             return list(batching)
         return [
             HOST_FIELD.sub(host_value, arg)
@@ -503,7 +489,7 @@ def command_for(
 
 def judge_for(
     root: Path, review: Review, reviewed: str, run: Callable[[Sequence[str], Path], str],
-    runtimes: Mapping[str, Mapping[str, Any]], *, batching: Sequence[str] = NO_BATCH,
+    runtimes: Mapping[str, Mapping[str, Any]], *, batching: Sequence[str] = batching_.NO_BATCH,
 ) -> Judge:  # fmt: skip
     """The :data:`~dev_lab.dev.forgereview_judge.Judge` of *review*'s declared judge over *reviewed*, on this host.
 

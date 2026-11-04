@@ -28,6 +28,7 @@ from dev_lab.dev.forgereview_batch import (
     WAIT_LEFT,
     batch_args,
     held_state,
+    wait_of,
     within,
 )
 from dev_lab.dev.forgereview_claim import claimable
@@ -159,7 +160,7 @@ def test_the_family_commands_batch_and_a_caller_without_state_calls_at_once() ->
 
 def test_the_declaration_is_validated() -> None:
     assert review_from('[tool.dev_lab.review]\nbatch = false\n', 'p').batch is False
-    assert review_from('[tool.dev_lab.review]\n', 'p').batch_wait_for == timedelta(minutes=20)
+    assert wait_of(review_from('[tool.dev_lab.review]\n', 'p')) == timedelta(minutes=20)
     with pytest.raises(ValueError, match='on_expiry'):
         review_from('[tool.dev_lab.review]\non_expiry = "later"\n', 'p')
     with pytest.raises(ValueError, match='batch_wait'):

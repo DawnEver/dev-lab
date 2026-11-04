@@ -32,7 +32,7 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import comment_list, pages, pr_list
-from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, within
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_command import ReviewPending, Runner, can_start, run_command
 from dev_lab.dev.forgereview_declared import (
     PATHS_FIELD,
@@ -181,7 +181,7 @@ def takeover(
     with held_state(client, thread.number, head, trusted_logins(client)) as state:
         try:
             said = _taken(root, client, review, head, scope=scope, thread=thread, base=base, host=host,
-                          run=within(run, datetime.now(UTC) + review.batch_wait_for), runtimes=runtimes,
+                          run=within(run, datetime.now(UTC) + wait_of(review)), runtimes=runtimes,
                           batching=batch_args(review, state))  # fmt: skip
         except ReviewPending as waiting:  # nothing is posted: the same takeover, run again, resumes the batch
             msg = f'{BATCH_PENDING} {waiting}; run the takeover again to resume it'

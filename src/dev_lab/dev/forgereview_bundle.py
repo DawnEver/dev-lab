@@ -50,7 +50,7 @@ from dev_lab.dev.artefacts import (
 )
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pr_list
-from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, within
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, wait_of, within
 from dev_lab.dev.forgereview_command import ReviewPending, run_command
 from dev_lab.dev.forgereview_declared import (
     JUDGE,
@@ -207,7 +207,7 @@ def _reviewed(
     reviewed = f'{bundle.base_sha}..{bundle.head_sha}'
     with held_state(client, pull.number, pull.head_sha, {client.whoami()}) as state:
         argv = command_for(review, reviewed, runtimes, bundle=True, batching=batch_args(review, state))
-        timed = within(run, datetime.now(UTC) + review.batch_wait_for)
+        timed = within(run, datetime.now(UTC) + wait_of(review))
 
         def once(filled: Sequence[str], _root: Path) -> str:
             return reviewbundle.judge(bundle, filled, diff=diff, run=lambda final, env: timed(final, where, env))

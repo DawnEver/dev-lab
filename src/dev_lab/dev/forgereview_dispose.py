@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgemerge import ready
 from dev_lab.dev.forgepulls import Marker, comment_upsert, pr_list
-from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, within
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_command import ReviewPending
 from dev_lab.dev.forgereview_declared import Review, judge_for
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, adjudicate, claim, upheld
@@ -126,7 +126,7 @@ def adjudicate_thread(
     since = landed_base(root, base, ledger.head)
     authors = sessions(root, since, ledger.head)
     with held_state(client, number, ledger.head, trusted_logins(client)) as state:
-        timed = within(run, datetime.now(UTC) + review.batch_wait_for)
+        timed = within(run, datetime.now(UTC) + wait_of(review))
         judged = judge_for(root, review, f'{since}..{ledger.head}', timed, runtimes, batching=batch_args(review, state))
         try:
             said = adjudicate(client, number, ledger.open, bodies, judged=judged, adjudicator=adjudicator,

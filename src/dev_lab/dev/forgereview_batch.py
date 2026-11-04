@@ -27,9 +27,11 @@ import contextlib
 import json
 import re
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
+
+from lab_commons.units import Q_
 
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 
@@ -40,8 +42,20 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'BATCH_FIELD', 'BATCH_PENDING', 'DEFAULT_BATCH_WAIT', 'FAMILY_BATCH', 'FAMILY_ON_EXPIRY', 'NO_BATCH', 'ON_EXPIRY',
-    'WAIT_LEFT', 'batch_args', 'held_state', 'trusted_logins', 'within',
+    'BATCH_FIELD',
+    'BATCH_PENDING',
+    'DEFAULT_BATCH_WAIT',
+    'FAMILY_BATCH',
+    'FAMILY_ON_EXPIRY',
+    'NO_BATCH',
+    'ON_EXPIRY',
+    'WAIT_LEFT',
+    'batch_args',
+    'check_expiry',
+    'held_state',
+    'trusted_logins',
+    'wait_of',
+    'within',
 ]  # fmt: skip
 
 #: Whether the family's review commands batch their model calls (user ruling 2026-11-04): ONE declared value; a repo
@@ -73,6 +87,26 @@ _SAID: Final = (
     "The review's model calls of this head run as a vendor batch. This is their state -- the batch ids, no reply and "
     'no key -- so the next run resumes them instead of resubmitting.'
 )
+
+
+def check_expiry(value: str) -> None:
+    """Refuse an ``on_expiry`` outside :data:`ON_EXPIRY`."""
+    if value not in ON_EXPIRY:
+        msg = f'on_expiry = {value!r} is not one of {ON_EXPIRY}'
+        raise ValueError(msg)
+
+
+def wait_of(review: Review) -> timedelta:
+    """*review*'s ``batch_wait``; a bare number or a non-duration is refused naming it."""
+    try:
+        quantity = Q_(review.batch_wait)
+    except Exception as bad:
+        msg = f'batch_wait {review.batch_wait!r} is not a duration; write one such as "20 min"'
+        raise ValueError(msg) from bad
+    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
+        msg = f'batch_wait {review.batch_wait!r} is not a duration (it needs a unit); write one such as "20 min"'
+        raise ValueError(msg)
+    return timedelta(seconds=float(quantity.m_as('s')))
 
 
 def batch_args(review: Review, state: Path) -> tuple[str, ...]:

@@ -104,7 +104,7 @@ from typing import TYPE_CHECKING, Any, Final
 from dev_lab.dev import forgereview_scope
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, within
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_claim import (
     CAPPED,
     DESCRIPTION,
@@ -340,7 +340,7 @@ def _command_round(
     (:mod:`dev_lab.dev.forgereview_batch`); a batch still running ends the round :func:`_batch_pending`.
     """
     with held_state(client, pull.number, pull.head_sha, trusted_logins(client)) as state:
-        run = within(runner.run, runner.clock() + review.batch_wait_for, runner.clock)
+        run = within(runner.run, runner.clock() + wait_of(review), runner.clock)
         return _round(root, client, review, pull, scope=scope, runner=runner, run=run,
                       batching=batch_args(review, state))  # fmt: skip
 
