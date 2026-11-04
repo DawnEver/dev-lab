@@ -62,8 +62,9 @@ class Breakglass(Placement):
     ``repos`` are the clone URLs it may merge into -- ITS OWN set, never ``[ops] repos`` (what promote fetches): a
     forge host may break glass on repos it does not promote, on any forge. Each URL names its forge (the host);
     ``tokens`` maps each forge host to the ONE file holding that forge's break-glass token, so every repo on that
-    forge merges as that identity. A repo whose forge names no token, a token no repo uses, an empty set and one
-    repository name twice are refused at load.
+    forge merges as that identity. A repo is named by its full identity ``<host>/<owner>/<repo>``
+    (:attr:`dev_lab.dev.forge.Forge.identity`), so one name on two forges or two owners is two repos. A repo whose
+    forge names no token, a token no repo uses, an empty set and one identity twice are refused at load.
 
     ``state`` is a directory (the wave, its reports, the last accepted TOTP step); ``wave_hours`` the longest wave a
     code opens; ``max_merges`` its cap (``0`` = none); ``tick`` when the timer closes expired waves and reminds
@@ -92,9 +93,9 @@ class Breakglass(Placement):
         if not self.repos:
             msg = '[ops.breakglass] serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
             raise ValueError(msg)
-        names = [repo_name(url) for url in self.repos]
-        if len(set(names)) != len(names):
-            msg = f'[ops.breakglass] repos name one repository twice: {names}'
+        identities = [forge_of_url(url).identity for url in self.repos]
+        if len(set(identities)) != len(identities):
+            msg = f'[ops.breakglass] repos name one repository twice: {identities}'
             raise ValueError(msg)
         hosts = {forge_of_url(url).host for url in self.repos}
         if untokened := sorted(hosts - set(self.tokens)):
@@ -104,9 +105,9 @@ class Breakglass(Placement):
             msg = f'[ops.breakglass.tokens] {", ".join(unused)} serves no repo in [ops.breakglass] repos'
             raise ValueError(msg)
 
-    def repo(self, name: str) -> str | None:
-        """The clone URL whose repository is called *name*, else ``None``."""
-        return next((url for url in self.repos if repo_name(url) == name), None)
+    def repo(self, identity: str) -> str | None:
+        """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
+        return next((url for url in self.repos if forge_of_url(url).identity == identity), None)
 
     def token_file(self, url: str) -> str:
         """The file holding the break-glass token of *url*'s forge."""

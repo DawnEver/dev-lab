@@ -56,7 +56,13 @@ def test_a_merge_sends_the_shown_head_and_no_code(tmp_path: Path) -> None:
     )
     assert code == 0
     assert send.sent == [
-        {'action': 'merge', 'repo': 'alpha', 'pr': 7, 'head': 'c' * 40, 'reason': 'review-bot is down'}
+        {
+            'action': 'merge',
+            'repo': 'forge.example/owner/alpha',
+            'pr': 7,
+            'head': 'c' * 40,
+            'reason': 'review-bot is down',
+        }
     ]
 
 

@@ -19,7 +19,8 @@ One request is one JSON line with an ``action``:
 
 * ``open {code, hours?, max_merges?}`` -- refused while a wave is open (never because an earlier audit is
   unacknowledged); ``hours`` may only shorten the configured ``wave_hours``, ``max_merges`` only tighten its cap;
-* ``merge {repo, pr, head, reason}`` -- refused outside an open wave, past the cap, for a repo not in
+* ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
+  the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
   declared integration branch, or whose head is not the one shown; then comment, merge at that head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use

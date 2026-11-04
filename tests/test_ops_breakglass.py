@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, serve
-from _ops_fixtures import GLASS, NOW, code, config
+from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 
 from dev_lab.dev.breakglass import reason
 from dev_lab.dev.reviewgate import DeclarationUnread
@@ -92,9 +92,7 @@ class Host:
         return self.server.handle(json.dumps({'action': action, **fields}))
 
     def merge(self, **overrides: object) -> str:
-        return self.ask(
-            'merge', **{'repo': 'alpha', 'pr': 7, 'head': HEAD, 'reason': 'review-bot is down', **overrides}
-        )
+        return self.ask('merge', **{'repo': ALPHA, 'pr': 7, 'head': HEAD, 'reason': 'review-bot is down', **overrides})
 
     def later(self, seconds: float) -> None:
         self.clock[0] += seconds
@@ -110,14 +108,14 @@ def host(tmp_path: Path) -> Host:
 
 def test_a_wave_merges_without_a_code_announces_each_merge_and_audits_on_close(host: Host) -> None:
     assert 'open for 4 h, at most 3' in host.ask('open', code=host.code())
-    assert host.merge().startswith('merged alpha#7')
+    assert host.merge().startswith(f'merged {ALPHA}#7')
     assert [call[0] for call in host.forge.calls] == ['comment', 'merge']
     assert reason(host.forge.calls[1][2]) == 'review-bot is down'  # the existing Break-Glass notice reads it
-    merged = [a for a in host.alerts if a[0] == 'break-glass MERGED alpha#7']
+    merged = [a for a in host.alerts if a[0] == f'break-glass MERGED {ALPHA}#7']
     assert HEAD in merged[0][1]  # the SERVER's announcement names the head that actually merged
     assert KEY in merged[0][1]  # ... and the ssh key that asked for it
     report = host.ask('close')
-    assert f'alpha#7 at aaaaaaaaaaaa by key {KEY}: review-bot is down' in report
+    assert f'{ALPHA}#7 at aaaaaaaaaaaa by key {KEY}: review-bot is down' in report
     assert 'awaits acknowledgement' not in report
     assert 'audit' in host.ask('status')
 
@@ -205,7 +203,7 @@ def test_the_tick_reminds_an_unacknowledged_audit_once_per_period(host: Host) ->
 @pytest.mark.parametrize(
     ('overrides', 'forge', 'why'),
     [
-        ({'repo': 'beta'}, FakeForge(), 'not a repository this host serves'),
+        ({'repo': 'alpha'}, FakeForge(), 'not a repository this host serves'),
         ({'reason': 'short'}, FakeForge(), 'at least 10'),
         ({}, FakeForge(state='closed'), 'closed, not open'),
         ({}, FakeForge(base='main'), 'not the integration branch integrate/main'),
@@ -333,7 +331,7 @@ def test_an_alert_that_fails_never_loses_the_audit_or_the_merge(host: Host) -> N
 
     server = host.server
     server.alert = broken
-    said = server.handle(json.dumps({'action': 'merge', 'repo': 'alpha', 'pr': 7, 'head': HEAD,
+    said = server.handle(json.dumps({'action': 'merge', 'repo': ALPHA, 'pr': 7, 'head': HEAD,
                                      'reason': 'review-bot is down'}))  # fmt: skip
     assert said.startswith('merged')
     assert host.config.breakglass is not None
@@ -375,7 +373,7 @@ def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
     server = host.server
     server.forge_for = boom
     with pytest.raises(KeyError):
-        server.handle(json.dumps({'action': 'merge', 'repo': 'alpha', 'pr': 7, 'head': HEAD,
+        server.handle(json.dumps({'action': 'merge', 'repo': ALPHA, 'pr': 7, 'head': HEAD,
                                   'reason': 'review-bot is down'}))  # fmt: skip
 
 
@@ -390,9 +388,9 @@ def test_an_unreadable_declaration_is_a_refusal_audited_and_alerted(host: Host) 
 
 def test_each_repo_is_merged_on_its_own_forge(host: Host) -> None:
     host.ask('open', code=host.code())
-    host.merge(repo='gamma')
-    host.merge(repo='alpha')
-    assert host.asked == [GLASS[1], GLASS[0]]
+    assert 'merged github.com/owner/alpha#7' in host.merge(repo=MIRROR)
+    host.merge(repo=ALPHA)
+    assert host.asked == [GLASS[1], GLASS[0]]  # one name, two forges: each merged on its own
 
 
 def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) -> None:
@@ -400,8 +398,8 @@ def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) 
     planted = Host(config(tmp_path, [promoted]))
     planted.ask('open', code=planted.code())
     with pytest.raises(BreakglassRefused, match='beta is not a repository'):
-        planted.merge(repo='beta')
-    planted.merge(repo='gamma')  # control: a repo break-glass declares, promoted here or not
+        planted.merge(repo='gitea.example/owner/beta')
+    planted.merge(repo=MIRROR)  # control: a repo break-glass declares, promoted here or not
 
 
 @pytest.mark.parametrize(
@@ -409,7 +407,7 @@ def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) 
     [
         ({'tokens': {'gitea.example': 't'}}, 'github.com names no token'),  # planted: a forge with no token
         ({'tokens': {'gitea.example': 't', 'github.com': 'g', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
-        ({'repos': (*GLASS, 'https://github.com/other/alpha.git')}, 'twice'),
+        ({'repos': (*GLASS, 'https://gitea.example/owner/alpha')}, 'twice'),  # the exact same identity again
         ({'repos': ()}, 'serves no repo'),
     ],
 )
@@ -422,6 +420,14 @@ def test_a_break_glass_declaration_that_lies_is_refused_at_load(
              'tokens': {'gitea.example': 't', 'github.com': 'g'}, **bad}  # fmt: skip
     with pytest.raises(ValueError, match=why):
         Breakglass(**table)
+
+
+def test_one_name_on_two_forges_or_owners_is_two_repos(tmp_path: Path) -> None:
+    other = 'https://github.com/someone/alpha.git'
+    built = config(tmp_path, [], glass=(*GLASS, other))
+    assert built.breakglass is not None
+    assert [built.breakglass.repo(i) for i in (ALPHA, MIRROR, 'github.com/someone/alpha')] == [*GLASS, other]
+    assert built.breakglass.repo('alpha') is None
 
 
 def test_each_forge_names_its_token_once(host: Host) -> None:

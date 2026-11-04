@@ -43,8 +43,10 @@ def origin(tmp: Path, name: str = 'alpha') -> tuple[str, str]:
     return bare.as_uri(), git(work, 'rev-parse', 'HEAD')
 
 
-#: The repos break-glass serves in :func:`config`: one per forge, each forge naming its token file once.
-GLASS = ('https://gitea.example/owner/alpha.git', 'https://github.com/owner/gamma.git')
+#: The repos break-glass serves in :func:`config`: ONE NAME on two forges (a mirror), each forge's token named once.
+GLASS = ('https://gitea.example/owner/alpha.git', 'https://github.com/owner/alpha.git')
+#: Their identities, as a request names them.
+ALPHA, MIRROR = 'gitea.example/owner/alpha', 'github.com/owner/alpha'
 
 
 def config(tmp: Path, repos: list[str], *, extra: str = '', glass: tuple[str, ...] = GLASS) -> OpsConfig:
