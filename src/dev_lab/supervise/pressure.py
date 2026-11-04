@@ -15,12 +15,12 @@ RAM read ~80% -- so a host-level percentage is not the measurement. What is:
 
 Every threshold is a named constant, overridable by the same name in the machine file's ``[pressure]`` table
 (:func:`thresholds`). This module MEASURES AND REPORTS; it never deletes (:mod:`dev_lab.supervise.components.
-resources` rules that) -- the remedy it carries is the biggest consumers and the family's cleanup doors.
+resources` rules that) -- the remedy it carries is the biggest consumers (:mod:`dev_lab.supervise.consumers`)
+and the family's cleanup doors.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -29,26 +29,22 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
+from dev_lab.supervise.consumers import Consumer, consumers
 from dev_lab.supervise.process.systemd import subprocess_runner
 
 __all__ = [
     'CGROUP_MOUNT',
     'DOORS',
-    'OWNED',
     'RAM_CRITICAL',
     'THRESHOLDS',
-    'WALK_BUDGET',
-    'Consumer',
     'Declared',
     'Finding',
     'Measured',
-    'consumers',
     'control_group',
     'measure',
     'parse_events',
     'parse_psi',
     'thresholds',
-    'tree_bytes',
 ]
 
 #: Where the box's RAM counts as full -- supervision's ``ProcessMonitor`` ceiling and a workstation's, one source.
@@ -90,23 +86,6 @@ PSI: Final[Mapping[str, Path]] = {'memory': Path('/proc/pressure/memory'), 'cpu'
 #: A slope needs two readings.
 _SLOPE_POINTS: Final = 2
 
-#: How many directory entries one reading's consumer walk may visit: a pressed disk is not walked whole.
-WALK_BUDGET: Final = 200_000
-
-#: How many consumers a disk alarm names.
-TOP_CONSUMERS: Final = 5
-
-#: The trees the forge and the agents make and may clean, as globs under a declared path (``*/`` one checkout
-#: deeper too) -- a consumer matching one is marked ``owned``; any other is named and never touched.
-OWNED: Final = (
-    '.claude/worktrees/*',
-    'output/logs/*',
-    '.cache/act/*',
-    '.cache/actcache/*',
-    '_work/_temp/*',
-    'ci/*',
-)
-
 #: The family's cleanup doors, in the order an agent should try them. None is run by this module.
 DOORS: Final = (
     'python -m dev_lab.dev.branchset --apply  (landed branches and their worktrees)',
@@ -133,15 +112,6 @@ class Declared:
         """From ``[pressure]``: ``paths``, ``services`` and any threshold by name."""
         paths = tuple(Path(str(p)) for p in table.get('paths', ()))
         return cls(paths, tuple(str(s) for s in table.get('services', ())), thresholds(table))
-
-
-@dataclass(frozen=True)
-class Consumer:
-    """One directory holding a pressed disk: its path AS READ FROM DISK (untrusted text), bytes, and ownership."""
-
-    path: str
-    bytes: int
-    owned: bool
 
 
 @dataclass(frozen=True)
@@ -337,75 +307,6 @@ def _windowed(psutil: ModuleType | None, limits: Mapping[str, float]) -> tuple[l
         if value > limits[f'{name}_percent_ceiling']
     ]
     return findings, {'cpu:percent': round(cpu, 1), 'memory:percent': round(memory, 1)}
-
-
-def tree_bytes(path: Path, budget: list[int], device: int) -> int:
-    """The bytes under *path* on the DECLARED ROOT'S filesystem *device*, symlinks not followed, within *budget*.
-
-    Bounded twice, because it runs when a disk is ALREADY pressed and on every tick while it stays so: it never
-    descends into another mount (``/proc``, ``/sys``, another disk are not this disk), and it stops when the
-    shared *budget* (:data:`WALK_BUDGET` entries per reading) is spent -- the sizes then read as lower bounds. An
-    entry that cannot be read is skipped, never raised.
-    """
-    total, stack = 0, [path]
-    while stack and budget[0] > 0:
-        try:
-            entries = list(os.scandir(stack.pop()))
-        except OSError:
-            continue
-        for entry in entries:
-            if budget[0] <= 0:
-                break
-            budget[0] -= 1
-            try:
-                info = entry.stat(follow_symlinks=False)
-            except OSError:
-                continue
-            total += info.st_size
-            if entry.is_dir(follow_symlinks=False) and info.st_dev == device:
-                stack.append(Path(entry.path))
-    return total
-
-
-def _device(path: Path) -> int | None:
-    try:
-        return path.lstat().st_dev
-    except OSError:
-        return None
-
-
-def consumers(
-    roots: Sequence[Path], *, top: int = TOP_CONSUMERS, device: Callable[[Path], int | None] = _device
-) -> tuple[Consumer, ...]:
-    """The *top* directories under *roots* by bytes, each marked owned (an :data:`OWNED` glob) or not.
-
-    An owned tree is named per child (one worktree, one log day), any other directory as one entry holding
-    what is NOT owned under it -- so no byte is counted twice, and the agent sees what it may clean. A root
-    that cannot be listed names nothing: the alarm stands without its consumers, never vanishes. A directory on
-    ANOTHER device than its declared root (``/proc``, ``/sys``, ``/dev``, ``/run`` under ``/``) is not a consumer
-    of this disk and is never walked.
-    """
-    seen: dict[Path, bool] = {}
-    devices: dict[Path, int] = {}
-    for root in roots:
-        home = device(root)
-        if home is None:
-            continue
-        try:
-            for pattern in OWNED:
-                for hit in (*root.glob(pattern), *root.glob(f'*/{pattern}')):
-                    if hit.is_dir() and not hit.is_symlink() and device(hit) == home:
-                        seen[hit], devices[hit] = True, home
-            for child in sorted(root.iterdir()) if root.is_dir() else ():
-                if child.is_dir() and not child.is_symlink() and device(child) == home and child not in seen:
-                    seen[child], devices[child] = False, home
-        except OSError:
-            continue
-    budget = [WALK_BUDGET]
-    sizes = {p: tree_bytes(p, budget, devices[p]) for p in seen}
-    rest = {p: n - sum(sizes[o] for o, mine in seen.items() if mine and p in o.parents) for p, n in sizes.items()}
-    ranked = sorted(seen, key=lambda p: -rest[p])[:top]
-    return tuple(Consumer(p.as_posix(), max(rest[p], 0), seen[p]) for p in ranked)
 
 
 def measure(

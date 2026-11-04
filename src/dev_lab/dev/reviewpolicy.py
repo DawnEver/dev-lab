@@ -4,7 +4,7 @@ ONE engine (ai-lab review), ONE policy (here), TWO triggers: the session's pre-p
 plugin, another repo, JavaScript) and the forge PR review (the merge gate). The policy is not restated here: it is
 READ from the values the forge review itself runs on -- :func:`dev_lab.dev.forgereview_declared.load_review` (family
 defaults overlaid by the repo's ``[tool.dev_lab.review]``), :data:`~dev_lab.dev.forgereview_findings.BLOCKING`,
-:data:`~dev_lab.dev.forgereview_rounds.SUMMARY_CITES` and :func:`dev_lab.dev.principles.payload` -- so the export
+:data:`~dev_lab.dev.forgereview_summary.SUMMARY_CITES` and :func:`dev_lab.dev.principles.payload` -- so the export
 and the gate cannot disagree.
 
 ``python -m dev_lab.dev.reviewpolicy --json [--repo <path>]`` prints :func:`policy`; ``max_file_bytes`` is the
@@ -22,7 +22,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_findings import BLOCKING
-from dev_lab.dev.forgereview_rounds import SUMMARY_CITES
+from dev_lab.dev.forgereview_summary import SUMMARY_CITES
 from dev_lab.dev.principles import payload
 
 __all__ = ['EXPORT_VERSION', 'main', 'policy']

@@ -121,12 +121,15 @@ def test_a_light_door_s_packages_are_every_import_its_verbs_make(tmp_path: Path)
     for body in narrowed:
         modules = sorted({m for run in _runs(body) for m in re.findall(r'-m (dev_lab\.dev\.\w+)', run)})
         assert modules
-        probe = (
+        probe = (  # what the VERBS import: the interpreter's startup (a host's sitecustomize) is not theirs
             'import importlib, json, sys\n'
+            'started = set(sys.modules)\n'
             f'for m in {modules!r}: importlib.import_module(m)\n'
-            'print(json.dumps(sorted({n.split(".")[0] for n in sys.modules})))'
+            'print(json.dumps(sorted({n.split(".")[0] for n in set(sys.modules) - started})))'
         )
-        done = subprocess.run([sys.executable, '-I', '-c', probe], capture_output=True, text=True, check=True)
+        done = subprocess.run(
+            [sys.executable, '-I', '-c', probe], capture_output=True, text=True, encoding='utf-8', check=True
+        )
         imported = set(json.loads(done.stdout)) - set(sys.stdlib_module_names) - {'dev_lab'}
         assert {name for name in imported if not name.startswith('_')} <= _only(body), modules
 

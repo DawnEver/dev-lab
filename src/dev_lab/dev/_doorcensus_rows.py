@@ -33,14 +33,14 @@ DOORS: tuple[DoorRow, ...] = (
         repo='dev-lab',
         path='Makefile',
         commands=14,
-        deliveries=frozenset({'INERT'}),
+        deliveries=frozenset({'INERT', 'RESOLVES'}),
         why=(
-            'The kit declares no floating requirement -- it IS the kit -- so every command here is '
-            'INERT by the SUBJECT being absent rather than by the commands being safe. This row is '
-            'the one that acquires teeth on the day a bare `git+` requirement lands in this '
-            'manifest, which is why the guard is pointed here rather than waived: a waiver would '
-            'have had to be noticed and removed by hand. 14 since 2026-10-01: `install-dev` now also '
-            'runs `hook_install --install`, a door added, not a delivery changed.'
+            'The row acquired its teeth on 2026-11-03, as it said it would: the `review` group declares '
+            'ai-lab as a bare `git+` requirement (c1bb741f, the lock names the commit), so the subject is '
+            'no longer absent. RE-MEASURED then: the two `uv pip install -e` doors (`install`, '
+            '`install-dev`) RESOLVE -- they re-resolve rather than serve a stale local resolution -- and '
+            'the other twelve stay INERT; nothing reads UNLOCKED. 14 since 2026-10-01: `install-dev` '
+            'also runs `hook_install --install`, a door added, not a delivery changed.'
         ),
     ),
 )
