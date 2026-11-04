@@ -21,12 +21,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgemerge import ready
 from dev_lab.dev.forgepulls import Marker, comment_upsert, pr_list
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, within
+from dev_lab.dev.forgereview_command import ReviewPending
 from dev_lab.dev.forgereview_declared import Review, judge_for
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, adjudicate, claim, upheld
 from dev_lab.dev.forgereview_rounds import DISPOSE_DOOR, blocking, ledger_of, trusted_bodies, verdict
@@ -121,10 +124,15 @@ def adjudicate_thread(
     if ledger is None:
         return [f'#{number}: no review round, nothing to adjudicate']
     since = landed_base(root, base, ledger.head)
-    judged = judge_for(root, review, f'{since}..{ledger.head}', run, runtimes)
     authors = sessions(root, since, ledger.head)
-    said = adjudicate(client, number, ledger.open, bodies, judged=judged, adjudicator=adjudicator, authors=authors,
-                      dry_run=dry_run)  # fmt: skip
+    with held_state(client, number, ledger.head, trusted_logins(client)) as state:
+        timed = within(run, datetime.now(UTC) + review.batch_wait_for)
+        judged = judge_for(root, review, f'{since}..{ledger.head}', timed, runtimes, batching=batch_args(review, state))
+        try:
+            said = adjudicate(client, number, ledger.open, bodies, judged=judged, adjudicator=adjudicator,
+                              authors=authors, dry_run=dry_run)  # fmt: skip
+        except ReviewPending as waiting:  # no ruling is posted: the next adjudication resumes the batch
+            return [f'#{number} {ledger.head[:12]}: adjudication waits -- {BATCH_PENDING} {waiting}']
     if dry_run:
         return said
     state, why = verdict(ledger, upheld(trusted_bodies(client, number, review.reviewers)), number)

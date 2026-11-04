@@ -1,7 +1,9 @@
 """The host side of the declared review command: whether this host can start it, and running it.
 
 :mod:`dev_lab.dev.forgereview` reads the outcome: a host that cannot (:class:`ReviewUnsupported`) posts
-``HOST_UNABLE`` and leaves the head claimable; a refusal (:class:`ReviewRefused`) is the head's own ``error``.
+``HOST_UNABLE`` and leaves the head claimable; a refusal (:class:`ReviewRefused`) is the head's own ``error``; a
+command whose model batch is still running at the end of its wait (:data:`PENDING_EXIT`) is :class:`ReviewPending`
+-- no verdict at all (:mod:`dev_lab.dev.forgereview_batch`).
 """
 
 from __future__ import annotations
@@ -21,10 +23,17 @@ from dev_lab.dev.reviewbudget import Spend, read_spend
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-__all__ = ['REFUSED_EXIT', 'ReviewRefused', 'ReviewUnsupported', 'Runner', 'can_start', 'run_command']
+__all__ = [
+    'PENDING_EXIT', 'REFUSED_EXIT', 'ReviewPending', 'ReviewRefused', 'ReviewUnsupported', 'Runner', 'can_start',
+    'run_command',
+]  # fmt: skip
 
 #: The exit a review command REFUSES with (a bad method, version or range): empty stdout, the reason on stderr.
 REFUSED_EXIT: Final = 2
+
+#: The exit a review command ends with when its model batch is still running at the end of its ``--wait``: EX_TEMPFAIL
+#: (sysexits.h), ai-lab's ``ai_lab.batch.PENDING_EXIT``. Nothing on stdout; ``pending: <line>`` on stderr.
+PENDING_EXIT: Final = 75
 
 _UNSAFE_PATH_EXIT: Final = 3
 #: Run under :data:`SAFE_PATH`: an interpreter reporting no ``sys.flags.safe_path`` (older than 3.11) exits 3.
@@ -40,6 +49,10 @@ _COMMAND_TIMEOUT_S: Final = 1800
 
 class ReviewRefused(OSError):
     """The review command refused the request (exit :data:`REFUSED_EXIT`), naming why on stderr."""
+
+
+class ReviewPending(OSError):
+    """The review command's model batch is still running: the state names it, and the next run resumes it."""
 
 
 class ReviewUnsupported(OSError):
@@ -103,6 +116,9 @@ def run_command(argv: Sequence[str], root: Path, env: Mapping[str, str] | None =
     if done.returncode == REFUSED_EXIT:
         msg = f'the review command refused: {why}'
         raise ReviewRefused(msg)
+    if done.returncode == PENDING_EXIT:
+        said = done.stderr.strip().splitlines()
+        raise ReviewPending(said[-1].removeprefix('pending: ') if said else 'a model batch is still running')
     if done.returncode != 0:
         msg = f'the review command exited {done.returncode}: {why}'
         raise OSError(msg)

@@ -68,6 +68,11 @@ integration into a PR restarted its review at the merge base (consumer #5397, tw
   (``ready_for_review`` in the workflows' types; the serve's next tick). A push after ready does NOT turn the PR
   back into a draft (D53): a fix push gets its round, and the debounce coalesces a burst of them.
 
+A BATCH STILL RUNNING IS NO VERDICT (user ruling 2026-11-04, :mod:`dev_lab.dev.forgereview_batch`): the model calls
+go through the vendor's batch endpoint by default; a round whose batch has not returned within ``batch_wait`` posts
+``pending`` :data:`~dev_lab.dev.forgereview_batch.BATCH_PENDING` naming it -- no findings, no round, no verdict --
+and leaves the batch state on the PR, so the next run of that head (a tick, a re-run, a takeover) resumes it.
+
 ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
 but this host's ``[runtimes]`` does not declare, or a command it cannot start (:func:`can_start`: a missing
 executable or module) -- is checked BEFORE the claim and posts NOTHING: a fact about the host is not the head's
@@ -99,6 +104,7 @@ from typing import TYPE_CHECKING, Any, Final
 from dev_lab.dev import forgereview_scope
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, within
 from dev_lab.dev.forgereview_claim import (
     CAPPED,
     DESCRIPTION,
@@ -109,7 +115,14 @@ from dev_lab.dev.forgereview_claim import (
     synced,
     unable,
 )  # fmt: skip
-from dev_lab.dev.forgereview_command import ReviewRefused, ReviewUnsupported, Runner, can_start, run_command
+from dev_lab.dev.forgereview_command import (
+    ReviewPending,
+    ReviewRefused,
+    ReviewUnsupported,
+    Runner,
+    can_start,
+    run_command,
+)
 from dev_lab.dev.forgereview_declared import JUDGE, PATHS_FIELD, Review, command_for, judge_for, review_at
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_judge import (
@@ -201,7 +214,8 @@ def _young(root: Path, head: str, runner: Runner) -> str | None:
 
 
 def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
-            authored: Mapping[str, str], runner: Runner, usd: float = 0.0) -> str:  # fmt: skip
+            authored: Mapping[str, str], runner: Runner, usd: float = 0.0,
+            run: Callable[[Sequence[str], Path], str], batching: Sequence[str]) -> str:  # fmt: skip
     """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
     head = pull.head_sha
     if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
@@ -218,10 +232,13 @@ def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope
         return f'#{pull.number} {head[:12]}: {why}'
     return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
                       outside=scope.outside, authored=authored, usd=usd, reviewers=review.reviewers,
-                      **_judging(root, client, review, pull, runner=runner))  # fmt: skip
+                      **_judging(root, client, review, pull, runner=runner, run=run, batching=batching))  # fmt: skip
 
 
-def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, runner: Runner) -> dict:
+def _judging(
+    root: Path, client: Client, review: Review, pull: PullRequest, *, runner: Runner,
+    run: Callable[[Sequence[str], Path], str], batching: Sequence[str],
+) -> dict:  # fmt: skip
     """The judge, the reviewer and the head's author sessions every round is posted with.
 
     The JUDGE reads the PR's whole change at its head (merge base..head), never the round's increment: a finding
@@ -229,7 +246,7 @@ def _judging(root: Path, client: Client, review: Review, pull: PullRequest, *, r
     """
     since = forgereview_scope.git(root, 'merge-base', f'origin/{pull.base}', pull.head_sha)[1].strip()
     return {
-        'judged': judge_for(root, review, f'{since}..{pull.head_sha}', runner.run, runner.runtimes),
+        'judged': judge_for(root, review, f'{since}..{pull.head_sha}', run, runner.runtimes, batching=batching),
         'reviewer': identity(client, runner.host, serving=runner.serving),
         'authors': sessions(root, f'origin/{pull.base}', pull.head_sha),
     }
@@ -317,10 +334,33 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
 def _command_round(
     root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner
 ) -> str:
-    """Claim *pull*'s head, run the command over *scope*'s slices and settle the head; the line said."""
+    """Claim *pull*'s head, run the command over *scope*'s slices and settle the head; the line said.
+
+    Every command of the round batches through the head's state on the PR and shares ONE wait
+    (:mod:`dev_lab.dev.forgereview_batch`); a batch still running ends the round :func:`_batch_pending`.
+    """
+    with held_state(client, pull.number, pull.head_sha, trusted_logins(client)) as state:
+        run = within(runner.run, runner.clock() + review.batch_wait_for, runner.clock)
+        return _round(root, client, review, pull, scope=scope, runner=runner, run=run,
+                      batching=batch_args(review, state))  # fmt: skip
+
+
+def _batch_pending(client: Client, pull: PullRequest, waiting: ReviewPending) -> str:
+    """Replace the claim with ``pending`` :data:`BATCH_PENDING` naming the batch: no verdict; the line said."""
+    why = f'{BATCH_PENDING} {waiting}'[:DESCRIPTION]
+    post_review(client, pull.head_sha, state='pending', description=why)
+    return f'#{pull.number} {pull.head_sha[:12]}: {why}'
+
+
+def _round(
+    root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner,
+    run: Callable[[Sequence[str], Path], str], batching: Sequence[str],
+) -> str:  # fmt: skip
+    """:func:`_command_round` once its batch state is held: *run* is the timed runner, *batching* the flags."""
     head, clock = pull.head_sha, runner.clock
     try:
-        argvs = [command_for(review, scope.range, runner.runtimes, paths=s.paths, lens=s.lens) for s in scope.slices]
+        argvs = [command_for(review, scope.range, runner.runtimes, paths=s.paths, lens=s.lens, batching=batching)
+                 for s in scope.slices]  # fmt: skip
         cannot = runner.ready(argvs[0], root)
     except ReviewUnsupported as unsupported:
         cannot = str(unsupported)
@@ -335,9 +375,11 @@ def _command_round(
     post_review(client, head, state='pending', description=claim_of(runner.host, clock()))
     before = _tagged(root, pull, runner)
     try:
-        synth = command_for(review, scope.range, runner.runtimes, synthesis=True)
+        synth = command_for(review, scope.range, runner.runtimes, synthesis=True, batching=batching)
         gone = upheld(trusted_bodies(client, pull.number, review.reviewers))
-        found = parse_findings(gather(scope.range, argvs, synth, runner.run, root, pr_body=pull.body, disposed=gone))
+        found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body, disposed=gone))
+    except ReviewPending as waiting:
+        return _batch_pending(client, pull, waiting)
     except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
         return unable(client, pull, runner.host, str(unsupported))
     except (UnknownSchemaVersion, ReviewRefused) as named:
@@ -350,7 +392,11 @@ def _command_round(
         return f'#{pull.number} {head[:12]}: {why}: {failed}'
     authored = trailed(root, f'origin/{pull.base}', head)
     usd = max(0.0, _tagged(root, pull, runner) - before)
-    return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner, usd=usd)
+    try:
+        return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner, usd=usd,
+                       run=run, batching=batching)  # fmt: skip
+    except ReviewPending as waiting:  # the judge's batch: the round is posted by the run that settles it
+        return _batch_pending(client, pull, waiting)
 
 
 def _tagged(root: Path, pull: PullRequest, runner: Runner) -> float:
