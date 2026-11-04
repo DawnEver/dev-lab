@@ -9,8 +9,8 @@ requires-python = ">=3.12"
 # dev-lab IS the development system, so what lab-commons shipped as its `dev` extra is this package's base
 # install: the lab-commons runtime it is built on (logging, paths, config, units for the duration/quantity
 # parsers) plus the tools it DRIVES as executables (pytest, ruff, `cz check` for the base commit-msg hook).
-# Floor: lab-commons at the split base 8c401f0 (hatch-vcs 0.3.1.dev992); one bare git URL graph-wide, as the
-# consumers spell it, so uv.lock pins its tip -- never a machine-local path.
+# Floor: lab-commons at the split base 8c401f0 (hatch-vcs 0.3.1.dev992); one git URL graph-wide at its integration
+# line, as the consumers spell it, so uv.lock pins that tip -- never a machine-local path.
 dependencies = [
     "lab-commons[units,paths,io,structured]>=0.3.1.dev992",
     "pytest",
@@ -33,7 +33,7 @@ test = ["nodejs-wheel-binaries"]
 [dependency-groups]
 # THE REVIEW METHOD the CI review jobs run (ci_base.toml `method` steps): dev-lab is the code that calls it, so this
 # lock names which ai-lab runs. NON-DEFAULT: neither `uv sync`, the door's `uv export`, nor a consumer installs it.
-review = ["ai-lab @ git+https://github.com/DawnEver/ai-lab.git"]
+review = ["ai-lab @ git+https://github.com/DawnEver/ai-lab.git@integrate/main"]
 
 # The allocation record's reader, loaded by lab_commons.hpc.allocation.recorded: every submitter reads it.
 [project.entry-points."lab_commons.hpc.allocation"]
@@ -62,8 +62,8 @@ template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_t
 packages = ["src/dev_lab"]
 
 [tool.uv.sources]
-# lab-commons follows its integration line on GitHub, its one home.
-lab-commons = { git = "https://github.com/DawnEver/lab-commons.git" }
+# lab-commons follows its integration line on GitHub, its one home (user ruling 2026-11-04: never its trunk).
+lab-commons = { git = "https://github.com/DawnEver/lab-commons.git", branch = "integrate/main" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.dev_lab.placement]
