@@ -77,6 +77,26 @@ ALLOWED: Final[dict[Site, str]] = {
     'import here is a cycle that fails at import time. The built-in unit producer is resolved where '
     'it is called, once per request read',
     (
+        'src/dev_lab/dev/reviewcode.py',
+        'ANN401',
+        'def call(method: str, url: str, body: dict[str, Any] | None) -> Any:',
+    ): 'the forge door returns the parsed JSON answer, whose shape is the endpoint',
+    (
+        'src/dev_lab/dev/reviewcode.py',
+        'BLE001',
+        'except Exception as failed:',
+    ): 'the pre-clone settle never fails the job: any fact it cannot read means the full review runs',
+    (
+        'src/dev_lab/dev/reviewcode.py',
+        'S310',
+        'request = urllib.request.Request(url, data=data, method=method)',
+    ): 'the URL is the FORGE_URL the job declares API, an https endpoint the workflow declares, never user input',
+    (
+        'src/dev_lab/dev/reviewcode.py',
+        'S310',
+        'with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as reply:',
+    ): 'opens only the request built above from the FORGE_URL the job declares',
+    (
         'src/dev_lab/dev/family.py',
         'ANN401',
         'def declared_table(data: Mapping[str, Any], name: str, default: Any = None) -> Any:',
