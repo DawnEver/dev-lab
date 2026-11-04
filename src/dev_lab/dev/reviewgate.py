@@ -82,6 +82,7 @@ if TYPE_CHECKING:
 __all__ = [
     'ACTIONS_REVIEW',
     'APPROVED',
+    'PREPARE_WORKFLOW',
     'RERUN',
     'VERDICT_STATES',
     'DeclarationUnread',
@@ -107,6 +108,10 @@ RERUN: Final = "re-run the forge's review of the head (the PR's review job)"
 
 #: The ``[tool.dev_lab.ci]`` workflow whose declaration adopts Gitea Actions as the forge's reviewer.
 ACTIONS_REVIEW: Final = 'review.yml'
+
+#: The base's workflow whose run posts a judge repo's bundle pointer on Gitea (:mod:`~dev_lab.dev.forgereview_bundle`);
+#: :mod:`~dev_lab.dev.ciworkflows` renders it under this name, the one the judge lists runs by.
+PREPARE_WORKFLOW: Final = 'review-prepare.yml'
 
 #: The event Gitea stores a run of the BASE's workflow under for a PR (``notifier_helper.go``, 1.27).
 REVIEW_EVENT: Final = 'pull_request_target'

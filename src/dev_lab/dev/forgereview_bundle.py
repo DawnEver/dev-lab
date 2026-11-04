@@ -31,9 +31,11 @@ trusts NOTHING the producer wrote that it can read or derive from the forge (D3)
 
 WHO MAY POINT (:func:`trusted_pointer`): a declared ``preparers`` login, or the forge's CI identity -- on GitHub its
 Actions bot; on Gitea, whose Actions statuses all carry a null creator, only a pointer naming a run of the BASE's
-:data:`PREPARE_WORKFLOW` at this head (``pull_request_target``, :func:`~dev_lab.dev.reviewgate.review_runs`), which
-a PR head can neither start nor alter. Every other pointer is logged and ignored. RESIDUAL, on record: on GitHub a
-same-repository branch's own workflow posts as the same bot; what it could point at is still verified above.
+:data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` at this head (``pull_request_target``,
+:func:`~dev_lab.dev.reviewgate.review_runs`), which a PR head can neither start nor alter. Every
+other pointer is logged and ignored. RESIDUAL, on record: on GitHub a same-repository branch's own workflow posts
+as the same bot; what it could point at is still verified above. The workflow is the base's ``_prepare`` table,
+which :mod:`~dev_lab.dev.ciworkflows` renders for every ``where = "judge"`` repo.
 
 The forge's gate is that review: dev-lab's merge, merge-ready and Break-Glass read the declared ``judge_login``'s
 latest standing verdict at the head (:func:`~dev_lab.dev.forgereview_declared.review_gate`), and the forge's own
@@ -94,6 +96,7 @@ from dev_lab.dev.forgetakeover import runtimes_with
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import (
+    PREPARE_WORKFLOW,
     DeclarationUnread,
     github_posted,
     job_run_url,
@@ -112,7 +115,6 @@ __all__ = [
     'DEFAULT_TOKEN_FILE',
     'MAX_ARCHIVE_BYTES',
     'MAX_BUNDLE_BYTES',
-    'PREPARE_WORKFLOW',
     'Verdict',
     'bound_ref',
     'forge_merge_base',
@@ -132,9 +134,6 @@ BUNDLE_CONTEXT: Final = 'review/bundle'
 
 #: The one member of a bundle's archive the judge reads.
 BUNDLE_FILE: Final = 'bundle.json'
-
-#: The base's workflow whose run (``pull_request_target``) posts the pointer on Gitea.
-PREPARE_WORKFLOW: Final = 'review-prepare.yml'
 
 #: The largest archive the judge fetches: the forge attachment limit, the store a bundle goes to by default.
 MAX_ARCHIVE_BYTES: Final = ATTACHMENT_LIMIT_MB * MB

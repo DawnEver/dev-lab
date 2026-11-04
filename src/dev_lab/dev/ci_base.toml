@@ -434,6 +434,49 @@ contents = "write"
 pull-requests = "write"
 issues = "write"
 
+# THE BUNDLE PREPARE (forgereview_bundle): a repo declaring [tool.dev_lab.review] where = "judge" is reviewed by an
+# isolated judge host, which trusts a Gitea bundle pointer only when it names a run of THIS workflow at the head.
+# Never declared by a repo and never keyed by its file name here: ciworkflows renders `_prepare` under
+# reviewgate.PREPARE_WORKFLOW -- the one name the judge lists runs by -- exactly when the repo is a judge repo.
+# pull_request_target ALONE (reviewgate.REVIEW_EVENT): the BASE's definition runs, so a PR can neither alter it nor
+# make its own run count. The head is checked out (sparse, `lean`) as DATA for the bundle -- read through git, never
+# run; the door is the base lock's (`door`), started isolated (-I). No review method and no key: the job token posts
+# the pointer. A fork PR's job still has no FAMILY_READ_TOKEN (the `door` guard).
+[_prepare]
+forge = "gitea"
+name = "Review prepare"
+
+[_prepare.on.pull_request_target]
+types = ["opened", "synchronize", "reopened", "ready_for_review"]
+
+[_prepare.concurrency]
+group = "review-prepare-${{ github.event.pull_request.number }}"
+cancel-in-progress = true
+
+[_prepare.env]
+HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
+FAMILY_SOURCE = "https://github.com/DawnEver/"
+UV_PYTHON = "python3"
+UV_PYTHON_DOWNLOADS = "never"
+UV_CONCURRENT_INSTALLS = "1"
+UV_CONCURRENT_BUILDS = "1"
+
+[_prepare.jobs.prepare]
+runs-on = "light"
+steps = [
+    { use-steps = "reach" },
+    { use-steps = "lean" },
+    { use-steps = "door" },
+    { name = "Prepare the review bundle", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }} --repo "$GITHUB_WORKSPACE"', env = { GITHUB_TOKEN = "${{ github.token }}" } },
+]
+
+# Uploading to the forge's package store and posting the pointer status both ask Code/Package write on Gitea;
+# actions: read lets prepare read its own run's html_url (reviewgate.job_run_url) for the pointer.
+[_prepare.jobs.prepare.permissions]
+actions = "read"
+contents = "write"
+packages = "write"
+
 # CLAIMS ARE ADJUDICATED BY THE FORGE (user ruling 2026-10-31): a `forge review dispose` comment carrying the claim
 # marker triggers this job, which rules on every pending claim of that PR or ledger issue as the job's own identity
 # -- never the claimant's session (dev_lab.dev.forgereview_judge). A separate workflow, so a comment never runs the

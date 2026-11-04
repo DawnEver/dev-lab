@@ -28,6 +28,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, JUDGE, Review, command_for, review_from
 from dev_lab.dev.reviewbundle import BundleRefused
+from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 _JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
 _JUDGE_TOML = '[tool.dev_lab.integrator]\nintegration = "main"\n' + _JUDGED
@@ -54,7 +55,7 @@ def _findings(severity: str | None, *, statuses: tuple[str, ...] = ('ok',)) -> s
 
 
 def _prepare_run(head: str, *, number: int = 7, event: str = 'pull_request_target') -> dict[str, Any]:
-    path = f'{fb.PREPARE_WORKFLOW}@refs/pull/{number}/head'
+    path = f'{PREPARE_WORKFLOW}@refs/pull/{number}/head'
     return {'id': number, 'head_sha': head, 'event': event, 'path': path, 'html_url': _RUN, 'conclusion': ''}
 
 
