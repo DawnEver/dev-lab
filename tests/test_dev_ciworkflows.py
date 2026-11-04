@@ -43,7 +43,9 @@ _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    assert set(workflows(_ROOT)) == {'ci.yml', 'review-claims.yml'}, 'a floor: an empty table drifts from nothing'
+    assert set(workflows(_ROOT)) == {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}, (
+        'a floor: an empty table drifts from nothing'
+    )
     assert drift(_ROOT) == []
 
 
@@ -102,7 +104,9 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith('${{ always()')
-    assert set(jobs['merge-ready']['needs']) == {'security', 'review'}, 'the parts gate promote, never the merge'
+    assert set(jobs['merge-ready']['needs']) == {'security', 'review', 'part', 'absent-parts'}, (
+        'a merge waits on its parts'
+    )
     assert jobs['merge-ready']['if'].startswith('${{ always()')
     ready, dispatch = jobs['merge-ready']['steps'][-2:]
     assert 'forge merge ready --pr' in ready['run']
@@ -199,7 +203,7 @@ def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_p
 def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_decision(tmp_path: Path) -> None:
     """D48-1A: once nightly, and on demand, integrate/main's tip runs every part on every OS, then promotes.
 
-    `integrate promote` stays the ONE place the parts gate (D83); the schedule's run is never a merge's smoke.
+    `integrate promote` alone asks the parts at scope full (D83); the schedule's run is never a merge's smoke.
     """
     ci = _base_ci(tmp_path)
     assert ci['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
@@ -1008,3 +1012,34 @@ def test_the_mirror_follows_the_forge_when_it_moves_hosts(tmp_path: Path) -> Non
     """2026-11-03: after the forge moved hosts every job failed reading the mirror's first-clone origin URL."""
     run = _fetch_the_head(tmp_path)['run']
     assert run.index('git -C "$MIRROR" remote set-url origin "$REPO"') < run.index('git -C "$MIRROR" fetch')
+
+
+def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: Path) -> None:
+    """A part settling after ci.yml's merge-ready ran (a workstation or HPC part) re-judges the PR, no human.
+
+    GitHub runs ``status`` and ``schedule`` from the DEFAULT branch's file, never a PR head's. PLANTED CONTROL:
+    merge-ready's own decision, and a pending part, start nothing (no loop, no judging a claim).
+    """
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8'
+    )
+    tick = workflows(tmp_path)['merge-tick.yml']
+    assert {'status', 'schedule', 'workflow_dispatch'} <= set(tick['on'])
+    assert not {'pull_request', 'pull_request_target'} & set(tick['on']), 'a merging token never runs a PR head'
+    (job,) = tick['jobs'].values()
+    gate = job['if']
+    assert "startsWith(github.event.context, 'tests/')" in gate
+    assert "github.event.context != 'tests/merge-ready'" in gate
+    assert "github.event.state != 'pending'" in gate
+    ready, dispatch = job['steps'][-2:]
+    assert 'forge merge ready)' in ready['run'], 'no --pr: every open PR into integration'
+    assert '*"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
+    assert dispatch['if'] == "${{ steps.ready.outputs.merged == 'true' }}"
+    assert 'gh workflow run ci.yml' in dispatch['run']
+    assert '-f smoke=true' in dispatch['run']
+    assert job['permissions'] == {
+        'contents': 'write',
+        'statuses': 'write',
+        'pull-requests': 'write',
+        'actions': 'write',
+    }

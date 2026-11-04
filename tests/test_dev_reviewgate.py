@@ -56,7 +56,7 @@ def test_every_review_state_but_success_blocks_the_merge_and_names_itself(tmp_pa
     """PLANTED CONTROL: the same head with a forge-posted success review is ready."""
     work, head = _work(tmp_path)
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
-    rest = (_status(*_SECURED),)
+    rest = (_status(*_SECURED), _status('tests/base', 'success', 'scope=full ran=3 hands=-'))  # parts gate the merge
     statuses = ((_status(REVIEW_CONTEXT, *review),) if review else ()) + rest
     assert review_missing(statuses, github_posted) is not None
     found = decide(

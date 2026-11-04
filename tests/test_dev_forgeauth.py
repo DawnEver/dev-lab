@@ -194,10 +194,16 @@ def test_an_auth_refusal_is_asked_once_and_names_the_remedy(server, tmp_path, ca
     assert len(_Recorder.received) == 1
     err = capsys.readouterr().err
     assert 'transient' not in err
-    # A plain store holds no refresh token: a 401's refresh empties it, the one case a re-login fixes.
-    # A 403 authenticated the credential and refused the act, so no refresh is spent and none is named.
-    assert ('auth login' in err) is (code == 401)
+    # A credential that EXISTS is never told to re-login (ruling 2026-10-18): retry and measure instead.
+    assert 'auth login' not in err
     assert 'stale' not in err
+
+
+def test_planted_control_a_box_with_no_credential_is_told_auth_login(server, tmp_path, capsys) -> None:
+    env, _ = _isolated_store(tmp_path)
+    assert main(['status', '--host', 'f.example'], cwd=tmp_path, env=env, transport=_Loopback(server)) == 1
+    assert _Recorder.received == []
+    assert 'auth login' in capsys.readouterr().err
 
 
 def test_a_server_error_stays_transient_and_is_retried(server) -> None:

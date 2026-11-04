@@ -9,9 +9,9 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
 
 1. Cut `pr/<topic>` from `origin/integrate/main` (`ephemeral = ['pr/*']` lets it be pushed with no row), push it,
    and open a PR into `integrate/main` (`forge pr create`). Sync with `forge sync`, never rebase.
-2. The forge produces its `tests/<part>` parts, but they DO NOT GATE THE MERGE (user ruling 2026-10-29, every
-   repo: full PASS is required only to promote to `main`). Each tick (`forge integration`, and every
-   `forge serve`), a PR whose review and `tests/security` stand, whose head merges cleanly into `integrate/main`, and whose merge passes the
+2. The forge produces its `tests/<part>` parts, and they GATE THE MERGE (user ruling 2026-11-04, after dev-lab#78
+   merged red): every part PASS at the head; promotion to `main` asks scope full. Each tick (`forge integration`,
+   and every `forge serve`), a PR whose parts, review and `tests/security` stand, whose head merges cleanly into `integrate/main`, and whose merge passes the
    merge audit is MERGED BY THE FORGE: a merge commit carrying `Merged-Branch: <head>` and `Forge-Pull: <N>`
    (`dev_lab.dev.forgemerge`), the `pr/*` head deleted with it. Otherwise its one integration comment says
    what is missing -- on a conflict, "merge `integrate/main` into the branch".

@@ -92,14 +92,33 @@ def test_a_green_clean_pr_is_ready_and_its_message_names_branch_and_pull(tmp_pat
     assert found.message.startswith('chore(merge): pr/x into integrate/main (#4)')
 
 
-def test_a_pr_whose_parts_are_not_all_pass_is_still_ready(tmp_path: Path) -> None:
-    """User ruling 2026-10-29: the test parts gate promotion to main, never a merge into integration.
+def test_a_pr_whose_base_failed_is_not_ready_though_review_and_security_pass(tmp_path: Path) -> None:
+    """dev-lab#78 (head f661172d): review and security pass, ``tests/base`` and ``tests/base@windows`` FAILED.
 
-    Absent, pending and FAILED parts alike leave a PR with its review and security posted ready.
+    User ruling 2026-11-04: a PR merges only when every part it needs stands green at its head; #78 merged.
+    PLANTED CONTROL: the same PR with its parts PASS is ready (``test_a_green_clean_pr_is_ready...``).
     """
     work, head = _work(tmp_path)
     gates = [r for r in _green() if r['context'] != 'tests/base']
-    for part in ('pending', 'failure', None):
+    red = 'scope=full ran=5882 hands=workstation:5'
+    raw = [
+        *gates,
+        {'id': 7, 'context': 'tests/base', 'status': 'failure', 'description': red},
+        {'id': 8, 'context': 'tests/base@windows', 'status': 'failure', 'description': red},
+        {'id': 9, 'context': 'tests/workstation', 'status': 'success', 'description': 'scope=full ran=5 hands=-'},
+    ]
+    found = decide(
+        work, POLICY, branch='pr/x', number=78, head=head, statuses=_statuses(raw), reviewed=status_gate(github_posted)
+    )
+    assert not found.ready
+    assert any(one.startswith('its test parts: ') and 'FAIL' in one for one in found.missing), found.missing
+
+
+def test_a_pr_whose_parts_are_absent_or_pending_waits(tmp_path: Path) -> None:
+    """An unsettled part is no green: the PR waits, naming its parts, until every one stands PASS."""
+    work, head = _work(tmp_path)
+    gates = [r for r in _green() if r['context'] != 'tests/base']
+    for part in ('pending', None):
         raw = gates + (
             [{'id': 9, 'context': 'tests/base', 'status': part, 'description': 'scope=full'}] if part else []
         )
@@ -112,7 +131,7 @@ def test_a_pr_whose_parts_are_not_all_pass_is_still_ready(tmp_path: Path) -> Non
             statuses=_statuses(raw),
             reviewed=status_gate(github_posted),
         )
-        assert found.ready, (part, found.missing)
+        assert any(one.startswith('its test parts: ') for one in found.missing), (part, found.missing)
 
 
 def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_path: Path) -> None:
@@ -235,17 +254,17 @@ def test_the_tick_leaves_the_merge_to_a_repo_s_merge_job_and_still_says_the_deci
     assert 'ready: the merge.yml job merges it' in comment['body']
 
 
-def test_a_pr_with_a_failed_part_is_merged_by_the_forge(tmp_path: Path) -> None:
-    """A red ``tests/<part>`` does not hold the merge into integration; it holds the promotion to main."""
+def test_a_pr_with_a_failed_part_stays_open(tmp_path: Path) -> None:
+    """A red ``tests/<part>`` holds the merge into integration (user ruling 2026-11-04)."""
     work, head = _work(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     forge.add_run(head)  # the review job's run
-    red = {'id': 1, 'context': 'tests/base', 'status': 'failure', 'description': 'scope=full ran=3'}
+    red = {'id': 1, 'context': 'tests/base', 'status': 'failure', 'description': 'scope=full ran=3 hands=-'}
     forge.statuses[head] = [red, *(r for r in _green() if r['context'] != 'tests/base')]
     _tick(work, forge, head, POLICY)
-    ((merged, _),) = forge.merges
-    assert merged == number
+    assert forge.merges == []
+    assert forge.pulls[number]['state'] == 'open'
 
 
 def test_an_unsafe_pr_stays_open_with_what_is_missing_in_its_one_comment(tmp_path: Path) -> None:
