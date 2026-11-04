@@ -13,7 +13,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -354,7 +353,7 @@ def test_a_blobless_clone_fetches_the_audited_blobs_before_reading_them(
     run = mergeaudit._door.run
     absent: list[str] = []
 
-    def guarded(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:  # noqa: ANN401
+    def guarded(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         if argv[3:5] == ['cat-file', '--batch']:
             check = subprocess.run(
                 [_GIT, '-C', str(clone), 'cat-file', '--batch-check'],
@@ -413,7 +412,7 @@ def test_a_hand_resolved_merge_in_a_blobless_clone_fetches_only_what_is_missing(
     run = mergeaudit._door.run
     wanted: list[str] = []
 
-    def spy(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:  # noqa: ANN401
+    def spy(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         if 'fetch' in argv:
             wanted.extend(argv)
         return run(argv, **kwargs)
