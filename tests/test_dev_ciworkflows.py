@@ -814,7 +814,7 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
     )
     rendered = workflows(tmp_path)
     readers = {name for name, workflow in rendered.items() if '${FAMILY_SOURCE}' in render(workflow)}
-    assert readers == {'ci.yml', 'review.yml', 'review-claims.yml'}
+    assert readers == {'ci.yml', 'merge-tick.yml', 'review.yml', 'review-claims.yml'}  # merge-tick: GitHub's base
     for name in readers:
         assert rendered[name]['env'].get('FAMILY_SOURCE'), f'{name} reads FAMILY_SOURCE but declares none'
         assert 'FAMILY_SOURCE:-' not in render(rendered[name]), f'{name}: a second source'
@@ -1030,9 +1030,8 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     text = render(prepare)
     assert 'ANTHROPIC_API_KEY' not in text
     assert 'Install the review method' not in text
-    assert [path.relative_to(tmp_path).as_posix() for path in write(tmp_path)] == [
-        f'.github/workflows/{PREPARE_WORKFLOW}'
-    ]
+    written = {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)}
+    assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE, PREPARE_WORKFLOW)}
     assert drift(tmp_path) == []
 
 
