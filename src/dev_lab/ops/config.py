@@ -21,6 +21,7 @@ that did not arrive refuses the verb rather than letting it run with its alerts 
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
@@ -141,6 +142,12 @@ class Backup(Placement):
     pullers, the dumpers' own settings. Pull (``source`` non-empty): ``<account>@<host>`` with a dedicated
     ``identity`` key, the ``dest`` directory, the ``user`` and ``schedule`` of the timer, ``retention_days``, and an
     optional ``offsite`` table (:class:`Offsite`).
+
+    The ``git_mirror`` dumper reads ``mirrors`` (clone URLs on any forge), keeps a ``git clone --mirror`` of each
+    under ``mirror_cache`` (persistent, so each export only fetches what is new) and bundles each into the export.
+    ``mirror_metadata`` adds each repo's pulls (with reviews and head statuses) and issues as JSON, read through the
+    forge's API with the read token in ``mirror_tokens[<host>]`` (a file), anonymously for a host naming none. A
+    ``git_mirror`` with no mirror or no cache, one repository twice, or a token no mirror uses is refused at load.
     """
 
     dumpers: tuple[str, ...] = ()
@@ -160,6 +167,73 @@ class Backup(Placement):
     schedule: str = ''
     retention_days: int = 14
     offsite: Offsite | None = None
+    mirrors: tuple[str, ...] = ()
+    mirror_cache: str = ''
+    mirror_metadata: bool = False
+    mirror_tokens: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Refuse a ``git_mirror`` declaration that lies (see the class docstring)."""
+        if 'git_mirror' not in self.dumpers:
+            declared = zip(
+                _MIRROR_KEYS, (self.mirrors, self.mirror_cache, self.mirror_metadata, self.mirror_tokens), strict=True
+            )
+            if declared := [key for key, value in declared if value]:
+                msg = (
+                    f'[ops.backup] {", ".join(declared)} set but dumpers names no git_mirror: nothing would be mirrored'
+                )
+                raise ValueError(msg)
+            return
+        if not self.mirrors:
+            msg = '[ops.backup] git_mirror names no mirror: declare mirrors = ["<clone url>", ...]'
+            raise ValueError(msg)
+        if not self.mirror_cache:
+            msg = '[ops.backup] git_mirror needs mirror_cache (the persistent directory the mirrors live in)'
+            raise ValueError(msg)
+        names = [mirror_name(url) for url in self.mirrors]
+        if len(set(names)) != len(names):
+            msg = f'[ops.backup] mirrors name one repository twice: {names}'
+            raise ValueError(msg)
+        if secret := [mirror_name(url) for url in self.mirrors if _PASSWORD.match(url)]:
+            msg = (
+                f'[ops.backup] mirrors {secret} carry a password in the URL; it would persist in the mirror cache '
+                'and reach messages: use an ssh key or the git credential store'
+            )
+            raise ValueError(msg)
+        hosts = {mirror_host(url) for url in self.mirrors}
+        if unused := sorted(set(self.mirror_tokens) - hosts):
+            msg = f'[ops.backup.mirror_tokens] {", ".join(unused)} serves no mirror'
+            raise ValueError(msg)
+
+
+def mirror_name(url: str) -> str:
+    """``<host>_<owner>_<repo>`` of a clone URL (scheme, credentials, port, ``.git`` dropped); a path keeps parts."""
+    return '_'.join(_mirror_parts(url))
+
+
+def mirror_host(url: str) -> str:
+    """The forge host of a clone URL as :func:`mirror_name` spells it: the key of ``mirror_tokens``."""
+    return _mirror_parts(url)[0]
+
+
+def _mirror_parts(url: str) -> list[str]:
+    if '://' in url:
+        authority, _, path = url.partition('://')[2].partition('/')
+        rest = f'{authority.rpartition("@")[2].partition(":")[0]}/{path}'
+    elif scp := _SCP.match(url):
+        rest = f'{scp["host"]}/{scp["path"]}'
+    else:
+        rest = url
+    parts = [part for part in re.split(r'[/\\]+', rest.strip('/\\').removesuffix('.git')) if part]
+    return [re.sub(r'[^A-Za-z0-9._-]', '-', part) for part in parts]
+
+
+#: The ``mirror_*`` keys only the ``git_mirror`` dumper reads.
+_MIRROR_KEYS = ('mirrors', 'mirror_cache', 'mirror_metadata', 'mirror_tokens')
+#: A URL whose userinfo carries a password (``scheme://<user>:<password>@host/...``).
+_PASSWORD = re.compile(r'^[a-z][a-z0-9+.-]*://[^/@]*:[^/@]*@', re.IGNORECASE)
+#: ``[user@]host:path``; a one-letter host is a Windows drive, not a forge.
+_SCP = re.compile(r'^(?:[^@/\\]+@)?(?P<host>[^:/\\]{2,}):(?P<path>.+)$')
 
 
 @dataclass(frozen=True)

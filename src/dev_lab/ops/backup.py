@@ -3,7 +3,12 @@
 * ``ops backup export`` -- the forced command of the export account on the forge host: every declared dumper
   (:data:`DUMPERS`; ``gitea`` = ``gitea dump`` as the Gitea user, ``postgresql`` = ``pg_dump -Fc`` as the database
   user) writes one file into a private work directory, an EMPTY file is refused, and ONE tar of them goes to stdout.
-  A dumper is a function, so another forge or database is one more entry, never a new role.
+  ``git_mirror`` = every ``mirrors`` repository on any forge, kept as ``git clone --mirror`` in ``mirror_cache`` and
+  bundled per repo (``git bundle --all``), plus its pulls, reviews, statuses and issues as JSON when
+  ``mirror_metadata`` is set (:func:`metadata`). An empty repository contributes no bundle. One mirror that cannot be
+  fetched refuses the WHOLE export, deliberately: the alert names it, and a backup silently missing a repository is
+  the failure this role exists to prevent. A dumper is a function returning its files, so another forge or
+  database is one more entry, never a new role.
 * ``ops backup pull`` -- the backup host's timer: ssh with the dedicated key to the export account, unpack into
   ``<dest>/<UTC stamp>/`` (a partial directory until every file is there and non-empty), drop stamped backups older
   than ``retention_days``, then the optional off-site copy (:mod:`dev_lab.ops.offsite`).
@@ -13,29 +18,36 @@ Any refusal or failure is alerted through ``[alerts]`` by the door (:mod:`dev_la
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import BinaryIO, Final
+from typing import Any, BinaryIO, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.ops.config import Backup
+from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.forgepulls import pages
+from dev_lab.dev.forgework import Client
+from dev_lab.dev.netverb import run_network_verb
+from dev_lab.ops.config import Backup, mirror_host, mirror_name
 
-__all__ = ['DUMPERS', 'STAMP', 'BackupRefused', 'export', 'pull']
+__all__ = ['DUMPERS', 'STAMP', 'BackupRefused', 'Dumper', 'export', 'git_mirror', 'metadata', 'pull']
 
 #: The UTC stamp a backup directory is named by.
 STAMP: Final = '%Y%m%dT%H%M%SZ'
 _STAMPED: Final = re.compile(r'^\d{8}T\d{6}Z$')
 _SSH: Final = shutil.which('ssh') or 'ssh'
 _RUNUSER: Final = shutil.which('runuser') or 'runuser'
+_GIT: Final = shutil.which('git') or 'git'
 
-Dumper = Callable[[Backup, Path], Path]
+Dumper = Callable[[Backup, Path], Sequence[Path]]
+Metadata = Callable[[str, str], Mapping[str, Any]]
 Fetch = Callable[[Backup, Path], None]
 
 
@@ -50,26 +62,103 @@ def _checked(argv: list[str], **kwargs: object) -> None:
         raise BackupRefused(msg)
 
 
-def _gitea(role: Backup, tmp: Path) -> Path:
+def _gitea(role: Backup, tmp: Path) -> Sequence[Path]:
     """``gitea dump`` (repositories, data, app.ini and its SQL) as the Gitea user."""
     target = tmp / 'gitea-dump.zip'
     shutil.chown(tmp, user=role.gitea_user)
     _checked([_RUNUSER, '-u', role.gitea_user, '--', role.gitea_binary, 'dump', '-c', role.gitea_config,
               '--skip-log', '--tempdir', str(tmp), '-f', str(target)],
              cwd=role.gitea_workdir or None, stdout=subprocess.DEVNULL)  # fmt: skip
-    return target
+    return (target,)
 
 
-def _postgresql(role: Backup, tmp: Path) -> Path:
+def _postgresql(role: Backup, tmp: Path) -> Sequence[Path]:
     """``pg_dump -Fc`` of the declared database as the database user."""
     target = tmp / f'{role.pg_database}.pgdump'
     with target.open('wb') as out:
         _checked([_RUNUSER, '-u', role.pg_user, '--', 'pg_dump', '-Fc', role.pg_database], stdout=out)
-    return target
+    return (target,)
+
+
+def metadata(client: Client) -> Mapping[str, Any]:
+    """Every pull (with its reviews and its head's statuses) and every issue of *client*'s repository, as JSON."""
+    pulls = [
+        dict(pull)
+        | {
+            'reviews': pages(client, f'{client.repo}/pulls/{pull["number"]}/reviews', {}),
+            'statuses': pages(client, f'{client.repo}/commits/{pull["head"]["sha"]}/statuses', {}),
+        }
+        for pull in pages(client, f'{client.repo}/pulls', {'state': 'all'})
+    ]
+    return {'pulls': pulls, 'issues': pages(client, f'{client.repo}/issues', {'state': 'all'})}
+
+
+def _api_metadata(url: str, token: str) -> Mapping[str, Any]:
+    """:func:`metadata` of *url* through the forge's API, presenting *token* (anonymous when empty)."""
+    return metadata(Client(forge_of_url(url), token))
+
+
+def _has_refs(mirror: Path) -> bool:
+    listed = _door.run([_GIT, '-C', str(mirror), 'for-each-ref', '--count=1'], check=False, capture_output=True,
+                       text=True, encoding='utf-8', timeout=600)  # fmt: skip
+    if listed.returncode != 0:
+        msg = f'git_mirror {mirror.name}: for-each-ref exited {listed.returncode}'
+        raise BackupRefused(msg)
+    return bool(listed.stdout.strip())
+
+
+def _token(role: Backup, url: str) -> str:
+    """The read token ``mirror_tokens`` declares for *url*'s host, ``''`` (anonymous) when it declares none."""
+    host = mirror_host(url)
+    if not (path := role.mirror_tokens.get(host, '')):
+        return ''
+    try:
+        token = Path(path).read_text(encoding='utf-8').strip()
+    except OSError as unreadable:
+        msg = f'[ops.backup.mirror_tokens] {host} = {path} is unreadable: {type(unreadable).__name__}'
+        raise BackupRefused(msg) from unreadable
+    if not token:
+        msg = f'[ops.backup.mirror_tokens] {host} = {path} is empty: write the read token into it, or drop the key'
+        raise BackupRefused(msg)
+    return token
+
+
+def git_mirror(*, meta: Metadata = _api_metadata) -> Dumper:
+    """The ``git_mirror`` dumper; *meta* reads one repository's metadata from its URL and read token."""
+
+    def dump(role: Backup, tmp: Path) -> Sequence[Path]:
+        cache = Path(role.mirror_cache)
+        cache.mkdir(parents=True, exist_ok=True)
+        files: list[Path] = []
+        for url in role.mirrors:
+            name = mirror_name(url)
+            mirror = cache / f'{name}.git'
+            fetch = [_GIT, '-C', str(mirror), 'remote', 'update', '--prune']
+            if not mirror.is_dir():
+                fetch = [_GIT, 'clone', '--quiet', '--mirror', url, str(mirror)]
+            report = run_network_verb(fetch, timeout=6 * 3600)
+            if not report.ok:  # the mirror's name, never its URL or git's stderr: either may carry a credential
+                msg = (
+                    f'git_mirror {name}: {"clone" if "clone" in fetch else "remote update"} exited {report.returncode}'
+                )
+                raise BackupRefused(msg)
+            if _has_refs(mirror):  # an empty repository has nothing to bundle; its metadata is still read
+                bundle = tmp / f'{name}.bundle'
+                _checked([_GIT, '-C', str(mirror), 'bundle', 'create', '--quiet', str(bundle), '--all'],
+                         stdout=subprocess.DEVNULL)  # fmt: skip
+                files.append(bundle)
+            if role.mirror_metadata:
+                token = _token(role, url)
+                meta_file = tmp / f'{name}.meta.json'
+                meta_file.write_text(json.dumps(meta(url, token), indent=1, sort_keys=True), encoding='utf-8')
+                files.append(meta_file)
+        return files
+
+    return dump
 
 
 #: The dumpers a config may name in ``dumpers``.
-DUMPERS: Final[Mapping[str, Dumper]] = {'gitea': _gitea, 'postgresql': _postgresql}
+DUMPERS: Final[Mapping[str, Dumper]] = {'gitea': _gitea, 'postgresql': _postgresql, 'git_mirror': git_mirror()}
 
 
 def export(role: Backup, out: BinaryIO, *, dumpers: Mapping[str, Dumper] = DUMPERS) -> list[str]:
@@ -84,7 +173,7 @@ def export(role: Backup, out: BinaryIO, *, dumpers: Mapping[str, Dumper] = DUMPE
         msg = f'unknown dumper(s) {unknown}; known: {sorted(dumpers)}'
         raise BackupRefused(msg)
     with tempfile.TemporaryDirectory(dir=role.tmp or None, prefix='ops-export-') as work:
-        files = [dumpers[name](role, Path(work)) for name in role.dumpers]
+        files = [path for name in role.dumpers for path in dumpers[name](role, Path(work))]
         if empty := [path.name for path in files if not path.is_file() or path.stat().st_size == 0]:
             msg = f'empty dump(s) {empty}: nothing is exported'
             raise BackupRefused(msg)
