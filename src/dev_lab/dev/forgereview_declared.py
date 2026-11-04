@@ -22,8 +22,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     max_total_bytes = 800000   # one head: past it, ONE whole-range structure review
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
-    code = [...]               # globs of what executes (forgereview_scope.CODE): nothing else is read or capped
-    not_code = [...]           # globs never code whatever their extension (forgereview_scope.NOT_CODE)
+    code = [...]               # globs of what executes (reviewcode.CODE): nothing else is read or capped
+    not_code = [...]           # globs never code whatever their extension (reviewcode.NOT_CODE)
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
     quiet = "10 min"           # the default (DEFAULT_QUIET): the serve reviews a head only once it is this old
     reviewers = []             # forge logins the review producers post as (serve hosts, jobs): their rounds are read
@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.units import Q_
 
-from dev_lab.dev import forgereview_scope
+from dev_lab.dev import forgereview_scope, reviewcode
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_command import ReviewUnsupported
 from dev_lab.dev.forgereview_findings import Finding
@@ -169,8 +169,8 @@ class Review:
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = STRICT
     light: tuple[str, ...] = LIGHT
-    code: tuple[str, ...] = forgereview_scope.CODE
-    not_code: tuple[str, ...] = forgereview_scope.NOT_CODE
+    code: tuple[str, ...] = reviewcode.CODE
+    not_code: tuple[str, ...] = reviewcode.NOT_CODE
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
     quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
     backlog: str = DEFAULT_BACKLOG  # a duration: a ready head unreviewed this long pages (forgebacklog)

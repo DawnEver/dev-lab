@@ -10,8 +10,8 @@ import pytest
 from dev_lab.dev import reviewpolicy
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_findings import Finding
-from dev_lab.dev.forgereview_scope import CODE, NOT_CODE
 from dev_lab.dev.principles import payload
+from dev_lab.dev.reviewcode import CODE, NOT_CODE
 from dev_lab.dev.reviewpolicy import policy
 
 
