@@ -50,7 +50,7 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forgereview_declared import JUDGE, load_review
+from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
@@ -70,6 +70,7 @@ __all__ = [
     'drift',
     'expand',
     'merge',
+    'placed',
     'render',
     'runner_labels',
     'workflows',
@@ -160,14 +161,21 @@ def expand(workflow: dict[str, Any], shared: dict[str, list[dict[str, Any]]]) ->
 
 
 def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
-    """Every workflow *root* declares, by file name: its forge's directory and the workflow, base merged under."""
-    base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
+    """Every workflow *root*'s working tree declares (:func:`placed`)."""
     pyproject = root / 'pyproject.toml'
-    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
+    return placed(pyproject.read_text(encoding='utf-8') if pyproject.is_file() else '', str(pyproject))
+
+
+def placed(text: str, origin: str) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """Every workflow pyproject *text* declares, by file name: its forge's directory and the workflow, base under.
+
+    *origin* names the text in a refusal; a reader with no checkout (the protection door) passes the forge's copy.
+    """
+    base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
     prepare = base.pop(PREPARE)
-    if load_review(root).where == JUDGE:
+    if review_from(text, origin).where == JUDGE:
         base[PREPARE_WORKFLOW] = prepare
         declared.setdefault(PREPARE_WORKFLOW, {})
     elif PREPARE_WORKFLOW in declared:

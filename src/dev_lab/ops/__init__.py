@@ -7,6 +7,8 @@ Every role is generic; a deployment is the ``[ops]`` table of the host's supervi
 * :mod:`dev_lab.ops.breakglass` -- merge PRs past the forge's protection inside a WAVE (:mod:`dev_lab.ops.wave`)
   the user opened with a TOTP code (:mod:`dev_lab.ops.totp`); its client is ``forge breakglass`` /
   ``forge pr breakglass`` (:mod:`dev_lab.dev.forgebreakglass`);
+* :mod:`dev_lab.ops.probe` -- per declared repo on either forge, protection drift (``forge protect check``) and a
+  failed scheduled or integration CI run, each alerted once;
 * :mod:`dev_lab.ops.install` -- render the systemd units, sshd drop-in and sudoers line the config asks for.
 
 The design and its follow-ups: ``.claude/memory/2026/11/03/PLAN-forge-host-roles-are-one-configured-mechanism.md``.

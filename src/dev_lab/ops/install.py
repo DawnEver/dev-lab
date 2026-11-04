@@ -28,7 +28,7 @@ from pathlib import Path
 
 from dev_lab.ops.access import PAM_INCLUDE
 from dev_lab.ops.access import files as access_files
-from dev_lab.ops.config import Backup, OpsConfig, Placement
+from dev_lab.ops.config import Backup, OpsConfig, Placement, Probe
 from dev_lab.ops.sshkey import ENV
 from dev_lab.supervise.daemon import watchdog_seconds
 
@@ -120,7 +120,7 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     }
 
 
-def _timer(config: OpsConfig, role: Backup, name: str, what: str, exec_start: str) -> dict[str, str]:
+def _timer(config: OpsConfig, role: Backup | Probe, name: str, what: str, exec_start: str) -> dict[str, str]:
     body = ['Type=oneshot', f'User={role.user}', f'ExecStart={exec_start}', 'Nice=10']
     service = _service(config, role, f'{what} (dev_lab.ops)', body, network=True)
     timer = (
@@ -155,6 +155,13 @@ def _backup(config: OpsConfig) -> dict[str, str]:
     return rendered
 
 
+def _probe(config: OpsConfig) -> dict[str, str]:
+    role = config.probe
+    if role is None:
+        return {}
+    return _timer(config, role, 'probe', 'Probe forge protection and CI runs', _door(config, 'probe'))
+
+
 def _supervise(config: OpsConfig) -> dict[str, str]:
     role = config.supervise
     if role is None:
@@ -182,7 +189,8 @@ def _supervise(config: OpsConfig) -> dict[str, str]:
 def files(config: OpsConfig) -> dict[str, str]:
     """Every file the configuration renders, by path relative to the root."""
     access = access_files(config.access) if config.access is not None else {}
-    return {**_promote(config), **_breakglass(config), **_backup(config), **access, **_supervise(config)}
+    rendered = {**_promote(config), **_breakglass(config), **_backup(config), **_probe(config)}
+    return {**rendered, **access, **_supervise(config)}
 
 
 def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
@@ -204,6 +212,12 @@ def _steps(config: OpsConfig, prepared: list[str]) -> tuple[str, ...]:
     if backup is not None and backup.source:
         steps += [f'id {backup.user} || useradd --system {backup.user}', 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-backup-pull.timer']  # fmt: skip
+    if (probe := config.probe) is not None:
+        tokens = ' '.join(sorted(probe.tokens.values()))
+        steps += [f'id {probe.user} || useradd --system {probe.user}',
+                  f'install -d -m 0700 -o {probe.user} {probe.state}',
+                  f'chown {probe.user} {tokens} && chmod 600 {tokens}',
+                  'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-probe.timer']  # fmt: skip
     if (access := config.access) is not None:
         steps += ['apt-get install -y libpam-oath', f'id {access.account} || useradd --create-home {access.account}',
                   f'put `@include {PAM_INCLUDE}` as the first auth line of /etc/pam.d/sshd',

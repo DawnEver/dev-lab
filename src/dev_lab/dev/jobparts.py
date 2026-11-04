@@ -75,6 +75,7 @@ __all__ = [
     'matrix',
     'produce',
     'pytest_collector',
+    'rows',
     'runner_for',
     'systems_for',
 ]
@@ -195,7 +196,7 @@ def systems_for(event: str) -> tuple[str, ...]:
     return PULL_REQUEST_SYSTEMS if event == 'pull_request' else tuple(sorted(HOSTED_RUNNERS))
 
 
-def _rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str, Any]]:
+def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str, Any]]:
     """*part*'s matrix rows: one per OS of *event* when it runs hosted and names no OS, else its one runner.
 
     A *declared* hosted part has one linux row carrying its secrets' names, and none on a pull request.
@@ -219,7 +220,7 @@ def matrix(
     """The rows of the parts *root*'s checkout derives (:data:`BASE` always) for GitHub *event*: a fromJSON matrix.
 
     A part needing a resource the checkout declares ``unproduced`` has no row (:mod:`dev_lab.dev.unproduced`).
-    Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`_rows`).
+    Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`rows`).
     *hosted* keeps only the rows the generic job produces on a GitHub-hosted runner -- a row carrying secrets has
     its own job (:func:`hosted_jobs`) -- and :func:`absent` then names the rest.
     """
@@ -231,9 +232,9 @@ def matrix(
     derived = {BASE, *need_sets(ids, carrying).values()}
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     declared = hosted_parts(text)
-    rows = [row for name in names for row in _rows(name, event, declared)]
-    generic = [row for row in rows if isinstance(row['runs-on'], str) and 'secrets' not in row]
-    return {'include': generic if hosted else rows}
+    every = [row for name in names for row in rows(name, event, declared)]
+    generic = [row for row in every if isinstance(row['runs-on'], str) and 'secrets' not in row]
+    return {'include': generic if hosted else every}
 
 
 def absent(client: Client, sha: str, expected: Mapping[str, Any], *, now: datetime | None = None) -> list[str]:

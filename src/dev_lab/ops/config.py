@@ -30,7 +30,7 @@ from typing import Any
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
-__all__ = ['Breakglass', 'OpsConfig', 'Placement', 'Promote', 'Supervise', 'load', 'repo_name']
+__all__ = ['Breakglass', 'OpsConfig', 'Placement', 'Probe', 'Promote', 'Supervise', 'load', 'repo_name']
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,20 +90,7 @@ class Breakglass(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
-        if not self.repos:
-            msg = '[ops.breakglass] serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
-            raise ValueError(msg)
-        identities = [forge_of_url(url).identity for url in self.repos]
-        if len(set(identities)) != len(identities):
-            msg = f'[ops.breakglass] repos name one repository twice: {identities}'
-            raise ValueError(msg)
-        hosts = {forge_of_url(url).host for url in self.repos}
-        if untokened := sorted(hosts - set(self.tokens)):
-            msg = f'[ops.breakglass] forge {", ".join(untokened)} names no token: add it to [ops.breakglass.tokens]'
-            raise ValueError(msg)
-        if unused := sorted(set(self.tokens) - hosts):
-            msg = f'[ops.breakglass.tokens] {", ".join(unused)} serves no repo in [ops.breakglass] repos'
-            raise ValueError(msg)
+        _served(self.repos, self.tokens, '[ops.breakglass]')
 
     def repo(self, identity: str) -> str | None:
         """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
@@ -111,6 +98,49 @@ class Breakglass(Placement):
 
     def token_file(self, url: str) -> str:
         """The file holding the break-glass token of *url*'s forge."""
+        return self.tokens[forge_of_url(url).host]
+
+
+def _served(repos: tuple[str, ...], tokens: Mapping[str, str], where: str) -> None:
+    """Refuse an empty repo set, one identity twice, a forge with no token, or a token no repo uses."""
+    if not repos:
+        msg = f'{where} serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
+        raise ValueError(msg)
+    identities = [forge_of_url(url).identity for url in repos]
+    if len(set(identities)) != len(identities):
+        msg = f'{where} repos name one repository twice: {identities}'
+        raise ValueError(msg)
+    hosts = {forge_of_url(url).host for url in repos}
+    if untokened := sorted(hosts - set(tokens)):
+        msg = f'{where} forge {", ".join(untokened)} names no token: add it to {where[:-1]}.tokens]'
+        raise ValueError(msg)
+    if unused := sorted(set(tokens) - hosts):
+        msg = f'{where[:-1]}.tokens] {", ".join(unused)} serves no repo in {where} repos'
+        raise ValueError(msg)
+
+
+@dataclass(frozen=True)
+class Probe(Placement):
+    """The forge probe (:mod:`dev_lab.ops.probe`): the repos it reads, a READ-ONLY token per forge, when, as whom.
+
+    ``repos`` are clone URLs on any forge -- its own set, as break-glass's is; ``tokens`` maps each forge host to the
+    file holding that forge's probe token (refused as :class:`Breakglass` refuses its own); ``state`` the directory
+    of what was already alerted; ``schedule`` the timer's ``OnCalendar``; ``user`` the account it runs as, which must
+    read the token files.
+    """
+
+    user: str
+    schedule: str
+    state: str
+    repos: tuple[str, ...] = ()
+    tokens: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Refuse a declaration that lies (see :func:`_served`)."""
+        _served(self.repos, self.tokens, '[ops.probe]')
+
+    def token_file(self, url: str) -> str:
+        """The file holding the probe token of *url*'s forge."""
         return self.tokens[forge_of_url(url).host]
 
 
@@ -203,6 +233,7 @@ class OpsConfig:
     backup: Backup | None = None
     access: Access | None = None
     supervise: Supervise | None = None
+    probe: Probe | None = None
     environment_file: str = ''
 
     def checkout(self, url: str) -> Path:
@@ -215,7 +246,7 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise)](
+def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Probe)](
     cls: type[T], table: object, where: str
 ) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -304,6 +335,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         backup=_backup(ops.get('backup')),
         access=_role(Access, ops.get('access'), '[ops.access]'),
         supervise=_role(Supervise, ops.get('supervise'), '[ops.supervise]'),
+        probe=_role(Probe, ops.get('probe'), '[ops.probe]'),
         environment_file=environment_file,
     )
 
