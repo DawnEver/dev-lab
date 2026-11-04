@@ -24,6 +24,11 @@ THE GITEA RUNNER LABELS ARE DECLARED ONCE: the top-level ``_runners`` table (:da
 names each label a Gitea job may run on -- ``review`` for the review job alone, :data:`LIGHT` for the jobs that hold
 no review method and no key (user ruling 2026-11-02). It is never a workflow and never rendered.
 
+A JUDGE REPO RENDERS ITS PREPARE WORKFLOW, undeclared: when the repo's ``[tool.dev_lab.review] where = "judge"``, the
+base's :data:`PREPARE` table is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one
+name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that
+name merged over it. Any other repo renders none, and a layer of that name there is refused.
+
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
@@ -45,7 +50,9 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.forgereview_declared import JUDGE, load_review
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
+from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
     'BASE_PATH',
@@ -53,6 +60,7 @@ __all__ = [
     'LIGHT',
     'NIGHTLY_CRON',
     'NIGHTLY_KEY',
+    'PREPARE',
     'RENDER_COMMAND',
     'RUNNERS',
     'SHARED',
@@ -72,6 +80,9 @@ BASE_PATH: Final = Path(__file__).resolve().parent / 'ci_base.toml'
 
 #: The top-level table of named step lists; never a workflow.
 SHARED: Final = '_steps'
+
+#: The top-level table of a judge repo's prepare workflow, rendered as ``PREPARE_WORKFLOW``; never a repo's key.
+PREPARE: Final = '_prepare'
 
 #: The top-level table of Gitea runner labels; never a workflow.
 RUNNERS: Final = '_runners'
@@ -155,6 +166,13 @@ def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
     declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
+    prepare = base.pop(PREPARE)
+    if load_review(root).where == JUDGE:
+        base[PREPARE_WORKFLOW] = prepare
+        declared.setdefault(PREPARE_WORKFLOW, {})
+    elif PREPARE_WORKFLOW in declared:
+        msg = f'[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]: rendered only for [tool.dev_lab.review] where = "{JUDGE}"'
+        raise ValueError(msg)
     hosted = hosted_parts(text)
     out = {}
     for name, layer in sorted(declared.items()):

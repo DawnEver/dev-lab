@@ -31,10 +31,10 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgereview_declared import review_gate
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.reviewgate import forge_posted, review_missing
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -93,11 +93,11 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
 
 
 def unreviewed(client: Client, head: str, *, base: str) -> str | None:
-    """Why *head* carries no FORGE-posted review on *client*'s forge, or ``None``: the one predicate (reviewgate).
+    """Why *head* is not reviewed on *client*'s forge, or ``None``: the one gate (forgereview_declared.review_gate).
 
     *base* is the integration branch whose declaration, with *head*'s, says who the forge is.
     """
-    return review_missing(status_list(client, head), forge_posted(client, head, base=base))
+    return review_gate(client, head, base=base)(status_list(client, head))
 
 
 def forge_unreviewed(root: Path, head: str) -> str | None:

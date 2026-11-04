@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import ast
+import io
 import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from dev_lab.dev import forgereview_scope, reviewcode
 from dev_lab.dev.forgecontexts import REVIEW_CONTEXT
@@ -99,3 +102,30 @@ def test_the_step_never_fails_and_tells_later_steps(tmp_path: Path) -> None:
 
     assert main(env, broken) == 0
     assert out.read_text(encoding='utf-8').splitlines() == ['settled=true', 'settled=false', 'settled=false']
+
+
+def _env(out: Path) -> dict[str, str]:
+    return {'FORGE_URL': 'http://forge', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_TOKEN': 't', 'PR_NUMBER': '7',
+            'HEAD_SHA': HEAD, 'GITHUB_RUN_ID': '99', 'GITHUB_OUTPUT': str(out)}  # fmt: skip
+
+
+def _refused(*_: object) -> object:
+    msg = 'refusé'
+    raise OSError(msg)
+
+
+def test_a_non_ascii_reason_reaches_an_ascii_stdout_as_utf8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, 'stdout', io.TextIOWrapper(raw, encoding='ascii'))
+    assert main(_env(tmp_path / 'out'), _refused) == 0
+    assert 'refusé'.encode() in raw.getvalue()
+
+
+def test_a_stdout_with_no_buffer_still_returns_0_and_writes_the_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text = io.StringIO()
+    monkeypatch.setattr(sys, 'stdout', text)
+    assert main(_env(tmp_path / 'out'), _refused) == 0
+    assert text.getvalue() == '', 'a text write is what ONE-WRITER-OWNS-THE-CONSOLE refuses'
+    assert (tmp_path / 'out').read_text(encoding='utf-8') == 'settled=false\n'

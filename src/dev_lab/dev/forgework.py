@@ -136,7 +136,7 @@ class Client:
         return backend_for(self.forge)
 
     def _once(
-        self, method: str, path: str, data: bytes | None, content_type: str, host: str | None
+        self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *, accept: str = ''
     ) -> tuple[int, bytes]:
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
@@ -144,6 +144,7 @@ class Client:
         try:
             sent = {'Authorization': auth, 'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)}
             sent |= dict(backend.headers)
+            sent |= {'Accept': accept} if accept else {}
             conn.request(method, path, body=data, headers=sent)
             response = conn.getresponse()
             self.answered = response.getheader('Date') or self.answered
@@ -228,16 +229,29 @@ class Client:
     def download(self, url: str) -> bytes:
         """The raw bytes at an attachment's download *url*, fetched with this client's credential.
 
-        Not retried and not JSON: the caller verifies what it got (:mod:`dev_lab.dev.artefacts` checks sha256).
+        The caller verifies what it got (:mod:`dev_lab.dev.artefacts` checks sha256).
         """
         parts = urllib.parse.urlsplit(url)
-        path = parts.path + (f'?{parts.query}' if parts.query else '')
-        status, payload = self._once('GET', path, None, 'application/octet-stream', parts.netloc or None)
+        return self._raw('GET', parts.path + (f'?{parts.query}' if parts.query else ''), host=parts.netloc or None)
+
+    def pull_diff(self, number: int) -> str:
+        """The forge's OWN unified diff of pull request *number* -- what a review bundle is checked against.
+
+        Gitea serves ``pulls/{n}.diff``; GitHub serves ``pulls/{n}`` as a diff when asked for
+        ``application/vnd.github.diff``.
+        """
+        github = self.backend is GITHUB
+        path = f'{self.repo}/pulls/{number}' + ('' if github else '.diff')
+        accept = 'application/vnd.github.diff' if github else 'text/plain'
+        return self._raw('GET', path, accept=accept).decode('utf-8', 'replace')
+
+    def _raw(self, method: str, path: str, *, host: str | None = None, accept: str = '') -> bytes:
+        """One call's raw answer: not retried and not JSON; a refusal raises :class:`ForgeCallFailed`."""
+        status, payload = self._once(method, path, None, 'application/octet-stream', host, accept=accept)
         if not 0 < status < HTTP_ERROR_FLOOR:
             text = payload.decode(errors='replace')[:300]
-            raise ForgeCallFailed(
-                Report(('GET', path), (Attempt(1, status or 1, text, self._diagnosis(status, text, path)),), 1)
-            )
+            diagnosis = self._diagnosis(status, text, path)
+            raise ForgeCallFailed(Report((method, path), (Attempt(1, status or 1, text, diagnosis),), 1))
         return payload
 
     def _request(

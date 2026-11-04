@@ -140,7 +140,7 @@ pull-requests = "read"
 # The review METHOD is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3,
 # 2026-10-31: "cannot import 'ai_lab.review'", nothing posted): the job installs ai-lab, from this owner's forge,
 # into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
-# the head and fails (forgetakeover.review_run), never exits green with no review.
+# the head and fails (forgereview_job.review_run), never exits green with no review.
 # The method's install and key are the shared `method` steps (below, with `setup`): the review job and the claims
 # workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
 # supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
@@ -388,7 +388,7 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 # workflow from the PR HEAD, so a same-repo PR could rewrite this file to post success itself or print the review
 # key; a pull_request_target workflow is detected from the BASE commit (notifier_helper.go, 1.27), so the BASE's
 # workflow runs -- the PR can neither change what runs nor read the secret -- and reviewgate counts a success only
-# when that run concluded success (the job fails unless it posted success, forgetakeover.job_exit). Safe ONLY because
+# when that run concluded success (the job fails unless it posted success, forgereview_job.job_exit). Safe ONLY because
 # what the job takes from the head is the DIFF, read as data; what it acts on is the base's -- the workflow,
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).
@@ -457,6 +457,49 @@ actions = "read"  # reviewgate reads the job's own run: GET actions/runs/{id} is
 contents = "write"
 pull-requests = "write"
 issues = "write"
+
+# THE BUNDLE PREPARE (forgereview_pointer): a repo declaring [tool.dev_lab.review] where = "judge" is reviewed by an
+# isolated judge host, which reads a bundle only as the `review-bundle` ARTIFACT of the newest concluded, successful
+# run of THIS workflow for the PR (event, path @refs/pull/<n>/head, head sha) -- located by the judge, never by a
+# status. Never declared by a repo and never keyed by its file name here: ciworkflows renders `_prepare` under
+# reviewgate.PREPARE_WORKFLOW -- the one name the judge lists runs by -- exactly when the repo is a judge repo.
+# pull_request_target ALONE (reviewgate.REVIEW_EVENT): the BASE's definition runs, so a PR can neither alter it nor
+# make its own run count. The head is checked out (sparse, `lean`) as DATA for the bundle -- read through git, never
+# run; the door is the base lock's (`door`), started isolated (-I). No review method and no key; the bundle goes up
+# with the run's own ACTIONS_RUNTIME_TOKEN (actionsartifact), which only this run's job holds, and nothing is
+# posted. A fork PR's job still has no FAMILY_READ_TOKEN (the `door` guard).
+[_prepare]
+forge = "gitea"
+name = "Review prepare"
+
+[_prepare.on.pull_request_target]
+types = ["opened", "synchronize", "reopened", "ready_for_review"]
+
+[_prepare.concurrency]
+group = "review-prepare-${{ github.event.pull_request.number }}"
+cancel-in-progress = true
+
+[_prepare.env]
+HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
+FAMILY_SOURCE = "https://github.com/DawnEver/"
+UV_PYTHON = "python3"
+UV_PYTHON_DOWNLOADS = "never"
+UV_CONCURRENT_INSTALLS = "1"
+UV_CONCURRENT_BUILDS = "1"
+
+[_prepare.jobs.prepare]
+runs-on = "light"
+steps = [
+    { use-steps = "reach" },
+    { use-steps = "lean" },
+    { use-steps = "door" },
+    { name = "Prepare the review bundle", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }} --repo "$GITHUB_WORKSPACE"', env = { GITHUB_TOKEN = "${{ github.token }}" } },
+]
+
+# Read only: the artifact upload authenticates with the run's runtime token, not the job token; prepare reads the PR.
+[_prepare.jobs.prepare.permissions]
+contents = "read"
+pull-requests = "read"
 
 # CLAIMS ARE ADJUDICATED BY THE FORGE (user ruling 2026-10-31): a `forge review dispose` comment carrying the claim
 # marker triggers this job, which rules on every pending claim of that PR or ledger issue as the job's own identity

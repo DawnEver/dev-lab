@@ -21,6 +21,7 @@ from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
     NIGHTLY_CRON,
+    PREPARE,
     RENDER_COMMAND,
     RUNNERS,
     SHARED,
@@ -35,8 +36,10 @@ from dev_lab.dev.ciworkflows import (
     write,
 )
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
+from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 
 _ROOT = Path(__file__).resolve().parents[1]
+_JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
@@ -362,8 +365,9 @@ def test_the_method_reads_the_locked_git_ai_lab_and_refuses_any_other_source(tmp
 
 def test_every_job_installing_the_method_installs_the_door_first(tmp_path: Path) -> None:
     """The method reads the door's dev-lab lock, so a job without the door before it has no ai-lab to install."""
-    names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS}]
-    (tmp_path / 'pyproject.toml').write_text(''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names), encoding='utf-8')
+    names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
+    tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + tables, encoding='utf-8')
     all_jobs = [(f'{w}:{j}', job) for w, flow in workflows(tmp_path).items() for j, job in flow['jobs'].items()]
     users = 0
     for name, job in all_jobs:
@@ -943,6 +947,31 @@ def test_promote_s_door_is_the_lock_of_the_integration_tip_it_promotes(tmp_path:
     )
     assert ran.returncode != 0
     assert 'no commit names the door' in ran.stdout + ran.stderr
+
+
+def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(tmp_path: Path) -> None:
+    """``where = "judge"`` renders the BASE's prepare workflow under the ONE name the judge reads its runs by.
+
+    ``pull_request_target`` alone (:data:`~dev_lab.dev.reviewgate.REVIEW_EVENT`): the base's definition runs, so a PR
+    can neither alter it nor start it as its own. It holds no review method and no key.
+    PLANTED CONTROL: a serve repo -- declared or by default -- renders no such workflow.
+    """
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
+    assert set(prepare['on']) == {REVIEW_EVENT}
+    (job,) = prepare['jobs'].values()
+    text = render(prepare)
+    assert '-I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }}' in text
+    assert 'ANTHROPIC_API_KEY' not in text
+    assert 'Install the review method' not in text
+    assert job['runs-on'] in tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS]
+    assert [path.relative_to(tmp_path).as_posix() for path in write(tmp_path)] == [
+        f'.gitea/workflows/{PREPARE_WORKFLOW}'
+    ]
+    assert drift(tmp_path) == []
+    for serve in ('', '[tool.dev_lab.review]\nwhere = "serve"\n'):
+        (tmp_path / 'pyproject.toml').write_text(serve, encoding='utf-8')
+        assert PREPARE_WORKFLOW not in workflows(tmp_path)
 
 
 def test_a_pr_with_no_code_is_settled_before_any_clone_or_install(tmp_path: Path) -> None:

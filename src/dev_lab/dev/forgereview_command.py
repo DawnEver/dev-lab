@@ -79,15 +79,16 @@ def can_start(argv: Sequence[str], root: Path) -> str | None:
 SAFE_PATH: Final = {'PYTHONSAFEPATH': '1'}
 
 
-def run_command(argv: Sequence[str], root: Path) -> str:
+def run_command(argv: Sequence[str], root: Path, env: Mapping[str, str] | None = None) -> str:
     """The stdout of the declared command run in *root*; :class:`ReviewRefused` or :class:`OSError` on a failure.
 
-    *root* is the PR's checkout -- data the reviewer reads, never a module path (:data:`SAFE_PATH`).
+    *root* is the PR's checkout -- data the reviewer reads, never a module path (:data:`SAFE_PATH`). *env* overrides
+    the inherited environment (the judge's :func:`~dev_lab.dev.reviewbundle.no_repo_env`).
     """
     try:
         done = _door.run(
             list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=_COMMAND_TIMEOUT_S, check=False, env={**os.environ, **SAFE_PATH},
+            timeout=_COMMAND_TIMEOUT_S, check=False, env={**os.environ, **SAFE_PATH, **(env or {})},
         )  # fmt: skip
     except FileNotFoundError:
         msg = f'unsupported: the review command {argv[0]!r} is not installed on this host'

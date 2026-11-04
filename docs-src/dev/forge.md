@@ -523,6 +523,18 @@ the context (repository, PR, branch, commit, run, service, since/last) and the r
 email's plain part carry that Markdown; Telegram and the email's HTML part render it. The host is
 `[notify] host_label` in the machine file (absent: the hostname).
 
+## A review judged on its own host: `forge review prepare` / `judge`
+
+A repo whose integration branch declares `[tool.dev_lab.review] where = "judge"` is reviewed by an isolated judge
+host and never by `forge serve` (one mode per repo). The runner runs
+`python -m dev_lab.dev.forge review prepare --pr <n>` (no reviewer token): it attaches the
+review bundle to its own run as the `review-bundle` artifact, which the judge finds by listing the base's prepare
+runs itself (a declared preparer's host instead stores it and points the head at it). The judge host
+runs `python -m dev_lab.dev.forge review judge --url <repo web url> [--token-file <path>] [--runtime ai_lab.python=<py>]`
+on a timer: it verifies each pointed-at bundle against the forge's own diff, reads the declaration fresh from the
+integration branch, and posts one PR review per head as its own login. The mechanism is the module docstring of
+`dev_lab.dev.forgereview_bundle`.
+
 ## Records and the outbox
 
 - **Statuses wait in an outbox** (`<main-checkout>/output/forge/outbox/`) until the commit is on origin.
