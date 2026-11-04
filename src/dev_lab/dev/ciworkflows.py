@@ -18,7 +18,7 @@ share -- the review itself -- has one source. A workflow either forge may run ke
 ``by-forge`` table (:data:`BY_FORGE`, never rendered): the part named by the merged ``forge`` is merged over the rest.
 
 THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
-rendered) schedules that workflow at it, so GitHub's ci.yml and Gitea's promote.yml promote on one clock.
+rendered) schedules that workflow at it. Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
 
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
