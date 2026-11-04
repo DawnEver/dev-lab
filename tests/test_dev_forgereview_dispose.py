@@ -20,6 +20,7 @@ from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, alarms, blocked, dispose
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, Identity, identity, self_review
 from dev_lab.dev.forgereview_rounds import trusted_bodies
+from dev_lab.dev.forgereview_scope import git
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import main, pull_for, takeover
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
@@ -218,6 +219,26 @@ def test_the_doors_are_forge_review_verbs(tmp_path: Path, monkeypatch: pytest.Mo
     assert main(['adjudicate', str(number)], cwd=work, client=forge, run=judge) == 0
     assert _state(forge, head)[0] == 'success'
     assert main(['blocked'], cwd=work, client=forge) == 0
+
+
+def test_the_forge_job_rules_in_a_checkout_whose_origin_head_is_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``adjudicate`` is the forge's job, as ``run`` is.
+
+    An Actions checkout sets no ``origin/HEAD``, so the trusted integration branch is asked of the forge, never
+    read from the clone (dev-lab #75, 2026-11-04: every claim stayed unruled on a refusal naming ``set-head``).
+    """
+    work, forge, number, head = _blocked(tmp_path)
+    monkeypatch.setattr('dev_lab.dev.forgetakeover.this_machine', lambda: 'box')
+    monkeypatch.setenv(SESSION_ENV, 'S-claimant')
+    assert main(['dispose', str(number), 'F-x', '--why', _WHY], cwd=work, client=forge) == 0
+    git(work, 'remote', 'set-head', 'origin', '--delete')  # no origin/HEAD, as an Actions checkout
+    judge = FakeCommand(rulings={'F-x': ('false-positive', 'a.py:3 asserts the guard')})
+    monkeypatch.setattr('dev_lab.dev.forgereview_judge.CI_LOGINS', frozenset({forge.login}))
+    monkeypatch.delenv(SESSION_ENV)
+    assert main(['adjudicate', str(number)], cwd=work, client=forge, run=judge) == 0
+    assert _state(forge, head)[0] == 'success'
 
 
 @pytest.mark.parametrize('context', ['tests/review', 'tests/review-hold'])

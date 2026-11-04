@@ -201,6 +201,10 @@ def takeover(
 #: What the hold says when the job's host cannot run the review command: the forge's review is re-run.
 HOST_CANNOT: Final = 'the review job cannot run the review command'
 
+#: The verbs the forge's own jobs run (``review.yml``, ``review-claims.yml``): they ask the forge for the trusted
+#: integration branch, because an Actions checkout sets no ``origin/HEAD``.
+_FORGE_JOBS: Final = frozenset({'run', 'adjudicate'})
+
 
 def review_run(root: Path, client: Client, review: Review, number: int, *, base: str, runner: Runner) -> str:
     """:func:`review_pull` on PR *number* alone -- what a GitHub workflow job runs for its event's PR; the line.
@@ -360,9 +364,10 @@ def main(
         # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.
         api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
         origin = client or client_for(root, token=api)
-        # never the working tree's: the head's (F-169e99e6c68c); the job asks the forge, the operator's verbs
-        # read their clone's origin/HEAD offline (dev-lab #40)
-        base = trusted_integration(root, origin) if args.verb == 'run' else operator_integration(root)
+        # never the working tree's: the head's (F-169e99e6c68c); the forge's jobs ask the forge (an Actions
+        # checkout sets no origin/HEAD), the operator's verbs read their clone's origin/HEAD offline (dev-lab #40)
+        job = args.verb in _FORGE_JOBS
+        base = trusted_integration(root, origin) if job else operator_integration(root)
         if args.verb == 'run':
             secret = all(os.environ.get(name) for name in args.secret_env)
             runner = Runner(
