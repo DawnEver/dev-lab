@@ -272,9 +272,9 @@ def test_install_creates_the_keys_directory_once(tmp_path: Path) -> None:
 
 
 def test_access_forwards_nothing_unless_permit_open_names_targets(tmp_path: Path) -> None:
-    jump = load(_host(tmp_path, 'permit_open = ["10.0.1.222:22", "[fd00::1]:22"]\n'), environ={})
+    jump = load(_host(tmp_path, 'permit_open = ["192.0.2.22:22", "[fd00::1]:22"]\n'), environ={})
     sshd = files(jump)['etc/ssh/sshd_config.d/61-dev-lab-ops-ops.conf']
-    assert '    AllowTcpForwarding local\n    PermitOpen 10.0.1.222:22 [fd00::1]:22\n' in sshd
+    assert '    AllowTcpForwarding local\n    PermitOpen 192.0.2.22:22 [fd00::1]:22\n' in sshd
     assert 'AllowTcpForwarding no' not in sshd
     for off in ('AllowAgentForwarding no', 'AllowStreamLocalForwarding no', 'X11Forwarding no', 'PermitTunnel no'):
         assert off in sshd
@@ -283,7 +283,7 @@ def test_access_forwards_nothing_unless_permit_open_names_targets(tmp_path: Path
     assert 'PermitOpen' not in plain
 
 
-@pytest.mark.parametrize('target', ['10.0.1.222', 'any', '10.0.1.222:22 extra:1', 'h:0', 'h:70000', 'h:22\\nMatch all'])
+@pytest.mark.parametrize('target', ['192.0.2.22', 'any', '192.0.2.22:22 extra:1', 'h:0', 'h:70000', 'h:22\\nMatch all'])
 def test_a_permit_open_target_that_is_not_host_port_is_refused(tmp_path: Path, target: str) -> None:
     config = load(_host(tmp_path, f'permit_open = ["{target}"]\n'), environ={})
     with pytest.raises(ValueError, match='host:port'):
