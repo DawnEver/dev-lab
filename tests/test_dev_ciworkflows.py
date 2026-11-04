@@ -99,7 +99,9 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith('${{ always()')
-    assert set(jobs['merge-ready']['needs']) == {'security', 'review'}, 'the parts gate promote, never the merge'
+    assert set(jobs['merge-ready']['needs']) == {'security', 'review', 'part', 'absent-parts'}, (
+        'a merge waits on its parts'
+    )
     assert jobs['merge-ready']['if'].startswith('${{ always()')
     ready, dispatch = jobs['merge-ready']['steps'][-2:]
     assert 'forge merge ready --pr' in ready['run']
@@ -196,7 +198,7 @@ def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_p
 def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_decision(tmp_path: Path) -> None:
     """D48-1A: once nightly, and on demand, integrate/main's tip runs every part on every OS, then promotes.
 
-    `integrate promote` stays the ONE place the parts gate (D83); the schedule's run is never a merge's smoke.
+    `integrate promote` alone asks the parts at scope full (D83); the schedule's run is never a merge's smoke.
     """
     ci = _base_ci(tmp_path)
     assert ci['on']['schedule'] == [{'cron': NIGHTLY_CRON}]

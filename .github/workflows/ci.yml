@@ -273,7 +273,9 @@
       },
       "needs": [
         "security",
-        "review"
+        "review",
+        "part",
+        "absent-parts"
       ],
       "if": "${{ always() && github.event_name == 'pull_request' }}",
       "runs-on": "ubuntu-latest",

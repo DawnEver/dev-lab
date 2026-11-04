@@ -1,9 +1,10 @@
 """INTEGRATION-TAKES-ONLY-FORGE-MERGES: the forge merges a reviewed, safe, clean PR into integration, server side.
 
 User ruling 2026-10-19: every change is a short-lived branch returning by a PR to the integration branch,
-which takes ONLY server-side merges. THE TEST PARTS DO NOT GATE THAT MERGE (user ruling 2026-10-29, every repo):
-they still run on a PR head, and a part that is absent, pending or FAILED is reported, but full PASS is required
-only to promote integration to the trunk (:func:`dev_lab.dev.integrate.promote`). Opted into by declaring
+which takes ONLY server-side merges. THE TEST PARTS GATE THAT MERGE (user ruling 2026-11-04, superseding
+2026-10-29's "parts never gate", after dev-lab#78 merged with ``tests/base`` FAILED and reddened integration): every
+part the head needs stands PASS (:func:`dev_lab.dev.platformparts.standing`, the reading promotion uses at scope full
+in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses. Opted into by declaring
 ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration tick
 (:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and,
 when nothing is missing, asks the forge to merge it (:func:`merge`). A client push adding a commit to the
@@ -23,6 +24,7 @@ The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
+* its head's test parts all stand PASS (:func:`parts_wait`);
 * its head is REVIEWED (:func:`dev_lab.dev.reviewgate.review_missing`, user ruling 2026-10-31): the latest
   ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold`` is
   pending. Absent, reviewing, ``error``, ``failure`` and a success any other login posted all wait -- nothing is
@@ -61,6 +63,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.branchset import declared_branchset
 from dev_lab.dev.family import declared_table
@@ -77,9 +80,11 @@ from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
+from dev_lab.dev.platformparts import standing
 from dev_lab.dev.reviewgate import forge_posted, review_missing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
+from dev_lab.dev.unproduced import unproduced_waived
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -182,6 +187,14 @@ def merge_message(branch: str, number: int, policy: Policy) -> str:
     )
 
 
+def parts_wait(root: Path, head: str, statuses: Sequence[CommitStatus]) -> str | None:
+    """Why *head*'s test parts do not all stand PASS, or ``None``: the one :func:`standing` reading, any scope."""
+    parts = standing(statuses, head=head, waived=unproduced_waived(root, head, statuses))
+    if parts.result is Conclusion.PASS:
+        return None
+    return '; '.join([f'they stand {parts.reading}', *parts.problems])
+
+
 def decide(
     root: Path,
     policy: Policy,
@@ -205,6 +218,8 @@ def decide(
         missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
+    if (red := parts_wait(root, head, statuses)) is not None:
+        missing.append(f'its test parts: {red}')
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)

@@ -26,11 +26,11 @@
 #   merge-ready   last, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready and, when it is success, merges that head into integrate/main itself
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
-#                 job token makes starts no workflow, so it dispatches this one on integrate/main; the
-#                 parts never gate it (user ruling 2026-10-29)
+#                 job token makes starts no workflow, so it dispatches this one on integrate/main; it
+#                 runs after the parts, which gate it: every part PASS (user ruling 2026-11-04)
 #   promote       NIGHTLY (D48-1A, user ruling 2026-11-01), never per merge: on the full run of a pending
 #                 integrate/main tip, once every part settled: `integrate promote`
-#                 refuses unless every part stands PASS -- the ONE place the parts gate,
+#                 refuses unless every part stands PASS at scope full,
 #                 the SAME decision Gitea's integrator runs, fast-forwards main and the job token pushes it;
 #                 then `branchprune sweep` deletes every branch integration now contains
 #
@@ -169,7 +169,7 @@ issues = "write"
 
 ["ci.yml".jobs.merge-ready]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
-needs = ["security", "review"]
+needs = ["security", "review", "part", "absent-parts"]
 if = "${{ always() && github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
 steps = [
@@ -498,7 +498,7 @@ pull-requests = "write"
 issues = "write"
 
 # GITEA'S NIGHTLY PROMOTION (D48-1A, user ruling 2026-11-01): Gitea promotes integrate/main's tip once a night by the
-# SAME decision as ci.yml's promote job -- `integrate promote`, the ONE place the parts gate -- then `branchprune
+# SAME decision as ci.yml's promote job -- `integrate promote`, the parts at scope full -- then `branchprune
 # sweep`. The decision reads only git and the forge's statuses (the parts Ada's `forge serve` already posted on the
 # tip, D111), so the Gitea host, which cannot reach Ada, runs it: Ada pulls its work and pushes its verdicts, and the
 # promotion asks Ada nothing. A tip main already holds is `current`: nothing moves. The parts are NOT re-run here --
