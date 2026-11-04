@@ -37,6 +37,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -49,7 +50,8 @@ from dev_lab.dev.artefacts import (
 )
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pr_list
-from dev_lab.dev.forgereview_command import run_command
+from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, wait_of, within
+from dev_lab.dev.forgereview_command import ReviewPending, run_command
 from dev_lab.dev.forgereview_declared import (
     JUDGE,
     Review,
@@ -187,17 +189,35 @@ def judge_one(
             return f'{said}: the bundle or the forge could not be read, retried next run: {failed}'
         if (unread := _unread_code(bundle, review)) is not None:
             return unread
-        reviewed = f'{bundle.base_sha}..{bundle.head_sha}'
-        argv = command_for(review, reviewed, runtimes, bundle=True)
+        out = _reviewed(client, review, pull, bundle, diff=diff, gone=gone, runtimes=runtimes, run=run, where=where)
+    return out if isinstance(out, str) else _verdict_of(out, bundle, said)
+
+
+def _reviewed(
+    client: Client, review: Review, pull: PullRequest, bundle: reviewbundle.Bundle, *, diff: str,
+    gone: Mapping[str, str], runtimes: Mapping[str, Mapping[str, Any]],
+    run: Callable[[Sequence[str], Path, Mapping[str, str]], str], where: Path,
+) -> Findings | str:  # fmt: skip
+    """The bundle command's findings over *bundle*, or the line said when there are none yet (retried next run).
+
+    The judge trusts its own login alone (D3): its batch state is a comment it wrote itself. A batch still running
+    posts nothing; the judge's next tick resumes it.
+    """
+    said = f'#{pull.number} {pull.head_sha[:12]}'
+    reviewed = f'{bundle.base_sha}..{bundle.head_sha}'
+    with held_state(client, pull.number, pull.head_sha, {client.whoami()}) as state:
+        argv = command_for(review, reviewed, runtimes, bundle=True, batching=batch_args(review, state))
+        timed = within(run, datetime.now(UTC) + wait_of(review))
 
         def once(filled: Sequence[str], _root: Path) -> str:
-            return reviewbundle.judge(bundle, filled, diff=diff, run=lambda final, env: run(final, where, env))
+            return reviewbundle.judge(bundle, filled, diff=diff, run=lambda final, env: timed(final, where, env))
 
         try:
-            out = parse_findings(gather(reviewed, [argv], (), once, where, pr_body=pull.body, disposed=gone))
+            return parse_findings(gather(reviewed, [argv], (), once, where, pr_body=pull.body, disposed=gone))
+        except ReviewPending as waiting:
+            return f'{said}: {BATCH_PENDING} {waiting}; nothing posted, the next run resumes it'
         except (OSError, FindingsInvalid) as failed:
             return f'{said}: the review command failed, retried next run: {failed}'
-    return _verdict_of(out, bundle, said)
 
 
 def post_verdict(client: Client, pull: PullRequest, verdict: Verdict) -> None:

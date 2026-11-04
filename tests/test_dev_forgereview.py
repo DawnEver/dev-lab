@@ -65,16 +65,6 @@ _MANIFEST = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _no_inherited_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """These tests simulate review HOSTS, not one Actions run, so none inherits the runner's run id.
-
-    A CI runner's ``GITHUB_RUN_ID`` would make every simulated host share one run, and a claim naming the
-    reader's own run reads as a killed re-run's.
-    """
-    monkeypatch.delenv('GITHUB_RUN_ID', raising=False)
-
-
 def _output(
     *, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), severity: str = 'MEDIUM', **top: object
 ) -> str:
@@ -536,6 +526,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
         'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code', 'reviewers', 'backlog',
         'claim_stale', 'max_rounds', 'quiet', 'where', 'bundle', 'judge_login', 'preparers',
+        'batch', 'on_expiry', 'batch_wait',
     }  # fmt: skip
 
 

@@ -82,7 +82,12 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'tests/test_dev_forgereview_bundle.py',
         'arg-type',
-        'said = fp.prepare(root, forge, 7, env=_ACTIONS)',
+        'said = fp.prepare(root, forge, 7, env=env)',
+    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        "fp.prepare(on_github.root, on_github.forge, 7, env={'GITHUB_ACTIONS': 'true'})",
     ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
     (
         'tests/test_dev_forgereview_bundle.py',
@@ -211,6 +216,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'import fcntl',
     ): 'the POSIX lock primitive: fcntl exists only on POSIX, so a top-level import breaks Windows',
+    (
+        'src/dev_lab/ops/totp.py',
+        'PLC0415',
+        'import segno',
+    ): 'segno is the ops extra: only the enrolling host draws a QR; a consumer reading codes never installs it',
     (
         'tests/test_dev_githooks.py',
         'PLC0415',

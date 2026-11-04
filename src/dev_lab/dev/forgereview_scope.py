@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Final
 from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, marker
+from dev_lab.dev.forgereview_command import ReviewPending
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, is_code, matches
@@ -361,7 +362,9 @@ def gather(
 
     *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
     the principles file as :data:`PRINCIPLES_FIELD` and the *disposed* file as :data:`DISPOSED_FIELD`; the first
-    slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``.
+    slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``. A slice whose
+    batch is still running (:class:`~dev_lab.dev.forgereview_command.ReviewPending`) does not stop the slices after
+    it: each submits its own, and the first pending is raised once all have run.
     """
     with tempfile.TemporaryDirectory() as scratch:
         given = Path(scratch) / 'principles.json'
@@ -381,7 +384,15 @@ def gather(
                                                                 .replace(DISPOSED_FIELD, str(gone))])
             ]  # fmt: skip
 
-        merged = merge_outputs([run(filled(argv, summarizes=not at), root) for at, argv in enumerate(argvs)], reviewed)
+        outputs, waiting = [], None
+        for at, argv in enumerate(argvs):
+            try:
+                outputs.append(run(filled(argv, summarizes=not at), root))
+            except ReviewPending as pending:  # the slices after it still submit theirs: one wait settles all
+                waiting = waiting or pending
+        if waiting is not None:
+            raise waiting
+        merged = merge_outputs(outputs, reviewed)
         if not synthesis or len(argvs) == 1:
             return merged
         path = Path(scratch) / 'findings.json'

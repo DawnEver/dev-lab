@@ -1,9 +1,9 @@
 # THE FAMILY'S GITHUB ACTIONS WORKFLOWS -- the base, as data. Rendered by dev_lab.dev.ciworkflows.
 #
-# A repo OPTS IN to a workflow by declaring its table, `[tool.dev_lab.ci."<file>.yml"]`, in its own
-# pyproject.toml (an empty table takes the base as is); the repo's table is deep-merged over the base
-# (tables merge key by key, any other value replaces). A repo may also declare a workflow the base
-# does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
+# EVERY REPO RENDERS EVERY TABLE HERE PLACED ON ITS FORGE (`forge`, github when omitted; the repo's forge is
+# read from its origin) -- never an opt-in. A repo's `[tool.dev_lab.ci."<file>.yml"]` in its pyproject.toml is
+# deep-merged over the base (tables merge key by key, any other value replaces); it may also render another
+# forge's table, or declare a workflow the base does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
 # parsed back. Re-render with `python -m dev_lab.dev.ciworkflows render`.
 
 # ONE PR LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29). ci.yml is GitHub's half of the model Gitea's
@@ -157,6 +157,7 @@ steps = [
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = false } },
     { use-steps = "door" },
     { use-steps = "method" },
+    { use-steps = "forge-tokens" },
     { use-steps = "review" },
 ]
 
@@ -227,6 +228,32 @@ contents = "write"
 statuses = "write"
 pull-requests = "write"
 actions = "write"
+
+# THE BATCH RESUME, on the merge tick's ONE cadence (user ruling 2026-11-04: review calls are batched by default): a
+# head whose review batch is still running shows `tests/review` pending "review batch pending"; every scheduled (or
+# dispatched) tick resumes those heads from the batch state on their PR -- polled, never resubmitted -- so a pending
+# batch never waits for a human. A `status` event starts no review. It runs the default branch's file, never a PR
+# head's, with the review method and key as the review job holds them.
+["merge-tick.yml".jobs.review-resume]
+if = "${{ github.event_name != 'status' }}"
+runs-on = "ubuntu-latest"
+env = { HEAD_SHA = "${{ github.sha }}", INTEGRATION_SHA = "${{ github.sha }}" }
+steps = [
+    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
+    { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = false } },
+    { use-steps = "door" },
+    { use-steps = "method" },
+    { use-steps = "forge-tokens" },
+    { name = "Resume the pending review batches", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --batch-pending --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+]
+
+["merge-tick.yml".jobs.review-resume.permissions]
+contents = "read"
+statuses = "write"
+pull-requests = "write"
+issues = "write"
 
 # Pushes the fast-forwarded main and deletes every branch integration now contains (LANDED-BRANCHES-SWEPT,
 # closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
@@ -300,12 +327,14 @@ print(source["git"].rpartition("#")[2])' < "$RUNNER_TEMP/dev-lab/uv.lock") || ex
 # once and removes it before any subprocess: the read token is its git header, the job token its forge client's.
 # The review key (ANTHROPIC_API_KEY) stays in the tests/review env: the reviewer needs it, a separate concern.
 # Whatever the door does, the files die with the step (F-5fd2611e79ea): a self-hosted runner may reuse RUNNER_TEMP.
-review = [
+forge-tokens = [
     { name = "Hand the forge tokens to the door", run = '''umask 077
 mkdir -p "$RUNNER_TEMP/forge-secrets"
 printf '%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" > "$RUNNER_TEMP/forge-secrets/read"
 printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 ''', env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
+]
+review = [
     { name = "tests/review", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
 "$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
 ''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
@@ -352,6 +381,11 @@ fi
 "$RUNNER_TEMP/review/bin/uv" pip install --no-config --python "$RUNNER_TEMP/review/bin/python" --no-deps "$RUNNER_TEMP/dev-lab"
 echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 ''', env = { DOOR_SHA = "${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
+]
+
+# THE BUNDLE ITSELF, once: both forges' prepare jobs run this step with the door's interpreter, isolated (-I).
+prepare = [
+    { name = "Prepare the review bundle", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }} --repo "$GITHUB_WORKSPACE"', env = { GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, behind a campus ACL). No `uses`
@@ -488,6 +522,7 @@ exec(compile(text, path, "exec"), {"__name__": "__main__"})' || echo "settled=fa
     { use-steps = "lean", if = "${{ steps.code.outputs.settled != 'true' }}" },
     { use-steps = "door", if = "${{ steps.code.outputs.settled != 'true' }}" },
     { use-steps = "method", if = "${{ steps.code.outputs.settled != 'true' }}" },
+    { use-steps = "forge-tokens", if = "${{ steps.code.outputs.settled != 'true' }}" },
     { use-steps = "review", if = "${{ steps.code.outputs.settled != 'true' }}" },
 ]
 
@@ -502,14 +537,20 @@ issues = "write"
 
 # THE BUNDLE PREPARE (forgereview_pointer): a repo declaring [tool.dev_lab.review] where = "judge" is reviewed by an
 # isolated judge host, which reads a bundle only as the `review-bundle` ARTIFACT of the newest concluded, successful
-# run of THIS workflow for the PR (event, path @refs/pull/<n>/head, head sha) -- located by the judge, never by a
+# run of THIS workflow for the PR (event, workflow, pull request, head sha) -- located by the judge, never by a
 # status. Never declared by a repo and never keyed by its file name here: ciworkflows renders `_prepare` under
 # reviewgate.PREPARE_WORKFLOW -- the one name the judge lists runs by -- exactly when the repo is a judge repo.
 # pull_request_target ALONE (reviewgate.REVIEW_EVENT): the BASE's definition runs, so a PR can neither alter it nor
-# make its own run count. The head is checked out (sparse, `lean`) as DATA for the bundle -- read through git, never
-# run; the door is the base lock's (`door`), started isolated (-I). No review method and no key; the bundle goes up
-# with the run's own ACTIONS_RUNTIME_TOKEN (actionsartifact), which only this run's job holds, and nothing is
-# posted. A fork PR's job still has no FAMILY_READ_TOKEN (the `door` guard).
+# make its own run count. The head is checked out as DATA for the bundle -- read through git, never run; the door is
+# the base lock's (`door`), started isolated (-I). No review method and no key, and nothing is posted.
+# EITHER FORGE (`forge`, Gitea unless the repo's layer names "github"; its `by-forge` table is that forge's part):
+# * Gitea: the host runner's `reach`/`lean` setup; the bundle goes up with the run's own ACTIONS_RUNTIME_TOKEN
+#   (actionsartifact), which only this run's job holds. A fork PR's job still has no FAMILY_READ_TOKEN (the `door`
+#   guard).
+# * GitHub: a hosted runner, whose `run` steps are never handed the runtime token, so `prepare` leaves the bundle in
+#   $RUNNER_TEMP and actions/upload-artifact attaches it to this run (overwrite: a re-run attempt replaces it, so the
+#   run holds one). The checkout keeps no credential. A fork PR is not prepared: GitHub lists no pull request on a
+#   fork's run, so the judge could never bind it to the PR (reviewgate._of_workflow).
 [_prepare]
 forge = "gitea"
 name = "Review prepare"
@@ -523,25 +564,40 @@ cancel-in-progress = true
 
 [_prepare.env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
+
+# Read only: the artifact upload authenticates with the run's runtime token, not the job token; prepare reads the PR.
+[_prepare.jobs.prepare.permissions]
+contents = "read"
+pull-requests = "read"
+
+[_prepare.by-forge.gitea.env]
 FAMILY_SOURCE = "https://github.com/DawnEver/"
 UV_PYTHON = "python3"
 UV_PYTHON_DOWNLOADS = "never"
 UV_CONCURRENT_INSTALLS = "1"
 UV_CONCURRENT_BUILDS = "1"
 
-[_prepare.jobs.prepare]
+[_prepare.by-forge.gitea.jobs.prepare]
 runs-on = "light"
 steps = [
     { use-steps = "reach" },
     { use-steps = "lean" },
     { use-steps = "door" },
-    { name = "Prepare the review bundle", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }} --repo "$GITHUB_WORKSPACE"', env = { GITHUB_TOKEN = "${{ github.token }}" } },
+    { use-steps = "prepare" },
 ]
 
-# Read only: the artifact upload authenticates with the run's runtime token, not the job token; prepare reads the PR.
-[_prepare.jobs.prepare.permissions]
-contents = "read"
-pull-requests = "read"
+[_prepare.by-forge.github.env]
+FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
+
+[_prepare.by-forge.github.jobs.prepare]
+if = "${{ github.event.pull_request.head.repo.full_name == github.repository }}"
+runs-on = "ubuntu-latest"
+steps = [
+    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0, persist-credentials = false } },
+    { use-steps = "door" },
+    { use-steps = "prepare" },
+    { name = "Attach the review bundle to this run", uses = "actions/upload-artifact@v4", with = { name = "review-bundle", path = "${{ runner.temp }}/review-bundle/bundle.json", if-no-files-found = "error", overwrite = true } },
+]
 
 # CLAIMS ARE ADJUDICATED BY THE FORGE (user ruling 2026-10-31): a `forge review dispose` comment carrying the claim
 # marker triggers this job, which rules on every pending claim of that PR or ledger issue as the job's own identity

@@ -169,7 +169,7 @@ def declaration_from(text: str, origin: str) -> Declaration:
 def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[str, ...]]:
     """Each role's required status contexts on *forge*, derived from the workflows *text* renders for it."""
     directory = WORKFLOW_DIRS[backend_for(forge).name]
-    flows = [flow for where, flow in placed(text, origin).values() if where == directory]
+    flows = [flow for where, flow in placed(text, origin, backend_for(forge).name).values() if where == directory]
     jobs = [job for flow in flows for job in flow.get('jobs', {}).values()]
     steps = {step.get('name') for job in jobs for step in job.get('steps', ())}
     if MERGE_READY_CONTEXT in steps:

@@ -476,6 +476,27 @@ def test_download_returns_the_raw_bytes_with_the_credential_and_a_refusal_raises
         _client(forge, transport).download('https://forge.example.org/attachments/absent')
 
 
+def test_download_follows_a_redirect_without_the_credential(server) -> None:
+    """GitHub's artifact zip answers 302 to a signed storage URL: followed, and the token never leaves the forge.
+
+    PLANTED CONTROL: the first request carried the credential; the redirected one carries none.
+    """
+    transport = _Loopback(server)
+    _answer('GET', '/repos/o/r/actions/artifacts/5/zip', (302, 'https://blob.example.net/a.zip?sig=s'))
+    _answer('GET', '/a.zip?sig=s', (200, {'k': 1}))
+    got = _client(Forge('github.com', 'o', 'r'), transport).download('/repos/o/r/actions/artifacts/5/zip')
+    assert got == json.dumps({'k': 1}).encode()
+    first, second = _Recorder.received[-2:]
+    assert (first['headers']['Authorization'], 'Authorization' in second['headers']) == ('Bearer T', False)
+    assert transport.asked[-2:] == ['api.github.com', 'blob.example.net']
+
+
+def test_download_refuses_an_endless_redirect(server) -> None:
+    _answer('GET', '/loop', (302, '/loop'))
+    with pytest.raises(ForgeCallFailed):
+        _client(Forge('forge.example.org', 'o', 'r'), _Loopback(server)).download('https://forge.example.org/loop')
+
+
 def test_pr_create_never_refuses_and_records_its_advice_on_the_pr(server, tmp_path: Path, capsys, monkeypatch) -> None:
     """ONE-SESSION-ONE-PR / NO-STACKED-PRS advise, never block. PLANTED CONTROL: no advice adds nothing."""
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
