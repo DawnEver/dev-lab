@@ -11,7 +11,7 @@ THE ROW, declared once in the product's ``pyproject.toml``::
 
     [tool.dev_lab.components.numerics-lab]
     url = "https://<forge>/<owner>/numerics-lab.git"   # the engine's repository
-    branch = "main"                                     # the branch a bump follows
+    branch = "integrate/main"                           # the branch a bump follows
     parts = ["base", "linux"]                           # the product's forge parts that verify a bump
     package = "numerics-lab"                            # optional: the Python distribution it provides
     crates = { numerics = "crates/numerics" }           # optional: Cargo crate -> its path in the engine
