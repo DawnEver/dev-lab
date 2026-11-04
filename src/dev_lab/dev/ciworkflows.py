@@ -2,7 +2,8 @@
 
 ONE SOURCE PER LAYER: the family base is ``ci_base.toml`` beside this module; a repo's layer is
 ``[tool.dev_lab.ci."<file>.yml"]`` in its ``pyproject.toml``. EVERY REPO RENDERS ITS FORGE'S WHOLE BASE
-(:func:`base_names`: each base table placed on the forge :func:`repo_forge` reads from ``origin``) -- never an opt-in
+(:func:`base_names`: each base table placed on the forge :func:`repo_forge` reads from ``origin``, else from the
+repo's declared tables) -- never an opt-in
 a repo can forget, which is how merge-tick and review-claims went undeployed outside dev-lab (2026-11-04). A repo's
 table layers over a base workflow, renders another forge's base workflow, or declares one of its own. The layers are
 deep-merged (tables key by key; anything else replaces) and each workflow is written to
@@ -54,7 +55,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._forgebackends import backend_for
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forge import forge_from_remote
+from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgereview_declared import JUDGE, load_review
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
@@ -166,9 +167,41 @@ def expand(workflow: dict[str, Any], shared: dict[str, list[dict[str, Any]]]) ->
     return {**workflow, 'jobs': jobs}
 
 
+def _declared(root: Path) -> tuple[str, dict[str, Any]]:
+    """*root*'s ``pyproject.toml`` text (empty when absent) and its ``[tool.dev_lab.ci]`` tables."""
+    pyproject = root / 'pyproject.toml'
+    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
+    return text, dict(declared_table(tomllib.loads(text), 'ci', {}))
+
+
 def repo_forge(root: Path) -> str:
-    """The forge *root* is hosted on (``github`` or ``gitea``), read from its ``origin`` remote."""
-    return backend_for(forge_from_remote(root)).name
+    """The forge *root* is hosted on (``github`` or ``gitea``): its ``origin`` remote, else its declarations.
+
+    With no ``origin`` (a checkout before its push, a scratch repo) the forge is the one every workflow the repo
+    declares is placed on (its own ``forge`` key, else the base table's). None, or more than one, is refused.
+
+    Raises:
+        ValueError: no ``origin`` and the declarations name no single forge.
+
+    """
+    try:
+        return backend_for(forge_from_remote(root)).name
+    except UnreadableRemote:
+        pass
+    base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
+    forges = {
+        layer.get(FORGE_KEY, base.get(name, {}).get(FORGE_KEY, 'github'))
+        for name, layer in _declared(root)[1].items()
+        if name != SHARED
+    }
+    if len(forges) != 1:
+        msg = (
+            f'{root}: no `origin` remote and its [tool.dev_lab.ci] tables name {sorted(forges) or "no"} forge(s) -- '
+            f'add the `origin` remote, or declare a workflow placed on the one forge it is hosted on'
+        )
+        raise ValueError(msg)
+    (forge,) = forges
+    return forge
 
 
 def base_names(forge: str) -> set[str]:
@@ -184,9 +217,7 @@ def base_names(forge: str) -> set[str]:
 def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     """Every workflow *root* declares, by file name: its forge's directory and the workflow, base merged under."""
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
-    pyproject = root / 'pyproject.toml'
-    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
-    declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
+    text, declared = _declared(root)
     for name in base_names(repo_forge(root)):
         declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))

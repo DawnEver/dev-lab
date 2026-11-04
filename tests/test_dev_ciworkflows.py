@@ -49,13 +49,13 @@ _GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}
 _GITEA_BASE = {'review.yml', 'merge.yml', 'promote.yml'}
 
 
-@pytest.fixture(autouse=True)
-def _a_scratch_repo_is_on_github(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A scratch repo has no remote: it renders as a GitHub repo; this repo's own forge is read from its remote."""
-    real = ciworkflows.repo_forge
-    monkeypatch.setattr(
-        ciworkflows, 'repo_forge', lambda root: 'github' if Path(root).is_relative_to(tmp_path) else real(root)
-    )
+def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
+    """*root* as a git repo whose ``origin`` is *url*: the one fact a repo's forge is read from."""
+    git = shutil.which('git')
+    assert git is not None
+    subprocess.run([git, 'init', '-q', str(root)], check=True)
+    subprocess.run([git, '-C', str(root), 'remote', 'add', 'origin', url], check=True)
+    return root
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
@@ -288,12 +288,14 @@ def test_a_repo_that_declares_nothing_renders_its_forge_s_whole_base(
 
 
 def test_an_undeclared_github_ci_still_runs_the_nightly_schedule(tmp_path: Path) -> None:
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
     assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
 
 
 def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> None:
     """PLANTED CONTROL: a full render drifts from nothing; deleting one base file is named."""
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
     write(tmp_path)
     assert drift(tmp_path) == []
@@ -302,17 +304,31 @@ def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize(
+    ('tables', 'forge'),
+    [('[tool.dev_lab.ci."ci.yml"]\n', 'github'), ('[tool.dev_lab.ci."merge.yml"]\n', 'gitea')],
+)
+def test_with_no_origin_the_forge_is_the_one_the_declared_tables_are_placed_on(
+    tmp_path: Path, tables: str, forge: str
+) -> None:
+    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    assert repo_forge(tmp_path) == forge
+
+
+@pytest.mark.parametrize('tables', ['', '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."merge.yml"]\n'])
+def test_with_no_origin_and_no_single_declared_forge_the_render_is_refused_naming_the_remedy(
+    tmp_path: Path, tables: str
+) -> None:
+    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    with pytest.raises(ValueError, match='add the `origin` remote'):
+        workflows(tmp_path)
+
+
+@pytest.mark.parametrize(
     ('url', 'forge'),
     [('https://github.com/o/r.git', 'github'), ('https://gitea.example.org/o/r.git', 'gitea')],
 )
 def test_a_repo_s_forge_is_read_from_its_origin(tmp_path: Path, url: str, forge: str) -> None:
-    repo = tmp_path.parent / f'{tmp_path.name}-remote'
-    repo.mkdir()
-    git = shutil.which('git')
-    assert git is not None
-    subprocess.run([git, 'init', '-q', str(repo)], check=True)
-    subprocess.run([git, '-C', str(repo), 'remote', 'add', 'origin', url], check=True)
-    assert repo_forge(repo) == forge
+    assert repo_forge(_hosted(tmp_path, url)) == forge
 
 
 def test_a_hand_edit_and_a_hand_written_workflow_are_refused_naming_the_render(tmp_path: Path, capsys) -> None:
@@ -423,6 +439,7 @@ def test_every_job_installing_the_method_installs_the_door_first(tmp_path: Path)
     """The method reads the door's dev-lab lock, so a job without the door before it has no ai-lab to install."""
     names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
     tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + tables, encoding='utf-8')
     all_jobs = [(f'{w}:{j}', job) for w, flow in workflows(tmp_path).items() for j, job in flow['jobs'].items()]
     users = 0
@@ -791,6 +808,7 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
     ``git+ai-lab.git@...`` and the install fails; enumerating the renders, not naming the workflows, keeps a
     fourth from slipping past.
     """
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
         encoding='utf-8',
@@ -824,6 +842,7 @@ def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None
 
 
 def _full_adoption(tmp_path: Path) -> dict[str, Any]:
+    _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
         encoding='utf-8',
