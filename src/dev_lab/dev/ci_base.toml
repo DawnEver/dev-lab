@@ -458,7 +458,7 @@ contents = "write"
 pull-requests = "write"
 issues = "write"
 
-# THE BUNDLE PREPARE (forgereview_bundle): a repo declaring [tool.dev_lab.review] where = "judge" is reviewed by an
+# THE BUNDLE PREPARE (forgereview_pointer): a repo declaring [tool.dev_lab.review] where = "judge" is reviewed by an
 # isolated judge host, which trusts a Gitea bundle pointer only when it names a run of THIS workflow at the head.
 # Never declared by a repo and never keyed by its file name here: ciworkflows renders `_prepare` under
 # reviewgate.PREPARE_WORKFLOW -- the one name the judge lists runs by -- exactly when the repo is a judge repo.

@@ -21,6 +21,7 @@ import pytest
 from _forge_fake import git_out, run_git
 
 from dev_lab.dev import forgereview_bundle as fb
+from dev_lab.dev import forgereview_pointer as fp
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.artefacts import Config, FolderStore, Ref, pack, run_id
@@ -188,13 +189,13 @@ def _prepared(
             configs.append(config)
         return store
 
-    monkeypatch.setattr(fb, 'store_for', store_for)
-    monkeypatch.setattr(fb, 'resolve', resolve)
-    monkeypatch.setattr(fb, 'job_run_url', lambda _client: _RUN)
+    monkeypatch.setattr(fp, 'store_for', store_for)
+    monkeypatch.setattr(fp, 'resolve', resolve)
+    monkeypatch.setattr(fp, 'job_run_url', lambda _client: _RUN)
     pull = PullRequest(7, 't', 'open', 'the body', 'u', 'a', 'pr/x', 'main', head_sha=head)
     diffs = {7: git_out(root, 'diff', '--full-index', base, head)}
     forge = FakeForge(pull, diffs, base, runs=[_prepare_run(head)])
-    said = fb.prepare(root, forge, 7)  # type: ignore[arg-type]
+    said = fp.prepare(root, forge, 7)  # type: ignore[arg-type]
     assert said.startswith(f'#7 {head[:12]}: bundle sha256:')
     return Prepared(forge, root, store, fetched)
 
@@ -223,9 +224,9 @@ def _judged(
 
 def test_prepare_points_the_head_at_its_stored_bundle_and_its_run(prepared: Prepared) -> None:
     (status,) = prepared.forge.statuses[prepared.forge.pull.head_sha]
-    assert (status['context'], status['state']) == (fb.BUNDLE_CONTEXT, 'success')
+    assert (status['context'], status['state']) == (fp.BUNDLE_CONTEXT, 'success')
     assert status['description'].startswith('sha256:')
-    assert fb.ref_of_pointer(status['target_url']).backend == 'folder'
+    assert fp.ref_of_pointer(status['target_url']).backend == 'folder'
     assert 'run=' in status['target_url']
 
 
@@ -297,10 +298,10 @@ def test_a_bundle_of_another_merge_base_is_refused(prepared: Prepared) -> None:
 def test_a_ref_not_bound_to_the_head_and_digest_is_never_fetched(prepared: Prepared, key: str) -> None:
     forge = prepared.forge
     (status,) = forge.statuses[forge.pull.head_sha]
-    ref = fb.ref_of_pointer(status['target_url'])
+    ref = fp.ref_of_pointer(status['target_url'])
     digest = status['description'].removeprefix('sha256:')[:16]
     forged = Ref(ref.backend, key.format(other='c' * 12, digest=digest), ref.bytes, ref.sha256)
-    status['target_url'] = fb.pointer(forged, run=_RUN)
+    status['target_url'] = fp.pointer(forged, run=_RUN)
     _judged(forge, _findings(None))
     assert prepared.fetched == []
     (review,) = forge.verdicts()
@@ -338,8 +339,8 @@ def _poison(prepared: Prepared, *, diff: str | None) -> None:
     forge.others.append(PullRequest(6, 'p', 'open', '', 'u', 'a', 'pr/p', 'main', head_sha=_POISONED))
     forge.runs.append(_prepare_run(_POISONED, number=6))
     forge.statuses[_POISONED] = [{
-        'id': 1, 'creator': None, 'context': fb.BUNDLE_CONTEXT, 'state': 'success',
-        'description': 'sha256:' + '1' * 64, 'target_url': fb.pointer(ref, run=_RUN),
+        'id': 1, 'creator': None, 'context': fp.BUNDLE_CONTEXT, 'state': 'success',
+        'description': 'sha256:' + '1' * 64, 'target_url': fp.pointer(ref, run=_RUN),
     }]  # fmt: skip
     if diff is not None:
         forge.diffs[6] = diff
@@ -399,10 +400,10 @@ def test_the_declaration_names_one_mode_and_a_bundle_command_that_reads_the_bund
 
 def test_a_pointer_round_trips_and_anything_else_is_refused() -> None:
     ref = Ref('folder', 'r/2026/11/03/x.tar.gz', 10, 'ab' * 32)
-    assert fb.ref_of_pointer(fb.pointer(ref, run=_RUN)) == ref
+    assert fp.ref_of_pointer(fp.pointer(ref, run=_RUN)) == ref
     for bad in ('https://x/y', 'artefact:?backend=folder'):
         with pytest.raises(BundleRefused, match='Ref'):
-            fb.ref_of_pointer(bad)
+            fp.ref_of_pointer(bad)
 
 
 def test_a_pointer_only_another_login_posted_is_ignored(prepared: Prepared) -> None:
@@ -459,4 +460,4 @@ def test_prepare_stores_where_the_base_declares_never_where_the_head_does(
     configs: list[Config] = []
     prepared = _prepared(tmp_path, monkeypatch, root, base, head, configs=configs)
     assert configs == [Config()]
-    assert fb.ref_of_pointer(prepared.forge.statuses[head][0]['target_url']).backend == 'folder'
+    assert fp.ref_of_pointer(prepared.forge.statuses[head][0]['target_url']).backend == 'folder'

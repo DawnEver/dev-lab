@@ -42,8 +42,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-import lab_commons.launch as _door
-
 from dev_lab.dev import forge as _forge
 from dev_lab.dev._forge_journal import (
     LOOKBACK,
@@ -68,8 +66,6 @@ from dev_lab.dev._forgebackends import (
     backend_for,
 )
 from dev_lab.dev.forge import (
-    _GIT,
-    _GIT_TIMEOUT_S,
     Forge,
     Transport,
     forge_from_remote,
@@ -77,6 +73,7 @@ from dev_lab.dev.forge import (
     forge_transport,
 )
 from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, ForgeCallFailed, diagnose
+from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report
 
 __all__ = [
@@ -94,35 +91,12 @@ __all__ = [
     'client_for',
     'comment_of',
     'is_pull',
-    'provenance',
     'pull_of',
     'stored_client',
 ]
 
 #: What GitHub answers a workflow job token asking `/user`: only this answer, from GitHub, names the Actions bot.
 _INTEGRATION: Final = 'Resource not accessible by integration'
-
-#: The separator in the provenance line, spelled once.
-_DOT: Final = ' · '
-
-
-def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
-    """``[<machine> · <agent> · <branch>]`` when both HARNESS vars are set, else ``None``."""
-    machine, agent = env.get('HARNESS_MACHINE', ''), env.get('HARNESS_AGENT', '')
-    if not machine or not agent:
-        return None
-    done = _door.run(
-        [_GIT, 'symbolic-ref', '--short', '-q', 'HEAD'],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
-    branch = done.stdout.strip() if done.returncode == 0 else ''
-    return '[' + _DOT.join(part for part in (machine, agent, branch) if part) + ']'
 
 
 @dataclass
@@ -167,8 +141,7 @@ class Client:
         try:
             sent = {'Authorization': auth, 'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)}
             sent |= dict(backend.headers)
-            if accept:
-                sent['Accept'] = accept
+            sent |= {'Accept': accept} if accept else {}
             conn.request(method, path, body=data, headers=sent)
             response = conn.getresponse()
             self.answered = response.getheader('Date') or self.answered
@@ -253,34 +226,30 @@ class Client:
     def download(self, url: str) -> bytes:
         """The raw bytes at an attachment's download *url*, fetched with this client's credential.
 
-        Not retried and not JSON: the caller verifies what it got (:mod:`dev_lab.dev.artefacts` checks sha256).
+        The caller verifies what it got (:mod:`dev_lab.dev.artefacts` checks sha256).
         """
         parts = urllib.parse.urlsplit(url)
-        path = parts.path + (f'?{parts.query}' if parts.query else '')
-        status, payload = self._once('GET', path, None, 'application/octet-stream', parts.netloc or None)
-        if not 0 < status < HTTP_ERROR_FLOOR:
-            text = payload.decode(errors='replace')[:300]
-            raise ForgeCallFailed(
-                Report(('GET', path), (Attempt(1, status or 1, text, self._diagnosis(status, text, path)),), 1)
-            )
-        return payload
+        return self._raw('GET', parts.path + (f'?{parts.query}' if parts.query else ''), host=parts.netloc or None)
 
     def pull_diff(self, number: int) -> str:
         """The forge's OWN unified diff of pull request *number* -- what a review bundle is checked against.
 
         Gitea serves ``pulls/{n}.diff``; GitHub serves ``pulls/{n}`` as a diff when asked for
-        ``application/vnd.github.diff``. Not retried and not JSON; a refusal raises :class:`ForgeCallFailed`.
+        ``application/vnd.github.diff``.
         """
         github = self.backend is GITHUB
         path = f'{self.repo}/pulls/{number}' + ('' if github else '.diff')
         accept = 'application/vnd.github.diff' if github else 'text/plain'
-        status, payload = self._once('GET', path, None, 'application/json', None, accept=accept)
+        return self._raw('GET', path, accept=accept).decode('utf-8', 'replace')
+
+    def _raw(self, method: str, path: str, *, host: str | None = None, accept: str = '') -> bytes:
+        """One call's raw answer: not retried and not JSON; a refusal raises :class:`ForgeCallFailed`."""
+        status, payload = self._once(method, path, None, 'application/octet-stream', host, accept=accept)
         if not 0 < status < HTTP_ERROR_FLOOR:
             text = payload.decode(errors='replace')[:300]
-            raise ForgeCallFailed(
-                Report(('GET', path), (Attempt(1, status or 1, text, self._diagnosis(status, text, path)),), 1)
-            )
-        return payload.decode('utf-8', 'replace')
+            diagnosis = self._diagnosis(status, text, path)
+            raise ForgeCallFailed(Report((method, path), (Attempt(1, status or 1, text, diagnosis),), 1))
+        return payload
 
     def _request(
         self, method: str, path: str, data: bytes | None, content_type: str, durable: Durable | None, *, host: str = ''

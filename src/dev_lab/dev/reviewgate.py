@@ -109,7 +109,7 @@ RERUN: Final = "re-run the forge's review of the head (the PR's review job)"
 #: The ``[tool.dev_lab.ci]`` workflow whose declaration adopts Gitea Actions as the forge's reviewer.
 ACTIONS_REVIEW: Final = 'review.yml'
 
-#: The base's workflow whose run posts a judge repo's bundle pointer on Gitea (:mod:`~dev_lab.dev.forgereview_bundle`);
+#: The base's workflow whose run posts a judge repo's bundle pointer on Gitea (:mod:`~dev_lab.dev.forgereview_pointer`);
 #: :mod:`~dev_lab.dev.ciworkflows` renders it under this name, the one the judge lists runs by.
 PREPARE_WORKFLOW: Final = 'review-prepare.yml'
 

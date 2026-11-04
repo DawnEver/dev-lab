@@ -34,6 +34,7 @@ from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.forgework import (
     ACTIONS_BOT,
     GITEA,
@@ -44,7 +45,6 @@ from dev_lab.dev.forgework import (
     PullRequest,
     backend_for,
     client_for,
-    provenance,
 )
 from dev_lab.dev.netverb import Diagnosis, Disposition
 

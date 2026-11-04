@@ -10,6 +10,7 @@ reads the forge's diff; and a git the judge's command starts finds no repository
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -41,7 +42,9 @@ def _repo(tmp_path: Path) -> tuple[Path, str, str]:
     (root / 'gone.py').write_text('y = 2\n', encoding='utf-8')
     (root / 'moved.py').write_text('m = 5\n' * 20, encoding='utf-8')
     (root / 'mode.sh').write_text('echo\n', encoding='utf-8')
-    (root / 'untouched.py').write_text('z = 3\n', encoding='utf-8')
+    # bytes: a text-mode write is CRLF on Windows, which autocrlf stores as LF in the base and the head's
+    # '*.py binary' stores as CRLF -- a change to a file the head never touched.
+    (root / 'untouched.py').write_bytes(b'z = 3\n')
     run_git(root, 'add', '.')
     run_git(root, 'commit', '-q', '-m', 'base')
     base = git_out(root, 'rev-parse', 'HEAD')
@@ -75,7 +78,7 @@ def _forge_diff(root: Path, base: str, head: str, *flags: str) -> str:
 
 
 def _without(bundle: reviewbundle.Bundle, path: str) -> reviewbundle.Bundle:
-    return reviewbundle.Bundle(**{**bundle.__dict__, 'files': tuple(f for f in bundle.files if f.path != path)})
+    return dataclasses.replace(bundle, files=tuple(f for f in bundle.files if f.path != path))
 
 
 def test_prepare_holds_only_the_changed_files_both_sides(tmp_path: Path) -> None:
@@ -170,7 +173,7 @@ def test_a_rename_whose_bytes_the_bundle_changed_is_refused(tmp_path: Path) -> N
         reviewbundle.Changed(f.path, f.base_blob, 'f' * 40, f.base, f.head) if f.path == 'renamed.py' else f
         for f in bundle.files
     )
-    swapped = reviewbundle.Bundle(**{**bundle.__dict__, 'files': files})
+    swapped = dataclasses.replace(bundle, files=files)
     with pytest.raises(BundleRefused, match=r'renamed\.py'):
         reviewbundle.matches_forge(swapped, _forge_diff(root, base, head))
 

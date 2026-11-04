@@ -65,6 +65,36 @@ Site = tuple[str, str, str]
 #: so both rows are declared below rather than any number being edited down to meet the tree.
 ALLOWED: Final[dict[Site, str]] = {
     (
+        'tests/_forge_state.py',
+        'PLR0911',
+        'def _shape(self, route: str) -> tuple[str, str]:',
+    ): "the fake forge's router: one return per Gitea route family, a table the forge's own URL shapes dictate",
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'ANN401',
+        'def call(self, method: str, path: str, body: dict[str, Any] | None = None, durable: object = None) -> Any:',
+    ): "the fake overrides Client.call, whose answer is the endpoint's parsed JSON: its shape is the route",
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'ANN401',
+        'def _get(self, path: str) -> Any:',
+    ): "the fake's GET router returns each endpoint's parsed JSON, whose shape is the route",
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        'said = fp.prepare(root, forge, 7)',
+    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        'return fb.judge_pending(forge, runtimes=_RUNTIMES, run=run), seen',
+    ): 'a FakeForge stands in for the Client the judge takes: a test double, not a subclass the type checker can see',
+    (
+        'tests/test_dev_forgereview_bundle.py',
+        'arg-type',
+        "assert review_tick(tmp_path, object(), review, base='main', host='h') == ()",
+    ): 'PLANTED CONTROL: a bare object() as the client proves a judge base returns before any forge call',
+    (
         'tests/test_dev_forgetick.py',
         'FBT001',
         'claimed: bool,',
