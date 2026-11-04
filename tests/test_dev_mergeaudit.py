@@ -423,3 +423,39 @@ def test_a_hand_resolved_merge_in_a_blobless_clone_fetches_only_what_is_missing(
     assert local not in wanted
     assert problems
     assert all('test_a' in line for line in problems)
+
+
+def test_the_audit_reads_each_distinct_blob_once_with_a_timeout_scaled_to_their_count(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Four trees share most test blobs: one ``cat-file --batch`` reads the distinct ones, its budget their count."""
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'tests/test_b.py': B}, 'lane adds b')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'src/m.py': 'X = 2\n'}, 'main moves on')
+    _git(repo, 'merge', '-q', '-m', 'merge lane', 'lane')
+    head = _git(repo, 'rev-parse', 'HEAD')
+    batches, real = [], mergeaudit._door.run
+
+    def spy(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if 'cat-file' in argv:
+            batches.append((kwargs['input'].decode().split(), kwargs['timeout']))
+        return real(argv, **kwargs)
+
+    monkeypatch.setattr(mergeaudit._door, 'run', spy)
+    assert mergeaudit.audit(repo, head, roots=('tests',)) == ()
+    [(asked, timeout)] = batches
+    assert sorted(asked) == sorted({*asked}), 'a blob shared by several trees is read once'
+    assert len(asked) == 2, 'test_a and test_b, whatever four trees hold them'
+    assert timeout == mergeaudit.batch_timeout(2) < mergeaudit.batch_timeout(100_000)
+
+
+def test_a_git_that_times_out_is_the_audits_refusal_naming_its_limit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def slow(argv: list[str], **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+
+    monkeypatch.setattr(mergeaudit._door, 'run', slow)
+    with pytest.raises(mergeaudit.MergeAuditError, match=r'git cat-file --batch timed out after \d+ s'):
+        mergeaudit._git(repo, 'cat-file', '--batch', data=b'', timeout=7)

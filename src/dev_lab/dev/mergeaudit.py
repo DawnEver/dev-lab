@@ -45,6 +45,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import re
+import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -70,6 +71,7 @@ __all__ = [
     'Deviation',
     'MergeAuditError',
     'audit',
+    'batch_timeout',
     'classify',
     'common_base',
     'judge',
@@ -90,6 +92,10 @@ _LINE: Final = re.compile(
     rf'^{TRAILER}:\s*(?P<kind>[A-Z]+)\s+(?P<test>\S+)(?:\s+--\s*(?P<reason>\S.*))?$', re.MULTILINE
 )
 _GIT_TIMEOUT_S: Final = 120
+#: A ``cat-file --batch`` read's budget per object on top of :data:`_GIT_TIMEOUT_S`. Measured 2026-11-04: 6,561 local
+#: blobs (49.9 MB, motronics-studio ``tests/`` at a 1,235-commit-ahead PR) read in 0.66 s warm, 10.7 s cold -- 1.6 ms
+#: each at worst; 20 ms is a 12x margin that still bounds a read gone lazy (a round trip per object) by its count.
+_BATCH_S_PER_OBJECT: Final = 0.02
 #: The base of a test the merge bases disagree on: equal to no parent body, so only equal parents expect one.
 _NO_BASE: Final = '<merge bases disagree>'
 #: A two-parent merge is the one shape the rule is about; an octopus is refused, one lane at a time.
@@ -214,10 +220,17 @@ def unnamed(found: Sequence[Deviation], message: str) -> tuple[str, ...]:
     return tuple(problems)
 
 
-def _git(root: Path, *args: str, data: bytes | None = None) -> bytes:
-    done = _door.run(
-        [_GIT, '-C', str(root), *args], input=data, capture_output=True, check=False, timeout=_GIT_TIMEOUT_S
-    )
+def batch_timeout(objects: int) -> float:
+    """The seconds a ``cat-file --batch`` of *objects* may take: bounded by the work, never one constant."""
+    return _GIT_TIMEOUT_S + objects * _BATCH_S_PER_OBJECT
+
+
+def _git(root: Path, *args: str, data: bytes | None = None, timeout: float = _GIT_TIMEOUT_S) -> bytes:
+    try:
+        done = _door.run([_GIT, '-C', str(root), *args], input=data, capture_output=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        msg = f'git {" ".join(args)} timed out after {timeout:.0f} s'
+        raise MergeAuditError(msg) from error
     if done.returncode != 0:
         msg = f'git {" ".join(args)} failed: {done.stderr.decode("utf-8", "replace").strip()}'
         raise MergeAuditError(msg)
@@ -235,17 +248,25 @@ def _test_blobs(root: Path, sha: str, roots: Sequence[str]) -> dict[str, str]:
     return blobs
 
 
-def _sources(root: Path, blobs: Mapping[str, str]) -> dict[str, bytes]:
-    """The bytes of *blobs* (path -> blob id) in one ``cat-file --batch``; a partial clone fetched them first."""
-    if not blobs:
+def _blob_bytes(root: Path, oids: set[str]) -> dict[str, bytes]:
+    """The bytes of each of *oids*, read ONCE in one ``cat-file --batch`` timed by :func:`batch_timeout`.
+
+    The audit's four-plus trees share nearly every test blob, so the distinct ids are the work, not the trees.
+    A partial clone fetched them first (:func:`_fetch_missing`).
+    """
+    if not oids:
         return {}
-    out = _git(root, 'cat-file', '--batch', data=''.join(f'{oid}\n' for oid in blobs.values()).encode())
+    ordered = sorted(oids)
+    out = _git(
+        root, 'cat-file', '--batch', data=''.join(f'{oid}\n' for oid in ordered).encode(),
+        timeout=batch_timeout(len(ordered)),
+    )  # fmt: skip
     contents: dict[str, bytes] = {}
     cursor = 0
-    for path in blobs:  # `--batch` answers in request order: `<oid> blob <size>\n<bytes>\n`
+    for oid in ordered:  # `--batch` answers in request order: `<oid> blob <size>\n<bytes>\n`
         header_end = out.index(b'\n', cursor)
         size = int(out[cursor:header_end].split()[2])
-        contents[path] = out[header_end + 1 : header_end + 1 + size]
+        contents[oid] = out[header_end + 1 : header_end + 1 + size]
         cursor = header_end + 1 + size + 1
     return contents
 
@@ -289,8 +310,10 @@ def _audit(
     bases = _git(root, 'merge-base', '--all', *parents).decode().split()
     shas = (*parents, merged, *bases)
     trees = [_test_blobs(root, sha, roots) for sha in shas]
-    _fetch_missing(root, merge, shas, {oid for tree in trees for oid in tree.values()})
-    rows = [_scan(_sources(root, tree)) for tree in trees]
+    wanted = {oid for tree in trees for oid in tree.values()}
+    _fetch_missing(root, merge, shas, wanted)
+    read = _blob_bytes(root, wanted)
+    rows = [_scan({path: read[oid] for path, oid in tree.items()}) for tree in trees]
     if not any(rows):
         msg = f'{merge}: no test under {list(roots)} in any of its trees -- a vacuous audit is refused'
         raise MergeAuditError(msg)

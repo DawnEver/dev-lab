@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -188,4 +189,29 @@ def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_
     assert forge.merges == []
     assert forge.deleted_refs == []
     assert 'NOT merged' in said
+    assert _merge_ready(forge, head)[0] == 'success'
+
+
+def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The second of three PRs raises: it is posted ``error`` naming why, the first and third are still judged."""
+    work, forge, first, head = _pr(tmp_path)
+    stuck = 'b' * 40
+    second = forge.add_pull('pr/y', 'integrate/main', sha=stuck)
+    third = forge.add_pull('pr/z', 'integrate/main', sha=head)
+    judged, real = [], forgemerge.ready
+
+    def flaky(root: Path, client: Client, number: int) -> str:
+        judged.append(number)
+        if number == second:
+            raise subprocess.TimeoutExpired(['git', 'cat-file', '--batch'], 120)
+        return real(root, client, number)
+
+    monkeypatch.setattr(forgemerge, 'ready', flaky)
+    assert forgemerge.main(['ready'], cwd=work, client=forge) == 2, 'a failed judgement still fails the tick'
+    assert judged == [first, second, third]
+    [said] = [one for one in status_list(forge, stuck) if one.context == MERGE_READY_CONTEXT]
+    assert (said.state, said.description) == (
+        'error',
+        'could not be judged: `git cat-file --batch` timed out after 120 s',
+    )
     assert _merge_ready(forge, head)[0] == 'success'
