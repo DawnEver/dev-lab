@@ -18,7 +18,7 @@ from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _output, _work
 from test_dev_forgereview_rounds import _REVIEW, _doc, _finding
 
-from dev_lab.dev import forgereview_rounds, forgereview_scope, reviewgitauth
+from dev_lab.dev import blobfetch, forgereview_rounds, forgereview_scope, reviewgitauth
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
@@ -363,14 +363,14 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
     read, api = _token_files(tmp_path, monkeypatch)
     monkeypatch.setenv('REVIEW_KEY', 'k')
     gits: list[dict[str, str] | None] = []
-    real = forgereview_scope._door.run
+    real = blobfetch._door.run
 
     def spy(argv: Sequence[str], **kw: object) -> subprocess.CompletedProcess[Any]:
         if argv[0] == 'git':
             gits.append(kw.get('env'))
         return real(argv, **kw)
 
-    monkeypatch.setattr(forgereview_scope._door, 'run', spy)
+    monkeypatch.setattr(blobfetch._door, 'run', spy)
     command = _EnvCommand()
     argv = ['run', '--pr', str(number), '--secret-env', 'REVIEW_KEY']
     assert main([*argv, '--git-token-file', str(read), '--api-token-file', str(api)],
@@ -394,8 +394,8 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
 
 
 def test_every_door_git_call_goes_through_the_one_helper() -> None:
-    """F-dd15a25cb5ca: the auth env is set in one place -- forgereview_scope.git -- for the scope and the rounds."""
-    for module, launches in ((forgereview_rounds, 0), (forgereview_scope, 1)):
+    """F-dd15a25cb5ca: the auth env is set in one place -- blobfetch.git -- for the scope, the rounds and the fetch."""
+    for module, launches in ((forgereview_rounds, 0), (forgereview_scope, 0), (blobfetch, 1)):
         assert Path(module.__file__).read_text(encoding='utf-8').count("['git',") == launches, module.__name__
     assert forgereview_rounds.git is forgereview_scope.git
     assert '_git' not in Path(forgereview_rounds.__file__).read_text(encoding='utf-8'), 'the private copy is gone'

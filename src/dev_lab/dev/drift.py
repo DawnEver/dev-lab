@@ -45,7 +45,7 @@ from dev_lab.dev.forgealarm import DRIFT, Alarm, sound
 from dev_lab.dev.forgenotice import duration
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.lockpins import Installed, installed_git, locked_git, sync_door
-from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.netverb import Report, run_network_verb
 
 __all__ = [
     'DEFAULT_BOUND',
@@ -129,7 +129,7 @@ def cache_dir(cache: Path, dist: str) -> Path:
     return cache / f'{dist}.git'
 
 
-def admit(url: str, sha: str, schemes: tuple[str, ...]) -> None:
+def require_fetchable(url: str, sha: str, schemes: tuple[str, ...]) -> None:
     """Refuse a lock pin that is not a URL over *schemes*, or whose URL or commit could be read as an option."""
     scheme = url.partition('://')[0] if '://' in url else ''
     if scheme not in schemes or url.startswith('-') or sha.startswith('-'):
@@ -137,13 +137,14 @@ def admit(url: str, sha: str, schemes: tuple[str, ...]) -> None:
         raise ValueError(msg)
 
 
-def fetch_argv(repo: Path, dist: str, url: str, schemes: tuple[str, ...]) -> list[str]:
-    """The commits-only fetch of *url*: only *schemes* allowed, the URL after ``--`` so it is never an option."""
+def fetch(repo: Path, dist: str, url: str, schemes: tuple[str, ...]) -> Report:
+    """The commits-only fetch of *url* through the retry door: only *schemes* allowed, the URL after ``--``."""
     allow = [arg for scheme in schemes for arg in ('-c', f'protocol.{scheme}.allow=always')]
-    return [
+    argv = [
         _GIT, '-C', str(repo), '-c', 'protocol.allow=never', *allow,
         'fetch', '-q', '--filter=tree:0', '--no-tags', '--', url, f'+HEAD:refs/drift/{dist}',
     ]  # fmt: skip
+    return run_network_verb(argv, cwd=repo, timeout=300)
 
 
 def _git(cwd: Path, *argv: str) -> str:
@@ -165,14 +166,15 @@ def lag(dist: str, url: str, pinned: str, *, cache: Path, schemes: tuple[str, ..
     """*pinned* read against the default branch of *url*: commits behind and since when.
 
     The dependency is fetched commits-only (``--filter=tree:0``) into ``cache/<dist>.git``, kept across ticks.
-    A pin that :func:`admit` or :func:`cache_dir` refuses raises ValueError before anything is created or fetched.
+    A pin that :func:`require_fetchable` or :func:`cache_dir` refuses raises ValueError before anything is created
+    or fetched.
     """
-    admit(url, pinned, schemes)
+    require_fetchable(url, pinned, schemes)
     repo = cache_dir(cache, dist)
     if not repo.is_dir():
         repo.mkdir(parents=True)
         _git(repo, 'init', '-q', '--bare')
-    report = run_network_verb(fetch_argv(repo, dist, url, schemes), cwd=repo, timeout=300)
+    report = fetch(repo, dist, url, schemes)
     if not report.ok:
         msg = f'the fetch of {url} failed: {report.remedy}'
         raise OSError(msg)

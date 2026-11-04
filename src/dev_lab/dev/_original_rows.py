@@ -327,6 +327,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgecontexts',
     'forgereview_dispose',
     'forgereview_rounds',
+    'forgereview_summary',
     'forgesecurity',
     'forgetakeover',
     'metrics_compute',
@@ -344,5 +345,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'reviewpolicy',  # the review policy exported for every trigger, new here
     'forgedraft',  # a PR opens as a draft until its author marks it ready (D53), new here
     'hostalarm',  # a pressed host tells its agents and its humans (D54), new here
+    'drift',  # a lock pin left behind its dependency, or a host off its lock, alarms; new here
+    'escapes',  # the tick's census of writes that escaped every allowed root, new here
+    'forgebacklog',  # a ready head unreviewed past the bound pages once, new here
+    'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',
 )

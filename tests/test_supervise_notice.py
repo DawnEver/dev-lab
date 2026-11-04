@@ -124,7 +124,8 @@ GOLDEN = {
         'email_html': (
             '<!DOCTYPE html>\n'
             '<html><body style="font-family:sans-serif;font-size:14px;color:#222">\n'
-            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#c62828"><b>CRITICAL</b> · Gitea · disk / 4.2 GB free (threshold 10 GB)</h2>\n'  # noqa: E501
+            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#c62828"><b>CRITICAL</b> · Gitea · disk / '
+            '4.2 GB free (threshold 10 GB)</h2>\n'
             '<p><b>Action:</b> Free disk space now.</p>\n'
             '<ul>\n'
             '<li><b>Since:</b> 2026-11-01 10:00 UTC</li>\n'
@@ -179,7 +180,8 @@ GOLDEN = {
         'email_html': (
             '<!DOCTYPE html>\n'
             '<html><body style="font-family:sans-serif;font-size:14px;color:#222">\n'
-            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#ef6c00"><b>WARNING</b> · Gitea · disk / 91% (threshold 90%)</h2>\n'  # noqa: E501
+            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#ef6c00"><b>WARNING</b> · Gitea · disk / '
+            '91% (threshold 90%)</h2>\n'
             '<p><b>Action:</b> Free disk space with a cleanup command below.</p>\n'
             '<ul>\n'
             '<li><b>Since:</b> 2026-11-01 10:00 UTC</li>\n'
@@ -215,7 +217,8 @@ GOLDEN = {
         'email_html': (
             '<!DOCTYPE html>\n'
             '<html><body style="font-family:sans-serif;font-size:14px;color:#222">\n'
-            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#1565c0"><b>INFO</b> · Gitea · nightly backup finished</h2>\n'  # noqa: E501
+            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#1565c0"><b>INFO</b> · Gitea · nightly '
+            'backup finished</h2>\n'
             '<p><b>Action:</b> No action needed.</p>\n'
             '<ul>\n'
             '<li><b>At:</b> 2026-11-01 12:00 UTC</li>\n'
@@ -231,7 +234,8 @@ GOLDEN = {
             '<b>Action:</b> Fix the finding, or claim it is not a defect.\n'
             '\n'
             '• <b>Repository:</b> DawnEver/motronics-studio\n'
-            '• <b>PR:</b> <a href="https://git.example.org/DawnEver/motronics-studio/pulls/5443">#5443 feat(mesh): band rules own the MeshSpec</a>\n'  # noqa: E501
+            '• <b>PR:</b> <a href="https://git.example.org/DawnEver/motronics-studio/pulls/5443">#5443 feat(mesh): '
+            'band rules own the MeshSpec</a>\n'
             '• <b>Branch:</b> <code>pr/meshspec-band-rules</code>\n'
             '• <b>Commit:</b> <a href="https://git.example.org/DawnEver/motronics-studio/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778"><code>3f2a9c81d7e4</code></a>\n'
             '• <b>Run:</b> <a href="https://git.example.org/DawnEver/motronics-studio/actions/runs/812">open</a>\n'
@@ -264,11 +268,13 @@ GOLDEN = {
         'email_html': (
             '<!DOCTYPE html>\n'
             '<html><body style="font-family:sans-serif;font-size:14px;color:#222">\n'
-            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#c62828"><b>CRITICAL</b> · Gitea · review blocks 3f2a9c81d7e4 (#5443)</h2>\n'  # noqa: E501
+            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#c62828"><b>CRITICAL</b> · Gitea · review '
+            'blocks 3f2a9c81d7e4 (#5443)</h2>\n'
             '<p><b>Action:</b> Fix the finding, or claim it is not a defect.</p>\n'
             '<ul>\n'
             '<li><b>Repository:</b> DawnEver/motronics-studio</li>\n'
-            '<li><b>PR:</b> <a href="https://git.example.org/DawnEver/motronics-studio/pulls/5443">#5443 feat(mesh): band rules own the MeshSpec</a></li>\n'  # noqa: E501
+            '<li><b>PR:</b> <a href="https://git.example.org/DawnEver/motronics-studio/pulls/5443">#5443 '
+            'feat(mesh): band rules own the MeshSpec</a></li>\n'
             '<li><b>Branch:</b> <code>pr/meshspec-band-rules</code></li>\n'
             '<li><b>Commit:</b> <a href="https://git.example.org/DawnEver/motronics-studio/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778"><code>3f2a9c81d7e4</code></a></li>\n'
             '<li><b>Run:</b> <a href="https://git.example.org/DawnEver/motronics-studio/actions/runs/812">open</a></li>\n'
@@ -278,7 +284,8 @@ GOLDEN = {
             '<li>review blocks the merge on F-2a7e8020c00a</li>\n'
             '</ul>\n'
             '<p><b>Remedy</b></p>\n'
-            '<pre style="background:#f4f4f4;padding:8px">python -m dev_lab.dev.forge review dispose 5443 F-2a7e8020c00a</pre>\n'  # noqa: E501
+            '<pre style="background:#f4f4f4;padding:8px">python -m dev_lab.dev.forge review dispose 5443 '
+            'F-2a7e8020c00a</pre>\n'
             '</body></html>'
         ),
         'headline': ('CRITICAL · Gitea · review blocks 3f2a9c81d7e4 (#5443)'),
@@ -317,7 +324,8 @@ GOLDEN = {
         'email_html': (
             '<!DOCTYPE html>\n'
             '<html><body style="font-family:sans-serif;font-size:14px;color:#222">\n'
-            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#6a1b9a"><b>TEST</b> · Gitea · alert channels reached</h2>\n'  # noqa: E501
+            '<h2 style="margin:0;padding:10px 14px;color:#fff;background:#6a1b9a"><b>TEST</b> · Gitea · alert '
+            'channels reached</h2>\n'
             '<p><b>Action:</b> No action needed. This is a test.</p>\n'
             '<ul>\n'
             '<li><b>At:</b> 2026-11-02 00:08 UTC</li>\n'
