@@ -27,6 +27,7 @@ from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import (
     forgehosts,
+    forgepoller,
     forgeproduce,
     forgerounds,
     forgerun,
@@ -257,7 +258,7 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
-    monkeypatch.setattr(forgeserve, 'elect', lambda _client, **_kw: elected)
+    monkeypatch.setattr(forgepoller, 'elect', lambda _client, **_kw: elected)
     report = forgeserve.serve(
         tmp_path,
         client=_client,
@@ -1100,10 +1101,10 @@ def test_every_repo_wide_step_reads_through_one_pass_memo_and_the_review_through
         sweep=lambda _root, built, **_k: given.append(built) or 0,
         prune=lambda _root, built, **_k: given.append(built) or (),
     )
-    memos = {id(getattr(one, 'memo', None)) for one in given}
+    memos = {id(one.memo) for one in given}
     assert len(given) == 3
     assert len(memos) == 1
-    assert getattr(given[0], 'memo', None) is not None
+    assert given[0].memo is not None
 
 
 def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, tmp_path: Path) -> None:

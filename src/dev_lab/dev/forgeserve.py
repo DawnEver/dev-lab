@@ -17,8 +17,8 @@ cluster run one step
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`dev_lab.dev.forgeship.tidy`);
 run the storage retention pass, every tick (:mod:`dev_lab.dev.retention`; still over quota raises a
 ``storage`` alarm); publish this host's card; then, ONLY ON THE REPO'S POLLER -- the host holding the poller
-lease (:func:`polls`, :mod:`dev_lab.dev.forgepoller`; measured 2026-10-24, every host polling every repo
-pegged the forge), every step reading through ONE pass memo (:class:`~dev_lab.dev.forgework.ReadMemo`) --
+lease (:func:`dev_lab.dev.forgepoller.polls`; measured 2026-10-24, every host polling every repo
+pegged the forge), every step reading through ONE pass memo (:class:`~dev_lab.dev.forgememo.ReadMemo`) --
 close open PRs whose head is on their base (:func:`dev_lab.dev.prlanded.serve_close_landed`),
 delete every origin branch integration now contains (:func:`dev_lab.dev.branchdelete.serve_sweep`), prune merged
 idle origin branches (idempotent) (:func:`dev_lab.dev.branchprune.serve_prune`),
@@ -144,24 +144,24 @@ from dev_lab.dev.forgealarm import (
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgehosts import HostsIssueLost, card_host, card_owners, read_cards, recording
+from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
 from dev_lab.dev.forgeintent import reattach
+from dev_lab.dev.forgememo import remembering
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from dev_lab.dev.forgepoller import elect
+from dev_lab.dev.forgepoller import POLL_LEASE_TICKS, polls
 from dev_lab.dev.forgeproduce import Produced, demote_unreachable, produce
-from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
 from dev_lab.dev.forgeservesteps import pressed, repo_wide, retain_storage, review, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.forgework import Client, ReadMemo, client_for
+from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 from dev_lab.supervise.notice import Context
 
-__all__ = ['POLL_LEASE_TICKS', 'ServeReport', 'main', 'polls', 'serve', 'work_root']
+__all__ = ['ServeReport', 'main', 'serve', 'work_root']
 
 
 @dataclass(frozen=True)
@@ -303,33 +303,6 @@ def serve(
     published = tuple(flush(root, client=client))
     lines = tuple(line for one in rounds for line in one.lines)
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
-
-
-#: How many tick periods a poller lease outlives its last renewal (:mod:`dev_lab.dev.forgepoller`).
-POLL_LEASE_TICKS = 3
-
-
-def remembering(client: Callable[[Path], Client]) -> Callable[[Path], Client]:
-    """*client*, each one it builds reading through ONE fresh :class:`~dev_lab.dev.forgework.ReadMemo`: one pass's."""
-    memo = ReadMemo()
-
-    def built(here: Path) -> Client:
-        made = client(here)
-        made.memo = memo
-        return made
-
-    return built
-
-
-def polls(built: Client, host: str, ttl: timedelta, say: Callable[[str], None]) -> bool:
-    """Whether *host* runs the repo-wide poll this tick (:func:`dev_lab.dev.forgepoller.elect`); never if unreadable."""
-    try:
-        here, holder = elect(built, host=host, ttl=ttl)
-    except (OSError, ListingIncomplete, HostsIssueLost) as failed:
-        say(f'[serve] no repo-wide poll this tick: the poller lease could not be read: {failed}')
-        return False
-    say(f'[serve] poller: {holder}' + ('' if here else '; this host claims and produces only'))
-    return here
 
 
 def _advance(
