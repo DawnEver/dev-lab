@@ -22,7 +22,7 @@ from dev_lab.dev.famtests.hookinstall import (
 _ROOT = Path(__file__).resolve().parents[1]
 
 #: The family base declares pre-commit and commit-msg; this repo's layer adds the pre-push admission.
-_DECLARED_STAGES = frozenset({'commit-msg', 'pre-commit', 'pre-push', 'post-commit'})
+_DECLARED_STAGES = frozenset({'commit-msg', 'pre-commit', 'pre-push', 'post-commit', 'post-merge', 'post-checkout'})
 
 
 def test_the_declared_set_is_what_this_repo_pinned() -> None:
