@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 import time
 from collections.abc import Sequence
@@ -133,7 +134,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'[ops] {bad}', err=True)
         return 2
     if args.verb == 'install':
-        done = install.install(config, args.root)
+        as_root = hasattr(os, 'geteuid') and os.geteuid() == 0
+        done = install.install(config, args.root, chown=shutil.chown if as_root else None)
         for path, state in done.paths.items():
             emit(f'{state:9} {path}')
         emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
