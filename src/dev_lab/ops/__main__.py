@@ -134,7 +134,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'[ops] {bad}', err=True)
         return 2
     if args.verb == 'install':
-        as_root = hasattr(os, 'geteuid') and os.geteuid() == 0
+        as_root = sys.platform != 'win32' and os.geteuid() == 0
         done = install.install(config, args.root, chown=shutil.chown if as_root else None)
         for path, state in done.paths.items():
             emit(f'{state:9} {path}')
