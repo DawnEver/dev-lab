@@ -16,7 +16,7 @@ def test_install_renders_units_sshd_and_sudoers_and_is_idempotent(tmp_path: Path
     host = config(tmp_path, ['https://forge.example/owner/alpha.git'])
     root = tmp_path / 'root'
     first = install(host, root)
-    assert set(first.paths.values()) == {'written'}
+    assert set(first.paths.values()) == {'written', 'created'}  # the clone home is created
     assert set(install(host, root).paths.values()) == {'unchanged'}
     rendered = files(host)
     timer = rendered['etc/systemd/system/dev-lab-ops-promote.timer']
