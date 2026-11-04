@@ -10,10 +10,11 @@ Every service it renders -- the roles' and the supervisor's own (``[ops.supervis
 place it. The sudo-reached verbs get no sudoers ``env_keep`` for that file: they read it themselves as root, so the
 secrets never pass through the invoking account and that account cannot override them.
 
-It also PREPARES what the promote run needs: it creates the clone ``home`` (0750) and, given a ``chown`` (the door
-passes one when it runs as root), hands the promote user its home and its credential (0600; a credential directory
-others cannot enter is opened to the promote group, 0750), and makes the environment file root's, 0600. What it
-cannot apply -- no root, no account yet, no file yet -- comes back as a next step instead.
+It also PREPARES what the promote run needs: it creates an absent clone ``home`` (0750) and, given a ``chown`` (the
+door passes one when it runs as root), hands the promote user that home and its credential (0600), and makes the
+environment file root's, 0600. What it cannot apply -- no root, no account yet, no file yet -- is a next step. It
+NEVER re-owns or widens a directory it did not create: an existing home is left as it is, and a credential directory
+the promote user cannot enter is named in a next step, never opened.
 """
 
 from __future__ import annotations
@@ -222,16 +223,19 @@ def _own(chown: Chown | None, path: Path, user: str | None, group: str | None) -
 
 
 def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[str, str], list[str]]:
-    """Create the clone home, hand the promote user its home and credential, make the environment file root's."""
+    """Create the clone home (only if absent), hand the promote user it and the credential, make the env file root's."""
     done: dict[str, str] = {}
     steps: list[str] = []
     if (role := config.promote) is not None:
         home = _under(root, config.home)
-        done[home.relative_to(root).as_posix()] = 'unchanged' if home.is_dir() else 'created'
-        home.mkdir(parents=True, exist_ok=True)
-        home.chmod(0o750)
-        if not _own(chown, home, role.user, role.user):
-            steps.append(f'chown {role.user}:{role.user} {config.home.as_posix()}')
+        if home.is_dir():  # an existing directory is the host's; install never re-owns or widens it
+            done[home.relative_to(root).as_posix()] = 'unchanged'
+        else:
+            done[home.relative_to(root).as_posix()] = 'created'
+            home.mkdir(parents=True)
+            home.chmod(0o750)
+            if not _own(chown, home, role.user, role.user):
+                steps.append(f'chown {role.user}:{role.user} {config.home.as_posix()}')
         credential = _under(root, role.credentials)
         if credential.is_file():
             credential.chmod(0o600)
@@ -239,11 +243,8 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
             steps.append(f'chown {role.user} {role.credentials} && chmod 600 {role.credentials}')
         parent = credential.parent
         if parent.is_dir() and not _others_may_enter(parent):
-            if _own(chown, parent, None, role.user):
-                parent.chmod(0o750)
-            else:
-                where = Path(role.credentials).parent.as_posix()
-                steps.append(f'chgrp {role.user} {where} && chmod 750 {where}')
+            where = Path(role.credentials).parent.as_posix()
+            steps.append(f'{role.user} cannot enter {where}: move the credential to a directory it may enter')
     if config.environment_file:
         declared = _under(root, config.environment_file)
         if declared.is_file():

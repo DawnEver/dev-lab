@@ -10,20 +10,23 @@ rather than discovered at 04:30.
 
 THE HOST'S SECRETS ARRIVE THROUGH ONE DECLARED FILE. ``[ops] environment_file`` names a root-owned, mode-0600 file
 of ``KEY=VALUE`` lines (systemd's ``EnvironmentFile=`` format) carrying the ``SUPERVISE_*`` overrides -- above all the
-alert channels' secrets. Every rendered unit loads it AND :func:`load` folds it in itself, because a verb reached
-through ``sudo`` (break-glass serve, backup export) arrives with its environment reset. The file wins over the
-process environment, so a caller cannot switch a channel off; a declared file that cannot be read refuses the verb
-rather than letting it run with its alerts silently off.
+alert channels' secrets. Every rendered unit carries ``EnvironmentFile=``, which systemd (PID 1, as root) reads into
+the service's environment -- so a NON-ROOT verb (promote, backup pull, a supervisor with a ``user``) never re-reads
+the root-only file; it requires that some ``SUPERVISE_*`` variable arrived. A ROOT verb -- above all one reached
+through ``sudo`` (break-glass serve, backup export), whose environment sudo reset -- folds the file in itself, the file
+winning over the process environment so a caller cannot switch a channel off. Either way a declared environment
+that did not arrive refuses the verb rather than letting it run with its alerts silently off.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
-from dev_lab.supervise.config import load_config
+from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = ['Breakglass', 'OpsConfig', 'Placement', 'Promote', 'Supervise', 'load', 'repo_name']
 
@@ -226,10 +229,15 @@ def _environment(path: Path) -> dict[str, str]:
     return found
 
 
-def load(path: Path, *, environ: dict[str, str] | None = None) -> OpsConfig:
-    """Read *path*'s ``[ops]`` table, folding in its environment file (see the module docstring).
+def _is_root() -> bool:
+    return sys.platform != 'win32' and os.geteuid() == 0
 
-    Refuses a missing table, an unreadable environment file, a repo list with a duplicate name, or a bad role.
+
+def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None) -> OpsConfig:
+    """Read *path*'s ``[ops]`` table and its environment (see the module docstring).
+
+    *as_root* defaults to the process's own euid. Refuses a missing table, a declared environment that did not
+    arrive (root: the file unreadable; non-root: no ``SUPERVISE_*`` variable), a duplicate repo name, a bad role.
     """
     merged = load_config(path, environ=environ)
     ops = merged.get('ops')
@@ -238,7 +246,14 @@ def load(path: Path, *, environ: dict[str, str] | None = None) -> OpsConfig:
         raise TypeError(msg)
     if environment_file := str(ops.get('environment_file', '')):
         process = dict(os.environ if environ is None else environ)
-        merged = load_config(path, environ=process | _environment(Path(environment_file)))
+        if _is_root() if as_root is None else as_root:
+            merged = load_config(path, environ=process | _environment(Path(environment_file)))
+        elif not any(name.startswith(ENV_PREFIX) for name in process):
+            msg = (
+                f'[ops] environment_file {environment_file} is declared but no {ENV_PREFIX}* variable reached this '
+                'non-root process (its unit must carry EnvironmentFile=); refusing, alerts would be off'
+            )
+            raise ValueError(msg)
     repos = tuple(ops.get('repos', ()))
     names = [repo_name(url) for url in repos]
     if len(set(names)) != len(names):
