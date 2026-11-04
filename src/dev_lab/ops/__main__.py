@@ -18,8 +18,6 @@ from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.dev.forgemerge import merge
-from dev_lab.dev.forgework import client_for
 from dev_lab.ops import access, backup, breakglass, install, offsite, promote, sshkey, totp
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.supervise.alert import Notifier
@@ -39,21 +37,8 @@ def _alert(config: OpsConfig, title: str, detail: str) -> None:
     )
 
 
-class _ForgeAs:
-    """:class:`breakglass.Forge` over the forge client of one clone, presenting the break-glass identity's token."""
-
-    def __init__(self, root: Path, token: str) -> None:
-        self._client = client_for(root, token=token)
-
-    def pull(self, number: int) -> tuple[str, str, str]:
-        found = self._client.pr_view(number)
-        return found.state, found.base, found.head_sha
-
-    def comment(self, number: int, body: str) -> None:
-        self._client.issue_comment(number, body)
-
-    def merge(self, number: int, *, head: str, message: str) -> None:
-        merge(self._client, number, head=head, message=message, delete_branch=False)
+def _secret(path: str) -> str:
+    return Path(path).read_text(encoding='utf-8').strip()
 
 
 def _access(config: OpsConfig, *, force: bool) -> int:
@@ -99,7 +84,7 @@ def _breakglass(config: OpsConfig, verb: str, *, force: bool) -> int:
         return 0
     server = breakglass.Server(
         config,
-        forge_for=lambda root: _ForgeAs(root, Path(role.token).read_text(encoding='utf-8').strip()),
+        forge_for=lambda url: breakglass.ClientForge(url, _secret(role.token_file(url))),
         alert=lambda title, detail: _alert(config, title, detail),
         now=time.time,
         key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),

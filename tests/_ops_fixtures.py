@@ -43,8 +43,18 @@ def origin(tmp: Path, name: str = 'alpha') -> tuple[str, str]:
     return bare.as_uri(), git(work, 'rev-parse', 'HEAD')
 
 
-def config(tmp: Path, repos: list[str], *, extra: str = '') -> OpsConfig:
-    """An ``[ops]`` config under *tmp* with both roles enabled and the TOTP secret enrolled."""
+#: The repos break-glass serves in :func:`config`: one per forge, each forge naming its token file once.
+GLASS = ('https://gitea.example/owner/alpha.git', 'https://github.com/owner/gamma.git')
+
+
+def config(tmp: Path, repos: list[str], *, extra: str = '', glass: tuple[str, ...] = GLASS) -> OpsConfig:
+    """An ``[ops]`` config under *tmp* with both roles enabled and the TOTP secret enrolled.
+
+    Break-glass serves *glass*, with one token file per forge host they name (``<tmp>/token-<host>``).
+    """
+    hosts = sorted({url.split('/')[2] for url in glass})
+    tokens = ''.join(f'"{host}" = "{(tmp / f"token-{host}").as_posix()}"\n' for host in hosts)
+    served = ', '.join(f'"{url}"' for url in glass)
     (tmp / 'totp').write_text(RFC_KEY + '\n', encoding='utf-8')
     home = (tmp / 'home').as_posix()
     listed = ', '.join(f'"{url}"' for url in repos)
@@ -60,12 +70,13 @@ credentials = "{(tmp / 'creds').as_posix()}"
 [ops.breakglass]
 account = "breakglass"
 keys = ["ssh-ed25519 AAAA agent"]
-token = "{(tmp / 'token').as_posix()}"
+repos = [{served}]
 totp = "{(tmp / 'totp').as_posix()}"
 state = "{(tmp / 'state').as_posix()}"
 log = "{(tmp / 'audit.log').as_posix()}"
 {extra}
-"""
+[ops.breakglass.tokens]
+{tokens}"""
     path = tmp / 'supervise.toml'
     path.write_text(text, encoding='utf-8')
     return load(path, environ={})

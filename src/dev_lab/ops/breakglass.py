@@ -7,14 +7,23 @@ server -- never the client -- announces each one through the configuration's ``[
 ``forge pr breakglass`` / ``forge breakglass open|close|ack|status`` (:mod:`dev_lab.dev.forgebreakglass`); the
 transport is the restricted account's ssh ForceCommand, whose key authorizes nothing by itself.
 
+EVERY FORGE OF THE FAMILY (user ruling 2026-11-04). Each served repo is reached on ITS forge -- Gitea or GitHub, the
+backend its URL's host selects (:class:`ClientForge` over :mod:`dev_lab.dev.forgework`) -- as that forge's ONE
+break-glass identity (``[ops.breakglass.tokens]``). The repo's integration branch is read from its declaration on the
+forge (:func:`dev_lab.dev.reviewgate.manifest_at` at the default branch), so a repo this host never clones is served
+as well as one it promotes. The identity must be able to bypass the branch's protection: on GitHub a user the
+ruleset lists as a bypass actor (or a repository admin where classic protection does not enforce on administrators);
+on Gitea an account the protection's merge whitelist admits, or an admin.
+
 One request is one JSON line with an ``action``:
 
 * ``open {code, hours?, max_merges?}`` -- refused while a wave is open (never because an earlier audit is
   unacknowledged); ``hours`` may only shorten the configured ``wave_hours``, ``max_merges`` only tighten its cap;
-* ``merge {repo, pr, head, reason}`` -- refused outside an open wave, past the cap, for an unconfigured repo, a short
-  reason, a PR not open, not into the repo's declared integration branch, or whose head is not the one shown; then
-  comment, merge at that head with a ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices`
-  opens the follow-up issue every use owes), announce;
+* ``merge {repo, pr, head, reason}`` -- refused outside an open wave, past the cap, for a repo not in
+  ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
+  declared integration branch, or whose head is not the one shown; then comment, merge at that head with a
+  ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
+  owes), announce;
 * ``close`` -- close the open wave: write and send its audit report; ``ack {id?, by}`` -- record who acknowledged
   an audit (the oldest unacknowledged when no id), no code;
 * ``status`` -- every wave's state; :meth:`Server.tick` (a timer) closes an expired wave and reminds an
@@ -31,15 +40,20 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from dev_lab.dev.breakglass import BREAK_GLASS
+from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgemerge import merge
+from dev_lab.dev.forgework import Client, Transport, forge_transport
+from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
-from dev_lab.ops.clones import CloneUnusable, declared
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.totp import TotpRefused, accept
 
-__all__ = ['BreakglassRefused', 'Forge', 'Server', 'merge_message']
+__all__ = ['BreakglassRefused', 'ClientForge', 'Forge', 'Server', 'merge_message']
 
 _HOUR = 3600.0
 
@@ -49,7 +63,11 @@ class BreakglassRefused(RuntimeError):
 
 
 class Forge(Protocol):
-    """The three forge calls the role makes, on one repository, as the break-glass identity."""
+    """The forge calls the role makes, on one repository, as the break-glass identity."""
+
+    def declaration(self) -> str:
+        """The repository's ``pyproject.toml`` at its default branch; raises ``ValueError`` when it cannot be read."""
+        ...
 
     def pull(self, number: int) -> tuple[str, str, str]:
         """``(state, base, head_sha)`` of PR *number*."""
@@ -62,6 +80,36 @@ class Forge(Protocol):
     def merge(self, number: int, *, head: str, message: str) -> None:
         """Merge PR *number* at *head* with a merge commit saying *message*."""
         ...
+
+
+class ClientForge:
+    """:class:`Forge` over the family's forge client of *url*'s backend, presenting *token*."""
+
+    def __init__(self, url: str, token: str, *, transport: Transport = forge_transport) -> None:
+        """Reach *url*'s repository through *transport* (the network by default)."""
+        self._client = Client(forge_of_url(url), token, transport=transport)
+
+    def declaration(self) -> str:
+        """The ``pyproject.toml`` at the repository's default branch, as the forge holds it."""
+        try:
+            default = str(self._client.call('GET', self._client.repo)['default_branch'])
+        except (ForgeCallFailed, KeyError, TypeError) as unread:
+            msg = f'the default branch of {self._client.repo} cannot be read: {unread}'
+            raise DeclarationUnread(msg) from unread
+        return manifest_at(self._client, default)
+
+    def pull(self, number: int) -> tuple[str, str, str]:
+        """``(state, base, head_sha)`` of PR *number*."""
+        found = self._client.pr_view(number)
+        return found.state, found.base, found.head_sha
+
+    def comment(self, number: int, body: str) -> None:
+        """Comment on PR *number*."""
+        self._client.issue_comment(number, body)
+
+    def merge(self, number: int, *, head: str, message: str) -> None:
+        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemerge.merge`, either backend); the branch is kept."""
+        merge(self._client, number, head=head, message=message, delete_branch=False)
 
 
 def merge_message(pr: int, integration: str, reason: str, wave: str) -> str:
@@ -77,14 +125,14 @@ def _cap(asked: int | None, declared_cap: int) -> int:
 
 @dataclass
 class Server:
-    """The role over one configuration; *forge_for* builds the forge of a clone, *alert* sends ``(title, body)``.
+    """The role over one configuration; *forge_for* builds the forge of a repo URL, *alert* sends ``(title, body)``.
 
     Every request and every tick runs under the role's one exclusive lock (:mod:`dev_lab.ops.statelock`), so the
     TOTP step, the lockout count and the waves are each read and written by one session at a time.
     """
 
     config: OpsConfig
-    forge_for: Callable[[Path], Forge]
+    forge_for: Callable[[str], Forge]
     alert: Callable[[str, str], None]
     now: Callable[[], float]
     #: The fingerprint of the ssh key this session authenticated with (:mod:`dev_lab.ops.sshkey`), ``''`` unknown.
@@ -215,19 +263,18 @@ class Server:
         return said
 
     def _admit(self, asked: requests.Merge) -> tuple[Forge, str]:
-        url = self.config.repo(asked.repo)
+        url = self.role.repo(asked.repo)
         if url is None:
             msg = f'{asked.repo} is not a repository this host serves'
             raise BreakglassRefused(msg)
         if len(asked.reason) < self.role.min_reason:
             msg = f'a reason of at least {self.role.min_reason} characters is required'
             raise BreakglassRefused(msg)
+        forge = self.forge_for(url)
         try:
-            root, policy = declared(self.config, url)
-        except CloneUnusable as unusable:
-            raise BreakglassRefused(str(unusable)) from unusable
-        integration = policy.integration
-        forge = self.forge_for(root)
+            integration = policy_from(forge.declaration(), f'{asked.repo}:pyproject.toml').integration
+        except ValueError as unread:
+            raise BreakglassRefused(str(unread)) from unread
         state, base, found = forge.pull(asked.pr)
         if state != 'open':
             msg = f'#{asked.pr} is {state}, not open'

@@ -177,7 +177,7 @@ def test_install_never_widens_a_credential_directory_or_re_owns_a_home_it_did_no
     home = _under(root, host.home)
     home.mkdir(parents=True)  # an existing deploy:deploy 0750 home
     mode = home.stat().st_mode
-    monkeypatch.setattr(install_module, '_others_may_enter', lambda path: path != credential.parent)
+    monkeypatch.setattr(install_module, '_may_enter', lambda path, _user: path != credential.parent)
     calls: list[tuple[Path, str | None, str | None]] = []
     done = install(host, root, chown=lambda p, u, g: calls.append((p, u, g)))
     assert not any(path in {credential.parent, home} for path, _, _ in calls)
@@ -197,3 +197,29 @@ def test_a_render_without_root_leaves_ownership_as_next_steps(tmp_path: Path) ->
     assert any(step.startswith('chown root:root ') and 'ops.env' in step for step in steps)
     useradd = next(i for i, step in enumerate(steps) if 'useradd' in step and 'promote' in step)
     assert steps.index(f'chown promote:promote {home}') > useradd
+
+
+_PROMOTE = install_module.Account(uid=1001, gids=frozenset({1001}))
+
+
+@pytest.mark.parametrize(
+    ('mode', 'uid', 'gid', 'account', 'enters'),
+    [
+        (0o750, 0, 1001, _PROMOTE, True),  # root:promote 750 -- the deployed /etc/promote; the group enters
+        (0o750, 0, 0, _PROMOTE, False),  # planted control: root:root 750, promote is no member
+        (0o700, 1001, 0, _PROMOTE, True),  # owner
+        (0o070, 1001, 0, _PROMOTE, False),  # the owner class decides for the owner, never the group's bits
+        (0o751, 0, 0, _PROMOTE, True),  # other-execute
+        (0o710, 0, 50, install_module.Account(uid=1001, gids=frozenset({1001, 50})), True),  # a supplementary group
+        (0o700, 5, 5, install_module.Account(uid=0, gids=frozenset({0})), True),  # root enters anything
+    ],
+)
+def test_entering_is_decided_by_the_users_owner_group_or_other_class(
+    mode: int, uid: int, gid: int, account: install_module.Account, *, enters: bool
+) -> None:
+    assert install_module.may_enter(mode, uid, gid, account) is enters
+
+
+def test_an_account_not_yet_made_is_judged_by_the_other_bits() -> None:
+    shut = install_module.may_enter(0o750, 0, 1001, None)
+    assert (shut, install_module.may_enter(0o751, 0, 1001, None)) == (False, True)
