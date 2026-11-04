@@ -17,7 +17,7 @@ from test_dev_forgereview import _LANE_POLICY, _work
 
 from dev_lab.dev import breakglass
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgemerge import decide
+from dev_lab.dev.forgemerge import decide, judged
 from dev_lab.dev.forgereview_declared import review_from, review_gate
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
@@ -434,3 +434,21 @@ def test_a_judge_declaration_without_a_judge_login_is_refused() -> None:
         _gate(forge, head)
     with pytest.raises(ValueError, match='judge_login'):  # Break-Glass's forge_unreviewed names it as a reason
         breakglass.unreviewed(forge, head, base=_BASE)
+
+
+@pytest.mark.parametrize('flag', ['dismissed', 'stale'])
+def test_a_dismissed_or_stale_approval_does_not_pass_the_judge_gate(flag: str) -> None:
+    """PLANTED CONTROL: the same approval, standing, passes (above)."""
+    forge, head, number = _judge_repo()
+    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
+    forge.reviews[number][-1][flag] = True
+    assert _gate(forge, head) is not None
+
+
+def test_a_judge_base_without_a_login_is_the_merge_s_wait_never_its_crash(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    forge = StateForge()
+    forge.pyproject_at[_LANE_POLICY.integration] = '[tool.dev_lab.review]\nwhere = "judge"\n'
+    number = forge.add_pull('pr/x', _LANE_POLICY.integration, sha=head)
+    found = judged(work, forge, _LANE_POLICY, branch='pr/x', number=number, head=head)
+    assert any('judge_login' in line for line in found.missing)

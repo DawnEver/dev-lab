@@ -235,8 +235,14 @@ def decide(
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
-    found = decide(root, policy, branch=branch, number=number, head=head, statuses=statuses,
-                   reviewed=review_gate(client, head, base=policy.integration))  # fmt: skip
+    try:
+        reviewed = review_gate(client, head, base=policy.integration)
+    except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash
+
+        def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:
+            return f'the review gate cannot be read: {why}'
+
+    found = decide(root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed)
     if client.pr_view(number).draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         return Decision((WAITING.format(n=number), *found.missing), found.message)
     return found

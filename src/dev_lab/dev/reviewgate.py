@@ -87,7 +87,6 @@ __all__ = [
     'DeclarationUnread',
     'RunsUnread',
     'adopts_actions_review',
-    'ci_posted',
     'forge_posted',
     'github_posted',
     'head_reviews',
@@ -98,6 +97,8 @@ __all__ = [
     'posted_verdicts',
     'review_missing',
     'review_runs',
+    'run_path',
+    'standing_verdicts',
     'status_gate',
 ]
 
@@ -125,16 +126,7 @@ def github_posted(status: CommitStatus) -> bool:
     return status.creator == ACTIONS_BOT
 
 
-def ci_posted(client: Client, status: CommitStatus) -> bool:
-    """Whether *status* was posted by *client*'s forge's CI identity: GitHub's Actions bot, Gitea's null creator.
-
-    Gitea answers ``creator: null`` for every Actions job's status (module docstring), so on Gitea this admits any
-    Actions job of the repo -- a PR-head workflow's too -- and a deleted user's old post; never a live login.
-    """
-    return github_posted(status) if client.backend is GITHUB else status.creator == ''
-
-
-def _run_path(url: str, owner: str, repo: str) -> str:
+def run_path(url: str, owner: str, repo: str) -> str:
     """``/<owner>/<repo>/actions/runs/<n>`` named in *url* (absolute or relative), lower-cased; ``''`` when none."""
     found = re.search(
         rf'/{re.escape(owner)}/{re.escape(repo)}/actions/runs/\d+(?=/|$)', urlsplit(url).path, re.IGNORECASE
@@ -174,8 +166,8 @@ def adopts_actions_review(client: Client, ref: str) -> bool:
     return ACTIONS_REVIEW in declared_table(tomllib.loads(manifest_at(client, ref)), 'ci', {})
 
 
-def review_runs(client: Client, head: str) -> list[dict[str, Any]]:
-    """The runs of the base's :data:`ACTIONS_REVIEW` at *head*, newest first, as the forge lists them.
+def review_runs(client: Client, head: str, *, workflow: str = ACTIONS_REVIEW) -> list[dict[str, Any]]:
+    """The runs of the base's *workflow* (:data:`ACTIONS_REVIEW`) at *head*, newest first, as the forge lists them.
 
     Only a :data:`REVIEW_EVENT` run whose ``path`` is ``review.yml@<ref>`` (Gitea's converter:
     ``fmt.Sprintf("%s@%s", run.WorkflowID, run.Ref)``, the entry file's name) -- the one workflow a PR cannot edit.
@@ -188,7 +180,7 @@ def review_runs(client: Client, head: str) -> list[dict[str, Any]]:
     honest = [
         run for run in runs
         if run.get('head_sha') == head and run.get('event') == REVIEW_EVENT
-        and str(run.get('path') or '').startswith(f'{ACTIONS_REVIEW}@')
+        and str(run.get('path') or '').startswith(f'{workflow}@')
     ]  # fmt: skip
     return sorted(honest, key=lambda run: int(run.get('id') or 0), reverse=True)
 
@@ -213,14 +205,14 @@ def forge_posted(client: Client, head: str, *, base: str) -> Callable[[CommitSta
         if not read:
             runs = review_runs(client, head)
             concluded = next((run for run in runs if run.get('conclusion')), None)
-            paths = frozenset(path for run in runs if (path := _run_path(run.get('html_url') or '', owner, repo)))
+            paths = frozenset(path for run in runs if (path := run_path(run.get('html_url') or '', owner, repo)))
             read.append((paths, concluded is not None and concluded.get('conclusion') == 'success'))
         return read[0]
 
     def posted(status: CommitStatus) -> bool:
         if status.creator != '':
             return False
-        named = _run_path(status.url, owner, repo)
+        named = run_path(status.url, owner, repo)
         if not named:
             return False
         paths, succeeded = at_head()
@@ -304,19 +296,29 @@ def head_reviews(client: Client, head: str) -> list[dict[str, Any]]:
     return [row for number in numbers for row in pages(client, f'{client.repo}/pulls/{number}/reviews', {})]
 
 
+def standing_verdicts(reviews: Sequence[Mapping[str, Any]], *, login: str, head: str) -> list[Mapping[str, Any]]:
+    """*login*'s verdict reviews (:data:`VERDICT_STATES`) at *head* that stand: neither dismissed nor stale.
+
+    Gitea keeps a dismissed review's state and marks it ``dismissed``, and marks one ``stale`` once the head moves;
+    GitHub reports a dismissal as the state ``DISMISSED``, never a verdict state.
+    """
+    return [
+        row for row in reviews
+        if (row.get('user') or {}).get('login') == login and row.get('commit_id') == head
+        and row.get('state') in VERDICT_STATES and not row.get('dismissed') and not row.get('stale')
+    ]  # fmt: skip
+
+
 def judge_missing(
     statuses: Sequence[CommitStatus], reviews: Sequence[Mapping[str, Any]], *, head: str, judge: str
 ) -> str | None:
     """The judge-mode gate: why *head* is not reviewed by the DECLARED *judge* login, or ``None`` when it is.
 
-    Reviewed when the latest verdict review (:data:`VERDICT_STATES`) *judge* left AT *head* is :data:`APPROVED`
-    and no hold is pending. Another login's approval, one at an older head, or a later ``REQUEST_CHANGES`` waits.
+    Reviewed when the latest standing verdict review (:func:`standing_verdicts`) *judge* left AT *head* is
+    :data:`APPROVED` and no hold is pending. Another login's approval, one at an older head, a dismissed or stale
+    one, or a later ``REQUEST_CHANGES`` waits.
     """
-    verdicts = [
-        row for row in reviews
-        if (row.get('user') or {}).get('login') == judge and row.get('commit_id') == head
-        and row.get('state') in VERDICT_STATES
-    ]  # fmt: skip
+    verdicts = standing_verdicts(reviews, login=judge, head=head)
     latest = max(verdicts, key=lambda row: int(row.get('id') or 0), default=None)
     if latest is None:
         return f'no verdict review by the judge {judge!r} at {head[:12]}: the judge reviews a prepared bundle'
