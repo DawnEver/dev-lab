@@ -125,7 +125,6 @@ from dev_lab.dev.forgereview_runtimes import (
     retired_table,
 )
 from dev_lab.dev.forgereview_scope import (
-    ONLY_GENERATED,
     Scope,
     gather,
     plan,
@@ -137,6 +136,7 @@ from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
+from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
 
 if TYPE_CHECKING:

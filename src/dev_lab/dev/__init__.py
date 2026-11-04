@@ -374,6 +374,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-judged each round.
+* :mod:`dev_lab.dev.forgereview_summary` -- a round's opening: what the PR does, and what changed and why.
 * :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in rounds and USD inside the family's month, fitted.
 * :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose`` records a claim; ``adjudicate`` rules on it.
 * :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
@@ -385,6 +386,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: an ADVISORY session review; never the gate (D11).
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
+* :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
 * :mod:`dev_lab.dev.metrics` -- the toolchain's baseline: refusals and hand actions, one JSONL per kind (record).
 * :mod:`dev_lab.dev.metrics_compute` -- the plan's figures from the recorded lines, forge pulls and git landings.
