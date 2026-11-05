@@ -34,6 +34,9 @@ name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.truste
 name merged over it; the layer's ``forge`` picks the forge it runs on (Gitea by default). Any other repo renders
 none, and a layer of that name there is refused.
 
+A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of a workflow a PR event starts (:data:`PR_EVENTS`) is
+AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`ready_only`) -- never typed per job.
+
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
@@ -58,6 +61,7 @@ from lab_commons.log import emit
 from dev_lab.dev._forgebackends import backend_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
+from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
@@ -70,6 +74,7 @@ __all__ = [
     'NIGHTLY_CRON',
     'NIGHTLY_KEY',
     'PREPARE',
+    'PR_EVENTS',
     'RENDER_COMMAND',
     'RUNNERS',
     'SHARED',
@@ -81,6 +86,7 @@ __all__ = [
     'expand',
     'merge',
     'placed',
+    'ready_only',
     'render',
     'repo_forge',
     'runner_labels',
@@ -173,6 +179,22 @@ def expand(workflow: dict[str, Any], shared: dict[str, list[dict[str, Any]]]) ->
     return {**workflow, 'jobs': jobs}
 
 
+#: The events that start a workflow for a pull request.
+PR_EVENTS: Final = frozenset({'pull_request', 'pull_request_target'})
+
+
+def ready_only(workflow: dict[str, Any]) -> dict[str, Any]:
+    """*workflow* with every job AND-guarded by :data:`~dev_lab.dev.forgedraft.READY_ONLY` when a PR starts it. PURE."""
+    if not PR_EVENTS & set(workflow.get('on', {})) or 'jobs' not in workflow:
+        return workflow
+
+    def guarded(job: dict[str, Any]) -> dict[str, Any]:
+        own = f' && ({_bare(job["if"])})' if 'if' in job else ''
+        return {**job, 'if': f'${{{{ ({READY_ONLY}){own} }}}}'}
+
+    return {**workflow, 'jobs': {name: guarded(job) for name, job in workflow['jobs'].items()}}
+
+
 def _declared(root: Path) -> tuple[str, dict[str, Any]]:
     """*root*'s ``pyproject.toml`` text (empty when absent) and its ``[tool.dev_lab.ci]`` tables."""
     pyproject = root / 'pyproject.toml'
@@ -250,7 +272,7 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
-        workflow = hosted_jobs(expand(merged, shared), hosted)
+        workflow = ready_only(hosted_jobs(expand(merged, shared), hosted))
         if workflow.pop(NIGHTLY_KEY, False):
             workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
         if forge not in WORKFLOW_DIRS:

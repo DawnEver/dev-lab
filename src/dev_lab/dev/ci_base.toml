@@ -45,7 +45,8 @@ nightly = true
 ["ci.yml".on.push]
 branches = ["integrate/main"]
 
-# ready_for_review (D52/D53): a draft is never reviewed, so marking it ready is what reviews it.
+# ready_for_review (D52/D53): a DRAFT RUNS NOTHING (user ruling 2026-11-05) -- every job of a PR-started workflow is
+# guarded at render by forgedraft.READY_ONLY -- so marking it ready is what starts every job.
 ["ci.yml".on.pull_request]
 types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
@@ -477,8 +478,9 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
-# The types are pull_request's defaults plus ready_for_review (D52/D53): a draft is never reviewed, so marking it
-# ready is what reviews it.
+# The types are pull_request's defaults plus ready_for_review (D52/D53): a draft runs nothing (forgedraft.READY_ONLY
+# guards every job). NEVER `edited` (F-6adfea8621bf): any body or title edit would join `review-<n>` below and cancel
+# a live review, its replacement all-skipped; Gitea's ready is a title edit, so the serve's next tick picks it up.
 ["review.yml"]
 forge = "gitea"
 name = "Review"

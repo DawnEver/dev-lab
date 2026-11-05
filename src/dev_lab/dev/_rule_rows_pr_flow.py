@@ -27,10 +27,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'DRAFT-UNTIL-READY',
         (
             'A PR is opened as a draft (`forge pr create`; `--ready` only for finished work) and its author marks it '
-            'ready with `forge pr ready <N>` when its own work is done; only a ready PR is reviewed or merged, and a '
+            'ready with `forge pr ready <N>` when its own work is done; only a ready PR is reviewed or merged, a draft '
+            'runs nothing on either forge -- no part, review or merge-ready (user ruling 2026-11-05) -- and a '
             'push after ready keeps it ready (D53, user ruling 2026-11-01; `forgedraft`).'
         ),
-        ('tests/test_dev_forgedraft.py', 'tests/test_dev_forgework.py'),
+        (
+            'tests/test_dev_forgedraft.py',
+            'tests/test_dev_forgework.py',
+            'tests/test_dev_ciworkflows.py',
+            'tests/test_dev_forgetick.py',
+        ),
     ),
     (
         'FORGE-DOORS-ARE-CONSENT',
