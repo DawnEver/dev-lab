@@ -134,7 +134,7 @@ def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_
     """lab-commons #11, dev-lab #3: the repo's own .venv has no ai_lab, so the review never ran on GitHub."""
     steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
     install, review = steps['Install the review method']['run'], steps['tests/review']['run']
-    assert 'uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+' in install
+    assert '-r "$RUNNER_TEMP/ai-lab.txt"' in install
     assert '--runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' in review
     assert '$GITHUB_WORKSPACE/.venv' not in review, "the repo's own environment does not carry the method"
     assert 'uv run' not in review
@@ -414,8 +414,33 @@ def test_the_review_method_is_the_ai_lab_the_door_s_dev_lab_lock_pins(tmp_path: 
     assert hub == tea, 'one source for both forges'
     assert 'env' not in hub or not any(re.fullmatch(r'[0-9a-f]{40}', v) for v in hub['env'].values())
     assert '< "$RUNNER_TEMP/dev-lab/uv.lock"' in hub['run']
-    assert '"ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REV"' in hub['run']
+    assert 'checkout -q --detach "$AI_LAB_REV"' in hub['run']
     assert not re.search(r'[0-9a-f]{40}', hub['run']), 'the step names no sha itself'
+
+
+def _floating_installs(run: str) -> list[str]:
+    """Every install line of *run* that lets a resolver pick a version: one without --no-deps.
+
+    The only allowed source of a version is ai-lab's lock: the requirements come from a --frozen export of it.
+    """
+    lines = [line for line in run.splitlines() if ' pip install ' in line and '-q uv' not in line]
+    return [line for line in lines if '--no-deps' not in line]
+
+
+def test_the_method_environment_is_ai_lab_s_whole_lock(tmp_path: Path) -> None:
+    """2026-11-05: ai-lab was pinned but its lab-commons floated to integrate/main and broke every review.
+
+    The step exports ai-lab's OWN uv.lock at the pinned commit (--frozen) and installs only that, --no-deps.
+    """
+    run = _method_steps(tmp_path)[0]['run']
+    assert 'export --no-config --project "$RUNNER_TEMP/ai-lab-src" --frozen' in run
+    assert '-r "$RUNNER_TEMP/ai-lab.txt"' in run
+    assert _floating_installs(run) == []
+    retired = (
+        '"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" '
+        '"ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REV"'
+    )
+    assert _floating_installs(retired) == [retired], 'PLANTED CONTROL: the floating install is caught'
 
 
 def test_the_method_reads_the_locked_git_ai_lab_and_refuses_any_other_source(tmp_path: Path) -> None:
