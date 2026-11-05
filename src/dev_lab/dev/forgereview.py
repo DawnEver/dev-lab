@@ -1,7 +1,7 @@
 """PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on every open PR into the PR base, per head.
 
 Step 4 of the branch flow (user ruling 2026-10-19). ONE review on both forges (user ruling 2026-10-29); only who
-TRIGGERS it differs, and on both it is the merge decision that asks (:func:`dev_lab.dev.forgemerge.review_turn`). On
+TRIGGERS it differs, and on both it is the merge decision that asks (:func:`dev_lab.dev.reviewturn.review_turn`). On
 Gitea the ``forge serve`` tick runs :func:`step` over every open PR, or, where the repo adopts ``review.yml``, the
 label the decision applies starts that job; on GitHub the merge-ready and merge-tick jobs run
 ``forge review run --pr <N>`` / ``--due`` (:mod:`dev_lab.dev.forgereview_job`) once the decision calls a head due.
@@ -22,7 +22,7 @@ cannot fill or start the command
 capable hosts the claim below makes each head reviewed once.
 
 WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integration`` whose head the merge decision
-has called due (:func:`dev_lab.dev.forgemerge.review_turn`: REVIEW IS THE LAST GATE, every other merge condition
+has called due (:func:`dev_lab.dev.reviewturn.review_turn`: REVIEW IS THE LAST GATE, every other merge condition
 already stands):
 
 * the head's review ROUND as ONE comment keyed by the head sha (``Marker.REVIEW``): its tagged findings carried

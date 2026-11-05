@@ -51,7 +51,7 @@ HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 #: merge waits, and the head stays claimable so a raised cap or a new month is read on the next tick.
 CAPPED: Final = 'review capped, merge waits:'
 
-#: REVIEW IS THE LAST GATE (user ruling 2026-11-05): the merge decision (:func:`dev_lab.dev.forgemerge.review_turn`)
+#: REVIEW IS THE LAST GATE (user ruling 2026-11-05): the merge decision (:func:`dev_lab.dev.reviewturn.review_turn`)
 #: posts these two ``pending`` statuses, and nothing else calls a head's review. WAITS: another merge condition is
 #: missing, named after it -- no review runs and no round is counted. DUE: every other condition stands; the review
 #: runs next (:func:`dev_lab.dev.forgereview.review_pull` reviews no head whose latest review status is not one the

@@ -381,7 +381,7 @@ class StateForge(Client):
 
 
 def called_due(forge: Client, head: str) -> None:
-    """The merge decision's DUE on *head* (``forgemerge.review_turn``): what a review reads before it runs.
+    """The merge decision's DUE on *head* (``reviewturn.review_turn``): what a review reads before it runs.
 
     REVIEW IS THE LAST GATE: a test of the review ROUND starts here, as the forge's decision would leave the head.
     """

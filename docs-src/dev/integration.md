@@ -143,7 +143,7 @@ head -- a review ROUND -- and a `tests/review` commit status.
 **Review is the last gate** (user ruling 2026-11-05: a PR is reviewed only when it is about to be merged). The
 review is the one merge condition that costs a model call and a round against `max_rounds`, so it is asked for only
 once every OTHER condition stands for the head -- its test parts, `tests/security`, a clean merge with integration,
-the merge audit, the messages, not a draft. The merge decision (`forgemerge.review_turn`, run by
+the merge audit, the messages, not a draft. The merge decision (`reviewturn.review_turn`, run by
 `forge merge ready` and by the serve's integration tick) is the one that asks; the review holds no second
 readiness check:
 

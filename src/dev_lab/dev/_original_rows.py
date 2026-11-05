@@ -80,6 +80,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeintegration',
     'forgelanes',
     'forgemerge',
+    'reviewturn',
     'forgereview',
     'forgereview_declared',
     'forgereview_findings',

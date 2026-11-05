@@ -1,6 +1,6 @@
 """REVIEW IS THE LAST GATE (user ruling 2026-11-05): a head is reviewed only once every other merge condition stands.
 
-The merge decision (``forgemerge.review_turn``) is the one that asks: WAITS naming what is missing, else DUE; the
+The merge decision (``reviewturn.review_turn``) is the one that asks: WAITS naming what is missing, else DUE; the
 review (``forgereview.review_pull``) runs only on DUE, so a head that cannot merge yet costs no model call and no
 round, and a push asks for nothing.
 """
@@ -14,9 +14,8 @@ from _branch_repos import advance
 from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 
-from dev_lab.dev import forgemerge
 from dev_lab.dev.ciworkflows import workflows
-from dev_lab.dev.forgemerge import REVIEW_DUE_SAID, REVIEW_LABEL, ready
+from dev_lab.dev.forgemerge import ready
 from dev_lab.dev.forgereview_claim import DUE, WAITS
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_job import review_run
@@ -25,6 +24,7 @@ from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
+from dev_lab.dev.reviewturn import REVIEW_DUE_SAID, REVIEW_LABEL
 
 _BASE = 'integrate/main'
 _PARTS = 'scope=full ran=3 hands=-'
@@ -165,4 +165,4 @@ def test_the_tick_is_what_starts_the_review_on_both_forges(tmp_path: Path) -> No
     assert 'forge review run --due' in ' '.join(step.get('run', '') for step in tick['jobs']['review']['steps'])
     assert gitea['on'] == {'pull_request_target': {'types': ['labeled']}}, 'a push starts no Gitea review'
     assert REVIEW_LABEL in gitea['jobs']['review']['if']
-    assert forgemerge.REVIEW_LABEL == 'review-due'
+    assert REVIEW_LABEL == 'review-due'

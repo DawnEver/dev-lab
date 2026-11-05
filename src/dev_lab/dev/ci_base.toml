@@ -479,8 +479,8 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
 # REVIEW IS THE LAST GATE (user ruling 2026-11-05): a push starts nothing here. The ONE type is `labeled`, and the job
-# runs only for forgemerge.REVIEW_LABEL, which the merge decision applies once every other condition stands
-# (forgemerge.review_turn, run by a serve: Gitea starts no workflow for its Actions user's event). Still a
+# runs only for reviewturn.REVIEW_LABEL, which the merge decision applies once every other condition stands
+# (reviewturn.review_turn, run by a serve: Gitea starts no workflow for its Actions user's event). Still a
 # pull_request_target run at the head, so the trust chain and reviewgate's run binding are unchanged; a label anyone
 # else adds reviews nothing (forgereview.review_pull reads the decision's DUE).
 ["review.yml"]

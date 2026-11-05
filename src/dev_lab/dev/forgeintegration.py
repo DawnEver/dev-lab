@@ -58,7 +58,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge, review_turn
+from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -76,6 +76,7 @@ from dev_lab.dev.forgework import GITEA, Client, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
+from dev_lab.dev.reviewturn import review_turn
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
 from dev_lab.dev.unproduced import unproduced_waived
 
