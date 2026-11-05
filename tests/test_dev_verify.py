@@ -933,7 +933,7 @@ def _patched_main(
     monkeypatch.setattr(localpart, 'read_cells', lambda _judged: ({'t::a': TestCell(Cell(Status.OK))}, frozenset()))
     monkeypatch.setattr(localpart, 'owners', lambda _root, _sha, reported, _collect: dict.fromkeys(reported, BASE))
     monkeypatch.setattr(localpart, 'present_here', lambda _root: frozenset({'windows'}))
-    monkeypatch.setattr(localpart, 'local_record', lambda **fields: fields)
+    monkeypatch.setattr(localpart, 'local_record', lambda _root, **fields: fields)
     monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
     assert verify.main([]) == EXIT_CODES[Conclusion.PASS]
     return posted

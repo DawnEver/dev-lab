@@ -18,6 +18,14 @@ suite to learn whether a sha is green, and you never wait for one to push.
   (`platformparts.derived`). A new tool is a new marker and nothing else.
 - **A run** is one execution of one part's tests at one sha; its record is `run-<sha>-<part>-<req>.json.gz`
   (its `platform` key holds the part). An incremental part is its base part plus the re-run ids.
+- **A tested tree is never tested again.** Before a producer runs a full part it asks the run-records store for
+  a PASS of the same (tree, env key, part) (`dev_lab.dev.verdictstore.lookup`) and, on a hit, posts it on the new
+  sha ending `cited from <sha12>: same tree`, the record as its `target_url` -- so a merge smoke, the push to
+  integrate/main and a no-op merge cite the PR head's run instead of repeating it (a fifth of hits are re-run as a
+  spot check, `workstationverdict.SPOT_CHECK_FRACTION`). Any other tree, env key or part runs. The env key leaves
+  out the project under test (`dev_lab.dev.verdictenv`): its VCS version moves with every commit, the tree already
+  names its code. On GitHub a new push cancels the superseded run of its own PR (`ci-pr-<number>`); a push to
+  integrate/main, the nightly run and a merge smoke are each their own group and never cancelled.
 - **Admission** is computed from parts and never stored (`dev_lab.dev.pushgate`): a lane and the
   integration branch need no part; the trunk needs `tests/base` and every part a part hands to, each a PASS
   at scope `full` -- every derived part green. An unreadable forge makes the trunk wait.

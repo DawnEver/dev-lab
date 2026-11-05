@@ -213,6 +213,27 @@ def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_p
     assert dispatch.endswith('--ref integrate/main -f smoke=true')
 
 
+def test_a_new_push_cancels_only_its_own_prs_superseded_run(tmp_path: Path) -> None:
+    """D: a PR's runs share ``ci-pr-<number>`` and cancel in progress; any other run is its own group, never cancelled.
+
+    A push to integrate/main, the nightly schedule and a merge's smoke dispatch each carry ``github.run_id``, so no
+    run -- not even a PENDING one, which Actions cancels in a shared group whatever ``cancel-in-progress`` says --
+    is ever superseded.
+    """
+    ci = _base_ci(tmp_path)
+    group, cancel = ci['concurrency']['group'], ci['concurrency']['cancel-in-progress']
+    assert group == (
+        "ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) "
+        '|| github.run_id }}'
+    )
+    assert cancel == "${{ github.event_name == 'pull_request' }}"
+    name, _, value = cancel.removeprefix('${{ ').removesuffix(' }}').partition(' == ')
+    cancels = {event: name == 'github.event_name' and value == f"'{event}'" for event in set(ci['on'])}
+    assert cancels == {'pull_request': True, 'push': False, 'schedule': False, 'workflow_dispatch': False}, (
+        'PLANTED CONTROL: an integrate/main push, the nightly run and a merge smoke are never cancelled'
+    )
+
+
 def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_decision(tmp_path: Path) -> None:
     """D48-1A: once nightly, and on demand, integrate/main's tip runs every part on every OS, then promotes.
 
@@ -225,7 +246,6 @@ def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_deci
     assert _parts_event(ci, 'workflow_dispatch', smoke=False) == 'workflow_dispatch'
     assert systems_for('schedule') == ('linux', 'macos', 'windows')
     assert systems_for(_parts_event(ci, 'push')) == PULL_REQUEST_SYSTEMS, 'PLANTED CONTROL: the smoke has no macos'
-    assert "'smoke' || github.event_name" in ci['concurrency']['group'], 'a merge never cancels the nightly run'
     promote = ci['jobs']['promote']
     assert promote['needs'] == ['parts', 'absent-parts']
     (step,) = [one for one in promote['steps'] if 'integrate promote' in one.get('run', '')]

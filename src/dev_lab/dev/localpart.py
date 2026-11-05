@@ -27,7 +27,6 @@ from lab_commons.box.providers import inventory
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
 from lab_commons.compute.probe import os_name
 from lab_commons.config import section
-from lab_commons.envkey import env_record
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL
@@ -39,6 +38,7 @@ from dev_lab.dev.jobparts import pytest_collector
 from dev_lab.dev.partrows import row_part, row_system, this_platform
 from dev_lab.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory
 from dev_lab.dev.test_outcomes import outcomes_dir, read_cells
+from dev_lab.dev.verdictenv import verdict_env_record
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
@@ -68,6 +68,7 @@ def owners(root: Path, sha: str, reported: Collection[str], collect: Callable[[s
 
 
 def local_record(
+    root: Path,
     *,
     sha: str,
     part: str,
@@ -84,7 +85,8 @@ def local_record(
     An id of *part* the run reported carries its test cell (and is ``flaky`` when the run decided it both
     ways); every other id of *owned* (id -> part) is handed off to the part it belongs to.
     It states the environment it ran against
-    (:func:`lab_commons.envkey.env_record`) and the vendor tool versions this host's presence probe READ
+    (:func:`dev_lab.dev.verdictenv.verdict_env_record`, *root*'s project left out)
+    and the vendor tool versions this host's presence probe READ
     (*tools*, default :func:`lab_commons.compute.presence.measured` over the cached reading): nothing is
     pinned, so the record is the reproducibility. *extra* adds keys -- a declared workstation's name and tree
     (:mod:`dev_lab.dev.workstationverdict`).
@@ -100,7 +102,7 @@ def local_record(
         'cells': {node: cells[node].to_plain() for node in mine},
         'flaky': sorted(node for node in flaky if node in mine),
         'handed': handed,
-        **env_record(),
+        **verdict_env_record(root),
         'tools': dict(measured(cached()) if tools is None else tools),
         **(extra or {}),
     }
@@ -172,7 +174,15 @@ def post_part(
         post_local(
             root,
             local_record(
-                sha=commit, part=name, scope=scope, req=log.stem, cells=cells, owned=owned, flaky=flaky, extra=extra
+                root,
+                sha=commit,
+                part=name,
+                scope=scope,
+                req=log.stem,
+                cells=cells,
+                owned=owned,
+                flaky=flaky,
+                extra=extra,
             ),
             directory,
         )

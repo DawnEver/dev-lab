@@ -7,7 +7,6 @@ from typing import NoReturn
 
 import pytest
 from _forge_fake import git_out, make_repo, run_git
-from lab_commons.envkey import env_record
 from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
 from lab_commons.hpc.needsets import BASE, Vocabulary, read_vocabulary
@@ -20,6 +19,7 @@ from dev_lab.dev import localpart, platformparts
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import CommitStatus, state_for
 from dev_lab.dev.producer import ProducerExit
+from dev_lab.dev.verdictenv import verdict_env_record
 
 SHA = 'a' * 40
 
@@ -288,7 +288,7 @@ def test_a_local_run_becomes_one_record_per_part_of_the_cluster_shape(tmp_path: 
 
     def local(part: str) -> dict[str, object]:
         fields = {'sha': SHA, 'scope': 'full', 'req': 'verify-x', 'cells': cells}
-        return localpart.local_record(part=part, owned=owned, **fields)
+        return localpart.local_record(tmp_path, part=part, owned=owned, **fields)
 
     base = local(BASE)
     assert base['cells'] == {'t::a': _cell('ok').to_plain()}, 'a handed id is no cell of this part'
@@ -311,12 +311,15 @@ def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path:
     assert owned == dict.fromkeys(reported, BASE)
 
     def local(cells: dict[str, TestCell]) -> dict[str, object]:
-        return localpart.local_record(part=BASE, cells=cells, owned=owned, sha=SHA, scope='full', req='r')
+        return localpart.local_record(tmp_path, part=BASE, cells=cells, owned=owned, sha=SHA, scope='full', req='r')
 
     record = local(reported)
     assert record['cells'] == {node: one.to_plain() for node, one in reported.items()}
-    assert {key: record[key] for key in ('env', 'resolved')} == env_record(), 'it names what it ran against'
+    assert {key: record[key] for key in ('env', 'resolved')} == verdict_env_record(tmp_path), (
+        'it names what it ran against'
+    )
     probed = localpart.local_record(
+        tmp_path,
         part=BASE,
         cells=reported,
         owned=owned,
@@ -329,7 +332,9 @@ def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path:
     assert TestCell.from_plain(record['cells']['t::s']).why == 'why', 'a reason travels in its cell'
     assert platformparts.part_of(record).hands == {}
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
-        platformparts.part_of(localpart.local_record(part=BASE, cells={}, owned={}, sha=SHA, scope='full', req='r'))
+        platformparts.part_of(
+            localpart.local_record(tmp_path, part=BASE, cells={}, owned={}, sha=SHA, scope='full', req='r')
+        )
 
 
 def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, monkeypatch) -> None:

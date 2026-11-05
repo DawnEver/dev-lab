@@ -31,8 +31,8 @@
     ]
   },
   "concurrency": {
-    "group": "ci-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.smoke) && 'smoke' || github.event_name }}",
-    "cancel-in-progress": true
+    "group": "ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}",
+    "cancel-in-progress": "${{ github.event_name == 'pull_request' }}"
   },
   "permissions": {
     "contents": "read"
