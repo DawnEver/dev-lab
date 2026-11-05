@@ -491,7 +491,7 @@ flattening them into one namespace beside :data:`dev_lab.dev.content.ABSENT` wou
 reader guessing which of two unrelated answers they are holding. Import them by module.
 
 NOR ARE THE MODULES THAT NEED AN EXTRA: :mod:`~dev_lab.dev.profile`, :mod:`~dev_lab.dev.rules`,
-:mod:`~dev_lab.dev.reports` and :mod:`~dev_lab.dev.quantity_values` reach ``platformdirs``, ``rtoml`` or
+:mod:`~dev_lab.dev.reports` and :mod:`~dev_lab.dev.quantity_values` reach ``platformdirs``, ``tomlkit`` or
 ``pint``. Every submodule import runs this file first, so re-exporting them here would make the stdlib-only
 hook runner (:mod:`dev_lab.dev.githooks`) fail in an environment installed without extras.
 Import them by module.

@@ -14,16 +14,14 @@ requires-python = ">=3.12"
 dependencies = [
     "lab-commons[units,paths,io,structured]>=0.3.1.dev992",
     "pytest",
-    "pytest-mock",
     # The verify door runs a selection on every core its claim admits (verifybox.selection_workers); without the
     # plugin xdist_installed() answers False and every part ran serially -- this repo's hosted part measured 483 s
     # on Linux and 2740 s on Windows on 4-vCPU runners (2026-11-05). Base, so every consumer's door has it.
     "pytest-xdist",
     "ruff",
-    "commitizen",
-    # Imported directly (dev.dep_observe, the suppression guard), so declared directly: lab-commons[io]
-    # supplies it today, and a direct import riding on another package's extra is a declaration that lies.
-    "rtoml",
+    # THE FAMILY'S ONE TOML WRITER (user ruling 2026-11-05): dev.dep_observe writes its observations with it;
+    # every read is stdlib tomllib.
+    "tomlkit",
     # dev.forgeapp signs a GitHub App judge's RS256 JWT: the one maintained RSA, never our own. Base, not the ops
     # extra: the dev layer imports it, and dev never reaches up into an ops extra.
     "cryptography",
@@ -35,7 +33,21 @@ dependencies = [
 # the code under test uses require/fs/process, DecompressionStream, TextDecoder, atob and timers, which a
 # bare QuickJS or V8 isolate does not provide. TEST/DEV ONLY (user ruling 2026-10-28): a consumer takes
 # it as `dev-lab[test]` in its dev extra, never in a runtime dependency (famtests.hostnode refuses that).
-test = ["nodejs-wheel-binaries", "dev-lab[ops]"]
+#
+# THE ONE TEST KIT (user ruling 2026-11-05): with the base install (pytest, pytest-xdist, ruff) this extra is the
+# family's complete shared test/dev tool set, so a consumer declares `dev-lab[test]` and nothing else of the
+# kind. pytest-timeout: the per-test ceiling every gate relies on; pytest-cov (brings coverage): the verify
+# door's coverage REPORT; hypothesis: property tests; pyright: the type checker; pdoc: dev.docsite builds with
+# it. NOT in it: maturin (a repo's own build tool) and pytest-mock (unittest.mock and monkeypatch cover it).
+test = [
+    "nodejs-wheel-binaries",
+    "dev-lab[ops]",
+    "pytest-timeout",
+    "pytest-cov",
+    "hypothesis",
+    "pyright",
+    "pdoc",
+]
 # A FORGE HOST'S extra (dev_lab.ops): `access enrol` / `breakglass enrol` draw the otpauth QR on the enrolling
 # terminal with segno (pure Python, no dependencies of its own). The test extra carries it so the QR is tested.
 ops = ["segno"]

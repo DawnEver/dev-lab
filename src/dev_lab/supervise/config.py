@@ -8,8 +8,8 @@ precedence here is two steps, and there is one file a reader has to open::
 
     environment  >  <config>.toml  >  the defaults below
 
-TOML rather than YAML, which drops a dependency rather than adding one -- ``rtoml`` is already
-tier 1 and the family's configs are already TOML. A YAML parser for one file was a second
+TOML rather than YAML, which drops a dependency rather than adding one -- stdlib ``tomllib`` reads it
+and the family's configs are already TOML. A YAML parser for one file was a second
 serialisation format to keep working.
 
 WHY A MISSING FILE IS NOT AN ERROR. A daemon that refuses to start because its config has not been
