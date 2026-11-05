@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.mirrors import mirror_host, mirror_name
 from dev_lab.ops.served import served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
@@ -80,8 +81,10 @@ class Judge(Placement):
     ``home`` is the judge user's HOME (default ``/var/lib/<user>``, 0700): the reviewer (ai-lab) reads its model
     keys ONLY from the git credential store there (``credential.helper store``, ``ai_lab.auth``, task ``pr-review``),
     so the unit runs with ``HOME`` set to it. ``keys_file`` is the host's root-owned 0600 file holding the
-    ``pr-review`` task's key bundle (:mod:`dev_lab.dev.taskkeys`), which install loads into that store on stdin and
-    never re-owns; empty, the operator pipes the bundle to the printed step. ``environment_file`` is an optional
+    ``pr-review`` task's key bundle (:mod:`dev_lab.dev.taskkeys`), which install loads into that store on stdin; it is a
+    host secret exactly as ``[ops] environment_file`` is -- the same root-owned 0600 narrowing at install and the same
+    root-time refusal when unreadable (:func:`_root_secret`), plus it must parse as a bundle; empty, the operator
+    pipes the bundle to the printed step. ``environment_file`` is an optional
     root-owned 0600 file of further ``KEY=VALUE`` lines loaded into the judge's unit only -- never a model key.
     """
 
@@ -384,13 +387,18 @@ def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Judge, Up
         raise ValueError(msg) from missing
 
 
+def _root_secret(path: Path, label: str, why: str) -> str:
+    """The text of a declared root-only host secret: the ONE read every such file takes; refuse one unreadable."""
+    try:
+        return path.read_text(encoding='utf-8')
+    except OSError as unreadable:
+        msg = f'{label} {path} is declared but unreadable ({unreadable}); refusing, {why}'
+        raise ValueError(msg) from unreadable
+
+
 def _environment(path: Path) -> dict[str, str]:
     """The ``KEY=VALUE`` lines of a declared environment file; refuse one unreadable or not an assignment."""
-    try:
-        text = path.read_text(encoding='utf-8')
-    except OSError as unreadable:
-        msg = f'[ops] environment_file {path} is declared but unreadable ({unreadable}); refusing, alerts would be off'
-        raise ValueError(msg) from unreadable
+    text = _root_secret(path, '[ops] environment_file', 'alerts would be off')
     found: dict[str, str] = {}
     for number, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()
@@ -422,9 +430,16 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
     if not isinstance(ops, dict):
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
+    root = _is_root() if as_root is None else as_root
+    judge_table = ops.get('judge')
+    if root and isinstance(judge_table, dict) and (keys_file := str(judge_table.get('keys_file', ''))):
+        keyless = 'the reviewer would run keyless'
+        require_bundle(
+            _root_secret(Path(keys_file), '[ops.judge] keys_file', keyless), f'[ops.judge] keys_file {keys_file}'
+        )
     if environment_file := str(ops.get('environment_file', '')):
         process = dict(os.environ if environ is None else environ)
-        if _is_root() if as_root is None else as_root:
+        if root:
             merged = load_config(path, environ=process | _environment(Path(environment_file)))
         elif not any(name.startswith(ENV_PREFIX) for name in process):
             msg = (

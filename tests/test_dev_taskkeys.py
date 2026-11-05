@@ -21,7 +21,7 @@ def test_a_task_s_secret_name_is_derived(task: str, name: str) -> None:
     assert taskkeys.secret_name(task) == name
 
 
-@pytest.mark.parametrize('task', ['', 'PR-REVIEW', 'pr_review', 'pr review', 'live; echo', '-live'])
+@pytest.mark.parametrize('task', ['', 'PR-REVIEW', 'pr_x', 'pr review', 'live; echo', '-live'])
 def test_a_malformed_task_is_refused_before_it_names_anything(task: str) -> None:
     with pytest.raises(ValueError, match='task name'):
         taskkeys.secret_name(task)

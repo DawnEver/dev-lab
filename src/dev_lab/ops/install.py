@@ -257,7 +257,7 @@ def _judge_steps(config: OpsConfig) -> list[str]:
     if (judged := config.judge) is None:
         return []
     as_judge = f'sudo -u {judged.user}'  # ai-lab reads the model keys from this HOME's git credential store
-    # the task's bundle on stdin: root reads the host's file (never re-owned), else the operator pipes it
+    # the task's bundle on stdin: root reads the host's root-only file, else the operator pipes it
     bundle = f' < {shlex.quote(judged.keys_file)}' if judged.keys_file else f'  (the {REVIEW_TASK} key bundle on stdin)'
     return [f'id {judged.user} || useradd --system --create-home --home-dir {judged.home_dir} {judged.user}',
             f'chmod 700 {judged.home_dir}', f'{as_judge} git config --global credential.helper store',
@@ -331,8 +331,9 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
     if (judge := config.judge) is not None:
         for secret in judge.secrets:
             steps += _private(root, chown, secret, judge.user) + _entered(root, secret, judge.user)
-    environments = [config.environment_file, judge.environment_file if judge is not None else '']
-    for environment in filter(None, environments):
+    # every root-only host secret takes the one narrowing: the environment files and the judge's key bundle
+    root_only = [config.environment_file, *((judge.environment_file, judge.keys_file) if judge is not None else ())]
+    for environment in filter(None, root_only):
         steps += _private(root, chown, environment, 'root', 'root')
     return done, steps
 

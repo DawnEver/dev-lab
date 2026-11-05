@@ -7,6 +7,7 @@ Each ai-lab task (``pr-review``, ``live``, ...) has ONE secret holding a TOML bu
 * :func:`secret_name` derives the secret's name from the task -- the ONE place that spelling is made;
 * :func:`loader` is the ai-lab command that reads one bundle on stdin and stores it for its task;
 * :func:`load` runs it, the bundle on stdin -- never argv, never a file, never a log line;
+* :func:`require_bundle` refuses text that is not a bundle, never echoing it;
 * :func:`keys_loaded` is the review door's ``--keys-env``: the named variable loaded, then unset.
 """
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tomllib
 from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
@@ -22,7 +24,7 @@ import lab_commons.launch as _door
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-__all__ = ['PREFIX', 'REVIEW_TASK', 'keys_loaded', 'load', 'loader', 'secret_name']
+__all__ = ['PREFIX', 'REVIEW_TASK', 'keys_loaded', 'load', 'loader', 'require_bundle', 'secret_name']
 
 #: Every task's secret starts so: ``AI_LAB_KEYS_<TASK>``.
 PREFIX: Final = 'AI_LAB_KEYS_'
@@ -82,3 +84,14 @@ def keys_loaded(name: str | None, runtimes: Mapping[str, Mapping[str, Any]]) -> 
         return False
     load(bundle, REVIEW_TASK, str(runtimes.get('ai_lab', {}).get('python', 'python')))
     return True
+
+
+def require_bundle(text: str, where: str) -> None:
+    """Refuse *text* that is not a key bundle (a non-empty TOML ``[keys]`` table); the message never quotes it."""
+    try:
+        keys = tomllib.loads(text).get('keys')
+    except tomllib.TOMLDecodeError:
+        keys = None
+    if not isinstance(keys, dict) or not keys:
+        msg = f'{where} is not a key bundle (a TOML [keys] table); refusing'
+        raise ValueError(msg)

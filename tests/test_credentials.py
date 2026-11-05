@@ -188,7 +188,7 @@ def test_a_task_is_checked_for_spelling_only_and_never_reads_as_a_slot() -> None
     assert key_username('pr-review') == 'api-key-pr-review'
     assert key_username('session') == 'api-key-session'
     assert key_username(None) == 'api-key'
-    for bad in ('PR_Review', 'pr_review', '2', 'x-2', '-a', 'a-', ''):
+    for bad in ('PR_Review', 'pr_x', '2', 'x-2', '-a', 'a-', ''):
         with pytest.raises(ValueError, match='not a task name'):
             key_username(bad)
 
