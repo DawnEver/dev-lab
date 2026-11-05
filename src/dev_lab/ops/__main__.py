@@ -1,7 +1,7 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``breakglass serve|enrol|tick``, ``backup export|pull``, ``access enrol|adopt``,
-``probe``.
+Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|enrol|tick``,
+``backup export|pull``, ``access enrol|adopt``.
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -21,7 +21,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
-from dev_lab.ops import access, backup, breakglass, install, offsite, probe, promote, sshkey, totp
+from dev_lab.ops import access, backup, breakglass, install, judge, offsite, probe, promote, sshkey, totp, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
@@ -73,6 +73,32 @@ def _install(config: OpsConfig, root: Path) -> int:
         emit(f'{state:9} {path}')
     emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
     return 0
+
+
+def _promote(config: OpsConfig) -> int:
+    failed = [o for o in promote.run(config) if o.state == 'failed']
+    for outcome in failed:
+        _alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
+    return 1 if failed else 0
+
+
+def _judge(config: OpsConfig) -> int:
+    if config.judge is None:
+        emit(f'[ops] {config.path} enables no [ops.judge]', err=True)
+        return 2
+    failed = [o for o in judge.run(config) if o.state == 'failed']
+    for outcome in failed:
+        _alert(config, f'judge FAILED {outcome.repo}', outcome.detail)
+    return 1 if failed else 0
+
+
+def _upgrade(config: OpsConfig) -> int:
+    if config.upgrade is None:
+        emit(f'[ops] {config.path} enables no [ops.upgrade]', err=True)
+        return 2
+    code, said = upgrade.run(config)
+    emit(f'[ops upgrade] {said}', err=code != 0)
+    return 0 if code == 0 else 1
 
 
 def _read_input(source: str) -> str:
@@ -162,6 +188,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('install').add_argument('--root', type=Path, default=Path('/'))
     verbs.add_parser('promote')
+    verbs.add_parser('judge', help='one judging pass over [ops.judge] repos')
+    verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref; takes no argument')
     verbs.add_parser('probe')
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'enrol', 'tick'))
@@ -182,10 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.verb == 'install':
         return _install(config, args.root)
     if args.verb == 'promote':
-        failed = [o for o in promote.run(config) if o.state == 'failed']
-        for outcome in failed:
-            _alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
-        return 1 if failed else 0
+        return _promote(config)
     verbs_of: dict[str, Callable[[], int]] = {
         'backup': lambda: _backup(config, args.action),
         'access': lambda: _access(
@@ -193,6 +218,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         'probe': lambda: _probe(config),
         'breakglass': lambda: _breakglass(config, args.action, force=args.force, uri_only=args.uri),
+        'judge': lambda: _judge(config),
+        'upgrade': lambda: _upgrade(config),
     }
     return verbs_of[args.verb]()
 

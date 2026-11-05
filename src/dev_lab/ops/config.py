@@ -29,9 +29,21 @@ from pathlib import Path
 from typing import Any
 
 from dev_lab.dev.forge import forge_of_url
+from dev_lab.ops.mirrors import mirror_host, mirror_name
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
-__all__ = ['Breakglass', 'OpsConfig', 'Placement', 'Probe', 'Promote', 'Supervise', 'load', 'repo_name']
+__all__ = [
+    'Breakglass',
+    'Judge',
+    'OpsConfig',
+    'Placement',
+    'Probe',
+    'Promote',
+    'Supervise',
+    'Upgrade',
+    'load',
+    'repo_name',
+]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -54,6 +66,48 @@ class Promote(Placement):
     schedule: str
     credentials: str
     memory_max: str = '1G'
+
+
+@dataclass(frozen=True)
+class Judge(Placement):
+    """The bundle-review judge (:mod:`dev_lab.dev.forgereview_bundle`): who runs it, when, on which repos, as whom.
+
+    ``repos`` are the web URLs it judges; ``tokens`` maps each forge host to the ONE file holding the judge's token
+    there (the shape and refusals of :class:`Breakglass`). ``environment_file`` is a root-owned 0600 file carrying the
+    reviewer's model key (e.g. ``ANTHROPIC_API_KEY``), loaded into the judge's unit only.
+    """
+
+    user: str
+    schedule: str
+    repos: tuple[str, ...] = ()
+    tokens: Mapping[str, str] = field(default_factory=dict)
+    environment_file: str = ''
+    memory_max: str = '2G'
+
+    def __post_init__(self) -> None:
+        """Refuse a declaration that lies (see :func:`_served`)."""
+        _served(self.repos, self.tokens, '[ops.judge]')
+
+    def token_file(self, url: str) -> str:
+        """The file holding the judge's token on *url*'s forge."""
+        return self.tokens[forge_of_url(url).host]
+
+
+@dataclass(frozen=True)
+class Upgrade:
+    """Where ``upgrade`` takes dev-lab from: the tip of ``ref`` of ``source``, never a caller's choice.
+
+    ``extras`` are dev-lab's own extras; ``packages`` further requirements installed beside it (the judge host's
+    reviewer, ``ai-lab``, which dev-lab declares only as its ``review`` dependency GROUP, which a git requirement
+    cannot carry); ``overrides`` a uv override file; ``uv`` the binary (empty: from ``PATH``).
+    """
+
+    source: str
+    ref: str = 'main'
+    extras: tuple[str, ...] = ()
+    packages: tuple[str, ...] = ()
+    overrides: str = ''
+    uv: str = ''
 
 
 @dataclass(frozen=True)
@@ -235,34 +289,10 @@ class Backup(Placement):
             raise ValueError(msg)
 
 
-def mirror_name(url: str) -> str:
-    """``<host>_<owner>_<repo>`` of a clone URL (scheme, credentials, port, ``.git`` dropped); a path keeps parts."""
-    return '_'.join(_mirror_parts(url))
-
-
-def mirror_host(url: str) -> str:
-    """The forge host of a clone URL as :func:`mirror_name` spells it: the key of ``mirror_tokens``."""
-    return _mirror_parts(url)[0]
-
-
-def _mirror_parts(url: str) -> list[str]:
-    if '://' in url:
-        authority, _, path = url.partition('://')[2].partition('/')
-        rest = f'{authority.rpartition("@")[2].partition(":")[0]}/{path}'
-    elif scp := _SCP.match(url):
-        rest = f'{scp["host"]}/{scp["path"]}'
-    else:
-        rest = url
-    parts = [part for part in re.split(r'[/\\]+', rest.strip('/\\').removesuffix('.git')) if part]
-    return [re.sub(r'[^A-Za-z0-9._-]', '-', part) for part in parts]
-
-
 #: The ``mirror_*`` keys only the ``git_mirror`` dumper reads.
 _MIRROR_KEYS = ('mirrors', 'mirror_cache', 'mirror_metadata', 'mirror_tokens')
 #: A URL whose userinfo carries a password (``scheme://<user>:<password>@host/...``).
 _PASSWORD = re.compile(r'^[a-z][a-z0-9+.-]*://[^/@]*:[^/@]*@', re.IGNORECASE)
-#: ``[user@]host:path``; a one-letter host is a Windows drive, not a forge.
-_SCP = re.compile(r'^(?:[^@/\\]+@)?(?P<host>[^:/\\]{2,}):(?P<path>.+)$')
 
 
 @dataclass(frozen=True)
@@ -311,6 +341,8 @@ class OpsConfig:
     backup: Backup | None = None
     access: Access | None = None
     supervise: Supervise | None = None
+    judge: Judge | None = None
+    upgrade: Upgrade | None = None
     probe: Probe | None = None
     environment_file: str = ''
 
@@ -324,7 +356,7 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Probe)](
+def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe)](
     cls: type[T], table: object, where: str
 ) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -413,6 +445,8 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         backup=_backup(ops.get('backup')),
         access=_role(Access, ops.get('access'), '[ops.access]'),
         supervise=_role(Supervise, ops.get('supervise'), '[ops.supervise]'),
+        judge=_role(Judge, ops.get('judge'), '[ops.judge]'),
+        upgrade=_role(Upgrade, ops.get('upgrade'), '[ops.upgrade]'),
         probe=_role(Probe, ops.get('probe'), '[ops.probe]'),
         environment_file=environment_file,
     )

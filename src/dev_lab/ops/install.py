@@ -23,24 +23,19 @@ the promote user cannot enter is named in a next step, never opened.
 from __future__ import annotations
 
 import shlex
-import stat
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
+from dev_lab.ops.accounts import account_of, may_enter
 from dev_lab.ops.config import Backup, OpsConfig, Placement, Probe
 from dev_lab.ops.sshkey import ENV
 from dev_lab.ops.totp import write_private
 from dev_lab.supervise.daemon import watchdog_seconds
 
-if sys.platform != 'win32':  # the host accounts: POSIX only
-    import grp
-    import pwd
-
-__all__ = ['Account', 'Chown', 'Rendered', 'account_of', 'files', 'install', 'may_enter']
+__all__ = ['Chown', 'Rendered', 'files', 'install']
 
 _UNIT = 'dev-lab-ops'
 #: The supervisor's own service.
@@ -92,6 +87,21 @@ def _promote(config: OpsConfig) -> dict[str, str]:
         f'etc/systemd/system/{_UNIT}-promote.service': service,
         f'etc/systemd/system/{_UNIT}-promote.timer': timer,
     }
+
+
+def _judge(config: OpsConfig) -> dict[str, str]:
+    role = config.judge
+    if role is None:
+        return {}
+    extra = [f'EnvironmentFile={role.environment_file}'] if role.environment_file else []
+    body = ['Type=oneshot', f'User={role.user}', *extra, f'ExecStart={_door(config, "judge")}',
+            f'MemoryMax={role.memory_max}']  # fmt: skip
+    service = _service(config, role, 'Judge every prepared review bundle (dev_lab.ops)', body, network=True)
+    timer = (
+        '[Unit]\nDescription=Bundle-review judge pass (dev_lab.ops)\n'
+        f'[Timer]\nOnCalendar={role.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
+    )
+    return {f'etc/systemd/system/{_UNIT}-judge.service': service, f'etc/systemd/system/{_UNIT}-judge.timer': timer}
 
 
 def _breakglass(config: OpsConfig) -> dict[str, str]:
@@ -195,8 +205,15 @@ def files(config: OpsConfig) -> dict[str, str]:
     if config.access is not None:
         secret_file(config)  # refuse two TOTP secrets on one host before anything renders
     access = access_files(config.access) if config.access is not None else {}
-    rendered = {**_promote(config), **_breakglass(config), **_backup(config), **_probe(config)}
-    return {**rendered, **access, **_supervise(config)}
+    return {
+        **_promote(config),
+        **_judge(config),
+        **_breakglass(config),
+        **_backup(config),
+        **_probe(config),
+        **access,
+        **_supervise(config),
+    }
 
 
 def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared | None) -> tuple[str, ...]:
@@ -206,6 +223,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                   *prepared, 'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-promote.timer']  # fmt: skip
     else:
         steps += prepared
+    steps += _judge_steps(config)
     if (role := config.breakglass) is not None:
         steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{role.account}', 'sshd -t && systemctl reload ssh',
@@ -218,12 +236,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
     if backup is not None and backup.source:
         steps += [f'id {backup.user} || useradd --system {backup.user}', 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-backup-pull.timer']  # fmt: skip
-    if (probe := config.probe) is not None:
-        tokens = ' '.join(sorted(probe.tokens.values()))
-        steps += [f'id {probe.user} || useradd --system {probe.user}',
-                  f'install -d -m 0700 -o {probe.user} {probe.state}',
-                  f'chown {probe.user} {tokens} && chmod 600 {tokens}',
-                  'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-probe.timer']  # fmt: skip
+    steps += _probe_steps(config)
     if (role := config.access) is not None:
         steps += ['apt-get install -y libpam-oath', f'id {role.account} || useradd --create-home {role.account}',
                   'sshd -t && systemctl reload ssh']  # fmt: skip
@@ -237,46 +250,26 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
     return tuple(steps)
 
 
+def _judge_steps(config: OpsConfig) -> list[str]:
+    if (judged := config.judge) is None:
+        return []
+    return [f'id {judged.user} || useradd --system --no-create-home {judged.user}', 'systemctl daemon-reload',
+            f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
+
+
+def _probe_steps(config: OpsConfig) -> list[str]:
+    if (probe := config.probe) is None:
+        return []
+    tokens = ' '.join(sorted(probe.tokens.values()))
+    return [f'id {probe.user} || useradd --system {probe.user}',
+            f'install -d -m 0700 -o {probe.user} {probe.state}',
+            f'chown {probe.user} {tokens} && chmod 600 {tokens}',
+            'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-probe.timer']  # fmt: skip
+
+
 def _under(root: Path, path: Path | str) -> Path:
     path = Path(path)
     return root / path.relative_to(path.anchor)
-
-
-@dataclass(frozen=True)
-class Account:
-    """A host account as the kernel judges access: its uid and every gid it holds (primary and supplementary)."""
-
-    uid: int
-    gids: frozenset[int]
-
-
-def account_of(user: str) -> Account | None:
-    """*user*'s :class:`Account` on this host, ``None`` where it does not exist yet (or the host has no ``pwd``)."""
-    if sys.platform == 'win32':  # a Windows render has no accounts to judge
-        return None
-    try:
-        entry = pwd.getpwnam(user)
-    except KeyError:
-        return None
-    supplementary = {group.gr_gid for group in grp.getgrall() if user in group.gr_mem}
-    return Account(entry.pw_uid, frozenset({entry.pw_gid, *supplementary}))
-
-
-def may_enter(mode: int, uid: int, gid: int, account: Account | None) -> bool:
-    """Whether *account* may enter a directory of *mode* owned ``uid:gid``: ONE class decides, as the kernel does.
-
-    Root enters anything; the owner is judged by the owner bits alone, a member of the group by the group bits, anyone
-    else by the other bits. An account not made yet (``None``) holds no ownership or membership: the other bits.
-    """
-    if account is None:
-        return bool(mode & stat.S_IXOTH)
-    if account.uid == 0:
-        return True
-    if account.uid == uid:
-        return bool(mode & stat.S_IXUSR)
-    if gid in account.gids:
-        return bool(mode & stat.S_IXGRP)
-    return bool(mode & stat.S_IXOTH)
 
 
 def _may_enter(path: Path, user: str) -> bool:
@@ -330,13 +323,23 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
         if parent.is_dir() and not _may_enter(parent, role.user):
             where = Path(role.credentials).parent.as_posix()
             steps.append(f'{role.user} cannot enter {where}: move the credential to a directory it may enter')
-    if config.environment_file:
-        declared = _under(root, config.environment_file)
-        if declared.is_file():
-            declared.chmod(0o600)
-        if not _own(chown, declared, 'root', 'root'):
-            steps.append(f'chown root:root {config.environment_file} && chmod 600 {config.environment_file}')
+    if (judge := config.judge) is not None:
+        for token in sorted(set(judge.tokens.values())):
+            steps += _private(root, chown, token, judge.user)
+    environments = [config.environment_file, judge.environment_file if judge is not None else '']
+    for environment in filter(None, environments):
+        steps += _private(root, chown, environment, 'root', 'root')
     return done, steps
+
+
+def _private(root: Path, chown: Chown | None, declared: str, user: str, group: str | None = None) -> list[str]:
+    """Narrow *declared* to 0600 and hand it to *user*; what could not be applied is a next step."""
+    found = _under(root, declared)
+    if found.is_file():
+        found.chmod(0o600)
+    if _own(chown, found, user, group):
+        return []
+    return [f'chown {user}{f":{group}" if group else ""} {declared} && chmod 600 {declared}']
 
 
 def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Rendered:

@@ -86,7 +86,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-22 at 360 (the two above merged): 314 -> 320.
 #: Re-taken 2026-10-22 at 362 (pr/no-ephemeral-refs merged: dev.ephemeralrefs, dev._rule_rows_citations): 320 -> 322.
 #: Re-taken 2026-10-22 at 240 when the split left lab-commons' trees behind: 322 -> 200.
-MODULE_FLOOR = 200
+#: RE-MEASURED 2026-11-05: 402 modules (the judge, upgrade, mirrors and accounts modules of #99); headroom unchanged.
+MODULE_FLOOR = 370
 MODULE_HEADROOM = 45
 
 
