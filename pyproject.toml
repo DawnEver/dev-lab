@@ -15,6 +15,10 @@ dependencies = [
     "lab-commons[units,paths,io,structured]>=0.3.1.dev992",
     "pytest",
     "pytest-mock",
+    # The verify door runs a selection on every core its claim admits (verifybox.selection_workers); without the
+    # plugin xdist_installed() answers False and every part ran serially -- this repo's hosted part measured 483 s
+    # on Linux and 2740 s on Windows on 4-vCPU runners (2026-11-05). Base, so every consumer's door has it.
+    "pytest-xdist",
     "ruff",
     "commitizen",
     # Imported directly (dev.dep_observe, the suppression guard), so declared directly: lab-commons[io]
