@@ -31,9 +31,10 @@ from lab_commons.file_io import read_toml
 #: `tests/test_the_base_install_is_the_standard_library.py` imports every ungated module to prove it.
 #: SPLIT 2026-10-22: dev-lab IS the development system, so what lab-commons shipped as its `dev` extra --
 #: the tools it drives (pytest, pytest-mock, ruff, commitizen) -- is this package's base install, over the
-#: lab-commons runtime it is built on.
+#: lab-commons runtime it is built on. 2026-11-05: `cryptography`, which `dev.forgeapp` (the GitHub App judge's
+#: RS256 JWT) imports -- the dev layer, so a base dependency, never the ops extra dev cannot reach up into.
 RUNTIME_DEPENDENCIES: frozenset[str] = frozenset(
-    {'commitizen', 'lab-commons', 'pytest', 'pytest-mock', 'rtoml', 'ruff'}
+    {'commitizen', 'cryptography', 'lab-commons', 'pytest', 'pytest-mock', 'rtoml', 'ruff'}
 )
 
 #: The name-boundary of a PEP 508 requirement: everything before the first comparator or marker.

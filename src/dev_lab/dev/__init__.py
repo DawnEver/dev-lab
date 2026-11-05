@@ -349,6 +349,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
 * :mod:`dev_lab.dev.forgeaffinity` -- HPC account affinity: verify accounts claim a verify part first.
+* :mod:`dev_lab.dev.forgeapp` -- a GitHub App as a forge identity: its JWT, installation token and client.
 * :mod:`dev_lab.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
 * :mod:`dev_lab.dev.forgefleet` -- a platform with no live host, or a tick serving nothing, alarms once per episode.
 * :mod:`dev_lab.dev.hostalarm` -- D54: a host pressed for disk/memory/CPU tells its agents (hook) and humans.
@@ -387,6 +388,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reviewbundle` -- a PR head's review bundle: the changed files both sides, checked against the forge.
 * :mod:`dev_lab.dev.forgereview_pointer` -- where the judge's bundle comes from: the prepare run's artifact, a preparer.
 * :mod:`dev_lab.dev.actionsartifact` -- an artifact only its own Actions run can attach, and what a reader takes of it.
+* :mod:`dev_lab.dev.forgereview_gate` -- the one review gate merge, merge-ready and Break-Glass read.
 * :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review prepare`` / ``judge``: the judge host's review of a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.

@@ -30,6 +30,8 @@ from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB, Backend
 from dev_lab.dev.actionsartifact import zipped
 from dev_lab.dev.artefacts import Config, FolderStore, Ref, pack
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeapp import App
+from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, JUDGE, Review, command_for, review_from
 from dev_lab.dev.reviewbundle import BundleRefused
@@ -114,6 +116,10 @@ class FakeForge:
     forge: Forge = field(default_factory=lambda: Forge('forge.example.org', 'o', 'r'))
     backend: Any = GITEA
     repo: str = '/api/v1/repos/o/r'
+    #: The GitHub App this judge authenticates as (:mod:`dev_lab.dev.forgeapp`), else ``None``: a login.
+    app: App | None = None
+    #: Every check run at each head, whoever posted it.
+    checks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
     @property
     def diff(self) -> str:
@@ -153,6 +159,11 @@ class FakeForge:
         return self._post(path, body or {}) if method == 'POST' else self._get(path)
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        if path.endswith('/check-runs'):
+            assert self.app is not None
+            runs = self.checks.setdefault(body['head_sha'], [])
+            runs.append({'id': len(runs) + 1, 'app': {'id': self.app.app_id, 'slug': self.app.slug}, **body})
+            return runs[-1]
         if path.endswith('/reviews'):
             number = int(path.split('/')[-2])
             rows = self.reviews.setdefault(number, [])
@@ -187,6 +198,9 @@ class FakeForge:
             answers[f'{self.repo}/issues/{number}/timeline'] = self.timelines.get(number, [])
             answers[f'{self.repo}/statuses/{one.head_sha}'] = list(self.statuses.get(one.head_sha, []))
             answers[f'{self.repo}/commits/{one.head_sha}/statuses'] = list(self.statuses.get(one.head_sha, []))
+            answers[f'{self.repo}/commits/{one.head_sha}/check-runs'] = {
+                'check_runs': self.checks.get(one.head_sha, [])
+            }
         if answers[path] is None:
             msg = f'the forge serves nothing at {path}'
             raise OSError(msg)
@@ -752,3 +766,67 @@ def test_prepare_stores_where_the_base_declares_never_where_the_head_does(
     prepared = _prepared(tmp_path, monkeypatch, root, base, head, configs=configs, hosted=True)
     assert configs == [Config()]
     assert fp.ref_of_pointer(prepared.forge.statuses[head][0]['target_url']).backend == 'folder'
+
+
+_APP = App(5619495, 'motronics-review')
+
+
+@pytest.fixture(autouse=True)
+def _apps_of_the_fake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake forge says which App it is through ``app``, as an :class:`~dev_lab.dev.forgeapp.AppClient` does."""
+    monkeypatch.setattr(fb, 'app_of', lambda client: client.app)
+
+
+def _as_app(forge: FakeForge, *, declared: int = _APP.app_id) -> FakeForge:
+    """*forge* (GitHub) judged by the App: the manifest declares judge_app, the client holds the App's token."""
+    forge.manifest = forge.manifest.replace('judge_login = "review-bot"', f'judge_app = {declared}')
+    forge.app, forge.login = _APP, _APP.login
+    return forge
+
+
+def test_an_app_judge_posts_its_verdict_as_a_check_run_never_a_review(on_github: Prepared) -> None:
+    forge = _as_app(on_github.forge)
+    said, _ = _judged(forge, _findings(None))
+    assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
+    (run,) = forge.checks[forge.pull.head_sha]
+    assert (run['name'], run['conclusion'], run['app']['id']) == (JUDGE_CHECK, 'success', _APP.app_id)
+    assert run['output']['title'] == 'approved'
+    assert forge.verdicts() == []
+    assert _judged(forge, _findings(None)) == ([], [])  # idempotent per head
+
+
+def test_an_app_judge_concludes_failure_on_a_blocking_finding(on_github: Prepared) -> None:
+    forge = _as_app(on_github.forge)
+    _judged(forge, _findings('HIGH'))
+    (run,) = forge.checks[forge.pull.head_sha]
+    assert run['conclusion'] == 'failure'
+    assert 'Blocking' in run['output']['summary']
+
+
+def test_a_same_named_run_from_another_app_is_not_this_judges_verdict(on_github: Prepared) -> None:
+    """PLANTED CONTROL: the head carries an impostor's review/judge success; the App judges it all the same."""
+    forge = _as_app(on_github.forge)
+    impostor = {'id': 9, 'name': JUDGE_CHECK, 'status': 'completed', 'conclusion': 'success', 'app': {'id': 1}}
+    forge.checks[forge.pull.head_sha] = [{**impostor, 'head_sha': forge.pull.head_sha}]
+    said, _ = _judged(forge, _findings(None))
+    assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
+
+
+def test_an_app_that_is_not_the_declared_one_judges_nothing(on_github: Prepared) -> None:
+    forge = _as_app(on_github.forge, declared=1)
+    said, seen = _judged(forge, _findings(None))
+    assert (seen, forge.checks) == ([], {})
+    assert 'judge_app = 1; this host is App 5619495' in said[0]
+
+
+def test_a_login_declaration_is_never_judged_by_an_app(on_github: Prepared) -> None:
+    forge = on_github.forge
+    forge.app = _APP
+    said, seen = _judged(forge, _findings(None))
+    assert (seen, forge.checks, forge.verdicts()) == ([], {}, [])
+    assert 'judge_login' in said[0]
+
+
+@pytest.mark.parametrize('half', [['--app-id', '5619495'], ['--app-key-file', 'k.pem']])
+def test_the_judge_cli_never_takes_half_an_app(tmp_path: Path, half: list[str]) -> None:
+    assert fb.main(['judge', '--url', 'https://github.com/o/r', *half], cwd=tmp_path) == 2

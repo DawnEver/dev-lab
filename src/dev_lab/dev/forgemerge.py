@@ -25,7 +25,7 @@ The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
 * its head's test parts all stand PASS (:func:`parts_wait`);
-* its head is REVIEWED (:func:`dev_lab.dev.forgereview_declared.review_gate`, user ruling 2026-10-31): the
+* its head is REVIEWED (:func:`dev_lab.dev.forgereview_gate.review_gate`, user ruling 2026-10-31): the
   latest ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold``
   is pending -- or, where the base declares ``where = "judge"``, the declared judge login's latest verdict review
   at the head is APPROVED. Absent, reviewing, ``error``, ``failure`` and a success any other login posted all
@@ -73,7 +73,8 @@ from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING, waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgereview_declared import load_review, review_gate
+from dev_lab.dev.forgereview_declared import load_review
+from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITHUB, client_for

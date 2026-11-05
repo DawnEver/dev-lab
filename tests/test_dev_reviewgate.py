@@ -18,7 +18,8 @@ from test_dev_forgereview import _LANE_POLICY, _work
 from dev_lab.dev import breakglass
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgemerge import decide, judged
-from dev_lab.dev.forgereview_declared import review_from, review_gate
+from dev_lab.dev.forgereview_declared import review_from
+from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT

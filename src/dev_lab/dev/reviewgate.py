@@ -65,7 +65,7 @@ from urllib.parse import urlsplit
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forgecontexts import HOLD_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.forgecontexts import HOLD_CONTEXT, JUDGE_CHECK, REVIEW_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgestatus import status_post
@@ -89,6 +89,8 @@ __all__ = [
     'DeclarationUnread',
     'RunsUnread',
     'adopts_actions_review',
+    'app_missing',
+    'app_verdicts',
     'forge_posted',
     'github_posted',
     'head_reviews',
@@ -353,6 +355,40 @@ def judge_missing(
         return f'no verdict review by the judge {judge!r} at {head[:12]}: the judge reviews a prepared bundle'
     if latest.get('state') != APPROVED:
         return f'the judge {judge!r} requested changes at {head[:12]}'
+    return _hold_missing(statuses)
+
+
+def app_verdicts(client: Client, head: str) -> list[dict[str, Any]]:
+    """Every :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` check run GitHub lists at *head*, whoever posted it."""
+    if client.backend is not GITHUB:
+        msg = f'judge_app is a GitHub App, and {client.forge.host} is no GitHub: declare judge_login there'
+        raise DeclarationUnread(msg)
+    listed: Any = client.call('GET', f'{client.repo}/commits/{head}/check-runs?check_name={JUDGE_CHECK}&per_page=100')
+    runs = listed.get('check_runs') if isinstance(listed, dict) else None
+    return [row for row in runs or [] if isinstance(row, dict)]
+
+
+def app_missing(
+    statuses: Sequence[CommitStatus], runs: Sequence[Mapping[str, Any]], *, head: str, app_id: int
+) -> str | None:
+    """The App-judge gate: why *head* carries no approving check run FROM App *app_id*, or ``None`` when it does.
+
+    Only a run whose ``app.id`` IS the declared App counts: a same-named run from another App or from Actions is no
+    verdict. Its latest completed run at *head* decides: ``success`` approves (then the hold is read), anything else
+    waits; a run still in progress is no verdict yet.
+    """
+    own = [
+        row for row in runs
+        if row.get('name') == JUDGE_CHECK and row.get('head_sha') == head and row.get('status') == 'completed'
+        and (row.get('app') or {}).get('id') == app_id
+    ]  # fmt: skip
+    latest = max(own, key=lambda row: int(row.get('id') or 0), default=None)
+    if latest is None:
+        others = sorted({str((row.get('app') or {}).get('slug') or '?') for row in runs if row not in own})
+        foreign = f' (ignored: {JUDGE_CHECK} from {", ".join(others)})' if others else ''
+        return f'no {JUDGE_CHECK} verdict by the judge App {app_id} at {head[:12]}{foreign}'
+    if latest.get('conclusion') != 'success':
+        return f'the judge App {app_id} concluded {latest.get("conclusion")!r} at {head[:12]}: changes requested'
     return _hold_missing(statuses)
 
 

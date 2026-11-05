@@ -30,6 +30,9 @@ def body(target: Target) -> dict[str, Any]:
     if ':' in target.bypass:
         msg = f'Gitea breakglass = {target.bypass!r}: a Gitea bypass allowlist names a login'
         raise ValueError(msg)
+    if target.judge_app:
+        msg = f'judge_app = {target.judge_app}: a Gitea forge has no GitHub App; declare judge_login'
+        raise ValueError(msg)
     pushed = bool(target.pushers)
     return {
         'rule_name': target.branch,
