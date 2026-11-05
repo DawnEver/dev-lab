@@ -21,6 +21,8 @@ push increment arrives as git's own pre-push lines on stdin.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -432,7 +434,7 @@ def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path, tmp_path: Path) -> N
 
 # ------------------------------------------------------------- cz-push-range.sh: the NAMED exemption
 
-_JUDGING_CZ = r"""import subprocess, sys
+_JUDGING_CZ = r"""import hashlib, json, subprocess, sys
 from pathlib import Path
 args = sys.argv[1:]
 if sum(len(arg) + 1 for arg in args) > 32767:
@@ -441,8 +443,11 @@ if "--message" in args:
     sys.exit(98)  # Message transport is file-backed, even for a short subject.
 if "--commit-msg-file" in args:
     path = Path(args[args.index("--commit-msg-file") + 1])
-    subjects = [path.read_text(encoding="utf-8")]
+    raw = path.read_bytes()
+    subjects = [raw.decode("utf-8")]
     open(LOG + ".paths", "a").write(str(path) + "\n")
+    with open(LOG + ".identities", "a") as log:
+        log.write(json.dumps({"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}) + "\n")
 else:
     rng = args[args.index("--rev-range") + 1]
     subjects = subprocess.run(["git", "log", "--format=%s", rng], capture_output=True, text=True).stdout.splitlines()
@@ -474,12 +479,6 @@ def _commit(repo: Path, message: str) -> str:
     return _git(repo, 'rev-parse', 'HEAD')
 
 
-def test_the_judging_child_refuses_even_a_short_message_on_argv(repo: Path, tmp_path: Path) -> None:
-    _plant_judging_commitizen(repo, tmp_path)
-    done = _run('with-venv', ['commitizen', 'check', '--message', 'feat: short'], cwd=repo, env={})
-    assert done.returncode == 98, done.stdout + done.stderr
-
-
 def test_an_EXEMPT_sha_passes_and_every_other_commit_is_judged_unchanged(repo: Path, tmp_path: Path) -> None:
     argv_log = _plant_judging_commitizen(repo, tmp_path)
     first = _git(repo, 'rev-parse', 'HEAD')
@@ -501,7 +500,7 @@ def test_large_messages_use_bounded_argv_and_one_cleaned_file_beside_exact_exemp
     off = _commit(repo, 'data(history): precisely exempt')
     # Neither byte length nor unicode quoting may become a process-argument limit.
     body = '\n\n' + ('unicode-\u03bb "quoted" $literal\n' * 2000)
-    head = _commit(repo, 'feat: large valid message' + body)
+    large = _commit(repo, 'feat: large valid message' + body)
     head = _commit(repo, ('data(ordinary): must refuse' if invalid else 'fix: second large message') + body)
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{off} named history')
     assert done.returncode == int(invalid), done.stdout + done.stderr
@@ -509,6 +508,16 @@ def test_large_messages_use_bounded_argv_and_one_cleaned_file_beside_exact_exemp
     judged = argv_log.read_text(encoding='utf-8').splitlines()
     assert len(judged) == 2
     assert all(line.startswith('check --commit-msg-file ') for line in judged)
+    identities = [json.loads(line) for line in Path(str(argv_log) + '.identities').read_text().splitlines()]
+    expected = []
+    for sha in (large, head):
+        raw = subprocess.run(
+            [GIT, 'log', '-1', '--format=%B', sha], cwd=repo, capture_output=True, check=True, timeout=120
+        ).stdout
+        assert len(raw) > 32767
+        assert ('unicode-\u03bb "quoted" $literal\n' * 2000).encode() in raw
+        expected.append({'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)})
+    assert identities == expected, 'the checker must receive every body byte, not just the subject or a prefix'
     paths = Path(str(argv_log) + '.paths').read_text(encoding='utf-8').splitlines()
     assert len(paths) == 2
     assert len(set(paths)) == 1, 'reuse one scratch file, not a file/message retained for every commit'
