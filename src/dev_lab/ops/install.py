@@ -99,7 +99,8 @@ def _judge(config: OpsConfig) -> dict[str, str]:
     if role is None:
         return {}
     extra = [f'EnvironmentFile={role.environment_file}'] if role.environment_file else []
-    body = ['Type=oneshot', f'User={role.user}', *extra, f'ExecStart={_door(config, "judge")}',
+    home = f'Environment=HOME={role.home_dir}'  # ai-lab reads its model keys from this HOME's credential store
+    body = ['Type=oneshot', f'User={role.user}', home, *extra, f'ExecStart={_door(config, "judge")}',
             f'MemoryMax={role.memory_max}']  # fmt: skip
     service = _service(config, role, 'Judge every prepared review bundle (dev_lab.ops)', body, network=True)
     timer = (
@@ -221,7 +222,11 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
     else:
         steps += prepared
     if (judged := config.judge) is not None:
-        steps += [f'id {judged.user} || useradd --system --no-create-home {judged.user}', 'systemctl daemon-reload',
+        as_judge = f'sudo -u {judged.user}'
+        steps += [f'id {judged.user} || useradd --system --create-home --home-dir {judged.home_dir} {judged.user}',
+                  f'chmod 700 {judged.home_dir}', f'{as_judge} git config --global credential.helper store',
+                  f'{as_judge} {config.python} -m ai_lab.auth login anthropic --task pr-review --from-file -',
+                  'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
     if (role := config.breakglass) is not None:
         steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
@@ -342,8 +347,8 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
             where = Path(role.credentials).parent.as_posix()
             steps.append(f'{role.user} cannot enter {where}: move the credential to a directory it may enter')
     if (judge := config.judge) is not None:
-        for token in sorted(set(judge.tokens.values())):
-            steps += _private(root, chown, token, judge.user)
+        for secret in judge.secrets:
+            steps += _private(root, chown, secret, judge.user)
     environments = [config.environment_file, judge.environment_file if judge is not None else '']
     for environment in filter(None, environments):
         steps += _private(root, chown, environment, 'root', 'root')

@@ -18,16 +18,19 @@ trusts NOTHING the producer wrote that it can read or derive from the forge (D3)
     (:func:`~dev_lab.dev.forgereview_judge.upheld`), and hands the reviewer the FORGE's diff, never the producer's;
   - a binary change to a path the declaration calls code (:func:`~dev_lab.dev.forgereview_scope.is_code`) is
     ``REQUEST_CHANGES``: no reviewer can read it, so it is never approved unread;
-  - it posts a PR REVIEW as its own identity: ``APPROVED`` only when every reviewer ran (``ok`` or ``skipped``,
-    at least one ``ok``) and none found a blocking finding, ``REQUEST_CHANGES`` naming them otherwise.
+  - it posts its verdict as its own identity: ``APPROVED`` only when every reviewer ran (``ok`` or ``skipped``,
+    at least one ``ok``) and none found a blocking finding, ``REQUEST_CHANGES`` naming them otherwise. A login
+    (Gitea's ``judge_login``) posts a PR REVIEW; a GitHub App (``judge_app``, :mod:`~dev_lab.dev.forgeapp`) posts
+    the check run :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` on the head, ``success`` or ``failure`` with the
+    findings as its output -- the one verdict a ruleset can require from that App alone.
 
   A bundle that fails verification -- a bad archive, a missing member, a malformed document -- is
   ``REQUEST_CHANGES`` naming why; a failure to READ (a forge call, a download, the command) posts nothing and is
   retried on the next run, and one PR's failure never stops the PRs after it.
 
-The forge's gate is that review: dev-lab's merge, merge-ready and Break-Glass read the declared ``judge_login``'s
-latest standing verdict at the head (:func:`~dev_lab.dev.forgereview_declared.review_gate`), and the forge's own
-branch protection may require it too. The judge needs PR write and code READ only -- it posts no status.
+The forge's gate is that verdict: dev-lab's merge, merge-ready and Break-Glass read the declared identity's latest
+verdict at the head (:func:`~dev_lab.dev.forgereview_gate.review_gate`), and the forge's own branch protection
+may require it too. The judge needs PR write (an App: checks write) and code READ only -- it posts no status.
 """
 
 from __future__ import annotations
@@ -48,6 +51,8 @@ from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.artefacts import (
     ArtefactRefused,
 )
+from dev_lab.dev.forgeapp import app_client, app_of
+from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pr_list
 from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, wait_of, within
@@ -70,6 +75,7 @@ from dev_lab.dev.forgework import client_for
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import (
     DeclarationUnread,
+    app_verdicts,
     standing_verdicts,
 )
 
@@ -93,6 +99,8 @@ DEFAULT_TOKEN_FILE: Final = Path('/etc/forge-bot/gitea-token')
 _APPROVE: Final = 'APPROVED'
 _CHANGES: Final = 'REQUEST_CHANGES'
 _RAN: Final = frozenset({'ok', 'skipped'})
+#: GitHub's ceiling on a check run's ``output.summary`` (65535 characters).
+_SUMMARY_MAX: Final = 65_535
 
 #: What a READ may fail with: posted as nothing, retried on the next run.
 _UNREAD: Final = (ForgeCallFailed, ArtefactRefused, OSError, DeclarationUnread)
@@ -107,7 +115,11 @@ class Verdict:
 
 
 def reviewed_by(client: Client, pull: PullRequest, login: str) -> bool:
-    """Whether *login*'s verdict on *pull*'s current head stands (:func:`~dev_lab.dev.reviewgate.standing_verdicts`)."""
+    """Whether *login*'s verdict on *pull*'s head stands: an App's completed check run there, else its review."""
+    if (app := app_of(client)) is not None:
+        runs = app_verdicts(client, pull.head_sha)
+        return any((run.get('app') or {}).get('id') == app.app_id and run.get('status') == 'completed'
+                   for run in runs)  # fmt: skip
     rows = pages(client, f'{client.repo}/pulls/{pull.number}/reviews', {})
     return bool(standing_verdicts(rows, login=login, head=pull.head_sha))
 
@@ -221,10 +233,27 @@ def _reviewed(
 
 
 def post_verdict(client: Client, pull: PullRequest, verdict: Verdict) -> None:
-    """Post *verdict* as a PR review on *pull*'s head, in the forge's own event spelling."""
+    """Post *verdict* on *pull*'s head: an App's :data:`JUDGE_CHECK` check run, else a PR review (forge spelling)."""
+    if app_of(client) is not None:
+        approved = verdict.event == _APPROVE
+        output = {'title': 'approved' if approved else 'changes requested', 'summary': verdict.body[:_SUMMARY_MAX]}
+        run = {'name': JUDGE_CHECK, 'head_sha': pull.head_sha, 'status': 'completed',
+               'conclusion': 'success' if approved else 'failure', 'output': output}  # fmt: skip
+        client.call('POST', f'{client.repo}/check-runs', run)
+        return
     event = 'APPROVE' if client.backend is GITHUB and verdict.event == _APPROVE else verdict.event
     body = {'body': verdict.body, 'event': event, 'commit_id': pull.head_sha}
     client.call('POST', f'{client.repo}/pulls/{pull.number}/reviews', body)
+
+
+def _not_the_judge(client: Client, review: Review, me: str) -> str | None:
+    """Which declared identity this host is not, or ``None`` when it IS the judge: an App by its id, a login by name."""
+    if review.judge_app:
+        held = app.app_id if (app := app_of(client)) is not None else None
+        return None if held == review.judge_app else f'judge_app = {review.judge_app}; this host is App {held}'
+    if app_of(client) is None and me == review.judge_login:
+        return None
+    return f'judge_login = {review.judge_login!r}; this host is {me!r}'
 
 
 def judge_pending(
@@ -240,8 +269,8 @@ def judge_pending(
     if review.where != JUDGE:
         return [f'{integration} declares where = {review.where!r}: the judge reviews no PR of this repo']
     me = client.whoami()
-    if me != review.judge_login:
-        return [f'{integration} declares judge_login = {review.judge_login!r}; this host is {me!r}: it judges nothing']
+    if (other := _not_the_judge(client, review, me)) is not None:
+        return [f'{integration} declares {other}: it judges nothing']
     said = []
     for pull in pr_list(client):
         if pull.base != integration or pull.draft or not pull.head_sha:
@@ -269,11 +298,23 @@ def _parser() -> argparse.ArgumentParser:
     judging = verbs.add_parser('judge', help='review every prepared head as this host, posting PR reviews')
     judging.add_argument('--url', required=True, help="the repository's web URL (the judge holds no checkout)")
     judging.add_argument('--token-file', type=Path, default=DEFAULT_TOKEN_FILE, help='the judge token')
+    judging.add_argument('--app-id', type=int, help='judge as this GitHub App (with --app-key-file), not a token')
+    judging.add_argument('--app-key-file', type=Path, help="the App's private key PEM")
     judging.add_argument(
         '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
         help="a [runtimes] value over this host's machine file, e.g. ai_lab.python=/opt/ai-lab/bin/python",
     )  # fmt: skip
     return parser
+
+
+def _judge_client(here: Path, args: argparse.Namespace) -> Client:
+    """The judge's client: as the App ``--app-id`` names, else presenting ``--token-file``."""
+    if (args.app_id is None) != (args.app_key_file is None):
+        msg = '--app-id and --app-key-file go together: an App authenticates with both'
+        raise ValueError(msg)
+    if args.app_id is not None:
+        return app_client(here, args.url, args.app_id, args.app_key_file)
+    return client_for(here, url=args.url, token=args.token_file.read_text(encoding='utf-8').strip())
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
@@ -285,8 +326,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
             root = args.repo or here
             emit(f'[review] {prepare(root, client or client_for(root), args.pr)}')
             return 0
-        token = args.token_file.read_text(encoding='utf-8').strip() if client is None else ''
-        judge = client or client_for(here, url=args.url, token=token)
+        judge = client or _judge_client(here, args)
         for line in judge_pending(judge, runtimes=runtimes_with(host_runtimes(), args.runtime)):
             emit(f'[review] {line}')
     except (BundleRefused, ArtefactRefused, DeclarationUnread, ForgeCallFailed, OSError, ValueError) as failed:
