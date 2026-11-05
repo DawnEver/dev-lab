@@ -66,10 +66,12 @@ class PullRequest:
     draft: bool = False
     #: Whether the forge merged it (gitea ``merged``, GitHub ``merged_at``): a CLOSED one without it was refused.
     merged: bool = False
+    #: Whether its head lives in another repository than its base (a fork; a deleted fork's head repo is ``null``).
+    fork: bool = False
 
 
 #: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
-_WIP_PREFIXES: Final = ('WIP:', '[WIP]')
+WIP_PREFIXES: Final = ('WIP:', '[WIP]')
 
 #: Gitea's draft, as a PR is opened or moved back to one (D53, :mod:`dev_lab.dev.forgedraft`).
 DRAFT_PREFIX: Final = 'WIP: '
@@ -77,12 +79,12 @@ DRAFT_PREFIX: Final = 'WIP: '
 
 def draft_title(title: str) -> str:
     """*title* as Gitea reads a draft: :data:`DRAFT_PREFIX` once."""
-    return title if title.upper().startswith(_WIP_PREFIXES) else DRAFT_PREFIX + title
+    return title if title.upper().startswith(WIP_PREFIXES) else DRAFT_PREFIX + title
 
 
 def ready_title(title: str) -> str:
     """*title* with its work-in-progress prefix removed."""
-    for prefix in _WIP_PREFIXES:
+    for prefix in WIP_PREFIXES:
         if title.upper().startswith(prefix):
             return title[len(prefix) :].lstrip()
     return title
@@ -103,9 +105,18 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
         raw['base']['ref'],
         raw['head'].get('sha') or '',
         tuple(str(label['name']) for label in raw.get('labels') or ()),
-        bool(raw.get('draft')) or issue.title.upper().startswith(_WIP_PREFIXES),
+        bool(raw.get('draft')) or issue.title.upper().startswith(WIP_PREFIXES),
         bool(raw.get('merged') or raw.get('merged_at')),
+        fork=_forked(raw),
     )
+
+
+def _forked(raw: Mapping[str, Any]) -> bool:
+    """Whether a pull-request JSON's head repository is not its base's; an answer naming no head repo is not."""
+    if 'repo' not in raw['head']:
+        return False
+    theirs, ours = raw['head']['repo'] or {}, raw['base'].get('repo') or {}
+    return not theirs or theirs.get('full_name') != ours.get('full_name')
 
 
 def comment_of(raw: Mapping[str, Any]) -> Comment:

@@ -749,6 +749,25 @@ def _integrate(server, tmp_path: Path, notes: list[str]) -> set[tuple[str, str]]
 _NOT_FOUND = (404, {'message': 'not found'})
 
 
+def test_a_draft_pr_head_is_never_a_candidate_under_any_class(server, tmp_path: Path) -> None:
+    """A DRAFT RUNS NOTHING (user ruling 2026-11-05): no host produces a part for a draft's head.
+
+    Neither as a PR nor as the class its branch would otherwise take (``wip/*`` is a feature, ``oth*`` a branch);
+    a Gitea draft is its ``WIP:`` title. PLANTED CONTROL: the ready PR is served, and the same branches with no PR
+    are served as their class (:func:`test_every_host_names_every_class_one_candidate_per_ref`).
+    """
+    repo, tips = _origin(tmp_path)
+    (repo / 'pyproject.toml').write_text(PRODUCE + _RULE, 'utf-8')
+    draft = {**_pull(8, 'wip/b', tips['wip/b']), 'draft': True}
+    titled = {**_pull(9, 'other', tips['other']), 'title': 'WIP: other'}
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a']), draft, titled]))
+    found = candidates(
+        repo, client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
+        parts=lambda _sha: (BASE,), schedule=load_schedule(repo), policy=_DECLARED, now=NOW,
+    )  # fmt: skip
+    assert {(c.ref, c.kind) for c in found} == {('integrate/main', INTEGRATION), ('topic/a', PR)}
+
+
 def test_a_repo_with_pull_requests_disabled_has_no_pr_candidates(server, tmp_path: Path) -> None:
     """Gitea answers ``/pulls`` 404 when the repo disables PRs. PLANTED CONTROL: PRs enabled, the 404 is said."""
     answer('GET', f'{API}/pulls', _NOT_FOUND)

@@ -147,6 +147,25 @@ def test_a_gate_that_raises_for_one_head_leaves_the_tick_and_the_next_head(tmp_p
     assert len(done.said) == len(heads), 'every child still got its integration feedback'
 
 
+def test_a_draft_head_is_never_gated(tmp_path: Path) -> None:
+    """A DRAFT RUNS NOTHING (user ruling 2026-11-05): no lock resolution is spent on a draft's head.
+
+    A Gitea draft is its ``WIP:`` title. PLANTED CONTROL: the ready PR's head is still judged.
+    """
+    work, forge, heads = _two_pulls(tmp_path)
+    draft, ready = sorted(heads)
+    forge.pulls[draft]['title'] = 'WIP: t'
+    judged: list[str] = []
+
+    def gate(_root: Path, _client: object, head: str, _branch: str, *, integration: str) -> list[str]:
+        assert integration == 'integrate/main'
+        judged.append(head)
+        return ['lock/fresh: success']
+
+    tick(work, forge, _DECLARED, fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate)
+    assert judged == [heads[ready]]
+
+
 def test_the_gate_runs_after_the_tick_work_within_a_budget_oldest_first(tmp_path: Path) -> None:
     """SR-20261024-003: the gate runs once every child is said, oldest PR first, and stops at the per-tick budget."""
     work, forge, heads = _two_pulls(tmp_path)

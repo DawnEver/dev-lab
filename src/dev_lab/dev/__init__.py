@@ -375,6 +375,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgewait` -- a part's wait answered, bounded and seen: why a box does not admit it, until when.
 * :mod:`dev_lab.dev.forgecontexts` -- the status contexts under ``tests/``: the part prefix, and those never a part.
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
+* :mod:`dev_lab.dev.taskkeys` -- an ai-lab task's ONE key-bundle secret: its derived name and stdin loader.
+* :mod:`dev_lab.dev.forgesecrets` -- ``forge secrets sync --task``: a task's bundle set on every declared repo.
 * :mod:`dev_lab.dev.forgereview` -- the review of each open PR head by the declared command; HIGH/security block.
 * :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, what stands on it, a host unable.
 * :mod:`dev_lab.dev.forgereview_declared` -- the review a repo declares, read from the integration branch a PR trusts.
@@ -384,6 +386,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-judged each round.
 * :mod:`dev_lab.dev.forgereview_summary` -- a round's opening: what the PR does, and what changed and why.
 * :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in rounds and USD inside the family's month, fitted.
+* :mod:`dev_lab.dev.reviewcap` -- a review past its round cap is waived at the merge, warned and recorded, never passed.
 * :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose`` records a claim; ``adjudicate`` rules on it.
 * :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
   by an independent reviewer, never the head's author session.
@@ -447,6 +450,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
   closes salvaged PRs with an evidence comment; it never deletes a branch.
+* :mod:`dev_lab.dev.plugin_settings` -- PLUGINS NO FAMILY SESSION RUNS (ruling 2026-11-05: ``sharp-review`` off,
+  the forge's PR review is the one review); ``agent_guard`` writes them into each ``.claude/settings.json``.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a scarce part runs on a PR only where its diff reaches it.
 * :mod:`dev_lab.dev.unproduced` -- a resource a repo declares no part for: every reading waives it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.

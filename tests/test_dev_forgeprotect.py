@@ -81,9 +81,10 @@ def test_a_forge_whose_workflows_post_the_decision_requires_it_and_every_base_ro
     }
 
 
-def test_a_served_forge_requires_what_the_serve_merge_reads() -> None:
+def test_a_served_forge_requires_its_tests_and_never_the_review_status() -> None:
+    """User ruling 2026-11-05: the merge decision enforces the review itself; a capped review merges WARNED."""
     assert required_contexts(GITEA_TEXT, 'p', GITEA) == {
-        INTEGRATION: ('tests/base', 'tests/review', 'tests/security'),
+        INTEGRATION: ('tests/base', 'tests/security'),
         TRUNK: ('tests/base',),
     }
 
@@ -96,7 +97,7 @@ def test_a_judged_repo_requires_no_review_status() -> None:
 def test_a_workflow_on_the_other_forge_is_not_this_forge_s_context() -> None:
     """GitHub's ci.yml posts ``tests/merge-ready`` on GitHub only; a Gitea mirror of the repo is served."""
     text = GITHUB_TEXT + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\n'
-    assert required_contexts(text, 'p', GITEA)[INTEGRATION] == ('tests/base', 'tests/review', 'tests/security')
+    assert required_contexts(text, 'p', GITEA)[INTEGRATION] == ('tests/base', 'tests/security')
 
 
 # -- GitHub: rulesets ------------------------------------------------------------------------------------------------

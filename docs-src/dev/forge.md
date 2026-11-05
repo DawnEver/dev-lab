@@ -563,7 +563,7 @@ Agents read and write the forge only through `python -m dev_lab.dev.forge` (`FOR
 no `gh` or `tea` binary is needed.
 
 - Verbs: `issue list|view|create|comment|close|claim|status|comments`, `issue comments-since ISO8601`,
-  `pr create|view`, `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
+  `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
 - The backend is read off `origin`: `github.com` is GitHub REST, any other host is Gitea (`<host>/api/v1`).
 - When `HARNESS_MACHINE` and `HARNESS_AGENT` are set, every created body opens with
   `[<machine> · <agent> · <branch>]`, so a write says which agent made it.
@@ -598,6 +598,27 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   checkout's remote lives on, plus `github.com` (`--host` narrows it), and refuses a terminal stdout; stderr
   names hosts and sha256 prefixes, never a token. `login --from-file <path|->` verifies EVERY token before
   storing ANY. An `OAUTH_USER` (GCM OAuth) token expires, so that host may re-authenticate on its first push.
+
+### Model keys: one bundle per ai-lab task
+
+- Each ai-lab task (`pr-review`, `live`, ...) has ONE secret, `AI_LAB_KEYS_<TASK>` (`-` as `_`), holding its TOML
+  key bundle; which providers it holds is ai-lab's `routes.toml`, never dev-lab's. The name and the loader are
+  `dev_lab.dev.taskkeys`'s; the review door (`forge review run|adjudicate`) takes `--keys-env AI_LAB_KEYS_PR_REVIEW`,
+  the ops judge reads `[ops.judge] keys_file`.
+- Set a task's bundle on every `[serve] repos` checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
+
+  ```
+  python -m dev_lab.dev.forge secrets sync --task pr-review --dry-run      # the targets only
+  <bundle source> | python -m dev_lab.dev.forge secrets sync --task pr-review
+  ```
+
+  GitHub through `gh secret set` (stdin), Gitea through the forge door unjournaled -- a journaled write keeps its
+  body on disk. Each line names the repo, the secret and the bundle's sha256 prefix only.
+- A Gitea Actions secret is writable ONLY by an owner of the organisation that owns the repo (or a site admin): a
+  push-only credential is refused, and the settings pages (`/<owner>/<repo>/settings/actions/secrets`,
+  `/org/<org>/settings/actions/secrets`) answer `404 Not Found`, not 403, to anyone else (measured 2026-11-05 on
+  `Tianjie-Zou-Team`). So on Gitea the bundle is set by the user in the web UI with the admin account, once at the
+  organisation level, where every repo of the organisation reads it; `secrets sync` sets the GitHub repos.
 
 ### A gitea auth refusal is an expired OAuth token, not a bad credential
 

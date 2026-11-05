@@ -58,7 +58,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge
+from dev_lab.dev.forgemerge import CI_MERGER, EXTERNAL, ci_merges, judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -251,10 +251,16 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
     if found.ready and ci_merges(root):
         line, summary = f'ready: the {CI_MERGER} job merges it', f'{said.summary}; ready for the {CI_MERGER} job'
+        if found.unreviewed:
+            line = f'{line}, WARNED -- {found.unreviewed}'
     elif found.ready:
         ephemeral = declared_branchset(root).is_ephemeral(child.branch)
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
         line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED
+        if found.unreviewed:
+            line = f'{line} WITHOUT a passing review -- {found.unreviewed}'
+    elif EXTERNAL in found.missing:  # never merged by the forge: the rest is a maintainer's to read
+        line, summary = EXTERNAL, f'{said.summary}; {EXTERNAL}'
     else:
         line = 'the forge merges it once it has: ' + '; '.join(found.missing)
         summary = f'{said.summary}; auto-merge waits'
@@ -283,6 +289,7 @@ def tick(
     said: list[tuple[Child, Feedback]] = []
     children: list[Child] = []
     listed_open = pr_list(origin)
+    drafts = {pr.number for pr in listed_open if pr.draft}  # a draft runs nothing: no sync, no gate (D53)
     for listed in listed_open:
         pr = _retarget(origin, listed, policy) if listed.base == policy.trunk else listed
         if pr is not listed:
@@ -300,7 +307,7 @@ def tick(
     for child in children:
         one = settle(root, child, policy, feedback(root, child, policy))
         if (
-            now is not None and policy.pr_merges_since and child.pr is not None
+            now is not None and policy.pr_merges_since and child.pr is not None and child.pr not in drafts
             and one.summary != _MERGED and one.state != 'success'
         ):  # fmt: skip
             others = [pull for pull in pulls if pull.number != child.pr]
@@ -317,7 +324,12 @@ def tick(
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
     if host:
         lines += forgeheadgate.judge_heads(
-            root, origin, [c for c in children if c.pr is not None], gate, monotonic, integration=policy.integration
+            root,
+            origin,
+            [c for c in children if c.pr is not None and c.pr not in drafts],
+            gate,
+            monotonic,
+            integration=policy.integration,
         )
     return Ticked(tuple(lines), tuple(said))
 

@@ -21,22 +21,26 @@ from dev_lab.dev.ciworkflows import (
     BASE_PATH,
     BY_FORGE,
     NIGHTLY_CRON,
+    PR_EVENTS,
     PREPARE,
     RENDER_COMMAND,
     RUNNERS,
     SHARED,
     STAMP,
     USE_STEPS,
+    _bare,
     base_names,
     drift,
     expand,
     main,
     merge,
+    ready_only,
     render,
     repo_forge,
     workflows,
     write,
 )
+from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
@@ -84,7 +88,7 @@ def test_the_lifecycle_runs_on_pull_request_and_never_on_pull_request_target(tmp
     ci = _base_ci(tmp_path)
     assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch', 'schedule'}
     assert 'pull_request_target' not in render(ci), "a fork's code would run with this repository's secrets"
-    assert ci['jobs']['review']['if'] == "${{ github.event_name == 'pull_request' }}"
+    assert ci['jobs']['review']['if'] == _guarded("${{ github.event_name == 'pull_request' }}")
 
 
 def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path: Path) -> None:
@@ -116,11 +120,11 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
-    assert jobs['absent-parts']['if'].startswith('${{ always()')
+    assert jobs['absent-parts']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
     assert set(jobs['merge-ready']['needs']) == {'security', 'review', 'part', 'absent-parts'}, (
         'a merge waits on its parts'
     )
-    assert jobs['merge-ready']['if'].startswith('${{ always()')
+    assert jobs['merge-ready']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
     ready, dispatch = jobs['merge-ready']['steps'][-2:]
     assert 'forge merge ready --pr' in ready['run']
     assert '"; merged") echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
@@ -208,7 +212,9 @@ def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_p
     assert steps['pending']['if'] == (
         "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}"
     ), 'a smoke run never asks pending, so its pending output is empty'
-    assert ci['jobs']['promote']['if'] == "${{ needs.parts.outputs.pending == 'true' }}", 'empty is never true'
+    assert ci['jobs']['promote']['if'] == _guarded("${{ needs.parts.outputs.pending == 'true' }}"), (
+        'empty is never true'
+    )
     dispatch = ci['jobs']['merge-ready']['steps'][-1]['run']
     assert dispatch.endswith('--ref integrate/main -f smoke=true')
 
@@ -263,7 +269,7 @@ def test_a_tip_main_already_holds_runs_no_part_no_absent_and_no_promote(tmp_path
     assert 'dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' in steps['pending']['run']
     assert steps['matrix']['if'] == "${{ steps.pending.outputs.pending != 'false' }}"
     assert ci['jobs']['parts']['outputs']['pending'] == '${{ steps.pending.outputs.pending }}'
-    assert ci['jobs']['part']['if'] == "${{ needs.parts.outputs.matrix != '' }}"
+    assert ci['jobs']['part']['if'] == _guarded("${{ needs.parts.outputs.matrix != '' }}")
     assert "needs.parts.outputs.matrix != ''" in ci['jobs']['absent-parts']['if']
     assert 'pending' in ci['jobs']['promote']['if']
 
@@ -395,7 +401,9 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     ci = workflows(tmp_path)['ci.yml']
     job = ci['jobs']['part-live']
     assert job['runs-on'] == 'ubuntu-latest'
-    assert job['if'] == "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
+    assert job['if'] == _guarded(
+        "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
+    )
     assert job['name'] == 'tests/live'
     carrying = [step for step in job['steps'] if 'env' in step]
     assert len(carrying) == 1
@@ -758,7 +766,12 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     """
     review = _gitea_review(tmp_path)
     assert set(review['on']) == {'pull_request_target'}
-    assert review['on']['pull_request_target']['types'] == ['opened', 'synchronize', 'reopened', 'ready_for_review']
+    assert review['on']['pull_request_target']['types'] == [
+        'opened',
+        'synchronize',
+        'reopened',
+        'ready_for_review',
+    ]
     (tmp_path / 'gh').mkdir()
     github = _base_ci(tmp_path / 'gh')
     assert 'ready_for_review' in github['on']['pull_request']['types'], 'D52/D53: marking ready reviews a draft'
@@ -1062,7 +1075,7 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     assert BY_FORGE not in prepare
     (job,) = prepare['jobs'].values()
     assert job['permissions'] == {'contents': 'read', 'pull-requests': 'read'}
-    assert job['if'] == '${{ github.event.pull_request.head.repo.full_name == github.repository }}'
+    assert job['if'] == _guarded('${{ github.event.pull_request.head.repo.full_name == github.repository }}')
     names = [step.get('name') for step in job['steps']]
     assert "Reach the forge on the runner's instance" not in names
     assert 'Fetch the head' not in names
@@ -1145,3 +1158,107 @@ def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: P
         'pull-requests': 'write',
         'actions': 'write',
     }
+
+
+def _guard_holds(text: str, event: dict[str, Any]) -> bool:
+    """The draft guard's grammar -- ``!``, ``&&``, ``||``, ``!=``, ``startsWith`` (case-blind), dotted names -- read."""
+
+    def value(dotted: str) -> object:
+        found: object = {'github': {'event': event}}
+        for part in dotted.split('.'):
+            found = found.get(part) if isinstance(found, dict) else None
+        return found
+
+    def starts(text: object, prefix: str) -> bool:
+        return isinstance(text, str) and text.upper().startswith(prefix.upper())
+
+    python = re.sub(r'github(\.[\w-]+)+', lambda m: f'value({m.group(0)!r})', text)
+    python = python.replace('!=', ' NE ').replace('!', ' not ').replace(' NE ', ' != ')
+    python = python.replace('||', ' or ').replace('&&', ' and ').replace('startsWith', 'starts')
+    calls = {'value': value, 'starts': starts}
+
+    def read(node: ast.expr) -> object:
+        if isinstance(node, ast.BoolOp):
+            values = [bool(read(one)) for one in node.values]
+            return all(values) if isinstance(node.op, ast.And) else any(values)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return not read(node.operand)
+        if isinstance(node, ast.Compare) and isinstance(node.ops[0], ast.NotEq):
+            return read(node.left) != read(node.comparators[0])
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            return calls[node.func.id](*(read(arg) for arg in node.args))
+        assert isinstance(node, ast.Constant), ast.dump(node)
+        return node.value
+
+    return bool(read(ast.parse(python.strip(), mode='eval').body))
+
+
+def _guarded(expression: str) -> str:
+    """A PR-started job's *expression* as :func:`ready_only` renders it: AND-ed after the draft guard."""
+    return ready_only({'on': {'pull_request': {}}, 'jobs': {'job': {'if': expression}}})['jobs']['job']['if']
+
+
+#: The PR actions that bring work to run: a new head, or a PR becoming ready. Any other action joining a
+#: cancel-in-progress group cancels the live run for nothing (F-6adfea8621bf).
+_BRINGS_WORK = frozenset({'opened', 'synchronize', 'reopened', 'ready_for_review'})
+
+
+def _cancels_for_nothing(workflow: dict[str, Any]) -> set[str]:
+    """The PR action types that would cancel *workflow*'s live run while bringing no work of their own."""
+    if not workflow.get('concurrency', {}).get('cancel-in-progress'):
+        return set()
+    on = workflow.get('on', {})
+    return {t for event in PR_EVENTS & set(on) for t in (on[event] or {}).get('types', [])} - _BRINGS_WORK
+
+
+@pytest.mark.parametrize('forge', ['github', 'gitea'])
+def test_no_pr_event_that_brings_no_work_can_cancel_a_live_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str
+) -> None:
+    """A body edit or a ready title rename must never cancel a live review (F-6adfea8621bf, F-8515b2f7627e).
+
+    Every rendered PR workflow with ``cancel-in-progress`` subscribes only actions that bring a head or a ready PR.
+    PLANTED CONTROL: the Gitea review workflow with ``edited`` added back is caught.
+    """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    rendered = workflows(tmp_path)
+    assert {name: _cancels_for_nothing(w) for name, w in rendered.items() if _cancels_for_nothing(w)} == {}
+    review = rendered.get('review.yml') or rendered[PREPARE_WORKFLOW]
+    (trigger,) = PR_EVENTS & set(review['on'])
+    types = [*review['on'][trigger]['types'], 'edited']
+    planted = {**review, 'on': {trigger: {'types': types}}}
+    assert _cancels_for_nothing(planted) == {'edited'}
+
+
+@pytest.mark.parametrize('forge', ['github', 'gitea'])
+def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str
+) -> None:
+    """A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of every PR-triggered workflow is guarded.
+
+    The draft is the one :func:`~dev_lab.dev._forge_records.pull_of` reads (GitHub's ``draft``, Gitea's
+    ``WIP:``/``[WIP]`` title).
+    PLANTED CONTROL: a ready PR, ``ready_for_review``, leaving a draft and an event with no PR all run; a job's own
+    condition survives the AND; a workflow no PR starts carries no guard.
+    """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    rendered = workflows(tmp_path)
+    events = {'pull_request', 'pull_request_target'}
+    triggered = {name: w for name, w in rendered.items() if events & set(w['on'])}
+    assert PREPARE_WORKFLOW in triggered
+    for name, workflow in triggered.items():
+        (trigger,) = events & set(workflow['on'])
+        assert 'ready_for_review' in workflow['on'][trigger]['types'], f'{name}: marking ready starts everything'
+        for job_name, job in workflow['jobs'].items():
+            assert _bare(job['if']).startswith(f'({READY_ONLY})'), f'{name} {job_name}: a draft runs it'
+    if forge == 'github':
+        assert _bare(rendered['ci.yml']['jobs']['review']['if']).endswith("(github.event_name == 'pull_request')")
+    assert all(READY_ONLY not in render(w) for name, w in rendered.items() if name not in triggered)
+    assert _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'draft': False, 'title': 'feat: x'}})
+    assert _guard_holds(READY_ONLY, {'action': 'ready_for_review', 'pull_request': {'draft': False, 'title': 'x'}})
+    assert _guard_holds(READY_ONLY, {})
+    assert not _guard_holds(READY_ONLY, {'action': 'synchronize', 'pull_request': {'draft': True, 'title': 'x'}})
+    for title in ('WIP: x', 'wip: x', '[WIP] x'):
+        assert not _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'title': title}}), title

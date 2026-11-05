@@ -1367,6 +1367,44 @@ def test_a_selection_runs_the_width_its_files_and_free_memory_hold(monkeypatch, 
     assert starved[starved.index('--mem-gb') + 1] == '1', 'declared at the width it runs'
 
 
+_ORDER_DEPENDENT: Final = """
+seen = []
+
+def test_a_writes():
+    seen.append('a')
+
+def test_b_reads_what_a_wrote():
+    assert seen == ['a'], 'order-dependent: passes only after test_a in the same process'
+"""
+
+
+def _planted_run(tmp_path: Path, *width: str) -> subprocess.CompletedProcess[str]:
+    (tmp_path / 'test_planted.py').write_text(_ORDER_DEPENDENT, encoding='utf-8')
+    argv = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *width, 'test_planted.py']
+    return subprocess.run(
+        argv, cwd=tmp_path, capture_output=True, text=True, encoding='utf-8', timeout=120, check=False
+    )
+
+
+def test_the_door_runs_workers_and_a_test_that_leans_on_another_fails_under_them(tmp_path: Path) -> None:
+    """The door's interpreter runs workers, and a test leaning on another's state fails under them.
+
+    THE SUITE RAN SERIALLY BECAUSE THE PLUGIN WAS ABSENT: dev-lab declared no pytest-xdist, so
+    :func:`verifybox.xdist_installed` answered False and every part ran one interpreter (2026-11-05: 483 s
+    Linux, 2740 s Windows on a 4-vCPU hosted runner). It is a base dependency now, so every consumer's door has it.
+
+    A test that passes only because another ran first in its process is shared state, and the workers expose
+    it: the planted pair passes at ``-n 0`` (PLANTED CONTROL) and fails at two workers, which xdist's load
+    scheduling deals one test each.
+    """
+    assert verifybox.xdist_installed(), 'the door`s own interpreter must be able to run workers'
+    alone = _planted_run(tmp_path, '-n', '0')
+    assert alone.returncode == 0, f'PLANTED CONTROL: serially the pair passes\n{alone.stdout}'
+    sharded = _planted_run(tmp_path, '-n', '2')
+    assert sharded.returncode == 1, f'two workers must expose the order dependence\n{sharded.stdout}'
+    assert 'test_b_reads_what_a_wrote' in sharded.stdout
+
+
 def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:
     """The box's RECORD decides: refused raises naming the holder, killed and crashed are truncations."""
     record = tmp_path / 'step.outcome.json'
