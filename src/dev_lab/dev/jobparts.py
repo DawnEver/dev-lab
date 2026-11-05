@@ -105,10 +105,18 @@ _FULL_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs
 
 
 #: The hosted job's key store: ai-lab reads keys from the git credential store ONLY, so the job keeps an in-memory
-#: one of its own, alive for a job's whole 6 h ceiling (the part runs after its setup step).
-_MEMORY_STORE: Final = (
-    'git config --global credential.helper "cache --timeout=21600 --socket=$RUNNER_TEMP/git-credential-cache/socket"'
-)
+#: one of its own under RUNNER_TEMP (F-83bc8b74b803). Its lifetime is the review's rule (ci_base.toml, 30 min):
+#: no hosted part declares a timeout, and the one this repo hosts measured 483 s, so 1800 s covers a part with room.
+_KEY_SOCKET: Final = '--socket=$RUNNER_TEMP/git-credential-cache/socket'
+_MEMORY_STORE: Final = f'git config --global credential.helper "cache --timeout=1800 {_KEY_SOCKET}"'
+
+#: The teardown that ends the store with the part, run on success AND failure (F-dc28c7ef66b4): the daemon would
+#: otherwise hold the keys past the part until its timeout.
+_FORGET_KEYS: Final = {
+    'name': 'Forget the key bundles',
+    'if': 'always()',
+    'run': f'git credential-cache {_KEY_SOCKET} exit || true',
+}
 
 
 @dataclass(frozen=True)
@@ -168,7 +176,8 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     """*workflow* with one ``part-<name>`` job per *declared* part, cut from its matrix ``part`` job. PURE.
 
     The job is the ``part`` job at one part: push-only, on linux, its setup step inserted before the produce step
-    with the bundles in THAT step's environment only; ``absent-parts`` waits for it. A workflow without the
+    with the bundles in THAT step's environment only, and an ``always()`` step after it stopping their cache, so
+    a part that fails forgets them as one that passes; ``absent-parts`` waits for it. A workflow without the
     ``part`` job, or nothing declared, is returned as is.
     """
     jobs = workflow.get('jobs', {})
@@ -187,7 +196,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
             'run': ' && '.join((_MEMORY_STORE, *loads)),
             'env': {secret: f'${{{{ secrets.{secret} }}}}' for secret in part.secrets},
         }
-        steps = [*one['steps'][:-1], setup, one['steps'][-1]]
+        steps = [*one['steps'][:-1], setup, one['steps'][-1], _FORGET_KEYS]
         added[f'part-{name}'] = {**one, 'if': _FULL_ONLY, 'runs-on': HOSTED_RUNNERS['linux'], 'steps': steps}
     out = dict(jobs)
     if 'absent-parts' in out:

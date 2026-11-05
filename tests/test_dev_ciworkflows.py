@@ -404,11 +404,18 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     assert setup['env'] == {'AI_LAB_KEYS_LIVE': '${{ secrets.AI_LAB_KEYS_LIVE }}'}
     assert setup['run'] == (
         'git config --global credential.helper '
-        '"cache --timeout=21600 --socket=$RUNNER_TEMP/git-credential-cache/socket" && '
+        '"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && '
         'printf \'%s\' "$AI_LAB_KEYS_LIVE" | '
         'uv run --no-sync python -I -m ai_lab.auth login --task live --bundle -'
     ), 'the bundle travels on stdin to the loader, never argv'
-    assert job['steps'][-1]['run'].endswith('jobparts produce live')
+    produce, forget = job['steps'][-2:]
+    assert produce['run'].endswith('jobparts produce live')
+    assert _forgets_keys(job), 'the part ends its key cache on success AND failure (F-dc28c7ef66b4)'
+    assert forget['run'].startswith('git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit')
+    assert not _forgets_keys({**job, 'steps': job['steps'][:-1]}), 'PLANTED CONTROL: no teardown is caught'
+    assert not _forgets_keys({**job, 'steps': [*job['steps'][:-1], {**forget, 'if': 'success()'}]}), (
+        'PLANTED CONTROL: a teardown the failure path skips is caught'
+    )
     assert 'part-live' in ci['jobs']['absent-parts']['needs'], 'absent waits for it'
     others = {name: render({'j': body}) for name, body in ci['jobs'].items() if name not in {'part-live', 'review'}}
     assert all('AI_LAB_KEYS_LIVE' not in text for text in others.values()), 'no other job carries the secret'
@@ -416,6 +423,16 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
     assert not [name for name in workflows(tmp_path)['ci.yml']['jobs'] if name.startswith('part-')], (
         'PLANTED CONTROL: nothing declared, no hosted job'
+    )
+
+
+def _forgets_keys(job: dict[str, Any]) -> bool:
+    """Whether *job* stops its key cache AFTER the step that sets it, on every outcome (``always()``)."""
+    names = [step.get('run', '') for step in job['steps']]
+    sets = max((i for i, run in enumerate(names) if 'credential.helper' in run), default=-1)
+    return any(
+        step.get('if') == 'always()' and 'git credential-cache' in step.get('run', '') and ' exit' in step['run']
+        for step in job['steps'][sets + 1 :]
     )
 
 
