@@ -30,6 +30,7 @@ from lab_commons.log import emit
 from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev.content import content_address
+from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.logref import LogRef
@@ -55,6 +56,7 @@ from dev_lab.dev.verifybox import (
 )
 
 __all__ = [
+    'COVERAGE_KIND',
     'LEDGER_PLUGIN',
     'LOG_DIRECTORY',
     'MEASURED_TARGETS',
@@ -121,24 +123,29 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
 
 #: THE COVERAGE REPORT (user ruling 2026-11-05): every pytest step measures coverage with pytest-cov and writes it
-#: as Markdown beside its log. A REPORT, NEVER A GATE -- no ``--cov-fail-under``, so a coverage number cannot move a
-#: verdict. ``--cov`` names no source, so a repo's own ``[tool.coverage.run]`` decides what is measured.
+#: as Markdown to ``<output>/<yy>/<mm>/<dd>/coverage/`` (:func:`dev_lab.dev.datedlog.output_dir`), named by its
+#: log. A REPORT, NEVER A GATE -- no ``--cov-fail-under``, so a coverage number cannot move a verdict.
+#: ``--cov`` names no source, so a repo's own ``[tool.coverage.run]`` decides what is measured.
 _COVERAGE_TOTAL: Final = '| **TOTAL**'
 
 
-def coverage_report(log: Path) -> Path:
-    """The Markdown coverage report of the run logged at *log*: ``<log stem>.coverage.md`` beside it."""
-    return log.with_suffix('.coverage.md')
+#: The output-tree kind the coverage report and its data file go to (user ruling 2026-11-05).
+COVERAGE_KIND: Final = 'coverage'
 
 
-def coverage_env(log: Path) -> dict[str, str]:
-    """The coverage DATA file of the run logged at *log*, beside it, so no run writes ``.coverage`` into the tree."""
-    return {'COVERAGE_FILE': str(log.with_suffix('.coverage'))}
+def coverage_report(root: Path, log: Path) -> Path:
+    """The Markdown coverage report of the run logged at *log*: ``<log stem>.coverage.md`` in today's coverage dir."""
+    return output_dir(root, COVERAGE_KIND) / f'{log.stem}.coverage.md'
+
+
+def coverage_env(root: Path, log: Path) -> dict[str, str]:
+    """The coverage DATA file of the run logged at *log*, beside its report, so no run writes ``.coverage`` here."""
+    return {'COVERAGE_FILE': str(output_dir(root, COVERAGE_KIND) / f'{log.stem}.coverage')}
 
 
 def coverage_args(root: Path, log: Path, *, append: bool = False) -> tuple[str, ...]:
     """pytest-cov's arguments for the run logged at *log* under *root*; *append* adds to the stage before it."""
-    report = coverage_report(log).relative_to(root).as_posix()  # relative: a drive colon would split the option
+    report = coverage_report(root, log).relative_to(root).as_posix()  # relative: a drive colon would split the option
     return ('--cov', f'--cov-report=markdown:{report}', *(('--cov-append',) if append else ()))
 
 
@@ -340,7 +347,7 @@ def run_verify(
             durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
             durations.LEDGER_ENV_VAR: env_key(env_manifest()),
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
-            **coverage_env(path),
+            **coverage_env(root, path),
         }
         head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
         pytest = [*head, *pytest_args]
@@ -356,7 +363,7 @@ def run_verify(
             argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
             codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
             cut += ended_in_the_box(record)
-    report = coverage_report(path)
+    report = coverage_report(root, path)
     emit(f'coverage: {coverage_total(report) or "not measured"} -- {report.relative_to(root).as_posix()} (a report)')
     stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]
     stages += [distil_log(path, banner=SERIAL_BANNER) for _ in codes[1:]]

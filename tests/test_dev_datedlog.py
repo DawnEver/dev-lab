@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.datedlog import date_parts, dated_log
+from dev_lab.dev.datedlog import UndeclaredOutput, date_parts, dated_log, output_dir
 
 
 def test_the_three_parts_are_todays_local_date_two_digits_each() -> None:
@@ -114,3 +114,20 @@ def test_base_and_kind_are_REQUIRED_KEYWORDS_with_no_default() -> None:
     for required in ('base', 'kind'):
         assert parameters[required].kind is inspect.Parameter.KEYWORD_ONLY
         assert parameters[required].default is inspect.Parameter.empty
+
+
+def test_output_dir_is_the_declared_root_dated_and_created(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    got = output_dir(tmp_path, 'coverage')
+    assert got.is_dir()
+    assert got.relative_to(tmp_path).as_posix() == f'out/logs/{"/".join(date_parts())}/coverage'
+
+
+@pytest.mark.parametrize('text', [None, '[project]\nname = "x"\n', '[tool.dev_lab.parts]\noutput = ""\n'])
+def test_planted_an_undeclared_output_is_REFUSED_naming_the_key(tmp_path: Path, text: str | None) -> None:
+    """No default: every family repo declares `output`, and a guessed one would be another repo's answer."""
+    if text is not None:
+        (tmp_path / 'pyproject.toml').write_text(text, encoding='utf-8')
+    with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
+        output_dir(tmp_path, 'coverage')
+    assert not (tmp_path / 'output').exists()

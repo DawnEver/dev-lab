@@ -46,6 +46,7 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.outcomes import Cell, Conclusion, Record, Status
 
 from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox, verifysteps
+from dev_lab.dev.datedlog import UndeclaredOutput, date_parts
 from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -626,7 +627,7 @@ class TestThePlantedControl:
             timeout=60,
         )
         (tmp_path / 'pyproject.toml').write_text(
-            '[tool.dev_lab.verify]\nallowed_skips = ["tests/test_other.py"]\n', encoding='utf-8'
+            '[tool.dev_lab.verify]\nallowed_skips = ["tests/test_other.py"]\n' + _OUTPUT, encoding='utf-8'
         )
         # THE DECLARED SUBJECT IS PLANTED, because `stale_declarations` refuses one whose file is gone
         # before any step launches -- and this control is about the SCOPE of the runtime ratchet, not
@@ -685,7 +686,7 @@ class TestThePlantedControl:
             timeout=60,
         )
         (tmp_path / 'pyproject.toml').write_text(
-            '[tool.dev_lab.verify]\nallowed_skips = ["tests/test_gone.py::test_vanished"]\n', encoding='utf-8'
+            '[tool.dev_lab.verify]\nallowed_skips = ["tests/test_gone.py::test_vanished"]\n' + _OUTPUT, encoding='utf-8'
         )
         launched: list[tuple[str, ...]] = []
 
@@ -1095,6 +1096,9 @@ def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], Pat
     return argv, None
 
 
+#: Every verify run writes into the output tree, so a planted repo declares its root.
+_OUTPUT: Final = '[tool.dev_lab.parts]\noutput = "out/logs"\n'
+
 #: Why the box refused the step (the ``--outcome`` record ``lab_commons.box.__main__`` writes).
 _REFUSED_WHY: Final = 'cpu: wants 4 of 3; verify:other (pid 7) holds 3 until 2026-10-15T00:00:00+00:00'
 
@@ -1114,6 +1118,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     """Run the REAL ``main`` and ``run_verify`` with the seat free, the hooks clean and the steps planted."""
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
+    (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
     monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
     clean = StepReport(name='hooks', reported=('hooks',), failures=())
@@ -1578,12 +1583,14 @@ def test_a_box_with_no_room_releases_a_producers_claim_claimable(
 # ------------------------------------------------------------------ the coverage REPORT (never a gate)
 
 
-def test_the_pytest_step_writes_a_coverage_report_beside_its_log_and_never_gates(tmp_path, monkeypatch) -> None:
-    """Every verify run measures coverage into ``<log>.coverage.md``; no ``--cov-fail-under`` anywhere.
+def test_the_pytest_step_writes_a_coverage_report_to_the_output_tree_and_never_gates(tmp_path, monkeypatch) -> None:
+    """Every verify run measures coverage into ``<output>/<date>/coverage/<log stem>.coverage.md``; never a gate.
 
     PLANTED CONTROL: the serial stage APPENDS to the parallel stage's data, so its report is the union.
     """
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
+    dated = f'out/logs/{"/".join(date_parts())}/coverage'
     launched: list[tuple[tuple[str, ...], dict[str, str]]] = []
 
     def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
@@ -1604,8 +1611,9 @@ def test_the_pytest_step_writes_a_coverage_report_beside_its_log_and_never_gates
         assert '--cov' in argv, argv
         assert not any(one.startswith('--cov-fail-under') for one in argv), argv
         (report,) = [one.split(':', 1)[1] for one in argv if one.startswith('--cov-report=markdown:')]
-        assert report.startswith(f'{verifysteps.LOG_DIRECTORY}/verify-'), report
+        assert report.startswith(f'{dated}/verify-'), report
         assert report.endswith('.coverage.md'), report
+        assert Path(env['COVERAGE_FILE']).relative_to(tmp_path).as_posix().startswith(f'{dated}/verify-'), env
         assert env['COVERAGE_FILE'].endswith('.coverage'), env
     assert '--cov-append' not in steps[0][0]
     assert '--cov-append' in steps[1][0]
@@ -1626,12 +1634,12 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
     """The arguments the door hands pytest, run for real: the report exists and carries a TOTAL."""
     (tmp_path / 'm.py').write_text('def f(x):\n    if x:\n        return 1\n    return 2\n', encoding='utf-8')
     (tmp_path / 'test_m.py').write_text('from m import f\n\n\ndef test_f():\n    assert f(1) == 1\n', encoding='utf-8')
-    log = tmp_path / verifysteps.LOG_DIRECTORY / 'verify-x.log'
-    log.parent.mkdir()
+    (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
+    log = tmp_path / 'verify-x.log'
     done = subprocess.run(
         [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *verifysteps.coverage_args(tmp_path, log)],
         cwd=tmp_path,
-        env={**os.environ, **verifysteps.coverage_env(log)},
+        env={**os.environ, **verifysteps.coverage_env(tmp_path, log)},
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -1639,4 +1647,10 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
         check=False,
     )
     assert done.returncode == 0, done.stdout + done.stderr
-    assert verifysteps.coverage_total(verifysteps.coverage_report(log)) == '86%'
+    assert verifysteps.coverage_total(verifysteps.coverage_report(tmp_path, log)) == '86%'
+
+
+def test_planted_an_UNDECLARED_output_root_is_refused_naming_the_key(tmp_path: Path) -> None:
+    """No default root: a repo that declares none is told the key, never handed another repo's answer."""
+    with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
+        verifysteps.coverage_report(tmp_path, tmp_path / 'verify-x.log')

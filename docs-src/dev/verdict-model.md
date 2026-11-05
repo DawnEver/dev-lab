@@ -79,8 +79,8 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - The tree stamp carries its dirty bit on a measurement too; it records which tree the counts are about.
 - Numerical regression uses tolerances, never hashes.
 - **Every pytest step writes a coverage REPORT, never a gate** (`verifysteps.coverage_args`): pytest-cov
-  writes `.verify/<log stem>.coverage.md` beside the run's log, its data file beside it too, and verify prints
-  the TOTAL line. A serial stage appends to the parallel stage's data, so the report covers the whole run.
+  writes `<output>/<yy>/<mm>/<dd>/coverage/<log stem>.coverage.md` (`datedlog.output_dir`), its data file beside
+  it, and verify prints the TOTAL line. A serial stage appends to the parallel stage's data, so the report covers the whole run.
   There is no `--cov-fail-under`: a coverage number never moves a verdict. `--cov` names no source, so a
   repo's own `[tool.coverage.run]` decides what is measured. The tool comes with `dev-lab`, like pytest-xdist.
 

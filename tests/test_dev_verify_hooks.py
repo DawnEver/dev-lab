@@ -23,7 +23,9 @@ _GIT = shutil.which('git') or 'git'
 def _repo(at: Path) -> Path:
     at.mkdir(parents=True)
     subprocess.run([_GIT, 'init', '-q', str(at)], check=True, capture_output=True, timeout=60)
-    (at / 'pyproject.toml').write_text('[tool.dev_lab.hooks]\n', encoding='utf-8')
+    (at / 'pyproject.toml').write_text(
+        '[tool.dev_lab.hooks]\n[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8'
+    )
     return at
 
 
