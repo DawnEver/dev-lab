@@ -14,7 +14,7 @@ import gzip
 import json
 import subprocess
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
@@ -37,6 +37,9 @@ __all__ = ['WORKSTATION_KEY', 'ContentKey', 'Found', 'cite', 'lookup', 'trees_of
 WORKSTATION_KEY: Final = 'workstation'
 
 _GIT_TIMEOUT_S: Final = 60
+
+#: How many hex digits of the cited record's sha the status names.
+_CITED_SHA: Final = 12
 
 #: How many hex digits a full commit sha has.
 _SHA_HEX: Final = 40
@@ -136,8 +139,8 @@ def lookup(
 
 
 def cite(client: Client, sha: str, found: Found) -> str:
-    """Post *found*'s part on *sha* through the status door, its record as the target; the line."""
-    part = part_of(found.record)
+    """Post *found*'s part on *sha* through the status door, ``cited from <sha12>``, its record as the target."""
+    part = replace(part_of(found.record), cited=str(found.record['sha'])[:_CITED_SHA])
     status_post(
         client, sha, context=part_context(part.platform), state=part.state, description=part.description(),
         target_url=found.attachment.url,
