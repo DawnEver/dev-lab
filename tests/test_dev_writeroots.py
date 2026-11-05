@@ -1,6 +1,6 @@
 """WRITES-STAY-IN-THE-TREE: an agent may not write into a write-prone root outside every checkout.
 
-User requirement 2026-11-05: an agent session left scripts in ``%TEMP%`` (Git Bash ``/tmp``). The roots are
+User requirement 2026-11-05: an agent session left scripts in the OS temp dir (Git Bash ``/tmp``). The roots are
 declared once (:func:`dev_lab.dev.writeroots.write_prone_roots`), injected here so no test touches the real temp
 dir. Planted controls on both halves: reading a root, writing into the harness ``claude/`` subtree and writing
 into a checkout are admitted.
@@ -140,9 +140,9 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'cp a.py /tmp/',
         'mv out.csv "C:/tmp/out.csv"',
         'mkdir -p /c/temp/probe',
-        'touch ~/src/x.py',
+        'touch $HOME/src/x.py',
         'Get-Content a | Out-File -FilePath $env:TEMP\\x.txt',
-        'Set-Content -Path C:\\Users\\me\\AppData\\Local\\Temp\\x.ps1 -Value 1',
+        'Set-Content -Path D:\\work\\AppData\\Local\\Temp\\x.ps1 -Value 1',
         'New-Item -ItemType File D:\\var\\x.txt',
         'Copy-Item a.py %TEMP%\\a.py',
         'echo x > ~/loose.txt',

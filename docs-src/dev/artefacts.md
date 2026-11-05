@@ -111,7 +111,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 
 - A report a person or agent writes is a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry, never a file
   under `output/` (`REPORTS-LIVE-IN-MEMORY`). `output/` holds only what a program can regenerate.
-- A file outside every checkout is nobody's artefact: an agent writes into the checkout's `output/logs/` or
-  `scratch/`, never into a temp, `var` or `src` root or loose into the home (`WRITES-STAY-IN-THE-TREE`,
-  [refusals](refusals.md#writes-stay-in-the-tree)). `python -m dev_lab.dev.tmpsweep` lists those roots;
-  `--apply` ages old temp entries out (a person's command or a scheduled task; the hooks only report).
+- A file outside every checkout is nobody's artefact: an agent writes into the checkout's
+  `output/logs/<yy>/<mm>/<dd>/<kind>/` or `scratch/`, never into a temp, `var` or `src` root or loose into the home
+  (`WRITES-STAY-IN-THE-TREE`, [refusals](refusals.md#writes-stay-in-the-tree)). `python -m dev_lab.dev.tmpsweep`
+  lists those roots; `--apply` ages old temp entries out (a person's command or a scheduled task; hooks only report).

@@ -51,6 +51,7 @@ import dataclasses
 import json
 import os
 import sys
+import time
 import tomllib
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
@@ -59,6 +60,7 @@ from typing import TextIO
 from lab_commons import launch
 from lab_commons.log import emit
 
+from dev_lab.dev import tmpsweep
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
@@ -379,6 +381,10 @@ def _stray_hook(payload: object) -> int:
         reason = stray_refusal(root)
     except StrayCensusUnreadable as exc:
         reason = f'STRAY-FILE-REFUSED: the stray census could not be read: {exc}'
+    roots, excluded = tmpsweep.declared()  # WRITES-STAY-IN-THE-TREE: what the session left outside the checkout
+    since = time.time() - tmpsweep.REPORT_WINDOW_S
+    outside = tmpsweep.session_report(roots, excluded, since=since, suffixes=CODE_SUFFIXES | {'.md', '.txt'})
+    reason = '\n'.join(one for one in (reason, outside) if one) or None
     if reason is not None:
         emit(json.dumps({'decision': 'block', 'reason': reason}))
     return 0

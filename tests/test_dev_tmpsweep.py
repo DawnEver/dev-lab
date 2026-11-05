@@ -1,6 +1,7 @@
 """``dev_lab.dev.tmpsweep``: the WRITES-STAY-IN-THE-TREE census and sweep, over planted roots only.
 
-The roots are injected (:class:`dev_lab.dev.writeroots.Root`), never the real temp dir. Planted controls: a fresh
+The roots are injected (:class:`dev_lab.dev.writeroots.Root`), never the real temp dir;
+so is the link test. Planted controls: a fresh
 entry, the harness ``claude/`` subtree, a declared cache, a checkout, a link and a census-only root all survive
 ``--apply``; an old entry in a temp root does not.
 """
@@ -15,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.codeplace import main as codeplace_main
 from dev_lab.dev.tmpsweep import census, main, session_report, sweep
 from dev_lab.dev.writeroots import Root
 
@@ -91,42 +93,52 @@ def test_a_directory_with_one_fresh_file_is_in_use_and_kept(planted: dict[str, P
     assert (planted['temp'] / 'olddir' / 'a.txt').exists()
 
 
-def test_a_link_is_never_followed_or_removed(planted: dict[str, Path], tmp_path: Path) -> None:
-    outside = tmp_path / 'outside'
+def test_a_link_is_never_followed_or_removed(planted: dict[str, Path]) -> None:
+    """The link test is injected: creating a real link or junction needs a privilege the suite cannot assume."""
+    outside = planted['temp'] / 'link'
     outside.mkdir()
     (outside / 'keep.txt').write_text('x', encoding='utf-8')
-    link = planted['temp'] / 'link'
-    try:
-        link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip('this host refuses symlink creation without privilege')
-    removed, _kept = sweep(census(_roots(planted), _excluded(planted)), max_age_days=0.0)
-    assert link not in removed
+    _age(outside, 30)
+    removed, kept = sweep(
+        census(_roots(planted), _excluded(planted)), max_age_days=7.0, linked=lambda path: path.name == 'link'
+    )
+    assert outside not in removed
     assert (outside / 'keep.txt').exists()
+    assert (outside, 'a link or junction is never followed') in kept
+
+
+_SCRIPTS = frozenset({'.py', '.md'})
 
 
 def test_the_session_report_names_scripts_written_since_the_session_began(planted: dict[str, Path]) -> None:
-    reason = session_report(_roots(planted), _excluded(planted), since=time.time() - 3600)
+    reason = session_report(_roots(planted), _excluded(planted), since=time.time() - 3600, suffixes=_SCRIPTS)
     assert reason is not None
     assert reason.startswith('WRITES-STAY-IN-THE-TREE: ')
     assert 'fresh.py' in reason
     assert 'loose.py' in reason
     assert 'old.py' not in reason
-    assert session_report(_roots(planted), _excluded(planted), since=time.time() + 60) is None
+    assert session_report(_roots(planted), _excluded(planted), since=time.time() + 60, suffixes=_SCRIPTS) is None
 
 
-def test_the_stop_hook_blocks_once(planted: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-    monkeypatch.setattr('dev_lab.dev.tmpsweep._declared', lambda: (_roots(planted), _excluded(planted)))
-    payload = {'hook_event_name': 'Stop', 'transcript_path': str(planted['home'] / 'nothing.jsonl')}
-    assert main(['stop'], stdin=io.StringIO(json.dumps(payload))) == 0
-    assert json.loads(capsys.readouterr().out)['decision'] == 'block'
+def test_the_stop_hook_rides_the_stray_census_and_blocks_once(
+    planted: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr('dev_lab.dev.tmpsweep.declared', lambda: (_roots(planted), _excluded(planted)))
+    checkout = planted['src'] / 'repo'
+    (checkout / '.git').mkdir(parents=True)
+    payload = {'hook_event_name': 'Stop', 'cwd': str(checkout)}
+    assert codeplace_main(['stray'], stdin=io.StringIO(json.dumps(payload))) == 0
+    decision = json.loads(capsys.readouterr().out)
+    assert decision['decision'] == 'block'
+    assert 'WRITES-STAY-IN-THE-TREE' in decision['reason']
+    assert 'fresh.py' in decision['reason']
     payload['stop_hook_active'] = True
-    assert main(['stop'], stdin=io.StringIO(json.dumps(payload))) == 0
+    assert codeplace_main(['stray'], stdin=io.StringIO(json.dumps(payload))) == 0
     assert capsys.readouterr().out == ''
 
 
 def test_the_command_is_read_only_without_apply(planted: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr('dev_lab.dev.tmpsweep._declared', lambda: (_roots(planted), _excluded(planted)))
+    monkeypatch.setattr('dev_lab.dev.tmpsweep.declared', lambda: (_roots(planted), _excluded(planted)))
     assert main([]) == 0
     assert (planted['temp'] / 'old.py').exists()
     assert main(['--apply', '--max-age-days', '7']) == 0

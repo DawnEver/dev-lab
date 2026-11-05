@@ -1,6 +1,6 @@
 """WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, ONE declared set, three callers.
 
-User requirement 2026-11-05: an agent session left scripts in ``%TEMP%`` (Git Bash ``/tmp`` is the same directory
+User requirement 2026-11-05: an agent session left scripts in the OS temp dir (Git Bash ``/tmp`` is the same directory
 on Windows), and the other easy-to-write paths -- a drive's or the home's ``tmp``, ``temp``, ``var``, ``src``, and
 the bare home -- must be checked the same way. A program's artefact goes to ``output/logs/<yy>/<mm>/<dd>/<kind>/``,
 an experiment to ``scratch/``; outside a checkout nothing scans, ignores or cleans it.
@@ -15,7 +15,7 @@ extends it (``temp``, ``census``, ``excluded``: lists of absolute paths). Three 
 
 A root's KIND decides what the sweep may do: ``temp`` is swept by age, ``census`` (``var``, ``src``: may hold a
 person's work) and ``home`` (loose non-dot files directly in the home) are only ever reported. A path inside a
-checkout is the checkout's own (``~/src/<repo>``), never this rule's.
+checkout is that checkout's own, wherever it sits, never this rule's.
 """
 
 from __future__ import annotations
