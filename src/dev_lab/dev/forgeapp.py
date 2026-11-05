@@ -144,10 +144,13 @@ def app_of(client: Client) -> App | None:
     return client.app if isinstance(client, AppClient) else None
 
 
-def app_client(root: Path, url: str, app_id: int, key_file: Path, *, transport: Transport = forge_transport) -> Client:
+def app_client(
+    root: Path, url: str, app_id: int, key_file: Path, *, transport: Transport = forge_transport,
+    outbox: Path | None = None,
+) -> Client:  # fmt: skip
     """The client for *url* as App *app_id*'s installation, journal, stamp and caches as :func:`client_for`."""
     app, token = installation(forge_of_url(url), app_id, key_file, transport=transport)
-    built = client_for(root, url=url, token=token, transport=transport)
+    built = client_for(root, url=url, token=token, transport=transport, outbox=outbox)
     return AppClient(
         built.forge, token, transport=transport, stamp=built.stamp, journal=built.journal, cache_dir=built.cache_dir,
         app=app,

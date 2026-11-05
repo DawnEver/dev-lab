@@ -303,6 +303,9 @@ setup = [
 # its own, whose interpreter the door is handed. The ai-lab COMMIT is the one the DOOR's dev-lab lock pins (its
 # non-default `review` group): dev-lab calls the method, so its lock says which one runs -- never a second pin, never
 # a floating branch (dev-lab #5 took whatever was current that minute). So every job runs `door` before `method`.
+# EVERY PACKAGE IN THE METHOD'S ENVIRONMENT IS AI-LAB'S LOCK (2026-11-05: ai-lab pinned, its lab-commons resolved
+# to the integrate/main tip, and `cannot import API_KEY_TASKS` failed every review family-wide): the step exports
+# ai-lab's own uv.lock at that commit, --frozen, and installs it and ai-lab --no-deps, so nothing resolves past it.
 # ai-lab reads keys from the git
 # credential store ONLY (dev-lab #5: every reviewer `unsupported` with the secret set), so the key is stored for the
 # review task in an in-memory credential cache, on stdin; with no secret (a fork PR) nothing is stored.
@@ -321,7 +324,12 @@ lock = tomllib.loads(sys.stdin.read())
 (source,) = [p["source"] for p in lock.get("package", []) if p["name"] == "ai-lab"] or sys.exit("the door lock pins no ai-lab")
 "git" in source or sys.exit(f"ai-lab is locked from {source}, not a git revision")
 print(source["git"].rpartition("#")[2])' < "$RUNNER_TEMP/dev-lab/uv.lock") || exit 1
-"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --python "$RUNNER_TEMP/ai-lab/bin/python" "ai_lab @ git+${FAMILY_SOURCE}ai-lab.git@$AI_LAB_REV"
+git clone -q --no-tags --filter=blob:none --no-checkout "${FAMILY_SOURCE}ai-lab.git" "$RUNNER_TEMP/ai-lab-src"
+git -C "$RUNNER_TEMP/ai-lab-src" fetch -q --no-tags origin "$AI_LAB_REV"
+git -C "$RUNNER_TEMP/ai-lab-src" checkout -q --detach "$AI_LAB_REV"
+"$RUNNER_TEMP/ai-lab/bin/uv" export --no-config --project "$RUNNER_TEMP/ai-lab-src" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/ai-lab.txt"
+"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --no-deps --python "$RUNNER_TEMP/ai-lab/bin/python" -r "$RUNNER_TEMP/ai-lab.txt"
+"$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --no-deps --python "$RUNNER_TEMP/ai-lab/bin/python" "$RUNNER_TEMP/ai-lab-src"
 ''', env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
     { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
 ]
