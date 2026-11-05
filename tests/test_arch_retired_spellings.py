@@ -53,6 +53,10 @@ RETIRED_SPELLINGS: Final = {
             'user-approved design 2026-11-05: a task carries ONE key bundle; dev-lab names no provider',
         ),
     ),
+    'review capped, merge waits': (
+        'forgereview_claim.CAPPED (review capped, merges unreviewed)',
+        'user ruling 2026-11-05: a capped review no longer holds the merge; it merges WARNED',
+    ),
     'OVER_CAP_TAKEOVER': ('Scope.structure', 'D123 2026-10-31: an oversize head is one structure-level review'),
     **{
         f'tool.lab_commons.{table}': (

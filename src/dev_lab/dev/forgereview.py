@@ -24,8 +24,8 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integrati
 
 * the head's review ROUND as ONE comment keyed by the head sha (``Marker.REVIEW``): its tagged findings carried
   from the earlier rounds, re-checked, and recorded as a ledger (:mod:`dev_lab.dev.forgereview_rounds`; round 1
-  opens with the change's context summary). Past ``max_rounds`` or the PR's dollar cap nothing runs: the head
-  waits, named (:mod:`dev_lab.dev.reviewbudget`);
+  opens with the change's context summary). Past ``max_rounds`` or the PR's dollar cap nothing runs: the cap is
+  named and recorded (:mod:`dev_lab.dev.reviewbudget`), and the merge goes on WARNED (:mod:`dev_lab.dev.reviewcap`);
 * a :data:`REVIEW_CONTEXT` status on the head: ``failure`` while an open ``HIGH`` or security finding is neither
   fixed nor disposed (``forge review dispose``, :mod:`dev_lab.dev.forgereview_dispose`), else ``success`` -- the
   auto-merge waits on every state but ``success`` (:func:`dev_lab.dev.reviewgate.review_missing`);
@@ -145,10 +145,11 @@ from dev_lab.dev.forgereview_scope import (
     reviewed_heads,
     synced_from,
 )
-from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
+from dev_lab.dev.reviewcap import capped_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
 
@@ -267,7 +268,9 @@ def capped(
 
     A waiting head gets a ``pending`` :data:`~dev_lab.dev.forgereview_claim.CAPPED` status naming the cap and the
     remedy, and the review is ``None`` -- posted and said once (``None, None`` after), and read again every tick,
-    so a raise or a new month releases it.
+    so a raise or a new month releases it. The cap is also RECORDED on the PR
+    (:func:`~dev_lab.dev.reviewcap.capped_line`): the merge reads its waiver from that trusted comment, never from
+    the status.
     """
     head, bodies = pull.head_sha, trusted_bodies(client, pull.number, review.reviewers)
     prior = ledger_of(bodies)
@@ -283,9 +286,13 @@ def capped(
         return dataclasses.replace(review, max_rounds=allowed.max_rounds, model=model), unknown
     said = f'{CAPPED} {allowed.why}'[:DESCRIPTION]
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if latest is not None and (latest.state, latest.description) == ('pending', said):
+    if latest is not None and (latest.state, latest.description) == ('pending', said[:DESCRIPTION_LIMIT]):
         return None, None
     post_review(client, head, state='pending', description=said)
+    client.issue_comment(
+        pull.number, f'Review stopped at its cap; this PR merges unreviewed once all else is green: {allowed.why}'
+        f'\n\n{capped_line(allowed.why)}',
+    )  # fmt: skip
     return None, f'#{pull.number} {head[:12]}: {said}'
 
 

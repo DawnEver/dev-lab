@@ -13,9 +13,12 @@ from test_dev_forgemerge import _MANIFEST, _work
 from dev_lab.dev import forgecli, forgemerge
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
-from dev_lab.dev.forgemerge import READY, ready
+from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
+from dev_lab.dev.forgereview_claim import CAPPED
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
+from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.reviewcap import capped_line
 
 _INTEGRATOR = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
 
@@ -215,3 +218,56 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
         'could not be judged: `git cat-file --batch` timed out after 120 s',
     )
     assert _merge_ready(forge, head)[0] == 'success'
+
+
+# --- INTERNAL-ONLY (user ruling 2026-11-05): only an internal PR is merged by the forge ----------------------------
+
+
+def test_an_internal_pr_capped_on_its_dollar_budget_merges_warned(tmp_path: Path) -> None:
+    """The reviewing host's trusted cap record waives the review; the merge says it merged unreviewed."""
+    work, forge, number, head = _hub_pr(tmp_path)
+    status_post(forge, head, context='tests/review', state='pending', description=f'{CAPPED} budget reached')
+    forge.issue_comment(number, capped_line('budget reached: 11.00/10.00 USD; split the PR'))
+    said = ready(work, forge, number)
+    state, description = _merge_ready(forge, head)
+    assert state == 'success'
+    assert 'WARNED -- Unreviewed: review budget reached: 11.00/10.00 USD' in description
+    [(merged, body)] = forge.merges
+    assert merged == number
+    assert 'Unreviewed: review budget reached: 11.00/10.00 USD' in body['commit_message']
+    assert said.endswith('merged')
+
+
+def test_a_capped_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same status, its record pasted by the PR author: the review still holds it."""
+    work, forge, number, head = _hub_pr(tmp_path)
+    status_post(forge, head, context='tests/review', state='pending', description=f'{CAPPED} budget reached')
+    forge.login = 'a'
+    forge.issue_comment(number, capped_line('budget reached: 11.00/10.00 USD; split the PR'))
+    forge.login = 'github-actions[bot]'
+    ready(work, forge, number)
+    assert _merge_ready(forge, head)[0] == 'failure'
+    assert forge.merges == []
+
+
+@pytest.mark.parametrize('how', ['non-writer', 'fork'])
+def test_an_external_green_pr_is_never_merged_and_waits_on_a_maintainer(tmp_path: Path, how: str) -> None:
+    """PLANTED CONTROL: the same green PR by the internal author merges (the GitHub ready test above)."""
+    work, forge, number, head = _hub_pr(tmp_path)
+    if how == 'fork':
+        forge.pulls[number]['head']['repo'] = {'full_name': 'stranger/r'}
+    else:
+        forge.pulls[number]['user'] = {'login': 'stranger'}
+    said = ready(work, forge, number)
+    assert _merge_ready(forge, head) == ('pending', EXTERNAL)
+    assert forge.merges == []
+    assert said.endswith(f'pending: {EXTERNAL}')
+
+
+def test_the_serve_tick_never_merges_an_external_pr(tmp_path: Path) -> None:
+    """Gitea's serve tick reads the same decision: an external head is said, never merged."""
+    work, forge, number, head = _pr(tmp_path)
+    forge.pulls[number]['user'] = {'login': 'stranger'}
+    found = judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head)
+    assert EXTERNAL in found.missing
+    assert not found.ready
