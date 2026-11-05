@@ -2,7 +2,7 @@
 
 The client half of :mod:`dev_lab.ops.breakglass`. The user opens a WAVE with the current code of their
 Authenticator (``open [--hours H] [--max-merges M]``, typed by the HUMAN at the prompt); inside it ``pr breakglass``
-merges with no code -- the server announces each merge itself, so the human sees what actually merged. ``close``
+merges with no code -- the server sends ONE summary of what actually merged when the wave ends. ``close``
 ends the wave early; ``ack [ID]`` records who acknowledged an audit report (no code; it never blocks a wave).
 
 The endpoint is the machine file's ``[breakglass]`` table (``endpoint = "<account>@<host>"``, optional

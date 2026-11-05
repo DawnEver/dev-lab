@@ -3,9 +3,10 @@
 User rulings 2026-11-03: a local agent session may run it, only under the user's authorization; no certificates, no
 second device -- the authorization is the user's Authenticator code, whose secret only this host holds
 (:mod:`dev_lab.ops.totp`). A code opens a WAVE (:mod:`dev_lab.ops.wave`); merges inside it need none, and this
-server -- never the client -- announces each one through the configuration's ``[alerts]``. The client is
-``forge pr breakglass`` / ``forge breakglass open|close|ack|status`` (:mod:`dev_lab.dev.forgebreakglass`); the
-transport is the restricted account's ssh ForceCommand, whose key authorizes nothing by itself.
+server -- never the client -- sends the wave's summary through the configuration's ``[alerts]`` when it ends.
+The client is ``forge pr breakglass`` / ``forge breakglass open|close|ack|status``
+(:mod:`dev_lab.dev.forgebreakglass`); the transport is the restricted account's ssh ForceCommand,
+whose key authorizes nothing by itself.
 
 EVERY FORGE OF THE FAMILY (user ruling 2026-11-04). Each served repo is reached on ITS forge -- Gitea or GitHub, the
 backend its URL's host selects (:class:`ClientForge` over :mod:`dev_lab.dev.forgework`) -- as that forge's ONE
@@ -25,14 +26,16 @@ One request is one JSON line with an ``action``:
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
   declared integration branch, or whose head is not the one shown; then comment, merge at that head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
-  owes), announce;
-* ``close`` -- close the open wave: write its audit report, and send it only if the wave merged something;
-  ``ack {id?, by}`` -- record who acknowledged an audit (the oldest unacknowledged when no id), no code;
-* ``status`` -- every wave's state; :meth:`Server.tick` (a timer) closes an expired wave and reminds an
-  unacknowledged audit of a wave that merged at most once per ``remind_hours``.
+  owes), audit; the merge that reaches the cap ends the wave;
+* ``close`` -- end the open wave; ``ack {id?, by}`` -- record who acknowledged an audit (the oldest unacknowledged
+  when no id), no code;
+* ``status`` -- every wave's state; :meth:`Server.tick` (a timer) ends an expired wave and resends a summary no
+  channel delivered.
 
-ALERTS (user ruling 2026-11-04: one wave sent three, too many): opening is audited only; every merge is announced at
-once; the close/expiry audit and its reminders are sent only for a wave that merged -- an empty wave is logged only.
+ALERTS (user rulings 2026-11-04, "one final acceptance is enough"): a wave sends ONE alert -- its summary (id, the
+opening key, the window, every merge with its full head and reason) when it ENDS, and only if it merged; opening, each
+merge and an empty wave are audited only, and nothing reminds. Delivery is recorded on the wave (``summarized``), so
+the summary goes once however often the tick runs. Refusals, failures and a lockout still alert: they are no merge.
 """
 
 from __future__ import annotations
@@ -138,7 +141,8 @@ class Server:
 
     config: OpsConfig
     forge_for: Callable[[str], Forge]
-    alert: Callable[[str, str], None]
+    #: Sends ``(title, body)``; returns whether ANY channel delivered it.
+    alert: Callable[[str, str], bool]
     now: Callable[[], float]
     #: The fingerprint of the ssh key this session authenticated with (:mod:`dev_lab.ops.sshkey`), ``''`` unknown.
     key: str = ''
@@ -166,10 +170,18 @@ class Server:
     def _announce(self, line: dict[str, Any], title: str, body: str) -> None:
         """Audit *line* FIRST, then alert; a failed alert is audited and never aborts the request."""
         self._audit(line)
+        self._send(title, body)
+
+    def _send(self, title: str, body: str) -> bool:
+        """Alert; whether any channel delivered. A failure is audited, never fatal."""
         try:
-            self.alert(title, body)
+            delivered = self.alert(title, body)
         except (OSError, ValueError, RuntimeError) as failed:  # a channel failure is recorded, never fatal
             self._audit({'outcome': f'alert failed: {type(failed).__name__}: {failed}', 'title': title})
+            return False
+        if not delivered:
+            self._audit({'outcome': 'alert failed: no channel delivered', 'title': title})
+        return delivered
 
     def _code(self, code: str) -> None:
         def check() -> None:
@@ -199,12 +211,18 @@ class Server:
         held.closed = min(self.now(), held.expires)
         waves.save(self.state, held)
         text = waves.report(self.state, held)
-        line = {'wave': held.id, 'outcome': 'closed', 'merges': len(held.merges)}
-        if held.merges:
-            self._announce(line, f'break-glass wave {held.id} closed: AUDIT AND ACKNOWLEDGE', text)
-        else:  # an empty wave is logged only (user ruling 2026-11-04)
-            self._audit(line)
+        self._audit({'wave': held.id, 'outcome': 'closed', 'merges': len(held.merges)})
+        self._summarize(held)
         return text
+
+    def _summarize(self, held: waves.Wave) -> None:
+        """Send an ended wave's ONE summary, unless one was delivered or it merged nothing (then it is logged only)."""
+        if not held.merges or held.summarized is not None:
+            return
+        if self._send(f'break-glass wave {held.id} ended: AUDIT AND ACKNOWLEDGE', waves.report(self.state, held)):
+            held.summarized = self.now()
+            waves.save(self.state, held)
+            self._audit({'wave': held.id, 'outcome': 'summarized'})
 
     def handle(self, line: str) -> str:
         """Parse, then judge and perform one request under the role lock.
@@ -243,7 +261,7 @@ class Server:
         cap = _cap(asked.max_merges, self.role.max_merges)
         now = self.now()
         stamp = datetime.fromtimestamp(now, UTC).strftime('%Y%m%dT%H%M%SZ')
-        opened = waves.Wave(stamp, now, now + hours * _HOUR, cap)
+        opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key)
         waves.save(self.state, opened)
         said = f'wave {opened.id} open for {hours:g} h' + (f', at most {cap} merge(s)' if cap else '')
         self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap})
@@ -254,9 +272,6 @@ class Server:
         if held is None:
             msg = 'no break-glass wave is open: the user opens one (forge breakglass open, with their code)'
             raise BreakglassRefused(msg)
-        if held.full():
-            msg = f'wave {held.id} reached its cap of {held.max_merges} merge(s)'
-            raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}. Reason: {reason}')
@@ -264,9 +279,10 @@ class Server:
         held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key))
         waves.save(self.state, held)
         said = f'merged {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
-        line = {'wave': held.id, 'outcome': 'merged', 'repo': repo, 'pr': pr, 'head': head, 'reason': reason}
-        body = f'{said}, head {head}, key {self.key or "unknown"}: {reason}'
-        self._announce(line, f'break-glass MERGED {repo}#{pr}', body)
+        self._audit({'wave': held.id, 'outcome': 'merged', 'repo': repo, 'pr': pr, 'head': head, 'reason': reason})
+        if held.full():
+            self._close(held)
+            said += f'; the cap of {held.max_merges} ended the wave'
         return said
 
     def _admit(self, asked: requests.Merge) -> tuple[Forge, str]:
@@ -316,15 +332,10 @@ class Server:
         return '\n'.join(listed) or 'no wave'
 
     def tick(self) -> str:
-        """The timer's step, under the role lock: close an expired wave; remind each unacknowledged wave that merged."""
+        """The timer's step, under the role lock: end an expired wave; resend each summary no channel delivered."""
         with exclusive(self.state):
             self._current()
             for wave in waves.held(self.state):
-                due = (wave.reminded or wave.closed or 0.0) + self.role.remind_hours * _HOUR
-                if wave.merges and wave.state(self.now()) == 'audit' and self.now() >= due:
-                    wave.reminded = self.now()
-                    waves.save(self.state, wave)
-                    line = {'wave': wave.id, 'outcome': 'reminded'}
-                    title = f'break-glass wave {wave.id} awaits acknowledgement'
-                    self._announce(line, title, waves.report(self.state, wave))
+                if wave.closed is not None:
+                    self._summarize(wave)
             return self._status(None)
