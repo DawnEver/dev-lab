@@ -31,6 +31,8 @@ It gets ONE linux row, on a full run only (as macos, D84), carrying its secrets'
 (:func:`hosted_parts`). The generic matrix job never runs it: :func:`hosted_jobs` renders it its own job, in which
 ONE setup step alone has the secrets in its environment and reads them on stdin as ``NAME=value`` lines -- never
 argv, never echoed -- before the part is produced. The render names a secret; it never holds a value.
+No pull request has its row, so no pull request's merge gate waits on it (:func:`pull_request_waived`); the full
+run produces it, and ``integrate promote`` reads it there.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -47,6 +50,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.probe import OS_NAMES
+from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary
 from lab_commons.hpc.shell import parse_ids
 from lab_commons.log import emit
@@ -74,6 +78,7 @@ __all__ = [
     'main',
     'matrix',
     'produce',
+    'pull_request_waived',
     'pytest_collector',
     'rows',
     'runner_for',
@@ -130,6 +135,18 @@ def hosted_parts(text: str) -> dict[str, Hosted]:
         )
         raise UndeclaredPart(msg)
     return {name: Hosted(tuple(entry['secrets']), entry['setup']) for name, entry in value.items()}
+
+
+def pull_request_waived(root: Path, sha: str) -> frozenset[str]:
+    """The hosted parts commit *sha* of *root* declares, which no pull request's merge gate waits on.
+
+    A pull request has no row of one (:func:`_rows`). ANY DOUBT -- an unreadable or malformed declaration --
+    waives nothing.
+    """
+    try:
+        return frozenset(hosted_parts(pyproject_at(root, sha)))
+    except (ValueError, subprocess.SubprocessError):
+        return frozenset()
 
 
 def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dict[str, Any]:
