@@ -21,17 +21,20 @@ from dev_lab.dev.ciworkflows import (
     BASE_PATH,
     BY_FORGE,
     NIGHTLY_CRON,
+    PR_EVENTS,
     PREPARE,
     RENDER_COMMAND,
     RUNNERS,
     SHARED,
     STAMP,
     USE_STEPS,
+    _bare,
     base_names,
     drift,
     expand,
     main,
     merge,
+    ready_only,
     render,
     repo_forge,
     workflows,
@@ -117,11 +120,11 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
-    assert jobs['absent-parts']['if'].startswith(_guarded('${{ always()').removesuffix(') }}'))
+    assert jobs['absent-parts']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
     assert set(jobs['merge-ready']['needs']) == {'security', 'review', 'part', 'absent-parts'}, (
         'a merge waits on its parts'
     )
-    assert jobs['merge-ready']['if'].startswith(_guarded('${{ always()').removesuffix(') }}'))
+    assert jobs['merge-ready']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
     ready, dispatch = jobs['merge-ready']['steps'][-2:]
     assert 'forge merge ready --pr' in ready['run']
     assert '"; merged") echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
@@ -723,7 +726,6 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
         'synchronize',
         'reopened',
         'ready_for_review',
-        'edited',
     ]
     (tmp_path / 'gh').mkdir()
     github = _base_ci(tmp_path / 'gh')
@@ -1146,13 +1148,42 @@ def _guard_holds(text: str, event: dict[str, Any]) -> bool:
     return bool(read(ast.parse(python.strip(), mode='eval').body))
 
 
-def _bare(expression: str) -> str:
-    return expression.strip().removeprefix('${{').removesuffix('}}').strip()
-
-
 def _guarded(expression: str) -> str:
-    """A PR-started job's *expression* as rendered: AND-ed after the draft guard."""
-    return f'${{{{ ({READY_ONLY}) && ({_bare(expression)}) }}}}'
+    """A PR-started job's *expression* as :func:`ready_only` renders it: AND-ed after the draft guard."""
+    return ready_only({'on': {'pull_request': {}}, 'jobs': {'job': {'if': expression}}})['jobs']['job']['if']
+
+
+#: The PR actions that bring work to run: a new head, or a PR becoming ready. Any other action joining a
+#: cancel-in-progress group cancels the live run for nothing (F-6adfea8621bf).
+_BRINGS_WORK = frozenset({'opened', 'synchronize', 'reopened', 'ready_for_review'})
+
+
+def _cancels_for_nothing(workflow: dict[str, Any]) -> set[str]:
+    """The PR action types that would cancel *workflow*'s live run while bringing no work of their own."""
+    if not workflow.get('concurrency', {}).get('cancel-in-progress'):
+        return set()
+    on = workflow.get('on', {})
+    return {t for event in PR_EVENTS & set(on) for t in (on[event] or {}).get('types', [])} - _BRINGS_WORK
+
+
+@pytest.mark.parametrize('forge', ['github', 'gitea'])
+def test_no_pr_event_that_brings_no_work_can_cancel_a_live_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str
+) -> None:
+    """A body edit or a ready title rename must never cancel a live review (F-6adfea8621bf, F-8515b2f7627e).
+
+    Every rendered PR workflow with ``cancel-in-progress`` subscribes only actions that bring a head or a ready PR.
+    PLANTED CONTROL: the Gitea review workflow with ``edited`` added back is caught.
+    """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    rendered = workflows(tmp_path)
+    assert {name: _cancels_for_nothing(w) for name, w in rendered.items() if _cancels_for_nothing(w)} == {}
+    review = rendered.get('review.yml') or rendered[PREPARE_WORKFLOW]
+    (trigger,) = PR_EVENTS & set(review['on'])
+    types = [*review['on'][trigger]['types'], 'edited']
+    planted = {**review, 'on': {trigger: {'types': types}}}
+    assert _cancels_for_nothing(planted) == {'edited'}
 
 
 @pytest.mark.parametrize('forge', ['github', 'gitea'])
@@ -1162,7 +1193,7 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
     """A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of every PR-triggered workflow is guarded.
 
     The draft is the one :func:`~dev_lab.dev._forge_records.pull_of` reads (GitHub's ``draft``, Gitea's
-    ``WIP:``/``[WIP]`` title); Gitea marks ready by a title edit, so ``edited`` runs only when the title LEFT a draft.
+    ``WIP:``/``[WIP]`` title).
     PLANTED CONTROL: a ready PR, ``ready_for_review``, leaving a draft and an event with no PR all run; a job's own
     condition survives the AND; a workflow no PR starts carries no guard.
     """
@@ -1177,18 +1208,12 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
         assert 'ready_for_review' in workflow['on'][trigger]['types'], f'{name}: marking ready starts everything'
         for job_name, job in workflow['jobs'].items():
             assert _bare(job['if']).startswith(f'({READY_ONLY})'), f'{name} {job_name}: a draft runs it'
-    if forge == 'gitea':
-        for name in ('review.yml', PREPARE_WORKFLOW):
-            assert 'edited' in rendered[name]['on']['pull_request_target']['types'], f'{name}: Gitea readies by title'
-    else:
+    if forge == 'github':
         assert _bare(rendered['ci.yml']['jobs']['review']['if']).endswith("(github.event_name == 'pull_request')")
     assert all(READY_ONLY not in render(w) for name, w in rendered.items() if name not in triggered)
     assert _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'draft': False, 'title': 'feat: x'}})
     assert _guard_holds(READY_ONLY, {'action': 'ready_for_review', 'pull_request': {'draft': False, 'title': 'x'}})
     assert _guard_holds(READY_ONLY, {})
-    left = {'action': 'edited', 'pull_request': {'title': 'x'}, 'changes': {'title': {'from': 'WIP: x'}}}
-    assert _guard_holds(READY_ONLY, left)
     assert not _guard_holds(READY_ONLY, {'action': 'synchronize', 'pull_request': {'draft': True, 'title': 'x'}})
     for title in ('WIP: x', 'wip: x', '[WIP] x'):
         assert not _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'title': title}}), title
-    assert not _guard_holds(READY_ONLY, {'action': 'edited', 'pull_request': {'title': 'x'}, 'changes': {}})

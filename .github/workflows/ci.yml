@@ -85,14 +85,14 @@
         "event": "${{ env.PARTS_EVENT }}",
         "pending": "${{ steps.pending.outputs.pending }}"
       },
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]')) && (github.event.action != 'edited' || startsWith(github.event.changes.title.from, 'WIP:') || startsWith(github.event.changes.title.from, '[WIP]'))) }}"
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) }}"
     },
     "part": {
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
       },
       "needs": "parts",
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]')) && (github.event.action != 'edited' || startsWith(github.event.changes.title.from, 'WIP:') || startsWith(github.event.changes.title.from, '[WIP]'))) && (needs.parts.outputs.matrix != '') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (needs.parts.outputs.matrix != '') }}",
       "name": "tests/${{ matrix.part }}",
       "runs-on": "${{ matrix.runs-on }}",
       "steps": [
@@ -136,7 +136,7 @@
         "parts",
         "part"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]')) && (github.event.action != 'edited' || startsWith(github.event.changes.title.from, 'WIP:') || startsWith(github.event.changes.title.from, '[WIP]'))) && (always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -171,7 +171,7 @@
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
       },
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]')) && (github.event.action != 'edited' || startsWith(github.event.changes.title.from, 'WIP:') || startsWith(github.event.changes.title.from, '[WIP]'))) && (github.event_name == 'pull_request') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event_name == 'pull_request') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -204,7 +204,7 @@
       }
     },
     "review": {
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]')) && (github.event.action != 'edited' || startsWith(github.event.changes.title.from, 'WIP:') || startsWith(github.event.changes.title.from, '[WIP]'))) && (github.event_name == 'pull_request') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event_name == 'pull_request') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -278,7 +278,7 @@
         "part",
         "absent-parts"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]')) && (github.event.action != 'edited' || startsWith(github.event.changes.title.from, 'WIP:') || startsWith(github.event.changes.title.from, '[WIP]'))) && (always() && github.event_name == 'pull_request') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && github.event_name == 'pull_request') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -328,7 +328,7 @@
         "parts",
         "absent-parts"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]')) && (github.event.action != 'edited' || startsWith(github.event.changes.title.from, 'WIP:') || startsWith(github.event.changes.title.from, '[WIP]'))) && (needs.parts.outputs.pending == 'true') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (needs.parts.outputs.pending == 'true') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {

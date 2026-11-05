@@ -17,8 +17,8 @@ behind the client:
 
 Only a ready PR is reviewed (:mod:`dev_lab.dev.forgereview`, both the serve tick and the review job) or merged
 (:func:`dev_lab.dev.forgemerge.judged` names :data:`WAITING`). Marking ready is a review trigger
-(``ready_for_review`` in the workflows' types; the serve's next tick). A push after ready keeps the PR ready: a fix
-push gets its round, and the serve's debounce (``quiet``) coalesces a burst of them.
+(``ready_for_review`` in the workflows' types; the serve's next tick, Gitea's one trigger). A push after ready
+keeps the PR ready: a fix push gets its round, and the serve's debounce (``quiet``) coalesces a burst of them.
 
 A DRAFT NEVER STALLS SILENTLY -- a session that has not read this rule would not know to mark it ready:
 
@@ -70,12 +70,10 @@ def _wip(field: str) -> str:
 
 
 #: The Actions guard of every job a PR event starts: the PR is no draft as :func:`~dev_lab.dev._forge_records.pull_of`
-#: reads one (GitHub's ``draft``, Gitea's work-in-progress title), and an ``edited`` event -- Gitea's ready is a
-#: title edit -- runs only when the title LEFT a draft. An event with no PR (a push, a schedule) passes.
-READY_ONLY: Final = (
-    f'!(github.event.pull_request.draft || {_wip("github.event.pull_request.title")}) && '
-    f"(github.event.action != 'edited' || {_wip('github.event.changes.title.from')})"
-)
+#: reads one (GitHub's ``draft``, Gitea's work-in-progress title). An event with no PR (a push, a schedule) passes.
+#: No workflow subscribes ``edited``: Gitea readies by a title edit, but an edit of any kind joins the PR's
+#: cancel-in-progress group and would cancel a live review for nothing, so a Gitea ready is the serve's next tick.
+READY_ONLY: Final = f'!(github.event.pull_request.draft || {_wip("github.event.pull_request.title")})'
 
 #: How long a draft's head may go without a push before the integrator is told it waits on its author.
 STALE_DRAFT: Final = timedelta(hours=24)
