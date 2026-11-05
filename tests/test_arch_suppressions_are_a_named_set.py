@@ -318,6 +318,18 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'the serve tick gates every open PR head in turn; one head whose gate raises (git, network, a corrupt '
     'tree) is one line for that head and must not end the tick for the others',
     (
+        'src/dev_lab/dev/forgemerge.py',
+        'BLE001',
+        'except Exception as error:',
+    ): 'the merge tick judges every open PR in turn; one PR whose judgement raises (a git timeout, a forge '
+    'call, a corrupt tree) is an error status on that PR and must not end the tick for the PRs after it',
+    (
+        'src/dev_lab/dev/forgemerge.py',
+        'BLE001',
+        'except Exception as unposted:',
+    ): 'posting the error status of a PR that could not be judged may itself fail for any reason; the cause '
+    'is already said on stderr, so the tick moves on to the next PR',
+    (
         'src/dev_lab/supervise/components/resources.py',
         'PLC0415',
         'import psutil',

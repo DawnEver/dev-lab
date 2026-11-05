@@ -1,7 +1,7 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``breakglass serve|enrol|tick``, ``backup export|pull``,
-``access enrol|adopt``.
+Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|enrol|tick``,
+``backup export|pull``, ``access enrol|adopt``.
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -13,13 +13,15 @@ import os
 import shutil
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.ops import access, backup, breakglass, install, judge, offsite, promote, sshkey, totp, upgrade
+from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.forgework import Client
+from dev_lab.ops import access, backup, breakglass, install, judge, offsite, probe, promote, sshkey, totp, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
@@ -27,13 +29,17 @@ from dev_lab.supervise.notice import Context, Notice, host_label
 __all__ = ['main']
 
 
-def _alert(config: OpsConfig, title: str, detail: str) -> None:
-    Notifier(config.merged).send(
-        Notice(
-            title,
-            host=host_label(config.merged.get('notify', {})),
-            context=Context(service='dev_lab.ops'),
-            findings=(detail,),
+def _alert(config: OpsConfig, title: str, detail: str) -> bool:
+    """Send through every ``[alerts]`` channel; whether any channel took it."""
+    return any(
+        delivery.ok
+        for delivery in Notifier(config.merged).send(
+            Notice(
+                title,
+                host=host_label(config.merged.get('notify', {})),
+                context=Context(service='dev_lab.ops'),
+                findings=(detail,),
+            )
         )
     )
 
@@ -161,8 +167,18 @@ def _breakglass(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) ->
     return 0
 
 
-#: The verbs that take no argument beyond the configuration.
-_NO_ARGUMENT = {'promote': _promote, 'judge': _judge, 'upgrade': _upgrade}
+def _probe(config: OpsConfig) -> int:
+    role = config.probe
+    if role is None:
+        emit(f'[ops] {config.path} enables no [ops.probe]', err=True)
+        return 2
+    for line in probe.run(
+        config,
+        lambda url: Client(forge_of_url(url), _secret(role.token_file(url))),
+        lambda title, detail: _alert(config, title, detail),
+    ):
+        emit(f'[ops probe] {line}')
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -174,6 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs.add_parser('promote')
     verbs.add_parser('judge', help='one judging pass over [ops.judge] repos')
     verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref; takes no argument')
+    verbs.add_parser('probe')
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'enrol', 'tick'))
     glass.add_argument('--force', action='store_true', help='enrol: replace an existing secret')
@@ -192,13 +209,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.verb == 'install':
         return _install(config, args.root)
-    if args.verb in _NO_ARGUMENT:
-        return _NO_ARGUMENT[args.verb](config)
-    if args.verb == 'backup':
-        return _backup(config, args.action)
-    if args.verb == 'access':
-        return _access(config, args.action, force=args.force, uri_only=args.uri, secret_from=args.secret_file)
-    return _breakglass(config, args.action, force=args.force, uri_only=args.uri)
+    if args.verb == 'promote':
+        return _promote(config)
+    verbs_of: dict[str, Callable[[], int]] = {
+        'backup': lambda: _backup(config, args.action),
+        'access': lambda: _access(
+            config, args.action, force=args.force, uri_only=args.uri, secret_from=args.secret_file
+        ),
+        'probe': lambda: _probe(config),
+        'breakglass': lambda: _breakglass(config, args.action, force=args.force, uri_only=args.uri),
+        'judge': lambda: _judge(config),
+        'upgrade': lambda: _upgrade(config),
+    }
+    return verbs_of[args.verb]()
 
 
 if __name__ == '__main__':

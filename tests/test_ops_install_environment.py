@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from _ops_fixtures import config
 
+from dev_lab.ops import accounts
 from dev_lab.ops import install as install_module
 from dev_lab.ops.__main__ import main
 from dev_lab.ops.config import load
@@ -199,7 +200,7 @@ def test_a_render_without_root_leaves_ownership_as_next_steps(tmp_path: Path) ->
     assert steps.index(f'chown promote:promote {home}') > useradd
 
 
-_PROMOTE = install_module.Account(uid=1001, gids=frozenset({1001}))
+_PROMOTE = accounts.Account(uid=1001, gids=frozenset({1001}))
 
 
 @pytest.mark.parametrize(
@@ -210,19 +211,19 @@ _PROMOTE = install_module.Account(uid=1001, gids=frozenset({1001}))
         (0o700, 1001, 0, _PROMOTE, True),  # owner
         (0o070, 1001, 0, _PROMOTE, False),  # the owner class decides for the owner, never the group's bits
         (0o751, 0, 0, _PROMOTE, True),  # other-execute
-        (0o710, 0, 50, install_module.Account(uid=1001, gids=frozenset({1001, 50})), True),  # a supplementary group
-        (0o700, 5, 5, install_module.Account(uid=0, gids=frozenset({0})), True),  # root enters anything
+        (0o710, 0, 50, accounts.Account(uid=1001, gids=frozenset({1001, 50})), True),  # a supplementary group
+        (0o700, 5, 5, accounts.Account(uid=0, gids=frozenset({0})), True),  # root enters anything
     ],
 )
 def test_entering_is_decided_by_the_users_owner_group_or_other_class(
-    mode: int, uid: int, gid: int, account: install_module.Account, *, enters: bool
+    mode: int, uid: int, gid: int, account: accounts.Account, *, enters: bool
 ) -> None:
-    assert install_module.may_enter(mode, uid, gid, account) is enters
+    assert accounts.may_enter(mode, uid, gid, account) is enters
 
 
 def test_an_account_not_yet_made_is_judged_by_the_other_bits() -> None:
-    shut = install_module.may_enter(0o750, 0, 1001, None)
-    assert (shut, install_module.may_enter(0o751, 0, 1001, None)) == (False, True)
+    shut = accounts.may_enter(0o750, 0, 1001, None)
+    assert (shut, accounts.may_enter(0o751, 0, 1001, None)) == (False, True)
 
 
 @pytest.mark.parametrize(

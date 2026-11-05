@@ -23,24 +23,19 @@ the promote user cannot enter is named in a next step, never opened.
 from __future__ import annotations
 
 import shlex
-import stat
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
-from dev_lab.ops.config import Backup, OpsConfig, Placement
+from dev_lab.ops.accounts import account_of, may_enter
+from dev_lab.ops.config import Backup, OpsConfig, Placement, Probe
 from dev_lab.ops.sshkey import ENV
 from dev_lab.ops.totp import write_private
 from dev_lab.supervise.daemon import watchdog_seconds
 
-if sys.platform != 'win32':  # the host accounts: POSIX only
-    import grp
-    import pwd
-
-__all__ = ['Account', 'Chown', 'Rendered', 'account_of', 'files', 'install', 'may_enter']
+__all__ = ['Chown', 'Rendered', 'files', 'install']
 
 _UNIT = 'dev-lab-ops'
 #: The supervisor's own service.
@@ -139,7 +134,7 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     }
 
 
-def _timer(config: OpsConfig, role: Backup, name: str, what: str, exec_start: str) -> dict[str, str]:
+def _timer(config: OpsConfig, role: Backup | Probe, name: str, what: str, exec_start: str) -> dict[str, str]:
     body = ['Type=oneshot', f'User={role.user}', f'ExecStart={exec_start}', 'Nice=10']
     service = _service(config, role, f'{what} (dev_lab.ops)', body, network=True)
     timer = (
@@ -172,6 +167,13 @@ def _backup(config: OpsConfig) -> dict[str, str]:
             raise ValueError(msg)
         rendered |= _timer(config, role, 'backup-pull', 'Pull the forge backup', _door(config, 'backup', 'pull'))
     return rendered
+
+
+def _probe(config: OpsConfig) -> dict[str, str]:
+    role = config.probe
+    if role is None:
+        return {}
+    return _timer(config, role, 'probe', 'Probe forge protection and CI runs', _door(config, 'probe'))
 
 
 def _supervise(config: OpsConfig) -> dict[str, str]:
@@ -208,6 +210,7 @@ def files(config: OpsConfig) -> dict[str, str]:
         **_judge(config),
         **_breakglass(config),
         **_backup(config),
+        **_probe(config),
         **access,
         **_supervise(config),
     }
@@ -220,9 +223,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                   *prepared, 'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-promote.timer']  # fmt: skip
     else:
         steps += prepared
-    if (judged := config.judge) is not None:
-        steps += [f'id {judged.user} || useradd --system --no-create-home {judged.user}', 'systemctl daemon-reload',
-                  f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
+    steps += _judge_steps(config)
     if (role := config.breakglass) is not None:
         steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{role.account}', 'sshd -t && systemctl reload ssh',
@@ -235,6 +236,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
     if backup is not None and backup.source:
         steps += [f'id {backup.user} || useradd --system {backup.user}', 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-backup-pull.timer']  # fmt: skip
+    steps += _probe_steps(config)
     if (role := config.access) is not None:
         steps += ['apt-get install -y libpam-oath', f'id {role.account} || useradd --create-home {role.account}',
                   'sshd -t && systemctl reload ssh']  # fmt: skip
@@ -248,46 +250,26 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
     return tuple(steps)
 
 
+def _judge_steps(config: OpsConfig) -> list[str]:
+    if (judged := config.judge) is None:
+        return []
+    return [f'id {judged.user} || useradd --system --no-create-home {judged.user}', 'systemctl daemon-reload',
+            f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
+
+
+def _probe_steps(config: OpsConfig) -> list[str]:
+    if (probe := config.probe) is None:
+        return []
+    tokens = ' '.join(sorted(probe.tokens.values()))
+    return [f'id {probe.user} || useradd --system {probe.user}',
+            f'install -d -m 0700 -o {probe.user} {probe.state}',
+            f'chown {probe.user} {tokens} && chmod 600 {tokens}',
+            'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-probe.timer']  # fmt: skip
+
+
 def _under(root: Path, path: Path | str) -> Path:
     path = Path(path)
     return root / path.relative_to(path.anchor)
-
-
-@dataclass(frozen=True)
-class Account:
-    """A host account as the kernel judges access: its uid and every gid it holds (primary and supplementary)."""
-
-    uid: int
-    gids: frozenset[int]
-
-
-def account_of(user: str) -> Account | None:
-    """*user*'s :class:`Account` on this host, ``None`` where it does not exist yet (or the host has no ``pwd``)."""
-    if sys.platform == 'win32':  # a Windows render has no accounts to judge
-        return None
-    try:
-        entry = pwd.getpwnam(user)
-    except KeyError:
-        return None
-    supplementary = {group.gr_gid for group in grp.getgrall() if user in group.gr_mem}
-    return Account(entry.pw_uid, frozenset({entry.pw_gid, *supplementary}))
-
-
-def may_enter(mode: int, uid: int, gid: int, account: Account | None) -> bool:
-    """Whether *account* may enter a directory of *mode* owned ``uid:gid``: ONE class decides, as the kernel does.
-
-    Root enters anything; the owner is judged by the owner bits alone, a member of the group by the group bits, anyone
-    else by the other bits. An account not made yet (``None``) holds no ownership or membership: the other bits.
-    """
-    if account is None:
-        return bool(mode & stat.S_IXOTH)
-    if account.uid == 0:
-        return True
-    if account.uid == uid:
-        return bool(mode & stat.S_IXUSR)
-    if gid in account.gids:
-        return bool(mode & stat.S_IXGRP)
-    return bool(mode & stat.S_IXOTH)
 
 
 def _may_enter(path: Path, user: str) -> bool:

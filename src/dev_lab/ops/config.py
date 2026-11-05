@@ -21,6 +21,7 @@ that did not arrive refuses the verb rather than letting it run with its alerts 
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
@@ -28,9 +29,21 @@ from pathlib import Path
 from typing import Any
 
 from dev_lab.dev.forge import forge_of_url
+from dev_lab.ops.mirrors import mirror_host, mirror_name
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
-__all__ = ['Breakglass', 'Judge', 'OpsConfig', 'Placement', 'Promote', 'Supervise', 'Upgrade', 'load', 'repo_name']
+__all__ = [
+    'Breakglass',
+    'Judge',
+    'OpsConfig',
+    'Placement',
+    'Probe',
+    'Promote',
+    'Supervise',
+    'Upgrade',
+    'load',
+    'repo_name',
+]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -55,24 +68,6 @@ class Promote(Placement):
     memory_max: str = '1G'
 
 
-def _served(where: str, repos: tuple[str, ...], tokens: Mapping[str, str]) -> None:
-    """Refuse an empty repo set, one identity twice, a forge naming no token and a token serving no repo."""
-    if not repos:
-        msg = f'{where} serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
-        raise ValueError(msg)
-    identities = [forge_of_url(url).identity for url in repos]
-    if len(set(identities)) != len(identities):
-        msg = f'{where} repos name one repository twice: {identities}'
-        raise ValueError(msg)
-    hosts = {forge_of_url(url).host for url in repos}
-    if untokened := sorted(hosts - set(tokens)):
-        msg = f'{where} forge {", ".join(untokened)} names no token: add it to {where[:-1]}.tokens]'
-        raise ValueError(msg)
-    if unused := sorted(set(tokens) - hosts):
-        msg = f'{where[:-1]}.tokens] {", ".join(unused)} serves no repo in {where} repos'
-        raise ValueError(msg)
-
-
 @dataclass(frozen=True)
 class Judge(Placement):
     """The bundle-review judge (:mod:`dev_lab.dev.forgereview_bundle`): who runs it, when, on which repos, as whom.
@@ -91,7 +86,7 @@ class Judge(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see :func:`_served`)."""
-        _served('[ops.judge]', self.repos, self.tokens)
+        _served(self.repos, self.tokens, '[ops.judge]')
 
     def token_file(self, url: str) -> str:
         """The file holding the judge's token on *url*'s forge."""
@@ -150,7 +145,7 @@ class Breakglass(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
-        _served('[ops.breakglass]', self.repos, self.tokens)
+        _served(self.repos, self.tokens, '[ops.breakglass]')
 
     def repo(self, identity: str) -> str | None:
         """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
@@ -158,6 +153,49 @@ class Breakglass(Placement):
 
     def token_file(self, url: str) -> str:
         """The file holding the break-glass token of *url*'s forge."""
+        return self.tokens[forge_of_url(url).host]
+
+
+def _served(repos: tuple[str, ...], tokens: Mapping[str, str], where: str) -> None:
+    """Refuse an empty repo set, one identity twice, a forge with no token, or a token no repo uses."""
+    if not repos:
+        msg = f'{where} serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
+        raise ValueError(msg)
+    identities = [forge_of_url(url).identity for url in repos]
+    if len(set(identities)) != len(identities):
+        msg = f'{where} repos name one repository twice: {identities}'
+        raise ValueError(msg)
+    hosts = {forge_of_url(url).host for url in repos}
+    if untokened := sorted(hosts - set(tokens)):
+        msg = f'{where} forge {", ".join(untokened)} names no token: add it to {where[:-1]}.tokens]'
+        raise ValueError(msg)
+    if unused := sorted(set(tokens) - hosts):
+        msg = f'{where[:-1]}.tokens] {", ".join(unused)} serves no repo in {where} repos'
+        raise ValueError(msg)
+
+
+@dataclass(frozen=True)
+class Probe(Placement):
+    """The forge probe (:mod:`dev_lab.ops.probe`): the repos it reads, a READ-ONLY token per forge, when, as whom.
+
+    ``repos`` are clone URLs on any forge -- its own set, as break-glass's is; ``tokens`` maps each forge host to the
+    file holding that forge's probe token (refused as :class:`Breakglass` refuses its own); ``state`` the directory
+    of what was already alerted; ``schedule`` the timer's ``OnCalendar``; ``user`` the account it runs as, which must
+    read the token files.
+    """
+
+    user: str
+    schedule: str
+    state: str
+    repos: tuple[str, ...] = ()
+    tokens: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Refuse a declaration that lies (see :func:`_served`)."""
+        _served(self.repos, self.tokens, '[ops.probe]')
+
+    def token_file(self, url: str) -> str:
+        """The file holding the probe token of *url*'s forge."""
         return self.tokens[forge_of_url(url).host]
 
 
@@ -188,6 +226,12 @@ class Backup(Placement):
     pullers, the dumpers' own settings. Pull (``source`` non-empty): ``<account>@<host>`` with a dedicated
     ``identity`` key, the ``dest`` directory, the ``user`` and ``schedule`` of the timer, ``retention_days``, and an
     optional ``offsite`` table (:class:`Offsite`).
+
+    The ``git_mirror`` dumper reads ``mirrors`` (clone URLs on any forge), keeps a ``git clone --mirror`` of each
+    under ``mirror_cache`` (persistent, so each export only fetches what is new) and bundles each into the export.
+    ``mirror_metadata`` adds each repo's pulls (with reviews and head statuses) and issues as JSON, read through the
+    forge's API with the read token in ``mirror_tokens[<host>]`` (a file), anonymously for a host naming none. A
+    ``git_mirror`` with no mirror or no cache, one repository twice, or a token no mirror uses is refused at load.
     """
 
     dumpers: tuple[str, ...] = ()
@@ -207,6 +251,49 @@ class Backup(Placement):
     schedule: str = ''
     retention_days: int = 14
     offsite: Offsite | None = None
+    mirrors: tuple[str, ...] = ()
+    mirror_cache: str = ''
+    mirror_metadata: bool = False
+    mirror_tokens: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Refuse a ``git_mirror`` declaration that lies (see the class docstring)."""
+        if 'git_mirror' not in self.dumpers:
+            declared = zip(
+                _MIRROR_KEYS, (self.mirrors, self.mirror_cache, self.mirror_metadata, self.mirror_tokens), strict=True
+            )
+            if declared := [key for key, value in declared if value]:
+                msg = (
+                    f'[ops.backup] {", ".join(declared)} set but dumpers names no git_mirror: nothing would be mirrored'
+                )
+                raise ValueError(msg)
+            return
+        if not self.mirrors:
+            msg = '[ops.backup] git_mirror names no mirror: declare mirrors = ["<clone url>", ...]'
+            raise ValueError(msg)
+        if not self.mirror_cache:
+            msg = '[ops.backup] git_mirror needs mirror_cache (the persistent directory the mirrors live in)'
+            raise ValueError(msg)
+        names = [mirror_name(url) for url in self.mirrors]
+        if len(set(names)) != len(names):
+            msg = f'[ops.backup] mirrors name one repository twice: {names}'
+            raise ValueError(msg)
+        if secret := [mirror_name(url) for url in self.mirrors if _PASSWORD.match(url)]:
+            msg = (
+                f'[ops.backup] mirrors {secret} carry a password in the URL; it would persist in the mirror cache '
+                'and reach messages: use an ssh key or the git credential store'
+            )
+            raise ValueError(msg)
+        hosts = {mirror_host(url) for url in self.mirrors}
+        if unused := sorted(set(self.mirror_tokens) - hosts):
+            msg = f'[ops.backup.mirror_tokens] {", ".join(unused)} serves no mirror'
+            raise ValueError(msg)
+
+
+#: The ``mirror_*`` keys only the ``git_mirror`` dumper reads.
+_MIRROR_KEYS = ('mirrors', 'mirror_cache', 'mirror_metadata', 'mirror_tokens')
+#: A URL whose userinfo carries a password (``scheme://<user>:<password>@host/...``).
+_PASSWORD = re.compile(r'^[a-z][a-z0-9+.-]*://[^/@]*:[^/@]*@', re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -257,6 +344,7 @@ class OpsConfig:
     supervise: Supervise | None = None
     judge: Judge | None = None
     upgrade: Upgrade | None = None
+    probe: Probe | None = None
     environment_file: str = ''
 
     def checkout(self, url: str) -> Path:
@@ -269,7 +357,7 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Judge, Upgrade)](
+def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe)](
     cls: type[T], table: object, where: str
 ) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -360,6 +448,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         supervise=_role(Supervise, ops.get('supervise'), '[ops.supervise]'),
         judge=_role(Judge, ops.get('judge'), '[ops.judge]'),
         upgrade=_role(Upgrade, ops.get('upgrade'), '[ops.upgrade]'),
+        probe=_role(Probe, ops.get('probe'), '[ops.probe]'),
         environment_file=environment_file,
     )
 
