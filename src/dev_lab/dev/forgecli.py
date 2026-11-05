@@ -68,6 +68,7 @@ from dev_lab.dev import (
     pushwatch,
     servelock,
 )
+from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
@@ -174,6 +175,11 @@ def _parser() -> argparse.ArgumentParser:
     comment.add_argument('--body', required=True)
     pr = nouns.add_parser('pr').add_subparsers(dest='verb', required=True)
     _verb(pr, 'view').add_argument('number', type=int)
+    closing = _verb(pr, 'close')
+    closing.add_argument('number', type=int)
+    closing.add_argument(
+        '--reason', required=True, help='why; posted as a comment before the close (no branch deleted)'
+    )
     opened = _verb(pr, 'create')
     opened.add_argument('--title', required=True)
     opened.add_argument('--body', default='')
@@ -184,6 +190,18 @@ def _parser() -> argparse.ArgumentParser:
         help='open it ready for review; the default is a DRAFT, marked ready by `forge pr ready N` (D53)',
     )  # fmt: skip
     return parser
+
+
+def pr_close(client: Client, number: int, reason: str) -> PullRequest:
+    """Close pull request *number*, commenting *reason* first so the record says why; its branch stays.
+
+    An empty *reason* is refused before any call: a close nobody can explain is not a record.
+    """
+    if not reason.strip():
+        said = f'pr close {number}: a reason is required (--reason "<why>")'
+        raise ValueError(said)
+    client.issue_comment(number, f'closed: {reason.strip()}')
+    return pull_of(client.call('PATCH', f'{client.repo}/pulls/{number}', {'state': 'closed'}))
 
 
 def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
@@ -197,6 +215,7 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
             args.title, args.body, head=args.head, base=args.base, draft=not args.ready
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
+        ('pr', 'close'): lambda: pr_close(client, args.number, args.reason),
     }
     return verbs[args.noun, args.verb]()
 
@@ -215,7 +234,10 @@ def issue_and_pr(
     transport: Transport = forge_transport,
 ) -> int:
     """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy."""
-    args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
+    parser = _parser()
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
+        parser.error('pr close: --reason must say why')
     root = Path.cwd() if cwd is None else cwd
     client = client_for(root, env=env, transport=transport)
     try:

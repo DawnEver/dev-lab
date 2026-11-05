@@ -21,7 +21,7 @@ VENV_PYTHONS: tuple[str, ...] = tuple('/'.join(parts) for parts in VENV_LAYOUTS.
 _FORGE_HAZARD = 'a forge write through any client but the family door does not record which machine or agent wrote it.'
 _FORGE_REMEDY = (
     f'Write through the family door: {PYTHON_SLOT} -m dev_lab.dev.forge issue create|comment|close, '
-    'pr create; a verb it lacks is the integrator`s.'
+    'pr create|close; a verb it lacks is the integrator`s.'
 )
 
 #: The HTTP verbs that WRITE, in every case spelling a shell accepts (curl and PowerShell both do).
