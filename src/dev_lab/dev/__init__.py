@@ -445,6 +445,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
   closes salvaged PRs with an evidence comment; it never deletes a branch.
+* :mod:`dev_lab.dev.plugin_settings` -- PLUGINS NO FAMILY SESSION RUNS (ruling 2026-11-05: ``sharp-review`` off,
+  the forge's PR review is the one review); ``agent_guard`` writes them into each ``.claude/settings.json``.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a scarce part runs on a PR only where its diff reaches it.
 * :mod:`dev_lab.dev.unproduced` -- a resource a repo declares no part for: every reading waives it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.

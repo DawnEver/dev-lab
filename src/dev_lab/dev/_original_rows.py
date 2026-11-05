@@ -42,6 +42,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'serialpass',
     'lanepolicy',
     'platformparts',
+    'plugin_settings',
     'cjk',
     'content',
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism
