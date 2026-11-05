@@ -815,7 +815,7 @@ def test_a_part_whose_infrastructure_did_not_answer_demotes_its_tools(monkeypatc
     """D21 (4): exit 4 on a femm part demotes femm here; a red part (exit 1) is the code's, never the tool's."""
     demoted: list = []
     monkeypatch.setattr(forgeproduce, 'demote', lambda tools, why: demoted.append((tools, why)))
-    monkeypatch.setattr(forgeproduce, 'needs_of', lambda _platform: frozenset({'femm', 'windows'}))
+    monkeypatch.setattr(forgeproduce, 'needs_of_row', lambda _platform: frozenset({'femm', 'windows'}))
     red = Produced('r', 'a' * 40, 'femm', (), 1)
     forgeproduce.demote_unreachable([red])
     assert demoted == [], 'PLANTED CONTROL: a failed test is not a failed tool'
