@@ -202,16 +202,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.retentionplan import load_policy as retention',
     ): 'retentionplan reaches this module through the forge layer; the [retention] budget has one reader',
     (
-        'src/dev_lab/dev/forgeapp.py',
-        'PLC0415',
-        'from cryptography.hazmat.primitives import hashes, serialization',
-    ): 'cryptography is the ops extra; forgereview_bundle imports forgeapp on every host, only a judge signs',
-    (
-        'src/dev_lab/dev/forgeapp.py',
-        'PLC0415',
-        'from cryptography.hazmat.primitives.asymmetric import padding, rsa',
-    ): 'cryptography is the ops extra; forgereview_bundle imports forgeapp on every host, only a judge signs',
-    (
         'src/dev_lab/dev/hpchost/__init__.py',
         'PLC0415',
         'from dev_lab.dev.hpchost import allocate, deploy, fleet, tick',

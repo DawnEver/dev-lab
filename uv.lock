@@ -365,6 +365,7 @@ name = "dev-lab"
 source = { editable = "." }
 dependencies = [
     { name = "commitizen" },
+    { name = "cryptography" },
     { name = "lab-commons", extra = ["io", "paths", "structured", "units"] },
     { name = "pytest" },
     { name = "pytest-mock" },
@@ -374,11 +375,9 @@ dependencies = [
 
 [package.optional-dependencies]
 ops = [
-    { name = "cryptography" },
     { name = "segno" },
 ]
 test = [
-    { name = "cryptography" },
     { name = "nodejs-wheel-binaries" },
     { name = "segno" },
 ]
@@ -391,8 +390,7 @@ review = [
 [package.metadata]
 requires-dist = [
     { name = "commitizen" },
-    { name = "cryptography", marker = "extra == 'ops'" },
-    { name = "cryptography", marker = "extra == 'test'" },
+    { name = "cryptography" },
     { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://github.com/DawnEver/lab-commons.git" },
     { name = "nodejs-wheel-binaries", marker = "extra == 'test'" },
     { name = "pytest" },

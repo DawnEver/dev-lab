@@ -12,7 +12,7 @@ The App authenticates in two steps, each asked of GitHub:
 * ``POST /app/installations/{id}/access_tokens`` exchanges it for an INSTALLATION TOKEN (one hour), the credential
   every verb then presents. It is cached per process and repository (:func:`installation`), so one run mints once.
 
-Signing is ``cryptography``'s RSA (the ``ops`` extra): the JWT around it is three base64url segments, no RSA of
+Signing is ``cryptography``'s RSA (a base dependency): the JWT around it is three base64url segments, no RSA of
 our own. The key file is read, never logged; the token never reaches output.
 """
 
@@ -24,6 +24,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
+
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from dev_lab.dev.forge import forge_of_url, forge_transport
 from dev_lab.dev.forgework import Client, client_for
@@ -73,9 +76,6 @@ def _segment(raw: bytes) -> str:
 
 def app_jwt(app_id: int, key_pem: bytes, now: datetime) -> str:
     """The RS256 JWT authenticating as App *app_id* at *now*; refused when *key_pem* is no RSA private key."""
-    from cryptography.hazmat.primitives import hashes, serialization  # noqa: PLC0415 -- the ops extra
-    from cryptography.hazmat.primitives.asymmetric import padding, rsa  # noqa: PLC0415
-
     key = serialization.load_pem_private_key(key_pem, password=None)
     if not isinstance(key, rsa.RSAPrivateKey):
         msg = f'the key of GitHub App {app_id} is not an RSA private key: GitHub signs RS256 only'
