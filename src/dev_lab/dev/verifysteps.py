@@ -58,7 +58,7 @@ from dev_lab.dev.verifybox import (
 __all__ = [
     'COVERAGE_KIND',
     'LEDGER_PLUGIN',
-    'LOG_DIRECTORY',
+    'LOG_KIND',
     'MEASURED_TARGETS',
     'OUTCOME_PLUGIN',
     'PYTEST_ARGS',
@@ -77,9 +77,10 @@ __all__ = [
 #: branch here -- and a repo that ACQUIRES one changes its address, which is correct.
 MEASURED_TARGETS: Final[tuple[str, ...]] = ('src', 'tests', 'pyproject.toml')
 
-#: Where the log lives. Under the project root rather than a platform cache dir, because the log
-#: IS the evidence a verdict cites and a reader who was handed the tree must be able to find it.
-LOG_DIRECTORY: Final = '.verify'
+#: The output-tree kind the run log and its records live under: ``<output>/<yy>/<mm>/<dd>/verify/``
+#: (:func:`dev_lab.dev.datedlog.output_dir`; user ruling 2026-11-05, ``.verify/`` retired). Inside the
+#: checkout rather than a platform cache dir, because the log IS the evidence a verdict cites.
+LOG_KIND: Final = 'verify'
 
 #: The two lint steps, in order, as ``(name, module args)``. Both run through ``sys.executable -m``
 #: so the ruff that judges is the ruff installed in the interpreter that will run the suite -- a
@@ -332,9 +333,7 @@ def run_verify(
     """
     allowed = declared_skips(root)
     vanished = vanished_shortfall(stale_declarations(root, allowed))
-    directory = root / LOG_DIRECTORY
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
+    path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
     seat = EnvironmentSeat(sys.prefix, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
     with seat.held(), path.open('w', encoding='utf-8') as handle:

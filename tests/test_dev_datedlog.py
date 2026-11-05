@@ -107,8 +107,8 @@ def test_base_and_kind_are_REQUIRED_KEYWORDS_with_no_default() -> None:
     """The migration's whole point, read off the SIGNATURE.
 
     A default for ``base`` would hand any other repo in this family consumer-a' 2026-09-03 directive
-    while reading as a shared convention -- and this package's own verify log lives at ``.verify/``,
-    so the disagreement is inside one tree rather than hypothetical.
+    while reading as a shared convention; the repo's answer is ``[tool.dev_lab.parts] output``, read by
+    :func:`dev_lab.dev.datedlog.declared_output`, which refuses rather than defaults.
     """
     parameters = inspect.signature(dated_log).parameters
     for required in ('base', 'kind'):

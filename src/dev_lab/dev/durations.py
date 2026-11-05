@@ -80,6 +80,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple, Protocol, runtime_checkable
 from lab_commons.compute.durable import durable_text
 
 from dev_lab.dev import floors
+from dev_lab.dev.datedlog import declared_output, output_dir
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -87,8 +88,8 @@ if TYPE_CHECKING:
 __all__ = [
     'CRASH_MARKER',
     'FAST',
-    'LEDGER_DIRECTORY',
     'LEDGER_ENV_VAR',
+    'LEDGER_KIND',
     'LEDGER_TREE_VAR',
     'MEASURE_DOOR',
     'NO_DATA',
@@ -118,8 +119,9 @@ __all__ = [
     'write',
 ]
 
-#: Beside the verdict logs, because a duration is evidence about the same run they are evidence for.
-LEDGER_DIRECTORY: Final = '.verify'
+#: The output-tree kind the ledger lives under: ``<output>/<yy>/<mm>/<dd>/durations/``
+#: (:func:`dev_lab.dev.datedlog.output_dir`), dated like the verify logs it is evidence beside.
+LEDGER_KIND: Final = 'durations'
 
 #: One file per pytest process; :func:`read` merges them. See the docstring on sharding.
 _STEM: Final = 'durations'
@@ -240,9 +242,9 @@ class Finding:
 
 
 def ledger_path(root: Path, *, worker: str | None = None) -> Path:
-    """Where one process's rows live: ``<root>/.verify/durations[-<worker>].json``."""
+    """Where one process's rows live TODAY: ``<output>/<yy>/<mm>/<dd>/durations/durations[-<worker>].json``."""
     suffix = f'-{worker}' if worker else ''
-    return Path(root) / LEDGER_DIRECTORY / f'{_STEM}{suffix}.json'
+    return output_dir(Path(root), LEDGER_KIND) / f'{_STEM}{suffix}.json'
 
 
 def module_of(nodeid: str) -> str:
@@ -306,7 +308,7 @@ def write(
     measured everything, which misleads anyone reading one file to find out what one worker did.
 
     Args:
-        root: the checkout whose ``.verify/`` holds the ledger.
+        root: the checkout whose declared output tree holds the ledger.
         rows: this process's measurements.
         selector: what the run SELECTED, recorded because rows mean nothing without it.
         worker: the shard id, or ``None`` for an unsharded run.
@@ -331,16 +333,16 @@ def write(
 
 
 def read(root: Path) -> Ledger:
-    """EVERY ledger file in *root*, merged by nodeid, NEWEST WINS. An absent ledger is an EMPTY one.
+    """EVERY ledger file under *root*'s output tree, EVERY DAY, merged by nodeid, NEWEST WINS. Absent is EMPTY.
 
     Emptiness is not judged here on purpose: "no ledger" and "a ledger of nothing" are the same fact,
     and :func:`assert_the_ledger_is_evidence` reports it as no data against the repo's floor.
     A row with no recorded time (a ledger written before readings were stamped) counts as oldest.
     """
-    directory = Path(root) / LEDGER_DIRECTORY
+    base = Path(root) / declared_output(Path(root))
     newest: dict[str, tuple[int, float]] = {}
     selectors: list[str] = []
-    paths = sorted(directory.glob(f'{_STEM}*.json')) if directory.is_dir() else []
+    paths = sorted(base.glob(f'*/*/*/{LEDGER_KIND}/{_STEM}*.json'))
     for path in paths:
         payload = json.loads(path.read_text(encoding='utf-8'))
         selectors.append(str(payload.get('selector', '')))

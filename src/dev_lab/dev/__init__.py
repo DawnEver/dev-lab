@@ -30,7 +30,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   the shortfalls, and the two-sided skip ratchet a project declares in ``allowed_skips``.
 * :mod:`dev_lab.dev.verify` — the family's ONE entry point that PRODUCES one:
   ``python -m dev_lab.dev.verify`` runs ruff, ruff format and pytest, tees them into a log under
-  ``.verify/``, and prints a stamped verdict -- the portable half of consumer-a's 1770-line
+  ``<output>/<yy>/<mm>/<dd>/verify/`` (:func:`dev_lab.dev.datedlog.output_dir`), and prints a stamped
+  verdict -- the portable half of consumer-a's 1770-line
   gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.

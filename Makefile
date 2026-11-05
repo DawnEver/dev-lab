@@ -54,7 +54,7 @@ verify:
 
 .PHONY: clean
 clean:
-	python -c "import shutil; [shutil.rmtree(d, True) for d in ('dist', 'build', '.verify')]"
+	python -c "import shutil; [shutil.rmtree(d, True) for d in ('dist', 'build')]"
 	python -c "import shutil; [shutil.rmtree(d, True) for d in ('.pytest_cache', '.ruff_cache')]"
 	python -c "import pathlib, shutil; [shutil.rmtree(d, True) for d in pathlib.Path().rglob('__pycache__')]"
 

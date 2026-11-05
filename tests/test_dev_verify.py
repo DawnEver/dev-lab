@@ -1619,6 +1619,23 @@ def test_the_pytest_step_writes_a_coverage_report_to_the_output_tree_and_never_g
     assert '--cov-append' in steps[1][0]
 
 
+def test_planted_a_verify_run_writes_nothing_under_dot_verify(tmp_path, monkeypatch) -> None:
+    """User ruling 2026-11-05: the run log and its records go to ``<output>/<date>/verify/``; ``.verify/`` is gone."""
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
+
+    def step(_command, *, handle, **_where: object) -> int:
+        handle.write('1 passed in 0.1s\n')
+        return 0
+
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, '_tee', step)
+    verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
+    assert not (tmp_path / '.verify').exists()
+    (log,) = (tmp_path / 'out/logs' / '/'.join(date_parts()) / 'verify').glob('verify-*.log')
+    assert '1 passed' in log.read_text(encoding='utf-8')
+
+
 def test_the_coverage_total_is_read_from_the_markdown_report(tmp_path: Path) -> None:
     report = tmp_path / 'r.coverage.md'
     report.write_text(

@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import durations, floors
+from dev_lab.dev.datedlog import UndeclaredOutput, date_parts
 from dev_lab.dev.durations import (
     CRASH_MARKER,
     FAST,
@@ -61,6 +62,17 @@ _BAR = 60.0
 _CEILING = 5.0
 
 _WEDGE = 'tests/integration/test_planted_wedge.py'
+
+#: The output root a planted checkout declares; the ledger lives in its dated tree.
+_DECLARED = '[tool.dev_lab.parts]' + chr(10) + 'output = "out/logs"' + chr(10)
+
+
+@pytest.fixture(autouse=True)
+def _declared_output(tmp_path: Path) -> None:
+    """Every planted checkout declares its output root, as every family repo does."""
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
+
+
 _QUICK = 'tests/unit/test_planted_fast.py'
 
 
@@ -336,6 +348,33 @@ def test_the_selector_travels_with_the_rows(tmp_path: Path) -> None:
     write(tmp_path, [Row('a::t', 1.0)], selector='not slow', worker='gw0')
     write(tmp_path, [Row('b::t', 2.0)], selector='all', worker='gw1')
     assert read(tmp_path).selector == 'all | not slow'
+
+
+def test_the_ledger_lives_in_the_dated_output_tree_and_never_in_dot_verify(tmp_path: Path) -> None:
+    written = write(tmp_path, [Row('a::t', 1.0)], selector='all')
+    assert written.relative_to(tmp_path).as_posix() == f'out/logs/{"/".join(date_parts())}/durations/durations.json'
+    assert not (tmp_path / '.verify').exists()
+
+
+def test_read_merges_every_DAY_newest_wins(tmp_path: Path) -> None:
+    """A ledger is read across runs: yesterday's file still counts, and a newer reading still wins."""
+    old = tmp_path / 'out/logs/26/01/01/durations/durations.json'
+    old.parent.mkdir(parents=True)
+    old.write_text(
+        '{"selector": "all", "seconds": {"a::t": 90.0, "b::t": 2.0}, '
+        '"provenance": {"a::t": {"at_ns": 1}, "b::t": {"at_ns": 1}}}',
+        encoding='utf-8',
+    )
+    write(tmp_path, [Row('a::t', 0.1)], selector='a')
+    assert read(tmp_path).seconds == {'a::t': 0.1, 'b::t': 2.0}
+
+
+def test_planted_an_UNDECLARED_output_root_refuses_the_ledger(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').unlink()
+    with pytest.raises(UndeclaredOutput):
+        write(tmp_path, [Row('a::t', 1.0)], selector='all')
+    with pytest.raises(UndeclaredOutput):
+        read(tmp_path)
 
 
 def test_an_absent_ledger_is_empty_rather_than_an_error(tmp_path: Path) -> None:
