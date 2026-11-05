@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import tomllib
 from collections.abc import Sequence
@@ -313,12 +314,44 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
         else:
             into = load_policy(root).integration
             numbers = [pull.number for pull in pr_list(built) if pull.base == into]
-        for number in numbers:
-            emit(f'[merge] {ready(root, built, number)}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         emit(f'[merge] refused: {failed}', err=True)
         return 2
+    failed = [number for number in numbers if not _ready_or_said(root, built, number)]
+    if failed:
+        emit(
+            f'[merge] refused: {len(failed)} PR(s) could not be judged: {", ".join(f"#{n}" for n in failed)}', err=True
+        )
+        return 2
     return 0
+
+
+def _ready_or_said(root: Path, client: Client, number: int) -> bool:
+    """Run :func:`ready` on PR *number*; whether it ran. ONE PR'S FAILURE NEVER STOPS THE TICK.
+
+    Any exception judging it (a forge call, an audit's git timing out) is that PR's ``error`` status naming the
+    cause, said on stderr; the PRs after it are still judged, and :func:`main` exits non-zero at the end.
+    """
+    try:
+        emit(f'[merge] {ready(root, client, number)}')
+    except Exception as error:  # noqa: BLE001 -- any cause is this PR's, never the tick's
+        why = f'could not be judged: {_cause(error)}'
+        emit(f'[merge] #{number} {why}', err=True)
+        try:
+            head = client.pr_view(number).head_sha
+            status_post(client, head, context=MERGE_READY_CONTEXT, state='error', description=why)
+        except Exception as unposted:  # noqa: BLE001 -- the line above already said it
+            emit(f'[merge] #{number} its error status was not posted: {unposted}', err=True)
+        return False
+    return True
+
+
+def _cause(error: BaseException) -> str:
+    """What went wrong, in one line: a timeout names the command and its limit."""
+    if isinstance(error, subprocess.TimeoutExpired):
+        argv = error.cmd if isinstance(error.cmd, str) else ' '.join(map(str, error.cmd[:4]))
+        return f'`{argv}` timed out after {error.timeout:g} s'
+    return f'{type(error).__name__}: {error}'
 
 
 def auto_merge(client: Client, number: int) -> str:

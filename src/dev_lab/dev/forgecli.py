@@ -1,7 +1,8 @@
 """``python -m dev_lab.dev.forge <noun> <verb>`` -- the one noun dispatch over the ``forge*`` doors.
 
 ``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
-state and comment reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for
+state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared branch protection,
+``publish`` for the status outbox, ``records`` for
 run records, ``run show <sha>`` for what a cluster run published (each round's losses, the final
 failing ids), ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
@@ -43,6 +44,7 @@ from dev_lab.dev import (
     forgemerge,
     forgenotice,
     forgeoutbox,
+    forgeprotect,
     forgepublish,
     forgequeue,
     forgerecords,
@@ -80,6 +82,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'auth': forgeauth.main,
     'breakglass': forgebreakglass.wave_main,
     'status': forgestatus.main,
+    'protect': forgeprotect.main,
     'publish': forgeoutbox.main,
     'records': forgerecords.main,
     'run': forgerunshow.main,
