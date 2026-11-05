@@ -137,10 +137,7 @@ from dev_lab.dev.forgereview_judge import (
     upheld,
 )
 from dev_lab.dev.forgereview_rounds import ledger_of, post_round, recorded_usd, trailed, trusted_bodies
-from dev_lab.dev.forgereview_runtimes import (
-    host_runtimes,
-    retired_table,
-)
+from dev_lab.dev.forgereview_runtimes import retired_table
 from dev_lab.dev.forgereview_scope import (
     Scope,
     gather,
@@ -156,6 +153,7 @@ from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_sp
 from dev_lab.dev.reviewcap import capped_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
+from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -487,7 +485,7 @@ def step(
     """
     try:
         review = review_at(root, policy.integration)
-        here = host_runtimes()
+        here = review_runtimes()
         try:  # any range, any slice: can this host run the command at all
             cannot = ready(command_for(review, '', here), root)
         except ReviewUnsupported as unsupported:

@@ -71,10 +71,8 @@ from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_fi
 from dev_lab.dev.forgereview_judge import upheld
 from dev_lab.dev.forgereview_pointer import prepare, trusted_bundle
 from dev_lab.dev.forgereview_rounds import trusted_bodies
-from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import gather, is_code
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgetakeover import runtimes_with
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
@@ -83,6 +81,7 @@ from dev_lab.dev.reviewgate import (
     app_verdicts,
     standing_verdicts,
 )
+from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -361,7 +360,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
             emit(f'[review] {prepare(root, client or client_for(root), args.pr)}')
             return 0
         judge = client or _judge_client(here, args)
-        for line in judge_pending(judge, runtimes=runtimes_with(host_runtimes(), args.runtime)):
+        for line in judge_pending(judge, runtimes=review_runtimes(args.runtime)):
             emit(f'[review] {line}')
     except (BundleRefused, ArtefactRefused, DeclarationUnread, ForgeCallFailed, OSError, ValueError) as failed:
         emit(f'[review] refused: {failed}', err=True)

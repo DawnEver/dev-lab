@@ -62,7 +62,7 @@ from dev_lab.dev.forgereview_command import ReviewUnsupported
 from dev_lab.dev.forgereview_findings import Finding
 from dev_lab.dev.forgereview_judge import Judge, Verdict, judge
 from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
-from dev_lab.dev.forgereview_runtimes import HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
+from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
 from dev_lab.dev.forgereview_scope import Budget
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
@@ -160,8 +160,9 @@ SERVE: Final = 'serve'
 JUDGE: Final = 'judge'
 WHERE: Final = (SERVE, JUDGE)
 
-#: The runtimes the family's commands read from a host's ``[runtimes]``: the ONE set a deploy migrates.
-FAMILY_RUNTIMES: Final = runtime_names((*FAMILY_COMMAND, *FAMILY_JUDGE, *FAMILY_BUNDLE))
+#: The runtimes the family's commands read from a host's ``[runtimes]``: the ONE set a deploy migrates. A derived
+#: runtime (``ai_lab``, built from the lock) is not one: no host declares it.
+FAMILY_RUNTIMES: Final = runtime_names((*FAMILY_COMMAND, *FAMILY_JUDGE, *FAMILY_BUNDLE)) - DERIVED_RUNTIMES.keys()
 
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')

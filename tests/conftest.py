@@ -17,7 +17,7 @@ import pytest
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev import _dep_project, forgeserve, metrics
+from dev_lab.dev import _dep_project, forgeserve, metrics, reviewruntime
 from dev_lab.dev.lockcheck import UV_VERSION
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 
@@ -51,6 +51,20 @@ def _a_serve_tick_measures_no_real_host(monkeypatch: pytest.MonkeyPatch) -> None
     fixtures, in test_dev_hostalarm.
     """
     monkeypatch.setattr(forgeserve, 'pressed', lambda *_a, **_k: None)
+
+
+@pytest.fixture(autouse=True)
+def locked_ai_lab(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A review test never builds THIS host's locked ai-lab: :func:`reviewruntime.review_runtimes` gets a stub.
+
+    The kit pins ai-lab ``ab12...`` from ``https://forge/o/dev-lab.git``; the runtime is a planted interpreter path.
+    test_dev_reviewruntime drives the real :func:`~reviewruntime.kit` and :func:`~reviewruntime.ensure` by seam.
+    """
+    python = tmp_path / 'locked-ai-lab' / 'python'
+    lock = '[[package]]\nname = "ai-lab"\nsource = { git = "https://forge/o/ai-lab.git#ab12cd34ef56ab12" }\n'
+    monkeypatch.setattr(reviewruntime, 'kit', lambda _home: (lock, 'https://forge/o/dev-lab.git'))
+    monkeypatch.setattr(reviewruntime, 'ensure', lambda *_a: python)
+    return python
 
 
 #: Git and Git Credential Manager never ask a person: a fake forge host once popped a GCM dialog on a

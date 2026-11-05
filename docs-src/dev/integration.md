@@ -234,7 +234,11 @@ command reads its own (`ai_lab`, the `pr-review` task key). The command is the F
 (`forgereview_declared.FAMILY_COMMAND`: `{runtimes.ai_lab.python} -m ai_lab.review --range {range} --lens {lens}
 --model {model} --rules {rules} --paths {paths}`; `{rules}` is the registry's ids, so ai-lab imports none); a repo declares only where it differs, and a redeclared family command or a
 retired host field (any `{capabilities.*}`: a host value is where a runtime lives, read from the machine file's
-`[runtimes.<name>]`, never a capability) is refused (`famtests.reviewcommand`). Every key optional:
+`[runtimes.<name>]`, never a capability) is refused (`famtests.reviewcommand`). `{runtimes.ai_lab.python}` is the
+one runtime no host declares: every host builds it from the ai-lab commit its installed dev-lab's `uv.lock` pins,
+with ai-lab's own lock `--frozen` and `--no-deps` (CI's `method` step), under `<forge home>/runtimes/ai-lab-<sha12>`
+-- rebuilt when the pin moves, a `--runtime ai_lab.python=` overriding it on a CI runner, and a machine file still
+naming `[runtimes.ai_lab]` refused until `workstation deploy` drops it (`dev_lab.dev.reviewruntime`). Every key optional:
 
 ```toml
 [tool.dev_lab.review]
