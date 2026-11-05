@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance
 from _forge_fake import git_out
+from _forge_state import called_due
 from test_dev_forgereview import JUDGE, FakeCommand, _forge, _tick, _work
 
 from dev_lab.dev._forgebackends import GITEA, GITHUB
@@ -152,6 +153,7 @@ def test_every_round_re_judges_a_finding_whose_scenario_the_head_removed(tmp_pat
     _tick(work, forge, FakeCommand(_doc(high)), _REVIEW)
     after = advance(work, 'pr/x', 'x.py', 'assert y\nx\n')  # x.py keeps its anchor line; a guard now covers it
     forge.pulls[number]['head']['sha'] = after
+    called_due(forge, after)
     rulings = {'F-x': ('fixed', 'guard.py asserts x before use')}
     command = FakeCommand(_doc(), rulings=rulings)
     _tick(work, forge, command, _REVIEW)
@@ -161,6 +163,7 @@ def test_every_round_re_judges_a_finding_whose_scenario_the_head_removed(tmp_pat
     assert 'fixed: guard.py asserts x before use' in forge.comments[number][-1]['body']
     still = advance(work, 'pr/x', 'x.py', 'x\n')  # the guard taken out: x.py changed, so F-x is re-judged
     forge.pulls[number]['head']['sha'] = still
+    called_due(forge, still)
     _tick(work, forge, FakeCommand(_doc(high), rulings={'F-x': ('present', 'nothing guards x')}), _REVIEW)
     assert _state(forge, still)[0] == 'failure', 're-raised and judged present: it blocks again'
 
@@ -215,6 +218,7 @@ def test_a_fix_pushed_after_a_blocking_round_closes_it_and_the_head_succeeds(tmp
     assert _state(forge, head)[0] == 'failure'
     fixed = advance(work, 'pr/x', 'x.py', 'fixed\n')
     forge.pulls[number]['head']['sha'] = fixed
+    called_due(forge, fixed)
     command = FakeCommand(_doc())
     _tick(work, forge, command, _REVIEW)
     state, said = _state(forge, fixed)
@@ -238,6 +242,7 @@ def test_a_claim_is_adjudicated_by_the_next_round_and_only_an_upheld_one_unblock
         assert _state(forge, head)[0] == 'failure', 'a claim moves no status'
         after = advance(work, 'pr/x', 'x.py', 'x\ny = 1\n')  # code on the finding's file: the round re-judges it
         forge.pulls[number]['head']['sha'] = after
+        called_due(forge, after)
         command = FakeCommand(_doc(high), rulings={'F-x': (outcome, 'ruled on the code')})
         _tick(work, forge, command, _REVIEW)
         assert command.judged[0][0]['claim'] == 'the guard is upstream'
@@ -337,6 +342,7 @@ def test_the_re_judge_reads_the_whole_change_at_the_head_never_the_increment(tmp
     _tick(work, forge, FakeCommand(_doc(_finding('F-x', severity='HIGH', file='x.py', anchor='x'))), _REVIEW)
     after = advance(work, 'pr/x', 'x.py', 'x\ny = 1\n')
     forge.pulls[number]['head']['sha'] = after
+    called_due(forge, after)
     seen: list[list[str]] = []
     command = FakeCommand(_doc())
 
@@ -368,6 +374,7 @@ def test_a_round_re_judges_only_blocking_or_claimed_findings_on_a_file_the_incre
     _tick(work, forge, FakeCommand(_doc(on_changed, untouched, minor)), _REVIEW)
     after = advance(work, 'pr/x', 'x.py', 'x\nguarded\n')
     forge.pulls[number]['head']['sha'] = after
+    called_due(forge, after)
     command = FakeCommand(_doc(), rulings={'F-hx': ('fixed', 'guarded'), 'F-hy': ('fixed', 'never asked')})
     _tick(work, forge, command, _REVIEW)
     ((asked,),) = command.judged
@@ -390,11 +397,13 @@ def test_a_claimed_finding_on_an_untouched_file_is_left_to_the_adjudication_door
     claim(forge, number, 'F-x', 'not a defect', by=Identity('a', 'box', 'S-author'), open_ids=['F-x'])
     after = advance(work, 'pr/x', 'y.py', 'y = 1\n')
     forge.pulls[number]['head']['sha'] = after
+    called_due(forge, after)
     command = FakeCommand(_doc())
     _tick(work, forge, command, _REVIEW)
     assert command.judged == []
     touched = advance(work, 'pr/x', 'x.py', 'x\nz = 1\n')
     forge.pulls[number]['head']['sha'] = touched
+    called_due(forge, touched)
     command = FakeCommand(_doc(), rulings={'F-x': ('false-positive', 'ruled')})
     _tick(work, forge, command, _REVIEW)
     ((asked,),) = command.judged

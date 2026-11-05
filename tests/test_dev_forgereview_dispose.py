@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
-from _forge_state import StateForge
-from test_dev_forgereview import FakeCommand, _forge, _tick, _work
+from _forge_state import StateForge, called_due
+from test_dev_forgereview import FakeCommand, _forge, _only_due, _tick, _work
 from test_dev_forgereview_rounds import _REVIEW, _doc, _finding, _state
 
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
@@ -152,11 +152,12 @@ def test_a_round_run_by_the_head_author_session_is_refused(tmp_path: Path, monke
     assert identity(forge, 'box').session == 'S-author'
     after = advance(work, 'pr/x', 'y.py', 'y = 1\n', message='feat: y\n\nLab-Session: S-author')
     forge.pulls[number]['head']['sha'] = after
+    called_due(forge, after)
     command = FakeCommand(_doc())
     (said,) = _tick(work, forge, command, _REVIEW)
     assert 'authored this head' in said
     assert command.ran == []
-    assert [one for one in status_list(forge, after) if one.context == REVIEW_CONTEXT] == [], 'nothing is posted'
+    assert _only_due(forge, after), 'nothing is posted'
     monkeypatch.delenv(SESSION_ENV)
     _tick(work, forge, FakeCommand(_doc()), _REVIEW)
     assert _state(forge, after)[0] == 'failure', 'the forge reviews it: the finding stands, judged present'
@@ -312,6 +313,7 @@ def test_an_author_claiming_as_fake1_and_taking_over_as_fake2_never_reaches_succ
     (review,) = [c['body'] for c in forge.comments[number] if marker(Marker.REVIEW, after) in c['body']]
     assert 'Emergency takeover' in review
     monkeypatch.delenv(SESSION_ENV)
+    called_due(forge, after)  # the merge decision calls the review the serve's round runs
     _tick(work, forge, judge, _REVIEW)  # the forge serve round
     assert _state(forge, after)[0] == 'success'
     assert review_missing(status_list(forge, after), lambda status: status.creator == forge.login) is None
