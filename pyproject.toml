@@ -18,6 +18,9 @@ dependencies = [
     # plugin xdist_installed() answers False and every part ran serially -- this repo's hosted part measured 483 s
     # on Linux and 2740 s on Windows on 4-vCPU runners (2026-11-05). Base, so every consumer's door has it.
     "pytest-xdist",
+    # The verify door writes a coverage REPORT on every pytest step (verifysteps.coverage_args); base for the
+    # reason pytest-xdist is: every consumer's door runs it. It brings coverage.
+    "pytest-cov",
     "ruff",
     # THE FAMILY'S ONE TOML WRITER (user ruling 2026-11-05): dev.dep_observe writes its observations with it;
     # every read is stdlib tomllib.
@@ -34,16 +37,15 @@ dependencies = [
 # bare QuickJS or V8 isolate does not provide. TEST/DEV ONLY (user ruling 2026-10-28): a consumer takes
 # it as `dev-lab[test]` in its dev extra, never in a runtime dependency (famtests.hostnode refuses that).
 #
-# THE ONE TEST KIT (user ruling 2026-11-05): with the base install (pytest, pytest-xdist, ruff) this extra is the
-# family's complete shared test/dev tool set, so a consumer declares `dev-lab[test]` and nothing else of the
-# kind. pytest-timeout: the per-test ceiling every gate relies on; pytest-cov (brings coverage): the verify
-# door's coverage REPORT; hypothesis: property tests; pyright: the type checker; pdoc: dev.docsite builds with
-# it. NOT in it: maturin (a repo's own build tool) and pytest-mock (unittest.mock and monkeypatch cover it).
+# THE ONE TEST KIT (user ruling 2026-11-05): with the base install (pytest, pytest-xdist, pytest-cov, ruff) this
+# extra is the family's complete shared test/dev tool set, so a consumer declares `dev-lab[test]` and nothing
+# else of the kind. pytest-timeout: the per-test ceiling every gate relies on; hypothesis: property tests;
+# pyright: the type checker; pdoc: dev.docsite builds with it. NOT in it: maturin (a repo's own build tool)
+# and pytest-mock (unittest.mock and monkeypatch cover it).
 test = [
     "nodejs-wheel-binaries",
     "dev-lab[ops]",
     "pytest-timeout",
-    "pytest-cov",
     "hypothesis",
     "pyright",
     "pdoc",

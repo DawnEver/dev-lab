@@ -34,9 +34,9 @@ from lab_commons.file_io import read_toml
 #: lab-commons runtime it is built on. 2026-11-05: `cryptography`, which `dev.forgeapp` (the GitHub App judge's
 #: RS256 JWT) imports -- the dev layer, so a base dependency, never the ops extra dev cannot reach up into.
 #: 2026-11-05 (ONE TEST KIT): commitizen left for `dev.commitmsg`, pytest-mock for `unittest.mock`, rtoml for
-#: `tomlkit` (the family's one TOML writer; reads are stdlib `tomllib`).
+#: `tomlkit` (the family's one TOML writer; reads are stdlib `tomllib`); pytest-cov, the verify door's coverage report.
 RUNTIME_DEPENDENCIES: frozenset[str] = frozenset(
-    {'cryptography', 'lab-commons', 'pytest', 'pytest-xdist', 'ruff', 'tomlkit'}
+    {'cryptography', 'lab-commons', 'pytest', 'pytest-cov', 'pytest-xdist', 'ruff', 'tomlkit'}
 )
 
 #: The name-boundary of a PEP 508 requirement: everything before the first comparator or marker.

@@ -62,6 +62,10 @@ __all__ = [
     'PYTEST_ARGS',
     'RUFF_STEPS',
     'build_verdict',
+    'coverage_args',
+    'coverage_env',
+    'coverage_report',
+    'coverage_total',
     'run_verify',
 ]
 
@@ -115,6 +119,38 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 #: checkout read INCONCLUSIVE. ``--no-fold-skipped`` selects pytest's other skip summary --
 #: ``SKIPPED <node id> - <reason>``, one line per skip -- and a node id is the name of the test.
 PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
+
+#: THE COVERAGE REPORT (user ruling 2026-11-05): every pytest step measures coverage with pytest-cov and writes it
+#: as Markdown beside its log. A REPORT, NEVER A GATE -- no ``--cov-fail-under``, so a coverage number cannot move a
+#: verdict. ``--cov`` names no source, so a repo's own ``[tool.coverage.run]`` decides what is measured.
+_COVERAGE_TOTAL: Final = '| **TOTAL**'
+
+
+def coverage_report(log: Path) -> Path:
+    """The Markdown coverage report of the run logged at *log*: ``<log stem>.coverage.md`` beside it."""
+    return log.with_suffix('.coverage.md')
+
+
+def coverage_env(log: Path) -> dict[str, str]:
+    """The coverage DATA file of the run logged at *log*, beside it, so no run writes ``.coverage`` into the tree."""
+    return {'COVERAGE_FILE': str(log.with_suffix('.coverage'))}
+
+
+def coverage_args(root: Path, log: Path, *, append: bool = False) -> tuple[str, ...]:
+    """pytest-cov's arguments for the run logged at *log* under *root*; *append* adds to the stage before it."""
+    report = coverage_report(log).relative_to(root).as_posix()  # relative: a drive colon would split the option
+    return ('--cov', f'--cov-report=markdown:{report}', *(('--cov-append',) if append else ()))
+
+
+def coverage_total(report: Path) -> str | None:
+    """The TOTAL percentage *report* states, or ``None`` when there is no report to read."""
+    if not report.is_file():
+        return None
+    for line in report.read_text(encoding='utf-8').splitlines():
+        if line.startswith(_COVERAGE_TOTAL):
+            return line.rstrip(' |').rsplit('|', 1)[-1].strip(' *')
+    return None
+
 
 #: The durations ledger, loaded as a plugin so EVERY verify run records what it executed -- targeted
 #: or full, whichever conftest the selected tests sit under (:func:`dev_lab.dev.durations.pytest_configure`).
@@ -304,18 +340,24 @@ def run_verify(
             durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
             durations.LEDGER_ENV_VAR: env_key(env_manifest()),
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
+            **coverage_env(path),
         }
-        pytest = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN, *pytest_args]
+        head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
+        pytest = [*head, *pytest_args]
+        covered = [*head, *coverage_args(root, path), *pytest_args]
         seen = path.with_suffix('.serial-seen')
-        argv, record = boxed(root, pytest, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
+        argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
         codes = [_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'parallel', SEEN_ENV: str(seen)})]
         learn_ended(root, pytest, record)
         cut = ended_in_the_box(record)
         if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
             handle.write(SERIAL_BANNER)
-            argv, record = boxed(root, [*pytest, *serial_width()], queue_s=wait_s, outcome=seen.with_suffix('.json'))
+            appended = [*covered, '--cov-append', *serial_width()]
+            argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
             codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
             cut += ended_in_the_box(record)
+    report = coverage_report(path)
+    emit(f'coverage: {coverage_total(report) or "not measured"} -- {report.relative_to(root).as_posix()} (a report)')
     stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]
     stages += [distil_log(path, banner=SERIAL_BANNER) for _ in codes[1:]]
     complete_census, scope_refusal = census_scope(pytest_args)

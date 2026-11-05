@@ -658,7 +658,9 @@ class TestThePlantedControl:
             *verifysteps.OUTCOME_PLUGIN,
             *serialpass.PLUGIN,
         )
-        assert commands[-1] == (*expected_command, *selection)
+        coverage = commands[-1][len(expected_command) : len(commands[-1]) - len(selection)]
+        assert commands[-1] == (*expected_command, *coverage, *selection)
+        assert coverage[0] == '--cov', coverage
         assert verdict.selector.spec == ' '.join(('verify', *selection))
         assert verdict.result.outcome is expected
         if selection == ('--unknown-selection',):
@@ -1571,3 +1573,68 @@ def test_a_box_with_no_room_releases_a_producers_claim_claimable(
     assert code == (ProducerExit.UNREACHABLE if producer else ProducerExit.INCONCLUSIVE)
     assert release_reason(code).startswith(RETRYABLE) is producer, 'serve re-queues exactly the capacity release'
     assert 'planted-holder' in lines[0], 'the one line names the capacity reason'
+
+
+# ------------------------------------------------------------------ the coverage REPORT (never a gate)
+
+
+def test_the_pytest_step_writes_a_coverage_report_beside_its_log_and_never_gates(tmp_path, monkeypatch) -> None:
+    """Every verify run measures coverage into ``<log>.coverage.md``; no ``--cov-fail-under`` anywhere.
+
+    PLANTED CONTROL: the serial stage APPENDS to the parallel stage's data, so its report is the union.
+    """
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
+    launched: list[tuple[tuple[str, ...], dict[str, str]]] = []
+
+    def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
+        assert cwd == tmp_path
+        launched.append((tuple(command), dict(extra_env or {})))
+        if 'pytest' in command and extra_env and extra_env.get(serialpass.STAGE_ENV) == 'parallel':
+            Path(extra_env[serialpass.SEEN_ENV]).write_text('x', encoding='utf-8')
+        handle.write('1 passed in 0.1s\n')
+        handle.flush()
+        return 0
+
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, '_tee', recorded_step)
+    verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
+    steps = [(argv, env) for argv, env in launched if 'pytest' in argv]
+    assert len(steps) == 2, steps
+    for argv, env in steps:
+        assert '--cov' in argv, argv
+        assert not any(one.startswith('--cov-fail-under') for one in argv), argv
+        (report,) = [one.split(':', 1)[1] for one in argv if one.startswith('--cov-report=markdown:')]
+        assert report.startswith(f'{verifysteps.LOG_DIRECTORY}/verify-'), report
+        assert report.endswith('.coverage.md'), report
+        assert env['COVERAGE_FILE'].endswith('.coverage'), env
+    assert '--cov-append' not in steps[0][0]
+    assert '--cov-append' in steps[1][0]
+
+
+def test_the_coverage_total_is_read_from_the_markdown_report(tmp_path: Path) -> None:
+    report = tmp_path / 'r.coverage.md'
+    report.write_text(
+        '| Name | Stmts | Miss | Cover |\n|--- | ---: | ---: | ---: |\n| m.py | 4 | 1 | 75% |\n'
+        '| **TOTAL** | **7** | **1** | **86%** |\n',
+        encoding='utf-8',
+    )
+    assert verifysteps.coverage_total(report) == '86%'
+    assert verifysteps.coverage_total(tmp_path / 'absent.md') is None  # PLANTED: no report, no number
+
+
+def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> None:
+    """The arguments the door hands pytest, run for real: the report exists and carries a TOTAL."""
+    (tmp_path / 'm.py').write_text('def f(x):\n    if x:\n        return 1\n    return 2\n', encoding='utf-8')
+    (tmp_path / 'test_m.py').write_text('from m import f\n\n\ndef test_f():\n    assert f(1) == 1\n', encoding='utf-8')
+    log = tmp_path / verifysteps.LOG_DIRECTORY / 'verify-x.log'
+    log.parent.mkdir()
+    done = subprocess.run(
+        [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *verifysteps.coverage_args(tmp_path, log)],
+        cwd=tmp_path,
+        env={**os.environ, **verifysteps.coverage_env(log)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert verifysteps.coverage_total(verifysteps.coverage_report(log)) == '86%'
