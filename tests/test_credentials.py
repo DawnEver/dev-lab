@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 from lab_commons.credentials import (
-    API_KEY_TASKS,
     NoCredential,
     api_key,
     api_keys,
@@ -184,17 +183,14 @@ def test_a_helper_answering_another_username_is_refused_not_taken(
         api_key('api.example.org', task='optimization')
 
 
-def test_an_undeclared_task_is_refused_naming_the_declared_ones() -> None:
-    with pytest.raises(ValueError, match='pr-review'):
-        key_username('pr_reveiw')
-    assert {key_username(task) for task in API_KEY_TASKS} == {f'api-key-{task}' for task in API_KEY_TASKS}
-    assert key_username(None) == 'api-key'
-    assert not any(task.isdigit() for task in API_KEY_TASKS)  # api-key-<N> is a fallback slot (ai_lab)
-
-
-def test_the_interactive_host_launchers_own_the_session_task() -> None:
-    assert 'session' in API_KEY_TASKS
+def test_a_task_is_checked_for_spelling_only_and_never_reads_as_a_slot() -> None:
+    """The task set is ai-lab's routes; lab_commons validates only the spelling (``TASK_NAME``)."""
+    assert key_username('pr-review') == 'api-key-pr-review'
     assert key_username('session') == 'api-key-session'
+    assert key_username(None) == 'api-key'
+    for bad in ('PR_Review', 'pr_x', '2', 'x-2', '-a', 'a-', ''):
+        with pytest.raises(ValueError, match='not a task name'):
+            key_username(bad)
 
 
 def test_one_username_rule_for_every_slot_with_and_without_a_task() -> None:

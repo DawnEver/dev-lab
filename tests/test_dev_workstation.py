@@ -745,20 +745,24 @@ def test_a_dry_run_reports_the_runtime_move_it_would_make(box: Box, capsys: pyte
     assert box.deploy('--dry-run') == 0
     out = capsys.readouterr().out
     assert 'already declares every table' not in out
-    assert 'retired spelling moved: [capabilities.ai_lab] -> [runtimes.ai_lab]' in out
-    assert '+[runtimes.ai_lab]  # the review interpreter' in out
+    assert 'retired spelling moved: [capabilities.ai_lab] dropped: built from the ai-lab commit' in out
+    assert '-[capabilities.ai_lab]  # the review interpreter' in out
     assert box.machine.read_text(encoding='utf-8') == held, 'a dry run writes nothing'
 
 
-def test_deploy_moves_a_commented_runtime_table_backs_up_once_and_is_idempotent(box: Box) -> None:
+def test_deploy_drops_a_hand_set_ai_lab_runtime_backs_up_once_and_is_idempotent(box: Box) -> None:
+    """2026-11-05: the review runtime is built from the lock, so a deploy drops the path G kept by hand."""
     assert box.deploy() == 0
-    held = _g_shaped(box)
+    _g_shaped(box)
+    box.machine.write_text(
+        box.machine.read_text(encoding='utf-8') + G_RUNTIME.replace('capabilities', 'runtimes'), encoding='utf-8'
+    )
+    held = box.machine.read_text(encoding='utf-8')
     assert box.deploy() == 0
     text = box.machine.read_text(encoding='utf-8')
-    assert G_RUNTIME.replace('capabilities', 'runtimes') in text, 'keys and the comment are kept'
     declared = tomllib.loads(text)
     assert set(declared['capabilities']) == {'workstation', 'jmag', 'connection'}, 'PLANTED CONTROL: supply kept'
-    assert declared['runtimes'] == {'ai_lab': {'python': 'C:/ai-lab/.venv/Scripts/python.exe'}}
+    assert 'ai_lab' not in declared.get('runtimes', {}), 'both spellings of the derived runtime are dropped'
     backup = box.machine.with_name(box.machine.name + '.lab-deploy.bak')
     assert backup.read_text(encoding='utf-8') == held
     assert box.deploy() == 0

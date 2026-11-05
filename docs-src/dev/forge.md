@@ -18,6 +18,14 @@ suite to learn whether a sha is green, and you never wait for one to push.
   (`platformparts.derived`). A new tool is a new marker and nothing else.
 - **A run** is one execution of one part's tests at one sha; its record is `run-<sha>-<part>-<req>.json.gz`
   (its `platform` key holds the part). An incremental part is its base part plus the re-run ids.
+- **A tested tree is never tested again.** Before a producer runs a full part it asks the run-records store for
+  a PASS of the same (tree, env key, part) (`dev_lab.dev.verdictstore.lookup`) and, on a hit, posts it on the new
+  sha ending `cited from <sha12>: same tree`, the record as its `target_url` -- so a merge smoke, the push to
+  integrate/main and a no-op merge cite the PR head's run instead of repeating it (a fifth of hits are re-run as a
+  spot check, `workstationverdict.SPOT_CHECK_FRACTION`). Any other tree, env key or part runs. The env key leaves
+  out the project under test (`dev_lab.dev.verdictenv`): its VCS version moves with every commit, the tree already
+  names its code. On GitHub a new push cancels the superseded run of its own PR (`ci-pr-<number>`); a push to
+  integrate/main, the nightly run and a merge smoke are each their own group and never cancelled.
 - **Admission** is computed from parts and never stored (`dev_lab.dev.pushgate`): a lane and the
   integration branch need no part; the trunk needs `tests/base` and every part a part hands to, each a PASS
   at scope `full` -- every derived part green. An unreadable forge makes the trunk wait.
@@ -530,7 +538,7 @@ host and never by `forge serve` (one mode per repo). The runner runs
 `python -m dev_lab.dev.forge review prepare --pr <n>` (no reviewer token): it attaches the
 review bundle to its own run as the `review-bundle` artifact, which the judge finds by listing the base's prepare
 runs itself (a declared preparer's host instead stores it and points the head at it). The judge host
-runs `python -m dev_lab.dev.forge review judge --url <repo web url> [--token-file <path>] [--runtime ai_lab.python=<py>]`
+runs `python -m dev_lab.dev.forge review judge --url <repo web url> [--token-file <path>]`
 on a timer: it verifies each pointed-at bundle against the forge's own diff, reads the declaration fresh from the
 integration branch, and posts one PR review per head as its own login. The mechanism is the module docstring of
 `dev_lab.dev.forgereview_bundle`.
@@ -590,6 +598,27 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   checkout's remote lives on, plus `github.com` (`--host` narrows it), and refuses a terminal stdout; stderr
   names hosts and sha256 prefixes, never a token. `login --from-file <path|->` verifies EVERY token before
   storing ANY. An `OAUTH_USER` (GCM OAuth) token expires, so that host may re-authenticate on its first push.
+
+### Model keys: one bundle per ai-lab task
+
+- Each ai-lab task (`pr-review`, `live`, ...) has ONE secret, `AI_LAB_KEYS_<TASK>` (`-` as `_`), holding its TOML
+  key bundle; which providers it holds is ai-lab's `routes.toml`, never dev-lab's. The name and the loader are
+  `dev_lab.dev.taskkeys`'s; the review jobs pass `--keys-env AI_LAB_KEYS_PR_REVIEW`, a hosted part declares
+  `tasks = [...]` (`dev_lab.dev.jobparts`), the ops judge reads `[ops.judge] keys_file`.
+- Set a task's bundle on every `[serve] repos` checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
+
+  ```
+  python -m dev_lab.dev.forge secrets sync --task pr-review --dry-run      # the targets only
+  <bundle source> | python -m dev_lab.dev.forge secrets sync --task pr-review
+  ```
+
+  GitHub through `gh secret set` (stdin), Gitea through the forge door unjournaled -- a journaled write keeps its
+  body on disk. Each line names the repo, the secret and the bundle's sha256 prefix only.
+- A Gitea Actions secret is writable ONLY by an owner of the organisation that owns the repo (or a site admin): a
+  push-only credential is refused, and the settings pages (`/<owner>/<repo>/settings/actions/secrets`,
+  `/org/<org>/settings/actions/secrets`) answer `404 Not Found`, not 403, to anyone else (measured 2026-11-05 on
+  `Tianjie-Zou-Team`). So on Gitea the bundle is set by the user in the web UI with the admin account, once at the
+  organisation level, where every repo of the organisation reads it; `secrets sync` sets the GitHub repos.
 
 ### A gitea auth refusal is an expired OAuth token, not a bad credential
 

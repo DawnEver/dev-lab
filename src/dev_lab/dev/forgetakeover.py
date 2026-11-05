@@ -16,7 +16,6 @@ the review" is :data:`~dev_lab.dev.reviewgate.RERUN` -- the forge's review run a
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -50,7 +49,6 @@ from dev_lab.dev.forgereview_findings import parse_findings
 from dev_lab.dev.forgereview_job import job_exit, resume_batches, review_run
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
-from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest, client_for
@@ -59,13 +57,15 @@ from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
+from dev_lab.dev.reviewruntime import review_runtimes
+from dev_lab.dev.taskkeys import REVIEW_TASK, keys_loaded
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
     'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
-    'runtimes_with', 'scope_of', 'takeover',
+    'scope_of', 'takeover',
 ]  # fmt: skip
 
 
@@ -242,6 +242,7 @@ def _parser() -> argparse.ArgumentParser:
     ruling = verbs.add_parser('adjudicate', help='rule on every pending claim of a thread (the forge runs this)')
     ruling.add_argument('number', type=int, help="the PR, or a PR-less head's ledger issue")
     ruling.add_argument('--dry-run', action='store_true', help='print the verdicts, post nothing (any session)')
+    _keys_env(ruling, 'empty or unset: the judge runs on the keys this host already stores')
     ruling.add_argument(
         '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
         help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
@@ -254,10 +255,7 @@ def _parser() -> argparse.ArgumentParser:
         '--batch-pending', action='store_true',
         help='resume every open head whose review batch is pending, from its PR (the scheduled job runs this)',
     )  # fmt: skip
-    running.add_argument(
-        '--secret-env', action='append', default=[], metavar='NAME',
-        help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer',
-    )  # fmt: skip
+    _keys_env(running, 'empty or unset (a fork PR) holds the head for a maintainer')
     running.add_argument(
         '--git-token-file', type=Path, metavar='PATH',
         help="a file holding the forge read token: read once, removed, sent only to the door's git",
@@ -273,17 +271,11 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def runtimes_with(here: Mapping[str, Mapping[str, Any]], given: Sequence[str]) -> dict[str, dict[str, Any]]:
-    """*here* (the machine file's ``[runtimes]``) with each ``NAME.KEY=VALUE`` of *given* over it."""
-    out = {name: dict(row) for name, row in here.items()}
-    for one in given:
-        where, equals, value = one.partition('=')
-        name, dot, key = where.partition('.')
-        if not (equals and dot and name and key):
-            msg = f'--runtime {one!r} is not NAME.KEY=VALUE'
-            raise ValueError(msg)
-        out.setdefault(name, {})[key] = value
-    return out
+def _keys_env(verb: argparse.ArgumentParser, unset: str) -> None:
+    verb.add_argument(
+        '--keys-env', metavar='NAME',
+        help=f'the variable holding the {REVIEW_TASK} key bundle, piped to the ai-lab loader and unset; {unset}',
+    )  # fmt: skip
 
 
 def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run: Callable[..., str]) -> list[str]:
@@ -297,9 +289,11 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
         return [f'[review] {dispose(origin, args.pr, args.finding, args.why, by=me)}']
     if args.verb == 'cap':
         return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
+    runtimes = review_runtimes(args.runtime)
+    keys_loaded(args.keys_env, runtimes)
     ruled = adjudicate_thread(
         root, origin, review_at(root, base), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
-        runtimes=runtimes_with(host_runtimes(), args.runtime),
+        runtimes=runtimes,
     )  # fmt: skip
     return [f'[review] {one}' for one in ruled]
 
@@ -309,8 +303,9 @@ def _job(
     ready: Callable[[Sequence[str], Path], str | None], fetch: Callable[[Path, int], object],
 ) -> int:  # fmt: skip
     """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
-    runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready,
-                    secret=all(os.environ.get(name) for name in args.secret_env), verifies=True)  # fmt: skip
+    runtimes = review_runtimes(args.runtime)
+    runner = Runner(this_machine(), runtimes, run=run, ready=ready, secret=keys_loaded(args.keys_env, runtimes),
+                    verifies=True)  # fmt: skip
     review = review_at(root, base)
     if args.batch_pending:
         for one in resume_batches(root, origin, review, base=base, runner=runner, fetch=fetch):
@@ -336,7 +331,7 @@ def main(
     pull_in = fetch or (lambda where, number: fetch_pull(where, 'origin', number))
     try:
         # run: the tokens arrive by file, never env, before any subprocess (F-5a82981c5f22, F-d61706393b50);
-        # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.
+        # the task's key bundle (--keys-env) is unset once loaded, before any reviewer starts (keys_loaded).
         api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
         origin = client or client_for(root, token=api)
         # never the working tree's: the head's (F-169e99e6c68c); the forge's jobs ask the forge (an Actions
@@ -366,7 +361,7 @@ def main(
             for one in scope.slices:
                 emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
             return 0
-        here = host_runtimes()
+        here = review_runtimes()
         for said in takeover(root, origin, review, head, pull=pull, base=base, host=this_machine(), run=run,
                              runtimes=here):  # fmt: skip
             emit(f'[review] {said}')

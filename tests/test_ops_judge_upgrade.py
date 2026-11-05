@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -212,3 +213,69 @@ def test_an_app_declaration_that_lies_is_refused(tmp_path: Path, apps: str, toke
     )
     with pytest.raises(ValueError, match=why):
         _config(tmp_path, table)
+
+
+def test_install_loads_the_judge_s_key_bundle_from_its_root_only_file(tmp_path: Path) -> None:
+    """2026-11-05: the judge's model keys are the pr-review task's ONE bundle, loaded on stdin, naming no provider.
+
+    PLANTED CONTROL: with no ``keys_file`` the step asks the operator to pipe the bundle.
+    """
+    bundle = (tmp_path / 'pr-review.toml').as_posix()
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle}"\nrepos = [', 1)
+    steps = install(_config(tmp_path, table), tmp_path / 'root').next_steps
+    (load,) = [step for step in steps if 'ai_lab.auth' in step]
+    assert load.startswith('sudo -u forge-judge ')
+    assert load.endswith(f'-I -m ai_lab.auth login --task pr-review --bundle - < {bundle}')
+    owned = [step for step in steps if 'pr-review.toml' in step and step.startswith('chown')]
+    assert owned == [f'chown root:root {bundle} && chmod 600 {bundle}'], 'root-only, never handed to the judge'
+    assert not [step for step in steps if 'anthropic' in step.lower()], 'ai-lab routes say which provider'
+    bare = install(_config(tmp_path, _app_table(tmp_path)), tmp_path / 'bare').next_steps
+    (piped,) = [step for step in bare if 'ai_lab.auth' in step]
+    assert piped.endswith('--bundle -  (the pr-review key bundle on stdin)')
+
+
+NL = chr(10)
+BUNDLE = f'[keys]{NL}anthropic = ["k"]{NL}'
+
+
+@pytest.mark.parametrize(
+    ('content', 'why'),
+    [(None, 'unreadable'), ('not = [toml', 'not a key bundle'), (f'[other]{NL}a = 1{NL}', 'not a key bundle')],
+)
+def test_a_root_load_refuses_a_keys_file_missing_or_not_a_bundle(tmp_path: Path, content: str | None, why: str) -> None:
+    """F-62e1a094ad3a: ``keys_file`` takes ``environment_file``'s one root-secret read; the bundle is never echoed.
+
+    PLANTED CONTROL: a readable ``[keys]`` bundle is accepted, and a non-root load never reads the root-only file.
+    """
+    bundle = tmp_path / 'pr-review.toml'
+    if content is not None:
+        bundle.write_text(content, encoding='utf-8')
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle.as_posix()}"{NL}repos = [', 1)
+    path = tmp_path / 'supervise.toml'
+    head = f'[ops]{NL}home = "{(tmp_path / "home").as_posix()}"{NL}python = "/p"{NL}'
+    path.write_text(head + table, encoding='utf-8')
+    with pytest.raises(ValueError, match=why) as refused:
+        load(path, environ={}, as_root=True)
+    assert 'not = [toml' not in str(refused.value)
+    assert load(path, environ={}, as_root=False).judge is not None
+    bundle.write_text(BUNDLE, encoding='utf-8')
+    assert load(path, environ={}, as_root=True).judge is not None
+
+
+def test_install_narrows_a_0644_keys_file_to_root_0600(tmp_path: Path) -> None:
+    """F-62e1a094ad3a: a world-readable bundle is narrowed and root-owned, exactly as ``environment_file`` is."""
+    root = tmp_path / 'root'
+    bundle = root / 'etc' / 'pr-review.toml'
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text(BUNDLE, encoding='utf-8')
+    bundle.chmod(0o644)
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "/etc/pr-review.toml"{NL}repos = [', 1)
+    seen: list[tuple[str, str | None, str | None]] = []
+
+    def chown(path: Path, user: str | None, group: str | None) -> None:
+        seen.append((path.name, user, group))
+
+    install(_config(tmp_path, table), root, chown=chown)
+    assert ('pr-review.toml', 'root', 'root') in seen
+    if sys.platform != 'win32':
+        assert bundle.stat().st_mode & 0o777 == 0o600
