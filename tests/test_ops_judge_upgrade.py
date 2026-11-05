@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.ops import __main__ as door
+from dev_lab.ops import install as install_module
 from dev_lab.ops import judge, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.install import install
@@ -172,6 +173,26 @@ def test_install_hands_the_app_key_to_the_judge_and_gives_it_a_home(tmp_path: Pa
     assert any(step.startswith('chown forge-judge ') and 'github-app.pem' in step for step in done.next_steps)
     assert any('--create-home --home-dir /var/lib/forge-judge forge-judge' in step for step in done.next_steps)
     assert any('credential.helper store' in step for step in done.next_steps)
+
+
+def test_install_names_the_remedy_when_the_judge_cannot_enter_its_keys_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deployed fault: the key 600 forge-judge's, its directory root:root 700; the remedy is named, not applied.
+
+    Install never opens a directory it did not make. PLANTED CONTROL: an enterable directory gets no such step.
+    """
+    host = _config(tmp_path, _app_table(tmp_path))
+    root = tmp_path / 'root'
+    keys = root / tmp_path.relative_to(tmp_path.anchor)
+    keys.mkdir(parents=True)
+    (keys / 'github-app.pem').write_text('k', encoding='utf-8')
+    where = tmp_path.as_posix()
+    remedy = f'forge-judge cannot enter {where}: chown root:forge-judge {where} && chmod 750 {where}'
+    for enters, named in ((False, True), (True, False)):
+        monkeypatch.setattr(install_module, '_may_enter', lambda path, _user, enters=enters: enters or path != keys)
+        steps = install(host, root, chown=lambda *_: None).next_steps
+        assert any(step.startswith(remedy) for step in steps) is named
 
 
 @pytest.mark.parametrize(
