@@ -41,7 +41,8 @@ from lab_commons.compute.durable import durable_write
 from dev_lab.dev.worktreeplace import main_checkout
 
 __all__ = [
-    'LOOKBACK', 'OUTBOX_REL', 'RETAIN_S', 'WRITES', 'Durable', 'Journal', 'Probe', 'Write', 'journal_for',
+    'LOOKBACK', 'OUTBOX_REL', 'RETAIN_S', 'WRITES', 'Durable', 'Journal', 'Probe', 'Write', 'journal_at',
+    'journal_for',
     'outbox_dir', 'since', 'write_key',
 ]  # fmt: skip
 
@@ -183,6 +184,11 @@ def outbox_dir(root: Path) -> Path:
     return main_checkout(root) / OUTBOX_REL
 
 
+def journal_at(outbox: Path) -> Journal:
+    """The write journal inside the outbox *outbox*: a checkout's (:func:`journal_for`) or a role's declared state."""
+    return Journal(outbox / WRITES)
+
+
 def journal_for(root: Path) -> Journal:
     """The write journal of *root*'s repository: what :func:`dev_lab.dev.forgework.client_for` records into."""
-    return Journal(outbox_dir(root) / WRITES)
+    return journal_at(outbox_dir(root))

@@ -36,6 +36,7 @@ may require it too. The judge needs PR write (an App: checks write) and code REA
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
@@ -84,6 +85,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'DEFAULT_TOKEN_FILE',
+    'JUDGE_STATE_REL',
     'Verdict',
     'forge_merge_base',
     'judge_one',
@@ -289,6 +291,21 @@ def judge_pending(
     return said
 
 
+#: The judge's state -- its forge-write journal and caches -- under the XDG state home of the user it runs as.
+JUDGE_STATE_REL: Final = 'dev-lab/forge/judge'
+
+
+def judge_state(env: Mapping[str, str] | None = None) -> Path:
+    """Where the judge keeps its state: ``$XDG_STATE_HOME``, else ``$HOME/.local/state``, then :data:`JUDGE_STATE_REL`.
+
+    The judge holds no checkout, so its journal cannot live in one: it lives in the HOME its unit declares
+    (``[ops.judge] home``), a process location, never the working directory.
+    """
+    env = os.environ if env is None else env
+    base = Path(env['XDG_STATE_HOME']) if env.get('XDG_STATE_HOME') else Path.home() / '.local' / 'state'
+    return base / JUDGE_STATE_REL
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge review', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -298,6 +315,7 @@ def _parser() -> argparse.ArgumentParser:
     judging = verbs.add_parser('judge', help='review every prepared head as this host, posting PR reviews')
     judging.add_argument('--url', required=True, help="the repository's web URL (the judge holds no checkout)")
     judging.add_argument('--token-file', type=Path, default=DEFAULT_TOKEN_FILE, help='the judge token')
+    judging.add_argument('--state', type=Path, help="the judge's journal and caches (default: judge_state())")
     judging.add_argument('--app-id', type=int, help='judge as this GitHub App (with --app-key-file), not a token')
     judging.add_argument('--app-key-file', type=Path, help="the App's private key PEM")
     judging.add_argument(
@@ -308,13 +326,15 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _judge_client(here: Path, args: argparse.Namespace) -> Client:
-    """The judge's client: as the App ``--app-id`` names, else presenting ``--token-file``."""
+    """The judge's client: as the App ``--app-id`` names, else presenting ``--token-file``; journal in ``--state``."""
     if (args.app_id is None) != (args.app_key_file is None):
         msg = '--app-id and --app-key-file go together: an App authenticates with both'
         raise ValueError(msg)
+    state = args.state or judge_state()
     if args.app_id is not None:
-        return app_client(here, args.url, args.app_id, args.app_key_file)
-    return client_for(here, url=args.url, token=args.token_file.read_text(encoding='utf-8').strip())
+        return app_client(here, args.url, args.app_id, args.app_key_file, outbox=state)
+    token = args.token_file.read_text(encoding='utf-8').strip()
+    return client_for(here, url=args.url, token=token, outbox=state)
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
