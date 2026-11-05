@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.forgereview_runtimes import host_runtimes
+from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -313,9 +313,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.reviewbudget', description=__doc__.splitlines()[0])
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
-    spend = read_spend(host_runtimes(), Path.cwd())
+    spend = read_spend(review_runtimes(), Path.cwd())
     if spend is None:
-        emit('this host has no ai-lab spend report ([runtimes.ai_lab] python, ai_lab.spend)', err=True)
+        emit('this host has no ai-lab spend report (its locked ai-lab gives no ai_lab.spend)', err=True)
         return 2
     got = fit(spend)
     doc = {

@@ -27,7 +27,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._machinefile import diff, merged, renamed
 from dev_lab.dev.forgereview_declared import FAMILY_RUNTIMES
-from dev_lab.dev.forgereview_runtimes import RUNTIMES_TABLE
+from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, RUNTIMES_TABLE
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -117,22 +117,31 @@ def template(role: str, repos: Sequence[str]) -> str:
     return merged('', role_tables(ROLES[role], capabilities(','.join(ROLES[role].capabilities)), repos))
 
 
+def _derived(data: Mapping[str, Any]) -> list[str]:
+    """Every table *data* spells for a runtime no host declares (:data:`DERIVED_RUNTIMES`), either spelling."""
+    tables = ('capabilities', RUNTIMES_TABLE)
+    return [f'{t}.{n}' for n in sorted(DERIVED_RUNTIMES) for t in tables if n in data.get(t, {})]
+
+
 def _retirements(text: str) -> tuple[str, dict[str, Any], list[str]]:
     """*text* with every RETIRED ``[capabilities.<name>]`` resolved: the text, the tables to drop, the moves made.
 
     No alias survives a deploy (:data:`lab_commons.hpc.retired.RETIRED`). A runtime's table (its name in
     :data:`FAMILY_RUNTIMES`, or its registry remedy ``[runtimes.<name>]``) holds where it lives, which only this
     host knows: renamed in place when ``[runtimes.<name>]`` is absent, else its keys carried there. Any other
-    retired table is dropped.
+    retired table is dropped, and so is a runtime no host declares any more (:data:`DERIVED_RUNTIMES`), under
+    either table.
     """
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
         return text, {}, []  # the merge refuses the file by name
     declared, runtimes = data.get('capabilities', {}), data.get(RUNTIMES_TABLE, {})
-    out: dict[str, Any] = {}
-    moves: list[str] = []
+    out: dict[str, Any] = dict.fromkeys(dropped := _derived(data))
+    moves = [f'[{table}] dropped: {DERIVED_RUNTIMES[table.rpartition(".")[2]]}' for table in dropped]
     for name, facts in declared.items():
+        if name in DERIVED_RUNTIMES:
+            continue
         old, new = f'capabilities.{name}', f'{RUNTIMES_TABLE}.{name}'
         remedy = RETIRED.get(old)
         if name not in FAMILY_RUNTIMES and not (remedy or '').startswith(f'[{new}]'):

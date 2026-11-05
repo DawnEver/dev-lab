@@ -67,7 +67,8 @@ Nothing else is written: no `[reserve]`, no seats. Every other table, key and co
 
    Read every action and the machine-file diff, then run it again without `--dry-run`. It clones and bootstraps
    each repo, installs its hooks, merges the tables above, removes every RETIRED `[capabilities.<name>]` table
-   (one retired into `[runtimes.<name>]` keeps its keys there), and writes the `lab-forge-serve` Task. A second
+   (one retired into `[runtimes.<name>]` keeps its keys there; `ai_lab` is dropped, its runtime built from the
+   lock -- [the reviewer](integration.md#the-pr-reviewer-blocks-on-high-or-security)), and writes the `lab-forge-serve` Task. A second
    run changes nothing.
 
 ## Verify

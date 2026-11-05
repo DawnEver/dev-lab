@@ -49,7 +49,6 @@ from dev_lab.dev.forgereview_findings import parse_findings
 from dev_lab.dev.forgereview_job import job_exit, resume_batches, review_run
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
-from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest, client_for
@@ -58,6 +57,7 @@ from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
+from dev_lab.dev.reviewruntime import review_runtimes
 from dev_lab.dev.taskkeys import REVIEW_TASK, keys_loaded
 
 if TYPE_CHECKING:
@@ -65,7 +65,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
-    'runtimes_with', 'scope_of', 'takeover',
+    'scope_of', 'takeover',
 ]  # fmt: skip
 
 
@@ -278,19 +278,6 @@ def _keys_env(verb: argparse.ArgumentParser, unset: str) -> None:
     )  # fmt: skip
 
 
-def runtimes_with(here: Mapping[str, Mapping[str, Any]], given: Sequence[str]) -> dict[str, dict[str, Any]]:
-    """*here* (the machine file's ``[runtimes]``) with each ``NAME.KEY=VALUE`` of *given* over it."""
-    out = {name: dict(row) for name, row in here.items()}
-    for one in given:
-        where, equals, value = one.partition('=')
-        name, dot, key = where.partition('.')
-        if not (equals and dot and name and key):
-            msg = f'--runtime {one!r} is not NAME.KEY=VALUE'
-            raise ValueError(msg)
-        out.setdefault(name, {})[key] = value
-    return out
-
-
 def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run: Callable[..., str]) -> list[str]:
     """``held`` and ``blocked`` list heads; ``dispose`` records a claim; ``adjudicate`` rules (the forge runs it)."""
     if args.verb == 'held':
@@ -302,7 +289,7 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
         return [f'[review] {dispose(origin, args.pr, args.finding, args.why, by=me)}']
     if args.verb == 'cap':
         return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
-    runtimes = runtimes_with(host_runtimes(), args.runtime)
+    runtimes = review_runtimes(args.runtime)
     keys_loaded(args.keys_env, runtimes)
     ruled = adjudicate_thread(
         root, origin, review_at(root, base), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
@@ -316,7 +303,7 @@ def _job(
     ready: Callable[[Sequence[str], Path], str | None], fetch: Callable[[Path, int], object],
 ) -> int:  # fmt: skip
     """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
-    runtimes = runtimes_with(host_runtimes(), args.runtime)
+    runtimes = review_runtimes(args.runtime)
     runner = Runner(this_machine(), runtimes, run=run, ready=ready, secret=keys_loaded(args.keys_env, runtimes),
                     verifies=True)  # fmt: skip
     review = review_at(root, base)
@@ -374,7 +361,7 @@ def main(
             for one in scope.slices:
                 emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
             return 0
-        here = host_runtimes()
+        here = review_runtimes()
         for said in takeover(root, origin, review, head, pull=pull, base=base, host=this_machine(), run=run,
                              runtimes=here):  # fmt: skip
             emit(f'[review] {said}')
