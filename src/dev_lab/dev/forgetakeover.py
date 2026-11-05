@@ -16,7 +16,6 @@ the review" is :data:`~dev_lab.dev.reviewgate.RERUN` -- the forge's review run a
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -258,11 +257,6 @@ def _parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     _keys_env(running, 'empty or unset (a fork PR) holds the head for a maintainer')
     running.add_argument(
-        '--secret-env', action='append', default=[], metavar='NAME',
-        help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer '
-        '(the render of the door before --keys-env; leaves with that render)',
-    )  # fmt: skip
-    running.add_argument(
         '--git-token-file', type=Path, metavar='PATH',
         help="a file holding the forge read token: read once, removed, sent only to the door's git",
     )  # fmt: skip
@@ -310,8 +304,8 @@ def _job(
 ) -> int:  # fmt: skip
     """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
     runtimes = review_runtimes(args.runtime)
-    runner = Runner(this_machine(), runtimes, run=run, ready=ready, secret=keys_loaded(args.keys_env, runtimes)
-                    and all(os.environ.get(name) for name in args.secret_env), verifies=True)  # fmt: skip
+    runner = Runner(this_machine(), runtimes, run=run, ready=ready, secret=keys_loaded(args.keys_env, runtimes),
+                    verifies=True)  # fmt: skip
     review = review_at(root, base)
     if args.batch_pending:
         for one in resume_batches(root, origin, review, base=base, runner=runner, fetch=fetch):

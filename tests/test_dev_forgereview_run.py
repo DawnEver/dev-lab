@@ -91,17 +91,13 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     assert _latest(control, other_head, HOLD_CONTEXT) is None
 
 
-@pytest.mark.parametrize('flag', ['--keys-env', '--secret-env'])
-def test_the_cli_reads_the_secret_from_the_named_variable(tmp_path: Path, monkeypatch, flag: str) -> None:
-    """A held head is not reviewed, so the job fails (dev-lab #30: the run's conclusion is the verdict).
-
-    ``--secret-env`` is the flag the base's render still passes: the door holds a fork PR under either.
-    """
+def test_the_cli_reads_the_secret_from_the_named_variable(tmp_path: Path, monkeypatch) -> None:
+    """A held head is not reviewed, so the job fails (dev-lab #30: the run's conclusion is the verdict)."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = ACTIONS_BOT
     monkeypatch.delenv('REVIEW_KEY', raising=False)
-    assert main(['run', '--pr', str(number), flag, 'REVIEW_KEY'], cwd=work, client=forge) == 1
+    assert main(['run', '--pr', str(number), '--keys-env', 'REVIEW_KEY'], cwd=work, client=forge) == 1
     assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
 
 

@@ -246,8 +246,8 @@ steps = [
     { use-steps = "method" },
     { use-steps = "forge-tokens" },
     { name = "Resume the pending review batches", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
-"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --batch-pending --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
-''', env = { ANTHROPIC_API_KEY = "${{ secrets.ANTHROPIC_API_KEY }}" } },
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --batch-pending --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+''', env = { AI_LAB_KEYS_PR_REVIEW = "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}" } },
 ]
 
 ["merge-tick.yml".jobs.review-resume.permissions]
@@ -299,8 +299,10 @@ setup = [
 # to the integrate/main tip, and a lab-commons name it imported was gone, failing every review family-wide): the step
 # exports ai-lab's own uv.lock at that commit, --frozen, and installs it and ai-lab --no-deps, so nothing resolves past it.
 # ai-lab reads keys from the git
-# credential store ONLY (dev-lab #5: every reviewer `unsupported` with the secret set), so the key is stored for the
-# review task in an in-memory credential cache, on stdin; with no secret (a fork PR) nothing is stored.
+# credential store ONLY (dev-lab #5: every reviewer `unsupported` with the secret set), so the job's store is an
+# in-memory credential cache, and the door that reviews or judges (`--keys-env`) pipes the task's ONE key bundle,
+# AI_LAB_KEYS_PR_REVIEW (dev_lab.dev.taskkeys), to ai-lab's loader on stdin; with no secret (a fork PR) nothing is
+# stored. Which providers the bundle holds is ai-lab's (routes.toml): no provider is named here.
 # NO CREDENTIAL OUTLIVES ITS USE (F-00bc79a46330): a forge token reaches git as process-scoped GIT_CONFIG_* env of
 # the one step that fetches, never a config file a later step reads; the key's cache lives as long as one review
 # (30 min) and the step that reads it stops the cache daemon on exit (`git credential-cache exit`). The cache is
@@ -323,7 +325,7 @@ git -C "$RUNNER_TEMP/ai-lab-src" checkout -q --detach "$AI_LAB_REV"
 "$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --no-deps --python "$RUNNER_TEMP/ai-lab/bin/python" -r "$RUNNER_TEMP/ai-lab.txt"
 "$RUNNER_TEMP/ai-lab/bin/uv" pip install --no-config --no-deps --python "$RUNNER_TEMP/ai-lab/bin/python" "$RUNNER_TEMP/ai-lab-src"
 ''', env = { FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
-    { name = "Store the review key", run = '''if [ -n "$ANTHROPIC_API_KEY" ]; then git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && printf '%s\n' "$ANTHROPIC_API_KEY" | "$RUNNER_TEMP/ai-lab/bin/python" -I -m ai_lab.auth login anthropic --task pr-review; fi''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
+    { name = "Keep the review keys in memory", run = 'git config --global credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket"' },
 ]
 
 # THE REVIEW ITSELF, once: GitHub's ci.yml review job and Gitea's review.yml run this very step, each with the
@@ -334,7 +336,7 @@ git -C "$RUNNER_TEMP/ai-lab-src" checkout -q --detach "$AI_LAB_REV"
 # F-d61706393b50): an unset variable still sits in /proc/<pid>/environ, readable by the reviewer it launches. So
 # the hand-over step alone holds the tokens, writes each to a private file (umask 077), and the door reads each
 # once and removes it before any subprocess: the read token is its git header, the job token its forge client's.
-# The review key (ANTHROPIC_API_KEY) stays in the tests/review env: the reviewer needs it, a separate concern.
+# The review task's key bundle (AI_LAB_KEYS_PR_REVIEW) reaches the door by env; it loads it and unsets it first.
 # Whatever the door does, the files die with the step (F-5fd2611e79ea): a self-hosted runner may reuse RUNNER_TEMP.
 forge-tokens = [
     { name = "Hand the forge tokens to the door", run = '''umask 077
@@ -345,8 +347,8 @@ printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 ]
 review = [
     { name = "tests/review", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
-"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
-''', env = { ANTHROPIC_API_KEY = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}" } },
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+''', env = { AI_LAB_KEYS_PR_REVIEW = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.AI_LAB_KEYS_PR_REVIEW || '' }}" } },
 ]
 
 # THE DOOR, installed from the dev-lab commit that DOOR_SHA's uv.lock pins (dev-lab #18): the consumer's lock is the
@@ -639,7 +641,7 @@ steps = [
     { use-steps = "setup" },
     { use-steps = "door" },
     { use-steps = "method" },
-    { name = "Adjudicate the claims", run = 'trap "git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"' },
+    { name = "Adjudicate the claims", run = 'trap "git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { AI_LAB_KEYS_PR_REVIEW = "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}" } },
 ]
 
 ["review-claims.yml".jobs.adjudicate.permissions]
