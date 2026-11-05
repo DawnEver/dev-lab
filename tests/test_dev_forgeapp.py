@@ -18,6 +18,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 
 from dev_lab.dev import forgeapp
+from dev_lab.dev import forgereview_bundle as fb
+from dev_lab.dev._forge_journal import WRITES, outbox_dir
+from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgereview_declared import review_from
@@ -184,3 +187,54 @@ def test_a_judge_repo_declares_exactly_one_identity() -> None:
 def test_a_judge_app_that_is_no_app_id_is_refused(bad: str) -> None:
     with pytest.raises(ValueError, match='no GitHub App id'):
         review_from(_JUDGE + f'judge_app = {bad}\n', 'x')
+
+
+class _GitHubTakingChecks(_GitHub):
+    """:class:`_GitHub` that also takes a check run, noting which journal entries existed as it arrived."""
+
+    def __init__(self, journal: Path) -> None:
+        super().__init__()
+        self.journal, self.journaled = journal, []
+
+    def getresponse(self) -> _Response:
+        method, path, _ = self._last
+        if (method, path) == ('POST', '/repos/o/r/check-runs'):
+            self.journaled.append(sorted(p.name for p in self.journal.glob('*.json')))
+            return _Response(201, {'id': 1})
+        return super().getresponse()
+
+
+def test_the_judge_runs_from_a_directory_that_is_no_checkout_journaling_into_its_home(
+    tmp_path: Path, key: rsa.RSAPrivateKey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deployed unit: cwd ``/`` (no git repo), only HOME. The check run posts; its journal is under HOME's state.
+
+    PLANTED CONTROL: the checkout-derived outbox the judge used before raises in that same directory.
+    """
+    nowhere, home = tmp_path / 'nowhere', tmp_path / 'home'
+    nowhere.mkdir()
+    home.mkdir()
+    monkeypatch.chdir(nowhere)
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('USERPROFILE', str(home))
+    monkeypatch.delenv('XDG_STATE_HOME', raising=False)
+    monkeypatch.setattr(forgeapp, '_MINTED', {})
+    pem = tmp_path / 'app.pem'
+    pem.write_bytes(_pem(key))
+    state = home / '.local' / 'state' / fb.JUDGE_STATE_REL
+    github = _GitHubTakingChecks(state / WRITES)
+    monkeypatch.setattr(fb, 'app_client', lambda *a, **k: forgeapp.app_client(*a, **k, transport=github))
+    monkeypatch.setattr(fb, 'host_runtimes', dict)
+    pull = PullRequest(7, 't', 'open', '', '', 'a', 'h', 'integrate/main', head_sha=HEAD)
+    monkeypatch.setattr(
+        fb, 'judge_pending',
+        lambda client, **_: [fb.post_verdict(client, pull, fb.Verdict('APPROVED', 'ok')), 'posted'][1:],
+    )  # fmt: skip
+    argv = ['judge', '--url', 'https://github.com/o/r', '--app-id', str(APP), '--app-key-file', str(pem)]
+    assert fb.main(argv) == 0
+    assert len(github.journaled) == 1
+    assert len(github.journaled[0]) == 1, 'journaled under the declared state before it was sent'
+    assert list((state / WRITES).glob('*.json')) == [], 'and acknowledged once GitHub answered'
+    assert list(nowhere.iterdir()) == []
+    with pytest.raises(RuntimeError, match='not a git repository'):
+        outbox_dir(nowhere)
