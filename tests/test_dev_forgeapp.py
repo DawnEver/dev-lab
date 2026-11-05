@@ -36,7 +36,7 @@ def key() -> rsa.RSAPrivateKey:
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _pem(key: Any) -> bytes:  # noqa: ANN401
+def _pem(key: rsa.RSAPrivateKey | ec.EllipticCurvePrivateKey) -> bytes:
     return key.private_bytes(
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
     )
@@ -62,7 +62,7 @@ def test_a_key_that_is_not_rsa_is_refused() -> None:
 
 
 class _Response:
-    def __init__(self, status: int, payload: Any) -> None:  # noqa: ANN401
+    def __init__(self, status: int, payload: object) -> None:
         self.status, self._payload = status, json.dumps(payload).encode()
 
     def getheader(self, _name: str) -> None:

@@ -266,3 +266,42 @@ def test_gitea_leaves_a_rule_for_an_undeclared_branch_alone() -> None:
 
 def test_the_door_is_the_forge_noun() -> None:
     assert NOUNS['protect'] is forgeprotect.main
+
+
+# -- a GitHub App judge ------------------------------------------------------------------------------------------------
+
+APP_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_app = 5619495\n'
+
+
+def test_an_app_judged_integration_requires_the_apps_check_from_that_app_and_no_approval() -> None:
+    forge = FakeGitHub()
+    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
+    integration, trunk = wanted
+    assert (integration.judge_app, integration.approvals, integration.approver, trunk.judge_app) == (5619495, 0, '', 0)
+    assert apply(forge, GITHUB, wanted) == []
+    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
+    (checks,) = [rule['parameters']['required_status_checks'] for rule in ruleset['rules']
+                 if rule['type'] == 'required_status_checks']  # fmt: skip
+    assert {'context': 'review/judge', 'integration_id': 5619495} in checks
+    assert plan(forge, GITHUB, wanted) == []
+
+
+def test_the_judge_check_required_from_another_app_is_drift() -> None:
+    """PLANTED: the same context name, required from any other App, is not the declared judge."""
+    forge = FakeGitHub()
+    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
+    apply(forge, GITHUB, wanted)
+    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
+    for rule in ruleset['rules']:
+        for check in rule.get('parameters', {}).get('required_status_checks', ()):
+            if check['context'] == 'review/judge':
+                check['integration_id'] = 1
+    (step,) = plan(forge, GITHUB, wanted)
+    assert 'review/judge@5619495' in ' '.join(step.lines)
+
+
+def test_an_app_judge_takes_no_approval_and_never_renders_on_gitea() -> None:
+    with pytest.raises(ValueError, match='the App posts a check'):
+        declaration_from(GITHUB_TEXT + APP_JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
+    with pytest.raises(ValueError, match='no GitHub App'):
+        plan(FakeGitea(), GITEA, targets(GITEA_TEXT + APP_JUDGED, 'p', GITEA))
