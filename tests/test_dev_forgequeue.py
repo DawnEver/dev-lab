@@ -347,3 +347,21 @@ def test_a_forge_that_never_answers_is_named_within_the_queues_bound(tmp_path: P
     assert took < 10, f'the queue took {took:.1f} s against a 1 s budget'
     said = capsys.readouterr().err
     assert '/api/v1/' in said, f'the slow call is named: {said!r}'
+
+
+def test_a_slow_fetch_spends_the_one_budget_the_reads_share(server, tmp_path: Path, monkeypatch, capsys) -> None:
+    """ONE deadline covers fetch + reads: a fetch that eats the budget leaves the forge calls none, and says so.
+
+    PLANTED CONTROL: the same answering forge with an instant fetch prints the queue (test_the_queue_cli_prints_json).
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, _tips = _origin(tmp_path)
+    began = time.monotonic()
+    code = forgequeue.main(
+        [], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server), budget_s=0.5,
+        fetch=lambda _root: time.sleep(0.6),
+    )  # fmt: skip
+    took = time.monotonic() - began
+    assert code == 1
+    assert took < 5, f'the queue took {took:.1f} s against a 0.5 s budget'
+    assert 'spent its 0.5 s read budget' in capsys.readouterr().err

@@ -51,14 +51,14 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 from lab_commons.compute.probe import OS_NAMES
 from lab_commons.hpc.declared import pyproject_at
-from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary
+from lab_commons.hpc.needsets import BASE, need_sets, read_vocabulary
 from lab_commons.hpc.shell import parse_ids
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_in
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.partrows import ROW_SEPARATOR
+from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row
 from dev_lab.dev.platformparts import UndeclaredPart, part_context, producer_argv
 from dev_lab.dev.producer import producing
 from dev_lab.dev.unproduced import unproduced, unproduced_parts
@@ -201,7 +201,7 @@ def runner_for(part: str) -> str | list[str]:
     A need-set naming a resource no hosted runner has (``femm``) runs on a self-hosted runner labelled with every
     resource it needs, so a workstation registered under those labels produces it.
     """
-    needs = needs_of(part)
+    needs = needs_of_row(part)
     systems = needs & set(OS_NAMES.values())
     if needs == systems and len(systems) <= 1:
         return HOSTED_RUNNERS[next(iter(systems), 'linux')]
@@ -222,7 +222,7 @@ def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str
         row = {'part': part, 'runs-on': HOSTED_RUNNERS['linux'], 'secrets': list(declared[part].secrets)}
         return [] if event == 'pull_request' else [row]
     home = runner_for(part)
-    if not isinstance(home, str) or needs_of(part) & set(OS_NAMES.values()):
+    if not isinstance(home, str) or needs_of_row(part) & set(OS_NAMES.values()):
         return [{'part': part, 'runs-on': home}]
     runners = {system: HOSTED_RUNNERS[system] for system in systems_for(event)}
     return [

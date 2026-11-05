@@ -66,7 +66,6 @@ from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.model import Demand
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
-from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
@@ -80,7 +79,7 @@ from dev_lab.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgewait import claim_vector
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.partrows import row_part
+from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import origin_url, parts_of, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
 from dev_lab.dev.servelock import was_stopped
@@ -109,7 +108,7 @@ def demote_unreachable(produced: Sequence[Produced]) -> None:
     """A part whose infrastructure did not answer (exit 4) demotes every checked tool it needs on this host."""
     for one in produced:
         if one.returncode == ProducerExit.UNREACHABLE:
-            tools = sorted(needs_of(row_part(one.platform)) & CHECKS.keys())
+            tools = sorted(needs_of_row(one.platform) & CHECKS.keys())
             demote(tools, f'{one.platform} at {one.sha[:12]} exited {int(ProducerExit.UNREACHABLE)} (unreachable)')
 
 
@@ -129,7 +128,7 @@ def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
 
     A part's producer is ``local``; a request's is its declared NAME, so it never shares a test part's record.
     """
-    record_run(origin_url(root), item.producer, needs_of(row_part(item.platform)), run, killed=killed)
+    record_run(origin_url(root), item.producer, needs_of_row(item.platform), run, killed=killed)
 
 
 def _origin(root: Path | None) -> str:
@@ -163,7 +162,7 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path, *,
 
 def box_claim(item: Work, capacity: Capacity, *, root: Path | None = None) -> Demand:
     """The :class:`Demand` *item* runs in the box at: the tick's admitted demand, else priced as a box part."""
-    needs = needs_of(row_part(item.platform))
+    needs = needs_of_row(item.platform)
     asked = item.demand or box_demand(_origin(root), needs, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
     return claim_vector(asked, capacity, needs)
 

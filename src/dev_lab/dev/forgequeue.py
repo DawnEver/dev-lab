@@ -35,7 +35,7 @@ from lab_commons.compute.priority import Priority
 from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.config import section
 from lab_commons.hpc.declared import OutdatedKit
-from lab_commons.hpc.needsets import declared_at, needs_of
+from lab_commons.hpc.needsets import declared_at
 from lab_commons.log import emit
 
 from dev_lab.dev.branchprune import listing
@@ -61,7 +61,7 @@ from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.partrows import row_part
+from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import derived, origin_url, part_context
 from dev_lab.dev.unproduced import unproduced_waived
 
@@ -210,7 +210,7 @@ def _standing(
 
 def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
     try:
-        needed = needs_of(row_part(candidate.platform))  # a row (``base@windows``) needs what its part needs
+        needed = needs_of_row(candidate.platform)  # a row (``base@windows``) needs what its part needs
     except ValueError as why:
         return str(why)
     unclaimable = unserved(needed, [supplied(card, now) for card in cards])
@@ -307,16 +307,19 @@ def main(
 ) -> int:
     """``queue [--json]``; exit 1 when the forge cannot be read, or not within *budget_s* -- naming the call.
 
-    *fetch* defaults to :func:`~dev_lab.dev.forge.fetch_origin` bounded by *budget_s* per attempt.
+    ONE deadline, *budget_s* from the start, bounds the whole read: the fetch (every attempt and backoff,
+    :func:`~dev_lab.dev.forge.fetch_origin`'s *deadline*) and then each forge call, cut to what the fetch
+    left. A slow fetch therefore leaves the calls less, and a spent budget is named rather than waited out.
     """
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge queue', description=__doc__.splitlines()[0])
     parser.add_argument('--json', action='store_true', help='print the whole view as JSON')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     try:
-        bounded = _within(transport, time.monotonic() + budget_s, budget_s)
+        deadline = time.monotonic() + budget_s
+        bounded = _within(transport, deadline, budget_s)
         built = client_for(root, env=dict(os.environ) if env is None else env, transport=bounded)
-        seen = view(root, built, fetch=fetch or functools.partial(fetch_origin, timeout=budget_s))
+        seen = view(root, built, fetch=fetch or functools.partial(fetch_origin, deadline=deadline))
     except (ForgeCallFailed, NoCredential, UnreadableRemote, OSError, ValueError) as failed:
         emit(f'[queue] {failed}', err=True)
         return 1

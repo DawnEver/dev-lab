@@ -295,6 +295,7 @@ def run_network_verb(
     attempts: int = DEFAULT_ATTEMPTS,
     backoff_s: float = DEFAULT_BACKOFF_S,
     timeout: float | None = None,
+    deadline: float | None = None,
     cwd: Path | str | None = None,
     env: Mapping[str, str] | None = None,
     no_prompt: bool = True,
@@ -313,6 +314,9 @@ def run_network_verb(
         attempts: the CEILING on tries, not a target; one success ends the loop.
         backoff_s: the first backoff, doubled per retry.
         timeout: seconds allowed per ATTEMPT, or ``None`` for no bound.
+        deadline: a :func:`time.monotonic` instant bounding the WHOLE run -- every attempt and backoff
+            together: each attempt gets at most what is left, and no attempt starts once it has passed
+            (the loop then reports :attr:`Diagnosis.TIMED_OUT`). ``None`` bounds only each attempt.
         cwd: the directory the command runs in.
         env: the environment it runs in, before the no-prompt keys are applied.
         no_prompt: close off the interactive credential prompt, so a missing credential is a
@@ -337,7 +341,12 @@ def run_network_verb(
     child_env = _child_env(env, no_prompt=no_prompt)
     made: list[Attempt] = []
     for index in range(1, attempts + 1):
-        attempt = _attempt(index, argv, cwd=cwd, env=child_env, timeout=timeout, run=run)
+        left = None if deadline is None else deadline - time.monotonic()
+        if left is not None and left <= 0:
+            made.append(Attempt(index, 124, 'the deadline passed before this attempt', Diagnosis.TIMED_OUT))
+            break
+        bound = left if timeout is None else timeout if left is None else min(timeout, left)
+        attempt = _attempt(index, argv, cwd=cwd, env=child_env, timeout=bound, run=run)
         made.append(attempt)
         if attempt.ok or not attempt.retryable:
             break
@@ -345,7 +354,7 @@ def run_network_verb(
             made[-1] = Attempt(attempt.index, attempt.returncode, attempt.output, Diagnosis.STOPPED_BY_CALLER)
             break
         if index < attempts:
-            sleep(backoff_s)
+            sleep(backoff_s if deadline is None else max(0.0, min(backoff_s, deadline - time.monotonic())))
     return Report(argv=argv, attempts=tuple(made), allowed_attempts=attempts)
 
 

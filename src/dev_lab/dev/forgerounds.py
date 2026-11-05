@@ -29,7 +29,6 @@ from lab_commons.box.supply import Reading
 from lab_commons.compute.model import Demand, Supply
 from lab_commons.compute.presence import cached
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.needsets import needs_of
 
 from dev_lab.dev import forgerun, forgerunstate
 from dev_lab.dev.forgealarm import AUTH, Alarm
@@ -40,7 +39,7 @@ from dev_lab.dev.forgehosts import HostCard, card_host, publish_card
 from dev_lab.dev.forgeproduce import Produced, box_claim
 from dev_lab.dev.forgetick import TickReport, tick
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.partrows import row_part
+from dev_lab.dev.partrows import needs_of_row
 
 __all__ = ['Producing', 'Rounds', 'box_now', 'locked_fetch', 'reserve', 'supply_now']
 
@@ -109,7 +108,7 @@ class Rounds:
         supply = self.supplied(held)
         # a run Slurm holds is in the standing already (every pending and running task): only an unsubmitted one is not
         unsubmitted = (forgerunstate.CLAIMED_PHASE, forgerunstate.SUBMITTING)
-        running = [self.sized(needs_of(row_part(run.platform))) for run in self.runs if run.phase in unsubmitted]
+        running = [self.sized(needs_of_row(run.platform)) for run in self.runs if run.phase in unsubmitted]
         box = self.room(held)
         ticked = _tick(
             self.repo, self.root, self.alarm, **self.ticking,

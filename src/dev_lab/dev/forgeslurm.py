@@ -51,7 +51,7 @@ from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, Unreachable, probe, scancel, submitter
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
-from lab_commons.hpc.needsets import needs_of, vocabulary_at
+from lab_commons.hpc.needsets import vocabulary_at
 from lab_commons.hpc.plan import grantable_gb
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.provider import SlurmAccount, unmeasured
@@ -70,6 +70,7 @@ from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_items
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgestuck import parse_duration, remote_path
+from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.slurmkilled import KILLED_FIELDS, killed_jobs
 
 __all__ = ['STALL_MULTIPLE', 'SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
@@ -223,7 +224,9 @@ class SlurmCluster:
             if why:
                 state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
                 ask_gb = state['rounds'][-1]['mem_mb'] / 1024
-                learned.record_ask(run.repo_url, learned.SLURM, needs_of(run.platform), ask_gb, safety=policy.safety)
+                learned.record_ask(
+                    run.repo_url, learned.SLURM, needs_of_row(run.platform), ask_gb, safety=policy.safety
+                )
                 self.cancel(run)
                 raise NoRoom(why)
             return None
@@ -253,7 +256,7 @@ class SlurmCluster:
             ask_gb = max(oom) / 1024 * learned.OOM_GROWTH
             ask_gb = ask_gb if ceiling is None else min(ask_gb, ceiling)
             learned.record_ask(
-                run.repo_url, learned.SLURM, needs_of(run.platform), ask_gb, safety=self.config.policy.safety
+                run.repo_url, learned.SLURM, needs_of_row(run.platform), ask_gb, safety=self.config.policy.safety
             )
             learn_floors(run.repo_url, oom_floors(found, task_items(state, shell, [one.job for one in found])), record)
         return found
