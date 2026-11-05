@@ -606,6 +606,11 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
 
   GitHub through `gh secret set` (stdin), Gitea through the forge door unjournaled -- a journaled write keeps its
   body on disk. Each line names the repo, the secret and the bundle's sha256 prefix only.
+- A Gitea Actions secret is writable ONLY by an owner of the organisation that owns the repo (or a site admin): a
+  push-only credential is refused, and the settings pages (`/<owner>/<repo>/settings/actions/secrets`,
+  `/org/<org>/settings/actions/secrets`) answer `404 Not Found`, not 403, to anyone else (measured 2026-11-05 on
+  `Tianjie-Zou-Team`). So on Gitea the bundle is set by the user in the web UI with the admin account, once at the
+  organisation level, where every repo of the organisation reads it; `secrets sync` sets the GitHub repos.
 
 ### A gitea auth refusal is an expired OAuth token, not a bad credential
 
