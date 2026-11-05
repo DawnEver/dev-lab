@@ -104,6 +104,13 @@ _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 _FULL_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
 
 
+#: The hosted job's key store: ai-lab reads keys from the git credential store ONLY, so the job keeps an in-memory
+#: one of its own, alive for a job's whole 6 h ceiling (the part runs after its setup step).
+_MEMORY_STORE: Final = (
+    'git config --global credential.helper "cache --timeout=21600 --socket=$RUNNER_TEMP/git-credential-cache/socket"'
+)
+
+
 @dataclass(frozen=True)
 class Hosted:
     """A part run hosted because secrets supply its resource: the ai-lab tasks whose key bundles it loads."""
@@ -177,7 +184,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
         )
         setup = {
             'name': f'Set up tests/{name} from its key bundles',
-            'run': ' && '.join(loads),
+            'run': ' && '.join((_MEMORY_STORE, *loads)),
             'env': {secret: f'${{{{ secrets.{secret} }}}}' for secret in part.secrets},
         }
         steps = [*one['steps'][:-1], setup, one['steps'][-1]]

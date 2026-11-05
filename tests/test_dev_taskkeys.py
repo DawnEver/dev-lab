@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from dev_lab.dev import forgesecrets, forgetakeover, taskkeys
+from dev_lab.dev import forgesecrets, taskkeys
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgesecrets import Target
 
@@ -56,15 +56,15 @@ def test_the_loader_takes_the_bundle_on_stdin_never_argv() -> None:
 def test_the_review_door_loads_the_named_bundle_and_unsets_it(monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: unset or empty (a fork PR) loads nothing and reports the secret absent."""
     loaded: list[tuple[str, ...]] = []
-    monkeypatch.setattr(forgetakeover, 'load', lambda *given: loaded.append(given))
+    monkeypatch.setattr(taskkeys, 'load', lambda *given: loaded.append(given))
     monkeypatch.setenv('AI_LAB_KEYS_PR_REVIEW', _BUNDLE)
-    assert forgetakeover.keys_loaded('AI_LAB_KEYS_PR_REVIEW', {'ai_lab': {'python': 'py'}}) is True
+    assert taskkeys.keys_loaded('AI_LAB_KEYS_PR_REVIEW', {'ai_lab': {'python': 'py'}}) is True
     assert loaded == [(_BUNDLE, 'pr-review', 'py')]
     assert 'AI_LAB_KEYS_PR_REVIEW' not in os.environ, 'no reviewer inherits it'
-    assert forgetakeover.keys_loaded('AI_LAB_KEYS_PR_REVIEW', {}) is False
+    assert taskkeys.keys_loaded('AI_LAB_KEYS_PR_REVIEW', {}) is False
     monkeypatch.setenv('AI_LAB_KEYS_PR_REVIEW', '')
-    assert forgetakeover.keys_loaded('AI_LAB_KEYS_PR_REVIEW', {}) is False
-    assert forgetakeover.keys_loaded(None, {}) is True, "no --keys-env: the host's own store holds"
+    assert taskkeys.keys_loaded('AI_LAB_KEYS_PR_REVIEW', {}) is False
+    assert taskkeys.keys_loaded(None, {}) is True, "no --keys-env: the host's own store holds"
     assert len(loaded) == 1
 
 
@@ -119,7 +119,10 @@ def test_sync_dry_run_lists_targets_and_touches_nothing(
 
 def test_sync_refuses_an_empty_bundle_and_a_bad_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repos = _repos(tmp_path, monkeypatch)
-    never = lambda *_: pytest.fail('nothing is written')  # noqa: E731
+
+    def never(*_: object) -> None:
+        pytest.fail('nothing is written')
+
     assert forgesecrets.main(['sync', '--task', 'live'], stdin=lambda: ' \n', repos=lambda: repos, write=never) == 2
     assert forgesecrets.main(['sync', '--task', 'Live'], stdin=lambda: _BUNDLE, repos=lambda: repos, write=never) == 2
 

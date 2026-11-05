@@ -395,7 +395,10 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     setup = carrying[0]
     assert setup['env'] == {'AI_LAB_KEYS_LIVE': '${{ secrets.AI_LAB_KEYS_LIVE }}'}
     assert setup['run'] == (
-        """printf '%s' "$AI_LAB_KEYS_LIVE" | uv run --no-sync python -I -m ai_lab.auth login --task live --bundle -"""
+        'git config --global credential.helper '
+        '"cache --timeout=21600 --socket=$RUNNER_TEMP/git-credential-cache/socket" && '
+        'printf \'%s\' "$AI_LAB_KEYS_LIVE" | '
+        'uv run --no-sync python -I -m ai_lab.auth login --task live --bundle -'
     ), 'the bundle travels on stdin to the loader, never argv'
     assert job['steps'][-1]['run'].endswith('jobparts produce live')
     assert 'part-live' in ci['jobs']['absent-parts']['needs'], 'absent waits for it'

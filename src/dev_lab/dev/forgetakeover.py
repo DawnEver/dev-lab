@@ -16,7 +16,6 @@ the review" is :data:`~dev_lab.dev.reviewgate.RERUN` -- the forge's review run a
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -59,23 +58,14 @@ from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
-from dev_lab.dev.taskkeys import REVIEW_TASK, load
+from dev_lab.dev.taskkeys import REVIEW_TASK, keys_loaded
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'LEDGER_TITLE',
-    'TakeoverRefused',
-    'alarms',
-    'held',
-    'keys_loaded',
-    'ledger_of',
-    'main',
-    'pull_for',
-    'runtimes_with',
-    'scope_of',
-    'takeover',
+    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
+    'runtimes_with', 'scope_of', 'takeover',
 ]  # fmt: skip
 
 
@@ -286,21 +276,6 @@ def _keys_env(verb: argparse.ArgumentParser, unset: str) -> None:
         '--keys-env', metavar='NAME',
         help=f'the variable holding the {REVIEW_TASK} key bundle, piped to the ai-lab loader and unset; {unset}',
     )  # fmt: skip
-
-
-def keys_loaded(name: str | None, runtimes: Mapping[str, Mapping[str, Any]]) -> bool:
-    """Whether the review task's bundle in variable *name* was stored through ai-lab's loader, on stdin.
-
-    The variable is UNSET first, so no reviewer this process starts inherits the keys; empty or unset (a fork PR)
-    stores nothing and answers ``False``. No *name* asks nothing and answers ``True``: the host's own store holds.
-    """
-    if name is None:
-        return True
-    bundle = os.environ.pop(name, '')
-    if not bundle:
-        return False
-    load(bundle, REVIEW_TASK, str(runtimes.get('ai_lab', {}).get('python', 'python')))
-    return True
 
 
 def runtimes_with(here: Mapping[str, Mapping[str, Any]], given: Sequence[str]) -> dict[str, dict[str, Any]]:

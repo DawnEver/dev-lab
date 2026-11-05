@@ -19,7 +19,7 @@ from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _output, _work
 from test_dev_forgereview_rounds import _REVIEW, _doc, _finding
 
-from dev_lab.dev import blobfetch, forgereview_rounds, forgereview_scope, forgetakeover, reviewgitauth
+from dev_lab.dev import blobfetch, forgereview_rounds, forgereview_scope, reviewgitauth, taskkeys
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
@@ -356,7 +356,7 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
     read, api = _token_files(tmp_path, monkeypatch)
     monkeypatch.setenv('REVIEW_KEY', 'k')
     loaded: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(forgetakeover, 'load', lambda *given: loaded.append(given))
+    monkeypatch.setattr(taskkeys, 'load', lambda *given: loaded.append(given))
     gits: list[dict[str, str] | None] = []
     real = blobfetch._door.run
 
