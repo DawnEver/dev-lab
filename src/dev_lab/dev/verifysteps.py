@@ -24,7 +24,6 @@ from typing import IO, Final
 
 import lab_commons.launch as _door
 from lab_commons.box import POLL_S
-from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
 from dev_lab.dev import durations
@@ -46,6 +45,7 @@ from dev_lab.dev.selection import census_scope
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
+from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verifybox import (
     WAIT_S,
     boxed,
@@ -302,7 +302,7 @@ def run_verify(
         handle.write(_PYTEST_BANNER)
         stamp = {
             durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
-            durations.LEDGER_ENV_VAR: env_key(env_manifest()),
+            durations.LEDGER_ENV_VAR: verdict_env(root),
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
         }
         pytest = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN, *pytest_args]
@@ -329,7 +329,7 @@ def run_verify(
     return build_verdict(
         tuple(reports),
         tree=content_address(root, MEASURED_TARGETS),
-        env=env_key(env_manifest()),
+        env=verdict_env(root),
         spec=' '.join(('verify', *pytest_args)),
         log=LogRef.of(path),
     )

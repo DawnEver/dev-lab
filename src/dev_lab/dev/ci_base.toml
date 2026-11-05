@@ -57,10 +57,12 @@ description = "a merge's smoke run: the PR's part set, no promote"
 type = "boolean"
 default = false
 
-# A merge's smoke run never cancels the nightly run on the same ref, nor the reverse.
+# A NEW PUSH CANCELS ITS PR'S SUPERSEDED RUN, and nothing else: a PR's runs share ci-pr-<number>; a push to
+# integrate/main, the nightly run and a merge's smoke each take their own run_id, so none is ever cancelled -- not
+# even while PENDING, which Actions cancels in a shared group whatever cancel-in-progress says.
 ["ci.yml".concurrency]
-group = "ci-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.smoke) && 'smoke' || github.event_name }}"
-cancel-in-progress = true
+group = "ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}"
+cancel-in-progress = "${{ github.event_name == 'pull_request' }}"
 
 ["ci.yml".permissions]
 contents = "read"

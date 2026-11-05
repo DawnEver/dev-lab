@@ -47,8 +47,10 @@ from dev_lab.dev.forgework import GITHUB, Client, client_for
 
 __all__ = [
     'CARRIED_FROM',
+    'CITED_FROM',
     'DESCRIPTION_LIMIT',
     'DOCS_ONLY',
+    'SAME_TREE',
     'STATES',
     'CommitStatus',
     'head_sha',
@@ -68,6 +70,10 @@ STATES: Final = ('success', 'failure', 'error', 'pending')
 #: a part posted under the retired ``every outcome carried by footprint`` still READS (FORMATS-UPGRADE-ON-READ).
 CARRIED_FROM: Final = 'carried from'
 DOCS_ONLY: Final = 'docs-only'
+
+#: A part CITED from a stored record of the same tree ends ``cited from <sha12>: same tree`` (dev_lab.dev.verdictstore).
+CITED_FROM: Final = 'cited from'
+SAME_TREE: Final = 'same tree'
 
 #: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
 DESCRIPTION_LIMIT: Final = 140

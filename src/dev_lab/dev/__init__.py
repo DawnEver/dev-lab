@@ -167,6 +167,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS
   of no revoked box, cited on a sha through the status door.
+* :mod:`dev_lab.dev.verdictenv` -- the env key a verdict cites: every installed distribution but the project
+  under test, whose VCS version moves with every commit while its tree already names the code.
 * :mod:`dev_lab.dev.workstationrevoke` -- strikes a contradicted spot check leaves against a box; enough revoke it.
 * :mod:`dev_lab.dev.commandpart` -- a repo whose tests are not pytest (``npm test``) posts its part as ONE
   cell, the command, judged by its exit code.
