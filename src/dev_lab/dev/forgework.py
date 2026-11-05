@@ -49,7 +49,7 @@ from dev_lab.dev._forge_journal import (
     Journal,
     Probe,
     Write,
-    journal_for,
+    journal_at,
     outbox_dir,
     since,
     write_key,
@@ -409,17 +409,19 @@ def client_for(
     remote: str = 'origin',
     url: str = '',
     token: str = '',
+    outbox: Path | None = None,
 ) -> Client:
     """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp.
 
     A *token* given is the job token a workflow handed over by file (the review door, :mod:`reviewgitauth`).
+    Its journal and caches live in *outbox*: given by a role that holds no checkout (the judge's declared state),
+    else *root*'s main checkout's (:func:`~dev_lab.dev._forge_journal.outbox_dir`).
     """
     forge = forge_of_url(url) if url else forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
-    built = stored_client(
-        forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root), token=token
-    )
-    built.cache_dir = outbox_dir(root)
+    built = stored_client(forge, cwd=root, env=env, transport=transport, stamp=stamp, token=token)
+    built.cache_dir = outbox_dir(root) if outbox is None else outbox
+    built.journal = journal_at(built.cache_dir)
     return built
 
 
@@ -430,7 +432,6 @@ def stored_client(
     env: Mapping[str, str] | None = None,
     transport: Transport = forge_transport,
     stamp: str | None = None,
-    journal: Journal | None = None,
     token: str = '',
 ) -> Client:
     """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
@@ -443,12 +444,10 @@ def stored_client(
 
     """
     if job := token or actions_token(forge, os.environ if env is None else env):
-        return Client(
-            forge, job, transport=transport, username=backend_for(forge).actions_login, stamp=stamp, journal=journal
-        )
+        return Client(forge, job, transport=transport, username=backend_for(forge).actions_login, stamp=stamp)
     username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
 
     def refresh(refused_user: str, refused: str) -> tuple[str, str]:
         return _forge.refresh_credential(forge.host, (refused_user, refused), cwd=cwd, env=env)
 
-    return Client(forge, secret, transport=transport, username=username, stamp=stamp, journal=journal, refresh=refresh)
+    return Client(forge, secret, transport=transport, username=username, stamp=stamp, refresh=refresh)

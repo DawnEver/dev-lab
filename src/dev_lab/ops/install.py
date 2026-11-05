@@ -16,8 +16,9 @@ another shape before writing anything), and for the promote run it creates an ab
 given a ``chown`` (the door passes one when it runs as root), hands the promote user that home and its credential
 (0600), and makes the environment file root's, 0600. What it cannot apply -- no root, no account yet, no file
 yet -- is a next step. It
-NEVER re-owns or widens a directory it did not create: an existing home is left as it is, and a credential directory
-the promote user cannot enter is named in a next step, never opened.
+NEVER re-owns or widens a directory it did not create: an existing home is left as it is, and a directory holding a
+credential or key its user (promote's, the judge's) cannot enter is named in a next step with the ``root:<user> 750``
+remedy, never opened.
 """
 
 from __future__ import annotations
@@ -326,17 +327,23 @@ def _prepare(config: OpsConfig, root: Path, chown: Chown | None) -> tuple[dict[s
             credential.chmod(0o600)
         if not _own(chown, credential, role.user, None):
             steps.append(f'chown {role.user} {role.credentials} && chmod 600 {role.credentials}')
-        parent = credential.parent
-        if parent.is_dir() and not _may_enter(parent, role.user):
-            where = Path(role.credentials).parent.as_posix()
-            steps.append(f'{role.user} cannot enter {where}: move the credential to a directory it may enter')
+        steps += _entered(root, role.credentials, role.user)
     if (judge := config.judge) is not None:
         for secret in judge.secrets:
-            steps += _private(root, chown, secret, judge.user)
+            steps += _private(root, chown, secret, judge.user) + _entered(root, secret, judge.user)
     environments = [config.environment_file, judge.environment_file if judge is not None else '']
     for environment in filter(None, environments):
         steps += _private(root, chown, environment, 'root', 'root')
     return done, steps
+
+
+def _entered(root: Path, declared: str, user: str) -> list[str]:
+    """The remedy when *user* cannot enter the directory holding *declared*: install never opens one it did not make."""
+    parent = _under(root, declared).parent
+    if not parent.is_dir() or _may_enter(parent, user):
+        return []
+    where = Path(declared).parent.as_posix()
+    return [f'{user} cannot enter {where}: chown root:{user} {where} && chmod 750 {where}, or move the file out of it']
 
 
 def _private(root: Path, chown: Chown | None, declared: str, user: str, group: str | None = None) -> list[str]:
