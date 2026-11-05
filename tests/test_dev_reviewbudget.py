@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
+from _forge_state import called_due
 from test_dev_forgereview import JUDGE, FakeCommand, _forge, _work
 from test_dev_forgereview_rounds import _doc, _finding, _state
 
@@ -191,6 +192,7 @@ def test_a_pr_over_its_round_cap_waits_named_and_runs_nothing(tmp_path: Path) ->
                 host='box', spend=lambda *_: _spend())  # fmt: skip
     after = advance(work, 'pr/x', 'y.py', 'y = 1\n')
     forge.pulls[number]['head']['sha'] = after
+    called_due(forge, after)
     command = FakeCommand(_doc())
     review_tick(work, forge, capped, base='integrate/main', run=command, ready=lambda *_: None, host='box',
                 spend=lambda *_: _spend())  # fmt: skip
@@ -301,6 +303,7 @@ def test_the_pr_cap_reads_the_recorded_rounds_not_this_hosts_spend_alone(tmp_pat
         forge.login = 'ci-job'
         head = advance(work, 'pr/x', 'y.py', 'y = 1\n')
         forge.pulls[number]['head']['sha'] = head
+        called_due(forge, head)
         command = FakeCommand(_doc())
         review = Review(judge=JUDGE, command=_REVIEW.command, reviewers=('serve-host',))
         review_tick(work, forge, review, base='integrate/main', run=command, ready=lambda *_: None, host='box',
@@ -333,6 +336,7 @@ def test_a_capped_pr_spends_zero_calls_on_a_push(tmp_path: Path, cap: str) -> No
     calls.clear()
     pushed = advance(work, 'pr/x', 'x.py', 'x\nmore\n')
     forge.pulls[number]['head']['sha'] = pushed
+    called_due(forge, pushed)
     review_tick(work, forge, review, base='integrate/main', run=run, ready=lambda *_: None, host='box',
                 spend=lambda *_: _spend(by_tag=spent))  # fmt: skip
     assert calls == [], 'a capped PR spends no call on a push'

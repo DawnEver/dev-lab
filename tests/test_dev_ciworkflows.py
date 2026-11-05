@@ -84,7 +84,9 @@ def test_the_lifecycle_runs_on_pull_request_and_never_on_pull_request_target(tmp
     ci = _base_ci(tmp_path)
     assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch', 'schedule'}
     assert 'pull_request_target' not in render(ci), "a fork's code would run with this repository's secrets"
-    assert ci['jobs']['review']['if'] == "${{ github.event_name == 'pull_request' }}"
+    assert ci['jobs']['review']['if'] == (
+        "${{ always() && github.event_name == 'pull_request' && needs.merge-ready.outputs.due == 'true' }}"
+    ), 'review is the last gate: it runs only once merge-ready called the head due'
 
 
 def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path: Path) -> None:
@@ -102,7 +104,7 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
     }
 
 
-def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_same_workflow(tmp_path: Path) -> None:
+def test_the_matrix_is_the_command_s_output_and_merge_ready_decides_before_the_review(tmp_path: Path) -> None:
     ci = _base_ci(tmp_path)
     jobs = ci['jobs']
     assert jobs['part']['strategy']['matrix'] == '${{ fromJSON(needs.parts.outputs.matrix) }}'
@@ -117,9 +119,10 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_runs_last_in_the_sam
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith('${{ always()')
-    assert set(jobs['merge-ready']['needs']) == {'security', 'review', 'part', 'absent-parts'}, (
-        'a merge waits on its parts'
+    assert set(jobs['merge-ready']['needs']) == {'security', 'part', 'absent-parts'}, (
+        'a merge waits on its parts; the review runs after the decision'
     )
+    assert jobs['review']['needs'] == ['merge-ready']
     assert jobs['merge-ready']['if'].startswith('${{ always()')
     ready, dispatch = jobs['merge-ready']['steps'][-2:]
     assert 'forge merge ready --pr' in ready['run']
@@ -713,10 +716,11 @@ def test_the_gitea_review_job_is_lean_on_the_review_runner_and_runs_github_s_rev
     """
     review = _gitea_review(tmp_path)
     assert set(review['on']) == {'pull_request_target'}
-    assert review['on']['pull_request_target']['types'] == ['opened', 'synchronize', 'reopened', 'ready_for_review']
+    assert review['on']['pull_request_target']['types'] == ['labeled'], 'a push starts no review: the decision asks'
+    assert review['jobs']['review']['if'] == "${{ github.event.label.name == 'review-due' }}"
     (tmp_path / 'gh').mkdir()
     github = _base_ci(tmp_path / 'gh')
-    assert 'ready_for_review' in github['on']['pull_request']['types'], 'D52/D53: marking ready reviews a draft'
+    assert 'ready_for_review' in github['on']['pull_request']['types'], 'D52/D53: marking ready judges a draft'
     (tmp_path / 'ci').mkdir()
     assert 'pull_request_target' not in render(_base_ci(tmp_path / 'ci'))
     job = review['jobs']['review']

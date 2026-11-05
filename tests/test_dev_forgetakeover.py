@@ -12,6 +12,7 @@ from test_dev_forgereview import JUDGE, FakeCommand, _forge, _output, _work
 
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
+from dev_lab.dev.forgereview_claim import DUE
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_declared import EMPTY_COMMAND_FIX, PATHS_FIELD, RANGE_FIELD, Review
 from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose
@@ -57,7 +58,8 @@ def _held(tmp_path: Path) -> tuple[Path, StateForge, int, str]:
 
 
 def _no_review(forge: object, sha: str) -> bool:
-    return all(one.context != REVIEW_CONTEXT for one in status_list(forge, sha))
+    """Whether *sha* carries no review status but, at most, the merge decision's DUE."""
+    return all(one.context != REVIEW_CONTEXT or one.description == DUE for one in status_list(forge, sha))
 
 
 def test_the_takeover_posts_an_advisory_review_and_releases_nothing(tmp_path: Path) -> None:

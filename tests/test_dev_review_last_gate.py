@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
-from _forge_fake import run_git
 from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 
@@ -23,6 +22,8 @@ from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_job import review_run
 from dev_lab.dev.forgereview_rounds import ledger_of, trusted_bodies
 from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.forgework import ACTIONS_BOT
+from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 
 _BASE = 'integrate/main'
@@ -32,6 +33,7 @@ _PARTS = 'scope=full ran=3 hands=-'
 @pytest.fixture(autouse=True)
 def _outside_actions(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv('GITEA_ACTIONS', raising=False)
+    monkeypatch.delenv(SESSION_ENV, raising=False)  # the forge reviews, never this session
 
 
 def _pr(tmp_path: Path, *, parts: str = 'success') -> tuple[Path, StateForge, int, str]:
@@ -53,11 +55,19 @@ def _review(forge: StateForge, head: str) -> tuple[str, str] | None:
 
 
 def _run(work: Path, forge: StateForge, number: int, command: FakeCommand) -> str:
-    return review_run(work, forge, _DECLARED, number, base=_BASE, runner=Runner('r', run=command, ready=_can))
+    forge.login = ACTIONS_BOT  # the review is the forge's own job, never a session's
+    try:
+        return review_run(work, forge, _DECLARED, number, base=_BASE, runner=Runner('r', run=command, ready=_can))
+    finally:
+        forge.login = 'a'
 
 
 def _rounds(forge: StateForge, number: int) -> int:
-    ledger = ledger_of(trusted_bodies(forge, number))
+    forge.login = ACTIONS_BOT  # the rounds the forge's own job recorded
+    try:
+        ledger = ledger_of(trusted_bodies(forge, number))
+    finally:
+        forge.login = 'a'
     return 0 if ledger is None else ledger.round
 
 
@@ -79,8 +89,6 @@ def test_a_red_test_head_waits_unreviewed_and_counts_no_round(tmp_path: Path) ->
 def test_a_conflicting_head_waits_unreviewed(tmp_path: Path) -> None:
     work, forge, number, _ = _pr(tmp_path)
     advance(work, _BASE, 'x.py', 'integration wrote it first\n')
-    run_git(work, 'push', '-q', 'origin', f'{_BASE}:{_BASE}')
-    run_git(work, 'fetch', '-q', 'origin')
     head = forge.pulls[number]['head']['sha']
     ready(work, forge, number)
     assert 'a clean merge' in _review(forge, head)[1]
@@ -142,11 +150,13 @@ def test_inside_a_gitea_actions_job_the_decision_leaves_the_asking_to_a_serve(
 
 
 def test_the_tick_is_what_starts_the_review_on_both_forges(tmp_path: Path) -> None:
-    (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."merge-tick.yml"]\n[tool.dev_lab.ci."review.yml"]\nforge = "gitea"\n', encoding='utf-8'
-    )
-    rendered = workflows(tmp_path)
-    ci, tick, gitea = rendered['ci.yml'], rendered['merge-tick.yml'], rendered['review.yml']
+    hub, tea = tmp_path / 'hub', tmp_path / 'tea'
+    hub.mkdir()
+    tea.mkdir()
+    (hub / 'pyproject.toml').write_text('[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
+    (tea / 'pyproject.toml').write_text('[tool.dev_lab.ci."review.yml"]\n', encoding='utf-8')
+    rendered = workflows(hub)
+    ci, tick, gitea = rendered['ci.yml'], rendered['merge-tick.yml'], workflows(tea)['review.yml']
     assert ci['jobs']['review']['needs'] == ['merge-ready'], 'GitHub: the decision, then the review'
     assert "needs.merge-ready.outputs.due == 'true'" in ci['jobs']['review']['if']
     assert 'review' not in ci['jobs']['merge-ready']['needs']

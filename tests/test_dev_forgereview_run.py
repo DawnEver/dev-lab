@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from _branch_repos import advance
 from _forge_fake import git_out, run_git
-from _forge_state import StateForge
+from _forge_state import StateForge, called_due
 from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _output, _work
 from test_dev_forgereview_rounds import _REVIEW, _doc, _finding
 
@@ -112,6 +112,7 @@ def test_the_job_exits_non_zero_unless_it_posted_success(tmp_path: Path, host: s
     work, head = _work(tmp_path)
     forge = StateForge(Forge(host, 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)
     forge.login = ACTIONS_BOT
     blocking = FakeCommand(_output(severity='HIGH'))
     assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=blocking, ready=_can) == 1
@@ -120,6 +121,7 @@ def test_the_job_exits_non_zero_unless_it_posted_success(tmp_path: Path, host: s
     other_work, other_head = _work(tmp_path / 'control')
     control = StateForge(Forge(host, 'o', 'r'))
     other = control.add_pull('pr/x', 'integrate/main', title='add x', sha=other_head)
+    called_due(control, other_head)
     control.login = ACTIONS_BOT
     assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=FakeCommand(), ready=_can) == 0
 
@@ -232,6 +234,7 @@ def test_the_pull_request_job_rules_on_every_pending_claim_of_its_pr(
     work, head = _work(tmp_path)
     forge = StateForge(Forge('github.com', 'o', 'r'))  # as #11: the job writes as the Actions bot
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)
     forge.login = ACTIONS_BOT
     monkeypatch.delenv(SESSION_ENV, raising=False)
     found = FakeCommand(_doc(_finding('F-x', severity='HIGH', file='x.py', anchor='x')))
@@ -485,6 +488,7 @@ def test_a_pr_against_a_branch_it_controls_naming_it_the_integration_is_never_re
     assert command.ran == [], 'no command runs, so the key is never handed to one'
     assert _latest(forge, head, REVIEW_CONTEXT) is None, 'nothing is posted for a PR the job does not review'
     trusted = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)
     assert main(['run', '--pr', str(trusted)], cwd=work, client=forge, run=command, ready=_can) == 0
     assert [argv[0] for argv, _ in command.ran] == ['reviewer']
 

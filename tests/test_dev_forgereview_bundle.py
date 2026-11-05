@@ -31,7 +31,9 @@ from dev_lab.dev.actionsartifact import zipped
 from dev_lab.dev.artefacts import Config, FolderStore, Ref, pack
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgereview import review_tick
+from dev_lab.dev.forgereview_claim import DUE
 from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, JUDGE, Review, command_for, review_from
+from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
@@ -313,6 +315,11 @@ def _judged(
             read.append({'diff': (tree / 'diff.patch').read_text(encoding='utf-8'), 'disposed': disposed, **env})
         return out
 
+    for one in forge._pulls().values():  # the merge decision called each head due: the review is the last gate
+        rows = forge.statuses.setdefault(one.head_sha, [])
+        if not any(row['context'] == REVIEW_CONTEXT for row in rows):
+            rows.append({'id': len(rows) + 1, 'creator': None, 'context': REVIEW_CONTEXT, 'state': 'pending',
+                         'description': DUE, 'target_url': ''})  # fmt: skip
     return fb.judge_pending(forge, runtimes=_RUNTIMES, run=run), seen  # type: ignore[arg-type]
 
 

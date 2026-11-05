@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance
 from _forge_fake import run_git
-from _forge_state import StateForge
+from _forge_state import StateForge, called_due
 from test_dev_forgereview import _MANIFEST, JUDGE, FakeCommand, _can, _forge, _output, _work
 
 from dev_lab.dev.ciworkflows import workflows
@@ -239,6 +239,7 @@ def test_a_pending_batch_is_not_a_failed_job_where_the_gate_reads_the_status_cre
     work, head = _batched_work(tmp_path)
     forge = StateForge(Forge(host, 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)
     forge.login = ACTIONS_BOT
     command = BatchedCommand(polls=99)
     assert review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == code
@@ -251,13 +252,14 @@ def test_the_github_job_still_fails_when_its_pending_is_not_a_batch(tmp_path: Pa
     work, head = _batched_work(tmp_path)
     forge = StateForge(Forge('github.com', 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)
     forge.login = ACTIONS_BOT
     exhausted = FakeCommand(_output(reviewers=(('correctness', 'exhausted'),)))
     assert review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=exhausted, ready=_can) == 1
 
 
-def test_the_scheduled_resume_settles_only_the_batch_pending_heads(tmp_path: Path) -> None:
-    """``forge review run --batch-pending`` resumes every head whose batch pends, from the state on its PR.
+def test_the_due_run_resumes_the_batch_pending_heads_and_nothing_held(tmp_path: Path) -> None:
+    """``forge review run --due`` resumes every head whose batch pends, from the state on its PR.
 
     PLANTED CONTROL: a head held for a takeover (another pending) is not touched.
     """
@@ -266,13 +268,14 @@ def test_the_scheduled_resume_settles_only_the_batch_pending_heads(tmp_path: Pat
     run_git(work, 'checkout', '-q', head)
     forge = StateForge(Forge('github.com', 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)
     forge.add_pull('pr/y', 'integrate/main', title='add y', sha=other)
     forge.login = ACTIONS_BOT
     status_post(forge, other, context=REVIEW_CONTEXT, state='pending', description=f'{TAKEOVER_PENDING}: held')
     command = BatchedCommand(polls=2)
     review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can)
     assert _review_status(forge, head).state == 'pending'
-    resumed = review_main(['run', '--batch-pending'], cwd=work, client=forge, run=command, ready=_can,
+    resumed = review_main(['run', '--due'], cwd=work, client=forge, run=command, ready=_can,
                           fetch=lambda _where, _number: None)  # fmt: skip
     assert resumed == 0
     assert _review_status(forge, head).state == 'success'
@@ -280,13 +283,14 @@ def test_the_scheduled_resume_settles_only_the_batch_pending_heads(tmp_path: Pat
     assert _review_status(forge, other).description.startswith(TAKEOVER_PENDING)
 
 
-def test_the_merge_tick_resumes_pending_batches_on_its_schedule(tmp_path: Path) -> None:
-    """One cadence (merge-tick's schedule) also resumes batches; a ``status`` event never starts a review."""
+def test_the_merge_tick_reviews_the_due_heads_and_resumes_batches_after_its_decision(tmp_path: Path) -> None:
+    """One cadence (merge-tick's): its decision, then ``--due``; a ``status`` event reviews only what it called due."""
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
     tick = workflows(tmp_path)['merge-tick.yml']
-    job = tick['jobs']['review-resume']
-    assert job['if'] == "${{ github.event_name != 'status' }}"
+    job = tick['jobs']['review']
+    assert job['needs'] == ['merge-tick']
+    assert job['if'] == "${{ always() && (github.event_name != 'status' || needs.merge-tick.outputs.due == 'true') }}"
     runs = ' '.join(step.get('run', '') for step in job['steps'])
-    assert 'forge review run --batch-pending' in runs
+    assert 'forge review run --due' in runs
     assert '--secret-env ANTHROPIC_API_KEY' in runs
     assert job['permissions'] == {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'}
