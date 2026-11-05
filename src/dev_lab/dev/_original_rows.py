@@ -35,6 +35,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'localpart',
     'workstationverdict',
     'verdictstore',
+    'verdictenv',
     'workstationrevoke',
     'lockpins',
     'lockwait',

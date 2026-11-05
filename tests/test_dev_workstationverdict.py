@@ -23,6 +23,7 @@ from lab_commons.outcomes import Cell, Conclusion, Reason, Status
 from dev_lab.dev import verdictstore, verify, workstationrevoke, workstationverdict
 from dev_lab.dev.forgerecords import Attachment
 from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.platformparts import parts_of
 from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit
 from dev_lab.dev.verdictstore import ContentKey, Found
 from dev_lab.dev.workstationverdict import Facts, posting_refusal
@@ -264,7 +265,9 @@ def test_a_hit_is_cited_through_the_status_door_naming_its_record() -> None:
         'success',
         'u/' + _found().attachment.name,
     )
-    assert status.description == 'scope=full ran=1 hands=-', 'a settled part, read as one'
+    assert status.description == f'scope=full ran=1 hands=- cited from {OLD[:12]}: same tree', 'the reuse is visible'
+    (part,) = parts_of(status_list(forge, SHA))[0].values()
+    assert part.cited == OLD[:12], 'a cited part reads back as a settled part naming the sha it ran at'
     assert 'CITED' in line
     assert 'BOXALPHA' in line
 
