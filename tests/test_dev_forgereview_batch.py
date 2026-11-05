@@ -288,5 +288,5 @@ def test_the_merge_tick_resumes_pending_batches_on_its_schedule(tmp_path: Path) 
     assert job['if'] == "${{ github.event_name != 'status' }}"
     runs = ' '.join(step.get('run', '') for step in job['steps'])
     assert 'forge review run --batch-pending' in runs
-    assert '--secret-env ANTHROPIC_API_KEY' in runs
+    assert '--keys-env AI_LAB_KEYS_PR_REVIEW' in runs
     assert job['permissions'] == {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'}

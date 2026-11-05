@@ -15,7 +15,8 @@ THE MONTH BOUNDS EVERY CAP (:func:`gate`). A PR's cap -- fitted, or raised by th
 the month has left. Below :data:`DEGRADE_BELOW` of the budget left, a round DEGRADES before anything stops: one
 round per PR (:data:`DEGRADED_ROUNDS`) on the cheaper :data:`DEGRADED_MODEL`. With nothing left, nothing runs.
 
-A REACHED CAP WAITS, NAMED. A PR at its round cap or its dollar cap is neither reviewed again nor passed: its
+A REACHED CAP STOPS THE REVIEW, NAMED -- NEVER THE MERGE (user ruling 2026-11-05, :mod:`dev_lab.dev.reviewcap`).
+A PR at its round cap or its dollar cap is neither reviewed again nor passed: it merges WARNED, and its
 review status is ``pending`` saying which cap (``budget reached: <spent>/<cap> USD``, ``round cap reached: r/R``)
 and the remedy -- split the PR, or the integrator raises its cap with a recorded reason (:data:`RAISE_DOOR`, a
 trusted ``review-cap`` comment, :func:`raised_of`).
@@ -40,7 +41,7 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.forgereview_runtimes import host_runtimes
+from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -312,9 +313,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.reviewbudget', description=__doc__.splitlines()[0])
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
-    spend = read_spend(host_runtimes(), Path.cwd())
+    spend = read_spend(review_runtimes(), Path.cwd())
     if spend is None:
-        emit('this host has no ai-lab spend report ([runtimes.ai_lab] python, ai_lab.spend)', err=True)
+        emit('this host has no ai-lab spend report (its locked ai-lab gives no ai_lab.spend)', err=True)
         return 2
     got = fit(spend)
     doc = {

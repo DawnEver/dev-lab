@@ -35,6 +35,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'localpart',
     'workstationverdict',
     'verdictstore',
+    'verdictenv',
     'workstationrevoke',
     'lockpins',
     'lockwait',
@@ -88,6 +89,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgereview_command',
     'forgereview_scope',
     'forgereview_runtimes',
+    # ORIGINAL (2026-11-05): a host's ai-lab was a hand-built venv the machine file named; CI alone built it locked.
+    'reviewruntime',
     # ORIGINAL (2026-11-05): a task's key bundle moved whole -- no consumer named a task's secret or set one on a
     # forge; each box stored provider keys by hand.
     'taskkeys',
@@ -341,6 +344,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'metrics_report',
     'reviewcommand',
     'reviewbudget',  # the review's round and dollar caps, new here
+    'reviewcap',  # a capped review warns and merges, new here
     'commandpart',  # a non-pytest repo's one command part, new here
     'forgeaffinity',  # HPC account affinity of verify parts, new here
     'forgeapp',  # a GitHub App as a forge identity (the judge's), new here

@@ -66,6 +66,8 @@ class PullRequest:
     draft: bool = False
     #: Whether the forge merged it (gitea ``merged``, GitHub ``merged_at``): a CLOSED one without it was refused.
     merged: bool = False
+    #: Whether its head lives in another repository than its base (a fork; a deleted fork's head repo is ``null``).
+    fork: bool = False
 
 
 #: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
@@ -105,7 +107,16 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
         tuple(str(label['name']) for label in raw.get('labels') or ()),
         bool(raw.get('draft')) or issue.title.upper().startswith(WIP_PREFIXES),
         bool(raw.get('merged') or raw.get('merged_at')),
+        fork=_forked(raw),
     )
+
+
+def _forked(raw: Mapping[str, Any]) -> bool:
+    """Whether a pull-request JSON's head repository is not its base's; an answer naming no head repo is not."""
+    if 'repo' not in raw['head']:
+        return False
+    theirs, ours = raw['head']['repo'] or {}, raw['base'].get('repo') or {}
+    return not theirs or theirs.get('full_name') != ours.get('full_name')
 
 
 def comment_of(raw: Mapping[str, Any]) -> Comment:

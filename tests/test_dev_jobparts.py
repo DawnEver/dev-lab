@@ -227,7 +227,7 @@ HOSTED = """
 resources = ["live", "workstation"]
 
 [tool.dev_lab.parts]
-hosted = { live = { secrets = ["MODEL_KEY"], setup = "login --from-file -" } }
+hosted = { live = { tasks = ["live"] } }
 """
 
 
@@ -240,7 +240,7 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
     carrying = {'': ['t::a', 't::l', 't::w'], 'live': ['t::l'], 'workstation': ['t::w']}
     rows = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event)['include']
     live = [row for row in rows if row['part'].startswith('live')]
-    assert live == [{'part': 'live', 'runs-on': 'ubuntu-latest', 'secrets': ['MODEL_KEY']}][:live_rows]
+    assert live == [{'part': 'live', 'runs-on': 'ubuntu-latest', 'secrets': ['AI_LAB_KEYS_LIVE']}][:live_rows]
     others = [row for row in rows if not row['part'].startswith('live')]
     assert all('secrets' not in row for row in others), 'no other row carries a secret'
     assert {'part': 'workstation', 'runs-on': ['self-hosted', 'workstation']} in others, (
@@ -253,11 +253,13 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
 @pytest.mark.parametrize(
     'declaration',
     [
-        'hosted = { femm = { secrets = ["K"], setup = "x" } }',
-        'hosted = { live = { secrets = ["k; echo"], setup = "x" } }',
-        'hosted = { live = { secrets = [], setup = "x" } }',
-        'hosted = { live = { secrets = ["K"] } }',
-        'hosted = { live = { secrets = ["K"], setup = "x" } }\nunproduced = ["live"]',
+        'hosted = { femm = { tasks = ["live"] } }',
+        'hosted = { live = { tasks = ["live; echo"] } }',
+        'hosted = { live = { tasks = ["Live"] } }',
+        'hosted = { live = { tasks = [] } }',
+        'hosted = { live = { tasks = ["live"], secrets = ["K"] } }',
+        'hosted = { live = { secrets = ["K"], setup = "x" } }',
+        'hosted = { live = { tasks = ["live"] } }\nunproduced = ["live"]',
     ],
 )
 def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_part_is_refused(
@@ -266,7 +268,8 @@ def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_p
     text = f'[tool.lab_commons.tests]\nresources = ["live"]\n[tool.dev_lab.parts]\n{declaration}\n'
     with pytest.raises(platformparts.UndeclaredPart):
         jobparts.hosted_parts(text)
-    assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('MODEL_KEY',), 'login --from-file -')}
+    assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('live',))}
+    assert jobparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
 
 
 def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,7 +280,7 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part(monkeypatch: pyt
     texts = {
         'hosted': HOSTED,
         'declared': HOSTED.split('[tool.dev_lab.parts]', maxsplit=1)[0],
-        'broken': HOSTED.replace('setup = "login --from-file -"', 'setup = ""'),
+        'broken': HOSTED.replace('tasks = ["live"]', 'tasks = []'),
     }
     monkeypatch.setattr(jobparts, 'pyproject_at', lambda _root, sha: texts[sha])
     monkeypatch.setattr(forgemerge, 'unproduced_waived', lambda *_: frozenset())

@@ -64,7 +64,7 @@ def test_the_merge_job_runs_the_one_decision_then_closes_landed_prs_then_sweeps(
         assert job['steps'][index]['if'] == '${{ !cancelled() }}', 'a merge refused still closes and sweeps'
     assert job['permissions'] == {'contents': 'write', 'pull-requests': 'write'}
     text = json.dumps(job)
-    for door in ('forge serve', 'forgeserve', 'slurm', 'jobparts', 'ANTHROPIC'):
+    for door in ('forge serve', 'forgeserve', 'slurm', 'jobparts', 'AI_LAB_KEYS_'):
         assert door not in text, door
 
 
@@ -101,11 +101,11 @@ def test_no_light_job_installs_the_review_method_or_its_key(tmp_path: Path) -> N
     assert light
     for body in light:
         text = json.dumps(body)
-        for held in ('ai-lab', 'ai_lab', 'ANTHROPIC_API_KEY', 'credential', 'forge review'):
+        for held in ('ai-lab', 'ai_lab', 'AI_LAB_KEYS_', 'credential', 'forge review'):
             assert held not in text, held
     review = json.dumps(_gitea(tmp_path)['review.yml']['jobs']['review'])
     assert 'ai-lab' in review
-    assert 'ANTHROPIC_API_KEY' in review
+    assert 'AI_LAB_KEYS_PR_REVIEW' in review
 
 
 def _only(body: dict[str, Any]) -> set[str]:

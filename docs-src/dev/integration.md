@@ -163,6 +163,19 @@ not add is dropped (no moving goalposts). Past `max_rounds` (family default 3, `
 no command runs: the open blocking findings are re-checked alone and the non-blocking ones move to ONE follow-up
 issue. Each round's comment records its ledger (a hidden `review-ledger` line), which the next round starts from.
 
+**A capped review warns and merges** (`dev_lab.dev.reviewcap`, user ruling 2026-11-05). A review that reached a
+cap -- the trusted ledger's round at the base's `max_rounds` (or a trusted raise's), or the reviewing host's
+`review-capped` record of its dollar or monthly budget -- has the review condition alone waived at the merge, open
+findings (security ones included) named: the `tests/security` status, tests, conflicts, the audit, messages and
+draft still hold. `tests/review` is never posted `success` for it (it stays `pending` `review capped, merges
+unreviewed: ...`) and is not a required context (`forgeprotect.required_contexts`: the merge decision enforces
+the review). The merge commit carries `Unreviewed: review capped at N rounds` or `Unreviewed: review budget
+reached: <spent>/<cap> USD`, then `; open findings: <ids>`; `tests/merge-ready` and the integration comment say
+`WARNED`, and the merging job comments it on the PR. The waiver is read from the PR's trusted comments, never from
+a status description. **Only an internal PR auto-merges** (`forgemerge.external`): a fork's head, or an author the
+forge records without write permission (`Client.can_write`, the one trust test cap raises use), is tested and
+reviewed but never merged by the forge -- `tests/merge-ready` stays `pending` `external PR: a maintainer merges it`.
+
 **What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
 slice, not whether a head is read at all:
 
@@ -199,7 +212,11 @@ command reads its own (`ai_lab`, the `pr-review` task key). The command is the F
 (`forgereview_declared.FAMILY_COMMAND`: `{runtimes.ai_lab.python} -m ai_lab.review --range {range} --lens {lens}
 --model {model} --rules {rules} --paths {paths}`; `{rules}` is the registry's ids, so ai-lab imports none); a repo declares only where it differs, and a redeclared family command or a
 retired host field (any `{capabilities.*}`: a host value is where a runtime lives, read from the machine file's
-`[runtimes.<name>]`, never a capability) is refused (`famtests.reviewcommand`). Every key optional:
+`[runtimes.<name>]`, never a capability) is refused (`famtests.reviewcommand`). `{runtimes.ai_lab.python}` is the
+one runtime no host declares: every host builds it from the ai-lab commit its installed dev-lab's `uv.lock` pins,
+with ai-lab's own lock `--frozen` and `--no-deps` (CI's `method` step), under `<forge home>/runtimes/ai-lab-<sha12>`
+-- rebuilt when the pin moves, a `--runtime ai_lab.python=` overriding it on a CI runner, and a machine file still
+naming `[runtimes.ai_lab]` refused until `workstation deploy` drops it (`dev_lab.dev.reviewruntime`). Every key optional:
 
 ```toml
 [tool.dev_lab.review]

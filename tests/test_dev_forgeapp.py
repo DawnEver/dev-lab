@@ -224,7 +224,7 @@ def test_the_judge_runs_from_a_directory_that_is_no_checkout_journaling_into_its
     state = home / '.local' / 'state' / fb.JUDGE_STATE_REL
     github = _GitHubTakingChecks(state / WRITES)
     monkeypatch.setattr(fb, 'app_client', lambda *a, **k: forgeapp.app_client(*a, **k, transport=github))
-    monkeypatch.setattr(fb, 'host_runtimes', dict)
+    monkeypatch.setattr(fb, 'review_runtimes', lambda _given: {})
     pull = PullRequest(7, 't', 'open', '', '', 'a', 'h', 'integrate/main', head_sha=HEAD)
     monkeypatch.setattr(
         fb, 'judge_pending',
