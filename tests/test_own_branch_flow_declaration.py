@@ -33,20 +33,17 @@ def test_a_push_to_integrate_main_needs_no_part_and_main_does() -> None:
 def test_every_part_this_repo_needs_has_a_producer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(platformparts, 'dated_log', lambda *_a, **_k: Path('output'))
     monkeypatch.setattr(platformparts, 'origin_url', lambda *_a: 'https://h/o/r.git')
-    assert platformparts.producer_argv(ROOT, 'workstation', sha='HEAD') == [
-        '-m',
-        'dev_lab.dev.verify',
-        '--part',
-        'workstation',
-    ]
+    assert platformparts.producer_argv(ROOT, 'base', sha='HEAD') == ['-m', 'dev_lab.dev.verify', '--part', 'base']
     assert platformparts.cluster_part(ROOT, 'HEAD').collect == ''
 
 
-def test_the_workstation_part_is_scarce_so_a_pr_waits_on_it_only_by_reach() -> None:
-    """Incident 2026-10-25: 13 open PRs waited on tests/workstation, which one host serves, whatever they touched.
+def test_this_repo_declares_no_scarce_part_and_a_declared_one_waits_only_by_reach() -> None:
+    """User ruling 2026-11-05: every dev-lab test runs on a hosted runner, so this repo has no scarce part.
 
-    SCARCE-PARTS-BY-REACH (:mod:`dev_lab.dev.forgescarce`) waives a scarce part a PR's diff cannot reach; the
-    part is scarce only by this declaration. PLANTED CONTROL: base is never scarce.
+    SCARCE-PARTS-BY-REACH (:mod:`dev_lab.dev.forgescarce`) stays family mechanism, read here on a planted
+    declaration. PLANTED CONTROL: base is never scarce.
     """
-    vocabulary = read_vocabulary((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
-    assert scarce_parts(['base', 'workstation'], vocabulary.scarce) == {'workstation'}
+    own = read_vocabulary((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
+    assert (own.resources, own.scarce) == ((), ())
+    planted = read_vocabulary('[tool.lab_commons.tests]\nresources = ["workstation"]\nscarce = ["workstation"]\n')
+    assert scarce_parts(['base', 'workstation'], planted.scarce) == {'workstation'}
