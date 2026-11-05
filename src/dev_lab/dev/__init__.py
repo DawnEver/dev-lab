@@ -110,6 +110,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   never rewrite).
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
   ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
+* :mod:`dev_lab.dev.czbatch` -- check shell-selected commit messages through the public Commitizen CLI in one process.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m
   dev_lab.dev.githooks run <stage>``), and the hook SCRIPTS shipped as a package payload and
   reached by NAME (``... githooks script bump-version``). They are not all hooks: ``with-venv`` is a

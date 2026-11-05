@@ -8,11 +8,11 @@ never enter argv: the same private file receives Git's complete raw ``%B`` stdou
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+import lab_commons.launch as _door
 from commitizen.cli import commitizen_excepthook
 from commitizen.cli import main as commitizen_main
 from commitizen.exceptions import CommitizenException
@@ -49,7 +49,7 @@ def check_messages(path: Path, shas: Iterable[str], exempt: set[str]) -> int:
         if sha in exempt:
             emit(f'[cz-push-range] exempt {sha} (LAB_CZ_EXEMPT)')
             continue
-        raw = subprocess.run(
+        raw = _door.run(
             [git, 'log', '-1', '--format=%B', sha, '--'],
             capture_output=True,
             check=True,
