@@ -40,6 +40,7 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.agenthooks import STAMP, engine_source
+from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -356,9 +357,10 @@ def _inspect_wiring(path: Path) -> tuple[str, str]:
         return _no_engine_hook(settings)
     if HOOK_COMMAND not in ours:
         return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
-    unwired = _unwired(settings)
-    if unwired:
-        return STALE, f'the stray census is not wired on {", ".join(unwired)} -- re-install to upgrade'
+    stale = [f'the stray census is not wired on {", ".join(u)}' for u in [_unwired(settings)] if u]
+    stale += [f'enabledPlugins does not turn off {", ".join(p)}' for p in [live_disabled_plugins(settings)] if p]
+    if stale:
+        return STALE, '; '.join(stale) + ' -- re-install to upgrade'
     return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
 
 
@@ -373,7 +375,9 @@ def guard_installation(repo: Path) -> GuardReport:
 
 
 def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    """*settings* with the guard's ``PreToolUse`` shell hook and the stray census present, and NOTHING ELSE MOVED.
+    """*settings* with the guard's hooks wired and the family's disabled plugins off, and NOTHING ELSE MOVED.
+
+    A repo's own ``enabledPlugins`` entries are kept; :mod:`dev_lab.dev.plugin_settings` owns ours.
 
     Pure over its argument -- the input is not mutated -- so the suite drives THIS function over a
     planted foreign settings file rather than re-deriving what "did not clobber" means.
@@ -392,7 +396,7 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
         out.get('hooks', {})[event] = [e for e in entries if not isinstance(e, dict) or e.get('hooks')]
     for wire in WIRING:
         _wire(out.setdefault('hooks', {}).setdefault(wire.event, []), wire)
-    return out
+    return disable_plugins(out)
 
 
 def _mine(hook: object, wire: Wire) -> bool:

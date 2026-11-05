@@ -25,6 +25,7 @@ from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
 from dev_lab.dev.jsrun import node_path
+from dev_lab.dev.plugin_settings import DISABLED_PLUGINS, live_disabled_plugins
 
 # THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
 
@@ -439,3 +440,35 @@ def test_the_pushed_head_gate_stops_the_main_session_and_the_venv_follow_starts_
     assert any(follow in entry['hooks'] for entry in after['hooks']['SessionStart'])
     assert 'dev_lab.dev.venvfollow --session-start' in agent_guard.VENVFOLLOW_COMMAND
     assert agent_guard.PUSHSTOP_COMMAND.startswith('node ')
+
+
+def test_the_install_turns_off_every_disabled_plugin_and_keeps_a_repo_own() -> None:
+    """Ruling 2026-11-05: the forge's PR review is the one review, so the wiring turns sharp-review off."""
+    own = {'enabledPlugins': {'rust-analyzer-lsp@claude-plugins-official': True, 'sharp-review@cc-market': True}}
+    after = agent_guard.wire_settings(own)
+    assert after['enabledPlugins'] == {
+        'rust-analyzer-lsp@claude-plugins-official': True,
+        **dict.fromkeys(DISABLED_PLUGINS, False),
+    }
+    assert own['enabledPlugins']['sharp-review@cc-market'] is True, 'the input was mutated'
+    assert live_disabled_plugins(after) == []
+
+
+@pytest.mark.parametrize('planted', [{'sharp-review@cc-market': True}, {}, None])
+def test_a_settings_file_enabling_or_omitting_a_disabled_plugin_is_stale(repo: Path, planted: object) -> None:
+    """PLANTED CONTROL: the check convicts an enabled plugin AND an absent entry (the user's file enables it)."""
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    settings = repo / agent_guard.SETTINGS_REL
+    document = json.loads(settings.read_text(encoding='utf-8'))
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+    if planted is None:
+        del document['enabledPlugins']
+    else:
+        document['enabledPlugins'] = planted
+    settings.write_text(json.dumps(document), encoding='utf-8')
+    wiring = agent_guard.guard_installation(repo).by_part['wiring']
+    assert wiring.status == agent_guard.STALE
+    assert 'sharp-review@cc-market' in wiring.detail
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
