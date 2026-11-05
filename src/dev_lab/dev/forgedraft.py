@@ -1,5 +1,10 @@
 """DRAFT-UNTIL-READY (D53, user ruling 2026-11-01): a PR opens as a draft, and only a ready PR is reviewed or merged.
 
+A DRAFT RUNS NOTHING (user ruling 2026-11-05): no test part, no merge-ready, no review, on either forge, until an
+agent marks it ready. Every job of a PR-triggered workflow is guarded by :data:`READY_ONLY` (rendered by
+:mod:`dev_lab.dev.ciworkflows`), and the serve produces no part, syncs and gates no head of a draft
+(:func:`dev_lab.dev.forgeschedule.candidates`, :func:`dev_lab.dev.forgeintegration.tick`).
+
 A review round is spent only on new work (D52): an author mid-task pushes many heads, and each one reviewed was a
 round and a budget spent on work its author had not finished. So the DOOR opens a draft -- ``forge pr create``
 unless it is given ``--ready`` -- and the author marks it ready when its own work is done. One mechanism per forge,
@@ -36,7 +41,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev._forge_records import draft_title, ready_title
+from dev_lab.dev._forge_records import WIP_PREFIXES, draft_title, ready_title
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -49,8 +54,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'READY_DOOR', 'STALE_DRAFT', 'WAITING', 'alarms', 'main', 'mark_draft', 'mark_ready', 'opened_line', 'pushed',
-    'waiting',
+    'READY_DOOR', 'READY_ONLY', 'STALE_DRAFT', 'WAITING', 'alarms', 'main', 'mark_draft', 'mark_ready', 'opened_line',
+    'pushed', 'waiting',
 ]  # fmt: skip
 
 #: The door that marks PR ``{n}`` ready.
@@ -58,6 +63,19 @@ READY_DOOR: Final = 'python -m dev_lab.dev.forge pr ready {n}'
 
 #: What a draft head's ``tests/merge-ready`` says (``pending``), and what the merge decision names as missing.
 WAITING: Final = 'draft: mark ready with `' + READY_DOOR + '` -- nothing reviews or merges a draft'
+
+
+def _wip(field: str) -> str:
+    return ' || '.join(f"startsWith({field}, '{prefix}')" for prefix in WIP_PREFIXES)  # startsWith is case-blind
+
+
+#: The Actions guard of every job a PR event starts: the PR is no draft as :func:`~dev_lab.dev._forge_records.pull_of`
+#: reads one (GitHub's ``draft``, Gitea's work-in-progress title), and an ``edited`` event -- Gitea's ready is a
+#: title edit -- runs only when the title LEFT a draft. An event with no PR (a push, a schedule) passes.
+READY_ONLY: Final = (
+    f'!(github.event.pull_request.draft || {_wip("github.event.pull_request.title")}) && '
+    f"(github.event.action != 'edited' || {_wip('github.event.changes.title.from')})"
+)
 
 #: How long a draft's head may go without a push before the integrator is told it waits on its author.
 STALE_DRAFT: Final = timedelta(hours=24)

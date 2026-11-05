@@ -297,11 +297,14 @@ def _part_refs(
     refs = (
         [(policy.integration, tips[policy.integration], INTEGRATION, (), 0, '')] if policy.integration in tips else []
     )
+    drafts = set()
     for pull in optional('open pull requests', lambda: pr_list(client), say):
         sha = tips.get(pull.head, pull.head_sha)
-        if pull.base == policy.integration and pull.head != policy.integration and sha:
+        if pull.draft:  # a draft runs nothing, under no class (D53, user ruling 2026-11-05)
+            drafts.add(pull.head)
+        elif pull.base == policy.integration and pull.head != policy.integration and sha:
             refs.append((pull.head, sha, PR, pull.labels, pull.number, pull.author))
-    served = {ref for ref, *_ in refs}
+    served = {ref for ref, *_ in refs} | drafts
     for branch, sha in sorted(tips.items()):
         kind = schedule.class_of(branch)
         if kind is not None and branch not in served and branch not in {policy.integration, policy.trunk}:

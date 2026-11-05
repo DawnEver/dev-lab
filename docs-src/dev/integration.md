@@ -308,6 +308,10 @@ not hold (`trialmerge.shares_unmerged`) that it is stacked and lands only after 
 
 `DRAFT-UNTIL-READY` (D53): the rule row states it; the mechanism -- each forge's draft, the `pr ready`/`pr draft`
 doors, the pending `tests/merge-ready` and the idle-draft alarm -- is `dev_lab.dev.forgedraft`'s docstring.
+A draft RUNS NOTHING (user ruling 2026-11-05): every job of a PR-started workflow on either forge is guarded at
+render by `forgedraft.READY_ONLY`, and the serve claims no part, syncs and gates no head of a draft; marking it
+ready (`ready_for_review`, or Gitea's title edit) starts everything. A consumer takes it by re-rendering
+(`python -m dev_lab.dev.ciworkflows render`).
 
 ## The integration tick
 
