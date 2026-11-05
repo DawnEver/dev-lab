@@ -146,3 +146,48 @@ def test_upgrade_refuses_a_host_with_no_upgrade_table(tmp_path: Path) -> None:
 def test_upgrade_refuses_a_table_with_no_source(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match='source'):
         _config(tmp_path, '[ops.upgrade]\nref = "main"\n')
+
+
+def _app_table(tmp: Path) -> str:
+    key = (tmp / 'github-app.pem').as_posix()
+    return (
+        f'[ops.judge]\nuser = "forge-judge"\nschedule = "*:0/5"\nrepos = ["{BETA}"]\n'
+        f'[ops.judge.apps]\n"github.com" = {{app_id = 5619495, key_file = "{key}"}}\n'
+    )
+
+
+def test_a_github_app_judge_runs_with_the_app_credential(tmp_path: Path) -> None:
+    host = _config(tmp_path, _app_table(tmp_path))
+    assert judge.command(host, BETA)[-4:] == [
+        '--app-id', '5619495', '--app-key-file', (tmp_path / 'github-app.pem').as_posix(),
+    ]  # fmt: skip
+
+
+def test_install_hands_the_app_key_to_the_judge_and_gives_it_a_home(tmp_path: Path) -> None:
+    host = _config(tmp_path, _app_table(tmp_path))
+    done = install(host, tmp_path / 'root')
+    service = (tmp_path / 'root' / 'etc/systemd/system/dev-lab-ops-judge.service').read_text(encoding='utf-8')
+    assert 'Environment=HOME=/var/lib/forge-judge\n' in service
+    assert 'EnvironmentFile' not in service  # the model key lives in the HOME's credential store, never a unit file
+    assert any(step.startswith('chown forge-judge ') and 'github-app.pem' in step for step in done.next_steps)
+    assert any('--create-home --home-dir /var/lib/forge-judge forge-judge' in step for step in done.next_steps)
+    assert any('credential.helper store' in step for step in done.next_steps)
+
+
+@pytest.mark.parametrize(
+    ('apps', 'tokens', 'why'),
+    [
+        ('"github.com" = {app_id = 1, key_file = "k"}\n', '"github.com" = "t"\n', 'both a token and an app'),
+        ('"github.com" = {app_id = true, key_file = "k"}\n', '', 'must be'),
+        ('"github.com" = {app_id = 1}\n', '', 'must be'),
+        ('"github.com" = {app_id = 1, key_file = "k", slug = "x"}\n', '', 'must be'),
+        ('"gitea.example" = {app_id = 1, key_file = "k"}\n', '"github.com" = "t"\n', 'serves no repo in'),
+    ],
+)
+def test_an_app_declaration_that_lies_is_refused(tmp_path: Path, apps: str, tokens: str, why: str) -> None:
+    table = (
+        f'[ops.judge]\nuser = "judge"\nschedule = "*:0/5"\nrepos = ["{BETA}"]\n'
+        f'[ops.judge.tokens]\n{tokens}[ops.judge.apps]\n{apps}'
+    )
+    with pytest.raises(ValueError, match=why):
+        _config(tmp_path, table)

@@ -20,6 +20,9 @@ dependencies = [
     # Imported directly (dev.dep_observe, the suppression guard), so declared directly: lab-commons[io]
     # supplies it today, and a direct import riding on another package's extra is a declaration that lies.
     "rtoml",
+    # dev.forgeapp signs a GitHub App judge's RS256 JWT: the one maintained RSA, never our own. Base, not the ops
+    # extra: the dev layer imports it, and dev never reaches up into an ops extra.
+    "cryptography",
 ]
 
 [project.optional-dependencies]

@@ -9,7 +9,15 @@ from __future__ import annotations
 
 from typing import Final
 
-__all__ = ['CONTEXT_PREFIX', 'HOLD_CONTEXT', 'MERGE_READY_CONTEXT', 'NOT_PARTS', 'REVIEW_CONTEXT', 'SECURITY_CONTEXT']
+__all__ = [
+    'CONTEXT_PREFIX',
+    'HOLD_CONTEXT',
+    'JUDGE_CHECK',
+    'MERGE_READY_CONTEXT',
+    'NOT_PARTS',
+    'REVIEW_CONTEXT',
+    'SECURITY_CONTEXT',
+]
 
 #: Every part's status context starts with this; the rest is the part's name (its need-set).
 CONTEXT_PREFIX: Final = 'tests/'
@@ -33,6 +41,11 @@ SECURITY_CONTEXT: Final = f'{CONTEXT_PREFIX}security'
 #: may merge, else ``failure`` naming what is missing. A workflow job posts it on GitHub, where native auto-merge waits
 #: on it as a required check; never a part.
 MERGE_READY_CONTEXT: Final = f'{CONTEXT_PREFIX}merge-ready'
+
+#: The CHECK RUN a GitHub App judge posts its verdict as (:mod:`dev_lab.dev.forgereview_bundle`): ``success``
+#: approves, ``failure`` requests changes. Read only FROM THE DECLARED APP (:func:`dev_lab.dev.reviewgate.app_missing`);
+#: a ruleset requires it with that App's ``integration_id``. Outside ``tests/``: it is no status and never a part.
+JUDGE_CHECK: Final = 'review/judge'
 
 #: The contexts under the prefix that are never a part.
 NOT_PARTS: Final = frozenset({REVIEW_CONTEXT, HOLD_CONTEXT, SECURITY_CONTEXT, MERGE_READY_CONTEXT})

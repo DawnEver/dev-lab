@@ -127,7 +127,7 @@ class FakeGitHub(_Fake):
             if rule['type'] == 'pull_request':
                 kept = {**rule, 'parameters': {**rule['parameters'], 'required_reviewers': []}}
             if rule['type'] == 'required_status_checks':
-                checks = [{**one, 'integration_id': 15368} for one in rule['parameters']['required_status_checks']]
+                checks = [{'integration_id': 15368, **one} for one in rule['parameters']['required_status_checks']]
                 kept = {**rule, 'parameters': {**rule['parameters'], 'required_status_checks': checks}}
             rules.append(kept)
         return stored | {'rules': rules}

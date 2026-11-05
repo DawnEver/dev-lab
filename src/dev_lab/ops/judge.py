@@ -31,12 +31,11 @@ class Outcome:
 
 
 def command(config: OpsConfig, url: str) -> list[str]:
-    """The ``forge review judge`` line for *url*, with its forge's judge token file."""
+    """The ``forge review judge`` line for *url*, with its forge's judge credential (an App's key, else a token)."""
     if config.judge is None:
         msg = f'{config.path} enables no [ops.judge]'
         raise ValueError(msg)
-    token = config.judge.token_file(url)
-    return [config.python, '-m', 'dev_lab.dev.forge', 'review', 'judge', '--url', url, '--token-file', token]
+    return [config.python, '-m', 'dev_lab.dev.forge', 'review', 'judge', '--url', url, *config.judge.credential(url)]
 
 
 def _subprocess(argv: Sequence[str]) -> int:

@@ -23,6 +23,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev._protect_steps import UNREADABLE, Step, absent, created, differences
+from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgefailure import ForgeCallFailed
 
 if TYPE_CHECKING:
@@ -60,8 +61,9 @@ def ruleset(target: Target) -> dict[str, Any]:
         msg = f'GitHub promote = {list(target.pushers)}: the trunk is pushed by the job token; declare no login'
         raise ValueError(msg)
     rules: list[dict[str, Any]] = [{'type': 'deletion'}, {'type': 'non_fast_forward'}]
-    if target.contexts:
-        checks = [{'context': context} for context in target.contexts]
+    checks = [{'context': context} for context in target.contexts]
+    checks += [{'context': JUDGE_CHECK, 'integration_id': target.judge_app}] if target.judge_app else []
+    if checks:
         rules.append({'type': 'required_status_checks', 'parameters': {
             'strict_required_status_checks_policy': False, 'do_not_enforce_on_create': False,
             'required_status_checks': checks}})  # fmt: skip
@@ -92,11 +94,20 @@ def facts(found: Mapping[str, Any]) -> dict[str, object]:
         'bypass': bypass if bypass == UNREADABLE else sorted(
             f'{one["actor_type"]}:{one.get("actor_id")}:{one["bypass_mode"]}' for one in bypass),
         'rules': sorted(rules),
-        'contexts': sorted(check['context'] for check in checks),
+        'contexts': sorted(_source(check) for check in checks),
         'approvals': None if review is None else review.get('required_approving_review_count'),
         'dismiss_stale': None if review is None else review.get('dismiss_stale_reviews_on_push'),
         'merge_methods': None if review is None else sorted(review.get('allowed_merge_methods', ())),
     }  # fmt: skip
+
+
+def _source(check: Mapping[str, Any]) -> str:
+    """A required check as ``context``; :data:`JUDGE_CHECK` as ``context@<app id>``, the one App it is required from.
+
+    GitHub answers every check with the ``integration_id`` it bound, Actions' for a bare context: only the judge's
+    App is declared, so only it is compared.
+    """
+    return f'{JUDGE_CHECK}@{check.get("integration_id")}' if check['context'] == JUDGE_CHECK else check['context']
 
 
 def _classic(api: Api, path: str) -> dict[str, Any] | None:

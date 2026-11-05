@@ -30,6 +30,7 @@ from typing import Any
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.ops.mirrors import mirror_host, mirror_name
+from dev_lab.ops.served import served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
@@ -73,24 +74,44 @@ class Judge(Placement):
     """The bundle-review judge (:mod:`dev_lab.dev.forgereview_bundle`): who runs it, when, on which repos, as whom.
 
     ``repos`` are the web URLs it judges; ``tokens`` maps each forge host to the ONE file holding the judge's token
-    there (the shape and refusals of :class:`Breakglass`). ``environment_file`` is a root-owned 0600 file carrying the
-    reviewer's model key (e.g. ``ANTHROPIC_API_KEY``), loaded into the judge's unit only.
+    there (the shape and refusals of :class:`Breakglass`) -- or ``apps`` maps it to a GitHub App,
+    ``{app_id, key_file}``, the judge authenticating as that App (:mod:`dev_lab.dev.forgeapp`); one host is one or
+    the other, never both.
+    ``home`` is the judge user's HOME (default ``/var/lib/<user>``, 0700): the reviewer (ai-lab) reads its model
+    keys ONLY from the git credential store there (``credential.helper store``, ``ai_lab.auth``, task ``pr-review``),
+    so the unit runs with ``HOME`` set to it. ``environment_file`` is an optional root-owned 0600 file of further
+    ``KEY=VALUE`` lines loaded into the judge's unit only -- never the model key.
     """
 
     user: str
     schedule: str
     repos: tuple[str, ...] = ()
     tokens: Mapping[str, str] = field(default_factory=dict)
+    apps: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    home: str = ''
     environment_file: str = ''
     memory_max: str = '2G'
 
     def __post_init__(self) -> None:
-        """Refuse a declaration that lies (see :func:`_served`)."""
-        _served(self.repos, self.tokens, '[ops.judge]')
+        """Refuse a declaration that lies: a role's repos and one credential per forge (:func:`served_by`)."""
+        served_by(self.repos, self.tokens, self.apps, '[ops.judge]')
 
-    def token_file(self, url: str) -> str:
-        """The file holding the judge's token on *url*'s forge."""
-        return self.tokens[forge_of_url(url).host]
+    def credential(self, url: str) -> list[str]:
+        """The ``forge review judge`` arguments naming the judge's credential on *url*'s forge: App, else token."""
+        host = forge_of_url(url).host
+        if (app := self.apps.get(host)) is not None:
+            return ['--app-id', str(app['app_id']), '--app-key-file', str(app['key_file'])]
+        return ['--token-file', self.tokens[host]]
+
+    @property
+    def home_dir(self) -> str:
+        """The judge user's HOME: ``home`` as declared, else ``/var/lib/<user>``."""
+        return self.home or f'/var/lib/{self.user}'
+
+    @property
+    def secrets(self) -> tuple[str, ...]:
+        """Every file the judge reads a credential from (token files and App keys): each 0600, owned by ``user``."""
+        return tuple(sorted({*self.tokens.values(), *(str(app['key_file']) for app in self.apps.values())}))
 
 
 @dataclass(frozen=True)
@@ -144,7 +165,7 @@ class Breakglass(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
-        _served(self.repos, self.tokens, '[ops.breakglass]')
+        served(self.repos, self.tokens, '[ops.breakglass]')
 
     def repo(self, identity: str) -> str | None:
         """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
@@ -153,24 +174,6 @@ class Breakglass(Placement):
     def token_file(self, url: str) -> str:
         """The file holding the break-glass token of *url*'s forge."""
         return self.tokens[forge_of_url(url).host]
-
-
-def _served(repos: tuple[str, ...], tokens: Mapping[str, str], where: str) -> None:
-    """Refuse an empty repo set, one identity twice, a forge with no token, or a token no repo uses."""
-    if not repos:
-        msg = f'{where} serves no repo: declare repos = ["https://<forge>/<owner>/<name>.git", ...]'
-        raise ValueError(msg)
-    identities = [forge_of_url(url).identity for url in repos]
-    if len(set(identities)) != len(identities):
-        msg = f'{where} repos name one repository twice: {identities}'
-        raise ValueError(msg)
-    hosts = {forge_of_url(url).host for url in repos}
-    if untokened := sorted(hosts - set(tokens)):
-        msg = f'{where} forge {", ".join(untokened)} names no token: add it to {where[:-1]}.tokens]'
-        raise ValueError(msg)
-    if unused := sorted(set(tokens) - hosts):
-        msg = f'{where[:-1]}.tokens] {", ".join(unused)} serves no repo in {where} repos'
-        raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -190,8 +193,8 @@ class Probe(Placement):
     tokens: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Refuse a declaration that lies (see :func:`_served`)."""
-        _served(self.repos, self.tokens, '[ops.probe]')
+        """Refuse a declaration that lies (see :func:`~dev_lab.ops.served.served`)."""
+        served(self.repos, self.tokens, '[ops.probe]')
 
     def token_file(self, url: str) -> str:
         """The file holding the probe token of *url*'s forge."""

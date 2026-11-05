@@ -31,7 +31,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgereview_declared import review_gate
+from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
@@ -93,7 +93,7 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
 
 
 def unreviewed(client: Client, head: str, *, base: str) -> str | None:
-    """Why *head* is not reviewed on *client*'s forge, or ``None``: the one gate (forgereview_declared.review_gate).
+    """Why *head* is not reviewed on *client*'s forge, or ``None``: the one gate (forgereview_gate.review_gate).
 
     *base* is the integration branch whose declaration, with *head*'s, says who the forge is.
     """

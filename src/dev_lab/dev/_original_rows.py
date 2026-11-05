@@ -339,6 +339,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'reviewbudget',  # the review's round and dollar caps, new here
     'commandpart',  # a non-pytest repo's one command part, new here
     'forgeaffinity',  # HPC account affinity of verify parts, new here
+    'forgeapp',  # a GitHub App as a forge identity (the judge's), new here
+    'forgereview_gate',  # the one review gate every merge door reads, split from forgereview_declared
     'forgereview_judge',  # independent re-judging and claim adjudication, new here
     'forgerunshow',  # a cluster run's findings published on the forge, new here
     'memoryadds',  # memory is added to, never edited, new here

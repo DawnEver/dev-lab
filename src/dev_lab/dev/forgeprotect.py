@@ -15,6 +15,9 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on;
 * the APPROVER is ``[tool.dev_lab.review] judge_login``: only a judge posts an approving PR review, so approvals
   are required only where one is declared -- a count with nobody to approve would hold every merge forever;
+* a GitHub repo judged by an App (``judge_app``) requires the App's
+  :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` FROM THAT APP (``integration_id``) on integration, and no approval:
+  the App posts a check run, never an approving review;
 * what THIS table declares, once, is the rest -- per forge host, the ONE bypass identity (break-glass) and the
   identities that may push the trunk (promote)::
 
@@ -127,6 +130,7 @@ class Target:
     pushers: tuple[str, ...] = ()
     approvals: int = 0
     approver: str = ''
+    judge_app: int = 0  # the GitHub App whose JUDGE_CHECK this branch requires from it alone; 0: none
 
     @property
     def via_pull_request(self) -> bool:
@@ -152,8 +156,12 @@ def declaration_from(text: str, origin: str) -> Declaration:
             msg = f'[tool.dev_lab.{_TABLE}.forges."{host}"] in {origin} names no breakglass: the bypass is undecided'
             raise ValueError(msg)
         forges[host] = Identities(str(entry['breakglass']), tuple(entry.get('promote', ())))
-    judged = review_from(text, origin).where == JUDGE
+    review = review_from(text, origin)
+    judged = review.where == JUDGE and not review.judge_app
     approvals = int(table.get('approvals', 1 if judged else 0))
+    if approvals and review.judge_app:
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} with judge_app -- the App posts a check'
+        raise ValueError(msg)
     if approvals and not judged:
         msg = (
             f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} with no [tool.dev_lab.review] '
@@ -193,10 +201,11 @@ def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
         msg = f'[tool.dev_lab.{_TABLE}.forges] in {origin} names no "{forge.host}": its bypass identity is undecided'
         raise ValueError(msg)
     contexts = required_contexts(text, origin, forge)
-    approver = review_from(text, origin).judge_login if declared.approvals else ''
+    review = review_from(text, origin)
+    approver = review.judge_login if declared.approvals else ''
     return (
         Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),
-               declared.approvals, approver),
+               declared.approvals, approver, review.judge_app),
         Target(TRUNK, policy.trunk, contexts[TRUNK], ours.breakglass, ours.promote),
     )  # fmt: skip
 
