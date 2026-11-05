@@ -191,7 +191,7 @@ command), and the forge's re-run releases it. A second tick on the same head run
 <host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
-through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
+through the same method (takeover chain: the task's API keys, then a ccc session, then a ccds session).
 
 It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
 integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the

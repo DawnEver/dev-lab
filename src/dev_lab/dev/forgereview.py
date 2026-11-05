@@ -31,7 +31,7 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integrati
   auto-merge waits on every state but ``success`` (:func:`dev_lab.dev.reviewgate.review_missing`);
   ``pending`` saying
   :data:`TAKEOVER_PENDING` when every reviewer was ``exhausted`` or ``auth`` (nothing is commented; the integrator
-  session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
+  session reviews that head through the same method -- the task's API keys, then a ccc, then a ccds session), ``error``
   when the command failed or printed no known findings version. NONE of these is advisory: each waits the merge
   until the FORGE posts ``success`` (D11: :mod:`dev_lab.dev.reviewgate` reads the status's recorded creator).
   It is not a PART (:func:`dev_lab.dev.platformparts.parts_of` skips it): promotion and push admission never wait
