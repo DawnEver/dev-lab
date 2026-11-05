@@ -136,15 +136,19 @@ def uv_command(
     return command
 
 
-def lock_upgrade_command(root: Path, python: str, required: str) -> list[str]:
-    """``uv lock --upgrade`` for *root* by uv *required*: every requirement re-resolved to the newest it admits."""
+def lock_upgrade_command(root: Path, python: str, required: str, packages: Sequence[str] = ()) -> list[str]:
+    """``uv lock --upgrade`` for *root* by uv *required*: every requirement re-resolved to the newest it admits.
+
+    Named *packages* move alone (``--upgrade-package``); everything else stays where the lock holds it.
+    """
     uv = shutil.which('uv')
     if uv is None:
         msg = 'a lock upgrade requires uv on PATH'
         raise FileNotFoundError(msg)
     interpreter = python if Path(python).is_file() else sys.executable
     uv = lock_writer(uv, required)
-    return [uv, 'lock', '--upgrade', '--project', str(root), '--python', interpreter]
+    moves = [part for package in packages for part in ('--upgrade-package', package)] or ['--upgrade']
+    return [uv, 'lock', *moves, '--project', str(root), '--python', interpreter]
 
 
 def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
@@ -192,6 +196,7 @@ def lock_upgrade(
     environment: dict[str, str],
     stable: Callable[[], str] = newest_stable,
     newest: Callable[[], str] = newest_uv,
+    packages: Sequence[str] = (),
 ) -> int:
     """Rewrite *root*'s lock at the newest resolution -- the remedy :mod:`dev_lab.dev.lockcheck` names.
 
@@ -200,15 +205,17 @@ def lock_upgrade(
     ``rust-toolchain.toml``, moved to *stable* (user ruling 2026-10-25), and a carried uv pin (dev-lab's
     :data:`~dev_lab.dev.lockcheck.UV_PIN`), moved to *newest* and written BY that uv (user directive 2026-11-05) --
     moves in this step; the
-    environment then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`.
+    environment then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`. Named *packages*
+    move ALONE (the relock's in-house scope, :mod:`dev_lab.dev.relock`): the toolchain and the uv pin are
+    third-party and stay where they are.
     """
     holds = unreasoned_holds((root / 'pyproject.toml').read_text(encoding='utf-8'))
     if holds:
         emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
         return 1
     try:
-        required = newest() if (root / UV_PIN).is_file() else uv_version(root)
-        command = lock_upgrade_command(root, python, required)
+        required = newest() if (root / UV_PIN).is_file() and not packages else uv_version(root)
+        command = lock_upgrade_command(root, python, required, packages)
     except (OtherUvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')
         return 1
@@ -216,8 +223,8 @@ def lock_upgrade(
         emit('would run: ' + ' '.join(command))
         return 0
     code = run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
-    if code == 0 and (root / TOOLCHAIN).is_file():
+    if code == 0 and not packages and (root / TOOLCHAIN).is_file():
         pin_stable(root, stable())
-    if code == 0 and (root / UV_PIN).is_file():
+    if code == 0 and not packages and (root / UV_PIN).is_file():
         pin_uv(root, required)
     return code
