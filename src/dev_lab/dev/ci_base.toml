@@ -693,7 +693,7 @@ UV_CONCURRENT_INSTALLS = "1"
 UV_CONCURRENT_BUILDS = "1"
 
 # The decision validates the review declaration (lab_commons.units: pint, numpy, pydantic) and runs the repo's
-# message row (commitizen), so this door installs the whole lock -- a hand list of that closure would be a second lock.
+# message row (dev_lab.dev.commitmsg), so this door installs the whole lock -- a hand list of that closure would be a second lock.
 ["merge.yml".jobs.merge]
 runs-on = "light"
 steps = [

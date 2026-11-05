@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check commit messages over the PUSH INCREMENT, not over the whole branch history. A HOOK, declared
+# Check commit messages (dev_lab.dev.commitmsg) over the PUSH INCREMENT, not over the whole branch history. A HOOK, declared
 # as a `pre-push` row of [tool.dev_lab.hooks] (dev_lab.dev.githooks.table):
 #
 #   run = ["python", "-m", "dev_lab.dev.githooks", "script", "cz-push-range"]
@@ -62,7 +62,8 @@ fi
 EXEMPT=' '
 bad=0
 while IFS= read -r entry || [ -n "${entry}" ]; do
-  entry="${entry%$''}"
+  entry="${entry%$'
+'}"
   read -r sha reason <<< "${entry}" || true
   [ -n "${sha:-}" ] || continue
   if ! [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
@@ -103,9 +104,9 @@ if [ "${#RANGES[@]}" -eq 0 ]; then
   WHYS=("no push increment on stdin -- judging the whole lane against ${BASE_REF}, on purpose")
 fi
 
-# AN EMPTY RANGE IS NOTHING TO JUDGE, NOT A REFUSAL, measured 2026-09-03. `commitizen check` exits 3
-# with "No commit found with range" when the range holds no commit (an up-to-date branch re-pushed).
-# The check is `rev-list`, not a parse of commitizen's message, so it cannot drift with its wording.
+# AN EMPTY RANGE IS NOTHING TO JUDGE, NOT A REFUSAL, measured 2026-09-03 (then against commitizen, which
+# exited 3 on a range holding no commit -- an up-to-date branch re-pushed). The check is `rev-list`, so it
+# says so here rather than asking the message checker (dev_lab.dev.commitmsg) to.
 status=0
 for i in "${!RANGES[@]}"; do
   RANGE="${RANGES[$i]}"
@@ -131,13 +132,13 @@ for i in "${!RANGES[@]}"; do
     case "${EXEMPT}" in *" ${sha} "*) HELD+=("${sha}") ;; esac
   done < <(git rev-list "${OWN[@]}")
   if [ "${#HELD[@]}" -eq 0 ] && [ "${upstream}" -eq 0 ]; then
-    bash "${HERE}/with-venv.sh" commitizen check --rev-range "${RANGE}" || status=1
+    bash "${HERE}/with-venv.sh" dev_lab.dev.commitmsg --rev-range "${RANGE}" || status=1
     continue
   fi
   while read -r sha; do
     case "${EXEMPT}" in
       *" ${sha} "*) echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)" ;;
-      *) bash "${HERE}/with-venv.sh" commitizen check --message "$(git log -1 --format=%B "${sha}")" || status=1 ;;
+      *) bash "${HERE}/with-venv.sh" dev_lab.dev.commitmsg --message "$(git log -1 --format=%B "${sha}")" || status=1 ;;
     esac
   done < <(git rev-list --reverse "${OWN[@]}")
 done

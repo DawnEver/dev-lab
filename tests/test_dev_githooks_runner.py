@@ -62,7 +62,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     # the published ref. The lock pin and freshness, the branch set and PR admission are the forge's.
     assert {hook.id for hook in table['pre-push']} == {'memory-adds', 'session-branch', 'landed-pr', 'pr-notices'}
     assert {hook.id for hook in table['commit-msg']} == {
-        'commitizen',
+        'conventional-commit',
         'forge-host',
         'issue-ref',
         'lab-session',
