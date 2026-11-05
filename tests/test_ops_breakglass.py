@@ -63,6 +63,8 @@ class Host:
     config: OpsConfig
     forge: FakeForge = field(default_factory=FakeForge)
     alerts: list[tuple[str, str]] = field(default_factory=list)
+    #: Whether a channel delivers; ``False`` models every channel failing (the alert is still recorded as tried).
+    delivers: bool = True
     #: Each repository URL the server asked a forge for.
     asked: list[str] = field(default_factory=list)
     clock: list[float] = field(default_factory=lambda: [NOW])
@@ -75,10 +77,14 @@ class Host:
         return Server(
             self.config,
             self._forge,
-            lambda t, d: self.alerts.append((t, d)),
+            self._alert,
             self._now,
             key=self.key,
         )
+
+    def _alert(self, title: str, body: str) -> bool:
+        self.alerts.append((title, body))
+        return self.delivers
 
     def _forge(self, url: str) -> FakeForge:
         self.asked.append(url)
@@ -106,16 +112,16 @@ def host(tmp_path: Path) -> Host:
     return Host(config(tmp_path, [], extra='wave_hours = 4.0\nmax_merges = 3'))
 
 
-def test_a_wave_merges_without_a_code_announces_each_merge_and_audits_on_close(host: Host) -> None:
+def test_a_wave_merges_without_a_code_and_summarizes_on_close(host: Host) -> None:
     assert 'open for 4 h, at most 3' in host.ask('open', code=host.code())
     assert host.merge().startswith(f'merged {ALPHA}#7')
     assert [call[0] for call in host.forge.calls] == ['comment', 'merge']
     assert reason(host.forge.calls[1][2]) == 'review-bot is down'  # the existing Break-Glass notice reads it
-    merged = [a for a in host.alerts if a[0] == f'break-glass MERGED {ALPHA}#7']
-    assert HEAD in merged[0][1]  # the SERVER's announcement names the head that actually merged
-    assert KEY in merged[0][1]  # ... and the ssh key that asked for it
     report = host.ask('close')
-    assert f'{ALPHA}#7 at aaaaaaaaaaaa by key {KEY}: review-bot is down' in report
+    [(_title, summary)] = host.alerts
+    assert HEAD in summary  # the SERVER's summary names the head that actually merged
+    assert KEY in summary  # ... and the ssh key that asked for it
+    assert f'{ALPHA}#7 at {HEAD} by key {KEY}: review-bot is down' in report
     assert 'awaits acknowledgement' not in report
     assert 'audit' in host.ask('status')
 
@@ -164,7 +170,7 @@ def test_the_client_may_only_shorten_the_window(host: Host) -> None:
 def test_a_merge_beyond_the_cap_is_refused(host: Host) -> None:
     host.ask('open', code=host.code(), max_merges=1)
     host.merge()
-    with pytest.raises(BreakglassRefused, match='cap of 1'):
+    with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):  # the cap ended the wave
         host.merge()
     assert len(host.forge.calls) == 2
 
@@ -184,21 +190,6 @@ def test_ack_needs_no_code_and_records_who(host: Host) -> None:
     assert 'acknowledged' in host.ask('status')
     with pytest.raises(BreakglassRefused, match='no wave awaits'):
         host.ask('ack', by='user@ws')
-
-
-def test_the_tick_reminds_an_unacknowledged_audit_once_per_period(host: Host) -> None:
-    host.ask('open', code=host.code())
-    host.merge()
-    host.ask('close')
-    host.alerts.clear()
-    host.server.tick()
-    assert host.alerts == []
-    host.later(24 * HOUR)
-    host.server.tick()
-    host.server.tick()
-    assert [a[0] for a in host.alerts] == [
-        f'break-glass wave {host.ask("status").split()[1][:-1]} awaits acknowledgement'
-    ]
 
 
 @pytest.mark.parametrize(
@@ -329,7 +320,7 @@ def test_parallel_wrong_codes_cannot_outrun_the_lockout(host: Host) -> None:
 def test_an_alert_that_fails_never_loses_the_audit_or_the_merge(host: Host) -> None:
     host.ask('open', code=host.code())
 
-    def broken(_title: str, _body: str) -> None:
+    def broken(_title: str, _body: str) -> bool:
         unreachable = 'telegram unreachable'
         raise OSError(unreachable)
 
@@ -338,6 +329,7 @@ def test_an_alert_that_fails_never_loses_the_audit_or_the_merge(host: Host) -> N
     said = server.handle(json.dumps({'action': 'merge', 'repo': ALPHA, 'pr': 7, 'head': HEAD,
                                      'reason': 'review-bot is down'}))  # fmt: skip
     assert said.startswith('merged')
+    server.handle(json.dumps({'action': 'close'}))
     assert host.config.breakglass is not None
     outcomes = [json.loads(line)['outcome'] for line in
                 Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()]  # fmt: skip
@@ -482,8 +474,8 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     assert 'Break-Glass: review-bot is down' in body
 
 
-# User ruling 2026-11-04: one wave sent three alerts. Opening is audited only; every merge is announced at once; the
-# close/expiry audit and its reminders are sent only for a wave that merged something.
+# User ruling 2026-11-04: "break glass still sends three messages -- one final acceptance is enough". A wave sends
+# ONE alert, its summary, when it ENDS (closed, cap reached, expired) and only if it merged; never one per merge.
 
 
 def _titles(host: Host) -> list[str]:
@@ -500,48 +492,148 @@ def _wave_id(host: Host) -> str:
     return host.ask('status').split()[1][:-1]
 
 
+def _summary(host: Host) -> str:
+    return f'break-glass wave {_wave_id(host)} ended: AUDIT AND ACKNOWLEDGE'
+
+
 def test_opening_a_wave_alerts_nothing_and_is_audited(host: Host) -> None:
     host.ask('open', code=host.code())
     assert host.alerts == []
     assert _outcomes(host) == ['opened']
 
 
-def test_a_wave_that_merged_alerts_each_merge_then_its_audit(host: Host) -> None:
+def test_a_merge_alerts_nothing_while_the_wave_is_open(host: Host) -> None:
     host.ask('open', code=host.code())
     host.merge()
-    host.ask('close')
-    wave = _wave_id(host)
-    assert _titles(host) == [f'break-glass MERGED {ALPHA}#7', f'break-glass wave {wave} closed: AUDIT AND ACKNOWLEDGE']
-
-
-def test_closing_an_empty_wave_alerts_nothing_and_is_audited(host: Host) -> None:
-    host.ask('open', code=host.code())
-    host.ask('close')
+    host.merge(pr=8)
     assert host.alerts == []
-    assert _outcomes(host) == ['opened', 'closed']
+    assert _outcomes(host) == ['opened', 'merged', 'merged']
+
+
+def test_closing_a_wave_that_merged_sends_one_summary_of_every_merge(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    host.merge(pr=8, reason='numerics-lab gate is wedged')
+    host.ask('close')
+    [(title, body)] = host.alerts
+    assert title == _summary(host)
+    assert f'{ALPHA}#7 at {HEAD} by key {KEY}: review-bot is down' in body
+    assert f'{ALPHA}#8 at {HEAD} by key {KEY}: numerics-lab gate is wedged' in body
+    assert f'by key {KEY}, ended' in body  # who opened it
+    assert 'opened 20' in body  # the window: when it opened and when it ended
+    assert 'ended 20' in body
+
+
+def test_reaching_the_cap_ends_the_wave_and_sends_its_summary(host: Host) -> None:
+    host.ask('open', code=host.code(), max_merges=2)
+    host.merge()
+    assert host.alerts == []
+    host.merge(pr=8)
+    assert _titles(host) == [_summary(host)]
+    assert 'audit' in host.ask('status')  # ended, not open
+    host.ask('close')
+    host.server.tick()
+    assert len(host.alerts) == 1
 
 
 @pytest.mark.parametrize('merged', [True, False])
-def test_an_expired_wave_alerts_its_audit_only_if_it_merged(host: Host, *, merged: bool) -> None:
+def test_an_expired_wave_sends_its_summary_only_if_it_merged(host: Host, *, merged: bool) -> None:
     host.ask('open', code=host.code(), hours=1)
     if merged:
         host.merge()
     host.later(HOUR + 1)
     host.server.tick()
-    wave = _wave_id(host)
-    audit = [f'break-glass wave {wave} closed: AUDIT AND ACKNOWLEDGE']
-    assert _titles(host) == ([f'break-glass MERGED {ALPHA}#7', *audit] if merged else [])
-    assert _outcomes(host)[-1] == 'closed'
+    assert _titles(host) == ([_summary(host)] if merged else [])
+    assert _outcomes(host)[-1] == ('summarized' if merged else 'closed')
 
 
-@pytest.mark.parametrize('merged', [True, False])
-def test_reminders_only_chase_a_wave_that_merged(host: Host, *, merged: bool) -> None:
+def test_closing_an_empty_wave_alerts_nothing_and_is_audited(host: Host) -> None:
     host.ask('open', code=host.code())
-    if merged:
-        host.merge()
     host.ask('close')
-    host.alerts.clear()
-    host.later(24 * HOUR)
     host.server.tick()
-    reminded = [f'break-glass wave {_wave_id(host)} awaits acknowledgement']
-    assert _titles(host) == (reminded if merged else [])
+    assert host.alerts == []
+    assert _outcomes(host) == ['opened', 'closed']
+
+
+def test_the_summary_is_sent_once_however_often_the_tick_runs(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    host.ask('close')
+    for _ in range(3):
+        host.later(24 * HOUR)
+        host.server.tick()
+    assert _titles(host) == [_summary(host)]  # no reminders either: one wave, one message
+
+
+def test_a_summary_no_channel_delivered_is_resent_by_the_next_tick_only(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    host.delivers = False
+    host.ask('close')
+    host.server.tick()
+    assert _titles(host) == [_summary(host)] * 2  # tried on close, retried by the tick
+    host.delivers = True
+    host.server.tick()
+    host.server.tick()
+    assert _titles(host) == [_summary(host)] * 3  # delivered once, then never again
+
+
+def test_a_raising_channel_is_a_failed_delivery_retried_next_tick(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    server = host.server
+
+    def broken(_title: str, _body: str) -> bool:
+        unreachable = 'telegram unreachable'
+        raise OSError(unreachable)
+
+    server.alert = broken
+    server.handle(json.dumps({'action': 'close'}))
+    host.server.tick()
+    assert _titles(host) == [_summary(host)]
+    assert _outcomes(host).count('summarized') == 1
+
+
+def test_planted_control_a_wave_marked_summarized_is_never_resent(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    host.delivers = False
+    host.ask('close')
+    assert host.config.breakglass is not None
+    state = Path(host.config.breakglass.state) / 'waves' / f'{_wave_id(host)}.json'
+    data = json.loads(state.read_text(encoding='utf-8'))
+    assert data['summarized'] is None  # control: the failed delivery left it unmarked ...
+    data['summarized'] = NOW
+    state.write_text(json.dumps(data), encoding='utf-8')
+    host.delivers = True
+    host.server.tick()
+    assert _titles(host) == [_summary(host)]  # ... and the mark alone stops the resend
+
+
+def test_the_summary_carries_no_secret(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    host.ask('close')
+    assert host.config.breakglass is not None
+    body = host.alerts[0][1]
+    secrets = [host.config.breakglass.totp, *host.config.breakglass.tokens.values()]
+    for path in (Path(name) for name in secrets):
+        if path.is_file():
+            assert path.read_text(encoding='utf-8').strip() not in body
+    assert host.code() not in body
+
+
+def test_a_wave_written_before_summaries_reads_as_already_summarized(host: Host) -> None:
+    host.ask('open', code=host.code())
+    host.merge()
+    host.delivers = False
+    host.ask('close')
+    assert host.config.breakglass is not None
+    state = Path(host.config.breakglass.state) / 'waves' / f'{_wave_id(host)}.json'
+    data = json.loads(state.read_text(encoding='utf-8'))
+    del data['summarized'], data['key']
+    data['reminded'] = None  # the earlier format: it alerted on close and reminded
+    state.write_text(json.dumps(data), encoding='utf-8')
+    host.delivers = True
+    host.server.tick()
+    assert _titles(host) == [_summary(host)]  # the close's try only: an old wave is never re-alerted

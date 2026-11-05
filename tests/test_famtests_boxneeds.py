@@ -7,6 +7,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from lab_commons.hpc.needsets import read_vocabulary
 
 from dev_lab.dev.famtests.boxneeds import NEEDS, UnmarkedNeed, assert_box_bodies_are_marked, unmarked
 
@@ -101,9 +102,13 @@ def test_every_need_names_a_real_body() -> None:
         assert attr in {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}, name
 
 
-def test_the_kits_own_tests_mark_what_they_judge() -> None:
-    """The kit adopts its own row: its tests that read this checkout or ask for the host node carry the marker."""
-    # Floor 3 under the 4 measured 2026-10-28, after the engine-driving bodies left NEEDS (dev.jsrun).
-    assert_box_bodies_are_marked(
-        tests=ROOT / 'tests', pyproject=(ROOT / 'pyproject.toml').read_text(encoding='utf-8'), floor=3
-    )
+def test_no_test_of_the_kit_judges_the_box() -> None:
+    """User ruling 2026-11-05: every dev-lab test completes on a hosted runner, so none calls a box body.
+
+    Read against the REAL pyproject, which must declare no resource: any box-body call is then an
+    undeclared need and reds by name (the refusal arms are planted above); floor 0 because the expected
+    count IS zero.
+    """
+    declared = (ROOT / 'pyproject.toml').read_text(encoding='utf-8')
+    assert read_vocabulary(declared).resources == ()
+    assert_box_bodies_are_marked(tests=ROOT / 'tests', pyproject=declared, floor=0)

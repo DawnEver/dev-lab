@@ -86,14 +86,14 @@ def test_the_suite_is_partitioned_by_need_set() -> None:
     assert parts == {'t::a': BASE, 't::f': 'femm', 't::w': 'windows', 't::fw': 'femm+windows'}
 
 
-def test_this_repo_names_its_off_cluster_tests_as_resources() -> None:
-    """The live checkout, ``node`` and the ``codex`` CLI are one host's kit, and the cluster's per-sha tree has none.
+def test_a_declared_workstation_resource_is_scarce_and_this_repo_declares_none() -> None:
+    """A consumer whose live-checkout tests share one host declares ONE scarce ``workstation`` resource.
 
-    So they are ONE resource, ``workstation``: every host carrying one carries all three, and three parts would
-    queue three times on the one host that can serve them. One host serves it, so it is also SCARCE: a PR
-    waits on it only where its diff reaches a workstation test (:mod:`dev_lab.dev.forgescarce`).
+    Read on a planted declaration (the family mechanism); dev-lab itself declares no resource (user ruling
+    2026-11-05: every test runs on a hosted runner), pinned against its real pyproject.
     """
+    planted = read_vocabulary('[tool.lab_commons.tests]\nresources = ["workstation"]\nscarce = ["workstation"]\n')
+    assert planted == Vocabulary(('workstation',), scarce=('workstation',))
+    assert selecting(planted, BASE) == 'not workstation'
     declared = (Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8')
-    vocabulary = read_vocabulary(declared)
-    assert vocabulary == Vocabulary(('workstation',), scarce=('workstation',))
-    assert selecting(vocabulary, BASE) == 'not workstation'
+    assert read_vocabulary(declared) == Vocabulary((), scarce=())

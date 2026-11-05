@@ -117,7 +117,7 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
         '    AllowTcpForwarding no\n    AllowAgentForwarding no\n    X11Forwarding no\n    PermitTTY no\n'
     )
     tick_service = _service(
-        config, role, 'Close expired break-glass waves, remind unacknowledged audits (dev_lab.ops)',
+        config, role, 'End expired break-glass waves, resend undelivered wave summaries (dev_lab.ops)',
         ['Type=oneshot', f'ExecStart={_door(config, "breakglass", "tick")}'], network=False,
     )  # fmt: skip
     tick_timer = (

@@ -11,9 +11,9 @@ import pytest
 from _forge_fake import make_repo
 from _forge_state import StateForge
 
-from dev_lab.dev import jobparts, localpart, partrows, platformparts
+from dev_lab.dev import forgemerge, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
-from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, client_for
 from dev_lab.dev.producer import full_suite_refusal
 
@@ -267,3 +267,25 @@ def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_p
     with pytest.raises(platformparts.UndeclaredPart):
         jobparts.hosted_parts(text)
     assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('MODEL_KEY',), 'login --from-file -')}
+
+
+def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hosted part has no pull request row, so merge-ready waives it; the full run still produces it.
+
+    PLANTED CONTROL: the same statuses under a commit declaring no hosted part still miss ``live``.
+    """
+    texts = {
+        'hosted': HOSTED,
+        'declared': HOSTED.split('[tool.dev_lab.parts]', maxsplit=1)[0],
+        'broken': HOSTED.replace('setup = "login --from-file -"', 'setup = ""'),
+    }
+    monkeypatch.setattr(jobparts, 'pyproject_at', lambda _root, sha: texts[sha])
+    monkeypatch.setattr(forgemerge, 'unproduced_waived', lambda *_: frozenset())
+    assert jobparts.pull_request_waived(Path(), 'hosted') == {'live'}
+    assert jobparts.pull_request_waived(Path(), 'broken') == frozenset(), 'doubt waives nothing'
+    handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
+    assert forgemerge.parts_wait(Path(), 'hosted', handed) is None
+    assert jobparts.pull_request_waived(Path(), 'declared') == frozenset()
+    still = forgemerge.parts_wait(Path(), 'declared', handed)
+    assert still is not None, 'PLANTED CONTROL'
+    assert 'missing the live part (base hands 2)' in still

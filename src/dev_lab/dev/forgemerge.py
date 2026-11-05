@@ -80,6 +80,7 @@ from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITHUB, client_for
 from dev_lab.dev.githooks import PYTHON_ENV, bash_executable, hook_path
 from dev_lab.dev.githooks.table import hook_table
+from dev_lab.dev.jobparts import pull_request_waived
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
@@ -189,8 +190,12 @@ def merge_message(branch: str, number: int, policy: Policy) -> str:
 
 
 def parts_wait(root: Path, head: str, statuses: Sequence[CommitStatus]) -> str | None:
-    """Why *head*'s test parts do not all stand PASS, or ``None``: the one :func:`standing` reading, any scope."""
-    parts = standing(statuses, head=head, waived=unproduced_waived(root, head, statuses))
+    """Why *head*'s test parts do not all stand PASS, or ``None``: the one :func:`standing` reading, any scope.
+
+    An unproduced part and a hosted one (produced only on a full run, never for a pull request) are waived.
+    """
+    waived = unproduced_waived(root, head, statuses) | pull_request_waived(root, head)
+    parts = standing(statuses, head=head, waived=waived)
     if parts.result is Conclusion.PASS:
         return None
     return '; '.join([f'they stand {parts.reading}', *parts.problems])
