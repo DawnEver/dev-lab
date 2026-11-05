@@ -19,6 +19,7 @@ from dev_lab.dev import forgeservesteps, relock
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.lockcheck import UV_PIN
 from dev_lab.dev.relock import (
     PREFIX,
     Relock,
@@ -304,3 +305,56 @@ def test_planted_control_a_tree_with_its_venv_renders_with_that_interpreter(tmp_
         python.parent.mkdir(parents=True, exist_ok=True)
         python.write_text('', encoding='utf-8')
     assert Path(_tree_python(tmp_path)).parent.parent == tmp_path / '.venv'
+
+
+def _uv_pinned(world: tuple[Path, Path, str]) -> tuple[Path, Path, str]:
+    clone, origin, _ = world
+    seed = origin.parent / 'seed'
+    (seed / UV_PIN).parent.mkdir(parents=True)
+    (seed / UV_PIN).write_text('version = "0.13.7"\n', encoding='utf-8')
+    _git(seed, 'add', '-A')
+    _git(seed, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'pin uv')
+    _git(seed, 'push', '-q', str(origin), 'integrate/main')
+    _git(clone, 'fetch', '-q', 'origin')
+    return clone, origin, _git(clone, 'rev-parse', 'origin/integrate/main')
+
+
+def _uv_bumped(tree: Path) -> int:
+    (tree / UV_PIN).write_text('version = "0.13.8"\n', encoding='utf-8')
+    return 0
+
+
+def test_a_uv_pin_behind_the_newest_release_is_carried_like_a_stale_lock(world: tuple[Path, Path, str]) -> None:
+    """User directive 2026-11-05: the forge raises dev-lab's uv pin by the same relock pull request."""
+    clone, origin, sha = _uv_pinned(world)
+    forge = _Forge()
+    said = carry(
+        clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_fresh, uv=lambda: '0.13.8',
+        host_uv=lambda: '0.13.8', upgrade=_uv_bumped,
+    )  # fmt: skip
+    branch = branch_for('uv', sha)
+    assert said == f'relocked uv onto {branch}: https://forge/pulls/99'
+    assert _git(origin, 'diff', '--name-only', sha, branch) == UV_PIN
+
+
+def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the_update(
+    world: tuple[Path, Path, str],
+) -> None:
+    """A lock is never written by the old uv: the relock RAISES naming ``uv self update`` and pushes nothing."""
+    clone, origin, sha = _uv_pinned(world)
+    forge = _Forge()
+
+    def never(_tree: Path) -> int:
+        msg = 'the door must not run on a host without the new uv'
+        raise AssertionError(msg)
+
+    with pytest.raises(RelockFailed, match=r'uv self update 0\.13\.8'):
+        carry(
+            clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_fresh, uv=lambda: '0.13.8',
+            host_uv=lambda: '0.13.7', upgrade=never,
+        )  # fmt: skip
+    assert branch_for('uv', sha) not in _git(origin, 'branch', '--list')
+
+
+def test_the_dist_of_a_uv_pin_sentence_is_uv() -> None:
+    assert dist_of(f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.13.8') == 'uv'

@@ -1,5 +1,8 @@
 """THE FORGE RELOCKS INTEGRATION: a stale ``uv.lock`` on ``origin/<integration>`` becomes ONE pull request.
 
+So does every other :data:`~dev_lab.dev.lockcheck.FRESHENED` input below the newest -- the Rust toolchain and
+dev-lab's uv pin, which is written by the uv it raises to (a host without that uv refuses, naming the update).
+
 FRESHNESS IS ONE PARTY'S JOB (2026-10-21). The ``lock`` pre-push row used to judge every push on freshness, so
 whenever any dependency published, every lane carried a hand-made relock commit before each push and stacked
 branches repeated it. Now every commit is judged on its PIN alone, on the forge
@@ -25,6 +28,7 @@ afresh.
 from __future__ import annotations
 
 import contextlib
+import shutil
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
@@ -33,10 +37,20 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev._dep_project import installed_uv_version, uv_remedy
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.labsession import machine_env
-from dev_lab.dev.lockcheck import FRESHENED, TOOLCHAIN, mount_submodules, newest_stable, refreshable, stale
+from dev_lab.dev.lockcheck import (
+    FRESHENED,
+    TOOLCHAIN,
+    UV_PIN,
+    mount_submodules,
+    newest_stable,
+    newest_uv,
+    refreshable,
+    stale,
+)
 from dev_lab.dev.netverb import run_network_verb
 
 if TYPE_CHECKING:
@@ -84,11 +98,13 @@ def dist_of(change: str) -> str:
     """The distribution a :func:`~dev_lab.dev.lockcheck.stale` sentence names.
 
     The sentence is ``uv.lock is not the newest resolution: Update pint v0.26.1 -> v0.26.2``; the word after
-    the verb is the distribution, a toolchain sentence answers ``'rust'``, and a sentence of another shape
-    answers ``'lock'`` rather than guessing.
+    the verb is the distribution, a toolchain sentence answers ``'rust'``, a uv pin sentence ``'uv'``,
+    and a sentence of another shape answers ``'lock'`` rather than guessing.
     """
     if change.startswith(f'{TOOLCHAIN} '):
         return 'rust'
+    if change.startswith(f'{UV_PIN} '):
+        return 'uv'
     _, _, rest = change.partition('resolution: ')
     words = rest.split()
     name = words[1] if len(words) >= _NAME_INDEX and words[0] in _VERBS else ''
@@ -101,14 +117,20 @@ def branch_for(dist: str, sha: str) -> str:
 
 
 def decision(
-    tree: Path, sha: str, *, resolve: Callable[[Path], Report] | None = None, stable: Callable[[], str] = newest_stable
+    tree: Path,
+    sha: str,
+    *,
+    resolve: Callable[[Path], Report] | None = None,
+    stable: Callable[[], str] = newest_stable,
+    uv: Callable[[], str] = newest_uv,
 ) -> Relock | None:
     """The relock *tree* (a checkout of integration at *sha*) needs, or ``None`` when its lock is the newest.
 
     *resolve* is the resolution :func:`stale` reads; left out it dry-runs ``uv lock --upgrade``, exactly as the
-    pre-push row does; *stable* is the newest Rust stable. A resolution that could not run RAISES, never relocks.
+    pre-push row does; *stable* is the newest Rust stable and *uv* the newest uv release.
+    A resolution that could not run RAISES, never relocks.
     """
-    found = stale(tree, stable=stable) if resolve is None else stale(tree, resolve=resolve, stable=stable)
+    found = stale(tree, stable=stable, uv=uv) if resolve is None else stale(tree, resolve=resolve, stable=stable, uv=uv)
     if not found:
         return None
     if not all(refreshable(line) for line in found):
@@ -186,6 +208,20 @@ def rerender(tree: Path) -> int:
     return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
 
 
+def _host_uv() -> str:
+    """The version of the uv on this host's PATH; empty when there is none."""
+    uv = shutil.which('uv')
+    return installed_uv_version(uv) if uv else ''
+
+
+def _uv_raise(body: str) -> str | None:
+    """The uv version a relock raises the pin to, read from its body's uv sentence; ``None`` when it raises none."""
+    for line in body.splitlines():
+        if line.startswith(f'- {UV_PIN} '):
+            return line.rsplit('-> ', 1)[-1].strip()
+    return None
+
+
 def _push(tree: Path, branch: str) -> None:
     report = run_network_verb([_GIT, 'push', 'origin', f'HEAD:refs/heads/{branch}'], cwd=tree, timeout=300)
     if not report.ok:
@@ -201,6 +237,8 @@ def carry(
     create: Callable[..., PullRequest],
     resolve: Callable[[Path], Report] | None = None,
     stable: Callable[[], str] = newest_stable,
+    uv: Callable[[], str] = newest_uv,
+    host_uv: Callable[[], str] = _host_uv,
     upgrade: Callable[[Path], int] = door_upgrade,
     rerender: Callable[[Path], int] = rerender,
     push: Callable[[Path, str], None] = _push,
@@ -208,8 +246,10 @@ def carry(
     """Relock ``origin/<integration>`` of *root* through one pull request, if it needs one; the line said.
 
     *pulls* lists the open pull requests and *create* opens one (``Client.pr_create``'s signature); *resolve*,
-    *stable*, *upgrade*, *rerender* and *push* are the resolution, the newest Rust stable, the door, the render
-    of the generated files and the push, each a seam a test plants.
+    *stable*, *uv*, *host_uv*, *upgrade*, *rerender* and *push* are the resolution, the newest Rust stable, the
+    newest uv release, this host's uv, the door, the render of the generated files and the push, each a seam a
+    test plants. A relock that raises the uv pin is written BY the new uv: on a host without it, it RAISES
+    naming the update rather than writing a lock with the old one.
     """
     for pull in pulls():
         if pull.head.startswith(f'{PREFIX}-'):
@@ -220,9 +260,15 @@ def carry(
         msg = f'there is no {base} in {root} to relock'
         raise RelockFailed(msg)
     with detached_worktree(root, sha) as tree:
-        found = decision(tree, sha, resolve=resolve, stable=stable)
+        found = decision(tree, sha, resolve=resolve, stable=stable, uv=uv)
         if found is None:
             return f'the lock of {policy.integration} at {sha[:SHORT]} is the newest resolution'
+        if (raised := _uv_raise(found.body)) is not None and (have := host_uv()) != raised:
+            msg = (
+                f'the relock raises {UV_PIN} to uv {raised}, but this host has uv {have or "(none)"} and a lock is '
+                f'written by the uv it pins: {uv_remedy(raised)} on this host'
+            )
+            raise RelockFailed(msg)
         if (exited := upgrade(tree)) != 0:
             msg = f'the dependency door exited {exited} relocking {found.dist} at {sha[:SHORT]}'
             raise RelockFailed(msg)

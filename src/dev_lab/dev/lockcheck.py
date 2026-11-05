@@ -24,7 +24,8 @@ the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``
 freshness against its base as a status (:mod:`dev_lab.dev.forgeheadgate`;
 a PR never chases the lock). The serve tick keeps integration at the newest
 resolution itself through a relock pull request (:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one
-staleness reading, of the lock and of the toolchain against :func:`newest_stable` --
+staleness reading, of the lock, of the toolchain against :func:`newest_stable` and of the uv pin against
+:func:`newest_uv` --
 and a lane takes it with ``forge sync``.
 """
 
@@ -45,8 +46,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 __all__ = [
-    'DOOR', 'FRESHENED', 'LOCK', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'lock_problems', 'mount_submodules',
-    'newest_stable', 'pin_stable', 'refreshable', 'stale', 'toolchain_problems', 'unreasoned_holds',
+    'DOOR', 'FRESHENED', 'LOCK', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'UV_PIN', 'UV_RELEASES', 'lock_problems',
+    'mount_submodules', 'newest_stable', 'newest_uv', 'pin_stable', 'pin_uv', 'refreshable', 'stale',
+    'toolchain_problems', 'unreasoned_holds', 'uv_version',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
@@ -54,14 +56,17 @@ LOCK: Final = 'uv.lock'
 #: The Rust toolchain pin every repository committing Rust carries at its root.
 TOOLCHAIN: Final = 'rust-toolchain.toml'
 
-#: THE uv that writes every lock in the family, and the one every installer here installs. ``uv.lock``'s
-#: ``revision`` line is the WRITER'S format, so two uv releases relocking the same pins churn it and conflict
-#: (measured 2026-10-27: 0.12.5 on the Windows box, 0.12.23 .. 0.13.5 across six Ada accounts). One constant,
-#: not a ``[tool.uv] required-version`` per pyproject: the door that writes locks and the deploys that install
-#: uv all live here, so this line moves the whole family. Raise it together with each host's ``uv self update``.
-UV_VERSION: Final = '0.13.5'
+#: Where THE uv that writes every lock in the family is pinned, relative to dev-lab's root: a data file the relock
+#: rewrites, never Python source. ``uv.lock``'s ``revision`` line is the WRITER'S format, so two uv releases relocking
+#: the same pins churn it and conflict (measured 2026-10-27: 0.12.5 on the Windows box, 0.12.23 .. 0.13.5 across six
+#: Ada accounts). One file, not a ``[tool.uv] required-version`` per pyproject: the door that writes locks and the
+#: deploys that install uv all live here, so this file moves the whole family; the forge keeps it at the newest
+#: release (:func:`newest_uv`, user directive 2026-11-05).
+UV_PIN: Final = 'src/dev_lab/dev/uv.toml'
 #: The pinned inputs the forge keeps at the newest; a :func:`stale` sentence naming one is :func:`refreshable`.
-FRESHENED: Final = (LOCK, TOOLCHAIN)
+FRESHENED: Final = (LOCK, TOOLCHAIN, UV_PIN)
+#: Where uv's releases are tagged; :func:`newest_uv` reads the highest ``X.Y.Z`` tag there.
+UV_RELEASES: Final = 'https://github.com/astral-sh/uv'
 #: How every :func:`stale` sentence for a resolution that could not run begins -- a refusal, never an admission.
 UNRESOLVED: Final = 'the newest resolution could not run'
 #: The one remedy for a missing or stale lock.
@@ -84,6 +89,9 @@ _CLAUSE: Final = re.compile(r'^\s*(?P<op>~=|===|==|!=|<=|>=|<|>)\s*[\w.*+!-]+\s*
 _HOLDING: Final = frozenset({'<', '<=', '==', '===', '~='})
 _CHANNEL: Final = re.compile(r'^(?P<lead>\s*channel\s*=\s*)["\'](?P<channel>[^"\'\n]*)["\']', re.MULTILINE)
 _EXACT: Final = re.compile(r'^\d+\.\d+\.\d+$')
+_UV_PINNED: Final = re.compile(r'^(?P<lead>version\s*=\s*)"(?P<version>[^"\n]*)"', re.MULTILINE)
+#: A release tag ``ls-remote`` lists: ``<sha>\trefs/tags/0.13.7``; a pre-release tag has a suffix and never matches.
+_RELEASE_TAG: Final = re.compile(r'\trefs/tags/v?(?P<version>\d+\.\d+\.\d+)$', re.MULTILINE)
 #: ``rustup check``'s stable line: ``Up to date : <v> (...)`` or ``Update available : <old> (...) -> <v> (...)``.
 #: rustup's case and the space before the colon vary by release (1.29 on Linux prints ``update available:``).
 _STABLE: Final = re.compile(
@@ -208,6 +216,40 @@ def newest_stable(*, check: Callable[[], Report] = _rustup_check) -> str:
     return found['version']
 
 
+def _uv_tags() -> Report:
+    """``git ls-remote --tags --refs`` of uv's repository through the network door: no API token, no rate limit."""
+    return run_network_verb([_GIT, 'ls-remote', '--tags', '--refs', UV_RELEASES], timeout=RESOLVE_TIMEOUT_S)
+
+
+def newest_uv(*, check: Callable[[], Report] = _uv_tags) -> str:
+    """The newest uv release (``0.13.7``) among the tags *check* lists; RAISES on none."""
+    report = check()
+    output = report.attempts[-1].output if report.attempts else ''
+    versions = [tuple(int(part) for part in found['version'].split('.')) for found in _RELEASE_TAG.finditer(output)]
+    if not report.ok or not versions:
+        msg = f'{UV_RELEASES} listed no uv release ({report.remedy}): {output.strip()[-200:]}'
+        raise OSError(msg)
+    return '.'.join(str(part) for part in max(versions))
+
+
+def uv_version(root: Path | None = None) -> str:
+    """The uv *root* pins at :data:`UV_PIN` when it carries one (a dev-lab checkout), else this dev-lab's own."""
+    pin = root / UV_PIN if root is not None else None
+    path = pin if pin is not None and pin.is_file() else Path(__file__).with_name('uv.toml')
+    found = _UV_PINNED.search(path.read_text(encoding='utf-8'))
+    if found is None:
+        msg = f'{path} pins no uv `version = "X.Y.Z"`'
+        raise ValueError(msg)
+    return found['version']
+
+
+def pin_uv(tree: Path, version: str) -> None:
+    """Rewrite the version of *tree*'s :data:`UV_PIN` to *version*, every other line as it was."""
+    path = tree / UV_PIN
+    text = path.read_text(encoding='utf-8')
+    path.write_text(_UV_PINNED.sub(lambda m: f'{m["lead"]}"{version}"', text, count=1), encoding='utf-8')
+
+
 def _channel(text: str) -> str | None:
     found = _CHANNEL.search(text)
     return found['channel'] if found else None
@@ -239,12 +281,17 @@ def refreshable(sentence: str) -> bool:
 
 
 def stale(
-    tree: Path, *, resolve: Callable[[Path], Report] = _dry_run, stable: Callable[[], str] = newest_stable
+    tree: Path,
+    *,
+    resolve: Callable[[Path], Report] = _dry_run,
+    stable: Callable[[], str] = newest_stable,
+    uv: Callable[[], str] = newest_uv,
 ) -> tuple[str, ...]:
-    """Why the lock or the toolchain in *tree* is not at the newest, one sentence each; empty when both are.
+    """Why a :data:`FRESHENED` input of *tree* is not at the newest, one sentence each; empty when none is.
 
     A resolution that could not run is one sentence carrying its diagnosis, so it refuses rather than admits.
-    The toolchain is read against *stable* only where *tree* pins one.
+    The toolchain is read against *stable* only where *tree* pins one, and the uv pin against *uv* only where
+    *tree* carries :data:`UV_PIN` (dev-lab itself).
     """
     try:
         report = resolve(tree)
@@ -255,14 +302,29 @@ def stale(
         tail = ' | '.join(line.strip() for line in output.strip().splitlines()[-4:])
         return (f'{UNRESOLVED} ({report.remedy}): {tail}',)
     found = tuple(f'{LOCK} is not the newest resolution: {change.strip()}' for change in _CHANGE.findall(output))
+    return found + _toolchain_stale(tree, stable) + _uv_stale(tree, uv)
+
+
+def _toolchain_stale(tree: Path, stable: Callable[[], str]) -> tuple[str, ...]:
     if not (tree / TOOLCHAIN).is_file():
-        return found
+        return ()
     try:
         newest = stable()
     except OSError as why:
-        return (*found, f'the newest stable toolchain could not be read: {why}')
+        return (f'the newest stable toolchain could not be read: {why}',)
     pinned = _channel((tree / TOOLCHAIN).read_text(encoding='utf-8'))
-    return found if pinned == newest else (*found, f'{TOOLCHAIN} is not the newest stable: {pinned} -> {newest}')
+    return () if pinned == newest else (f'{TOOLCHAIN} is not the newest stable: {pinned} -> {newest}',)
+
+
+def _uv_stale(tree: Path, uv: Callable[[], str]) -> tuple[str, ...]:
+    if not (tree / UV_PIN).is_file():
+        return ()
+    try:
+        newest = uv()
+    except OSError as why:
+        return (f'the newest uv release could not be read: {why}',)
+    pinned = uv_version(tree)
+    return () if pinned == newest else (f'{UV_PIN} is not the newest uv: {pinned} -> {newest}',)
 
 
 def lock_problems(root: Path, sha: str) -> tuple[str, ...]:

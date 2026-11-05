@@ -149,6 +149,11 @@ What every host still reads, kept small:
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
   fixes, tests and commits. A
   resolution that cannot run (the network is down) refuses with its diagnosis; a deletion is never judged.
+  The same relock keeps every other pinned input at the newest (`dev_lab.dev.lockcheck.FRESHENED`): a
+  `rust-toolchain.toml` below the newest stable, and dev-lab's uv pin (`src/dev_lab/dev/uv.toml`, THE uv that writes
+  every family lock and that host deploys install) below the newest uv release tag (user directive 2026-11-05).
+  A relock raising the uv pin is written BY the new uv; on a host without it the relock is refused naming
+  `uv self update <version>`, never written by the old one.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards dev-lab and then each `[serve]` repo to its upstream and

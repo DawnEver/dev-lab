@@ -18,7 +18,7 @@ from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 
 from dev_lab.dev import _dep_project, forgeserve, metrics
-from dev_lab.dev.lockcheck import UV_VERSION
+from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 
 
@@ -116,4 +116,4 @@ def _the_declared_uv(monkeypatch: pytest.MonkeyPatch) -> None:
 
     A test that means another uv says so itself. Planted control: test_one_uv_writes_every_lock.
     """
-    monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: UV_VERSION)
+    monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: uv_version())

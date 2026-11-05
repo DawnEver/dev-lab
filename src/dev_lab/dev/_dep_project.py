@@ -14,7 +14,16 @@ from lab_commons.log import emit
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.installdoor import floating_requirements
-from dev_lab.dev.lockcheck import TOOLCHAIN, UV_VERSION, newest_stable, pin_stable, unreasoned_holds
+from dev_lab.dev.lockcheck import (
+    TOOLCHAIN,
+    UV_PIN,
+    newest_stable,
+    newest_uv,
+    pin_stable,
+    pin_uv,
+    unreasoned_holds,
+    uv_version,
+)
 from dev_lab.dev.venvpath import venv_interpreter
 
 
@@ -50,7 +59,7 @@ def target_root(root: Path | None, cwd: Path) -> Path:
 
 
 class OtherUvRefused(RuntimeError):
-    """The uv on PATH is not :data:`~dev_lab.dev.lockcheck.UV_VERSION`, and this command would write a lock."""
+    """The uv on PATH is not the one :func:`~dev_lab.dev.lockcheck.uv_version` pins, and this would write a lock."""
 
 
 def parse_uv_version(said: str) -> str:
@@ -65,14 +74,18 @@ def installed_uv_version(uv: str) -> str:
     return parse_uv_version(done.stdout) if done.returncode == 0 else ''
 
 
-def lock_writer(uv: str) -> str:
-    """*uv*, if it is the one uv that writes every lock in the family; else refused by name with the remedy."""
+def uv_remedy(version: str) -> str:
+    """How a host gets uv *version*."""
+    return f'run `uv self update {version}` (WinGet: `winget install --id astral-sh.uv -e --version {version}`)'
+
+
+def lock_writer(uv: str, required: str) -> str:
+    """*uv*, if it is *required*, the one uv that writes every lock in the family; else refused with the remedy."""
     found = installed_uv_version(uv)
-    if found != UV_VERSION:
+    if found != required:
         msg = (
-            f'{uv} is uv {found or "(unreadable)"}, but every lock is written by uv {UV_VERSION} '
-            f'(dev_lab.dev.lockcheck.UV_VERSION): a lock written by another uv churns its revision line. '
-            f'Run `uv self update {UV_VERSION}` (WinGet: `winget install --id astral-sh.uv -e --version {UV_VERSION}`)'
+            f'{uv} is uv {found or "(unreadable)"}, but every lock is written by uv {required} '
+            f'({UV_PIN}): a lock written by another uv churns its revision line. {uv_remedy(required).capitalize()}'
         )
         raise OtherUvRefused(msg)
     return uv
@@ -114,7 +127,7 @@ def uv_command(
             command.extend(('--reinstall-package', package))
     if frozen:
         return [*command, '--frozen']
-    command[0] = lock_writer(uv)  # an unfrozen sync or lock may rewrite uv.lock
+    command[0] = lock_writer(uv, uv_version(root))  # an unfrozen sync or lock may rewrite uv.lock
     upgrades = set(upgrade_packages)
     if syncing:
         upgrades.update(floating_requirements(root / 'pyproject.toml'))
@@ -123,14 +136,14 @@ def uv_command(
     return command
 
 
-def lock_upgrade_command(root: Path, python: str) -> list[str]:
-    """``uv lock --upgrade`` for *root*: every requirement re-resolved to the newest its declaration admits."""
+def lock_upgrade_command(root: Path, python: str, required: str) -> list[str]:
+    """``uv lock --upgrade`` for *root* by uv *required*: every requirement re-resolved to the newest it admits."""
     uv = shutil.which('uv')
     if uv is None:
         msg = 'a lock upgrade requires uv on PATH'
         raise FileNotFoundError(msg)
     interpreter = python if Path(python).is_file() else sys.executable
-    uv = lock_writer(uv)
+    uv = lock_writer(uv, required)
     return [uv, 'lock', '--upgrade', '--project', str(root), '--python', interpreter]
 
 
@@ -178,12 +191,15 @@ def lock_upgrade(
     dry_run: bool,
     environment: dict[str, str],
     stable: Callable[[], str] = newest_stable,
+    newest: Callable[[], str] = newest_uv,
 ) -> int:
     """Rewrite *root*'s lock at the newest resolution -- the remedy :mod:`dev_lab.dev.lockcheck` names.
 
     The holds the forge refuses (famtests.lockpin) are refused HERE first, before anything resolves: a lock written
     under an unreasoned hold would only be refused again at the push. Only the lock -- and a pinned
-    ``rust-toolchain.toml``, moved to *stable* (user ruling 2026-10-25) -- moves in this step; the
+    ``rust-toolchain.toml``, moved to *stable* (user ruling 2026-10-25), and a carried uv pin (dev-lab's
+    :data:`~dev_lab.dev.lockcheck.UV_PIN`), moved to *newest* and written BY that uv (user directive 2026-11-05) --
+    moves in this step; the
     environment then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`.
     """
     holds = unreasoned_holds((root / 'pyproject.toml').read_text(encoding='utf-8'))
@@ -191,8 +207,9 @@ def lock_upgrade(
         emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
         return 1
     try:
-        command = lock_upgrade_command(root, python)
-    except OtherUvRefused as exc:
+        required = newest() if (root / UV_PIN).is_file() else uv_version(root)
+        command = lock_upgrade_command(root, python, required)
+    except (OtherUvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')
         return 1
     if dry_run:
@@ -201,4 +218,6 @@ def lock_upgrade(
     code = run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
     if code == 0 and (root / TOOLCHAIN).is_file():
         pin_stable(root, stable())
+    if code == 0 and (root / UV_PIN).is_file():
+        pin_uv(root, required)
     return code
