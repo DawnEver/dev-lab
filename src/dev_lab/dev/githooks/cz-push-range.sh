@@ -107,6 +107,8 @@ fi
 # with "No commit found with range" when the range holds no commit (an up-to-date branch re-pushed).
 # The check is `rev-list`, not a parse of commitizen's message, so it cannot drift with its wording.
 status=0
+MESSAGE_FILE=''
+trap 'if [ -n "${MESSAGE_FILE}" ]; then rm -f -- "${MESSAGE_FILE}"; fi' EXIT
 for i in "${!RANGES[@]}"; do
   RANGE="${RANGES[$i]}"
   # PRINTED, NOT SILENT: a range chosen by fallback must say so.
@@ -134,10 +136,18 @@ for i in "${!RANGES[@]}"; do
     bash "${HERE}/with-venv.sh" commitizen check --rev-range "${RANGE}" || status=1
     continue
   fi
+  # A full message is data, never argv: Windows refuses valid historical bodies above its command-line ceiling.
+  # One private file is reused across the whole push, not one retained file per commit. EXIT also cleans refusals.
+  if [ -z "${MESSAGE_FILE}" ]; then
+    MESSAGE_FILE="$(mktemp)"
+  fi
   while read -r sha; do
     case "${EXEMPT}" in
       *" ${sha} "*) echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)" ;;
-      *) bash "${HERE}/with-venv.sh" commitizen check --message "$(git log -1 --format=%B "${sha}")" || status=1 ;;
+      *)
+        git log -1 --format=%B "${sha}" > "${MESSAGE_FILE}"
+        bash "${HERE}/with-venv.sh" commitizen check --commit-msg-file "${MESSAGE_FILE}" || status=1
+        ;;
     esac
   done < <(git rev-list --reverse "${OWN[@]}")
 done
