@@ -147,10 +147,9 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path, *,
     box_demand` of *root*'s origin). The child holds against *capacity*, the one reading the demand was sized by.
     """
     what = f'{item.context}@{item.sha[:12]}'
-    demand = box_claim(item, capacity, root=root)
     return command(
         argv,
-        demand,
+        box_claim(item, capacity, root=root),
         item.wall_s,
         BOX_QUEUE_S,
         key=item.context,
