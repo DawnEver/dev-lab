@@ -65,7 +65,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -75,7 +75,6 @@ import lab_commons.launch as _door
 from lab_commons import envkey as envkey_module
 from lab_commons.box import Refused
 from lab_commons.census import processes
-from lab_commons.config import section
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
@@ -84,7 +83,6 @@ from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
-from dev_lab.dev.worktreeplace import family_root
 
 __all__ = [
     'CHILD_WALL_S',
@@ -178,7 +176,7 @@ class Port:
 
     def env_key(self, python: str | None = None) -> str:
         """The key of the environment as it is RIGHT NOW -- called once before and once after."""
-        return self.key() if self.key is not None else _snapshot(python)[1]
+        return self.key() if self.key is not None else _dep_local.keyed(*_snapshot(python))
 
 
 def current_env_key() -> str:
@@ -412,55 +410,12 @@ def _change(
         raise _held_refusal(port.name, exc, prefix) from exc
 
 
-def _declared_overlays(
-    root: Path, cli: Sequence[str], machine: Callable[[str], Mapping[str, Any]], *, syncing: bool
-) -> tuple[_dep_local.Overlay, ...] | None:
-    """The siblings declared local for this sync, resolved.
-
-    ``()`` is the bare lock; ``None`` is a run that syncs nothing.
-    """
-    if not syncing:
-        return None
-    names = _dep_local.declared(cli, machine('dep'))
-    if not names:
-        return ()
-    return _dep_local.resolve(root, names, repos=machine('repos'), family=family_root(root))
-
-
-def _overlay(
-    overlays: Sequence[_dep_local.Overlay] | None,
-    *,
-    uv: str,
-    python: str,
-    prefix: Path,
-    root: Path,
-    run: Callable[..., Any],
-    env: dict[str, str],
-) -> int:
-    """Install *overlays* over the synced lock, then stamp and announce them -- or clear the stamp when there are none.
-
-    ``None`` (a run that synced nothing) leaves the environment's overlay exactly as it was.
-    """
-    if overlays is None:
-        return 0
-    code = 0
-    if overlays:
-        argv = _dep_local.install_command(uv, python, overlays)
-        code = run_change(argv, run=run, timeout=CHILD_WALL_S, cwd=root, environment=env)
-    if not code:
-        _dep_local.record(prefix, overlays)
-        for line in _dep_local.banner(overlays):
-            emit(line)
-    return code
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
     run: Callable[..., Any] = _door.run,
     cwd: Path | None = None,
     census: Census = processes,
-    machine: Callable[[str], Mapping[str, Any]] = section,
 ) -> int:
     """Bootstrap, sync or lock-upgrade the named worktree's own environment, with declared full extras.
 
@@ -508,19 +463,13 @@ def main(
             frozen=args.bootstrap is not None or locking,
             reinstall_packages=changed(root, prefix) if syncing else (),
         )
-        overlays = _declared_overlays(root, args.local, machine, syncing=syncing)
+        overlay = _dep_local.step(
+            root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment
+        )
     except (_dep_project.OtherUvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
         return 1
-
-    def overlay() -> int:
-        return _overlay(overlays, uv=command[0], python=python, prefix=prefix, root=root, run=run, env=environment)
-
-    port = Port(
-        name=str(root),
-        anchor_paths=lambda: paths,
-        key=lambda: _snapshot(python)[1] + _dep_local.key_suffix(prefix),
-    )
+    port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
         result = _change(
             command,

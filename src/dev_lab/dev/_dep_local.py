@@ -16,15 +16,22 @@ otherwise move nothing.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.config import section
+from lab_commons.log import emit
+
 from dev_lab.dev._dep_components import _tree
+from dev_lab.dev._dep_network import CHILD_WALL_S
+from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.worktreeplace import family_root
 
 __all__ = [
     'STAMP_FILE',
@@ -32,10 +39,12 @@ __all__ = [
     'OverlayRefused',
     'banner',
     'declared',
-    'install_command',
-    'key_suffix',
+    'install',
+    'keyed',
+    'overlays_for',
     'record',
     'resolve',
+    'step',
 ]
 
 #: Where an environment keeps the overlays it holds, beside the components stamp.
@@ -98,14 +107,6 @@ def resolve(root: Path, names: Sequence[str], *, repos: Mapping[str, Any], famil
     return tuple(overlays)
 
 
-def install_command(uv: str, python: str, overlays: Sequence[Overlay]) -> list[str]:
-    """Editable, and ``--no-deps``: a sibling needing a newer peer is a relock, never an overlay."""
-    command = [uv, 'pip', 'install', '--python', python, '--no-deps']
-    for overlay in overlays:
-        command.extend(('-e', str(overlay.path)))
-    return command
-
-
 def _stamps(overlays: Sequence[Overlay]) -> dict[str, str]:
     return {o.name: f'{o.path}@{_tree(o.path) or "unreadable"}' for o in overlays}
 
@@ -125,10 +126,71 @@ def record(prefix: Path, overlays: Sequence[Overlay]) -> None:
     stamp.write_text(json.dumps(_stamps(overlays), sort_keys=True), encoding='utf-8')
 
 
-def key_suffix(prefix: Path) -> str:
-    """What the overlay adds to the environment key: ``''`` for the bare lock."""
+def keyed(prefix: str, key: str) -> str:
+    """The environment at *prefix*'s *key* with its overlay folded in -- *key* itself for the bare lock."""
     try:
-        text = (prefix / STAMP_FILE).read_text(encoding='utf-8')
+        text = (Path(prefix) / STAMP_FILE).read_text(encoding='utf-8')
     except OSError:
-        return ''
-    return '+local:' + text
+        return key
+    return f'{key}+local:{text}'
+
+
+def overlays_for(root: Path, cli: Sequence[str], *, syncing: bool) -> tuple[Overlay, ...] | None:
+    """The siblings declared local for this sync (the machine file's, then *cli*'s), resolved.
+
+    ``()`` is the bare lock; ``None`` is a run that syncs nothing.
+    """
+    if not syncing:
+        return None
+    names = declared(cli, section('dep'))
+    if not names:
+        return ()
+    return resolve(root, names, repos=section('repos'), family=family_root(root))
+
+
+def step(
+    root: Path,
+    cli: Sequence[str],
+    *,
+    syncing: bool,
+    uv: str,
+    python: str,
+    prefix: Path,
+    run: Callable[..., Any],
+    env: dict[str, str],
+) -> Callable[[], int]:
+    """The overlay as the step the door runs after the sync, in its seat -- resolved NOW, so a refusal precedes it."""
+    overlays = overlays_for(root, cli, syncing=syncing)
+    return functools.partial(install, overlays, uv=uv, python=python, prefix=prefix, root=root, run=run, env=env)
+
+
+def install(
+    overlays: Sequence[Overlay] | None,
+    *,
+    uv: str,
+    python: str,
+    prefix: Path,
+    root: Path,
+    run: Callable[..., Any],
+    env: dict[str, str],
+) -> int:
+    """Install *overlays* over the synced lock, then stamp and announce them -- or clear the stamp when there are none.
+
+    Editable, and ``--no-deps``: a sibling needing a newer peer is a relock, never an overlay. The install resolves
+    from the index, so it goes through the ONE retry door (NETWORK-RETRY-THEN-REPORT). ``None`` (a run that synced
+    nothing) leaves the environment's overlay exactly as it was.
+    """
+    if overlays is None:
+        return 0
+    if overlays:
+        argv = [uv, 'pip', 'install', '--python', python, '--no-deps']
+        for overlay in overlays:
+            argv.extend(('-e', str(overlay.path)))
+        report = run_network_verb(argv, run=run, timeout=CHILD_WALL_S, cwd=root, env=env)
+        if not report.ok:
+            emit(f'[netverb] {report.remedy}', err=True)
+            return report.returncode
+    record(prefix, overlays)
+    for line in banner(overlays):
+        emit(line)
+    return 0
