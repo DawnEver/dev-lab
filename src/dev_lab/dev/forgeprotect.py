@@ -10,8 +10,9 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
 * the REQUIRED CONTEXTS are derived from the rendered workflows (:mod:`dev_lab.dev.ciworkflows`,
   :func:`required_contexts`): a forge whose workflows post the merge decision requires
   :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT` on integration; a forge whose serve host merges requires
-  what that merge reads as statuses (``tests/base``, ``tests/security``, and ``tests/review`` where the review is a
-  status). The trunk requires the base part's rows the promotion event runs (``tests/base`` and, where workflows fan
+  ``tests/base`` and ``tests/security``, never ``tests/review`` (user ruling 2026-11-05: the merge decision enforces
+  the review itself, and a capped review merges WARNED, :mod:`dev_lab.dev.reviewcap`). The trunk requires the
+  base part's rows the promotion event runs (``tests/base`` and, where workflows fan
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on;
 * the APPROVER is ``[tool.dev_lab.review] judge_login``: only a judge posts an approving PR review, so approvals
   are required only where one is declared -- a count with nobody to approve would hold every merge forever;
@@ -54,8 +55,8 @@ from dev_lab.dev._protect_steps import Step
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT, REVIEW_CONTEXT, SECURITY_CONTEXT
-from dev_lab.dev.forgereview_declared import JUDGE, SERVE, review_from
+from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT, SECURITY_CONTEXT
+from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
@@ -183,8 +184,7 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
     if MERGE_READY_CONTEXT in steps:
         integration: tuple[str, ...] = (MERGE_READY_CONTEXT,)
     else:
-        reviewed = (REVIEW_CONTEXT,) if review_from(text, origin).where == SERVE else ()
-        integration = tuple(sorted({f'{CONTEXT_PREFIX}{BASE}', SECURITY_CONTEXT, *reviewed}))
+        integration = tuple(sorted({f'{CONTEXT_PREFIX}{BASE}', SECURITY_CONTEXT}))
     if any(job.get('name') == _PART_JOB for job in jobs):
         trunk = tuple(sorted(f'{CONTEXT_PREFIX}{row["part"]}' for row in rows(BASE, _PROMOTION_EVENT, {})))
     else:

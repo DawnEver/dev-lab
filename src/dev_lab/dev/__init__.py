@@ -168,6 +168,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS
   of no revoked box, cited on a sha through the status door.
+* :mod:`dev_lab.dev.verdictenv` -- the env key a verdict cites: every installed distribution but the project
+  under test, whose VCS version moves with every commit while its tree already names the code.
 * :mod:`dev_lab.dev.workstationrevoke` -- strikes a contradicted spot check leaves against a box; enough revoke it.
 * :mod:`dev_lab.dev.commandpart` -- a repo whose tests are not pytest (``npm test``) posts its part as ONE
   cell, the command, judged by its exit code.
@@ -374,6 +376,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgewait` -- a part's wait answered, bounded and seen: why a box does not admit it, until when.
 * :mod:`dev_lab.dev.forgecontexts` -- the status contexts under ``tests/``: the part prefix, and those never a part.
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
+* :mod:`dev_lab.dev.taskkeys` -- an ai-lab task's ONE key-bundle secret: its derived name and stdin loader.
+* :mod:`dev_lab.dev.forgesecrets` -- ``forge secrets sync --task``: a task's bundle set on every declared repo.
 * :mod:`dev_lab.dev.forgereview` -- the review of each open PR head by the declared command; HIGH/security block.
 * :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, what stands on it, a host unable.
 * :mod:`dev_lab.dev.forgereview_declared` -- the review a repo declares, read from the integration branch a PR trusts.
@@ -383,6 +387,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-judged each round.
 * :mod:`dev_lab.dev.forgereview_summary` -- a round's opening: what the PR does, and what changed and why.
 * :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in rounds and USD inside the family's month, fitted.
+* :mod:`dev_lab.dev.reviewcap` -- a review past its round cap is waived at the merge, warned and recorded, never passed.
 * :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose`` records a claim; ``adjudicate`` rules on it.
 * :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
   by an independent reviewer, never the head's author session.
@@ -401,6 +406,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
+* :mod:`dev_lab.dev.reviewruntime` -- the host's ai-lab review runtime, built from the commit dev-lab's lock pins.
 * :mod:`dev_lab.dev.metrics` -- the toolchain's baseline: refusals and hand actions, one JSONL per kind (record).
 * :mod:`dev_lab.dev.metrics_compute` -- the plan's figures from the recorded lines, forge pulls and git landings.
 * :mod:`dev_lab.dev.metrics_report` -- the family's metrics over one window, and the metrics CLI.
@@ -447,6 +453,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
   closes salvaged PRs with an evidence comment; it never deletes a branch.
+* :mod:`dev_lab.dev.plugin_settings` -- PLUGINS NO FAMILY SESSION RUNS (ruling 2026-11-05: ``sharp-review`` off,
+  the forge's PR review is the one review); ``agent_guard`` writes them into each ``.claude/settings.json``.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a scarce part runs on a PR only where its diff reaches it.
 * :mod:`dev_lab.dev.unproduced` -- a resource a repo declares no part for: every reading waives it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.

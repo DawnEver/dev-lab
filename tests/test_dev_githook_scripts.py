@@ -433,7 +433,9 @@ def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path) -> None:
 def _commit(repo: Path, message: str) -> str:
     (repo / 'g.txt').write_text(message, encoding='utf-8')
     _git(repo, 'add', '-A')
-    _git(repo, 'commit', '-m', message)
+    message_file = repo / '.git' / 'test-message.txt'
+    message_file.write_text(message, encoding='utf-8')
+    _git(repo, 'commit', '-F', str(message_file))
     return _git(repo, 'rev-parse', 'HEAD')
 
 
@@ -448,6 +450,26 @@ def test_a_PUBLISHED_off_format_commit_on_the_base_is_not_judged(repo: Path) -> 
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'already published' in done.stdout, done.stdout
     assert _judged(argv_log) == [f'--rev-range {first}..{head} --published=base-for-test --published=--remotes']
+
+
+@pytest.mark.parametrize('invalid', [False, True])
+def test_large_messages_are_judged_whole_with_bounded_argv(repo: Path, *, invalid: bool) -> None:
+    """Ported from integrate/main's argv-ceiling fix: a body above Windows' 32767 limit never travels as argv."""
+    argv_log = _plant_checker(repo)
+    _git(repo, 'branch', 'base-for-test')
+    first = _git(repo, 'rev-parse', 'HEAD')
+    body = '\n\n' + ('unicode-λ "quoted" $literal\n' * 2000)
+    _commit(repo, 'feat: large valid message' + body)
+    head = _commit(repo, ('data(ordinary): must refuse' if invalid else 'fix: second large message') + body)
+    raw = subprocess.run(
+        [GIT, 'log', '-1', '--format=%B', head], cwd=repo, capture_output=True, check=True, timeout=120
+    )
+    assert len(raw.stdout) > 32767
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
+    assert done.returncode == int(invalid), done.stdout + done.stderr
+    judged = _judged(argv_log)
+    assert len(judged) == 1
+    assert all(len(line) < 1000 for line in judged), 'a message body reached argv'
 
 
 @pytest.mark.parametrize('message', ['data(x): y', 'rem(x): y', 'wip'])

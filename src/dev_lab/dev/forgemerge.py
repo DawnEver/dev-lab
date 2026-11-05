@@ -29,7 +29,11 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
   latest ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold``
   is pending -- or, where the base declares ``where = "judge"``, the declared judge login's latest verdict review
   at the head is APPROVED. Absent, reviewing, ``error``, ``failure`` and a success any other login posted all
-  wait -- nothing is advisory; a review that cannot run is re-run by the forge;
+  wait -- nothing is advisory; a review that cannot run is re-run by the forge. ONE WAIVER (user ruling 2026-11-05):
+  a review that reached a cap (:func:`dev_lab.dev.reviewcap.capped_waiver`, read from trusted comments) no
+  longer blocks -- the merge proceeds WARNED, its commit message and decision carrying ``Unreviewed: ...``;
+* it is an INTERNAL PR (:func:`external`, user ruling 2026-11-05): a fork's, or a non-writer's, is never merged by
+  the forge -- ``tests/merge-ready`` stays ``pending`` :data:`EXTERNAL`;
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
@@ -86,24 +90,27 @@ from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.platformparts import standing
+from dev_lab.dev.reviewcap import capped_waiver
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 from dev_lab.dev.unproduced import unproduced_waived
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
-    from dev_lab.dev.forgework import Client
+    from dev_lab.dev.forgework import Client, PullRequest
     from dev_lab.dev.lanepolicy import Policy
     from dev_lab.dev.reviewgate import Reviewed
 
 __all__ = [
     'CI_MERGER',
+    'EXTERNAL',
     'FORGE_PULL',
     'READY',
     'Decision',
     'auto_merge',
     'ci_merges',
     'decide',
+    'external',
     'judged',
     'main',
     'merge',
@@ -111,6 +118,9 @@ __all__ = [
     'message_wait',
     'ready',
 ]  # fmt: skip
+
+#: The merge decision's ``pending`` line for a PR the forge never merges (:func:`external`).
+EXTERNAL: Final = 'external PR: a maintainer merges it'
 
 #: The Gitea workflow that merges, closes landed PRs and sweeps (``ci_base.toml``); declaring it is the opt-in.
 CI_MERGER: Final = 'merge.yml'
@@ -175,6 +185,7 @@ class Decision:
 
     missing: tuple[str, ...]
     message: str
+    unreviewed: str = ''  # the capped-review warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
 
     @property
     def ready(self) -> bool:
@@ -211,8 +222,13 @@ def decide(
     head: str,
     statuses: Sequence[CommitStatus],
     reviewed: Reviewed,
+    capped: str | None = None,
 ) -> Decision:
-    """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing."""
+    """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing.
+
+    *capped* (:func:`dev_lab.dev.reviewcap.capped_waiver`) waives the review condition alone, and the message and
+    the decision carry it.
+    """
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
@@ -221,8 +237,14 @@ def decide(
         load_review(root)
     except ValueError as config:
         missing.append(f'its review config: {config}')
+    waived = ''
     if (unreviewed := reviewed(statuses)) is not None:
-        missing.append(f'its review: {unreviewed}')
+        if capped:
+            waived = capped
+            title, _, trailers = message.partition('\n\n')
+            message = f'{title}\n\n{capped}\n\n{trailers}'
+        else:
+            missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
     if (red := parts_wait(root, head, statuses)) is not None:
@@ -252,7 +274,17 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    return Decision(tuple(missing), message)
+    return Decision(tuple(missing), message, waived)
+
+
+def external(client: Client, pull: PullRequest) -> bool:
+    """Whether *pull* is an EXTERNAL contributor's, which the forge never merges (user ruling 2026-11-05).
+
+    External is a fork's head, or an author the forge does not record with write permission
+    (:meth:`~dev_lab.dev.forgework.Client.can_write` -- the one trust test a cap raise passes,
+    :func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`). It is still tested and reviewed; a human merges it.
+    """
+    return pull.fork or not client.can_write(pull.author)
 
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
@@ -265,10 +297,16 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:
             return f'the review gate cannot be read: {why}'
 
-    found = decide(root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed)
-    if client.pr_view(number).draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
-        return Decision((WAITING.format(n=number), *found.missing), found.message)
-    return found
+    capped = capped_waiver(client, number, base=policy.integration)
+    found = decide(
+        root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, capped=capped
+    )
+    pull, missing = client.pr_view(number), found.missing
+    if external(client, pull):  # INTERNAL-ONLY (2026-11-05): never merged by the forge, whatever else is green
+        missing = (EXTERNAL, *missing)
+    if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
+        missing = (WAITING.format(n=number), *missing)
+    return Decision(missing, found.message, found.unreviewed)
 
 
 def ready(root: Path, client: Client, number: int) -> str:
@@ -285,10 +323,15 @@ def ready(root: Path, client: Client, number: int) -> str:
         decision = Decision((f'a PR into {policy.integration}, not {pull.base}',), '')
     elif pull.draft:  # D53: pending, naming the ready door -- it waits on its author, not on a check
         return waiting(client, pull) or f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: draft'
+    elif external(client, pull):  # pending: it waits on a maintainer, never on a check
+        status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=EXTERNAL)
+        return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {EXTERNAL}'
     else:
         decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
     missing = decision.missing
     state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)
+    if decision.unreviewed and not missing:
+        why = f'{READY}, WARNED -- {decision.unreviewed}'
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
     said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
     if missing or (client.backend is not GITHUB and not ci_merges(root)):
@@ -298,6 +341,8 @@ def ready(root: Path, client: Client, number: int) -> str:
         merge(client, number, head=pull.head_sha, message=decision.message, delete_branch=ephemeral)
     except ForgeCallFailed as refused:
         return f'{said}; NOT merged -- {refused}'
+    if decision.unreviewed:
+        client.issue_comment(number, f'Merged WITHOUT a passing review -- {decision.unreviewed}')
     return f'{said}; merged'
 
 

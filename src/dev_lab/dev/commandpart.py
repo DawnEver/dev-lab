@@ -69,7 +69,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     node = ' '.join(command)
     cell = upgraded('passed') if code == 0 else upgraded('failed', f'{node} exited {code}')
     record = local_record(
-        sha=sha, part=args.part, scope=FULL, req='command', cells={node: cell}, owned={node: row_part(args.part)}
+        args.root,
+        sha=sha,
+        part=args.part,
+        scope=FULL,
+        req='command',
+        cells={node: cell},
+        owned={node: row_part(args.part)},
     )
     emit(post_local(args.root, record, record_directory(args.root, sha)))
     return ProducerExit.PASS if code == 0 else ProducerExit.FAIL

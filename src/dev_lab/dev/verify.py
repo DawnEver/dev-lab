@@ -44,7 +44,6 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.box import POLL_S, Refused
-from lab_commons.envkey import env_key, env_manifest
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -68,6 +67,7 @@ from dev_lab.dev.reports import (
 from dev_lab.dev.runcache import cache_path, cached, remember
 from dev_lab.dev.selection import is_targeted
 from dev_lab.dev.treedirt import status_paths
+from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verdictstore import ContentKey, Found
 from dev_lab.dev.verifybox import (
     MEASURE_WAIT_S,
@@ -292,7 +292,7 @@ def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
     """What makes two verify requests ONE run: the tree address, the env key and the selection."""
     return RunKey(
         tree=content_address(root, MEASURED_TARGETS),
-        env=env_key(env_manifest()),
+        env=verdict_env(root),
         selector=' '.join(('verify', *pytest_args)),
     )
 
