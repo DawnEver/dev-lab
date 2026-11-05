@@ -597,7 +597,7 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   key bundle; which providers it holds is ai-lab's `routes.toml`, never dev-lab's. The name and the loader are
   `dev_lab.dev.taskkeys`'s; the review jobs pass `--keys-env AI_LAB_KEYS_PR_REVIEW`, a hosted part declares
   `tasks = [...]` (`dev_lab.dev.jobparts`), the ops judge reads `[ops.judge] keys_file`.
-- Set a task's bundle on every repo of the machine file's `[repos]` from stdin, never argv or a file:
+- Set a task's bundle on every `[serve] repos` checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
 
   ```
   python -m dev_lab.dev.forge secrets sync --task pr-review --dry-run      # the targets only

@@ -68,10 +68,27 @@ def test_the_review_door_loads_the_named_bundle_and_unsets_it(monkeypatch: pytes
     assert len(loaded) == 1
 
 
-def _repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+def _repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     forges = {'hub': Forge('github.com', 'o', 'hub'), 'tea': Forge('forge.example', 'o', 'tea')}
     monkeypatch.setattr(forgesecrets, 'forge_from_remote', lambda checkout: forges[checkout.name])
-    return {name: str(tmp_path / name) for name in forges}
+    for name in forges:
+        (tmp_path / name).mkdir()
+    return {name: tmp_path / name for name in forges}
+
+
+def test_the_targets_are_the_serve_repos_at_their_serve_checkouts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED CONTROL: a declared name with no checkout is skipped with its reason, never fatal."""
+    _repos(tmp_path / 'repos', monkeypatch) if (tmp_path / 'repos').mkdir() is None else None
+    monkeypatch.setattr(forgesecrets, 'forge_home', lambda: tmp_path)
+    monkeypatch.setattr(
+        forgesecrets, 'section', lambda name: {'repos': ['hub', 'gone', 'tea']} if name == 'serve' else {}
+    )
+    found, skipped = forgesecrets.targets(forgesecrets.declared())
+    assert [t.name for t in found] == ['hub', 'tea']
+    assert [t.checkout for t in found] == [tmp_path / 'repos' / 'hub', tmp_path / 'repos' / 'tea']
+    assert skipped == [f'gone: no checkout at {tmp_path / "repos" / "gone"}'], 'PLANTED CONTROL'
 
 
 def test_sync_sets_the_derived_secret_on_every_declared_repo_and_logs_no_bundle(

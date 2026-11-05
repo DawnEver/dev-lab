@@ -1,8 +1,9 @@
 """``forge secrets sync --task <task>``: one ai-lab task's key bundle set on every repo this machine declares.
 
 A task's bundle (:mod:`dev_lab.dev.taskkeys`) lives in ONE secret per repo, named by
-:func:`~dev_lab.dev.taskkeys.secret_name`. The repos are the machine file's ``[repos]`` checkouts -- the list this
-machine already declares -- each placed on its forge by its own ``origin`` remote:
+:func:`~dev_lab.dev.taskkeys.secret_name`. The repos are the machine file's ``[serve] repos`` -- the one list this
+machine declares -- each at its serve checkout (:func:`dev_lab.dev.servetask.checkout`) and placed on its forge by
+that checkout's own ``origin`` remote; a name with no checkout is skipped with its reason:
 
 * GitHub: ``gh secret set <NAME> -R <owner>/<repo>``, the value on stdin (GitHub seals it client-side, which
   ``gh`` does and the REST door does not);
@@ -31,12 +32,14 @@ from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import stored_client
+from dev_lab.dev.servelock import forge_home
+from dev_lab.dev.servetask import checkout
 from dev_lab.dev.taskkeys import secret_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-__all__ = ['Target', 'main', 'set_secret', 'targets']
+__all__ = ['Target', 'declared', 'main', 'set_secret', 'targets']
 
 #: Tries per repo before its refusal is reported (NETWORK-RETRY-THEN-REPORT); a secret set is idempotent.
 _ATTEMPTS: Final = 3
@@ -51,13 +54,21 @@ class Target:
     forge: Forge
 
 
-def targets(repos: Mapping[str, object]) -> tuple[list[Target], list[str]]:
-    """Each ``[repos]`` checkout placed on its forge, and why each that cannot be is skipped."""
+def declared() -> dict[str, Path]:
+    """Each ``[serve] repos`` name -> its serve checkout under the forge home."""
+    home = forge_home()
+    return {str(name): checkout(home, str(name)) for name in section('serve').get('repos', ())}
+
+
+def targets(repos: Mapping[str, Path]) -> tuple[list[Target], list[str]]:
+    """Each declared checkout placed on its forge, and why each that cannot be is skipped."""
     found, skipped = [], []
     for name, where in sorted(repos.items()):
-        checkout = Path(str(where)).expanduser()
+        if not where.is_dir():
+            skipped.append(f'{name}: no checkout at {where}')
+            continue
         try:
-            found.append(Target(name, checkout, forge_from_remote(checkout)))
+            found.append(Target(name, where, forge_from_remote(where)))
         except (UnreadableRemote, OSError) as unread:
             skipped.append(f'{name}: {unread}')
     return found, skipped
@@ -108,7 +119,7 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     stdin: Callable[[], str] | None = None,
-    repos: Callable[[], Mapping[str, object]] = lambda: section('repos'),
+    repos: Callable[[], Mapping[str, Path]] = declared,
     write: Callable[[Target, str, str], None] = set_secret,
 ) -> int:
     """``secrets sync --task <task> [--dry-run]``: exit 0 every target set, 1 one refused or skipped, 2 refused."""
@@ -122,7 +133,7 @@ def main(
     for why in skipped:
         emit(f'[secrets] skipped {why}', err=True)
     if not found:
-        emit('[secrets] refused: no [repos] checkout on a forge in the machine file', err=True)
+        emit('[secrets] refused: no [serve] repos checkout on a forge in the machine file', err=True)
         return 2
     if args.dry_run:
         for target in found:
