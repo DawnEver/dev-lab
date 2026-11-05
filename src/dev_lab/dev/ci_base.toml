@@ -48,7 +48,8 @@ nightly = true
 ["ci.yml".on.push]
 branches = ["integrate/main"]
 
-# ready_for_review (D52/D53): a draft is never judged, so marking it ready is what judges it.
+# ready_for_review (D52/D53): a DRAFT RUNS NOTHING (user ruling 2026-11-05) -- every job of a PR-started workflow is
+# guarded at render by forgedraft.READY_ONLY -- so marking it ready is what starts every job.
 ["ci.yml".on.pull_request]
 types = ["opened", "synchronize", "reopened", "ready_for_review"]
 
@@ -491,6 +492,8 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 # (reviewturn.review_turn, run by a serve: Gitea starts no workflow for its Actions user's event). Still a
 # pull_request_target run at the head, so the trust chain and reviewgate's run binding are unchanged; a label anyone
 # else adds reviews nothing (forgereview.review_pull reads the decision's DUE).
+# The draft guard (forgedraft.READY_ONLY) still ANDs onto the job. NEVER `edited` (F-6adfea8621bf). The concurrency
+# group is keyed on the label NAME, so any other label's run lands in its own group and cannot cancel a live review.
 ["review.yml"]
 forge = "gitea"
 name = "Review"
@@ -499,7 +502,7 @@ name = "Review"
 types = ["labeled"]
 
 ["review.yml".concurrency]
-group = "review-${{ github.event.pull_request.number }}"
+group = "review-${{ github.event.pull_request.number }}-${{ github.event.label.name }}"
 cancel-in-progress = true
 
 ["review.yml".env]
@@ -603,6 +606,10 @@ UV_CONCURRENT_BUILDS = "1"
 # judge reads only a head the decision called due (forgereview_bundle._called_due).
 [_prepare.by-forge.gitea.on.pull_request_target]
 types = ["labeled"]
+
+[_prepare.by-forge.gitea.concurrency]
+group = "review-prepare-${{ github.event.pull_request.number }}-${{ github.event.label.name }}"
+cancel-in-progress = true
 
 [_prepare.by-forge.gitea.jobs.prepare]
 if = "${{ github.event.label.name == 'review-due' }}"

@@ -285,6 +285,7 @@ def tick(
     said: list[tuple[Child, Feedback]] = []
     children: list[Child] = []
     listed_open = pr_list(origin)
+    drafts = {pr.number for pr in listed_open if pr.draft}  # a draft runs nothing: no sync, no gate (D53)
     for listed in listed_open:
         pr = _retarget(origin, listed, policy) if listed.base == policy.trunk else listed
         if pr is not listed:
@@ -302,7 +303,7 @@ def tick(
     for child in children:
         one = settle(root, child, policy, feedback(root, child, policy))
         if (
-            now is not None and policy.pr_merges_since and child.pr is not None
+            now is not None and policy.pr_merges_since and child.pr is not None and child.pr not in drafts
             and one.summary != _MERGED and one.state != 'success'
         ):  # fmt: skip
             others = [pull for pull in pulls if pull.number != child.pr]
@@ -319,7 +320,12 @@ def tick(
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
     if host:
         lines += forgeheadgate.judge_heads(
-            root, origin, [c for c in children if c.pr is not None], gate, monotonic, integration=policy.integration
+            root,
+            origin,
+            [c for c in children if c.pr is not None and c.pr not in drafts],
+            gate,
+            monotonic,
+            integration=policy.integration,
         )
     return Ticked(tuple(lines), tuple(said))
 

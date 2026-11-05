@@ -32,7 +32,7 @@ from _forge_fake import run_git as _run
 from dev_lab.dev import branchnotices, pradmit
 from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
-from dev_lab.dev.forgecli import issue_and_pr
+from dev_lab.dev.forgecli import issue_and_pr, pr_close
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgestamp import provenance
@@ -624,3 +624,36 @@ def test_planted_control_without_a_memo_every_read_is_a_request(server) -> None:
     for _ in range(3):
         client.call('GET', _STATUSES)
     assert _gets(_STATUSES) == 3
+
+
+@pytest.mark.parametrize(('forge', 'host', 'root', 'auth'), CASES)
+def test_pr_close_comments_its_reason_then_closes_and_deletes_no_branch(server, forge, host, root, auth) -> None:
+    """User ruling 2026-11-05: an agent closes a superseded PR itself, and the record says why."""
+    _answer('POST', f'{root}/issues/9/comments', (201, {'id': 3, 'body': 'x', 'html_url': 'https://x/c/3'}))
+    _answer('PATCH', f'{root}/pulls/9', (200, {**_PR, 'state': 'closed'}))
+    transport = _Loopback(server)
+    assert pr_close(_client(forge, transport), 9, 'superseded by #12').state == 'closed'
+    sent = [(r['method'], r['path'], r['body']) for r in _Recorder.received]
+    assert sent == [
+        ('POST', f'{root}/issues/9/comments', {'body': 'closed: superseded by #12'}),
+        ('PATCH', f'{root}/pulls/9', {'state': 'closed'}),
+    ]
+    assert set(transport.asked) == {host}
+    assert {r['headers']['Authorization'] for r in _Recorder.received} == {auth}
+
+
+@pytest.mark.parametrize('reason', ['', '   '])
+def test_pr_close_without_a_reason_is_refused_before_any_call(server, tmp_path: Path, reason: str) -> None:
+    """PLANTED CONTROL: the same close WITH a reason reaches the forge; without one nothing is sent."""
+    repo = _repo(tmp_path, 'https://f.example/o/r.git')
+    env = credential_env(tmp_path)
+    with pytest.raises(SystemExit):
+        issue_and_pr(['pr', 'close', '9', '--reason', reason], cwd=repo, env=env, transport=_Loopback(server))
+    with pytest.raises(ValueError, match='reason'):
+        pr_close(_client(Forge('f.example', 'o', 'r'), _Loopback(server)), 9, reason)
+    assert _Recorder.received == []
+    _answer('POST', '/api/v1/repos/o/r/issues/9/comments', (201, {'id': 3, 'body': 'x', 'html_url': 'https://x/c/3'}))
+    _answer('PATCH', '/api/v1/repos/o/r/pulls/9', (200, {**_PR, 'state': 'closed'}))
+    argv = ['pr', 'close', '9', '--reason', 'superseded']
+    assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert [r['method'] for r in _Recorder.received] == ['POST', 'PATCH']
