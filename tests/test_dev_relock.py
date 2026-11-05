@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -173,7 +173,7 @@ def _carry(clone: Path, forge: _Forge, *, now: float = 0.0, **seams: object) -> 
     seams.setdefault('upgrade', _Door())
     return carry(
         clone, _DECLARED, pulls=forge.pulls, create=forge.create, edit=forge.edit, close=forge.close, now=now,
-        **seams,  # type: ignore[arg-type]
+        **cast('dict[str, Any]', seams),
     )  # fmt: skip
 
 
