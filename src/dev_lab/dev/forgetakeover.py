@@ -59,13 +59,23 @@ from dev_lab.dev.platformparts import HOLD_CONTEXT
 from dev_lab.dev.reviewbudget import Raised
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
+from dev_lab.dev.taskkeys import REVIEW_TASK, load
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
-    'runtimes_with', 'scope_of', 'takeover',
+    'LEDGER_TITLE',
+    'TakeoverRefused',
+    'alarms',
+    'held',
+    'keys_loaded',
+    'ledger_of',
+    'main',
+    'pull_for',
+    'runtimes_with',
+    'scope_of',
+    'takeover',
 ]  # fmt: skip
 
 
@@ -242,6 +252,7 @@ def _parser() -> argparse.ArgumentParser:
     ruling = verbs.add_parser('adjudicate', help='rule on every pending claim of a thread (the forge runs this)')
     ruling.add_argument('number', type=int, help="the PR, or a PR-less head's ledger issue")
     ruling.add_argument('--dry-run', action='store_true', help='print the verdicts, post nothing (any session)')
+    _keys_env(ruling, 'empty or unset: the judge runs on the keys this host already stores')
     ruling.add_argument(
         '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
         help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
@@ -254,10 +265,7 @@ def _parser() -> argparse.ArgumentParser:
         '--batch-pending', action='store_true',
         help='resume every open head whose review batch is pending, from its PR (the scheduled job runs this)',
     )  # fmt: skip
-    running.add_argument(
-        '--secret-env', action='append', default=[], metavar='NAME',
-        help='a variable the review command needs; empty or unset (a fork PR) holds the head for a maintainer',
-    )  # fmt: skip
+    _keys_env(running, 'empty or unset (a fork PR) holds the head for a maintainer')
     running.add_argument(
         '--git-token-file', type=Path, metavar='PATH',
         help="a file holding the forge read token: read once, removed, sent only to the door's git",
@@ -271,6 +279,28 @@ def _parser() -> argparse.ArgumentParser:
         help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
     )  # fmt: skip
     return parser
+
+
+def _keys_env(verb: argparse.ArgumentParser, unset: str) -> None:
+    verb.add_argument(
+        '--keys-env', metavar='NAME',
+        help=f'the variable holding the {REVIEW_TASK} key bundle, piped to the ai-lab loader and unset; {unset}',
+    )  # fmt: skip
+
+
+def keys_loaded(name: str | None, runtimes: Mapping[str, Mapping[str, Any]]) -> bool:
+    """Whether the review task's bundle in variable *name* was stored through ai-lab's loader, on stdin.
+
+    The variable is UNSET first, so no reviewer this process starts inherits the keys; empty or unset (a fork PR)
+    stores nothing and answers ``False``. No *name* asks nothing and answers ``True``: the host's own store holds.
+    """
+    if name is None:
+        return True
+    bundle = os.environ.pop(name, '')
+    if not bundle:
+        return False
+    load(bundle, REVIEW_TASK, str(runtimes.get('ai_lab', {}).get('python', 'python')))
+    return True
 
 
 def runtimes_with(here: Mapping[str, Mapping[str, Any]], given: Sequence[str]) -> dict[str, dict[str, Any]]:
@@ -297,9 +327,11 @@ def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run
         return [f'[review] {dispose(origin, args.pr, args.finding, args.why, by=me)}']
     if args.verb == 'cap':
         return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
+    runtimes = runtimes_with(host_runtimes(), args.runtime)
+    keys_loaded(args.keys_env, runtimes)
     ruled = adjudicate_thread(
         root, origin, review_at(root, base), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
-        runtimes=runtimes_with(host_runtimes(), args.runtime),
+        runtimes=runtimes,
     )  # fmt: skip
     return [f'[review] {one}' for one in ruled]
 
@@ -309,8 +341,9 @@ def _job(
     ready: Callable[[Sequence[str], Path], str | None], fetch: Callable[[Path, int], object],
 ) -> int:  # fmt: skip
     """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
-    runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready,
-                    secret=all(os.environ.get(name) for name in args.secret_env), verifies=True)  # fmt: skip
+    runtimes = runtimes_with(host_runtimes(), args.runtime)
+    runner = Runner(this_machine(), runtimes, run=run, ready=ready, secret=keys_loaded(args.keys_env, runtimes),
+                    verifies=True)  # fmt: skip
     review = review_at(root, base)
     if args.batch_pending:
         for one in resume_batches(root, origin, review, base=base, runner=runner, fetch=fetch):
@@ -336,7 +369,7 @@ def main(
     pull_in = fetch or (lambda where, number: fetch_pull(where, 'origin', number))
     try:
         # run: the tokens arrive by file, never env, before any subprocess (F-5a82981c5f22, F-d61706393b50);
-        # the reviewer's model key (--secret-env) is its own, a separate concern, and stays in the env.
+        # the task's key bundle (--keys-env) is unset once loaded, before any reviewer starts (keys_loaded).
         api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
         origin = client or client_for(root, token=api)
         # never the working tree's: the head's (F-169e99e6c68c); the forge's jobs ask the forge (an Actions

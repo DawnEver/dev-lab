@@ -27,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dev_lab.dev.taskkeys import REVIEW_TASK, loader
 from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.accounts import account_of, may_enter
@@ -254,10 +255,12 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
 def _judge_steps(config: OpsConfig) -> list[str]:
     if (judged := config.judge) is None:
         return []
-    as_judge = f'sudo -u {judged.user}'  # ai-lab reads the model key from this HOME's git credential store
+    as_judge = f'sudo -u {judged.user}'  # ai-lab reads the model keys from this HOME's git credential store
+    # the task's bundle on stdin: root reads the host's file (never re-owned), else the operator pipes it
+    bundle = f' < {shlex.quote(judged.keys_file)}' if judged.keys_file else f'  (the {REVIEW_TASK} key bundle on stdin)'
     return [f'id {judged.user} || useradd --system --create-home --home-dir {judged.home_dir} {judged.user}',
             f'chmod 700 {judged.home_dir}', f'{as_judge} git config --global credential.helper store',
-            f'{as_judge} {config.python} -m ai_lab.auth login anthropic --task pr-review --from-file -',
+            f'{as_judge} {shlex.join(loader(config.python, REVIEW_TASK))}{bundle}',
             'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
 
 

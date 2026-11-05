@@ -79,8 +79,10 @@ class Judge(Placement):
     the other, never both.
     ``home`` is the judge user's HOME (default ``/var/lib/<user>``, 0700): the reviewer (ai-lab) reads its model
     keys ONLY from the git credential store there (``credential.helper store``, ``ai_lab.auth``, task ``pr-review``),
-    so the unit runs with ``HOME`` set to it. ``environment_file`` is an optional root-owned 0600 file of further
-    ``KEY=VALUE`` lines loaded into the judge's unit only -- never the model key.
+    so the unit runs with ``HOME`` set to it. ``keys_file`` is the host's root-owned 0600 file holding the
+    ``pr-review`` task's key bundle (:mod:`dev_lab.dev.taskkeys`), which install loads into that store on stdin and
+    never re-owns; empty, the operator pipes the bundle to the printed step. ``environment_file`` is an optional
+    root-owned 0600 file of further ``KEY=VALUE`` lines loaded into the judge's unit only -- never a model key.
     """
 
     user: str
@@ -89,6 +91,7 @@ class Judge(Placement):
     tokens: Mapping[str, str] = field(default_factory=dict)
     apps: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     home: str = ''
+    keys_file: str = ''
     environment_file: str = ''
     memory_max: str = '2G'
 
