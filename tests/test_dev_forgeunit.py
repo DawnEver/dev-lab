@@ -211,8 +211,6 @@ def test_a_bundle_that_is_not_its_jobs_unit_is_refused(
 
 def test_offering_for_is_the_one_call_a_consumer_needs(monkeypatch, tmp_path) -> None:
     """A consumer names a repo and a sha; the forge client is the dev kit's to build, never the consumer's."""
-    from dev_lab.dev import forgeunit  # noqa: PLC0415 -- the module under test
-
     built: list[object] = []
     sentinel = object()
     monkeypatch.setattr(forgeunit, 'client_for', lambda root: built.append(root) or sentinel)
