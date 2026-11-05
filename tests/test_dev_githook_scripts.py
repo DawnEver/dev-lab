@@ -433,13 +433,23 @@ def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path, tmp_path: Path) -> N
 # ------------------------------------------------------------- cz-push-range.sh: the NAMED exemption
 
 _JUDGING_CZ = r"""import subprocess, sys
+from pathlib import Path
 args = sys.argv[1:]
-open(LOG, "a").write(" ".join(a.splitlines()[0] if a else a for a in args) + "\n")
+if sum(len(arg) + 1 for arg in args) > 32767:
+    sys.exit(99)  # Plant the Windows command-line ceiling on every platform.
 if "--message" in args:
     subjects = [args[args.index("--message") + 1]]
+elif "--commit-msg-file" in args:
+    path = Path(args[args.index("--commit-msg-file") + 1])
+    subjects = [path.read_text(encoding="utf-8")]
+    open(LOG + ".paths", "a").write(str(path) + "\n")
 else:
     rng = args[args.index("--rev-range") + 1]
     subjects = subprocess.run(["git", "log", "--format=%s", rng], capture_output=True, text=True).stdout.splitlines()
+logged = [*args]
+if "--commit-msg-file" in args:
+    logged[-1] = subjects[0].splitlines()[0]
+open(LOG, "a").write(" ".join(a.splitlines()[0] if a else a for a in logged) + "\n")
 sys.exit(1 if any(s.startswith("data(") for s in subjects) else 0)
 """
 
@@ -458,7 +468,9 @@ def _plant_judging_commitizen(root: Path, tmp_path: Path) -> Path:
 def _commit(repo: Path, message: str) -> str:
     (repo / 'g.txt').write_text(message, encoding='utf-8')
     _git(repo, 'add', '-A')
-    _git(repo, 'commit', '-m', message)
+    message_file = repo / '.git' / 'test-message.txt'
+    message_file.write_text(message, encoding='utf-8')
+    _git(repo, 'commit', '-F', str(message_file))
     return _git(repo, 'rev-parse', 'HEAD')
 
 
@@ -471,7 +483,30 @@ def test_an_EXEMPT_sha_passes_and_every_other_commit_is_judged_unchanged(repo: P
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=exempt)
     assert done.returncode == 0, done.stdout + done.stderr
     assert f'exempt {off}' in done.stdout, done.stdout
-    assert argv_log.read_text(encoding='utf-8').splitlines() == ['check --message feat: after it']
+    assert argv_log.read_text(encoding='utf-8').splitlines() == ['check --commit-msg-file feat: after it']
+
+
+@pytest.mark.parametrize('invalid', [False, True])
+def test_large_messages_use_bounded_argv_and_one_cleaned_file_beside_exact_exemptions(
+    repo: Path, tmp_path: Path, *, invalid: bool
+) -> None:
+    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    first = _git(repo, 'rev-parse', 'HEAD')
+    off = _commit(repo, 'data(history): precisely exempt')
+    # Neither byte length nor unicode quoting may become a process-argument limit.
+    body = '\n\n' + ('unicode-\u03bb "quoted" $literal\n' * 2000)
+    head = _commit(repo, 'feat: large valid message' + body)
+    head = _commit(repo, ('data(ordinary): must refuse' if invalid else 'fix: second large message') + body)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{off} named history')
+    assert done.returncode == int(invalid), done.stdout + done.stderr
+    assert f'exempt {off}' in done.stdout
+    judged = argv_log.read_text(encoding='utf-8').splitlines()
+    assert len(judged) == 2
+    assert all(line.startswith('check --commit-msg-file ') for line in judged)
+    paths = Path(str(argv_log) + '.paths').read_text(encoding='utf-8').splitlines()
+    assert len(paths) == 2
+    assert len(set(paths)) == 1, 'reuse one scratch file, not a file/message retained for every commit'
+    assert all(not Path(path).exists() for path in paths), 'success and refusal must both clean the scratch file'
 
 
 def test_a_data_message_NOT_declared_still_fails_beside_an_exempt_one(repo: Path, tmp_path: Path) -> None:
