@@ -385,7 +385,7 @@ def test_the_increment_is_the_range_the_checker_receives(repo: Path) -> None:
     head = _git(repo, 'rev-parse', 'HEAD')
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert _judged(argv_log) == [f'--rev-range {first}..{head}'], _judged(argv_log)
+    assert _judged(argv_log) == [f'--rev-range {first}..{head} --published=--remotes'], _judged(argv_log)
     assert 'as git stated it' in done.stdout
 
 
@@ -400,7 +400,7 @@ def test_an_all_zero_remote_side_falls_back_to_the_declared_base(repo: Path) -> 
     done = _cz(repo, _line('0' * 40, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'new branch' in done.stdout, done.stdout
-    assert _judged(argv_log) == [f'--rev-range base-for-test..{head}']
+    assert _judged(argv_log) == [f'--rev-range base-for-test..{head} --published=base-for-test --published=--remotes']
 
 
 def test_a_sha_this_checkout_does_not_have_falls_back_and_SAYS_SO(repo: Path) -> None:
@@ -414,7 +414,7 @@ def test_a_sha_this_checkout_does_not_have_falls_back_and_SAYS_SO(repo: Path) ->
     done = _cz(repo, _line('b' * 40, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'does not have' in done.stdout, done.stdout
-    assert _judged(argv_log) == [f'--rev-range base-for-test..{head}']
+    assert _judged(argv_log) == [f'--rev-range base-for-test..{head} --published=base-for-test --published=--remotes']
 
 
 def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path) -> None:
@@ -427,7 +427,7 @@ def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path) -> None:
     assert not _judged(argv_log), 'the checker was invoked on an empty range'
 
 
-# ------------------------------------------------------------- cz-push-range.sh: the NAMED exemption
+# ------------------------------------------- cz-push-range.sh: history is not re-judged, nothing is exempt
 
 
 def _commit(repo: Path, message: str) -> str:
@@ -437,53 +437,82 @@ def _commit(repo: Path, message: str) -> str:
     return _git(repo, 'rev-parse', 'HEAD')
 
 
-def test_an_EXEMPT_sha_passes_and_every_other_commit_is_judged_unchanged(repo: Path) -> None:
+def test_a_PUBLISHED_off_format_commit_on_the_base_is_not_judged(repo: Path) -> None:
+    """The reason LAB_CZ_EXEMPT existed, answered without it: what the base holds is history."""
     argv_log = _plant_checker(repo)
     first = _git(repo, 'rev-parse', 'HEAD')
-    off = _commit(repo, 'data(femm): landed past every hook')
+    _commit(repo, 'data(femm): published long ago')
+    _git(repo, 'branch', 'base-for-test')
     head = _commit(repo, 'feat: after it')
-    exempt = f'{off} landed on integration via #5311 before the forge judged messages'
-    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=exempt)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert f'exempt {off}' in done.stdout, done.stdout
-    assert _judged(argv_log) == ['--message feat: after it']
+    assert 'already published' in done.stdout, done.stdout
+    assert _judged(argv_log) == [f'--rev-range {first}..{head} --published=base-for-test --published=--remotes']
 
 
-def test_a_data_message_NOT_declared_still_fails_beside_an_exempt_one(repo: Path) -> None:
-    """PLANTED CONTROL: the exemption names shas, never a type -- another ``data(...)`` is refused."""
+@pytest.mark.parametrize('message', ['data(x): y', 'rem(x): y', 'wip'])
+def test_planted_an_UNPUBLISHED_off_format_commit_is_refused(repo: Path, message: str) -> None:
+    """PLANTED CONTROL: a new commit is always judged, and no variable can exempt it."""
     _plant_checker(repo)
+    _git(repo, 'branch', 'base-for-test')
     first = _git(repo, 'rev-parse', 'HEAD')
-    off = _commit(repo, 'data(femm): exempt one')
-    head = _commit(repo, 'data(x): y')
-    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{off} named')
+    head = _commit(repo, message)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test', LAB_CZ_EXEMPT=f'{head} retired knob')
     assert done.returncode == 1, done.stdout + done.stderr
+    assert 'refused' in done.stdout + done.stderr
 
 
-def test_a_data_message_with_no_exemption_in_range_fails_over_the_range(repo: Path) -> None:
-    argv_log = _plant_checker(repo)
+def _push_feature_branch(repo: Path, message: str) -> tuple[str, str]:
+    """``feature`` carries *message* and is PUBLISHED (``refs/remotes/origin/feature``) but not on the base."""
     first = _git(repo, 'rev-parse', 'HEAD')
-    head = _commit(repo, 'data(x): y')
-    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{first} the seed')
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert _judged(argv_log) == [f'--rev-range {first}..{head}']
+    _git(repo, 'branch', 'base-for-test')
+    _git(repo, 'switch', '-q', '-c', 'feature')
+    off = _commit(repo, message)
+    _git(repo, 'update-ref', 'refs/remotes/origin/feature', off)
+    _git(repo, 'switch', '-q', '-')
+    return first, off
 
 
-@pytest.mark.parametrize(
-    ('entry', 'said'),
-    [
-        ('SHORT reason', 'not a full 40-hex sha'),
-        ('{unknown} reason', 'names no commit'),
-        ('{head}', 'carries no reason'),
-    ],
-)
-def test_a_declaration_naming_no_full_existing_sha_with_a_reason_is_REFUSED(repo: Path, entry: str, said: str) -> None:
-    argv_log = _plant_checker(repo)
+def test_pre_push_an_off_format_commit_published_on_ANOTHER_branch_is_not_judged(repo: Path) -> None:
+    """User ruling 2026-11-05: an existing ``rem(`` commit, already pushed on a feature branch, never blocks."""
+    first, _ = _push_feature_branch(repo, 'rem(x): pushed long ago on a feature branch')
+    _plant_checker(repo)  # after the branch switches, which would carry the planted venv away
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'chore(merge): feature into the lane', 'feature')
     head = _git(repo, 'rev-parse', 'HEAD')
-    declared = entry.replace('SHORT', head[:12]).format(unknown='c' * 40, head=head)
-    done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=declared)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert 'already published' in done.stdout, done.stdout
+
+
+def test_planted_pre_push_a_NEW_local_off_format_commit_beside_it_is_refused(repo: Path) -> None:
+    first, _ = _push_feature_branch(repo, 'rem(x): pushed long ago on a feature branch')
+    _plant_checker(repo)  # after the branch switches, which would carry the planted venv away
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'chore(merge): feature into the lane', 'feature')
+    head = _commit(repo, 'data(lane): never pushed')
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 1, done.stdout + done.stderr
-    assert said in done.stderr, done.stderr
-    assert not _judged(argv_log), 'the checker ran under a refused declaration'
+    assert 'data(lane)' in done.stdout + done.stderr
+
+
+def test_merge_decision_judges_a_PRs_published_off_format_commit_not_on_the_base(repo: Path) -> None:
+    """At the merge the PR's commits ARE on the remote; only the base is history there, so this is refused."""
+    first, off = _push_feature_branch(repo, 'rem(x): on the PR branch, not on the base')
+    _plant_checker(repo)  # after the branch switches, which would carry the planted venv away
+    done = _run(
+        'cz-push-range',
+        ['--merge-decision'],
+        cwd=repo,
+        env={'LAB_CZ_BASE_REF': 'base-for-test'},
+        stdin=_line(first, off),
+    )
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'rem(x)' in done.stdout + done.stderr
+
+
+def test_an_unknown_mode_argument_is_refused(repo: Path) -> None:
+    done = _run('cz-push-range', ['--exempt'], cwd=repo, env={'LAB_CZ_BASE_REF': 'base-for-test'}, stdin='')
+    assert done.returncode == 1
+    assert 'unknown argument' in done.stderr
 
 
 # ------------------------------------------------------- cz-push-range.sh: a sync re-judges nothing upstream
@@ -512,9 +541,8 @@ def test_a_sync_increment_does_not_re_judge_what_the_base_already_holds(repo: Pa
     first, head = _sync_with_an_off_format_upstream_commit(repo)
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
-    judged = ' | '.join(_judged(argv_log))
-    assert 'data(femm)' not in judged, judged
-    assert 'chore(merge)' in judged, judged
+    assert _judged(argv_log) == [f'--rev-range {first}..{head} --published=base-for-test --published=--remotes']
+    assert '1 commit(s) already published' in done.stdout, done.stdout
 
 
 def test_planted_a_lanes_own_off_format_commit_in_a_sync_push_is_still_refused(repo: Path) -> None:

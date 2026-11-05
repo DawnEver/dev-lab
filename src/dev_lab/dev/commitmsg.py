@@ -7,16 +7,22 @@ packages from every consumer's resolution for a regex.
 
 THE SHAPE is commitizen's ``cz_conventional_commits`` schema, unchanged: one of :data:`TYPES`, an optional
 ``(scope)`` with no whitespace, an optional ``!``, ``": "`` and a non-empty subject line; a body, if any, is
-separated by a blank line. A message starting with one of :data:`DEFAULT_PREFIXES` (merges, reverts, fixups)
-passes whatever follows, as commitizen's ``allowed_prefixes`` did; a repo EXTENDS that set with
-``[tool.dev_lab.commit_msg] allowed_prefixes``.
+separated by a blank line. A message starting with one of :data:`DEFAULT_PREFIXES` passes whatever follows:
+those are the subjects GIT ITSELF writes (merges, reverts, fixups), and nothing else. NO REPO CAN ADD A PREFIX
+(user ruling 2026-11-05): a ``rem(``/``data(``-style message is a violation, never an exemption.
+
+HISTORY IS NOT RE-JUDGED (user ruling 2026-11-05: EXISTING ``rem(``/``data(`` commits stand, new ones are
+refused). ``--published REV`` (repeatable) drops every commit reachable from *REV* -- ``git log <range> --not
+REV...``, so git's own ``--remotes`` (every remote-tracking ref) is a valid *REV*. A commit is judged once, when
+it is first published; one already published is history. That -- not a name or sha list -- is what keeps an
+off-format commit published long ago from blocking every later push that merges it.
 
 THE EMPTY MESSAGE IS AN ABORT, NOT A REFUSAL (commitizen's ``--allow-abort``): git abandons an empty commit
 itself, so a refusal would only be noise. Comment lines and everything under git's scissors line are not
 part of the recorded message and are not read.
 
-``python -m dev_lab.dev.commitmsg --commit-msg-file F | --message M | --rev-range A..B``: 0 when every
-message passes, 1 otherwise, with the refusal as the LAST line said (the merge decision quotes it).
+``python -m dev_lab.dev.commitmsg --commit-msg-file F | --message M | --rev-range A..B [--published REV]...``:
+0 when every message passes, 1 otherwise, with the refusal as the LAST line said (the merge decision quotes it).
 """
 
 from __future__ import annotations
@@ -24,7 +30,6 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
@@ -32,9 +37,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.family import declared_table
-
-__all__ = ['DEFAULT_PREFIXES', 'SHAPE', 'TYPES', 'declared_prefixes', 'main', 'refusal']
+__all__ = ['DEFAULT_PREFIXES', 'SHAPE', 'TYPES', 'main', 'refusal']
 
 #: The commit types the family's ``cz_conventional_commits`` config accepted.
 TYPES: Final[tuple[str, ...]] = (
@@ -55,19 +58,12 @@ TYPES: Final[tuple[str, ...]] = (
 #: The one regex: matched against the WHOLE message (comments and scissors already removed).
 SHAPE: Final = re.compile(rf'(?s)(?:{"|".join(TYPES)})(?:\(\S+\))?!?: [^\n\r]+(?:\n\n.*|\s*)$')
 
-#: Message starts that pass unjudged: git's own merge/revert/fixup subjects (commitizen's defaults).
-DEFAULT_PREFIXES: Final[tuple[str, ...]] = ('Merge', 'Revert', 'Pull request', 'fixup!', 'squash!', 'amend!')
+#: Message starts that pass unjudged: ONLY the subjects git itself writes (merge, revert, fixup/squash/amend).
+#: No ``Pull request`` (a web-UI merge subject; the forge merges as ``chore(merge): ...``) and no repo extension.
+DEFAULT_PREFIXES: Final[tuple[str, ...]] = ('Merge', 'Revert', 'fixup!', 'squash!', 'amend!')
 
 _SCISSORS: Final = '# ------------------------ >8 ------------------------'
 _EXPECTED: Final = f'expected `type(scope)!: subject` with type one of {", ".join(TYPES)}'
-
-
-def declared_prefixes(root: Path) -> tuple[str, ...]:
-    """:data:`DEFAULT_PREFIXES` plus *root*'s ``[tool.dev_lab.commit_msg] allowed_prefixes``."""
-    pyproject = root / 'pyproject.toml'
-    data = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
-    extra = declared_table(data, 'commit_msg', {}).get('allowed_prefixes', [])
-    return (*DEFAULT_PREFIXES, *(one for one in extra if one not in DEFAULT_PREFIXES))
 
 
 def _recorded(text: str) -> str:
@@ -81,17 +77,18 @@ def _recorded(text: str) -> str:
     return '\n'.join(lines).strip('\n')
 
 
-def refusal(message: str, prefixes: Sequence[str]) -> str | None:
+def refusal(message: str) -> str | None:
     """Why *message* is off-format, or ``None`` when it passes."""
-    if message.startswith(tuple(prefixes)) or SHAPE.match(message):
+    if message.startswith(DEFAULT_PREFIXES) or SHAPE.match(message):
         return None
     subject = message.splitlines()[0] if message else ''
     return f'{subject!r} -- {_EXPECTED}'
 
 
-def _range(spec: str) -> list[tuple[str, str]]:
+def _range(spec: str, published: Sequence[str]) -> list[tuple[str, str]]:
+    history = ['--not', *published] if published else []
     out = _door.run(
-        ['git', 'log', '--reverse', '--format=%H%x00%B%x1e', spec],
+        ['git', 'log', '--reverse', '--format=%H%x00%B%x1e', spec, *history],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -109,17 +106,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     source.add_argument('--commit-msg-file', type=Path, help='the commit-msg hook argument')
     source.add_argument('--message', help='one message')
     source.add_argument('--rev-range', help='every commit of a git range, e.g. origin/main..HEAD')
+    parser.add_argument(
+        '--published',
+        metavar='REV',
+        action='append',
+        default=[],
+        help='with --rev-range: skip commits REV already holds (repeatable; --published=--remotes for every remote)',
+    )
     args = parser.parse_args(argv)
-    prefixes = declared_prefixes(Path.cwd())
+    if args.published and args.rev_range is None:
+        parser.error('--published narrows a --rev-range and means nothing without one')
     if args.rev_range is not None:
-        judged = _range(args.rev_range)
+        judged = _range(args.rev_range, args.published)
     else:
         text = args.message if args.message is not None else args.commit_msg_file.read_text(encoding='utf-8')
         judged = [('', _recorded(text))]
     if judged == [('', '')]:
         emit('[commit-msg] empty message -- an abort, nothing to judge')
         return 0
-    refused = [(sha, why) for sha, body in judged if (why := refusal(body, prefixes)) is not None]
+    refused = [(sha, why) for sha, body in judged if (why := refusal(body)) is not None]
     emit(f'[commit-msg] {len(judged) - len(refused)}/{len(judged)} message(s) conventional')
     for sha, why in refused:
         emit(f'[commit-msg] refused {sha[:12] + " " if sha else ""}{why}')

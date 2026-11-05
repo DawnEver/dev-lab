@@ -38,8 +38,9 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
   (:func:`dev_lab.dev.mergeaudit.judge`, the same judgement the commit-msg hook makes) -- its message
   names the branch (``Merged-Branch:``), so INTEGRATION-IS-MERGES-ONLY holds of it too;
 * every commit its head adds over integration passes the repo's OWN declared message row -- the pre-push row
-  running ``cz-push-range``, run here on the range ``origin/<integration>..<head>`` with that row's env, its named
-  exemptions included (:func:`message_wait`). A worktree with no venv skips that row at commit and push, so the
+  running ``cz-push-range``, run here on the range ``origin/<integration>..<head>`` with that row's env in its
+  ``--merge-decision`` mode -- commits the base already holds are history, the PR's own are all judged, none
+  exempt (:func:`message_wait`). A worktree with no venv skips that row at commit and push, so the
   merge is the one place no client can skip it; a repo declaring no such row is not judged on messages;
 * every merge commit its head adds over integration declares each file its parents conflict on
   (:func:`dev_lab.dev.mergeresolution.unresolved`, MERGE-RESOLUTION-DECLARED) -- the one place no client and no
@@ -152,7 +153,7 @@ def message_wait(root: Path, base: str, head: str) -> str | None:
     )
     line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
     done = _door.run(
-        [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix()],
+        [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix(), '--merge-decision'],
         cwd=str(root),
         input=line,
         capture_output=True,

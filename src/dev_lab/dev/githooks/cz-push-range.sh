@@ -37,14 +37,23 @@
 # brand-new branch whose remote side is the all-zero sha -- and in both of those a
 # lane's full history against the base IS the right question, because none of it has been published.
 #
-# A NAMED EXEMPTION, never a new type -- an optional second repo fact with no default (absent = empty):
+# NO EXEMPTION, AND NO NEED FOR ONE (user rulings 2026-11-05): EXISTING off-format commits stand, NEW ones are
+# refused, and no variable, prefix or sha list lets a new one through. "Existing" is PUBLISHED, and a commit is
+# judged once -- when it is first published (`dev_lab.dev.commitmsg --published`). Two modes, one argument:
 #
-#   LAB_CZ_EXEMPT     one `<full sha> <reason>` per line: a commit already on a shared branch with an
-#                     off-format message, which no one may rewrite. Each line must name a FULL 40-hex sha
-#                     this checkout holds, with a reason, or the hook refuses before judging anything. A
-#                     range holding no exempt sha is judged exactly as without it; a range holding one is
-#                     judged commit by commit, skipping only the named shas.
+#   (none)             PRE-PUSH. Published = reachable from LAB_CZ_BASE_REF or from ANY remote-tracking ref
+#                      (`--not --remotes`): an old commit already pushed on some other branch (a feature branch
+#                      merged in) never blocks a later push; a never-pushed commit is always judged.
+#   --merge-decision   THE FORGE'S MERGE DECISION (dev_lab.dev.forgemerge). A PR's own commits are on the remote
+#                      by then, so published = reachable from LAB_CZ_BASE_REF only, or nothing would be judged.
 set -euo pipefail
+
+MODE=push
+case "${1-}" in
+  '') ;;
+  --merge-decision) MODE=merge ;;
+  *) echo "[cz-push-range] unknown argument '${1}' -- the one argument is --merge-decision" >&2; exit 1 ;;
+esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=git-env-repair.sh
@@ -58,25 +67,6 @@ if [ -z "${BASE_REF}" ]; then
   echo "[cz-push-range]   judged against a ref that does not exist, and read as a clean lane." >&2
   exit 1
 fi
-
-EXEMPT=' '
-bad=0
-while IFS= read -r entry || [ -n "${entry}" ]; do
-  entry="${entry%$'
-'}"
-  read -r sha reason <<< "${entry}" || true
-  [ -n "${sha:-}" ] || continue
-  if ! [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "[cz-push-range] LAB_CZ_EXEMPT: '${sha}' is not a full 40-hex sha" >&2; bad=1
-  elif ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
-    echo "[cz-push-range] LAB_CZ_EXEMPT: ${sha} names no commit this checkout holds" >&2; bad=1
-  elif [ -z "${reason:-}" ]; then
-    echo "[cz-push-range] LAB_CZ_EXEMPT: ${sha} carries no reason" >&2; bad=1
-  else
-    EXEMPT="${EXEMPT}${sha} "
-  fi
-done <<< "${LAB_CZ_EXEMPT-}"
-[ "${bad}" -eq 0 ] || exit 1
 
 ZERO='0000000000000000000000000000000000000000'
 RANGES=()
@@ -119,27 +109,21 @@ for i in "${!RANGES[@]}"; do
   # A SYNC'S INCREMENT HOLDS THE BASE'S OWN COMMITS (measured 2026-11-01: a lane merging integrate/main was refused
   # for two off-format commits integrate/main already held). A commit reachable from the base was judged where it
   # landed; only what the lane wrote is judged here.
-  OWN=("${RANGE}")
+  HISTORY=()
   if git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null; then
-    OWN+=("^${BASE_REF}")
+    HISTORY+=("${BASE_REF}")
   fi
-  upstream=$(( $(git rev-list --count "${RANGE}") - $(git rev-list --count "${OWN[@]}") ))
-  if [ "${upstream}" -gt 0 ]; then
-    echo "[cz-push-range] ${upstream} commit(s) ${BASE_REF} already holds -- judged where they landed"
+  if [ "${MODE}" = push ]; then
+    HISTORY+=(--remotes)
   fi
-  HELD=()
-  while read -r sha; do
-    case "${EXEMPT}" in *" ${sha} "*) HELD+=("${sha}") ;; esac
-  done < <(git rev-list "${OWN[@]}")
-  if [ "${#HELD[@]}" -eq 0 ] && [ "${upstream}" -eq 0 ]; then
-    bash "${HERE}/with-venv.sh" dev_lab.dev.commitmsg --rev-range "${RANGE}" || status=1
-    continue
+  PUBLISHED=()
+  for rev in ${HISTORY[@]+"${HISTORY[@]}"}; do PUBLISHED+=("--published=${rev}"); done
+  if [ "${#HISTORY[@]}" -gt 0 ]; then
+    upstream=$(( $(git rev-list --count "${RANGE}") - $(git rev-list --count "${RANGE}" --not "${HISTORY[@]}") ))
+    if [ "${upstream}" -gt 0 ]; then
+      echo "[cz-push-range] ${upstream} commit(s) already published (${HISTORY[*]}) -- history, not re-judged"
+    fi
   fi
-  while read -r sha; do
-    case "${EXEMPT}" in
-      *" ${sha} "*) echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)" ;;
-      *) bash "${HERE}/with-venv.sh" dev_lab.dev.commitmsg --message "$(git log -1 --format=%B "${sha}")" || status=1 ;;
-    esac
-  done < <(git rev-list --reverse "${OWN[@]}")
+  bash "${HERE}/with-venv.sh" dev_lab.dev.commitmsg --rev-range "${RANGE}" ${PUBLISHED[@]+"${PUBLISHED[@]}"} || status=1
 done
 exit "${status}"
