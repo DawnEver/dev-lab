@@ -58,7 +58,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge
+from dev_lab.dev.forgemerge import CI_MERGER, EXTERNAL, ci_merges, judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -259,6 +259,8 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
         line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED
         if found.unreviewed:
             line = f'{line} WITHOUT a passing review -- {found.unreviewed}'
+    elif EXTERNAL in found.missing:  # never merged by the forge: the rest is a maintainer's to read
+        line, summary = EXTERNAL, f'{said.summary}; {EXTERNAL}'
     else:
         line = 'the forge merges it once it has: ' + '; '.join(found.missing)
         summary = f'{said.summary}; auto-merge waits'

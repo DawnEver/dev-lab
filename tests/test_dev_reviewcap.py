@@ -5,7 +5,7 @@ from __future__ import annotations
 from dev_lab.dev.forgereview_findings import Finding
 from dev_lab.dev.forgereview_rounds import Ledger
 from dev_lab.dev.reviewbudget import Raised, raise_line
-from dev_lab.dev.reviewcap import waiver_of
+from dev_lab.dev.reviewcap import capped_line, waiver_of
 
 _HIGH = Finding('F-1', 'HIGH', security=False, rule='r', file='a.py', anchor='1', summary='s', category='c')
 
@@ -28,3 +28,23 @@ def test_a_trusted_raise_moves_the_cap() -> None:
     raised = raise_line(Raised(None, 5, 'big PR', 'lead'))
     assert waiver_of([_ledger(3), raised], max_rounds=3) is None
     assert waiver_of([_ledger(5), raised], max_rounds=3) is not None
+
+
+_BUDGET = 'budget reached: 11.00/10.00 USD; split the PR, or forge review cap 4 --usd <n>'
+
+
+def test_a_recorded_dollar_cap_is_waived_naming_the_budget() -> None:
+    """User ruling 2026-11-05: the dollar cap no longer blocks; the reviewing host's record names it."""
+    said = waiver_of([_ledger(1), f'stopped\n\n{capped_line(_BUDGET)}'], max_rounds=3)
+    assert said == 'Unreviewed: review budget reached: 11.00/10.00 USD; open findings: F-1'
+    assert waiver_of([capped_line(_BUDGET)], max_rounds=3) == (
+        'Unreviewed: review budget reached: 11.00/10.00 USD; open findings: none'
+    )
+
+
+def test_a_ledger_or_raise_after_the_record_supersedes_it() -> None:
+    """PLANTED CONTROL: the same record, then a round ran again or the cap was raised: the review is back on."""
+    record = capped_line(_BUDGET)
+    assert waiver_of([record, _ledger(1)], max_rounds=3) is None
+    assert waiver_of([record, raise_line(Raised(20.0, None, 'big PR', 'lead'))], max_rounds=3) is None
+    assert waiver_of([_ledger(1)], max_rounds=3) is None

@@ -372,7 +372,12 @@ _CAPPED = 'Unreviewed: review capped at 5 rounds; open findings: F-1'
 
 def _capped_review(raw: list[dict[str, object]]) -> list[dict[str, object]]:
     """*raw* with ``tests/review`` the pending cap the serve posts: never a success."""
-    review = {'id': 2, 'context': 'tests/review', 'status': 'pending', 'description': 'review capped, merge waits: x'}
+    review = {
+        'id': 2,
+        'context': 'tests/review',
+        'status': 'pending',
+        'description': 'review capped, merges unreviewed: x',
+    }
     return [review if r['context'] == 'tests/review' else r for r in raw]
 
 
