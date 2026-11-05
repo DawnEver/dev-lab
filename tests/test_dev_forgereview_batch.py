@@ -292,5 +292,5 @@ def test_the_merge_tick_reviews_the_due_heads_and_resumes_batches_after_its_deci
     assert job['if'] == "${{ always() && (github.event_name != 'status' || needs.merge-tick.outputs.due == 'true') }}"
     runs = ' '.join(step.get('run', '') for step in job['steps'])
     assert 'forge review run --due' in runs
-    assert '--secret-env ANTHROPIC_API_KEY' in runs
+    assert '--keys-env AI_LAB_KEYS_PR_REVIEW' in runs
     assert job['permissions'] == {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'}

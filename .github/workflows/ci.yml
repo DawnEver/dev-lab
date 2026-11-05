@@ -242,11 +242,8 @@
           }
         },
         {
-          "name": "Store the review key",
-          "run": "if [ -n \"$ANTHROPIC_API_KEY\" ]; then git config --global credential.helper \"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket\" && printf '%s\\n' \"$ANTHROPIC_API_KEY\" | \"$RUNNER_TEMP/ai-lab/bin/python\" -I -m ai_lab.auth login anthropic --task pr-review; fi",
-          "env": {
-            "ANTHROPIC_API_KEY": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}"
-          }
+          "name": "Keep the review keys in memory",
+          "run": "git config --global credential.helper \"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket\""
         },
         {
           "name": "Hand the forge tokens to the door",
@@ -258,9 +255,9 @@
         },
         {
           "name": "tests/review",
-          "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --secret-env ANTHROPIC_API_KEY --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
           "env": {
-            "ANTHROPIC_API_KEY": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ANTHROPIC_API_KEY || '' }}"
+            "AI_LAB_KEYS_PR_REVIEW": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.AI_LAB_KEYS_PR_REVIEW || '' }}"
           }
         }
       ],

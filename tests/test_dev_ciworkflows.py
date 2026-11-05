@@ -44,6 +44,7 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
+from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
 _ROOT = Path(__file__).resolve().parents[1]
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
@@ -147,26 +148,38 @@ def test_the_review_job_runs_the_method_from_an_environment_that_carries_it(tmp_
     assert 'uv run' not in review
 
 
-def test_the_review_key_reaches_the_method_through_its_own_store_never_argv(tmp_path: Path) -> None:
-    """The review key reaches ai-lab through its credential store, on stdin, never argv or the environment.
+#: Model providers ai-lab routes a task to: a rendered workflow names none of them (ai-lab's routes.toml does).
+_PROVIDERS = re.compile(r'anthropic|deepseek|openai|gemini|claude_api', re.IGNORECASE)
 
-    ai-lab reads keys from the git credential store ONLY: dev-lab #5's reviewers were all `unsupported` with
-    ANTHROPIC_API_KEY set. The job stores it (memory cache, stdin) for the review task.
+
+def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_provider(tmp_path: Path) -> None:
+    """The review task's ONE key bundle reaches the door by its derived name; the door loads it on stdin.
+
+    ai-lab reads keys from the git credential store ONLY (dev-lab #5), so the job keeps an in-memory store, and the
+    door (`--keys-env`) pipes the bundle to ai-lab's loader (dev_lab.dev.taskkeys). Which providers it holds is
+    ai-lab's: no rendered workflow names one.
+    PLANTED CONTROL: the provider scan finds the retired per-provider secret.
     """
+    name = secret_name(REVIEW_TASK)
     steps = {step.get('name'): step for step in _base_ci(tmp_path)['jobs']['review']['steps']}
-    login = steps['Store the review key']
-    (key,) = login['env'].values()
-    assert set(login['env']) == {'ANTHROPIC_API_KEY'}
-    assert key.endswith("&& secrets.ANTHROPIC_API_KEY || '' }}"), (
+    store, review = steps['Keep the review keys in memory'], steps['tests/review']
+    assert 'env' not in store, 'the store holds no key: the door loads it'
+    helper = 'credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket"'
+    assert helper in store['run'], 'in memory, one review long, the job its own'
+    assert set(review['env']) == {name}
+    assert review['env'][name].endswith(f"&& secrets.{name} || '' }}}}"), (
         'a fork PR is withheld it (test_a_fork_pr_s_review_job_holds_secret_free)'
     )
-    helper = 'credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket"'
-    assert helper in login['run'], 'in memory, one review long, the job its own'
-    assert '-m ai_lab.auth login anthropic --task pr-review' in login['run']
-    assert '| "$RUNNER_TEMP/ai-lab/bin/python"' in login['run'], 'the key travels on stdin'
-    assert 'if [ -n "$ANTHROPIC_API_KEY" ]' in login['run'], 'a fork PR has no secret: the review holds the head'
+    assert f'--keys-env {name}' in review['run']
     names = list(steps)
-    assert names.index('Install the review method') < names.index('Store the review key') < names.index('tests/review')
+    assert names.index('Keep the review keys in memory') < names.index('tests/review')
+    (tmp_path / 'hub').mkdir()
+    rendered = {**workflows(_ROOT), 'review.yml': _gitea_review(tmp_path / 'hub')}
+    assert {key: _PROVIDERS.findall(render(body)) for key, body in rendered.items()} == {key: [] for key in rendered}
+    claims = rendered['review-claims.yml']['jobs']['adjudicate']['steps'][-1]
+    assert f'--keys-env {name}' in claims['run']
+    assert set(claims['env']) == {name}
+    assert _PROVIDERS.findall('env: { ANTHROPIC_' + 'API_KEY: x }'), 'PLANTED CONTROL'
 
 
 def _parts_event(ci: dict[str, Any], event: str, *, smoke: bool | None = None) -> str:
@@ -369,7 +382,7 @@ _HOSTED = """
 resources = ["live"]
 
 [tool.dev_lab.parts]
-hosted = { live = { secrets = ["MODEL_KEY"], setup = "login --from-file -" } }
+hosted = { live = { tasks = ["live"] } }
 
 [tool.dev_lab.ci."ci.yml"]
 """
@@ -379,7 +392,7 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     tmp_path: Path, monkeypatch
 ) -> None:
     planted = 'sk-planted-value-never-rendered'
-    monkeypatch.setenv('MODEL_KEY', planted)
+    monkeypatch.setenv('AI_LAB_KEYS_LIVE', planted)
     (tmp_path / 'pyproject.toml').write_text(_HOSTED, encoding='utf-8')
     ci = workflows(tmp_path)['ci.yml']
     job = ci['jobs']['part-live']
@@ -391,16 +404,38 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     carrying = [step for step in job['steps'] if 'env' in step]
     assert len(carrying) == 1
     setup = carrying[0]
-    assert setup['env'] == {'MODEL_KEY': '${{ secrets.MODEL_KEY }}'}
-    assert setup['run'] == r"""printf '%s=%s\n' MODEL_KEY "$MODEL_KEY" | { login --from-file -; }"""
-    assert job['steps'][-1]['run'].endswith('jobparts produce live')
+    assert setup['env'] == {'AI_LAB_KEYS_LIVE': '${{ secrets.AI_LAB_KEYS_LIVE }}'}
+    assert setup['run'] == (
+        'git config --global credential.helper '
+        '"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket" && '
+        'printf \'%s\' "$AI_LAB_KEYS_LIVE" | '
+        'uv run --no-sync python -I -m ai_lab.auth login --task live --bundle -'
+    ), 'the bundle travels on stdin to the loader, never argv'
+    produce, forget = job['steps'][-2:]
+    assert produce['run'].endswith('jobparts produce live')
+    assert _forgets_keys(job), 'the part ends its key cache on success AND failure (F-dc28c7ef66b4)'
+    assert forget['run'].startswith('git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit')
+    assert not _forgets_keys({**job, 'steps': job['steps'][:-1]}), 'PLANTED CONTROL: no teardown is caught'
+    assert not _forgets_keys({**job, 'steps': [*job['steps'][:-1], {**forget, 'if': 'success()'}]}), (
+        'PLANTED CONTROL: a teardown the failure path skips is caught'
+    )
     assert 'part-live' in ci['jobs']['absent-parts']['needs'], 'absent waits for it'
     others = {name: render({'j': body}) for name, body in ci['jobs'].items() if name not in {'part-live', 'review'}}
-    assert all('MODEL_KEY' not in text for text in others.values()), 'no other job carries the secret'
+    assert all('AI_LAB_KEYS_LIVE' not in text for text in others.values()), 'no other job carries the secret'
     assert planted not in render(ci), 'the render never prints a secret value'
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
     assert not [name for name in workflows(tmp_path)['ci.yml']['jobs'] if name.startswith('part-')], (
         'PLANTED CONTROL: nothing declared, no hosted job'
+    )
+
+
+def _forgets_keys(job: dict[str, Any]) -> bool:
+    """Whether *job* stops its key cache AFTER the step that sets it, on every outcome (``always()``)."""
+    names = [step.get('run', '') for step in job['steps']]
+    sets = max((i for i, run in enumerate(names) if 'credential.helper' in run), default=-1)
+    return any(
+        step.get('if') == 'always()' and 'git credential-cache' in step.get('run', '') and ' exit' in step['run']
+        for step in job['steps'][sets + 1 :]
     )
 
 
@@ -787,7 +822,10 @@ def test_no_python_in_the_review_job_imports_from_the_checkout(tmp_path: Path) -
     (tmp_path / 'hub').mkdir()
     for workflow in (_base_ci(tmp_path / 'hub'), _gitea_review(tmp_path)):
         assert not _imports_from_the_checkout(workflow['jobs']['review']['steps']), render(workflow)
-    planted = {'name': 'k', 'run': 'printf x | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login anthropic'}
+    planted = {
+        'name': 'k',
+        'run': 'printf x | "$RUNNER_TEMP/ai-lab/bin/python" -m ai_lab.auth login --task t --bundle -',
+    }
     assert _imports_from_the_checkout([planted]) == ['k'], 'PLANTED CONTROL'
     for bypass in (
         'cd "$RUNNER_TEMP"\ncd "$GITHUB_WORKSPACE" && python -m x',  # a cd prefix excuses nothing
@@ -942,7 +980,7 @@ def test_a_fork_pr_s_review_job_holds_secret_free(tmp_path: Path) -> None:
     text = render(_gitea_review(tmp_path))
     secrets = [one for one in re.findall(r'\$\{\{ (.*?) \}\}', text) if 'secrets.' in one]
     named = {found.group(1) for one in secrets if (found := re.search(r'secrets\.(\w+)', one))}
-    assert named >= {'ANTHROPIC_API_KEY', 'FAMILY_READ_TOKEN'}
+    assert named >= {'AI_LAB_KEYS_PR_REVIEW', 'FAMILY_READ_TOKEN'}
     fork = {'pull_request': {'head': {'repo': {'full_name': 'fork/r'}}}}
     same = {'pull_request': {'head': {'repo': {'full_name': 'o/r'}}}}
     for one in secrets:
@@ -1027,7 +1065,7 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
     (job,) = prepare['jobs'].values()
     text = render(prepare)
     assert '-I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }}' in text
-    assert 'ANTHROPIC_API_KEY' not in text
+    assert 'AI_LAB_KEYS_' not in text
     assert 'Install the review method' not in text
     assert job['runs-on'] in tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS]
     assert {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)} == {
@@ -1065,7 +1103,7 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     assert upload['with']['name'] == ARTIFACT
     assert upload['with']['path'] == f'${{{{ runner.temp }}}}/{ARTIFACT}/{BUNDLE_FILE}'
     text = render(prepare)
-    assert 'ANTHROPIC_API_KEY' not in text
+    assert 'AI_LAB_KEYS_' not in text
     assert 'Install the review method' not in text
     written = {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)}
     assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE, PREPARE_WORKFLOW)}
