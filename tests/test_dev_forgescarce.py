@@ -108,6 +108,37 @@ def test_a_scarce_part_is_waived_only_where_no_changed_path_reaches_its_tests(tm
     assert files_by_part(_RECORD) == {'jmag': frozenset({'tests/test_j.py'})}
 
 
+def _locked(*packages: tuple[str, str]) -> str:
+    entries = (
+        f'\n[[package]]\nname = "{name}"\nversion = "{version}"\nsource = {{ registry = "https://pypi.org/simple" }}\n'
+        for name, version in packages
+    )
+    return 'version = 1\n' + ''.join(entries)
+
+
+def test_a_relock_reaches_a_scarce_part_only_where_its_tests_import_a_moved_distribution(tmp_path: Path) -> None:
+    """A relock PR (user ruling 2026-11-05) runs only the scarce parts its moves reach; the lock is resolved to imports.
+
+    PLANTED CONTROL: the same relock moving numpy, which the jmag test imports, waives nothing.
+    """
+    repo = _repo(tmp_path)
+    old = _locked(('numpy', '2.5.3'), ('pint', '0.26.1'))
+    test_j = 'import numpy\nfrom pkg import j\n\n\ndef test_j():\n    assert j.J and numpy\n'
+    tip = _commit(repo, {'uv.lock': old, 'tests/test_j.py': test_j}, 'lock')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', tip)
+
+    def relock(moved: str) -> str:
+        run_git(repo, 'checkout', '-q', '-B', 'pr/relock', 'refs/remotes/origin/integrate/main')
+        return _commit(repo, {'uv.lock': old.replace(moved, moved[:-1] + '9')}, 'build(deps): relock')
+
+    forgescarce._REACHED.clear()
+    pint = relock('0.26.1')
+    assert unreached(repo, None, 'integrate/main', pint, GREEN_BASE, record=lambda _s: _RECORD) == {'jmag'}
+    forgescarce._REACHED.clear()
+    numpy = relock('2.5.3')
+    assert unreached(repo, None, 'integrate/main', numpy, GREEN_BASE, record=lambda _s: _RECORD) == frozenset()
+
+
 def test_a_pr_is_offered_only_its_reached_scarce_parts_whatever_the_ref_filter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
