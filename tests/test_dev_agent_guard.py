@@ -294,6 +294,8 @@ _SWEEP = {'type': 'command', 'command': agent_guard.SWEEP_COMMAND}
 _PRESSURE = {'type': 'command', 'command': agent_guard.PRESSURE_COMMAND}
 #: PUSHED-HEAD-IS-WATCHED, the Stop half (ruling 2026-11-04): after the hand-back check.
 _PUSHSTOP = {'type': 'command', 'command': agent_guard.PUSHSTOP_COMMAND}
+#: WRITES-STAY-IN-THE-TREE, the Stop report (2026-11-05): after the stray census.
+_TMPSWEEP = {'type': 'command', 'command': agent_guard.TMPSWEEP_COMMAND}
 
 
 def test_the_install_wires_the_stray_census_once_at_stop() -> None:
@@ -302,9 +304,15 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
+    assert after['hooks']['Stop'] == [
+        {'hooks': [stray]},
+        {'hooks': [_TMPSWEEP]},
+        {'hooks': [handback]},
+        {'hooks': [_PUSHSTOP]},
+    ]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
     assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
+    assert 'dev_lab.dev.tmpsweep stop' in agent_guard.TMPSWEEP_COMMAND
     assert agent_guard.PUSHWATCH_COMMAND.startswith('node ')
     assert 'dev_lab.dev.pushwatch' in agent_guard.PUSHWATCH_COMMAND
 
@@ -330,6 +338,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
     assert once['hooks']['Stop'] == [
         planted['hooks']['Stop'][0],
         {'hooks': [stray]},
+        {'hooks': [_TMPSWEEP]},
         {'hooks': [handback]},
         {'hooks': [_PUSHSTOP]},
     ]
@@ -344,7 +353,12 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_guard.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
+    assert after['hooks']['Stop'] == [
+        {'hooks': [stray]},
+        {'hooks': [_TMPSWEEP]},
+        {'hooks': [handback]},
+        {'hooks': [_PUSHSTOP]},
+    ]
 
 
 def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:

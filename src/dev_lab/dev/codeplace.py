@@ -62,6 +62,7 @@ from lab_commons.log import emit
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
+from dev_lab.dev.writeroots import refuse_outside_tree
 
 __all__ = [
     'ARCHIVED_SEGMENTS',
@@ -384,7 +385,9 @@ def _stray_hook(payload: object) -> int:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """The agent and git hooks. No argument: ``PreToolUse`` on Write/Edit/MultiEdit, hint a misplaced code file.
+    """The agent and git hooks. No argument: ``PreToolUse`` on Write/Edit/MultiEdit/NotebookEdit.
+
+    It refuses a report under ``output/`` and a write into a write-prone root, and hints a misplaced code file.
 
     ``stray``: the ``PostToolUse``/``Stop`` stray census (:func:`_stray_hook`). ``stray-check``: the
     post-commit hint row, exit 1 naming every stray of the current checkout. A payload naming no path is
@@ -403,15 +406,16 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     if mode == 'stray':
         return _stray_hook(payload)
     tool_input = payload.get('tool_input') if isinstance(payload, dict) else None
-    target = tool_input.get('file_path') if isinstance(tool_input, dict) else None
+    target = (tool_input.get('file_path') or tool_input.get('notebook_path')) if isinstance(tool_input, dict) else None
     if not isinstance(target, str) or not target:
         return 0
     path = Path(target)
     if not path.is_absolute():
         path = Path(payload.get('cwd') or Path.cwd()) / path
-    # A report under output/ is lost to the next cleanup, so it is refused; a misplaced code file is a style
+    # A report under output/ is lost to the next cleanup, and a write outside every checkout outlives the session
+    # (WRITES-STAY-IN-THE-TREE), so both are refused; a misplaced code file is a style
     # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
-    refused, hint = refuse_report(path), refuse_write(path)
+    refused, hint = refuse_report(path) or refuse_outside_tree(path), refuse_write(path)
     if refused is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}
         emit(json.dumps({'hookSpecificOutput': decision}))

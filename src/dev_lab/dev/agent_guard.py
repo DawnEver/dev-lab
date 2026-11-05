@@ -125,6 +125,10 @@ def launcher_source() -> str:
 #: checkout with no venv is NOT blocked (decision 7, 2026-10-22): the launcher exits 0 without one.
 STRAY_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.codeplace stray'
 
+#: WRITES-STAY-IN-THE-TREE's Stop report (:mod:`dev_lab.dev.tmpsweep` ``stop``): the scripts and notes a session left
+#: in a write-prone root outside every checkout, blocking the stop once; it never deletes.
+TMPSWEEP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.tmpsweep stop'
+
 #: AGENT-RUNS-ITS-OWN-COMMANDS (:mod:`dev_lab.dev.handback`): a final message handing the user a runnable
 #: command blocks the stop, for the main session and for every subagent.
 HANDBACK_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.handback'
@@ -171,7 +175,8 @@ class Wire:
 #: The engine before every shell call; the pushed-head reminder, the landed sweep and the host-pressure reminder
 #: after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at stop -- a stray is the
 #: state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a census after every
-#: shell call repeated the same block (2026-11-03 audit); the hand-back check at every stop, the main session's and
+#: shell call repeated the same block (2026-11-03 audit); the WRITES-STAY-IN-THE-TREE report after it (what the
+#: session left in a write-prone root outside the checkout); the hand-back check at every stop, the main session's and
 #: each subagent's; the pushed-head gate at the main session's stop; the background reclaim at session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
@@ -180,6 +185,7 @@ WIRING: Final = (
     Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
+    Wire('Stop', TMPSWEEP_COMMAND, 'dev_lab.dev.tmpsweep stop', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),

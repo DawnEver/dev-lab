@@ -52,6 +52,18 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
     ),
     (
+        'WRITES-STAY-IN-THE-TREE',
+        (
+            'An agent never writes into a write-prone root outside every checkout -- the OS temp dir (Git Bash '
+            '`/tmp` included), the drive root or home `tmp`, `temp`, `var` or `src`, or loose into the home -- '
+            'because nothing scans, ignores or cleans a file there: the artefact of a program goes to the dated output '
+            'tree and an experiment to scratch of the checkout it works in. The roots are one declared set the '
+            'machine file may extend; the write hook and the shell guard refuse the write, the Stop hook names '
+            'what a session left there, and the sweep ages old temp entries out, never those of the harness.'
+        ),
+        ('tests/test_dev_writeroots.py', 'tests/test_dev_tmpsweep.py'),
+    ),
+    (
         'FORGE-THROUGH-THE-DOOR',
         (
             'Issue and pull-request reads and writes go through `python -m dev_lab.dev.forge` (`issue '
