@@ -44,7 +44,7 @@ from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_o
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from dev_lab.dev.forgecoalesce import behind
-from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgeprovides import supplied, unserved
 from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, request_context
@@ -290,7 +290,7 @@ def _within(transport: Transport, deadline: float, budget_s: float) -> Transport
         left = deadline - time.monotonic()
         if left <= 0:
             msg = f'the queue spent its {budget_s:g} s read budget before asking {host}'
-            raise TimeoutError(msg)
+            raise BudgetSpent(msg)
         return transport(host, min(timeout, left))
 
     return opened
