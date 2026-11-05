@@ -336,6 +336,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'metrics_report',
     'reviewcommand',
     'reviewbudget',  # the review's round and dollar caps, new here
+    'reviewcap',  # a capped review warns and merges, new here
     'commandpart',  # a non-pytest repo's one command part, new here
     'forgeaffinity',  # HPC account affinity of verify parts, new here
     'forgeapp',  # a GitHub App as a forge identity (the judge's), new here

@@ -83,6 +83,12 @@ def waiver_of(bodies: Iterable[str], *, max_rounds: int) -> str | None:
 
 
 def capped_waiver(client: Client, number: int, *, base: str) -> str | None:
-    """:func:`waiver_of` PR *number* as the forge holds it, under the review *base* declares (trusted)."""
-    review = forge_review(client, base)
+    """:func:`waiver_of` PR *number* as the forge holds it, under the review *base* declares (trusted).
+
+    A declaration that cannot be read waives nothing: the review gate names it and the merge waits, never crashes.
+    """
+    try:
+        review = forge_review(client, base)
+    except ValueError:
+        return None
     return waiver_of(trusted_bodies(client, number, review.reviewers), max_rounds=review.max_rounds)
