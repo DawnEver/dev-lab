@@ -212,3 +212,21 @@ def test_an_app_declaration_that_lies_is_refused(tmp_path: Path, apps: str, toke
     )
     with pytest.raises(ValueError, match=why):
         _config(tmp_path, table)
+
+
+def test_install_loads_the_judge_s_key_bundle_from_its_root_file_never_re_owned(tmp_path: Path) -> None:
+    """2026-11-05: the judge's model keys are the pr-review task's ONE bundle, loaded on stdin, naming no provider.
+
+    PLANTED CONTROL: with no ``keys_file`` the step asks the operator to pipe the bundle.
+    """
+    bundle = (tmp_path / 'pr-review.toml').as_posix()
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle}"\nrepos = [', 1)
+    steps = install(_config(tmp_path, table), tmp_path / 'root').next_steps
+    (load,) = [step for step in steps if 'ai_lab.auth' in step]
+    assert load.startswith('sudo -u forge-judge ')
+    assert load.endswith(f'-I -m ai_lab.auth login --task pr-review --bundle - < {bundle}')
+    assert not [step for step in steps if 'pr-review.toml' in step and step.startswith('chown')], 'never re-owned'
+    assert not [step for step in steps if 'anthropic' in step.lower()], 'ai-lab routes say which provider'
+    bare = install(_config(tmp_path, _app_table(tmp_path)), tmp_path / 'bare').next_steps
+    (piped,) = [step for step in bare if 'ai_lab.auth' in step]
+    assert piped.endswith('--bundle -  (the pr-review key bundle on stdin)')

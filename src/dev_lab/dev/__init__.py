@@ -373,6 +373,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgewait` -- a part's wait answered, bounded and seen: why a box does not admit it, until when.
 * :mod:`dev_lab.dev.forgecontexts` -- the status contexts under ``tests/``: the part prefix, and those never a part.
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
+* :mod:`dev_lab.dev.taskkeys` -- an ai-lab task's ONE key-bundle secret: its derived name and stdin loader.
+* :mod:`dev_lab.dev.forgesecrets` -- ``forge secrets sync --task``: a task's bundle set on every declared repo.
 * :mod:`dev_lab.dev.forgereview` -- the review of each open PR head by the declared command; HIGH/security block.
 * :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, what stands on it, a host unable.
 * :mod:`dev_lab.dev.forgereview_declared` -- the review a repo declares, read from the integration branch a PR trusts.

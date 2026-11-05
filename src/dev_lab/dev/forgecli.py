@@ -13,7 +13,7 @@ to close salvaged ones (neither deletes a branch),
 ``cancel-stuck <sha>`` for the forge's own stuck tasks, ``watch <sha>`` to follow a verdict read-only,
 ``notices`` for a session's PR notices, ``review takeover|plan <sha>`` / ``review held`` for the
 integrator's review of a head held over the cap, ``security release <pr> --why`` for a head's new
-security exemptions; anything
+security exemptions, ``secrets sync --task <task>`` for a task's key bundle on every declared repo; anything
 else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
 entry point.
@@ -51,6 +51,7 @@ from dev_lab.dev import (
     forgereview_bundle,
     forgeroute,
     forgerunshow,
+    forgesecrets,
     forgesecurity,
     forgeserve,
     forgestatus,
@@ -98,6 +99,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'review': lambda argv: (forgereview_bundle.main if argv[:1] in (['prepare'], ['judge']) else forgetakeover.main)(
         argv
     ),
+    'secrets': forgesecrets.main,
     'security': forgesecurity.main,
     'tidy': forgetidy.main,
     'hosts': forgehosts.main,
