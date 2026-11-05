@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
-from _forge_state import StateForge
+from _forge_state import StateForge, called_due
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgereview_command
@@ -143,6 +143,7 @@ def _forge(head: str, **pull: object) -> tuple[StateForge, int]:
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     forge.pulls[number] |= pull
+    called_due(forge, head)  # the merge decision called the review: what every round test starts from
     return forge, number
 
 

@@ -45,6 +45,14 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
   (:func:`dev_lab.dev.mergeresolution.unresolved`, MERGE-RESOLUTION-DECLARED) -- the one place no client and no
   web-UI merge can skip it.
 
+REVIEW IS THE LAST GATE (user ruling 2026-11-05: "a PR is reviewed only when it is about to be merged"). The review
+is the one condition that costs a model call and counts a round against the PR's cap, so it is asked for only once
+every OTHER condition stands for the head, and THIS decision is the one that asks (:func:`review_turn`): a head
+missing anything else gets ``tests/review`` ``pending`` :data:`~dev_lab.dev.forgereview_claim.WAITS` naming what,
+and a head missing only its review gets :data:`~dev_lab.dev.forgereview_claim.DUE`, which is what the review reads
+before it runs (:func:`dev_lab.dev.forgereview.review_pull`). A push starts no review: a new head has no status, so
+it waits for the decision again, and a superseded head is never reviewed.
+
 Otherwise the PR stays open and the missing conditions are said in its one integration comment. The merge
 is a MERGE COMMIT (``Do: merge``, never squash or rebase), pinned to the judged head (``head_commit_id``: a
 head that moved since is refused by the forge, and judged afresh next tick). A head in a declared ephemeral
@@ -58,10 +66,10 @@ import os
 import subprocess
 import sys
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
@@ -73,17 +81,19 @@ from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING, waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
+from dev_lab.dev.forgereview_claim import DESCRIPTION, DUE, WAITS
 from dev_lab.dev.forgereview_declared import load_review, review_gate
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import GITHUB, client_for
+from dev_lab.dev.forgework import GITEA, GITHUB, client_for
 from dev_lab.dev.githooks import PYTHON_ENV, bash_executable, hook_path
 from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.jobparts import pull_request_waived
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.platformparts import standing
+from dev_lab.dev.platformparts import REVIEW_CONTEXT, standing
+from dev_lab.dev.reviewgate import post_review
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 from dev_lab.dev.unproduced import unproduced_waived
@@ -98,6 +108,8 @@ __all__ = [
     'CI_MERGER',
     'FORGE_PULL',
     'READY',
+    'REVIEW_DUE_SAID',
+    'REVIEW_LABEL',
     'Decision',
     'auto_merge',
     'ci_merges',
@@ -108,6 +120,7 @@ __all__ = [
     'merge_message',
     'message_wait',
     'ready',
+    'review_turn',
 ]  # fmt: skip
 
 #: The Gitea workflow that merges, closes landed PRs and sweeps (``ci_base.toml``); declaring it is the opt-in.
@@ -126,6 +139,16 @@ FORGE_PULL: Final = 'Forge-Pull'
 
 #: What a ``success`` :data:`MERGE_READY_CONTEXT` says.
 READY: Final = 'ready: every merge condition holds'
+
+#: What the decision's line ends with when the head's review is due: a GitHub job reads it to start the review.
+REVIEW_DUE_SAID: Final = '; review due'
+
+#: The PR label whose ``labeled`` event starts a Gitea repo's review (``review.yml``) and bundle prepare: Gitea starts
+#: no workflow for an event its Actions user raised, so the decision run by a serve (its own login) applies it.
+REVIEW_LABEL: Final = 'review-due'
+
+#: The label's colour when the decision creates it on a repo that lacks it.
+_LABEL_COLOR: Final = '#0e8a16'
 
 #: GitHub's native auto-merge, as a merge commit (never squash or rebase: the merge audit reads merge commits).
 _AUTO_MERGE: Final = (
@@ -169,10 +192,20 @@ def message_wait(root: Path, base: str, head: str) -> str | None:
 
 @dataclass(frozen=True)
 class Decision:
-    """Whether one PR may be merged now: what is missing (nothing, when it may), and the message it merges with."""
+    """Whether one PR may be merged now: what is missing (nothing, when it may), and the message it merges with.
 
-    missing: tuple[str, ...]
+    *others* is every missing condition but the review, *review* why the head is not reviewed (``None``: it is):
+    the review is the last gate, asked for only when *others* is empty (:func:`review_turn`).
+    """
+
+    others: tuple[str, ...]
     message: str
+    review: str | None = None
+
+    @property
+    def missing(self) -> tuple[str, ...]:
+        """Every missing condition, the review first."""
+        return (*((f'its review: {self.review}',) if self.review is not None else ()), *self.others)
 
     @property
     def ready(self) -> bool:
@@ -219,8 +252,6 @@ def decide(
         load_review(root)
     except ValueError as config:
         missing.append(f'its review config: {config}')
-    if (unreviewed := reviewed(statuses)) is not None:
-        missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
     if (red := parts_wait(root, head, statuses)) is not None:
@@ -250,7 +281,7 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    return Decision(tuple(missing), message)
+    return Decision(tuple(missing), message, reviewed(statuses))
 
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
@@ -265,7 +296,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
 
     found = decide(root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed)
     if client.pr_view(number).draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
-        return Decision((WAITING.format(n=number), *found.missing), found.message)
+        return Decision((WAITING.format(n=number), *found.others), found.message, found.review)
     return found
 
 
@@ -288,7 +319,8 @@ def ready(root: Path, client: Client, number: int) -> str:
     missing = decision.missing
     state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
-    said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
+    turn = review_turn(client, number, pull.head_sha, decision)
+    said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}{turn}'
     if missing or (client.backend is not GITHUB and not ci_merges(root)):
         return said
     ephemeral = declared_branchset(root).is_ephemeral(pull.head)
@@ -297,6 +329,54 @@ def ready(root: Path, client: Client, number: int) -> str:
     except ForgeCallFailed as refused:
         return f'{said}; NOT merged -- {refused}'
     return f'{said}; merged'
+
+
+def review_turn(
+    client: Client, number: int, head: str, decision: Decision, env: Mapping[str, str] | None = None
+) -> str:
+    """Say on *head*'s ``tests/review`` what *decision* means for its review; what the decision's line adds.
+
+    THE ONE PLACE A REVIEW IS ASKED FOR (module docstring). Nothing, when the head is reviewed or its review status is
+    the review's own (a claim, a batch, a cap, a verdict, a hold for a takeover): that stands. Else, posted only when
+    it changes -- :data:`~dev_lab.dev.forgereview_claim.WAITS` naming every other missing condition, or, when none is
+    missing, :data:`~dev_lab.dev.forgereview_claim.DUE` (the line ends :data:`REVIEW_DUE_SAID`). On Gitea DUE also
+    applies :data:`REVIEW_LABEL` (:func:`_request`), and only outside an Actions job (*env*): Gitea starts no workflow
+    for its Actions user's event, so a DUE posted there would start nothing and stop the serve from asking.
+    """
+    if decision.review is None:
+        return ''
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if latest is not None and not (latest.state == 'pending' and latest.description.startswith((WAITS, DUE))):
+        return ''
+    if decision.others:
+        why = (WAITS + '; '.join(decision.others))[:DESCRIPTION]
+        if latest is None or latest.description != why:
+            post_review(client, head, state='pending', description=why)
+        return '; review waits'
+    if client.backend is GITEA and (os.environ if env is None else env).get('GITEA_ACTIONS') == 'true':
+        return f'{REVIEW_DUE_SAID}: a serve asks for it (Gitea starts no workflow for its Actions user)'
+    if latest is None or latest.description != DUE:
+        post_review(client, head, state='pending', description=DUE)
+        if client.backend is GITEA:
+            _request(client, number)
+    return REVIEW_DUE_SAID
+
+
+def _request(client: Client, number: int) -> None:
+    """Apply :data:`REVIEW_LABEL` to PR *number* afresh, so the forge raises the ``labeled`` event.
+
+    The review and prepare workflows start on that event. A label a superseded head left is removed first; the label
+    is created when the repository lacks it.
+    """
+    labels: Any = client.call('GET', f'{client.repo}/labels?limit=50')
+    found = next((one for one in labels or () if isinstance(one, dict) and one.get('name') == REVIEW_LABEL), None)
+    if found is None:
+        found = client.call('POST', f'{client.repo}/labels', {'name': REVIEW_LABEL, 'color': _LABEL_COLOR})
+    label = int(found['id'])
+    held: Any = client.call('GET', f'{client.repo}/issues/{number}/labels')
+    if any(isinstance(one, dict) and one.get('id') == label for one in held or ()):
+        client.call('DELETE', f'{client.repo}/issues/{number}/labels/{label}')
+    client.call('POST', f'{client.repo}/issues/{number}/labels', {'labels': [label]})
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:

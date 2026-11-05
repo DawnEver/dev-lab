@@ -7,7 +7,8 @@ trusts NOTHING the producer wrote that it can read or derive from the forge (D3)
 * PREPARE writes a bundle; where it goes, and the only two sources the judge reads one from -- the base's prepare
   run's own artifact, or a declared preparer's bound pointer -- is :mod:`~dev_lab.dev.forgereview_pointer`.
 * JUDGE (:func:`judge_pending`) runs on a host holding only its own forge token and model key, as the declared
-  ``judge_login``. For each open, non-draft PR into the trusted integration branch whose head has a bundle from a
+  ``judge_login``. For each open, non-draft PR into the trusted integration branch whose head the merge decision
+  called due (:func:`_called_due`: the review is the last gate), whose head has a bundle from a
   TRUSTED source (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) and no standing verdict of this
   identity yet (idempotent per head):
 
@@ -51,6 +52,7 @@ from dev_lab.dev.artefacts import (
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pr_list
 from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, wait_of, within
+from dev_lab.dev.forgereview_claim import DUE
 from dev_lab.dev.forgereview_command import ReviewPending, run_command
 from dev_lab.dev.forgereview_declared import (
     JUDGE,
@@ -65,8 +67,10 @@ from dev_lab.dev.forgereview_pointer import prepare, trusted_bundle
 from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.forgereview_scope import gather, is_code
+from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgetakeover import runtimes_with
 from dev_lab.dev.forgework import client_for
+from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import (
     DeclarationUnread,
@@ -227,6 +231,16 @@ def post_verdict(client: Client, pull: PullRequest, verdict: Verdict) -> None:
     client.call('POST', f'{client.repo}/pulls/{pull.number}/reviews', body)
 
 
+def _called_due(client: Client, head: str) -> bool:
+    """Whether the merge decision called *head*'s review due (REVIEW IS THE LAST GATE, :mod:`dev_lab.dev.forgemerge`).
+
+    The one status the judge reads, and it only ever SKIPS work: a DUE someone else posted spends a judgement early,
+    never approves anything; the verdict is still the judge's own, read from the bundle.
+    """
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    return latest is not None and latest.state == 'pending' and latest.description == DUE
+
+
 def judge_pending(
     client: Client, *, runtimes: Mapping[str, Mapping[str, Any]],
     run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
@@ -247,7 +261,7 @@ def judge_pending(
         if pull.base != integration or pull.draft or not pull.head_sha:
             continue
         try:
-            if reviewed_by(client, pull, me):
+            if not _called_due(client, pull.head_sha) or reviewed_by(client, pull, me):
                 continue
             outcome = judge_one(client, review, pull, runtimes=runtimes, run=run)
             if isinstance(outcome, Verdict):

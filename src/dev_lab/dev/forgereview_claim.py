@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'CAPPED', 'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'PURE_SYNC', 'RELEASED', 'claim_of', 'claimable',
+    'CAPPED', 'CLAIMED', 'DESCRIPTION', 'DUE', 'HOST_UNABLE', 'PURE_SYNC', 'RELEASED', 'WAITS', 'claim_of', 'claimable',
     'counted_success', 'live_claim', 'passed', 'run_ended', 'standing', 'synced', 'unable',
 ]  # fmt: skip
 
@@ -50,6 +50,14 @@ HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 #: What a ``pending`` status opens with when the PR's review cap holds it (:mod:`dev_lab.dev.reviewbudget`): the
 #: merge waits, and the head stays claimable so a raised cap or a new month is read on the next tick.
 CAPPED: Final = 'review capped, merge waits:'
+
+#: REVIEW IS THE LAST GATE (user ruling 2026-11-05): the merge decision (:func:`dev_lab.dev.forgemerge.review_turn`)
+#: posts these two ``pending`` statuses, and nothing else calls a head's review. WAITS: another merge condition is
+#: missing, named after it -- no review runs and no round is counted. DUE: every other condition stands; the review
+#: runs next (:func:`dev_lab.dev.forgereview.review_pull` reviews no head whose latest review status is not one the
+#: review itself left, DUE, or a status of a review in progress).
+WAITS: Final = 'waits: not reviewed until '
+DUE: Final = 'due: every other merge condition stands, the review runs next'
 
 _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing(?: \(run (?P<run>\d+)\))?')
 
@@ -107,7 +115,8 @@ def claimable(
     """Whether a head whose review status is *status* may be claimed: none, a released, stale or ended claim.
 
     A head whose batch is pending (:data:`~dev_lab.dev.forgereview_batch.BATCH_PENDING`) is claimable at once: its
-    state is on the PR, so whoever claims it resumes the batch, never resubmits it.
+    state is on the PR, so whoever claims it resumes the batch, never resubmits it. The merge decision's own
+    :data:`WAITS` and :data:`DUE` hold nothing either: no review is running on that head.
 
     A claim is ended when the run it names has ended (*ended*, :func:`run_ended`); one naming no run is not.
 
@@ -117,7 +126,7 @@ def claimable(
         return True
     if status.state != 'pending':
         return False
-    if status.description.startswith((RELEASED, CAPPED, BATCH_PENDING)):
+    if status.description.startswith((RELEASED, CAPPED, BATCH_PENDING, WAITS, DUE)):
         return True
     if (claim := _CLAIM.match(status.description)) is None:
         return False  # takeover pending, or any other pending: not ours to take

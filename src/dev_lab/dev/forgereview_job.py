@@ -16,7 +16,7 @@ from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgereview import HostCannot, hold, review_pull
 from dev_lab.dev.forgereview_batch import BATCH_PENDING
-from dev_lab.dev.forgereview_claim import live_claim, run_ended
+from dev_lab.dev.forgereview_claim import CAPPED, DUE, WAITS, live_claim, run_ended
 from dev_lab.dev.forgereview_declared import JUDGE
 from dev_lab.dev.forgereview_dispose import adjudicate_thread
 from dev_lab.dev.forgereview_judge import identity, pending
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgereview_declared import Review
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['HOST_CANNOT', 'batch_pending', 'job_exit', 'resume_batches', 'review_run']
+__all__ = ['HOST_CANNOT', 'due', 'job_exit', 'review_due', 'review_run']
 
 #: What the hold says when the job's host cannot run the review command: the forge's review is re-run.
 HOST_CANNOT: Final = 'the review job cannot run the review command'
@@ -67,38 +67,47 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     return '; '.join([said, *ruled])
 
 
-def batch_pending(client: Client, base: str) -> tuple[PullRequest, ...]:
-    """Every open, non-draft PR into *base* whose head's review is a pending batch (:data:`BATCH_PENDING`)."""
+#: The ``pending`` review statuses whose head the review job takes up: the merge decision's DUE, a batch still
+#: running, and a cap (re-read every run, so a raise or a new month releases it).
+_TAKEN_UP: Final = (DUE, BATCH_PENDING, CAPPED)
+
+
+def due(client: Client, base: str) -> tuple[PullRequest, ...]:
+    """Every open, non-draft PR into *base* whose head's review status is one the job takes up (:data:`_TAKEN_UP`)."""
     return tuple(
         pull for pull in pr_list(client)
-        if pull.base == base and not pull.draft and pull.head_sha and _batch_waits(client, pull.head_sha)
+        if pull.base == base and not pull.draft and pull.head_sha and _pending(client, pull.head_sha, _TAKEN_UP)
     )  # fmt: skip
 
 
-def resume_batches(
+def review_due(
     root: Path, client: Client, review: Review, *, base: str, runner: Runner, fetch: Callable[[Path, int], object]
 ) -> list[str]:  # fmt: skip
-    """Resume the review of every :func:`batch_pending` head from the batch state on its PR; the lines said.
+    """Review every :func:`due` head -- one the merge decision called due, or a batch to resume; the lines said.
 
-    What the scheduled job runs (``forge review run --batch-pending``): a pending batch never waits for a human. The
-    state comment names the batches, so the round polls them and never resubmits; a head still pending stays so.
+    What the merge tick's review job runs (``forge review run --due``) after its decision: the decision asks, this
+    answers, and a pending batch never waits for a human. A batch's state comment names the batches, so the round
+    polls them and never resubmits; a head still pending stays so.
     """
     said = []
-    for pull in batch_pending(client, base):
+    for pull in due(client, base):
         fetch(root, pull.number)
         said.append(review_run(root, client, review, pull.number, base=base, runner=runner))
     return said
 
 
-def _batch_waits(client: Client, head: str) -> bool:
+def _pending(client: Client, head: str, said: tuple[str, ...]) -> bool:
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    return latest is not None and latest.state == 'pending' and latest.description.startswith(BATCH_PENDING)
+    return latest is not None and latest.state == 'pending' and latest.description.startswith(said)
 
 
 def _stood(client: Client, head: str, number: int) -> str:
-    """What stands on *head* when :func:`review_pull` did nothing: a claim by another run, else its review."""
+    """What stands on *head* when :func:`review_pull` did nothing: not due yet, a claim by another run, its review."""
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if latest is not None and latest.state == 'pending':
+    if latest is None or (latest.state == 'pending' and latest.description.startswith(WAITS)):
+        why = latest.description if latest is not None else 'the merge decision has not judged it'
+        return f'#{number} {head[:12]}: not reviewed -- the review is the last merge gate: {why}'
+    if latest.state == 'pending':
         return f'#{number} {head[:12]}: claimed by another run, which posts the verdict ({latest.description})'
     return f'#{number} {head[:12]}: already reviewed'
 
@@ -118,14 +127,14 @@ def job_exit(
 
     A BATCH STILL RUNNING is no failure: on GitHub, whose gate trusts the status CREATOR, a job that left the head
     ``pending`` :data:`BATCH_PENDING` exits ``0`` -- the status alone holds the merge, and the scheduled resume
-    (:func:`resume_batches`) settles it. On Gitea the gate trusts the review RUN's success, so a pending run must not
+    (:func:`review_due`) settles it. On Gitea the gate trusts the review RUN's success, so a pending run must not
     conclude success (a planted status would count beside it): it exits ``1`` there.
     """
     pull = client.pr_view(number)
     if pull.base != base:  # not a PR into the trusted integration: never reviewed, so never a success
         return 1
     if posted:
-        if posted[-1] == 'pending' and client.backend is GITHUB and _batch_waits(client, pull.head_sha):
+        if posted[-1] == 'pending' and client.backend is GITHUB and _pending(client, pull.head_sha, (BATCH_PENDING,)):
             return 0  # pending is not failure: GitHub's gate trusts the status creator, and the status holds the merge
         return 0 if posted[-1] == 'success' else 1
     head = pull.head_sha

@@ -58,7 +58,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge
+from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge, review_turn
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -249,6 +249,7 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said
     found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
+    turn = review_turn(child.client, child.pr, child.head, found)  # the review is asked for here too: its last gate
     if found.ready and ci_merges(root):
         line, summary = f'ready: the {CI_MERGER} job merges it', f'{said.summary}; ready for the {CI_MERGER} job'
     elif found.ready:
@@ -256,7 +257,7 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
         line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED
     else:
-        line = 'the forge merges it once it has: ' + '; '.join(found.missing)
+        line = 'the forge merges it once it has: ' + '; '.join(found.missing) + turn
         summary = f'{said.summary}; auto-merge waits'
     return dataclasses.replace(said, text=f'{said.text}\n- {line}', summary=summary)
 

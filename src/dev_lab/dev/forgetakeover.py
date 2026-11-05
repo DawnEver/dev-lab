@@ -47,7 +47,7 @@ from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_ca
 from dev_lab.dev.forgereview_dispose import blocked as review_blocked
 from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
-from dev_lab.dev.forgereview_job import job_exit, resume_batches, review_run
+from dev_lab.dev.forgereview_job import job_exit, review_due, review_run
 from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
 from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import host_runtimes
@@ -251,8 +251,8 @@ def _parser() -> argparse.ArgumentParser:
     which = running.add_mutually_exclusive_group(required=True)
     which.add_argument('--pr', type=int)
     which.add_argument(
-        '--batch-pending', action='store_true',
-        help='resume every open head whose review batch is pending, from its PR (the scheduled job runs this)',
+        '--due', action='store_true',
+        help='review every open head the merge decision called due, and resume every pending batch (merge tick)',
     )  # fmt: skip
     running.add_argument(
         '--secret-env', action='append', default=[], metavar='NAME',
@@ -308,12 +308,12 @@ def _job(
     args: argparse.Namespace, root: Path, origin: Client, base: str, *, run: Callable[[Sequence[str], Path], str],
     ready: Callable[[Sequence[str], Path], str | None], fetch: Callable[[Path, int], object],
 ) -> int:  # fmt: skip
-    """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
+    """``forge review run``: one PR's head (``--pr``), or every head that is due (``--due``); the exit."""
     runner = Runner(this_machine(), runtimes_with(host_runtimes(), args.runtime), run=run, ready=ready,
                     secret=all(os.environ.get(name) for name in args.secret_env), verifies=True)  # fmt: skip
     review = review_at(root, base)
-    if args.batch_pending:
-        for one in resume_batches(root, origin, review, base=base, runner=runner, fetch=fetch):
+    if args.due:
+        for one in review_due(root, origin, review, base=base, runner=runner, fetch=fetch):
             emit(f'[review] {one}')
         return 0
     with posted_verdicts() as said:

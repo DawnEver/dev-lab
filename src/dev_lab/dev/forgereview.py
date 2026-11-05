@@ -1,9 +1,11 @@
 """PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on every open PR into the PR base, per head.
 
 Step 4 of the branch flow (user ruling 2026-10-19). ONE review on both forges (user ruling 2026-10-29); only who
-TRIGGERS it differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR; on GitHub a workflow
-job runs ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgereview_job.review_run`) for the one PR its event
-names. Both run the same round (:func:`review_pull`). A job whose review secret is absent -- a fork PR, which
+TRIGGERS it differs, and on both it is the merge decision that asks (:func:`dev_lab.dev.forgemerge.review_turn`). On
+Gitea the ``forge serve`` tick runs :func:`step` over every open PR, or, where the repo adopts ``review.yml``, the
+label the decision applies starts that job; on GitHub the merge-ready and merge-tick jobs run
+``forge review run --pr <N>`` / ``--due`` (:mod:`dev_lab.dev.forgereview_job`) once the decision calls a head due.
+Both run the same round (:func:`review_pull`). A job whose review secret is absent -- a fork PR, which
 GitHub never hands a secret -- holds
 the head (:data:`NEEDS_MAINTAINER`) until a maintainer re-runs the forge's review with the secret; nothing new is
 stored.
@@ -19,8 +21,9 @@ cannot fill or start the command
 (:func:`~dev_lab.dev.forgereview_declared.command_for`, :func:`can_start`) says so once and reads no PR. Among the
 capable hosts the claim below makes each head reviewed once.
 
-WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integration`` whose head carries no
-:data:`REVIEW_CONTEXT` status yet:
+WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integration`` whose head the merge decision
+has called due (:func:`dev_lab.dev.forgemerge.review_turn`: REVIEW IS THE LAST GATE, every other merge condition
+already stands):
 
 * the head's review ROUND as ONE comment keyed by the head sha (``Marker.REVIEW``): its tagged findings carried
   from the earlier rounds, re-checked, and recorded as a ledger (:mod:`dev_lab.dev.forgereview_rounds`; round 1
@@ -108,6 +111,7 @@ from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state,
 from dev_lab.dev.forgereview_claim import (
     CAPPED,
     DESCRIPTION,
+    WAITS,
     claim_of,
     counted_success,
     passed,
@@ -296,6 +300,12 @@ def hold(client: Client, pull: PullRequest, why: str) -> str:
     return f'#{pull.number} {pull.head_sha[:12]}: {why}'
 
 
+def _called(client: Client, head: str) -> bool:
+    """Whether *head*'s review may run: the merge decision called it DUE, or a review is under way (its own state)."""
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    return latest is not None and not (latest.state == 'pending' and latest.description.startswith(WAITS))
+
+
 def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str | None:
     """Review *pull*'s head once (the round in the module docstring); the line said, ``None`` when nothing was.
 
@@ -303,12 +313,19 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     :data:`REVIEW_CONTEXT` status per head are posted from it. A host that cannot start it posts nothing;
     a command that fails or prints anything but a known findings version posts ``error`` naming why, and is not
     retried on that head.
+
+    REVIEW IS THE LAST GATE (:mod:`dev_lab.dev.forgemerge`): a head with no review status yet, or one the merge
+    decision says WAITS, is not reviewed -- nothing is posted, run or counted -- whoever started this (a push's job,
+    a serve tick, a label someone added). Only the decision's DUE, or the state of a review already under way,
+    lets it through.
     """
     head, target = pull.head_sha, f'origin/{pull.base}'
     counted = forge_posted(client, head, base=pull.base) if runner.verifies else None
-    if (
-        stands := passed(root, client, head, runner.clock(), review.stale, counted=counted, ended=run_ended(client))
-    ) is not None:
+    stands = (  # not called due: nothing runs, nothing is said
+        passed(root, client, head, runner.clock(), review.stale, counted=counted, ended=run_ended(client))
+        if _called(client, head) else ''
+    )  # fmt: skip
+    if stands is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     # the forge's own rounds only: a pasted marker naming an unreviewed sha would shrink the range or seed a carry
     done = reviewed_heads(trusted_bodies(client, pull.number, review.reviewers))

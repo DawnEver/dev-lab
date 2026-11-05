@@ -135,10 +135,32 @@ An integrator runs no test, merges no branch by hand, and pushes nothing to `int
 ## The PR reviewer blocks on HIGH or security
 
 `PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY` (`dev_lab.dev.forgereview`, user ruling 2026-10-26). The forge only
-orchestrates: each open, non-draft PR into `integrate/main` on gitea is reviewed ONCE per head sha by the command
+orchestrates: each open, non-draft PR into `integrate/main` is reviewed ONCE per head sha, once due, by the command
 the repo declares; its stdout is the sharp-review findings JSON (`schema_version` 3, read by
 `dev_lab.dev.forgereview_findings`; any other version is refused by name). The forge posts one PR comment per
 head -- a review ROUND -- and a `tests/review` commit status.
+
+**Review is the last gate** (user ruling 2026-11-05: a PR is reviewed only when it is about to be merged). The
+review is the one merge condition that costs a model call and a round against `max_rounds`, so it is asked for only
+once every OTHER condition stands for the head -- its test parts, `tests/security`, a clean merge with integration,
+the merge audit, the messages, not a draft. The merge decision (`forgemerge.review_turn`, run by
+`forge merge ready` and by the serve's integration tick) is the one that asks; the review holds no second
+readiness check:
+
+- another condition missing: `tests/review` is `pending` `waits: not reviewed until <them>` -- no review runs, no
+  round counts, nothing is spent;
+- only the review missing: `tests/review` is `pending` `due: ...`, and the review runs. GitHub: `ci.yml`'s
+  `merge-ready` job and `merge-tick.yml` read `; review due` in the decision's line and start their `review` job
+  (`forge review run --pr N` / `--due`, which also resumes pending batches); the next tick merges. Gitea: the
+  decision applies the PR label `review-due`, whose `pull_request_target` `labeled` event starts `review.yml` (and a
+  judge repo's prepare) -- still a run of the base's workflow at the head, so `reviewgate`'s binding is unchanged.
+  Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision only says the review is
+  due and the serve's tick (its own login) asks;
+- `forgereview.review_pull` reviews nothing whose latest `tests/review` is absent or `waits`, whoever started it (a
+  push, a hand-added label, a serve tick); the judge (`where = "judge"`) judges only a head called due.
+
+A push asks for nothing: a new head has no status, so it waits for the decision again, and a superseded head is
+never reviewed. A verdict, a claim, a batch, a cap or a takeover hold already on the head is never overwritten.
 
 **Tagged findings.** Every finding carries `severity` (`HIGH`/`MEDIUM`/`LOW`), `security` (bool) and `rule` --
 the one principle id (ai-lab's `principles.json`) or registry rule id (`dev_lab.dev.rules`) it violates; ai-lab's
