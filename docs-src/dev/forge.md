@@ -530,7 +530,7 @@ host and never by `forge serve` (one mode per repo). The runner runs
 `python -m dev_lab.dev.forge review prepare --pr <n>` (no reviewer token): it attaches the
 review bundle to its own run as the `review-bundle` artifact, which the judge finds by listing the base's prepare
 runs itself (a declared preparer's host instead stores it and points the head at it). The judge host
-runs `python -m dev_lab.dev.forge review judge --url <repo web url> [--token-file <path>] [--runtime ai_lab.python=<py>]`
+runs `python -m dev_lab.dev.forge review judge --url <repo web url> [--token-file <path>]`
 on a timer: it verifies each pointed-at bundle against the forge's own diff, reads the declaration fresh from the
 integration branch, and posts one PR review per head as its own login. The mechanism is the module docstring of
 `dev_lab.dev.forgereview_bundle`.

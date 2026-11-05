@@ -249,7 +249,8 @@ def runtime_of(tree: Path, runtimes: Mapping[str, Mapping[str, Any]]) -> str:
     """Why *tree* stays because the host runs from it: ``runtime of <name>``; ``''`` when no runtime lives there.
 
     Issue dev-lab#26 (2026-11-01): ``branchset --apply`` reclaimed the detached, landed tree whose ``.venv`` the
-    machine file's ``[runtimes.ai_lab] python`` names -- the forge serve's review interpreter. A tree holding
+    machine file named as the forge serve's review interpreter (since built from the lock under the forge home,
+    :mod:`dev_lab.dev.reviewruntime`). A tree holding
     any path a ``[runtimes.<name>]`` value declares is that host's runtime, never a finished lease. A value is
     judged by where it LIVES, never where its leaf points: a POSIX venv's ``bin/python`` links outside the tree.
     """
