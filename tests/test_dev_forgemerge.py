@@ -363,3 +363,61 @@ def test_a_repo_declaring_no_message_row_is_not_judged_on_messages(tmp_path: Pat
         reviewed=status_gate(github_posted),
     )
     assert found.ready, found.missing
+
+
+# --- a capped review warns and merges (user ruling 2026-11-05) ----------------------------------------
+
+_CAPPED = 'Unreviewed: review capped at 5 rounds; open findings: F-1'
+
+
+def _capped_review(raw: list[dict[str, object]]) -> list[dict[str, object]]:
+    """*raw* with ``tests/review`` the pending cap the serve posts: never a success."""
+    review = {
+        'id': 2,
+        'context': 'tests/review',
+        'status': 'pending',
+        'description': 'review capped, merges unreviewed: x',
+    }
+    return [review if r['context'] == 'tests/review' else r for r in raw]
+
+
+def test_a_capped_review_with_green_tests_merges_warned_in_its_message(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    found = decide(
+        work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_capped_review(_green())),
+        reviewed=status_gate(github_posted), capped=_CAPPED,
+    )  # fmt: skip
+    assert found.ready, found.missing
+    assert found.unreviewed == _CAPPED
+    assert _CAPPED in found.message
+    assert merged_branch(found.message) == 'pr/x'
+
+
+def test_a_capped_review_with_red_tests_does_not_merge(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    raw = [r for r in _capped_review(_green()) if r['context'] != 'tests/base']
+    raw.append({'id': 7, 'context': 'tests/base', 'status': 'failure', 'description': 'scope=full ran=3 hands=-'})
+    found = decide(
+        work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(raw),
+        reviewed=status_gate(github_posted), capped=_CAPPED,
+    )  # fmt: skip
+    assert not found.ready
+    assert any(one.startswith('its test parts: ') for one in found.missing), found.missing
+    assert not any(one.startswith('its review: ') for one in found.missing), found.missing
+
+
+def test_a_blocking_review_not_capped_still_blocks(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same blocking review with no cap reached waits on the review, unwarned."""
+    work, head = _work(tmp_path)
+    raw = [
+        {**r, 'status': 'failure', 'description': 'review round 2: 1 blocking'} if r['context'] == 'tests/review' else r
+        for r in _green()
+    ]
+    for statuses in (raw, _capped_review(_green())):  # a status saying "capped" is no waiver: only the ledger is
+        found = decide(
+            work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(statuses),
+            reviewed=status_gate(github_posted),
+        )  # fmt: skip
+        assert any(one.startswith('its review: ') for one in found.missing), found.missing
+        assert not found.unreviewed
+        assert 'Unreviewed' not in found.message

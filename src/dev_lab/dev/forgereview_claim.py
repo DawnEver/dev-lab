@@ -47,9 +47,10 @@ RELEASED: Final = 'released by'
 #: not the head, so the head stays claimable -- by a capable host, or by this one once it is fixed.
 HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 
-#: What a ``pending`` status opens with when the PR's review cap holds it (:mod:`dev_lab.dev.reviewbudget`): the
-#: merge waits, and the head stays claimable so a raised cap or a new month is read on the next tick.
-CAPPED: Final = 'review capped, merge waits:'
+#: What a ``pending`` status opens with when the PR's review cap stops its review (:mod:`dev_lab.dev.reviewbudget`):
+#: the merge goes on WARNED (:mod:`dev_lab.dev.reviewcap`), and the head stays claimable so a raised cap or a new
+#: month is read on the next tick.
+CAPPED: Final = 'review capped, merges unreviewed:'
 
 #: REVIEW IS THE LAST GATE (user ruling 2026-11-05): the merge decision (:func:`dev_lab.dev.reviewturn.review_turn`)
 #: posts these two ``pending`` statuses, and nothing else calls a head's review. WAITS: another merge condition is

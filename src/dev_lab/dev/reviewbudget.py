@@ -15,7 +15,8 @@ THE MONTH BOUNDS EVERY CAP (:func:`gate`). A PR's cap -- fitted, or raised by th
 the month has left. Below :data:`DEGRADE_BELOW` of the budget left, a round DEGRADES before anything stops: one
 round per PR (:data:`DEGRADED_ROUNDS`) on the cheaper :data:`DEGRADED_MODEL`. With nothing left, nothing runs.
 
-A REACHED CAP WAITS, NAMED. A PR at its round cap or its dollar cap is neither reviewed again nor passed: its
+A REACHED CAP STOPS THE REVIEW, NAMED -- NEVER THE MERGE (user ruling 2026-11-05, :mod:`dev_lab.dev.reviewcap`).
+A PR at its round cap or its dollar cap is neither reviewed again nor passed: it merges WARNED, and its
 review status is ``pending`` saying which cap (``budget reached: <spent>/<cap> USD``, ``round cap reached: r/R``)
 and the remedy -- split the PR, or the integrator raises its cap with a recorded reason (:data:`RAISE_DOOR`, a
 trusted ``review-cap`` comment, :func:`raised_of`).

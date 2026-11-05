@@ -305,8 +305,8 @@ setup = [
 # non-default `review` group): dev-lab calls the method, so its lock says which one runs -- never a second pin, never
 # a floating branch (dev-lab #5 took whatever was current that minute). So every job runs `door` before `method`.
 # EVERY PACKAGE IN THE METHOD'S ENVIRONMENT IS AI-LAB'S LOCK (2026-11-05: ai-lab pinned, its lab-commons resolved
-# to the integrate/main tip, and `cannot import API_KEY_TASKS` failed every review family-wide): the step exports
-# ai-lab's own uv.lock at that commit, --frozen, and installs it and ai-lab --no-deps, so nothing resolves past it.
+# to the integrate/main tip, and a lab-commons name it imported was gone, failing every review family-wide): the step
+# exports ai-lab's own uv.lock at that commit, --frozen, and installs it and ai-lab --no-deps, so nothing resolves past it.
 # ai-lab reads keys from the git
 # credential store ONLY (dev-lab #5: every reviewer `unsupported` with the secret set), so the key is stored for the
 # review task in an in-memory credential cache, on stdin; with no secret (a fork PR) nothing is stored.

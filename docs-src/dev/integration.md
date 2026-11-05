@@ -185,6 +185,19 @@ not add is dropped (no moving goalposts). Past `max_rounds` (family default 3, `
 no command runs: the open blocking findings are re-checked alone and the non-blocking ones move to ONE follow-up
 issue. Each round's comment records its ledger (a hidden `review-ledger` line), which the next round starts from.
 
+**A capped review warns and merges** (`dev_lab.dev.reviewcap`, user ruling 2026-11-05). A review that reached a
+cap -- the trusted ledger's round at the base's `max_rounds` (or a trusted raise's), or the reviewing host's
+`review-capped` record of its dollar or monthly budget -- has the review condition alone waived at the merge, open
+findings (security ones included) named: the `tests/security` status, tests, conflicts, the audit, messages and
+draft still hold. `tests/review` is never posted `success` for it (it stays `pending` `review capped, merges
+unreviewed: ...`) and is not a required context (`forgeprotect.required_contexts`: the merge decision enforces
+the review). The merge commit carries `Unreviewed: review capped at N rounds` or `Unreviewed: review budget
+reached: <spent>/<cap> USD`, then `; open findings: <ids>`; `tests/merge-ready` and the integration comment say
+`WARNED`, and the merging job comments it on the PR. The waiver is read from the PR's trusted comments, never from
+a status description. **Only an internal PR auto-merges** (`forgemerge.external`): a fork's head, or an author the
+forge records without write permission (`Client.can_write`, the one trust test cap raises use), is tested and
+reviewed but never merged by the forge -- `tests/merge-ready` stays `pending` `external PR: a maintainer merges it`.
+
 **What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
 slice, not whether a head is read at all:
 
@@ -213,7 +226,7 @@ command), and the forge's re-run releases it. A second tick on the same head run
 <host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
-through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
+through the same method (takeover chain: the task's API keys, then a ccc session, then a ccds session).
 
 It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
 integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the

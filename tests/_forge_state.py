@@ -51,7 +51,7 @@ class StateForge(Client):
         self.private: bool | None = True  # the repository's visibility, as the forge's `private` flag answers it
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         #: ``{login: repository permission}`` as the forge records it; an absent login reads ``read``.
-        self.permissions: dict[str, str] = {}
+        self.permissions: dict[str, str] = {'a': 'write'}  # the default PR author is a maintainer: internal
         self._next_comment = 1000
         #: The forge's clock, the ``Date`` of every answer; an issue written is updated at it.
         self.now_http = NOW_HTTP
@@ -117,7 +117,9 @@ class StateForge(Client):
         """Issues and pulls share one number space, as on both forges."""
         return max([*self.issues_by_number, *self.pulls], default=0) + 1
 
-    def add_pull(self, head: str, base: str, *, title: str = 't', body: str = '', sha: str = '') -> int:
+    def add_pull(
+        self, head: str, base: str, *, title: str = 't', body: str = '', sha: str = '', fork: bool = False
+    ) -> int:
         number = self._number()
         self.pulls[number] = {
             'number': number,
@@ -127,8 +129,8 @@ class StateForge(Client):
             'body': body,
             'html_url': f'https://{self.forge.host}/o/r/pulls/{number}',
             'user': {'login': 'a'},
-            'head': {'ref': head, 'sha': sha},
-            'base': {'ref': base},
+            'head': {'ref': head, 'sha': sha, 'repo': {'full_name': 'fork/r' if fork else 'o/r'}},
+            'base': {'ref': base, 'repo': {'full_name': 'o/r'}},
         }
         self.comments[number] = []
         return number

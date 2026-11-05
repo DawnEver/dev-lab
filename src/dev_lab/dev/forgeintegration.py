@@ -58,7 +58,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import CI_MERGER, ci_merges, judged, merge
+from dev_lab.dev.forgemerge import CI_MERGER, EXTERNAL, ci_merges, judged, merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -253,10 +253,16 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     turn = review_turn(child.client, child.pr, child.head, found)  # the review is asked for here too: its last gate
     if found.ready and ci_merges(root):
         line, summary = f'ready: the {CI_MERGER} job merges it', f'{said.summary}; ready for the {CI_MERGER} job'
+        if found.unreviewed:
+            line = f'{line}, WARNED -- {found.unreviewed}'
     elif found.ready:
         ephemeral = declared_branchset(root).is_ephemeral(child.branch)
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
         line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED
+        if found.unreviewed:
+            line = f'{line} WITHOUT a passing review -- {found.unreviewed}'
+    elif EXTERNAL in found.missing:  # never merged by the forge: the rest is a maintainer's to read
+        line, summary = EXTERNAL, f'{said.summary}; {EXTERNAL}'
     else:
         line = 'the forge merges it once it has: ' + '; '.join(found.missing) + turn
         summary = f'{said.summary}; auto-merge waits'
