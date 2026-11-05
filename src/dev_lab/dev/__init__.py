@@ -167,6 +167,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS
   of no revoked box, cited on a sha through the status door.
+* :mod:`dev_lab.dev.verdictenv` -- the env key a verdict cites: every installed distribution but the project
+  under test, whose VCS version moves with every commit while its tree already names the code.
 * :mod:`dev_lab.dev.workstationrevoke` -- strikes a contradicted spot check leaves against a box; enough revoke it.
 * :mod:`dev_lab.dev.commandpart` -- a repo whose tests are not pytest (``npm test``) posts its part as ONE
   cell, the command, judged by its exit code.
@@ -403,6 +405,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
+* :mod:`dev_lab.dev.reviewruntime` -- the host's ai-lab review runtime, built from the commit dev-lab's lock pins.
 * :mod:`dev_lab.dev.metrics` -- the toolchain's baseline: refusals and hand actions, one JSONL per kind (record).
 * :mod:`dev_lab.dev.metrics_compute` -- the plan's figures from the recorded lines, forge pulls and git landings.
 * :mod:`dev_lab.dev.metrics_report` -- the family's metrics over one window, and the metrics CLI.

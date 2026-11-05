@@ -22,15 +22,17 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
   (:mod:`dev_lab.dev.workstationverdict`), may still settle it.
 
 A PART FED BY A SECRET (user decision 2026-10-30). A part whose resource no hosted runner has can still run
-hosted when repository secrets supply it; the repo declares that ONCE, in its pyproject::
+hosted when repository secrets supply it: the ai-lab TASKS whose key bundles it needs (:mod:`dev_lab.dev.taskkeys`,
+2026-11-05). The repo declares that ONCE, in its pyproject::
 
     [tool.dev_lab.parts]
-    hosted = { live = { secrets = ["ANTHROPIC_API_KEY"], setup = "python -m ai_lab.auth login --from-file -" } }
+    hosted = { live = { tasks = ["live"] } }
 
-It gets ONE linux row, on a full run only (as macos, D84), carrying its secrets' NAMES
-(:func:`hosted_parts`). The generic matrix job never runs it: :func:`hosted_jobs` renders it its own job, in which
-ONE setup step alone has the secrets in its environment and reads them on stdin as ``NAME=value`` lines -- never
-argv, never echoed -- before the part is produced. The render names a secret; it never holds a value.
+It gets ONE linux row, on a full run only (as macos, D84), carrying its bundles' secret NAMES
+(:func:`hosted_parts`, each :func:`~dev_lab.dev.taskkeys.secret_name`). The generic matrix job never runs it:
+:func:`hosted_jobs` renders it its own job, in which ONE setup step alone has the bundles in its environment and
+pipes each to ai-lab's loader on stdin -- never argv, never echoed -- before the part is produced. The render names
+a secret; it never holds a value, and it names no provider (ai-lab's routes say which a task uses).
 No pull request has its row, so no pull request's merge gate waits on it (:func:`pull_request_waived`); the full
 run produces it, and ``integrate promote`` reads it there.
 """
@@ -40,7 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -61,6 +63,7 @@ from dev_lab.dev.forgework import client_for
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row
 from dev_lab.dev.platformparts import UndeclaredPart, part_context, producer_argv
 from dev_lab.dev.producer import producing
+from dev_lab.dev.taskkeys import loader, secret_name
 from dev_lab.dev.unproduced import unproduced, unproduced_parts
 
 if TYPE_CHECKING:
@@ -96,30 +99,50 @@ ABSENT: Final = 'absent: no job settled this part'
 
 _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 
-#: A secret's name: all that ``${{ secrets.<NAME> }}`` and ``"$<NAME>"`` carry into a rendered workflow.
-_SECRET_NAME: Final = re.compile(r'[A-Z][A-Z0-9_]*')
-
 #: The ``if`` of a hosted part's job: a FULL run's (the parts job's event is not the PR's set, as macos, D84;
 #: a merge's smoke takes the PR's set, D48-1A), never one main already holds (an empty matrix).
 _FULL_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
 
 
+#: The hosted job's key store: ai-lab reads keys from the git credential store ONLY, so the job keeps an in-memory
+#: one of its own under RUNNER_TEMP (F-83bc8b74b803). Its lifetime is the review's rule (ci_base.toml, 30 min):
+#: no hosted part declares a timeout, and the one this repo hosts measured 483 s, so 1800 s covers a part with room.
+_KEY_SOCKET: Final = '--socket=$RUNNER_TEMP/git-credential-cache/socket'
+_MEMORY_STORE: Final = f'git config --global credential.helper "cache --timeout=1800 {_KEY_SOCKET}"'
+
+#: The teardown that ends the store with the part, run on success AND failure (F-dc28c7ef66b4): the daemon would
+#: otherwise hold the keys past the part until its timeout.
+_FORGET_KEYS: Final = {
+    'name': 'Forget the key bundles',
+    'if': 'always()',
+    'run': f'git credential-cache {_KEY_SOCKET} exit || true',
+}
+
+
 @dataclass(frozen=True)
 class Hosted:
-    """A part run hosted because secrets supply its resource: their names, and the command taking them on stdin."""
+    """A part run hosted because secrets supply its resource: the ai-lab tasks whose key bundles it loads."""
 
-    secrets: tuple[str, ...]
-    setup: str
+    tasks: tuple[str, ...]
+
+    @property
+    def secrets(self) -> tuple[str, ...]:
+        """The secret holding each task's bundle, in task order."""
+        return tuple(secret_name(task) for task in self.tasks)
 
 
 def _malformed(name: str, entry: object, produced: set[str]) -> bool:
-    """Whether hosted *entry* of part *name* is not a produced resource with named secrets and a setup command."""
-    if name not in produced or not isinstance(entry, dict):
+    """Whether hosted *entry* of part *name* is not a produced resource naming exactly its ai-lab ``tasks``."""
+    if name not in produced or not isinstance(entry, dict) or set(entry) != {'tasks'}:
         return True
-    secrets, setup = entry.get('secrets'), entry.get('setup')
-    named = isinstance(secrets, list) and bool(secrets)
-    named = named and all(isinstance(one, str) and _SECRET_NAME.fullmatch(one) for one in secrets)
-    return not named or not isinstance(setup, str) or not setup.strip()
+    tasks = entry['tasks']
+    if not isinstance(tasks, list) or not tasks or not all(isinstance(one, str) for one in tasks):
+        return True
+    try:
+        [secret_name(task) for task in tasks]
+    except ValueError:
+        return True
+    return False
 
 
 def hosted_parts(text: str) -> dict[str, Hosted]:
@@ -131,10 +154,10 @@ def hosted_parts(text: str) -> dict[str, Hosted]:
     if not isinstance(value, dict) or any(_malformed(name, entry, produced) for name, entry in value.items()):
         msg = (
             f'[tool.dev_lab.parts] hosted = {value!r}: each a produced resource of {sorted(resources)} '
-            '= { secrets = ["UPPER_NAME", ...], setup = "<command reading NAME=value lines on stdin>" }'
+            '= { tasks = ["<ai-lab task>", ...] }'
         )
         raise UndeclaredPart(msg)
-    return {name: Hosted(tuple(entry['secrets']), entry['setup']) for name, entry in value.items()}
+    return {name: Hosted(tuple(entry['tasks'])) for name, entry in value.items()}
 
 
 def pull_request_waived(root: Path, sha: str) -> frozenset[str]:
@@ -153,7 +176,8 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     """*workflow* with one ``part-<name>`` job per *declared* part, cut from its matrix ``part`` job. PURE.
 
     The job is the ``part`` job at one part: push-only, on linux, its setup step inserted before the produce step
-    with the secrets in THAT step's environment only; ``absent-parts`` waits for it. A workflow without the
+    with the bundles in THAT step's environment only, and an ``always()`` step after it stopping their cache, so
+    a part that fails forgets them as one that passes; ``absent-parts`` waits for it. A workflow without the
     ``part`` job, or nothing declared, is returned as is.
     """
     jobs = workflow.get('jobs', {})
@@ -163,13 +187,16 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     added = {}
     for name, part in sorted(declared.items()):
         one = json.loads(template.replace('${{ matrix.part }}', name))
-        values = ' '.join(f'{secret} "${secret}"' for secret in part.secrets)
+        loads = (
+            f"""printf '%s' "${secret_name(task)}" | uv run --no-sync {shlex.join(loader('python', task))}"""
+            for task in part.tasks
+        )
         setup = {
-            'name': f'Set up tests/{name} from its secrets',
-            'run': f"printf '%s=%s\\n' {values} | {{ {part.setup}; }}",
+            'name': f'Set up tests/{name} from its key bundles',
+            'run': ' && '.join((_MEMORY_STORE, *loads)),
             'env': {secret: f'${{{{ secrets.{secret} }}}}' for secret in part.secrets},
         }
-        steps = [*one['steps'][:-1], setup, one['steps'][-1]]
+        steps = [*one['steps'][:-1], setup, one['steps'][-1], _FORGET_KEYS]
         added[f'part-{name}'] = {**one, 'if': _FULL_ONLY, 'runs-on': HOSTED_RUNNERS['linux'], 'steps': steps}
     out = dict(jobs)
     if 'absent-parts' in out:

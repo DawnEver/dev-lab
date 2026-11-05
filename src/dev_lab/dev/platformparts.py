@@ -21,7 +21,9 @@ judged like any outcome and never counted in ``ran``.
 DISCOVERED (:func:`derived`): ``base`` is always wanted, and so is every part a posted part hands to. A
 part CARRIED to a reach-equivalent descendant (:mod:`dev_lab.dev.forgecarry`) ends ``carried from
 <sha12>: docs-only`` and is a part like any other: the sha it was judged at is named,
-never hidden. The full per-id outcome stays in the run record, attached on the forge and linked as the
+never hidden. So is a part CITED from a stored record of the SAME tree (:mod:`dev_lab.dev.verdictstore`): it
+ends ``cited from <sha12>: same tree``, nothing ran for it, and its ``target_url`` is that record.
+The full per-id outcome stays in the run record, attached on the forge and linked as the
 status's ``target_url`` (:mod:`dev_lab.dev.forgerecords`). A ``pending`` status in the same context
 is a CLAIM on the part (:mod:`dev_lab.dev.forgetick`), not a part.
 
@@ -94,7 +96,7 @@ from dev_lab.dev.family import declared_in
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
-from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for
+from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
 from dev_lab.dev.producer import ProducerExit
 
@@ -147,7 +149,8 @@ _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
     r'hands=(?P<hands>-|[a-z0-9_+]+:\d+(?:,[a-z0-9_+]+:\d+)*)'
     r'(?: kept=(?P<kept>[0-9a-f]{12}:\d+(?:,[0-9a-f]{12}:\d+)*))?'
-    r'(?: carried from (?P<carried>[0-9a-f]{12}): (?:docs-only|every outcome carried by footprint))?$'
+    r'(?: carried from (?P<carried>[0-9a-f]{12}): (?:docs-only|every outcome carried by footprint))?'
+    r'(?: cited from (?P<cited>[0-9a-f]{12}): same tree)?$'
 )
 
 #: The remedy a missing part names: a host whose resources admit it claims it and runs :func:`producer_argv`.
@@ -304,6 +307,7 @@ class Part:
     hands: dict[str, int] = field(default_factory=dict)
     carried: str = ''  # the sha12 this verdict was judged at, when it is carried (dev_lab.dev.forgecarry)
     kept: dict[str, int] = field(default_factory=dict)  # outcomes carried in, per sha12 they ran at; never in ran
+    cited: str = ''  # the sha12 whose stored record of the SAME tree this verdict cites (dev_lab.dev.verdictstore)
 
     @property
     def state(self) -> str:
@@ -315,7 +319,8 @@ class Part:
         hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
         kept = ' kept=' + ','.join(f'{sha}:{count}' for sha, count in sorted(self.kept.items())) if self.kept else ''
         carried = f' {CARRIED_FROM} {self.carried}: {DOCS_ONLY}' if self.carried else ''
-        return f'scope={self.scope} ran={self.ran} hands={hands}{kept}{carried}'
+        cited = f' {CITED_FROM} {self.cited}: {SAME_TREE}' if self.cited else ''
+        return f'scope={self.scope} ran={self.ran} hands={hands}{kept}{carried}{cited}'
 
 
 def part_of(record: Mapping[str, Any]) -> Part:
@@ -385,9 +390,8 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
             ran=int(found['ran']),
             hands={owner: int(count) for owner, count in hands.items()},
             carried=found['carried'] or '',
-            kept={sha: int(n) for sha, n in (one.split(':') for one in found['kept'].split(','))}
-            if found['kept']
-            else {},
+            cited=found['cited'] or '',
+            kept={sha: int(n) for sha, n in (one.split(':') for one in filter(None, (found['kept'] or '').split(',')))},
         )
     return parts, tuple(problems)
 
