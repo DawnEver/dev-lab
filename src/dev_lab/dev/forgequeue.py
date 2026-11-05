@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import functools
+import http.client
 import json
 import os
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -58,13 +61,17 @@ from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import derived, origin_url, part_context
 from dev_lab.dev.unproduced import unproduced_waived
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
 _STALE = '  STALE (no tick published: host down, cron line gone, or its forge credential refused -- see its cron log)'
 
-__all__ = ['forge_queue', 'main', 'render', 'unadmitted', 'view']
+#: The queue's whole forge read, seconds: past it the queue names the call it waited on (NETWORK-RETRY-THEN-REPORT).
+QUEUE_BUDGET_S = 90.0
+
+__all__ = ['QUEUE_BUDGET_S', 'forge_queue', 'main', 'render', 'unadmitted', 'view']
 
 
 def _row(item: Ranked, favoured: Sequence[str] = ()) -> dict[str, Any]:
@@ -82,9 +89,9 @@ def _row(item: Ranked, favoured: Sequence[str] = ()) -> dict[str, Any]:
 
 def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_origin) -> dict[str, Any]:
     """The whole picture as data: ``queue``, ``in_flight``, ``hosts``, ``starved`` (module docstring)."""
+    schedule = load_schedule(root)  # the declared config refuses before any network call
     fetch(root)
     now = forge_now(client)
-    schedule = load_schedule(root)
     cards = read_cards(client)
     ranked, in_flight = forge_queue(root, client, cards, now=now, schedule=schedule)
     repo = repo_name(client)
@@ -203,7 +210,7 @@ def _standing(
 
 def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
     try:
-        needed = needs_of(candidate.platform)
+        needed = needs_of(row_part(candidate.platform))  # a row (``base@windows``) needs what its part needs
     except ValueError as why:
         return str(why)
     unclaimable = unserved(needed, [supplied(card, now) for card in cards])
@@ -276,22 +283,40 @@ def render(view_: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _within(transport: Transport, deadline: float, budget_s: float) -> Transport:
+    """*transport*, each connection's wait cut to what is left before *deadline*, and none opened past it."""
+
+    def opened(host: str, timeout: float) -> http.client.HTTPConnection:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            msg = f'the queue spent its {budget_s:g} s read budget before asking {host}'
+            raise TimeoutError(msg)
+        return transport(host, min(timeout, left))
+
+    return opened
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
     transport: Transport = forge_transport,
-    fetch: Callable[[Path], None] = fetch_origin,
+    fetch: Callable[[Path], None] | None = None,
+    budget_s: float = QUEUE_BUDGET_S,
 ) -> int:
-    """``queue [--json]``; exit 1 when the forge cannot be read."""
+    """``queue [--json]``; exit 1 when the forge cannot be read, or not within *budget_s* -- naming the call.
+
+    *fetch* defaults to :func:`~dev_lab.dev.forge.fetch_origin` bounded by *budget_s* per attempt.
+    """
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge queue', description=__doc__.splitlines()[0])
     parser.add_argument('--json', action='store_true', help='print the whole view as JSON')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     try:
-        built = client_for(root, env=dict(os.environ) if env is None else env, transport=transport)
-        seen = view(root, built, fetch=fetch)
+        bounded = _within(transport, time.monotonic() + budget_s, budget_s)
+        built = client_for(root, env=dict(os.environ) if env is None else env, transport=bounded)
+        seen = view(root, built, fetch=fetch or functools.partial(fetch_origin, timeout=budget_s))
     except (ForgeCallFailed, NoCredential, UnreadableRemote, OSError, ValueError) as failed:
         emit(f'[queue] {failed}', err=True)
         return 1
