@@ -85,20 +85,11 @@ install = "uv sync --frozen --all-extras"
 # The run record's root (dev_lab.dev.platformparts).
 [tool.dev_lab.parts]
 output = "output/logs"
-# User ruling 2026-10-30: the toolchain lives on GitHub and no hosted runner is a workstation, so the
-# workstation-marked tests (codex CLI, installed hooks, the live checkout, host node) run in no part and
-# nothing waits on one (dev_lab.dev.unproduced).
-unproduced = ["workstation"]
 
-# One need vocabulary (lab_commons.hpc.needsets): a test marks the resources it needs, and its part is its
-# need-set -- tests/base and tests/workstation. A host claims a part when its machine file's
-# [capabilities.<name>] give it every one; the cluster's per-sha tree has none. `produce` is the ONE local producer of every part ({part} filled); a cluster part runs
-# from [tool.lab_commons.hpc].
+# One need vocabulary (lab_commons.hpc.needsets): user ruling 2026-11-05, every test completes on a hosted
+# runner, so this repo declares no resource and its one part is tests/base. `produce` is the ONE local
+# producer of every part ({part} filled); a cluster part runs from [tool.lab_commons.hpc].
 [tool.lab_commons.tests]
-resources = ["workstation"]
-# SCARCE-PARTS-BY-REACH (dev_lab.dev.forgescarce): one host serves it, so a PR waits on it only where its
-# diff reaches a workstation test; integration runs it in full.
-scarce = ["workstation"]
 produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 # The tool FLOORS this repo's parts need (D21): `<tool> = {floor = "<version>", reason = "<why>"}`. A
@@ -160,7 +151,6 @@ NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clo
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "workstation: needs a developer workstation -- the live checkout (installed hooks, worktree placement), the host `node` the live agent hook runs on, or the `codex` CLI; the cluster's per-sha tree has none of it. Driving a hook engine or any JS needs NO mark: it runs on the locked Node (dev.jsrun, the `test` extra)",
     "not_applicable: a skip of this test is NOT_APPLICABLE (lab_commons.hpc.pytest_item.judged); any other skip is refused",
 ]
 

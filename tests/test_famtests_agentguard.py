@@ -108,12 +108,6 @@ def _track_everything(root: Path) -> None:
 # the box, and the refusal that is not a skip
 
 
-@pytest.mark.workstation
-def test_node_is_available_here_and_the_refusal_is_not_a_skip() -> None:
-    """The workstation's live hook runs the HOST node: absent, this REDS rather than going quiet."""
-    assert_node_is_available()
-
-
 def test_a_box_planted_without_node_is_refused_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED: the cluster compute node's PATH, which carries no ``node`` -- named, never quiet."""
     monkeypatch.setenv('PATH', str(tmp_path))

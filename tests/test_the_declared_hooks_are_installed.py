@@ -8,12 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from dev_lab.dev.famtests.hookinstall import (
     assert_a_foreign_hook_is_not_installed,
-    assert_declared_hooks_are_installed,
-    assert_hooks_dir_is_the_one_git_consults,
     assert_stages_are_declared,
     assert_the_guard_can_go_both_ways,
 )
@@ -27,16 +23,6 @@ _DECLARED_STAGES = frozenset({'commit-msg', 'pre-commit', 'pre-push', 'post-comm
 
 def test_the_declared_set_is_what_this_repo_pinned() -> None:
     assert_stages_are_declared(root=_ROOT, declared_stages=_DECLARED_STAGES)
-
-
-@pytest.mark.workstation
-def test_every_hook_this_repository_declares_is_installed() -> None:
-    assert_declared_hooks_are_installed(root=_ROOT)
-
-
-@pytest.mark.workstation
-def test_the_hooks_directory_is_the_one_git_will_consult() -> None:
-    assert_hooks_dir_is_the_one_git_consults(root=_ROOT)
 
 
 def test_this_guard_can_go_both_ways(tmp_path: Path) -> None:

@@ -123,27 +123,6 @@ def test_no_rendering_allows_a_raw_destructive_verb_and_the_scan_sees_one() -> N
     assert promises_raw('Bash(git push origin --delete x)') == ('--delete',)
 
 
-@pytest.mark.workstation  # the codex CLI is workstation kit: only a workstation host runs this test's part
-def test_the_real_codex_engine_allows_a_door_and_not_a_raw_verb(tmp_path: Path) -> None:
-    rules = tmp_path / 'doors.rules'
-    rules.write_text(codex_rules(_SCRIPTS), encoding='utf-8')
-    codex = shutil.which('codex') or 'codex'
-
-    def decision(*argv: str) -> str:
-        done = subprocess.run(
-            [codex, 'execpolicy', 'check', '--rules', str(rules), *argv],
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            check=False,
-            timeout=120,
-        )
-        return done.stdout
-
-    assert '"decision":"allow"' in decision('.venv/bin/python', '-m', 'dev_lab.dev.worktrees', '--prune')
-    assert '"decision":"allow"' not in decision('git', 'push', 'origin', '--delete', 'x')
-
-
 def test_script_doors_are_the_tracked_entry_points(tmp_path: Path) -> None:
     work = plant_checkout(tmp_path, trunk='main').work
     (work / 'scripts' / 'hooks').mkdir(parents=True)
