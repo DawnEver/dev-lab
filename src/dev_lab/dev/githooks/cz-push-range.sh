@@ -141,14 +141,9 @@ for i in "${!RANGES[@]}"; do
   if [ -z "${MESSAGE_FILE}" ]; then
     MESSAGE_FILE="$(mktemp)"
   fi
-  while read -r sha; do
-    case "${EXEMPT}" in
-      *" ${sha} "*) echo "[cz-push-range] exempt ${sha} (LAB_CZ_EXEMPT)" ;;
-      *)
-        git log -1 --format=%B "${sha}" > "${MESSAGE_FILE}"
-        bash "${HERE}/with-venv.sh" commitizen check --commit-msg-file "${MESSAGE_FILE}" || status=1
-        ;;
-    esac
-  done < <(git rev-list --reverse "${OWN[@]}")
+  # Selection and exemptions remain Git/shell-owned data, never a long Windows argument list.
+  # One interpreter calls Commitizen's public CLI for each message, not one interpreter per SHA.
+  { printf '%s\n' "${EXEMPT}"; git rev-list --reverse "${OWN[@]}"; } |
+    bash "${HERE}/with-venv.sh" dev_lab.dev.czbatch "${MESSAGE_FILE}" || status=1
 done
 exit "${status}"

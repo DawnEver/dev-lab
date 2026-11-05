@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -465,7 +466,17 @@ def _plant_judging_commitizen(root: Path, tmp_path: Path) -> Path:
     (where / 'commitizen').mkdir(parents=True)
     argv_log = tmp_path / 'cz-argv.log'
     (where / 'commitizen' / '__init__.py').write_text('', encoding='utf-8')
-    (where / 'commitizen' / '__main__.py').write_text(f'LOG = r"{argv_log}"\n' + _JUDGING_CZ, encoding='utf-8')
+    (where / 'commitizen' / '__main__.py').write_text('from .cli import main\nmain()\n', encoding='utf-8')
+    (where / 'commitizen' / 'cli.py').write_text(
+        f'LOG = r"{argv_log}"\ndef main():\n'
+        + textwrap.indent(_JUDGING_CZ, '    ')
+        + '\ndef commitizen_excepthook(*args):\n    raise AssertionError(args)\n',
+        encoding='utf-8',
+    )
+    (where / 'commitizen' / 'exceptions.py').write_text(
+        'class CommitizenException(Exception):\n    pass\n',
+        encoding='utf-8',
+    )
     _plant_venv(root, pythonpath=where)
     return argv_log
 
