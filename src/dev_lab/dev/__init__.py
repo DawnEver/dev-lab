@@ -382,6 +382,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-judged each round.
 * :mod:`dev_lab.dev.forgereview_summary` -- a round's opening: what the PR does, and what changed and why.
 * :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in rounds and USD inside the family's month, fitted.
+* :mod:`dev_lab.dev.reviewcap` -- a review past its round cap is waived at the merge, warned and recorded, never passed.
 * :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose`` records a claim; ``adjudicate`` rules on it.
 * :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
   by an independent reviewer, never the head's author session.

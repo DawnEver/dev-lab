@@ -163,6 +163,13 @@ not add is dropped (no moving goalposts). Past `max_rounds` (family default 3, `
 no command runs: the open blocking findings are re-checked alone and the non-blocking ones move to ONE follow-up
 issue. Each round's comment records its ledger (a hidden `review-ledger` line), which the next round starts from.
 
+**A capped review warns and merges** (`dev_lab.dev.reviewcap`, user ruling 2026-11-05). Once the trusted ledger's
+round reaches the base's `max_rounds` (or a trusted raise's), the review condition alone is waived at the merge:
+tests, security, conflicts, the audit, messages and draft still hold. `tests/review` is never posted `success` for
+it; the merge commit carries `Unreviewed: review capped at N rounds; open findings: <ids>`, `tests/merge-ready`
+and the integration comment say `WARNED`, and the merging job comments it on the PR. The waiver is read from the
+PR's trusted comments, never from a status description. The dollar cap is not waived: it still waits, named.
+
 **What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
 slice, not whether a head is read at all:
 

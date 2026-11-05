@@ -251,10 +251,14 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
     if found.ready and ci_merges(root):
         line, summary = f'ready: the {CI_MERGER} job merges it', f'{said.summary}; ready for the {CI_MERGER} job'
+        if found.unreviewed:
+            line = f'{line}, WARNED -- {found.unreviewed}'
     elif found.ready:
         ephemeral = declared_branchset(root).is_ephemeral(child.branch)
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
         line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED
+        if found.unreviewed:
+            line = f'{line} WITHOUT a passing review -- {found.unreviewed}'
     else:
         line = 'the forge merges it once it has: ' + '; '.join(found.missing)
         summary = f'{said.summary}; auto-merge waits'
