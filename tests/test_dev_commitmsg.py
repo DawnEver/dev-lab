@@ -114,7 +114,9 @@ _GIT = shutil.which('git') or 'git'
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run([_GIT, *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(
+        [_GIT, *args], cwd=root, check=True, capture_output=True, text=True, encoding='utf-8'
+    ).stdout.strip()
 
 
 def test_a_rev_range_judges_every_commit_and_names_the_bad_one(

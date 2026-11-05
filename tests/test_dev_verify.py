@@ -1634,6 +1634,8 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
         env={**os.environ, **verifysteps.coverage_env(log)},
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
     )
     assert done.returncode == 0, done.stdout + done.stderr

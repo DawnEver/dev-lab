@@ -411,6 +411,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgedraft` -- DRAFT-UNTIL-READY: ``pr create`` opens a draft; ``pr ready|draft <N>``; idle alarm.
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
+* :mod:`dev_lab.dev.commitmsg` -- the commit-msg and push-range check: `type(scope)!: subject`, owned once.
 * :mod:`dev_lab.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`dev_lab.dev.forgecli` -- the ``python -m dev_lab.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`dev_lab.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
