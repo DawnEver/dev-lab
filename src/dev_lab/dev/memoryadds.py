@@ -3,13 +3,15 @@
 THE RULE (user rulings 2026-10-31, the four-layer plan). A memory entry is immutable once written: a
 correction is a NEW entry naming the old one in ``corrects:``, and a consolidation is a NEW entry naming
 its sources in ``merged_from:``. So a change touching ``**/.claude/memory/**`` may only ADD a file.
-Two shapes are not edits:
+Three shapes are not narrative edits:
 
 * a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
   closed task becomes history, and it is the one rename into memory;
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
   (:data:`VOLATILE_FIELDS`) a reader used to rewrite on every read. A change whose ONLY difference is
-  those lines is that migration and nothing else.
+  those lines is that migration and nothing else;
+* rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
+  rewrite task text or turn narrative memory into a task list. Both versions must match the format.
 
 A MERGED ENTRY CITES. An added entry with ``merged_from:`` names sources that are memory files of its
 OWN scope existing at the base the change is judged against, and every body paragraph names a source
@@ -28,6 +30,7 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -54,6 +57,8 @@ _FRONTMATTER = re.compile(r'\A---\n(.*?)\n---(?:\n|\Z)', re.DOTALL)
 _MERGED_FROM = re.compile(r'^merged_from:\s*(.*)$', re.MULTILINE)
 _VOLATILE = re.compile(rf'^(?:{"|".join(VOLATILE_FIELDS)}):')
 _CITATION = re.compile(r'[\w./-]*[\w-]\.(?:md|py|rs|mjs|js|ts|toml|json|txt|yaml|yml|csv)\b')
+_MANUAL = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
+_MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
 
 class MemoryAddsError(RuntimeError):
@@ -92,6 +97,47 @@ def _only_volatile_stripped(old: str, new: str) -> bool:
         return False
     head = '\n'.join(line for line in match.group(1).splitlines() if not _VOLATILE.match(line))
     return f'---\n{head}\n---\n' + old[match.end() :] == new
+
+
+def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
+    """Recognize rem task-engine's dedicated list, not a filename exemption for prose."""
+    match = _MANUAL.search(path)
+    if match is None:
+        return None
+    day = '-'.join(match.groups())
+    try:
+        date.fromisoformat(day)
+    except ValueError:
+        return None
+    header = f'---\nname: manual-{day}\ndescription: Manual tasks created on {day}\nmetadata:\n  type: project\n---\n'
+    text = _lf(text)
+    if not text.startswith(header):
+        return None
+    lines = [line for line in text[len(header) :].splitlines() if line]
+    if len(lines) % 2:
+        return None
+    rows = []
+    ids: set[str] = set()
+    for task, module in zip(lines[::2], lines[1::2], strict=True):
+        row = _MANUAL_ROW.fullmatch(task)
+        if (
+            row is None
+            or row[2] in ids
+            or row[3] != day.replace('-', '')
+            or row[4] != day
+            or re.fullmatch(r' {6}module: \S.*', module) is None
+        ):
+            return None
+        ids.add(row[2])
+        rows.append((row[1], task[5:], module))
+    return rows
+
+
+def _only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
+    before, after = _manual_rows(path, old), _manual_rows(path, new)
+    if before is None or after is None or len(after) < len(before):
+        return False
+    return all(a[1:] == b[1:] for a, b in zip(before, after[: len(before)], strict=True))
 
 
 def merged_entry_problems(path: str, text: str, exists: Callable[[str], bool] | None = None) -> tuple[str, ...]:
@@ -146,7 +192,7 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
         elif status == 'M' and _is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
-            if not _only_volatile_stripped(before, after):
+            if not (_only_volatile_stripped(before, after) or _only_manual_tasks_updated(old, before, after)):
                 out.append(f'{old}: a memory entry is immutable -- write a new entry with `corrects:` instead')
         elif status in 'DRT' and _is_memory(old):
             out.append(f'{old}: a memory entry is never deleted or moved ({status})')
