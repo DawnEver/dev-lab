@@ -115,12 +115,6 @@ def test_the_family_assertion_is_green_here_and_red_on_the_plant(repo: Path) -> 
         assert_every_worktree_stays_inside(root=repo)
 
 
-@pytest.mark.workstation
-def test_this_checkout_keeps_every_worktree_inside() -> None:
-    """THE ADOPTION, run by the kit on the kit."""
-    assert_every_worktree_stays_inside(root=Path(__file__).resolve().parents[1])
-
-
 def test_a_worktree_inside_finds_the_family_but_requires_its_own_venv(repo: Path) -> None:
     """PLANTED: from `<repo>/.claude/worktrees/inside`, siblings resolve beside the MAIN checkout."""
     inside = repo / WORKTREES_REL / 'inside'

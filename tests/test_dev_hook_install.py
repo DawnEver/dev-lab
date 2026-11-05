@@ -16,6 +16,7 @@ import pytest
 from dev_lab.dev import hook_install
 from dev_lab.dev.famtests.hookinstall import (
     assert_declared_hooks_are_installed,
+    assert_hooks_dir_is_the_one_git_consults,
     assert_stages_are_declared,
 )
 from dev_lab.dev.hook_install import (
@@ -68,6 +69,15 @@ def test_a_missing_shim_is_reported_absent_and_the_checkout_unprotected(repo: Pa
     assert INSTALL_COMMAND in capsys.readouterr().out
     with pytest.raises(AssertionError, match='not live'):
         assert_declared_hooks_are_installed(root=repo)
+
+
+def test_the_hooks_directory_is_the_one_git_names_and_a_missing_one_reds(repo: Path) -> None:
+    """Green once installed; PLANTED CONTROL: a hooksPath naming no directory reds by name."""
+    install(repo)
+    assert_hooks_dir_is_the_one_git_consults(root=repo)
+    subprocess.run([_GIT, '-C', str(repo), 'config', 'core.hooksPath', 'nowhere'], check=True, capture_output=True)
+    with pytest.raises(AssertionError, match='not a directory'):
+        assert_hooks_dir_is_the_one_git_consults(root=repo)
 
 
 def test_install_writes_one_shim_per_declared_stage_and_is_idempotent(repo: Path) -> None:
