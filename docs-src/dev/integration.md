@@ -54,13 +54,15 @@ ephemeral = ['pr/*']
 pr_merges_since = "<the integrate/main sha the rule starts after>"
 ```
 
-## Auto-sync: the forge syncs a behind PR head
+## Auto-sync: the forge syncs a PR head whose lock alone conflicts
 
-User ruling 2026-10-21: integration is automatic. Wherever the forge merges PRs, each `forge serve` tick (the integration step,
-`dev_lab.dev.forgeautosync`) takes every open PR into integration that it did not merge and whose head does
-not contain `origin/<integration>`, and merges integration INTO the head in a worktree under the git directory:
+User ruling 2026-10-21: integration is automatic. A head that is merely BEHIND is left alone: the merge decision
+trial-merges it against the current integration tip, and a sync would only restart every `tests/<part>` (user
+report 2026-11-06: syncing every behind head on every integration move kept every PR's tests from finishing).
+Wherever the forge merges PRs, each `forge serve` tick (the integration step, `dev_lab.dev.forgeautosync`) takes
+every open PR into integration that it did not merge and whose trial merge conflicts in `uv.lock` alone, and merges integration INTO the head in a worktree under the git directory:
 a merge commit (`Merged-Branch: <integration>`, first parent the head), never a rebase or a force, pushed under
-the head's own name. A lock left stale or conflicted by the merge is relocked inside the merge commit through
+the head's own name. The conflicted lock is relocked inside the merge commit through
 the dependency door. The new head gets its parts by the normal path, then merges like any other PR.
 
 - Once per integration tip per head: each outcome is an `integration/sync` status on the head naming the tip,
