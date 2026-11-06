@@ -327,13 +327,33 @@ class Client:
         """Whether the forge records *login* with write permission on this repository (refused or unknown: no).
 
         ``GET .../collaborators/{login}/permission`` on both forges; the writing permissions are the backend's.
+        Where the backend names a :attr:`~Backend.writer_unit` (Gitea), a team granting write on that unit and
+        listing *login* as a member counts too: Gitea answers ``none`` for a login whose write comes from an org
+        team (2026-11-06: every internal motronics PR read as external, so nothing auto-merged).
         """
-        path = f'{self.repo}/collaborators/{urllib.parse.quote(login, safe="")}/permission'
+        quoted = urllib.parse.quote(login, safe='')
+        writers, unit = self.backend.writer_permissions, self.backend.writer_unit
         try:
-            answer = self.call('GET', path)
+            answer = self.call('GET', f'{self.repo}/collaborators/{quoted}/permission')
+            if isinstance(answer, dict) and answer.get('permission') in writers:
+                return True
+            teams = self.call('GET', f'{self.repo}/teams') if unit else []
         except ForgeCallFailed:
             return False
-        return isinstance(answer, dict) and answer.get('permission') in self.backend.writer_permissions
+        granting = (
+            team['id']
+            for team in teams if isinstance(team, dict)
+            if team.get('permission') in writers or (team.get('units_map') or {}).get(unit) in writers
+        )  # fmt: skip
+        return any(self._team_member(team, quoted) for team in granting)
+
+    def _team_member(self, team: int, quoted: str) -> bool:
+        """Whether team *team* lists the (quoted) login: Gitea answers the user, else 404 (refused: no)."""
+        try:
+            self.call('GET', f'{self.backend.api_root}/teams/{team}/members/{quoted}')
+        except ForgeCallFailed:
+            return False
+        return True
 
     def whoami(self) -> str:
         """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub.
