@@ -148,9 +148,12 @@ class Breakglass(Placement):
     (:attr:`dev_lab.dev.forge.Forge.identity`), so one name on two forges or two owners is two repos. A repo whose
     forge names no token, a token no repo uses, an empty set and one identity twice are refused at load.
 
-    ``state`` is a directory (the wave, its reports, the last accepted TOTP step); ``wave_hours`` the longest wave a
-    code opens; ``max_merges`` its cap (``0`` = none); ``tick`` when the timer ends expired waves and resends
-    a wave summary no alert channel delivered (a systemd ``OnCalendar``);
+    ``state`` is a directory (the wave, its reports, the last accepted TOTP step). Each wave bound is a DEFAULT and a
+    CEILING (user ruling 2026-11-06): ``wave_hours`` is the window a request naming none gets, ``wave_hours_max`` the
+    longest a request may ask; ``max_merges`` the cap a request naming none gets (``0`` = none), ``max_merges_max``
+    the largest cap a request may ask (``0`` = no ceiling). A non-positive or NaN window, a negative cap, a default
+    above its ceiling and an uncapped default under a capped ceiling are refused at load. ``tick`` is when the timer
+    ends expired waves and resends a wave summary no alert channel delivered (a systemd ``OnCalendar``);
     ``lockout_after`` consecutive wrong codes refuse every code for ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`).
     """
 
@@ -164,7 +167,9 @@ class Breakglass(Placement):
     min_reason: int = 10
     issuer: str = 'forge break-glass'
     wave_hours: float = 4.0
+    wave_hours_max: float = 4.0
     max_merges: int = 0
+    max_merges_max: int = 0
     tick: str = 'hourly'
     lockout_after: int = 5
     lockout_minutes: float = 15.0
@@ -172,6 +177,7 @@ class Breakglass(Placement):
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
         served(self.repos, self.tokens, '[ops.breakglass]')
+        _bounded(self.wave_hours, self.wave_hours_max, self.max_merges, self.max_merges_max)
 
     def repo(self, identity: str) -> str | None:
         """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
@@ -180,6 +186,22 @@ class Breakglass(Placement):
     def token_file(self, url: str) -> str:
         """The file holding the break-glass token of *url*'s forge."""
         return self.tokens[forge_of_url(url).host]
+
+
+def _bounded(hours: float, hours_max: float, merges: int, merges_max: int) -> None:
+    """Refuse wave bounds that lie: see :class:`Breakglass`."""
+    if not (hours > 0 and hours_max > 0):  # NaN fails too
+        msg = f'[ops.breakglass] wave_hours ({hours}) and wave_hours_max ({hours_max}) must be positive'
+        raise ValueError(msg)
+    if hours > hours_max:
+        msg = f'[ops.breakglass] wave_hours ({hours:g}) is above its ceiling wave_hours_max ({hours_max:g})'
+        raise ValueError(msg)
+    if merges < 0 or merges_max < 0:
+        msg = f'[ops.breakglass] max_merges ({merges}) and max_merges_max ({merges_max}) must not be negative'
+        raise ValueError(msg)
+    if merges_max and not 0 < merges <= merges_max:
+        msg = f'[ops.breakglass] max_merges ({merges}) must be 1..max_merges_max ({merges_max}) under that ceiling'
+        raise ValueError(msg)
 
 
 @dataclass(frozen=True)
