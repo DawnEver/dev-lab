@@ -288,7 +288,7 @@ def test_explicit_interpreters_with_one_resolved_binary_still_have_distinct_pref
         python = target / 'Scripts/python.exe'
         monkeypatch.setattr(Path, 'resolve', lambda _self: Path('C:/shared-base/python.exe'))
         monkeypatch.setattr(
-            dep.subprocess, 'run', lambda *_a, **_k: SimpleNamespace(stdout=json.dumps([str(target), 'B-key']))
+            subprocess, 'run', lambda *_a, **_k: SimpleNamespace(stdout=json.dumps([str(target), 'B-key']))
         )
     prefix, _ = dep._snapshot(str(python))
     assert prefix == str(target)

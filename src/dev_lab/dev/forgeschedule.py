@@ -90,6 +90,7 @@ from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, parse_
 from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import part_refs
 
 __all__ = [
@@ -392,7 +393,8 @@ def candidates(
         if kind == PR:
             skipped = waived(sha)
             needed = [part for part in needed if part not in skipped]
-            reached |= {(ref, sha, part) for part in scarce_parts(needed, _scarce(root, sha))}
+            scarce = scarce_parts({row_part(row) for row in needed}, _scarce(root, sha))  # a row names its part
+            reached |= {(ref, sha, row) for row in needed if row_part(row) in scarce}
         by = (pr_author or head_login(client, sha)) if needed else ''
         found += [
             Candidate(

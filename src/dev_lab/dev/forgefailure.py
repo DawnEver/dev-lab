@@ -19,7 +19,7 @@ from typing import Final
 from dev_lab.dev import forge as _forge
 from dev_lab.dev.netverb import Diagnosis, Report, classify
 
-__all__ = ['HTTP_ERROR_FLOOR', 'UNAUTHENTICATED', 'ForgeCallFailed', 'diagnose']
+__all__ = ['HTTP_ERROR_FLOOR', 'UNAUTHENTICATED', 'BudgetSpent', 'ForgeCallFailed', 'diagnose']
 
 #: Statuses below this are answers; at or above it the call failed.
 HTTP_ERROR_FLOOR: Final = 400
@@ -32,6 +32,10 @@ UNAUTHENTICATED: Final = 401
 
 #: 4xx statuses that are NOT a refusal of the request itself: timeout and rate limit clear by waiting.
 _HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
+
+
+class BudgetSpent(TimeoutError):
+    """The caller's time budget ran out before a forge call could start: never retried, as waiting cannot clear it."""
 
 
 class ForgeCallFailed(OSError):
