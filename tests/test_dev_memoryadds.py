@@ -17,6 +17,19 @@ from dev_lab.dev import memoryadds
 _GIT = shutil.which('git') or 'git'
 ENTRY = '.claude/memory/2026/10/01/an-entry.md'
 SOURCES = ('.claude/memory/2026/10/01/a.md', '.claude/memory/2026/10/02/b.md')
+MANUAL = '.claude/memory/2026/11/05/manual.md'
+# rem 2.2 task-engine.js handleAdd's exact dedicated task-list shape, not a generic memory entry.
+MANUAL_HEAD = (
+    '---\nname: manual-2026-11-05\ndescription: Manual tasks created on 2026-11-05\nmetadata:\n  type: project\n---\n\n'
+)
+MANUAL_FIRST = (
+    '- [ ] MANUAL-20261105-694 [HIGH] Deferred heavy acceptance; keep its evidence bar. (2026-11-05)\n'
+    '      module: acceptance\n'
+)
+MANUAL_NEXT = (
+    '- [ ] MANUAL-20261105-695 [HIGH] Measure the exact unmeasured geometry identities. (2026-11-05)\n'
+    '      module: euclid.geometry\n'
+)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -60,6 +73,89 @@ def test_a_lane_that_only_adds_memory_passes(repo: Path) -> None:
     _write(repo, '.claude/memory/2026/10/31/new.md', '---\nname: new\ndescription: d\n---\n\nNew.\n')
     _commit(repo, 'add', '.claude/memory/2026/10/31/new.md')
     assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize('operation', ['append', 'append_closed', 'close', 'reopen'])
+def test_rem_manual_task_operations_pass_both_index_and_push(repo: Path, operation: str) -> None:
+    before = MANUAL_HEAD + MANUAL_FIRST
+    if operation == 'reopen':
+        before = before.replace('- [ ]', '- [x]')
+    _write(repo, MANUAL, before)
+    _commit(repo, 'original manual tasks', MANUAL)
+    base = _lane(repo)
+    after = (
+        before + '\n' + MANUAL_NEXT
+        if operation.startswith('append')
+        else before.replace(
+            '- [x]' if operation == 'reopen' else '- [ ]', '- [ ]' if operation == 'reopen' else '- [x]'
+        )
+    )
+    if operation == 'append_closed':
+        after = before + '\n' + MANUAL_NEXT.replace('- [ ]', '- [x]')
+    _write(repo, MANUAL, after)
+    _git(repo, 'add', '--', MANUAL)
+    assert memoryadds.pending(repo) == ()
+    _commit(repo, 'task state', MANUAL)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    'after',
+    [
+        MANUAL_HEAD + MANUAL_FIRST.replace('evidence bar', 'new claim'),
+        MANUAL_HEAD + MANUAL_FIRST.replace('acceptance\n', 'geometry\n'),
+        MANUAL_HEAD + MANUAL_FIRST.replace('[HIGH]', '[LOW]'),
+        MANUAL_HEAD,
+        MANUAL_HEAD + MANUAL_FIRST + '\nA historical claim rewritten in a task file.\n',
+        MANUAL_HEAD + MANUAL_FIRST + '\n' + MANUAL_FIRST,
+        MANUAL_HEAD + MANUAL_FIRST + '\n' + MANUAL_NEXT.replace('20261105', '20261106'),
+        MANUAL_HEAD + MANUAL_FIRST + '\n' + MANUAL_NEXT.replace('(2026-11-05)', '(2026-11-06)'),
+        MANUAL_HEAD + MANUAL_NEXT + '\n' + MANUAL_FIRST,
+        (MANUAL_HEAD + MANUAL_FIRST).replace('type: project', 'type: bypass'),
+    ],
+)
+def test_manual_filename_never_allows_task_content_rewrites_or_memory_injection(repo: Path, after: str) -> None:
+    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST)
+    _commit(repo, 'original manual tasks', MANUAL)
+    base = _lane(repo)
+    _write(repo, MANUAL, after)
+    _git(repo, 'add', '--', MANUAL)
+    assert memoryadds.pending(repo)
+    _commit(repo, 'planted bypass', MANUAL)
+    assert memoryadds.problems_between(repo, base, 'HEAD')
+
+
+@pytest.mark.parametrize('path', [MANUAL, ENTRY, 'src/x/' + MANUAL])
+def test_ordinary_memory_cannot_turn_into_a_mutable_manual_list(repo: Path, path: str) -> None:
+    _write(repo, path, '---\nname: manual-2026-11-05\n---\n\nImmutable prose.\n')
+    _commit(repo, 'ordinary entry', path)
+    _write(repo, path, MANUAL_HEAD + MANUAL_FIRST)
+    _git(repo, 'add', '--', path)
+    assert memoryadds.pending(repo)
+
+
+def test_manual_refusal_names_the_versioned_task_format_and_remedy(repo: Path) -> None:
+    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST)
+    _commit(repo, 'original task', MANUAL)
+    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST.replace('evidence bar', 'rewritten history'))
+    _git(repo, 'add', '--', MANUAL)
+    refusal = '\n'.join(memoryadds.pending(repo))
+    assert 'rem 2.2.0' in refusal
+    assert 'append tasks or toggle checkboxes' in refusal
+    assert 'immutable' in refusal
+
+
+@pytest.mark.parametrize('prefix', ['', 'src/x/'])
+def test_scoped_manual_task_format_preserves_crlf_operations(prefix: str) -> None:
+    before = MANUAL_HEAD + MANUAL_FIRST
+    after = before.replace('- [ ]', '- [x]') + '\n' + MANUAL_NEXT
+    assert memoryadds._only_manual_tasks_updated(prefix + MANUAL, before.replace('\n', '\r\n'), after)
+
+
+@pytest.mark.parametrize('path', [ENTRY, MANUAL.replace('manual.md', 'narrative.md'), MANUAL.replace('/11/', '/99/')])
+def test_a_task_shaped_body_cannot_make_another_memory_path_mutable(path: str) -> None:
+    before = MANUAL_HEAD + MANUAL_FIRST
+    assert not memoryadds._only_manual_tasks_updated(path, before, before + '\n' + MANUAL_NEXT)
 
 
 @pytest.mark.parametrize('change', ['edit', 'delete', 'rename'])

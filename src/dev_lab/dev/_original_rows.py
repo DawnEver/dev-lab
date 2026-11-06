@@ -16,6 +16,7 @@ __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'ab_bench',
+    'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
     'envseat',
     'verifybox',
