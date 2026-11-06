@@ -55,10 +55,10 @@ class Backend:
     actions_login: str = GITEA_ACTIONS_LOGIN
     #: The repository permissions ``GET .../collaborators/{login}/permission`` answers for a login that may WRITE.
     writer_permissions: frozenset[str] = frozenset({'admin', 'owner', 'write'})
-    #: The team unit whose access lets a team member WRITE code, ``''`` when the permission answer already counts
-    #: teams. Gitea's answer omits a unit-scoped org team (``permission: none``, its grant in ``units_map``), so a
-    #: team member's write is read from ``GET .../teams`` and ``GET /teams/{id}/members/{login}``; GitHub's counts it.
-    writer_unit: str = 'repo.code'
+    #: Whether an author must be VETTED before the forge merges their PR or admits their cap raise. Gitea is the
+    #: family's private forge: every author is trusted (user ruling 2026-11-06). GitHub is public: a fork's head
+    #: or an author without write permission is external (:meth:`~dev_lab.dev.forgework.Client.trusts`).
+    vets_authors: bool = False
     #: What the issue listing adds to exclude pulls server-side: Gitea's ``type=issues``. GitHub has no such
     #: parameter (it answers 422), so its listing filters pulls client-side (:func:`dev_lab.dev.forgepulls.is_pull`).
     issues_only: tuple[tuple[str, str], ...] = (('type', 'issues'),)
@@ -106,7 +106,7 @@ GITHUB: Final = Backend(
     file_at='blob/{sha}/{path}',
     actions_login=ACTIONS_BOT,
     writer_permissions=frozenset({'admin', 'maintain', 'write'}),
-    writer_unit='',
+    vets_authors=True,
     issues_only=(),
     run_path='.github/workflows/{workflow}',
     run_pulls_listed=True,
