@@ -113,9 +113,9 @@ INTENTS: Final[dict[str, str]] = {
     ),
     'monitor': 'Read-only monitoring of the forge: commit statuses, the queue, host cards and run progress.',
     'open-pr': 'Opening pull requests through the family forge door, as drafts unless the author marks them ready.',
-    'dispose-fixed': (
-        'Disposing a forge review finding that is already fixed, with a reason naming the commit that fixed it '
-        '(user ruling 2026-10-28: always allowed).'
+    'review-again': (
+        'Asking the forge to review a PR again (`forge review again <pr>`) once a security finding is fixed '
+        '(user ruling 2026-11-06: the review is one-shot advice; always allowed).'
     ),
     'correct-request': (
         "Editing a forge request issue's body to correct a malformed field, such as a short commit id to the "

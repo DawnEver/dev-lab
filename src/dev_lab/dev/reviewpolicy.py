@@ -8,7 +8,7 @@ defaults overlaid by the repo's ``[tool.dev_lab.review]``), :data:`~dev_lab.dev.
 and the gate cannot disagree.
 
 ``python -m dev_lab.dev.reviewpolicy --json [--repo <path>]`` prints :func:`policy`; ``max_file_bytes`` is the
-review's ``max_diff_bytes`` (one file alone past a slice is held).
+review's ``max_diff_bytes`` (one file alone past it is a slice of its own).
 """
 
 from __future__ import annotations

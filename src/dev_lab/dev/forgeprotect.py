@@ -11,7 +11,7 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   :func:`required_contexts`): a forge whose workflows post the merge decision requires
   :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT` on integration; a forge whose serve host merges requires
   ``tests/base`` and ``tests/security``, never ``tests/review`` (user ruling 2026-11-05: the merge decision enforces
-  the review itself, and a capped review merges WARNED, :mod:`dev_lab.dev.reviewcap`). The trunk requires the
+  the review itself, and a review that did not run merges WARNED, :mod:`dev_lab.dev.reviewcap`). The trunk requires the
   base part's rows the promotion event runs (``tests/base`` and, where workflows fan
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on;
 * the APPROVER is ``[tool.dev_lab.review] judge_login``: only a judge posts an approving PR review, so approvals
