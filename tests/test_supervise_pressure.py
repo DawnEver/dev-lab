@@ -7,16 +7,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
+from dev_lab.supervise.cgroup import CGROUP_MOUNT
 from dev_lab.supervise.consumers import consumers, tree_bytes
 from dev_lab.supervise.pressure import (
-    CGROUP_MOUNT,
     PSI,
     THRESHOLDS,
     Declared,
     Measured,
     measure,
-    parse_psi,
 )
+from dev_lab.supervise.reading import parse_psi
 
 GB = 1024**3
 
@@ -27,10 +27,18 @@ class Disk(NamedTuple):
     free: int
 
 
-EVENTS = 'low 0\nhigh {high}\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n'
+EVENTS = 'low 0\nhigh {high}\nmax 0\noom 0\noom_kill {oom_kill}\noom_group_kill 0\n'
+STAT = 'anon 35000000\nfile 105000000\nworkingset_refault_anon {anon}\nworkingset_refault_file 900\n'
 PSI_TEXT = (
     'some avg10=1.00 avg60={some:.2f} avg300=1.00 total=1\nfull avg10=0.00 avg60={full:.2f} avg300=0.00 total=1\n'
 )
+GROUP_PSI = (
+    'some avg10={some:.2f} avg60=0.00 avg300=0.00 total=1\nfull avg10={full:.2f} avg60=0.00 avg300=0.00 total=1\n'
+)
+
+
+def _events(high: int = 0, oom_kill: int = 0) -> str:
+    return EVENTS.format(high=high, oom_kill=oom_kill)
 
 
 def _files(table: dict[Path, str]) -> Callable[[Path], str | None]:
@@ -59,19 +67,68 @@ def _linux(
     return measure(declared, previous or {}, now=1000.0, read=_files(files), linux=True, locate=_systemd(located))
 
 
-def test_a_cgroup_whose_high_counter_jumps_alarms_and_a_flat_one_does_not() -> None:
-    """The 2026-11-01 incident: memory.high hit 151,572 times while host RAM read ~80%. PLANTED CONTROL: flat."""
-    service = 'gitea-runner.service'
-    events = CGROUP_MOUNT / RUNNERS.lstrip('/') / service / 'memory.events'
-    declared = Declared(services=(service,))
-    first = _linux({events: EVENTS.format(high=100)}, declared)
+def _group(service: str, high: int = 0, oom_kill: int = 0, anon: int = 0, psi: tuple[float, float] = (0, 0)) -> dict:
+    """The three files of *service*'s cgroup under the runners slice."""
+    root = CGROUP_MOUNT / RUNNERS.lstrip('/') / service
+    return {
+        root / 'memory.events': _events(high, oom_kill),
+        root / 'memory.stat': STAT.format(anon=anon),
+        root / 'memory.pressure': GROUP_PSI.format(some=psi[0], full=psi[1]),
+    }
+
+
+SERVICE = 'forge-runner-light.service'
+
+
+def test_a_high_rise_alone_is_routine_reclaim_and_never_alarms() -> None:
+    """2026-11-06 forge-a1: memory.high +252 at 139 MB of 1 GB, oom_kill 0, refault_anon 0 -- cache reclaim."""
+    declared = Declared(services=(SERVICE,))
+    first = _linux(_group(SERVICE, high=100), declared)
     assert first.findings == []  # a first reading is a baseline, never a delta
-    jumped = _linux({events: EVENTS.format(high=151_672)}, declared, first.memo)
-    assert [(f.kind, f.severity) for f in jumped.findings] == [(f'cgroup:{service}:high', 'warning')]
-    assert '151572' in jumped.findings[0].measurement
-    flat = _linux({events: EVENTS.format(high=151_672)}, declared, jumped.memo)
-    assert flat.findings == []
-    assert flat.readings[f'cgroup:{service}:high_delta'] == 0
+    routine = _linux(_group(SERVICE, high=352), declared, first.memo)
+    assert routine.findings == []
+    assert routine.readings[f'cgroup:{SERVICE}:high_delta'] == 252
+
+
+def test_the_high_line_is_an_opt_in_that_alarms_past_its_rise() -> None:
+    """PLANTED CONTROL for the default: the same +252 alarms once a host declares ``cgroup_high_rise``."""
+    declared = Declared.of({'services': [SERVICE], 'cgroup_high_rise': 100})
+    first = _linux(_group(SERVICE, high=100), declared)
+    risen = _linux(_group(SERVICE, high=352), declared, first.memo)
+    assert [(f.kind, f.severity, f.value) for f in risen.findings] == [(f'cgroup:{SERVICE}:high', 'warning', '+252')]
+
+
+def test_an_oom_kill_rise_alarms_critical_and_names_its_signal() -> None:
+    declared = Declared(services=(SERVICE,))
+    first = _linux(_group(SERVICE, high=100), declared)
+    killed = _linux(_group(SERVICE, high=352, oom_kill=1), declared, first.memo)
+    assert [(f.kind, f.severity) for f in killed.findings] == [(f'cgroup:{SERVICE}:oom_kill', 'critical')]
+    assert 'oom_kill rose by 1' in killed.findings[0].measurement
+
+
+def test_an_anon_refault_rise_alarms_and_a_flat_one_does_not() -> None:
+    """The 2026-09-14 throttle signature: anon pages thrashed back in. PLANTED CONTROL: flat refaults."""
+    declared = Declared(services=(SERVICE,))
+    first = _linux(_group(SERVICE, anon=10), declared)
+    thrashed = _linux(_group(SERVICE, high=5000, anon=4010), declared, first.memo)
+    kinds = [(f.kind, f.severity) for f in thrashed.findings]
+    assert kinds == [(f'cgroup:{SERVICE}:workingset_refault_anon', 'warning')]
+    assert 'workingset_refault_anon rose by 4000' in thrashed.findings[0].measurement
+    assert _linux(_group(SERVICE, high=9000, anon=4010), declared, thrashed.memo).findings == []
+
+
+def test_cgroup_memory_psi_over_its_line_alarms_and_under_it_does_not() -> None:
+    """PLANTED CONTROL: the same group at avg10 under both lines is silent."""
+    declared = Declared(services=(SERVICE,))
+    over = _linux(_group(SERVICE, psi=(25.0, 8.0)), declared)
+    kinds = {f.kind: (f.severity, f.value) for f in over.findings}
+    assert kinds == {
+        f'cgroup:{SERVICE}:psi_some': ('warning', '25.0%'),
+        f'cgroup:{SERVICE}:psi_full': ('critical', '8.0%'),
+    }
+    under = _linux(_group(SERVICE, psi=(9.0, 4.0)), declared)
+    assert under.findings == []
+    assert under.readings[f'cgroup:{SERVICE}:psi_memory_some_avg10'] == 9.0
 
 
 def test_a_unit_in_a_nested_slice_is_read_where_systemd_says_it_lives() -> None:
@@ -80,16 +137,16 @@ def test_a_unit_in_a_nested_slice_is_read_where_systemd_says_it_lives() -> None:
     nested = CGROUP_MOUNT / 'ci.slice' / 'ci-runners.slice' / service / 'memory.events'
     old = Path('/sys/fs/cgroup/system.slice') / service / 'memory.events'
     declared = Declared(services=(service,))
-    first = _linux({nested: EVENTS.format(high=1), old: EVENTS.format(high=1)}, declared)
-    jumped = _linux({nested: EVENTS.format(high=9), old: EVENTS.format(high=1)}, declared, first.memo)
-    assert [f.kind for f in jumped.findings] == [f'cgroup:{service}:high']
+    first = _linux({nested: _events(oom_kill=1), old: _events(oom_kill=1)}, declared)
+    jumped = _linux({nested: _events(oom_kill=9), old: _events(oom_kill=1)}, declared, first.memo)
+    assert [f.kind for f in jumped.findings] == [f'cgroup:{service}:oom_kill']
 
 
 def test_the_old_system_slice_guess_is_never_consulted() -> None:
     """PLANTED CONTROL: a file only at the old hard-coded path, and systemd placing the unit elsewhere."""
     service = 'gitea-runner.service'
     old = Path('/sys/fs/cgroup/system.slice') / service / 'memory.events'
-    done = _linux({old: EVENTS.format(high=5)}, Declared(services=(service,)))
+    done = _linux({old: _events(oom_kill=5)}, Declared(services=(service,)))
     assert done.memo['cgroup'] == {}
     assert [(f.kind, f.severity) for f in done.findings] == [(f'cgroup:{service}', 'warning')]
 
@@ -99,9 +156,9 @@ def test_a_slice_unit_is_read_at_its_own_group() -> None:
     events = CGROUP_MOUNT / 'ci.slice' / slice_unit / 'memory.events'
     declared = Declared(services=(slice_unit,))
     units = {slice_unit: f'/ci.slice/{slice_unit}'}
-    first = _linux({events: EVENTS.format(high=0)}, declared, units=units)
-    jumped = _linux({events: EVENTS.format(high=3)}, declared, first.memo, units=units)
-    assert [(f.kind, f.severity) for f in jumped.findings] == [(f'cgroup:{slice_unit}:high', 'warning')]
+    first = _linux({events: _events()}, declared, units=units)
+    jumped = _linux({events: _events(oom_kill=3)}, declared, first.memo, units=units)
+    assert [(f.kind, f.severity) for f in jumped.findings] == [(f'cgroup:{slice_unit}:oom_kill', 'critical')]
 
 
 def test_an_unresolvable_or_unreadable_unit_is_a_warning_never_a_silent_none() -> None:
@@ -126,8 +183,9 @@ def test_psi_over_its_line_alarms_under_it_does_not_and_absent_is_unmeasurable_n
     assert absent.readings['psi:memory:some_avg60'] is None
 
 
-def test_parse_psi_reads_avg60_per_line() -> None:
-    assert parse_psi(PSI_TEXT.format(some=12.5, full=2)) == {'some_avg60': 12.5, 'full_avg60': 2.0}
+def test_parse_psi_reads_every_window_per_line() -> None:
+    parsed = parse_psi(PSI_TEXT.format(some=12.5, full=2))
+    assert (parsed['some_avg60'], parsed['full_avg60'], parsed['some_avg10']) == (12.5, 2.0, 1.0)
 
 
 def _tree(root: Path) -> None:

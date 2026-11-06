@@ -8,8 +8,11 @@ RAM read ~80% -- so a host-level percentage is not the measurement. What is:
   of readings (a slope, so a disk filling fast alarms before it is nearly full);
 * LINUX MEMORY/CPU -- PSI (``/proc/pressure/memory`` ``some``/``full avg60``, ``/proc/pressure/cpu`` ``some
   avg60``): the share of time work STALLED, which is what the runner felt; and per declared systemd service its
-  cgroup ``memory.events`` DELTAS (``high``/``max``/``oom_kill``) between two readings -- a counter that moved
-  is a throttle that happened, whatever the host percentage says;
+  cgroup's REAL pressure: a rise of ``memory.events`` ``oom_kill``/``oom``/``max``, a rise of ``memory.stat``
+  ``workingset_refault_anon`` (anonymous pages thrashed back in), or its ``memory.pressure`` avg10 over a line.
+  The ``high`` counter ALONE is never pressure (2026-11-06, forge-a1: +252 at 139 MB of a 1 GB memory.high, 105
+  MB of it file cache, oom_kill 0, refault_anon 0 -- the kernel reclaiming git-mirror cache at the line, routine).
+  The throttle signature is high large WITH anon refaults (2026-09-14); ``cgroup_high_rise`` is an opt-in line;
 * A WORKSTATION (Windows, macOS) -- psutil AVERAGED over a window: a 50 ms ``cpu_percent`` sample on two cores
   is noise, which is why CPU was off. Where PSI is absent the PSI reading is UNMEASURABLE (``None``), never 0.
 
@@ -29,21 +32,17 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
+from dev_lab.supervise.cgroup import cgroups, control_group
 from dev_lab.supervise.consumers import Consumer, consumers
-from dev_lab.supervise.process.systemd import subprocess_runner
+from dev_lab.supervise.reading import Finding, parse_psi
 
 __all__ = [
-    'CGROUP_MOUNT',
     'DOORS',
     'RAM_CRITICAL',
     'THRESHOLDS',
     'Declared',
-    'Finding',
     'Measured',
-    'control_group',
     'measure',
-    'parse_events',
-    'parse_psi',
     'thresholds',
 ]
 
@@ -68,17 +67,13 @@ THRESHOLDS: Final[Mapping[str, float]] = {
     # so at any cadence the window holds a reading old enough to meet the floor.
     'interval_s': 300.0,
     'slope_span_s': 3600.0,
+    # A CGROUP'S REAL PRESSURE. `high` alone is routine cache reclaim at memory.high: it alarms only past an
+    # opt-in rise (default never); anon refaults and the cgroup's own memory PSI (avg10) are the throttle.
+    'cgroup_high_rise': float('inf'),  # warning when memory.events `high` rose by MORE than this between readings
+    'cgroup_refault_anon_rise': 0.0,  # warning when memory.stat workingset_refault_anon rose by more than this
+    'cgroup_psi_memory_some_avg10': 10.0,  # the cgroup's memory.pressure `some avg10`: warning
+    'cgroup_psi_memory_full_avg10': 5.0,  # the cgroup's memory.pressure `full avg10`: critical
 }
-
-#: The cgroup counters a declared service's ``memory.events`` is read for, and the severity a rise carries.
-EVENTS: Final[Mapping[str, str]] = {'high': 'warning', 'max': 'critical', 'oom_kill': 'critical'}
-
-#: The cgroup v2 mount. WHERE under it a unit lives is systemd's answer (:func:`control_group`), never a guess:
-#: on 2026-11-02 the runners moved to ``/ci.slice/ci-runners.slice`` and a hard-coded ``system.slice`` went blind.
-CGROUP_MOUNT: Final = Path('/sys/fs/cgroup')
-
-#: How long ``systemctl show`` may take, in seconds.
-_SYSTEMCTL_TIMEOUT_S: Final = 10
 
 #: The PSI files, by resource.
 PSI: Final[Mapping[str, Path]] = {'memory': Path('/proc/pressure/memory'), 'cpu': Path('/proc/pressure/cpu')}
@@ -114,24 +109,6 @@ class Declared:
         return cls(paths, tuple(str(s) for s in table.get('services', ())), thresholds(table))
 
 
-@dataclass(frozen=True)
-class Finding:
-    """One alarm: which pressure, how severe, what was read, and who holds the resource.
-
-    *kind* names WHICH pressure (``disk:/``, ``cgroup:gitea-runner.service:high``); *consumers* are the biggest
-    owners of the resource. *metric*, *value* and *threshold* are the glanceable reading an alert's first line
-    shows (``disk /``, ``91%``, ``> 90%``); *measurement* is the full sentence.
-    """
-
-    kind: str
-    severity: str
-    measurement: str
-    consumers: tuple[Consumer, ...] = ()
-    metric: str = ''
-    value: str = ''
-    threshold: str = ''
-
-
 @dataclass
 class Measured:
     """The findings, every reading (``None`` = unmeasurable here), and the memo the next reading compares to."""
@@ -140,23 +117,6 @@ class Measured:
     readings: dict[str, float | None] = field(default_factory=dict)
     memo: dict[str, Any] = field(default_factory=dict)
     interval_s: float = THRESHOLDS['interval_s']
-
-
-def parse_psi(text: str) -> dict[str, float]:
-    """``{'some_avg60': x, 'full_avg60': y}`` from a PSI file's lines (``full`` absent for cpu on old kernels)."""
-    found: dict[str, float] = {}
-    for line in text.splitlines():
-        head, *pairs = line.split()
-        for pair in pairs:
-            key, _, value = pair.partition('=')
-            if key == 'avg60':
-                found[f'{head}_avg60'] = float(value)
-    return found
-
-
-def parse_events(text: str) -> dict[str, int]:
-    """A cgroup ``memory.events`` file as ``{counter: count}``."""
-    return {k: int(v) for k, v in (line.split() for line in text.splitlines() if line.strip())}
 
 
 def _read(path: Path) -> str | None:
@@ -241,54 +201,6 @@ def _psi(
     return findings, readings
 
 
-def control_group(unit: str) -> str:
-    """*unit*'s cgroup path as systemd reports it (``/ci.slice/ci-runners.slice/x.service``); a service or a slice.
-
-    Raises:
-        LookupError: systemctl failed or reported no group -- the reason, for the finding.
-
-    """
-    ran = subprocess_runner(['systemctl', 'show', unit, '-p', 'ControlGroup', '--value'], _SYSTEMCTL_TIMEOUT_S, None)
-    group = ran.out.strip()
-    if ran.code != 0 or not group.startswith('/'):
-        msg = f'systemctl show gave no ControlGroup (exit {ran.code}{": " + ran.err.strip() if ran.err else ""})'
-        raise LookupError(msg)
-    return group
-
-
-def _cgroups(
-    services: Sequence[str],
-    previous: Mapping[str, Mapping[str, int]],
-    read: Callable[[Path], str | None],
-    locate: Callable[[str], str],
-) -> tuple[list[Finding], dict[str, float | None], dict[str, dict[str, int]]]:
-    findings: list[Finding] = []
-    readings: dict[str, float | None] = {}
-    counts: dict[str, dict[str, int]] = {}
-    for service in services:
-        try:
-            events = CGROUP_MOUNT / locate(service).lstrip('/') / 'memory.events'
-            text = read(events)
-            reason = f'{events.as_posix()} not readable'
-        except LookupError as exc:
-            text, reason = None, str(exc)
-        if text is None:  # unmeasurable is a reading AND a finding: an alarm that cannot see must say so
-            readings[f'cgroup:{service}'] = None
-            said = f'{service}: memory.events unreadable ({reason}) -- the alarm cannot see it'
-            findings.append(Finding(f'cgroup:{service}', 'warning', said))
-            continue
-        now = counts[service] = parse_events(text)
-        before = previous.get(service)
-        for counter, severity in EVENTS.items():
-            rise = now.get(counter, 0) - before.get(counter, 0) if before is not None else None
-            readings[f'cgroup:{service}:{counter}_delta'] = rise  # the first reading has no delta yet
-            if rise is not None and rise > 0:
-                said = f'{service} cgroup memory.events {counter} rose by {rise} (now {now.get(counter, 0)})'
-                reading = {'metric': f'{service} memory.{counter}', 'value': f'+{rise}', 'threshold': '0'}
-                findings.append(Finding(f'cgroup:{service}:{counter}', severity, said, **reading))
-    return findings, readings, counts
-
-
 def _windowed(psutil: ModuleType | None, limits: Mapping[str, float]) -> tuple[list[Finding], dict[str, float | None]]:
     if psutil is None:
         return [], {'cpu:percent': None, 'memory:percent': None}
@@ -343,7 +255,7 @@ def measure(
         found, readings = _psi(declared.limits, read)
         done.findings += found
         done.readings.update(readings)
-        found, readings, counts = _cgroups(declared.services, previous.get('cgroup', {}), read, locate)
+        found, readings, counts = cgroups(declared.services, previous.get('cgroup', {}), declared.limits, read, locate)
         done.findings += found
         done.readings.update(readings)
         done.memo['cgroup'] = counts

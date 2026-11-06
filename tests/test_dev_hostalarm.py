@@ -20,7 +20,8 @@ from dev_lab.supervise.components import pressure as component
 from dev_lab.supervise.components.pressure import HostPressure
 from dev_lab.supervise.consumers import Consumer
 from dev_lab.supervise.notice import Notice, headline, markdown
-from dev_lab.supervise.pressure import DOORS, Finding, Measured
+from dev_lab.supervise.pressure import DOORS, Measured
+from dev_lab.supervise.reading import Finding
 from dev_lab.supervise.verdict import Severity
 
 if TYPE_CHECKING:

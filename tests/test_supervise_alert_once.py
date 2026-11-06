@@ -19,7 +19,8 @@ from dev_lab.supervise.component import CheckContext, Registry
 from dev_lab.supervise.components import pressure as component
 from dev_lab.supervise.components.pressure import HostPressure
 from dev_lab.supervise.notice import Notice, headline, markdown, telegram_html
-from dev_lab.supervise.pressure import Finding, Measured
+from dev_lab.supervise.pressure import Measured
+from dev_lab.supervise.reading import Finding
 from dev_lab.supervise.verdict import Anomaly, Severity
 
 if TYPE_CHECKING:

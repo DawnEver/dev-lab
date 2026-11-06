@@ -21,7 +21,7 @@ __all__ = ['HostPressure']
 
 
 class HostPressure(Component):
-    """Disk, PSI, cgroup ``memory.events`` deltas, or a windowed psutil reading, against named thresholds.
+    """Disk, PSI, a cgroup's real memory pressure, or a windowed psutil reading, against named thresholds.
 
     Config (the keys of the machine file's ``[pressure]``)::
 
@@ -31,6 +31,9 @@ class HostPressure(Component):
         services = ["gitea-runner.service"]
         owner = "integrator"
         psi_memory_some_avg60 = 10
+        cgroup_refault_anon_rise = 0     # anon pages thrashed back in: warning
+        cgroup_psi_memory_some_avg10 = 10
+        # cgroup_high_rise = 1000        # opt-in; default never: `high` alone is routine cache reclaim
 
     """
 
