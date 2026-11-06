@@ -1,6 +1,6 @@
 """``upgrade``: install dev-lab into ``[ops] python``'s environment at the tip of the CONFIGURED ref and source.
 
-It takes no argument, so an operator allowed exactly this command (sudo) installs only reviewed, promoted code --
+It takes no argument, so an operator allowed exactly this command (sudo) installs only the configured integration tip --
 never a sha or URL of their choosing. Every input is ``[ops.upgrade]`` (:class:`dev_lab.ops.config.Upgrade`).
 """
 

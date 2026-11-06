@@ -26,7 +26,7 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
@@ -35,6 +35,7 @@ from dev_lab.ops.served import served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
+    'INTEGRATION_REF',
     'Breakglass',
     'Judge',
     'OpsConfig',
@@ -120,6 +121,11 @@ class Judge(Placement):
         return tuple(sorted({*self.tokens.values(), *(str(app['key_file']) for app in self.apps.values())}))
 
 
+#: The ref every host installs and releases from (user ruling 2026-11-06: every repo tracks integrate/main; nothing
+#: waits for a promotion to ``main`` to take effect).
+INTEGRATION_REF: Final = 'integrate/main'
+
+
 @dataclass(frozen=True)
 class Upgrade:
     """Where ``upgrade`` takes dev-lab from: the tip of ``ref`` of ``source``, never a caller's choice.
@@ -130,7 +136,7 @@ class Upgrade:
     """
 
     source: str
-    ref: str = 'main'
+    ref: str = INTEGRATION_REF
     extras: tuple[str, ...] = ()
     packages: tuple[str, ...] = ()
     overrides: str = ''

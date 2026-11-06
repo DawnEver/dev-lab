@@ -28,6 +28,7 @@ from typing import Any, Final
 
 from lab_commons.outcomes import Status
 
+from dev_lab.ops.config import INTEGRATION_REF
 from dev_lab.supervise.component import ActionContext
 from dev_lab.supervise.process.base import Ran
 from dev_lab.supervise.release import Snapshot
@@ -197,7 +198,7 @@ def _git(plan: Plan, ctx: ActionContext, repo: str, args: list[str], timeout: in
     return ctx.manager.run_capped(['git', '-C', plan.repositories[repo], *args], memory_max='256M', timeout=timeout)
 
 
-def fetch(plan: Plan, ctx: ActionContext, *, branch: str = 'main') -> PhaseResult:
+def fetch(plan: Plan, ctx: ActionContext, *, branch: str = INTEGRATION_REF) -> PhaseResult:
     """Fetch every repository and read the commits the remote now holds.
 
     Args:
