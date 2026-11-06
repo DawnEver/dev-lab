@@ -17,11 +17,13 @@ from test_dev_forgereview import _LANE_POLICY, _work
 
 from dev_lab.dev import breakglass
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemerge import decide, judged
 from dev_lab.dev.forgereview_declared import review_from
 from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import (
     DeclarationUnread,
@@ -199,7 +201,6 @@ def test_break_glass_and_the_merge_read_the_one_predicate() -> None:
     )
 
 
-_UNADOPTED = '[tool.dev_lab.ci."ci.yml"]\n'
 _SERVE = 'ServeBot'
 
 
@@ -212,12 +213,12 @@ def _judged_by_serve(forge: StateForge, head: str, *, login: str, url: str) -> s
 
 @pytest.mark.parametrize('third', ['DawnEver', ACTIONS_BOT, GITEA_ACTIONS_LOGIN])
 def test_a_gitea_repo_not_adopting_the_actions_review_at_its_base_is_reviewed_by_the_serve(third) -> None:
-    """No ``[tool.dev_lab.ci."review.yml"]`` at the base: no Actions job reviews, ``forge serve`` does (2026-11-01).
+    """No ``.gitea/workflows/review.yml`` at the base: no Actions job reviews, ``forge serve`` does (2026-11-01).
 
     PLANTED CONTROL: a third login's success -- or a null one naming this head's run -- is still refused.
     """
     forge, head = StateForge(), 'f' * 40
-    forge.pyproject_at.update({head: _UNADOPTED, _BASE: _UNADOPTED})
+    forge.review_workflow = False
     _, run = forge.add_run(head)
     said = _judged_by_serve(forge, head, login=third, url=run)
     assert said is not None
@@ -226,12 +227,12 @@ def test_a_gitea_repo_not_adopting_the_actions_review_at_its_base_is_reviewed_by
 
 
 def test_adopted_at_base_the_serves_login_is_refused_a_pr_never_un_adopts() -> None:
-    """A PR dropping review.yml from an adopted base is still judged by the Actions rule: the base decides.
+    """A PR deleting review.yml from an adopting base is still judged by the Actions rule: the base decides.
 
     PLANTED CONTROL: the Actions job's success naming this head's run counts.
     """
     forge, head = StateForge(), 'f' * 40
-    forge.pyproject_at[head] = _UNADOPTED
+    forge.review_workflow_at[head] = False
     _, run = forge.add_run(head)
     said = _judged_by_serve(forge, head, login=_SERVE, url=run)
     assert said is not None
@@ -247,7 +248,7 @@ def test_a_head_only_adoption_is_judged_by_the_serve_rule_until_it_lands() -> No
     PLANTED CONTROL: a null-creator success naming an honest run at this head is refused under the serve rule.
     """
     forge, head = StateForge(), 'f' * 40
-    forge.pyproject_at[_BASE] = _UNADOPTED
+    forge.review_workflow_at[_BASE] = False
     _, run = forge.add_run(head)
     said = _judged_by_serve(forge, head, login=GITEA_ACTIONS_LOGIN, url=run)
     assert said is not None
@@ -339,22 +340,46 @@ def test_a_runs_listing_without_a_list_refuses_never_passes() -> None:
     assert breakglass.unreviewed(forge, head, base=_BASE) is None
 
 
-@pytest.mark.parametrize('answer', ['missing', 'empty'])
-def test_an_unreadable_declaration_refuses_never_reads_as_not_adopted(answer: str) -> None:
-    """F-16475f2b1121: an absent file or a contentless answer decides nothing, so no success counts.
+@pytest.mark.parametrize('answer', ['refused', 'empty'])
+def test_an_unreadable_review_workflow_refuses_never_reads_as_not_adopted(answer: str) -> None:
+    """F-16475f2b1121: a failed read or a contentless answer decides nothing, so no success counts.
 
-    PLANTED CONTROL: a parsed manifest without the table is "not adopted", and the serve's success counts.
+    PLANTED CONTROL: the forge's 404 is "not adopted", and the serve's success counts.
     """
     forge, head = StateForge(), 'f' * 40
-    forge.pyproject_at.update({head: _UNADOPTED, _BASE: _UNADOPTED})
-    forge.pyproject_at[_BASE] = None if answer == 'missing' else ''
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
-    forge.login = _SERVE
+    real = forge.call
+
+    def unreadable(method: str, path: str, body: object = None, durable: object = None) -> object:
+        if '/contents/.gitea/' not in path:
+            return real(method, path, body, durable)
+        if answer == 'empty':
+            return {'content': ''}
+        refused = Attempt(1, 500, 'internal error', Diagnosis.TRANSIENT)
+        raise ForgeCallFailed(Report(('GET', 'contents'), (refused,), 1))
+
+    forge.call = unreadable
     with pytest.raises(DeclarationUnread):
-        breakglass.unreviewed(forge, head, base=_BASE)
-    forge.pyproject_at[_BASE] = _UNADOPTED
-    _gitea_review(forge, head, login=_SERVE, url='')
+        _gitea_review(forge, head, login=_SERVE, url='')
+    forge.call = real
+    forge.review_workflow_at[_BASE] = False
     assert breakglass.unreviewed(forge, head, base=_BASE) is None
+
+
+def test_a_base_rendering_review_yml_undeclared_trusts_its_review_run_never_a_user() -> None:
+    """Motronics #5540 (2026-11-06): the base renders review.yml from the base set, with no ``[tool.dev_lab.ci]``.
+
+    The job's null-creator success naming the base's review run at this head counts.
+    PLANTED CONTROL: the same success posted by a user's token -- the serve's login, a developer's -- never does.
+    """
+    forge, head = StateForge(), 'f' * 40
+    forge.pyproject = '[tool.dev_lab.review]\nreviewers = ["MingyangBao"]\n'
+    _, run = forge.add_run(head)
+    forge.login = _SERVE
+    for user in (_SERVE, 'MingyangBao'):
+        said = _gitea_review(forge, head, login=user, url=run)
+        assert said is not None
+        assert 'not by the forge' in said
+    assert _gitea_review(forge, head, login=GITEA_ACTIONS_LOGIN, url=run) is None
 
 
 # THE JUDGE MODE: a repo whose base declares ``where = "judge"`` is reviewed by its DECLARED judge's PR review.
@@ -419,7 +444,7 @@ def test_a_pending_hold_still_blocks_a_judge_approved_head() -> None:
 def test_a_serve_repo_is_unaffected_by_a_judge_approval() -> None:
     """The serve gate is the one it was: an APPROVED review alone does not pass it; the forge's success does."""
     forge, head = StateForge(), 'a' * 40
-    forge.pyproject_at[_BASE] = _UNADOPTED
+    forge.review_workflow_at[_BASE] = False
     number = forge.add_pull('pr/x', _BASE, sha=head)
     forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
     assert _gate(forge, head) == review_missing(status_list(forge, head), forge_posted(forge, head, base=_BASE))

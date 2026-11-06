@@ -762,16 +762,13 @@ def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> No
 
 # --- D52: a round is spent only on new work ------------------------------------------------------------
 
-#: A repo whose review is the serve's (not the Actions job's): the serve's own login is what the gate counts.
-_SERVED = '[tool.dev_lab.ci]\n'
-
 
 def _reviewed_then_synced(tmp_path: Path) -> tuple[Path, StateForge, int, str, str]:
     """A PR whose head was reviewed (success), then integration moved and was merged in clean; ``R`` and the sync."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    forge.pyproject = _SERVED
+    forge.review_workflow = False  # the serve's review, not the Actions job's: the serve's own login counts
     _tick(work, forge, FakeCommand())
     advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
     run_git(work, 'checkout', '-q', '-B', 'sync', 'origin/pr/x')
@@ -799,7 +796,7 @@ def test_a_pure_sync_carries_the_reviewed_heads_success_and_runs_nothing(tmp_pat
     assert len(forge.comments[number]) == 1, 'no round is posted'
 
     work, forge, number, head, synced = _reviewed_then_synced(tmp_path / 'control')
-    forge.pyproject = '[tool.dev_lab.ci."review.yml"]\n'
+    forge.review_workflow = True
     command = FakeCommand()
     _tick(work, forge, command)
     assert len(command.ran) == 1
@@ -814,7 +811,7 @@ def test_an_empty_push_after_a_failure_is_reviewed_never_nothing_to_review(tmp_p
         (tmp_path / severity).mkdir()
         work, head = _work(tmp_path / severity)
         forge, number = _forge(head)
-        forge.pyproject = _SERVED
+        forge.review_workflow = False
         _tick(work, forge, FakeCommand(_output(severity=severity)))
         run_git(work, 'checkout', '-q', '-B', 'empty', 'origin/pr/x')
         run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'nudge')

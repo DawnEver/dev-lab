@@ -56,9 +56,12 @@ class StateForge(Client):
         self.now_http = NOW_HTTP
         #: Every call as ``METHOD path?query``, in order: what a test counts requests by.
         self.asked: list[str] = []
-        #: ``pyproject.toml`` at every ref (default: it adopts the Actions review), ``pyproject_at`` overriding one ref.
-        self.pyproject = '[tool.dev_lab.ci."review.yml"]\n'
+        #: ``pyproject.toml`` at every ref, ``pyproject_at`` overriding one ref.
+        self.pyproject = ''
         self.pyproject_at: dict[str, str | None] = {}  # ``None``: the file is absent at that ref
+        #: Whether every ref holds Gitea's review workflow (default: it adopts the Actions review), and per ref.
+        self.review_workflow = True
+        self.review_workflow_at: dict[str, bool] = {}
         #: Every PR review by pull number, as ``GET .../pulls/{n}/reviews`` lists them (:meth:`add_review`).
         self.reviews: dict[int, list[dict[str, Any]]] = {}
 
@@ -100,8 +103,14 @@ class StateForge(Client):
         listed = [r for r in mine if r['head_sha'] == query.get('head_sha', r['head_sha'])][::-1]  # newest first
         return {'workflow_runs': listed, 'total_count': len(listed)}
 
-    def _contents(self, ref: str) -> dict[str, Any]:
-        text = self.pyproject_at.get(ref, self.pyproject)
+    def _contents(self, path: str, ref: str) -> dict[str, Any]:
+        if path == 'pyproject.toml':
+            text = self.pyproject_at.get(ref, self.pyproject)
+        else:  # the review workflow file, the only other one read
+            if not self.review_workflow_at.get(ref, self.review_workflow):  # gitea answers an absent file 404
+                absent = Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED)
+                raise ForgeCallFailed(Report(('GET', 'contents'), (absent,), 1))
+            text = 'name: Review\n'
         if text is None:
             missing = Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED)
             raise ForgeCallFailed(Report(('GET', 'contents'), (missing,), 1))
@@ -324,7 +333,7 @@ class StateForge(Client):
             ('GET', 'teams'): lambda: [team for team, _ in self.teams],
             ('GET', 'team_member'): lambda: self._team_member_of(key),
             ('GET', 'runs'): lambda: self._runs(query),
-            ('GET', 'contents'): lambda: self._contents(query['ref']),
+            ('GET', 'contents'): lambda: self._contents(key, query['ref']),
             ('GET', 'run'): lambda: next(r for r in self.runs if r['id'] == number),
             ('GET', 'repo'): lambda: {
                 'open_issues_count': opened,

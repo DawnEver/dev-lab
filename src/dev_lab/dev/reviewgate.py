@@ -34,19 +34,22 @@ earlier conclusion is no longer observable, so a success naming it cannot be tol
 planted during a first run. That re-run reviews the head afresh
 (:attr:`~dev_lab.dev.forgereview_command.Runner.verifies`) and concludes by its own post.
 
-ON GITEA THE BASE'S DECLARATION ALONE SAYS WHICH IDENTITY IS THE FORGE (:func:`adopts_actions_review`): a repo whose
-integration branch declares ``[tool.dev_lab.ci."review.yml"]`` (it renders ``.gitea/workflows/review.yml``) is judged
-by the Actions rule above. Under ``pull_request_target`` only the base's workflow ever runs, so a PR that adopts
-review.yml is reviewed by the serve rule until it lands -- an adoption read at the head would wait forever for an
-Actions review that cannot come -- and a PR never un-adopts it: the base is the integration branch, which the PR
-cannot edit. A repo not declaring it at its base has no review job: its review is posted by ``forge serve``, and the
-forge is the login the judging client authenticates as (:meth:`~dev_lab.dev.forgework.Client.whoami`) -- the pre-#14
+ON GITEA THE BASE'S REVIEW WORKFLOW ALONE SAYS WHICH IDENTITY IS THE FORGE (:func:`adopts_actions_review`): a repo
+whose integration branch holds :data:`ACTIONS_REVIEW_FILE` -- the file Gitea runs for ``pull_request_target`` --
+is judged by the Actions rule above. The FILE is read, never a ``[tool.dev_lab.ci]`` table: every Gitea repo renders
+it from the base set without declaring it (dev-lab #92), and a table read as "not adopted" sent the job's null-creator
+success to the serve rule, which refuses every one (motronics #5540, 2026-11-06). Under ``pull_request_target`` only
+the base's workflow ever runs, so a PR that adds review.yml is reviewed by the serve rule until it lands -- an
+adoption read at the head would wait forever for an Actions review that cannot come -- and a PR never removes it:
+the base is the integration branch, which the PR cannot edit. A base without the file has no review job: its review
+is posted by ``forge serve``, and the forge is the login the judging client authenticates as
+(:meth:`~dev_lab.dev.forgework.Client.whoami`) -- the pre-#14
 rule (be39f7a6, ``forge_bots`` with ``[tool.dev_lab.review] forge_bot`` = "the login forge serve posts as"), its
 identity now read from the forge rather than declared. RESIDUAL, ACCEPTED ON RECORD (D18, "fake isolation"): on a
 Gitea host the serve's login is shared with the agents on that host, so until the repo adopts the Actions review a
 same-host agent's token is indistinguishable from the serve's.
-A declaration that cannot be read -- no ``pyproject.toml``, an answer without content -- refuses
-(:class:`DeclarationUnread`); only a parsed manifest lacking the table is "not adopted". A runs listing the forge
+A base whose file cannot be read -- any failure but the forge's 404, an answer without content -- refuses
+(:class:`DeclarationUnread`); only a 404 is "not adopted". A runs listing the forge
 answers without a list refuses too (:class:`RunsUnread`), as a failed call does: never a pass.
 
 The remedy for a head whose review could not run is :data:`RERUN`: the forge's own review, run again.
@@ -58,13 +61,11 @@ import base64
 import contextlib
 import os
 import re
-import tomllib
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlsplit
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
-from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, JUDGE_CHECK, REVIEW_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages
@@ -82,6 +83,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ACTIONS_REVIEW',
+    'ACTIONS_REVIEW_FILE',
     'APPROVED',
     'PREPARE_WORKFLOW',
     'RERUN',
@@ -109,8 +111,11 @@ __all__ = [
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
 RERUN: Final = "re-run the forge's review of the head (the PR's review job)"
 
-#: The ``[tool.dev_lab.ci]`` workflow whose declaration adopts Gitea Actions as the forge's reviewer.
+#: The workflow whose run is Gitea's review job (:func:`review_runs` lists runs by it).
 ACTIONS_REVIEW: Final = 'review.yml'
+
+#: Where the base holds :data:`ACTIONS_REVIEW` on Gitea; holding it adopts Gitea Actions as the forge's reviewer.
+ACTIONS_REVIEW_FILE: Final = f'.gitea/workflows/{ACTIONS_REVIEW}'
 
 #: The base's workflow whose run attaches a judge repo's bundle (:mod:`~dev_lab.dev.forgereview_pointer`);
 #: :mod:`~dev_lab.dev.ciworkflows` renders it, on either forge, under this name: the one the judge lists runs by.
@@ -150,28 +155,44 @@ class RunsUnread(ValueError):
     """The forge's runs at a head could not be read: whether its review run concluded success is undecided."""
 
 
-def manifest_at(client: Client, ref: str) -> str:
-    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree.
+def _content_at(client: Client, path: str, ref: str) -> str | None:
+    """The repo's file *path* at *ref*, as the forge holds it -- never a working tree; ``None`` on the forge's 404.
 
     Raises:
-        DeclarationUnread: the file is absent at *ref*, or the forge's answer carries no content.
+        DeclarationUnread: any other failure, or an answer that carries no content.
 
     """
     try:
-        answer: Any = client.call('GET', f'{client.repo}/contents/pyproject.toml?ref={ref}')
+        answer: Any = client.call('GET', f'{client.repo}/contents/{path}?ref={ref}')
     except ForgeCallFailed as failed:
-        msg = f'pyproject.toml at {ref} cannot be read: {failed}'
+        if failed.final == _NOT_FOUND:
+            return None
+        msg = f'{path} at {ref} cannot be read: {failed}'
         raise DeclarationUnread(msg) from failed
     content = answer.get('content') if isinstance(answer, dict) else None
     if not content:
-        msg = f'pyproject.toml at {ref}: the forge answered no content'
+        msg = f'{path} at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
     return base64.b64decode(content).decode()
 
 
+def manifest_at(client: Client, ref: str) -> str:
+    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it (:func:`_content_at`).
+
+    Raises:
+        DeclarationUnread: the file is absent at *ref*, or cannot be read.
+
+    """
+    text = _content_at(client, 'pyproject.toml', ref)
+    if text is None:
+        msg = f'pyproject.toml at {ref} is absent'
+        raise DeclarationUnread(msg)
+    return text
+
+
 def adopts_actions_review(client: Client, ref: str) -> bool:
-    """Whether the repo's ``pyproject.toml`` at *ref* (:func:`manifest_at`) declares :data:`ACTIONS_REVIEW`."""
-    return ACTIONS_REVIEW in declared_table(tomllib.loads(manifest_at(client, ref)), 'ci', {})
+    """Whether the repo holds :data:`ACTIONS_REVIEW_FILE` at *ref*: the review job Gitea runs for its PRs."""
+    return _content_at(client, ACTIONS_REVIEW_FILE, ref) is not None
 
 
 def review_runs(
