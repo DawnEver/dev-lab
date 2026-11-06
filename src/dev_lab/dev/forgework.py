@@ -65,6 +65,7 @@ from dev_lab.dev._forgebackends import (
     actions_token,
     backend_for,
 )
+from dev_lab.dev._forgeteams import team_grants_write
 from dev_lab.dev.forge import (
     Forge,
     Transport,
@@ -332,28 +333,13 @@ class Client:
         team (2026-11-06: every internal motronics PR read as external, so nothing auto-merged).
         """
         quoted = urllib.parse.quote(login, safe='')
-        writers, unit = self.backend.writer_permissions, self.backend.writer_unit
         try:
             answer = self.call('GET', f'{self.repo}/collaborators/{quoted}/permission')
-            if isinstance(answer, dict) and answer.get('permission') in writers:
+            if isinstance(answer, dict) and answer.get('permission') in self.backend.writer_permissions:
                 return True
-            teams = self.call('GET', f'{self.repo}/teams') if unit else []
+            return bool(self.backend.writer_unit) and team_grants_write(self, quoted)
         except ForgeCallFailed:
             return False
-        granting = (
-            team['id']
-            for team in teams if isinstance(team, dict)
-            if team.get('permission') in writers or (team.get('units_map') or {}).get(unit) in writers
-        )  # fmt: skip
-        return any(self._team_member(team, quoted) for team in granting)
-
-    def _team_member(self, team: int, quoted: str) -> bool:
-        """Whether team *team* lists the (quoted) login: Gitea answers the user, else 404 (refused: no)."""
-        try:
-            self.call('GET', f'{self.backend.api_root}/teams/{team}/members/{quoted}')
-        except ForgeCallFailed:
-            return False
-        return True
 
     def whoami(self) -> str:
         """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub.
