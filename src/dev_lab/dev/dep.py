@@ -59,11 +59,9 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -81,6 +79,7 @@ from lab_commons.log import emit
 from dev_lab.dev import _dep_local, _dep_project
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
+from dev_lab.dev._dep_pip import has_pip
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
@@ -93,7 +92,6 @@ __all__ = [
     'Report',
     'Version',
     'current_env_key',
-    'has_pip',
     'init_submodules',
     'main',
     'mutate',
@@ -209,21 +207,6 @@ def retire_anchors(paths: Sequence[Path]) -> tuple[str, ...]:
     for path in retired:
         path.unlink()
     return tuple(str(path) for path in retired)
-
-
-def has_pip(python: str) -> bool:
-    """Whether *python* can run ``-m pip``. A uv-created venv cannot: uv seeds no pip into it.
-
-    The invoking interpreter is answered in-process; any other is asked, because a venv's packages
-    are a fact about THAT interpreter and not about this one.
-    """
-    if python == sys.executable:
-        return importlib.util.find_spec('pip') is not None
-    try:
-        done = _door.run([python, '-c', 'import pip'], capture_output=True, timeout=60, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return done.returncode == 0
 
 
 def pip_argv(
