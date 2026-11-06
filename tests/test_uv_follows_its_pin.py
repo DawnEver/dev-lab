@@ -21,7 +21,7 @@ from dev_lab.dev.uvfollow import WINGET_ID, Route, follow, route_of, update_argv
 _STALE = '0.13.5'
 _WINGET_UV = r'C:\Users\x\AppData\Local\Microsoft\WinGet\Links\uv.exe'
 _WINGET_PACKAGE_UV = r'C:\Users\x\AppData\Local\Microsoft\WinGet\Packages\astral-sh.uv_Microsoft.Winget.Source\uv.exe'
-_STANDALONE_UV = '/home/x/.local/bin/uv'
+_STANDALONE_UV = '/opt/tools/bin/uv'
 
 
 def _report(argv: Sequence[str], code: int) -> Report:
