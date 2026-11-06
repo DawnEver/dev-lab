@@ -425,6 +425,9 @@ prepare = [
 # Two jobs of one repository may overlap (the concurrency group is per PR, so a superseded run is cancelled and no
 # PR's pending run is dropped for another's): the flock serialises their mirror updates, and a --prune'd branch's
 # objects stay in the mirror's packs until a gc's prune expiry (two weeks), far beyond a job.
+# A JOB NEVER REPACKS THE WHOLE MIRROR (2026-11-06, forge-a1): the fetch's auto-gc ran `pack-objects --all` (360 MB)
+# inside the 1 GB light runner, which hit memory.high 3928 times. The fetch runs with gc.auto=0, and under the same
+# lock a GEOMETRIC repack merges only the small new packs, so the pack count stays bounded without a full rewrite.
 # The checkout is sparse, root files only: the review reads the head through git and only pyproject.toml from
 # the tree, and a full checkout would lazily fetch every blob of the head (a large consumer: 10+ minutes on the host).
 # `reach` is its own list: every Gitea host-runner job (review.yml, merge.yml) takes it before its own fetch.
@@ -456,7 +459,8 @@ mkdir -p "${MIRROR%/*}"
   fi
   find "$MIRROR" -maxdepth 2 -name '*.lock' -type f -delete
   git -C "$MIRROR" remote set-url origin "$REPO"
-  git -C "$MIRROR" fetch -q --prune --no-tags --filter=blob:none origin '+refs/heads/*:refs/heads/*'
+  git -C "$MIRROR" -c gc.auto=0 fetch -q --prune --no-tags --filter=blob:none origin '+refs/heads/*:refs/heads/*'
+  git -C "$MIRROR" repack -q -d --geometric=2
 ) 9>"$MIRROR.lock"
 git clone -q --shared --no-checkout --template= "$MIRROR" .
 git remote set-url origin "$REPO"
