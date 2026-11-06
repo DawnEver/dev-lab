@@ -1,5 +1,10 @@
 """The cluster deployment's DATA: the ``[deploy]`` declaration, and the crontab lines derived from it.
 
+AN ACCOUNT HAS A ROLE (user ruling 2026-11-06), declared ONCE as ``[deploy] role`` in its own machine file -- the
+table its deploy, its tick, its host card and the workstation's ``deploy-fleet`` all read: ``"verification"`` (a
+Forge Verification account: it runs the forge serve cron) or ``"research"`` (checkouts and venvs for research,
+never a serve cron). Undeclared, nothing is ticked and the deploy refuses (:func:`role_refusal`).
+
 Pure: parse, render, derive. :mod:`dev_lab.dev.hpchost.deploy` runs the steps.
 """
 
@@ -23,6 +28,9 @@ __all__ = [
     'DEFAULT_TICK_MINUTES',
     'KIT',
     'MARK',
+    'RESEARCH',
+    'ROLES',
+    'VERIFICATION',
     'Deployment',
     'Repo',
     'checkout_of',
@@ -34,6 +42,7 @@ __all__ = [
     'parse_repo',
     'render',
     'render_grant',
+    'role_refusal',
     'tick_command',
     'tick_dirs',
     'tick_environment',
@@ -54,6 +63,11 @@ DEFAULT_TICK_MINUTES: Final = 5
 
 #: The served repo every tick RUNS -- the kit, whose ``forge serve`` serves every other served repo.
 KIT: Final = 'dev-lab'
+
+#: The two ``[deploy] role`` values: only a verification account serves the forge (user ruling 2026-11-06).
+VERIFICATION: Final = 'verification'
+RESEARCH: Final = 'research'
+ROLES: Final = (VERIFICATION, RESEARCH)
 
 #: The interpreter a cron line runs: the line is a Linux login node's, so the POSIX venv layout is the only one.
 _VENV_PYTHON: Final = str(PurePosixPath('.venv', 'bin', 'python'))
@@ -80,7 +94,8 @@ class Repo:
 class Deployment:
     """The ``[deploy]`` table of the machine file, plus the ``[schedule] tick_minutes`` its cron lines run at.
 
-    ``slurm_account`` and ``partitions`` declare this account's grant.
+    ``slurm_account`` and ``partitions`` declare this account's grant; ``role`` is one of :data:`ROLES`, ``''``
+    when undeclared (nothing is ticked, the deploy refuses).
     """
 
     host: str
@@ -89,6 +104,7 @@ class Deployment:
     repos: tuple[Repo, ...]
     slurm_account: str = ''  # needed only when sacctmgr names several
     partitions: tuple[str, ...] = ()
+    role: str = ''
     tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
 
 
@@ -114,11 +130,30 @@ def load(path: Path) -> Deployment | None:
             ),
             slurm_account=raw.get('slurm_account', ''),
             partitions=tuple(raw.get('partitions', ())),
+            role=_role(path, raw.get('role', '')),
             tick_minutes=_tick_minutes(path, table.get('schedule', {})),
         )
     except KeyError as missing:
         msg = f'[deploy] in {path} lacks {missing}'
         raise ValueError(msg) from None
+
+
+def _role(path: Path, role: object) -> str:
+    """``[deploy] role``: one of :data:`ROLES`, or ``''`` when undeclared; anything else refused naming the key."""
+    if role != '' and role not in ROLES:
+        msg = f'[deploy] role in {path} is {role!r}: declare one of {list(ROLES)}'
+        raise ValueError(msg)
+    return str(role)
+
+
+def role_refusal(spec: Deployment, path: Path) -> str:
+    """``''`` when *spec* declares its role; else why the deploy refuses -- a deploy never serves silently."""
+    if spec.role:
+        return ''
+    return (
+        f'[deploy] role is undeclared in {path}: declare role = "{VERIFICATION}" (a Forge Verification account, '
+        f'which runs the forge serve cron) or role = "{RESEARCH}" (never serves) -- user ruling 2026-11-06'
+    )
 
 
 def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
@@ -145,6 +180,7 @@ def render(spec: Deployment) -> str:
         for r in spec.repos
     )
     account = f'slurm_account = {_toml(spec.slurm_account)}\n' if spec.slurm_account else ''
+    account += f'role = {_toml(spec.role)}\n' if spec.role else ''
     return (
         f'\n[deploy]\nhost = {_toml(spec.host)}\nroot = {_toml(spec.root)}\npython = {_toml(spec.python)}\n'
         f'{account}partitions = {_list(spec.partitions)}\nrepos = [\n{repos}]\n'
@@ -204,7 +240,12 @@ def cron_lines(spec: Deployment, home: Path, *, slurm: Sequence[str] = (), setup
 
 
 def ticked(spec: Deployment) -> tuple[Repo, ...]:
-    """The repos this account TICKS: every served one, and the kit (whose own tick refreshes its checkout)."""
+    """The repos this account TICKS: every served one, and the kit (whose own tick refreshes its checkout).
+
+    Only a :data:`VERIFICATION` account ticks: a research or undeclared one ticks nothing, so no serve line.
+    """
+    if spec.role != VERIFICATION:
+        return ()
     return tuple(repo for repo in spec.repos if repo.serve or repo.name == KIT)
 
 

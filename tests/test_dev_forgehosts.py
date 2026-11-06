@@ -126,6 +126,16 @@ def test_a_card_carries_the_verify_parts_its_account_produces_first_and_reads_ba
     assert card.redacted().verify == ('tests/*',), 'scheduling reads it, so a public card keeps it'
 
 
+def test_a_card_shows_its_accounts_role_and_reads_back() -> None:
+    """User ruling 2026-11-06: an account's [deploy] role is on its card. PLANTED CONTROL: a box shows none."""
+    card = HostCard('ada/alice', 'a', 'linux', NOW.isoformat(), role='verification')
+    forge = StateForge()
+    publish(forge, card)
+    assert read_cards(forge) == (card,)
+    assert 'role: verification' in next(iter(forge.comments.values()))[0]['body']
+    assert 'role:' not in HostCard('box', 'a', 'windows', NOW.isoformat()).text()
+
+
 def test_a_card_written_before_a_field_was_renamed_reads_without_it() -> None:
     """A field a version no longer declares is not read: a fleet mid-upgrade never crashes its readers.
 

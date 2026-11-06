@@ -141,6 +141,7 @@ class HostCard:
     withholds: tuple[str, ...] = ()  # machine-file [serve] withhold: resources it keeps for its own work
     verify: tuple[str, ...] = ()  # [deploy] repos verify: the contexts it produces first (dev_lab.dev.forgeaffinity)
     size: Mapping[str, float] = field(default_factory=dict)  # a box's cpu and mem_gb after its reserve; {}: unstated
+    role: str = ''  # a cluster account's [deploy] role (dev_lab.dev.hpchost.spec); '' on a box
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -186,6 +187,7 @@ class HostCard:
         rule = Serves(self.serves, frozenset(self.withholds))
         head += f'\n\nserves: {rule.text()}' if self.serves != EVERY or self.withholds else ''
         head += f'\n\nverify first: {", ".join(self.verify)}' if self.verify else ''
+        head += f'\n\nrole: {self.role}' if self.role else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
@@ -366,6 +368,7 @@ def publish_card(
     withholds: Sequence[str] = (),
     size: Mapping[str, float] | None = None,
     verify: Sequence[str] = (),
+    role: str = '',
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
@@ -373,7 +376,8 @@ def publish_card(
     published while they run. *supply* is what the tick admitted against (default: the cluster
     standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
     ``[serve] parts`` rule, *size* a box's size (what a part larger than any live host is refused against),
-    *verify* the contexts this account produces first (:mod:`dev_lab.dev.forgeaffinity`).
+    *verify* the contexts this account produces first (:mod:`dev_lab.dev.forgeaffinity`), *role* a cluster
+    account's ``[deploy] role`` (:mod:`dev_lab.dev.hpchost.spec`).
     """
     progress = progress or {}
     built = client(root)
@@ -402,6 +406,7 @@ def publish_card(
             withholds=tuple(sorted(withholds)),
             size=dict(size or {}),
             verify=tuple(verify),
+            role=role,
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:

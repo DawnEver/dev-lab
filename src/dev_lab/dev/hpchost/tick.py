@@ -13,6 +13,10 @@ claimed parts its build could not make). Each repo's declared ``needs`` is probe
 :func:`~dev_lab.dev.hpchost.checks.runs`, once per tool per tick, in the tick's own environment (the cron
 line already set it up); a repo lacking one is released unserved -- nothing claimed -- and a ``needs``
 alarm names the account and the tool.
+
+ONLY A VERIFICATION ACCOUNT SERVES (user ruling 2026-11-06): a tick on an account whose ``[deploy] role`` is not
+``"verification"`` -- a research account a stale cron line survived on -- refreshes, then refuses to serve, exit 2
+naming the role; its own ``hpchost deploy`` removes the line (:func:`dev_lab.dev.hpchost.spec.ticked`).
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from lab_commons.log import emit
 from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
 from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.hpchost.checks import runs
-from dev_lab.dev.hpchost.spec import Deployment, Repo, checkout_of, host_serve_argv, load
+from dev_lab.dev.hpchost.spec import VERIFICATION, Deployment, Repo, checkout_of, host_serve_argv, load
 from dev_lab.dev.hpchost.steps import Step, Tools, build, declared, update
 
 __all__ = ['account', 'tick']
@@ -101,6 +105,10 @@ def tick(
         alarm(Alarm(NEEDS, repo.url, f'{account()} lacks {", ".join(lacking)}: {name} is not served', why))
     if why:
         emit(f'[tick] {name} released, not served this tick: {why}', err=True)
+        return 2
+    if spec.role != VERIFICATION:
+        role = spec.role or 'undeclared'
+        emit(f'[tick] {name} refused to serve: [deploy] role is {role}; only a {VERIFICATION} account serves', err=True)
         return 2
     serve_off({one.name: one.serve for one in spec.repos}, account(), alarm=alarm, repo=repo.url)
     if not repo.serve:

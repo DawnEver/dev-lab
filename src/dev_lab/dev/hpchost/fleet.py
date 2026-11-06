@@ -7,7 +7,8 @@ fleet -- anything else is refused before any ssh.
 WHERE AN ACCOUNT SERVES IS ITS OWN DECLARATION, never this machine's guess: its machine file's ``[deploy]``
 ``host`` and ``root`` (:mod:`dev_lab.dev.hpchost.spec`, the table its cron line was written from). Login hosts
 share the home, so one read through any of the grant's hosts (:func:`lab_commons.hpc.cluster.runner_for`)
-answers (:func:`declared_target`). An account with no ``[deploy]``, or whose host is not one of its grant's
+answers (:func:`declared_target`), with its ``role`` (:mod:`dev_lab.dev.hpchost.spec`: only a verification account
+serves), printed per account. An account with no ``[deploy]``, or whose host is not one of its grant's
 login hosts, is refused by name and the others still deploy (exit 2).
 
 Then it starts ONE detached ``ssh -o BatchMode=yes <user>@<declared host>`` that runs that account's own
@@ -52,10 +53,11 @@ Launch = Callable[[Sequence[str], IO[Any]], object]
 
 @dataclass(frozen=True)
 class Target:
-    """Where one account serves: its declared login host and checkout root."""
+    """Where one account deploys: its declared login host, checkout root and role (``''``: undeclared)."""
 
     host: str
     root: str
+    role: str = ''
 
 
 def declared_target(grant: Grant, shell: Runner) -> Target | str:
@@ -75,7 +77,7 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
-    return Target(named[0], deploy.get('root', DEFAULT_ROOT))
+    return Target(named[0], deploy.get('root', DEFAULT_ROOT), deploy.get('role', ''))
 
 
 def remote_argv(user: str, target: Target) -> list[str]:
@@ -141,7 +143,8 @@ def deploy_fleet(
             continue
         argv = remote_argv(user, target)
         path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
-        say(f'{user}: {"would start" if dry_run else "started"} {shlex.join(argv)}  log {path}')
+        role = target.role or 'role undeclared'
+        say(f'{user} ({role}): {"would start" if dry_run else "started"} {shlex.join(argv)}  log {path}')
         if not dry_run:
             with path.open('a', encoding='utf-8') as log:
                 launch(argv, log)

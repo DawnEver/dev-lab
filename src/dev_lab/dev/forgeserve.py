@@ -156,6 +156,7 @@ from dev_lab.dev.forgeservesteps import pressed, repo_wide, retain_storage, revi
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.hpchost.spec import load
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL
@@ -240,6 +241,7 @@ def serve(
     priority = Priority.of(section(PRIORITY_TABLE))
     serves = Serves.of(section(SERVE_TABLE))
     verify = declared(config_path(), repo) if seat is not None else ()  # HPC account affinity
+    role = deployed.role if seat is not None and (deployed := load(config_path())) else ''  # its card shows it
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     if slurm is not None:
         _cancel_strays(slurm, repo, seat, alarm)
@@ -267,7 +269,7 @@ def serve(
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
             'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
-            'serves': serves.parts, 'withholds': sorted(serves.withholds), 'verify': verify,
+            'serves': serves.parts, 'withholds': sorted(serves.withholds), 'verify': verify, 'role': role,
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,

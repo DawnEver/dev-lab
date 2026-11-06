@@ -9,22 +9,23 @@ a tracked file, since the forge, its repos and the login host are private to the
     python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
+    role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)
     repos = [{ name = "dev-lab", url = "<https url>", ref = "<branch>" }, { name = "<repo>", ... }, ...]
     # an entry may add serve = false: checked out and installed, its forge queue not served by this account
 
     [schedule]
     tick_minutes = 15              # the cron period (divides 60; default 5) -- also what the host card is judged by
 
-The first run DECLARES it with ``--host <host> --repo <name>=<url>@<ref> ... --partition <p> ...`` (written
+The first run DECLARES it with ``--host <host> --repo <name>=<url>@<ref> ... --partition <p> ... --role <r>`` (written
 once; a later run with flags that disagree is refused, naming the file); every later run reads it.
 ``dev-lab`` (the kit) is always among the repos: every tick RUNS it and its own line is the one writer of
 its checkout; whether this account also serves dev-lab's queue is that entry's ``serve``.
 
-STEPS, each one reporting, each one safe to repeat: refuse off the declared host; check the account BEFORE
-anything changes (:mod:`dev_lab.dev.hpchost.account`: git's credential helper and its store, every repo's
-``git ls-remote``, and the forge API calls a tick makes); write this account's own ``[[hpc.grant]]`` when
-it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy repository --
-IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
+STEPS, each one reporting, each one safe to repeat: refuse an undeclared ``role``; refuse off the declared host;
+check the account BEFORE anything changes (:mod:`dev_lab.dev.hpchost.account`: git's credential helper and
+its store, every repo's ``git ls-remote``, and the forge API calls a tick makes); write this account's own
+``[[hpc.grant]]`` when it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy
+repository -- IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
 before its tick) -- or refuse naming that environment; clone or update each checkout; install ``uv`` and
 every declared ``needs`` whose ``--version`` does not run in the tick's environment, or refuse naming it;
 make the login shell's PATH name the tick's user installs (one marked line in the files bash reads, written
@@ -35,7 +36,9 @@ artefact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone
 are then not claimed here); replace this tool's marked crontab lines (one per served repo and the kit, every
 ``[schedule] tick_minutes`` at a minute offset derived per account, under ``flock -n``)
 and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes nothing;
-``--remove`` deletes the marked lines only. No credential is ever printed.
+``--remove`` deletes the marked lines only. A ``research`` account gets every step but the serve: its marked
+lines are removed (each printed) and none is written (:func:`dev_lab.dev.hpchost.spec.ticked`). No credential is
+ever printed.
 
 A REFUSAL BELONGS TO THE REPO THAT EARNED IT (incident 2026-10-13: one repo still declaring a retired
 ``[tool.lab_commons.<table>]`` stopped the whole deploy at ``[tools]``, so the host served none of three).
@@ -82,21 +85,22 @@ from dev_lab.dev.hpchost.spec import (
     DEFAULT_PYTHON,
     DEFAULT_ROOT,
     KIT,
+    ROLES,
     Deployment,
     Repo,
     checkout_of,
     cron_lines,
     grant_setup,
     load,
-    merge_crontab,
     parse_repo,
     render,
+    role_refusal,
     tick_command,
     tick_dirs,
     tick_environment,
     ticked,
 )
-from dev_lab.dev.hpchost.steps import Step, Tools, build, declared, update
+from dev_lab.dev.hpchost.steps import Step, Tools, build, crontab, declared, update
 
 __all__ = ['deploy', 'main']
 
@@ -117,21 +121,6 @@ AlarmSink = Callable[[str, str, str], object]
 Refused = dict[str, str]
 
 
-def _crontab(step: Step, lines: Sequence[str]) -> int:
-    listed = step.read([*step.tools.crontab, '-l'])
-    current = listed.stdout if listed.returncode == 0 else ''
-    if listed.returncode and 'no crontab' not in listed.stderr:
-        emit(f'  crontab -l exited {listed.returncode}: {listed.stderr.strip()}', err=True)
-        return 2
-    wanted = merge_crontab(current, lines)
-    if wanted == current:
-        emit(f'  crontab: the {len(lines)} marked line(s) are already in place')
-        return 0
-    return step.change(
-        f'crontab: write {len(lines)} marked line(s), every other line kept', [*step.tools.crontab, '-'], stdin=wanted
-    )
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpchost deploy', description=__doc__.splitlines()[0])
     parser.add_argument('--config', type=Path, help='the machine file holding [deploy] (default: lab_commons.config)')
@@ -143,6 +132,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--python', default=DEFAULT_PYTHON, help='declare: the uv-managed interpreter request')
     parser.add_argument('--slurm-account', default='', help="declare: the grant's account, when Slurm names several")
     parser.add_argument('--partition', action='append', default=[], help='declare: a partition the grant may use')
+    parser.add_argument('--role', choices=ROLES, default='', help='declare: verification serves; research never')
     parser.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     parser.add_argument('--remove', action='store_true', help='delete the marked crontab lines only')
     return parser
@@ -157,17 +147,21 @@ def _declared(args: argparse.Namespace, path: Path) -> Deployment | str:
         )
     if not (args.host and args.repo):
         return 'a declaration needs both --host and at least one --repo'
-    given = Deployment(args.host, args.root, args.python, tuple(args.repo), args.slurm_account, tuple(args.partition))
+    given = Deployment(
+        args.host, args.root, args.python, tuple(args.repo), args.slurm_account, tuple(args.partition), args.role
+    )
     if stored is not None and stored != given:
         return f'{path} already declares a different [deploy]; edit it there, or run without --host/--repo'
     return given
 
 
 def _resolve(args: argparse.Namespace, path: Path) -> Deployment | str:
-    """The declared deployment, refused unless it declares the kit (dev-lab) -- the code every tick runs."""
+    """The declared deployment, refused unless it declares its role and the kit (dev-lab), which every tick runs."""
     spec = _declared(args, path)
     if isinstance(spec, Deployment) and KIT not in {repo.name for repo in spec.repos}:
         return f'every tick runs {KIT}, so the host checks it out: add --repo {KIT}=<https url>@<branch>'
+    if isinstance(spec, Deployment) and not args.remove and (why := role_refusal(spec, path)):
+        return why  # a deploy never serves silently; --remove needs no role
     return spec
 
 
@@ -284,11 +278,11 @@ def _cron(
     step: Step, spec: Deployment, home: Path, refused: Refused, *, slurm: Sequence[str], setup: Sequence[str]
 ) -> int:
     """One marked line per repo not refused; a refused repo's line is removed, so a broken line never runs."""
-    emit('[cron] one marked line per served repo')
+    emit(f'[cron] one marked line per served repo ({spec.role} account: only verification serves)')
     if not step.dry:
         (home / '.cache').mkdir(parents=True, exist_ok=True)
     lines = cron_lines(replace(spec, repos=tuple(_healthy(spec, refused))), home, slurm=slurm, setup=setup)
-    rc = _crontab(step, lines)
+    rc = crontab(step, lines)
     for line in lines:
         emit(f'  {line}')
     return rc
@@ -298,7 +292,7 @@ def _tick(
     step: Step, spec: Deployment, home: Path, repo: Repo, *, slurm: Sequence[str] = (), setup: Sequence[str] = ()
 ) -> int:
     if repo not in ticked(spec):
-        emit(f'  {repo.name}: not served by this account, not ticked')
+        emit(f'  {repo.name}: not served by this {spec.role} account, not ticked')
         return 0
     command = tick_command(spec, home, repo, log=False, slurm=slurm, setup=setup)
     rc = step.change(f'tick {repo.name}: {command}', [*step.tools.sh, command])
@@ -381,7 +375,7 @@ def deploy(
     step = Step(tools or Tools(), dry=args.dry_run, path=path_env)
     if args.remove:
         emit('[cron] removing the marked lines')
-        return _crontab(step, [])
+        return crontab(step, [])
     check = api or auth_check
     slurm = _slurm_dirs()
     if isinstance(slurm, str):

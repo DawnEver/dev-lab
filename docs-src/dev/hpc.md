@@ -11,8 +11,15 @@ On the login host you chose, store your own forge token once (`git config --glob
 `chmod 600 ~/.git-credentials`, then `python -m dev_lab.dev.forge auth login`), then paste:
 
 ```
-[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/dev-lab; { [ -d $D/.git ] || git clone -q -b integrate/main $F/dev-lab.git $D; } && git -C $D pull -q --ff-only && cd $D && ~/.local/bin/uv run --python 3.13 python -m dev_lab.dev.hpchost deploy --host <login host> --repo dev-lab=$F/dev-lab.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ...
+[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/dev-lab; { [ -d $D/.git ] || git clone -q -b integrate/main $F/dev-lab.git $D; } && git -C $D pull -q --ff-only && cd $D && ~/.local/bin/uv run --python 3.13 python -m dev_lab.dev.hpchost deploy --host <login host> --repo dev-lab=$F/dev-lab.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ... --role <verification|research>
 ```
+
+- **Every account declares its role** (user ruling 2026-11-06), once, as `[deploy] role` in its own machine
+  file (`--role` on the first run): `"verification"` -- a Forge Verification account, the only kind that runs
+  the forge serve cron -- or `"research"`, which gets its checkouts and venvs and NO serve line: its deploy
+  removes any marked line it finds and prints each one. Undeclared, the deploy refuses naming the key, and a
+  tick on a non-verification account refreshes, then refuses to serve, naming the role. The host card shows
+  `role:`, and `deploy-fleet` prints each account's role (`dev_lab.dev.hpchost.spec`).
 
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
   file: host, root, python, served repos, partitions, and `--slurm-account` when Slurm names several); later
@@ -59,7 +66,7 @@ On the login host you chose, store your own forge token once (`git config --glob
 
 Once every account is deployed, a workstation re-deploys the whole fleet with
 `python -m dev_lab.dev.hpchost deploy-fleet [--account <user>]... [--dry-run]`: for each `[[hpc.grant]]`
-account it reads that account's own `[deploy]` host and root, then one detached `ssh` to that host runs its
+account it reads that account's own `[deploy]` host, root and role, then one detached `ssh` to that host runs its
 `deploy`, one log each under
 `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log`. An account outside the grants is refused.
 
