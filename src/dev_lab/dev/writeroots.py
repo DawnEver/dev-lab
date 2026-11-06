@@ -38,6 +38,7 @@ from dev_lab.dev.disclosure import details_for
 
 __all__ = [
     'DRIVE_NAMES',
+    'EXCLUDED_GLOBS_IN_TEMP',
     'EXCLUDED_IN_TEMP',
     'HAZARD',
     'REMEDY',
@@ -69,7 +70,12 @@ DRIVE_NAMES: Final[Mapping[str, Literal['temp', 'census']]] = {
 EXCLUDED_IN_TEMP: Final[Mapping[str, str]] = {
     'claude': 'the Claude Code harness writes its task output under <temp>/claude/<hash>/<session>/ itself',
     'lab-commons-notices': "dev_lab.dev.branchnotices' per-session forge-read cache",
+    'claude-notif-*.ps1': 'the Claude Code harness writes its desktop-notification script here itself',
 }
+
+#: The :data:`EXCLUDED_IN_TEMP` names that are GLOBS (a harness file named at random), matched against an entry's
+#: name; the rest are exact names, excluded as paths (:func:`excluded_paths`).
+EXCLUDED_GLOBS_IN_TEMP: Final = tuple(name for name in EXCLUDED_IN_TEMP if any(c in name for c in '*?['))
 
 #: Environment variables naming a tool cache the family uses; one inside a root is excluded.
 _CACHE_VARS: Final = ('UV_CACHE_DIR', 'PIP_CACHE_DIR', 'RUFF_CACHE_DIR')
@@ -140,7 +146,8 @@ def excluded_paths(
     """What no caller refuses, reports or sweeps: :data:`EXCLUDED_IN_TEMP`, the cache variables, the machine's."""
     env = os.environ if env is None else env
     machine = declared() if machine is None else machine
-    found = [root.path / name for root in roots if root.kind == 'temp' for name in EXCLUDED_IN_TEMP]
+    names = [name for name in EXCLUDED_IN_TEMP if name not in EXCLUDED_GLOBS_IN_TEMP]  # a glob is matched by name
+    found = [root.path / name for root in roots if root.kind == 'temp' for name in names]
     found += [Path(env[var]) for var in _CACHE_VARS if env.get(var)]
     found += _paths(machine, 'excluded')
     return tuple(dict.fromkeys(found))

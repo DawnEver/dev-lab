@@ -19,6 +19,7 @@ are never listed, so nothing can remove them.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import os
 import shutil
 import sys
@@ -31,7 +32,7 @@ from typing import Final
 from lab_commons.log import emit
 
 from dev_lab.dev.disclosure import details_for
-from dev_lab.dev.writeroots import REMEDY, RULE_ID, Root, excluded_paths, write_prone_roots
+from dev_lab.dev.writeroots import EXCLUDED_GLOBS_IN_TEMP, REMEDY, RULE_ID, Root, excluded_paths, write_prone_roots
 
 __all__ = ['MAX_AGE_DAYS', 'REPORT_WINDOW_S', 'Entry', 'census', 'declared', 'main', 'session_report', 'sweep']
 
@@ -60,6 +61,10 @@ def _excluded(path: Path, excluded: Sequence[Path]) -> bool:
     return any(path == one or one in path.parents for one in excluded)
 
 
+def _harness_named(name: str) -> bool:
+    return any(fnmatch.fnmatchcase(name, glob) for glob in EXCLUDED_GLOBS_IN_TEMP)
+
+
 def census(roots: Iterable[Root], excluded: Iterable[Path]) -> list[Entry]:
     """Every direct entry of each root that exists, minus *excluded*; a ``home`` root lists loose non-dot files."""
     skip = tuple(excluded)
@@ -70,7 +75,7 @@ def census(roots: Iterable[Root], excluded: Iterable[Path]) -> list[Entry]:
         except OSError:
             continue  # absent or unreadable: nothing written there to name
         for child in children:
-            if _excluded(child, skip):
+            if _excluded(child, skip) or (root.kind == 'temp' and _harness_named(child.name)):
                 continue
             if root.kind == 'home' and (child.name.startswith('.') or _linked(child) or not child.is_file()):
                 continue

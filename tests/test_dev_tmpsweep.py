@@ -43,6 +43,8 @@ def planted(tmp_path: Path) -> dict[str, Path]:
     (temp / 'olddir' / 'a.txt').write_text('x', encoding='utf-8')
     (temp / 'fresh.py').write_text('x', encoding='utf-8')
     (temp / 'claude' / 'h' / 's').mkdir(parents=True)
+    (temp / 'claude-notif-0f.ps1').write_text('x', encoding='utf-8')  # the harness's own, named at random
+    (temp / 'claude-notif-0f.py').write_text('x', encoding='utf-8')  # PLANTED CONTROL: not the harness's
     (temp / 'cache').mkdir()
     (temp / 'repo' / '.git').mkdir(parents=True)
     (src / 'old.py').write_text('x', encoding='utf-8')
@@ -67,7 +69,8 @@ def test_the_census_lists_direct_entries_minus_exclusions_and_home_dot_and_dirs(
     found = {entry.path for entry in census(_roots(planted), _excluded(planted))}
     temp = planted['temp']
     assert found == {
-        temp / 'old.py', temp / 'olddir', temp / 'fresh.py', temp / 'repo', planted['src'] / 'old.py',
+        temp / 'old.py', temp / 'olddir', temp / 'fresh.py', temp / 'claude-notif-0f.py', temp / 'repo',
+        planted['src'] / 'old.py',
         planted['home'] / 'loose.py',
     }  # fmt: skip
 

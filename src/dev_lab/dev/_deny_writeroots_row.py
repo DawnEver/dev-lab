@@ -11,7 +11,7 @@ home. The engine reads text, so the roots are spelled here as a pattern; their o
 
 from __future__ import annotations
 
-from dev_lab.dev.writeroots import DRIVE_NAMES, EXCLUDED_IN_TEMP, HAZARD, REMEDY, RULE_ID
+from dev_lab.dev.writeroots import DRIVE_NAMES, EXCLUDED_GLOBS_IN_TEMP, EXCLUDED_IN_TEMP, HAZARD, REMEDY, RULE_ID
 
 __all__ = ['WRITES_STAY_IN_THE_TREE']
 
@@ -26,7 +26,7 @@ _PATHCHAR = r"""[^\s"';&|()<>]"""
 _SEG = r"""[^\s"';&|()<>\\/]"""
 _END = r"""(?=["'\s;&|)]|$)"""
 _NAMES = '(?:' + '|'.join(_ci(name) for name in DRIVE_NAMES) + ')'
-_EXCLUDED = '|'.join(EXCLUDED_IN_TEMP)
+_EXCLUDED = '|'.join(n for n in EXCLUDED_IN_TEMP if n not in EXCLUDED_GLOBS_IN_TEMP)  # no agent spells a glob
 #: The OS temp dir, by every spelling a shell gives it, not followed by an excluded name.
 _TEMP = (
     r'(?:/tmp|/var/tmp|\$\{?(?:TEMP|TMP|TMPDIR)\}?|%(?:TEMP|TMP)%|\$env:(?:TEMP|TMP)'
