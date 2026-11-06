@@ -19,12 +19,12 @@ import pytest
 from _branch_repos import advance
 from _forge_fake import run_git
 from _forge_state import StateForge
-from test_dev_forgereview import _MANIFEST, JUDGE, FakeCommand, _can, _forge, _output, _work
+from test_dev_forgereview import _MANIFEST, FakeCommand, _can, _forge, _output, _work
 
 from dev_lab.dev.ciworkflows import workflows
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, marker
-from dev_lab.dev.forgereview import REVIEW_CONTEXT, TAKEOVER_PENDING, review_tick
+from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_batch import (
     BATCH_FIELD,
     BATCH_PENDING,
@@ -36,12 +36,11 @@ from dev_lab.dev.forgereview_batch import (
     wait_of,
     within,
 )
-from dev_lab.dev.forgereview_claim import claimable
+from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS, claimable
 from dev_lab.dev.forgereview_command import PENDING_EXIT, ReviewPending, run_command
 from dev_lab.dev.forgereview_declared import (
     FAMILY_BUNDLE,
     FAMILY_COMMAND,
-    FAMILY_JUDGE,
     RANGE_FIELD,
     Review,
     command_for,
@@ -51,8 +50,9 @@ from dev_lab.dev.forgereview_scope import gather
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgetakeover import main as review_main
 from dev_lab.dev.forgework import ACTIONS_BOT
+from dev_lab.dev.platformparts import REVIEW_CONTEXT
 
-_BATCHED = Review(command=('reviewer', '--range', RANGE_FIELD, BATCH_FIELD), judge=JUDGE)
+_BATCHED = Review(command=('reviewer', '--range', RANGE_FIELD, BATCH_FIELD))
 
 
 class BatchedCommand(FakeCommand):
@@ -113,11 +113,11 @@ def test_a_pending_batch_posts_no_verdict_and_the_next_tick_resumes_it_without_r
     assert any(marker(Marker.REVIEW, head) in c['body'] for c in forge.comments[number])
 
 
-def test_every_command_of_a_round_shares_one_wait(tmp_path: Path) -> None:
+def test_every_command_of_a_review_shares_one_wait(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = BatchedCommand(polls=1)
-    review = Review(command=_BATCHED.command, judge=JUDGE, batch_wait='5 min')
+    review = Review(command=_BATCHED.command, batch_wait='5 min')
     review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
     assert command.waits
     assert all(0 <= int(left) <= 300 for left in command.waits)
@@ -152,7 +152,7 @@ def test_the_batch_flags_follow_the_declaration(tmp_path: Path) -> None:
 
 def test_the_family_commands_batch_and_a_caller_without_state_calls_at_once() -> None:
     """``{batch}`` is in every family command; filled without a state it is ``--no-batch`` (it could not resume)."""
-    for command in (FAMILY_COMMAND, FAMILY_JUDGE, FAMILY_BUNDLE):
+    for command in (FAMILY_COMMAND, FAMILY_BUNDLE):
         assert BATCH_FIELD in command
     runtimes = {'ai_lab': {'python': sys.executable}}
     plain = command_for(Review(), 'a..b', runtimes, paths=['x.py'])
@@ -183,7 +183,7 @@ def test_within_fills_the_seconds_left_when_each_command_starts() -> None:
 def test_a_pending_head_is_claimable_at_once() -> None:
     now = datetime(2026, 11, 4, 9, 0, tzinfo=UTC)
     pending = CommitStatus(REVIEW_CONTEXT, 'pending', f'{BATCH_PENDING} model batch msgbatch_1 ...', '', None)
-    other = CommitStatus(REVIEW_CONTEXT, 'pending', 'takeover pending: ...', '')
+    other = CommitStatus(REVIEW_CONTEXT, 'pending', f'{UNREVIEWED_STATUS} no key', '')
     assert claimable(pending, now, timedelta(hours=1))
     assert not claimable(other, now, timedelta(hours=1)), 'PLANTED control: another pending is not ours to take'
 
@@ -207,7 +207,7 @@ def test_a_slice_pending_still_lets_the_slices_after_it_submit(tmp_path: Path) -
         return _output()
 
     with pytest.raises(ReviewPending, match='msgbatch_1'):
-        gather('a..b', [['one'], ['two']], ['synth'], run, tmp_path, pr_body='', disposed={})
+        gather('a..b', [['one'], ['two']], ['synth'], run, tmp_path, pr_body='')
     assert ran == ['one', 'two'], 'slice two submitted; the synthesis waits for both'
 
 
@@ -261,7 +261,7 @@ def test_the_scheduled_resume_settles_only_the_batch_pending_heads(tmp_path: Pat
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     forge.add_pull('pr/y', 'integrate/main', title='add y', sha=other)
     forge.login = ACTIONS_BOT
-    status_post(forge, other, context=REVIEW_CONTEXT, state='pending', description=f'{TAKEOVER_PENDING}: held')
+    status_post(forge, other, context=REVIEW_CONTEXT, state='pending', description=f'{UNREVIEWED_STATUS}: held')
     command = BatchedCommand(polls=2)
     review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can)
     assert _review_status(forge, head).state == 'pending'
@@ -270,7 +270,7 @@ def test_the_scheduled_resume_settles_only_the_batch_pending_heads(tmp_path: Pat
     assert resumed == 0
     assert _review_status(forge, head).state == 'success'
     assert command.submitted == 1, 'resumed from the PR, never resubmitted'
-    assert _review_status(forge, other).description.startswith(TAKEOVER_PENDING)
+    assert _review_status(forge, other).description.startswith(UNREVIEWED_STATUS)
 
 
 def test_the_merge_tick_resumes_pending_batches_on_its_schedule(tmp_path: Path) -> None:

