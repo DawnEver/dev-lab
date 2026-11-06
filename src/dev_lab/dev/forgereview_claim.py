@@ -32,8 +32,21 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'RELEASED', 'RETRYING', 'UNREVIEWED_STATUS', 'claim_of', 'claimable',
-    'latest_review', 'live_claim', 'retried', 'run_ended', 'unable',
+    'CLAIMED',
+    'DESCRIPTION',
+    'DUE',
+    'HOST_UNABLE',
+    'RELEASED',
+    'RETRYING',
+    'UNREVIEWED_STATUS',
+    'WAITS',
+    'claim_of',
+    'claimable',
+    'latest_review',
+    'live_claim',
+    'retried',
+    'run_ended',
+    'unable',
 ]  # fmt: skip
 
 #: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
@@ -53,6 +66,14 @@ RETRYING: Final = 'review attempt failed, retried once:'
 #: What a ``pending`` status opens with when the review did not run and will not be retried: the merge waives it
 #: from the cause recorded on the PR (:mod:`dev_lab.dev.reviewcap`).
 UNREVIEWED_STATUS: Final = 'not reviewed, merges unreviewed:'
+
+#: REVIEW IS THE LAST GATE (user ruling 2026-11-05; integrator ruling M8 2026-11-06): the merge decision
+#: (:func:`dev_lab.dev.reviewturn.review_turn`) posts these two ``pending`` statuses, and nothing else calls a head's
+#: review. WAITS: another merge condition is missing, named after it -- no review runs, nothing is spent. DUE: every
+#: other condition stands; the one-shot review runs next, or a head whose PR already holds its review gets that
+#: review's verdict (:func:`dev_lab.dev.forgereview.review_pull`).
+WAITS: Final = 'waits: not reviewed until '
+DUE: Final = 'due: every other merge condition stands, the review runs next'
 
 #: A commit-status description is short: every one posted is cut to this.
 DESCRIPTION: Final = 240
@@ -121,13 +142,14 @@ def claimable(
     A head whose batch is pending (:data:`~dev_lab.dev.forgereview_batch.BATCH_PENDING`) is claimable at once: its
     state is on the PR, so whoever claims it resumes the batch, never resubmits it. A host that could not run the
     review (:data:`HOST_UNABLE`) is the host's fault, never the head's; a first failed attempt (:data:`RETRYING`) is
-    tried once more. A claim is ended when the run it names has ended (*ended*, :func:`run_ended`).
+    tried once more. The merge decision's :data:`DUE` is claimable; its :data:`WAITS` is not. A claim is ended
+    when the run it names has ended (*ended*, :func:`run_ended`).
     """
     if status is None or (status.state == 'error' and status.description.startswith((HOST_UNABLE, RETRYING))):
         return True
     if status.state != 'pending':
         return False
-    if status.description.startswith((RELEASED, BATCH_PENDING)):
+    if status.description.startswith((RELEASED, BATCH_PENDING, DUE)):
         return True
     if (claim := _CLAIM.match(status.description)) is None:
         return False  # not reviewed for good, or any other pending: not ours to take

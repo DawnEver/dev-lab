@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
-from _forge_state import StateForge
+from _forge_state import StateForge, called_due
 from _review_doubles import _doc, _state
 from test_dev_forgereview import FakeCommand, _forge, _work
 
@@ -326,6 +326,7 @@ def test_a_raise_by_an_author_without_write_permission_is_ignored_on_github(tmp_
     assert _raised_as_seen_by(gitea, number, 'github-actions[bot]').usd == 99.0
     forge = StateForge(Forge('github.com', 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     forge.login = 'mallory'
     raise_cap(forge, number, Raised(99.0, 'self-raised'), by=Identity('mallory', 'box', 'S-m'))
     assert _raised_as_seen_by(forge, number, 'github-actions[bot]') is None
@@ -391,6 +392,7 @@ def test_the_pr_cap_reads_the_recorded_reviews_not_this_hosts_spend_alone(tmp_pa
         forge.login = 'ci-job'
         head = advance(work, 'pr/x', 'y.py', 'y = 1\n')
         forge.pulls[number]['head']['sha'] = head
+        called_due(forge, head)  # the merge decision called the moved head
         ask_again(forge, number, head, 'S-a')
         command = FakeCommand(_doc())
         review = Review(command=_REVIEW.command, reviewers=('serve-host',))

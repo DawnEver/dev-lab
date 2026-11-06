@@ -44,7 +44,7 @@ from dev_lab.dev.forgereview_declared import (
 )
 from dev_lab.dev.forgereview_findings import parse_findings
 from dev_lab.dev.forgereview_identity import Identity, ReviewerRefused, identity
-from dev_lab.dev.forgereview_job import job_exit, resume_batches, review_run
+from dev_lab.dev.forgereview_job import job_exit, review_due, review_run
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest, client_for
@@ -213,8 +213,8 @@ def _parser() -> argparse.ArgumentParser:
     which = running.add_mutually_exclusive_group(required=True)
     which.add_argument('--pr', type=int)
     which.add_argument(
-        '--batch-pending', action='store_true',
-        help='resume every open head whose review batch is pending, from its PR (the scheduled job runs this)',
+        '--due', action='store_true',
+        help='review every open head the merge decision called due, and resume every pending batch (merge tick)',
     )  # fmt: skip
     running.add_argument(
         '--keys-env', metavar='NAME',
@@ -245,8 +245,8 @@ def _job(
     runner = Runner(this_machine(), runtimes, run=run, ready=ready, secret=keys_loaded(args.keys_env, runtimes),
                     verifies=True)  # fmt: skip
     review = review_at(root, base)
-    if args.batch_pending:
-        for one in resume_batches(root, origin, review, base=base, runner=runner, fetch=fetch):
+    if args.due:
+        for one in review_due(root, origin, review, base=base, runner=runner, fetch=fetch):
             emit(f'[review] {one}')
         return 0
     with posted_verdicts() as said:

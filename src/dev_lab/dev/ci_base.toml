@@ -20,14 +20,17 @@
 #                 (tests/<part>, or tests/<part>@<os> off its own runner)
 #   absent-parts  always: `jobparts absent --event` posts pending (absent) on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
-#   review        `forge review run --pr N`: tests/review (pull_request ONLY -- never pull_request_target,
-#                 which would run a fork's code with this repository's secrets; Gitea's review.yml below is the
-#                 one pull_request_target workflow: it acts on nothing the head declares, below)
-#   merge-ready   last, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
+#   merge-ready   after the parts, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready and, when it is success, merges that head into integrate/main itself
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
 #                 job token makes starts no workflow, so it dispatches this one on integrate/main; it
 #                 runs after the parts, which gate it: every part PASS (user ruling 2026-11-04)
+#   review        LAST (user ruling 2026-11-05; integrator ruling M8 2026-11-06: the one-shot review runs at the
+#                 first MERGE-READY head): only when merge-ready's decision called the head's review due -- every
+#                 other condition stands -- does `forge review run --pr N` post tests/review (pull_request ONLY --
+#                 never pull_request_target, which would run a fork's code with this repository's secrets; Gitea's
+#                 review.yml below is the one pull_request_target workflow: it acts on nothing the head declares,
+#                 below). A push reviews nothing by itself; the merge tick merges the reviewed head
 #   promote       NIGHTLY (D48-1A, user ruling 2026-11-01), never per merge: on the full run of a pending
 #                 integrate/main tip, once every part settled: `integrate promote`
 #                 refuses unless every part stands PASS at scope full,
@@ -152,7 +155,8 @@ pull-requests = "read"
 # branch's review declaration (forgereview_declared.review_at) -> the command; a PR into any other base is not reviewed.
 # The dev_lab door is the shared `door` steps': the dev-lab DOOR_SHA's uv.lock pins.
 ["ci.yml".jobs.review]
-if = "${{ github.event_name == 'pull_request' }}"
+needs = ["merge-ready"]
+if = "${{ always() && github.event_name == 'pull_request' && needs.merge-ready.outputs.due == 'true' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
@@ -173,12 +177,13 @@ issues = "write"
 
 ["ci.yml".jobs.merge-ready]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
-needs = ["security", "review", "part", "absent-parts"]
+needs = ["security", "part", "absent-parts"]
 if = "${{ always() && github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
+outputs = { due = "${{ steps.ready.outputs.due }}" }
 steps = [
     { use-steps = "setup" },
-    { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac' },
+    { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
     { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
 ]
 
@@ -196,7 +201,8 @@ actions = "write"
 # way Gitea's merge.yml does. TRIGGERS: `status` and `schedule` run the DEFAULT branch's file (integrate/main), never a
 # PR head's, so the merging token runs no head's code; the schedule catches a status the job token posted (it starts
 # no workflow). merge-ready's own decision and a pending claim start nothing. A merge it makes starts no workflow, so
-# it dispatches the merge's smoke run on integrate/main, as merge-ready does.
+# it dispatches the merge's smoke run on integrate/main, as merge-ready does. When the decision calls a head's review
+# due (the review is the last gate), the `review` job below reviews it, and a later tick merges it.
 ["merge-tick.yml"]
 name = "Merge tick"
 
@@ -220,9 +226,10 @@ FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ github.event_name != 'status' || (startsWith(github.event.context, 'tests/') && github.event.context != 'tests/merge-ready' && github.event.state != 'pending') }}"
 runs-on = "ubuntu-latest"
+outputs = { due = "${{ steps.ready.outputs.due }}" }
 steps = [
     { use-steps = "setup" },
-    { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready)"; echo "$said"; case "$said" in *"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac' },
+    { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready)"; echo "$said"; case "$said" in *"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
     { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
 ]
 
@@ -232,13 +239,15 @@ statuses = "write"
 pull-requests = "write"
 actions = "write"
 
-# THE BATCH RESUME, on the merge tick's ONE cadence (user ruling 2026-11-04: review calls are batched by default): a
-# head whose review batch is still running shows `tests/review` pending "review batch pending"; every scheduled (or
-# dispatched) tick resumes those heads from the batch state on their PR -- polled, never resubmitted -- so a pending
-# batch never waits for a human. A `status` event starts no review. It runs the default branch's file, never a PR
-# head's, with the review method and key as the review job holds them.
-["merge-tick.yml".jobs.review-resume]
-if = "${{ github.event_name != 'status' }}"
+# THE REVIEW THE TICK ASKS FOR (user ruling 2026-11-05: review is the last gate), on the merge tick's ONE cadence:
+# `forge review run --due` reviews every head the decision above called due, and resumes every head whose review
+# batch is still running (user ruling 2026-11-04: review calls are batched by default) from the batch state on its
+# PR -- polled, never resubmitted -- so a pending batch never waits for a human. A `status` event reviews only when
+# its decision called a head due. It runs the default branch's file, never a PR head's, with the review method and
+# key as the review job holds them.
+["merge-tick.yml".jobs.review]
+needs = ["merge-tick"]
+if = "${{ always() && (github.event_name != 'status' || needs.merge-tick.outputs.due == 'true') }}"
 runs-on = "ubuntu-latest"
 env = { HEAD_SHA = "${{ github.sha }}", INTEGRATION_SHA = "${{ github.sha }}" }
 steps = [
@@ -247,12 +256,12 @@ steps = [
     { use-steps = "door" },
     { use-steps = "method" },
     { use-steps = "forge-tokens" },
-    { name = "Resume the pending review batches", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
-"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --batch-pending --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+    { name = "Review the due heads", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --due --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
 ''', env = { AI_LAB_KEYS_PR_REVIEW = "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}" } },
 ]
 
-["merge-tick.yml".jobs.review-resume.permissions]
+["merge-tick.yml".jobs.review.permissions]
 contents = "read"
 statuses = "write"
 pull-requests = "write"
@@ -486,18 +495,22 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
-# The types are pull_request's defaults plus ready_for_review (D52/D53): a draft runs nothing (forgedraft.READY_ONLY
-# guards every job). NEVER `edited` (F-6adfea8621bf): any body or title edit would join `review-<n>` below and cancel
-# a live review, its replacement all-skipped; Gitea's ready is a title edit, so the serve's next tick picks it up.
+# REVIEW IS THE LAST GATE (user ruling 2026-11-05; integrator ruling M8 2026-11-06): a push starts nothing here. The
+# ONE type is `labeled`, and the job runs only for reviewturn.REVIEW_LABEL, which the merge decision applies once
+# every other condition stands (reviewturn.review_turn, run by a serve: Gitea starts no workflow for its Actions
+# user's event). Still a pull_request_target run at the head, so the trust chain and reviewgate's run binding are
+# unchanged; a label anyone else adds reviews nothing (forgereview.review_pull reads the decision's DUE).
+# The draft guard (forgedraft.READY_ONLY) still ANDs onto the job. NEVER `edited` (F-6adfea8621bf). The concurrency
+# group is keyed on the label NAME, so any other label's run lands in its own group and cannot cancel a live review.
 ["review.yml"]
 forge = "gitea"
 name = "Review"
 
 ["review.yml".on.pull_request_target]
-types = ["opened", "synchronize", "reopened", "ready_for_review"]
+types = ["labeled"]
 
 ["review.yml".concurrency]
-group = "review-${{ github.event.pull_request.number }}"
+group = "review-${{ github.event.pull_request.number }}-${{ github.event.label.name }}"
 cancel-in-progress = true
 
 ["review.yml".env]
@@ -515,6 +528,7 @@ UV_CONCURRENT_BUILDS = "1"
 # dev_lab.dev.reviewcode -- fetched alone at the door's locked dev-lab commit -- which posts the review's own
 # ONLY_GENERATED success on a PR holding no code and skips every later step; whatever it cannot read, the review runs.
 ["review.yml".jobs.review]
+if = "${{ github.event.label.name == 'review-due' }}"
 runs-on = "review"
 steps = [
     { use-steps = "reach" },
@@ -595,7 +609,18 @@ UV_PYTHON_DOWNLOADS = "never"
 UV_CONCURRENT_INSTALLS = "1"
 UV_CONCURRENT_BUILDS = "1"
 
+# Gitea prepares a head only once the merge decision calls its review due (the `review.yml` label, above); GitHub
+# starts no workflow for a label its job token applies, so there a push prepares (no model call) and the judge reads
+# only a head the decision called due (forgereview_bundle._called_due).
+[_prepare.by-forge.gitea.on.pull_request_target]
+types = ["labeled"]
+
+[_prepare.by-forge.gitea.concurrency]
+group = "review-prepare-${{ github.event.pull_request.number }}-${{ github.event.label.name }}"
+cancel-in-progress = true
+
 [_prepare.by-forge.gitea.jobs.prepare]
+if = "${{ github.event.label.name == 'review-due' }}"
 runs-on = "light"
 steps = [
     { use-steps = "reach" },

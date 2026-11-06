@@ -76,6 +76,7 @@ from dev_lab.dev.forgework import GITEA, Client, PullRequest, client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
+from dev_lab.dev.reviewturn import review_turn
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
 from dev_lab.dev.unproduced import unproduced_waived
 
@@ -249,6 +250,7 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said
     found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
+    turn = review_turn(child.client, child.pr, child.head, found)  # the review is asked for here too: its last gate
     if found.ready and ci_merges(root):
         line, summary = f'ready: the {CI_MERGER} job merges it', f'{said.summary}; ready for the {CI_MERGER} job'
         if found.unreviewed:
@@ -262,7 +264,7 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     elif EXTERNAL in found.missing:  # never merged by the forge: the rest is a maintainer's to read
         line, summary = EXTERNAL, f'{said.summary}; {EXTERNAL}'
     else:
-        line = 'the forge merges it once it has: ' + '; '.join(found.missing)
+        line = 'the forge merges it once it has: ' + '; '.join(found.missing) + turn
         summary = f'{said.summary}; auto-merge waits'
     return dataclasses.replace(said, text=f'{said.text}\n- {line}', summary=summary)
 

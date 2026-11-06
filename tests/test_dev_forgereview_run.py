@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from _branch_repos import advance
 from _forge_fake import git_out, run_git
-from _forge_state import StateForge
+from _forge_state import StateForge, called_due
 from _review_doubles import _doc, _finding
 from test_dev_forgereview import _DECLARED, _MANIFEST, FakeCommand, _can, _forge, _work
 
@@ -108,6 +108,7 @@ def test_the_job_exits_non_zero_only_on_a_security_finding(tmp_path: Path, host:
     work, head = _work(tmp_path)
     forge = StateForge(Forge(host, 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     forge.login = ACTIONS_BOT
     high = FakeCommand(_doc(_finding('F-high', severity='HIGH', file='x.py', anchor='x')))
     assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=high, ready=_can) == 0
@@ -116,6 +117,7 @@ def test_the_job_exits_non_zero_only_on_a_security_finding(tmp_path: Path, host:
     other_work, other_head = _work(tmp_path / 'control')
     control = StateForge(Forge(host, 'o', 'r'))
     other = control.add_pull('pr/x', 'integrate/main', title='add x', sha=other_head)
+    called_due(control, other_head)  # the merge decision called its review due
     control.login = ACTIONS_BOT
     secure = FakeCommand(_doc(_finding('F-sec', severity='LOW', security=True, file='x.py', anchor='x')))
     assert main(['run', '--pr', str(other)], cwd=other_work, client=control, run=secure, ready=_can) == 1
@@ -132,6 +134,7 @@ def test_a_success_a_user_posted_first_stands_on_gitea_and_is_reviewed_on_github
         work, head = _work(tmp_path / host)
         forge = StateForge(Forge(host, 'o', 'r'))
         number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+        called_due(forge, head)  # the merge decision called its review due
         forge.login = 'a'
         status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean')
         forge.login = ACTIONS_BOT if host == 'github.com' else GITEA_ACTIONS_LOGIN
@@ -422,6 +425,7 @@ def test_a_pr_against_a_branch_it_controls_naming_it_the_integration_is_never_re
     assert command.ran == [], 'no command runs, so the key is never handed to one'
     assert _latest(forge, head, REVIEW_CONTEXT) is None, 'nothing is posted for a PR the job does not review'
     trusted = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     assert main(['run', '--pr', str(trusted)], cwd=work, client=forge, run=command, ready=_can) == 0
     assert [argv[0] for argv, _ in command.ran] == ['reviewer']
 

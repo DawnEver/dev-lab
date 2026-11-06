@@ -15,7 +15,7 @@ from pathlib import Path
 
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
-from _forge_state import StateForge
+from _forge_state import StateForge, called_due
 
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgereview import review_tick
@@ -109,6 +109,7 @@ def test_a_head_of_only_generated_files_is_posted_as_nothing_to_review(tmp_path:
     head = advance(work, 'pr/x', 'uv.lock', 'lock\n')
     forge = StateForge()
     forge.add_pull('pr/x', 'integrate/main', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     command = Recorder()
     review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=command, ready=_can, host='box')
     assert command.ran == []
@@ -145,6 +146,7 @@ def test_a_head_past_one_slice_is_read_in_slices_each_under_one_lens(tmp_path: P
     work, head = _many(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     command = Recorder()
     review = Review(command=_SLICED, max_diff_bytes=400)
     review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
@@ -162,6 +164,7 @@ def test_a_synthesis_reads_the_merged_slices_once(tmp_path: Path) -> None:
     for synthesis, runs in (((), 4), (('synth', '--findings', FINDINGS_FIELD, '--range', RANGE_FIELD), 5)):
         forge = StateForge()
         forge.add_pull('pr/x', 'integrate/main', sha=head)
+        called_due(forge, head)  # the merge decision called its review due
         command = Recorder()
         review = Review(command=_SLICED, synthesis=synthesis, max_diff_bytes=400)
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
@@ -186,6 +189,7 @@ def test_an_oversize_head_is_read_in_diff_slices_and_the_rest_is_listed(tmp_path
     ):
         forge = StateForge()
         number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+        called_due(forge, head)  # the merge decision called its review due
         command = Recorder()
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
         runs = [one for one in command.ran if one[0] == 'reviewer']
@@ -329,6 +333,7 @@ def test_the_review_comment_names_the_files_outside_scope(tmp_path: Path) -> Non
     work, head = _mixed(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=Recorder(), ready=_can, host='box')
     (comment,) = forge.comments[number]
     assert f'{len(_NOT_CODE)} non-code file(s) outside the review scope' in comment['body']

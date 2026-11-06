@@ -396,6 +396,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_gate` -- the one review gate merge, merge-ready and Break-Glass read.
 * :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review prepare`` / ``judge``: the judge host's review of a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
+* :mod:`dev_lab.dev.reviewturn` -- the review is the last gate: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
 * :mod:`dev_lab.dev.forgerunshow` -- what a cluster run learned, published on the forge for ``forge run show``.
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.

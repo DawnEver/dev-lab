@@ -137,7 +137,29 @@ ready PR into `integrate/main` is reviewed by the command the repo declares; its
 JSON (`schema_version` 3, read by `dev_lab.dev.forgereview_findings`; any other version is refused by name). The
 forge posts ONE PR comment (`dev_lab.dev.forgereview_advice`) and a `tests/review` commit status.
 
-**Once per PR.** The review runs at the PR's first ready head. A fix push or a sync with `integrate/main` is not
+**Review is the last gate** (user ruling 2026-11-05; integrator ruling M8 2026-11-06: "first ready head" is the
+first MERGE-READY head). The review is the one merge condition that costs a model call, so it is asked for only
+once every OTHER condition stands for the head -- its test parts, `tests/security`, a clean merge with integration,
+the merge audit, the messages, not a draft. The merge decision (`reviewturn.review_turn`, run by
+`forge merge ready` and by the serve's integration tick) is the one that asks:
+
+- another condition missing: `tests/review` is `pending` `waits: not reviewed until <them>` -- no review runs and
+  nothing is spent;
+- only the review missing: `tests/review` is `pending` `due: ...`, and the review runs. GitHub: `ci.yml`'s
+  `merge-ready` job and `merge-tick.yml` read `; review due` in the decision's line and start their `review` job
+  (`forge review run --pr N` / `--due`, which also resumes pending batches); the next tick merges. Gitea: the
+  decision applies the PR label `review-due`, whose `pull_request_target` `labeled` event starts `review.yml` (and a
+  judge repo's prepare). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
+  only says the review is due and the serve's tick (its own login) asks;
+- `forgereview.review_pull` reviews nothing whose latest `tests/review` is absent or `waits`, whoever started it (a
+  push, a hand-added label, a serve tick); the judge (`where = "judge"`) judges only a head called due.
+
+A push asks for nothing: a new head has no status, so it waits for the decision again, and a superseded head is
+never reviewed. A head whose PR already holds its one review is never reviewed again by this trigger: once called
+due it gets the standing verdict. A verdict, a claim, a batch or an unreviewed record already on the head is never
+overwritten.
+
+**Once per PR.** The review runs at the PR's first merge-ready head. A fix push or a sync with `integrate/main` is not
 reviewed again: the standing review's verdict is posted on the new head, naming the head it reviewed. It is
 reviewed again only when the PR's own reviewable code has grown to `forgereview.REVIEW_AGAIN_GROWTH` (2) times what
 the review measured, or when a session asks: `python -m dev_lab.dev.forge review again <pr>` (on GitHub the

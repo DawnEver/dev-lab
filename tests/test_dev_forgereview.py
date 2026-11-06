@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
-from _forge_state import StateForge
+from _forge_state import StateForge, called_due
 from _review_doubles import _state
 from lab_commons.outcomes import Conclusion
 
@@ -133,6 +133,7 @@ def _work(tmp_path: Path) -> tuple[Path, str]:
 def _forge(head: str, **pull: object) -> tuple[StateForge, int]:
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     forge.pulls[number] |= pull
     return forge, number
 
@@ -507,6 +508,7 @@ def test_one_review_per_pr_a_fix_push_posts_the_standing_verdict_and_runs_nothin
     assert (len(forge.comments[number]), len(forge.statuses[head])) == posted
     fix = advance(work, 'pr/x', 'x.py', 'x fixed\n')
     forge.pulls[number]['head']['sha'] = fix
+    called_due(forge, fix)  # the merge decision called the moved head
     lines = _tick(work, forge, command)
     assert len(command.ran) == 1, 'a fix push is not reviewed again'
     state, said = _state(forge, fix)
@@ -526,6 +528,7 @@ def test_a_standing_security_finding_holds_every_later_head_until_the_review_is_
     _tick(work, forge, FakeCommand(_output(security=True)))
     fix = advance(work, 'pr/x', 'x.py', 'x fixed\n')
     forge.pulls[number]['head']['sha'] = fix
+    called_due(forge, fix)  # the merge decision called the moved head
     command = FakeCommand(_output(reviewers=(('c', 'skipped'),)))
     _tick(work, forge, command)
     assert command.ran == []
@@ -549,11 +552,13 @@ def test_a_pr_grown_to_the_declared_multiple_is_reviewed_once_more(tmp_path: Pat
     _tick(work, forge, command)
     small = advance(work, 'pr/x', 'x.py', 'x\ny\n')
     forge.pulls[number]['head']['sha'] = small
+    called_due(forge, small)  # the merge decision called the moved head
     _tick(work, forge, command)
     assert len(command.ran) == 1
     assert REVIEW_AGAIN_GROWTH == 2
     big = advance(work, 'pr/x', 'big.py', ''.join(f'line_{n} = {n}\n' for n in range(400)))
     forge.pulls[number]['head']['sha'] = big
+    called_due(forge, big)  # the merge decision called the moved head
     _tick(work, forge, command)
     assert len(command.ran) == 2
     assert marker(Marker.REVIEW, big) in forge.comments[number][-1]['body']
@@ -859,6 +864,7 @@ def _reviewed_then_synced(tmp_path: Path, host: str = 'forge.example.org') -> tu
     work, head = _work(tmp_path)
     forge = StateForge(Forge(host, 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
+    called_due(forge, head)  # the merge decision called its review due
     _tick(work, forge, FakeCommand())
     advance(work, 'integrate/main', 'theirs.py', ''.join(f'theirs_{n} = {n}\n' for n in range(400)))
     run_git(work, 'checkout', '-q', '-B', 'sync', 'origin/pr/x')
@@ -867,6 +873,7 @@ def _reviewed_then_synced(tmp_path: Path, host: str = 'forge.example.org') -> tu
     run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
     run_git(work, 'fetch', '-q', 'origin')
     forge.pulls[number]['head']['sha'] = synced
+    called_due(forge, synced)  # the merge decision called the moved head
     return work, forge, number, head, synced
 
 

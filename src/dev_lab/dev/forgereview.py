@@ -6,7 +6,12 @@ differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR;
 ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgereview_job.review_run`) for the one PR its event names. Both
 run :func:`review_pull`.
 
-ONCE PER PR. A PR is reviewed at its first ready head; every later head -- a fix push, a sync with integration --
+REVIEW IS THE LAST GATE (user ruling 2026-11-05; integrator ruling M8 2026-11-06). The merge decision asks
+(:func:`dev_lab.dev.reviewturn.review_turn`): a head is reviewed only once the decision called it DUE -- tests
+green, no conflict, every other condition standing. A head with no review status, or the decision's WAITS, is
+not reviewed and nothing is posted or spent, whoever started the run; a push asks for nothing.
+
+ONCE PER PR. A PR is reviewed at its first merge-ready head; every later head -- a fix push, a sync with integration --
 gets the standing review's verdict posted on it, and nothing runs. It is reviewed again only when:
 
 * its own change has GROWN to :data:`REVIEW_AGAIN_GROWTH` times the reviewable code bytes the review measured
@@ -50,6 +55,7 @@ from dev_lab.dev.forgereview_claim import (
     DESCRIPTION,
     RETRYING,
     UNREVIEWED_STATUS,
+    WAITS,
     claim_of,
     claimable,
     latest_review,
@@ -90,6 +96,7 @@ from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgereview_advice import Record
+    from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
     from dev_lab.dev.lanepolicy import Policy
 
@@ -118,6 +125,11 @@ class HostCannot(OSError):
     The serve tick says it and leaves the head to a capable host; a workflow job -- the ONLY reviewer of its PR
     -- records the PR unreviewed (:func:`dev_lab.dev.forgereview_job.review_run`).
     """
+
+
+def _not_called(latest: CommitStatus | None) -> bool:
+    """Whether the merge decision has not called this head's review: no status yet, or its WAITS."""
+    return latest is None or (latest.state == 'pending' and latest.description.startswith(WAITS))
 
 
 def ask_again(client: Client, number: int, head: str, who: str) -> str:
@@ -205,6 +217,8 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     if latest is not None and latest.state == 'success' and runner.verifies and not forge_posted(client)(latest):
         latest = None  # a success the gate does not count is no review (dev-lab #38)
     settled = latest is not None and (latest.state != 'pending' or latest.description.startswith(UNREVIEWED_STATUS))
+    if not asked and _not_called(latest):  # the last gate: no model call on a red or conflicting head
+        return None
     if not claimable(latest, runner.clock(), review.stale, run_ended(client)) and not (asked and settled):
         return None
     if (
