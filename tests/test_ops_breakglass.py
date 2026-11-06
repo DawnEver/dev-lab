@@ -163,8 +163,36 @@ def test_a_merge_after_expiry_is_refused_and_the_expiry_closes_the_wave(host: Ho
     assert 'audit' in host.ask('status')  # closed by the expiry, before the merge was judged
 
 
-def test_the_client_may_only_shorten_the_window(host: Host) -> None:
-    assert 'open for 4 h' in host.ask('open', code=host.code(), hours=99)
+@pytest.fixture
+def roomy(tmp_path: Path) -> Host:
+    bounds = 'wave_hours = 4.0\nwave_hours_max = 24.0\nmax_merges = 3\nmax_merges_max = 10'
+    return Host(config(tmp_path, [], extra=bounds))
+
+
+def test_the_default_bounds_apply_when_none_is_asked(roomy: Host) -> None:
+    assert 'open for 4 h, at most 3 merge(s)' in roomy.ask('open', code=roomy.code())
+
+
+def test_a_request_may_ask_up_to_the_ceiling(roomy: Host) -> None:
+    said = roomy.ask('open', code=roomy.code(), hours=24, max_merges=10)  # planted control: exactly the ceilings
+    assert 'open for 24 h, at most 10 merge(s)' in said
+    opened = [json.loads(line) for line in Path(roomy.config.breakglass.log).read_text(encoding='utf-8').splitlines()]
+    assert opened[-1]['asked'] == {'hours': 24, 'max_merges': 10}
+    assert (opened[-1]['hours'], opened[-1]['max_merges']) == (24, 10)
+
+
+@pytest.mark.parametrize(
+    ('fields', 'ceiling'), [({'hours': 24.5}, 'wave_hours_max = 24 h'), ({'max_merges': 11}, 'max_merges_max = 10')]
+)
+def test_a_request_above_a_ceiling_is_refused_naming_it(roomy: Host, fields: dict[str, object], ceiling: str) -> None:
+    valid = roomy.code()
+    with pytest.raises(BreakglassRefused, match=ceiling):
+        roomy.ask('open', code=valid, **fields)
+    assert 'open for' in roomy.ask('open', code=valid)  # never clamped, and the code was not spent
+
+
+def test_no_merge_ceiling_admits_any_cap(host: Host) -> None:
+    assert 'at most 50 merge(s)' in host.ask('open', code=host.code(), max_merges=50)
 
 
 def test_a_merge_beyond_the_cap_is_refused(host: Host) -> None:
@@ -405,6 +433,12 @@ def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) 
         ({'tokens': {'gitea.example': 't', 'github.com': 'g', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
         ({'repos': (*GLASS, 'https://gitea.example/owner/alpha')}, 'twice'),  # the exact same identity again
         ({'repos': ()}, 'serves no repo'),
+        ({'wave_hours': 5.0}, 'above its ceiling'),  # the default 4 h ceiling; planted control: 4.0 loads
+        ({'wave_hours': 0.0}, 'must be positive'),
+        ({'wave_hours_max': float('nan')}, 'must be positive'),
+        ({'max_merges': 11, 'max_merges_max': 10}, 'under that ceiling'),
+        ({'max_merges': 0, 'max_merges_max': 10}, 'under that ceiling'),  # an uncapped default under a ceiling
+        ({'max_merges': -1}, 'must not be negative'),
     ],
 )
 def test_a_break_glass_declaration_that_lies_is_refused_at_load(

@@ -19,8 +19,10 @@ on Gitea an account the protection's merge whitelist admits, or an admin.
 One request is one JSON line with an ``action``:
 
 * ``open {code, hours?, max_merges?}`` -- audited, never alerted (the user typed the code); refused while a wave
-  is open (never because an earlier audit is unacknowledged); ``hours`` may only shorten the configured
-  ``wave_hours``, ``max_merges`` only tighten its cap;
+  is open (never because an earlier audit is unacknowledged); ``hours`` and ``max_merges`` default to the configured
+  ``wave_hours`` / ``max_merges`` and may ask anything up to ``wave_hours_max`` / ``max_merges_max`` (``0`` = no
+  ceiling) -- a request above a ceiling is REFUSED naming it, never clamped, and before the code is checked, so it
+  spends no TOTP step; the audit records what was asked and what was granted;
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
@@ -125,10 +127,17 @@ def merge_message(pr: int, integration: str, reason: str, wave: str) -> str:
     return f'chore(merge): break-glass #{pr} into {integration} (wave {wave})\n\n{BREAK_GLASS}: {reason}\n'
 
 
-def _cap(asked: int | None, declared_cap: int) -> int:
-    """The tighter of two merge caps, ``0`` meaning none."""
-    given = [cap for cap in (asked or 0, declared_cap) if cap > 0]
-    return min(given) if given else 0
+def _granted(asked: requests.Open, role: Breakglass) -> tuple[float, int]:
+    """The window and merge cap *asked* gets: the role's default when none is named, refused above its ceiling."""
+    hours = role.wave_hours if asked.hours is None else asked.hours
+    if hours > role.wave_hours_max:
+        msg = f'{hours:g} h is above the ceiling wave_hours_max = {role.wave_hours_max:g} h'
+        raise BreakglassRefused(msg)
+    cap = role.max_merges if asked.max_merges is None else asked.max_merges
+    if role.max_merges_max and cap > role.max_merges_max:
+        msg = f'{cap} merge(s) is above the ceiling max_merges_max = {role.max_merges_max}'
+        raise BreakglassRefused(msg)
+    return hours, cap
 
 
 @dataclass
@@ -256,15 +265,15 @@ class Server:
         if (held := self._current()) is not None:
             msg = f'wave {held.id} is open: use it, or close it first'
             raise BreakglassRefused(msg)
+        hours, cap = _granted(asked, self.role)  # before the code: a refused bound spends no TOTP step
         self._code(asked.code)
-        hours = min(asked.hours or self.role.wave_hours, self.role.wave_hours)
-        cap = _cap(asked.max_merges, self.role.max_merges)
         now = self.now()
         stamp = datetime.fromtimestamp(now, UTC).strftime('%Y%m%dT%H%M%SZ')
         opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key)
         waves.save(self.state, opened)
         said = f'wave {opened.id} open for {hours:g} h' + (f', at most {cap} merge(s)' if cap else '')
-        self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap})
+        self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap,
+                     'asked': {'hours': asked.hours, 'max_merges': asked.max_merges}})  # fmt: skip
         return said
 
     def _merge(self, asked: requests.Merge) -> str:

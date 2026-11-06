@@ -1032,6 +1032,19 @@ def test_the_review_job_fetches_from_a_per_repository_mirror(tmp_path: Path) -> 
     assert run.index('flock') < run.index('--shared') < run.index('git checkout')
 
 
+def test_a_job_never_repacks_the_whole_mirror(tmp_path: Path) -> None:
+    """A mirror fetch never triggers git's auto-gc, and only a geometric repack runs under the lock.
+
+    2026-11-06, forge-a1: the auto-gc's ``pack-objects --all`` (360 MB) plus the merge job held the 1 GB light runner
+    over memory.high 3928 times. PLANTED CONTROL: no ``gc`` and no ``repack -a``/``-A`` appears in the step.
+    """
+    run = _fetch_the_head(tmp_path)['run']
+    assert 'git -C "$MIRROR" -c gc.auto=0 fetch' in run
+    assert 'repack -q -d --geometric=2' in run
+    assert run.index('-c gc.auto=0 fetch') < run.index('--geometric=2') < run.index(') 9>"$MIRROR.lock"')
+    assert not any(bad in run for bad in (' gc ', ' gc\n', 'repack -a', 'repack -A', 'repack -q -a'))
+
+
 def test_no_credential_or_pr_influence_persists_in_the_mirror(tmp_path: Path) -> None:
     """The header lives only in the step's GIT_CONFIG_* env; nothing written to a config carries it.
 

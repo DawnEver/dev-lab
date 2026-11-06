@@ -43,7 +43,10 @@ __all__ = [
 #: Every crontab line this tool owns ends with this comment plus the repo's name.
 MARK: Final = '# lab-commons-deploy:'
 
-DEFAULT_ROOT: Final = 'src'
+#: Where the served checkouts live, under the account's home: the forge home's ``repos`` (the workstation's
+#: :func:`dev_lab.dev.servelock` home on Linux), never ``~/src`` -- a home ``src`` is a write-prone root nothing
+#: scans (WRITES-STAY-IN-THE-TREE), and ~/src was retired (user rulings 2026-10-26, 2026-11-06).
+DEFAULT_ROOT: Final = '.local/share/lab-forge/repos'
 DEFAULT_PYTHON: Final = '3.13'
 
 #: ``[schedule] tick_minutes`` when undeclared -- the same default the host card is judged stale against.

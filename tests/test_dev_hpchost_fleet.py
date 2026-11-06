@@ -7,6 +7,7 @@ from pathlib import Path
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev.hpchost.fleet import Target, deploy_fleet, remote_argv
+from dev_lab.dev.hpchost.spec import DEFAULT_ROOT
 
 _HOSTS = ('login01.example', 'login02.example')
 _FLEET = (
@@ -128,3 +129,13 @@ def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
     assert code == 2
     assert started == []
     assert any('ambiguous' in line for line in said)
+
+
+def test_an_undeclared_root_is_the_forge_home_never_home_src() -> None:
+    """User rulings 2026-10-26 and 2026-11-06: ~/src is retired; a served checkout lives in the forge home.
+
+    PLANTED CONTROL: a declared root is still honoured as given.
+    """
+    assert DEFAULT_ROOT == '.local/share/lab-forge/repos'
+    assert DEFAULT_ROOT.split('/')[0] != 'src'
+    assert Target('login02.example', 'elsewhere').root == 'elsewhere'

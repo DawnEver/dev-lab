@@ -212,6 +212,41 @@ def test_a_conflict_in_the_lock_alone_is_relocked_inside_the_merge(tmp_path: Pat
     assert resolution_judge(work, parents, message) == ()  # MERGE-RESOLUTION-DECLARED: the forge's own merge lands
 
 
+def _pin(sha: str) -> str:
+    """A lock pinning family ai-lab at *sha*: the two sides' differing pins conflict on this one line."""
+    return f'[[package]]\nname = "ai-lab"\nsource = {{ git = "https://example.test/ai-lab#{sha}" }}\n'
+
+
+def _older(_d: str, _u: str, older: str, newer: str) -> bool:
+    return (older, newer) == ('a1', 'a2')
+
+
+@pytest.mark.parametrize(('lane', 'base', 'kept'), [('a2', 'a1', 'a2'), ('a1', 'a2', 'a2')])
+def test_a_lock_conflict_keeps_the_newer_family_pin_whichever_side_holds_it(
+    tmp_path: Path, lane: str, base: str, kept: str
+) -> None:
+    """The 2026-11-06 incident: integration's relocked lock pinned its older ai-lab. PLANTED control: base newer."""
+    work, _, _ = _world(tmp_path)
+    advance(work, 'integrate/main', 'uv.lock', _pin(base))
+    head = advance(work, 'pr/l', 'uv.lock', _pin(lane))
+    forge = StateForge()
+    number = forge.add_pull('pr/l', 'integrate/main', sha=head)
+    _tick(work, forge, {number: head}, run=_synced(upgrade=lambda _t: 0, ancestry=_older))  # the door keeps theirs
+    assert f'#{kept}' in git_out(work, 'show', f'{_origin(work, "pr/l")}:uv.lock')
+
+
+def test_diverged_family_pins_refuse_the_sync_naming_the_package_and_both_pins(tmp_path: Path) -> None:
+    work, _, _ = _world(tmp_path)
+    advance(work, 'integrate/main', 'uv.lock', _pin('b2'))
+    head = advance(work, 'pr/l', 'uv.lock', _pin('a2'))
+    forge = StateForge()
+    number = forge.add_pull('pr/l', 'integrate/main', sha=head)
+    _tick(work, forge, {number: head}, run=_synced(upgrade=lambda _t: 0, ancestry=_older))
+    assert _origin(work, 'pr/l') == head
+    said = forge.comments[number][0]['body']
+    assert {'ai-lab', 'a2', 'b2'} <= set(said.replace(',', ' ').split())
+
+
 def test_a_stale_lock_after_a_clean_merge_is_relocked_and_an_unrunnable_resolution_refuses(tmp_path: Path) -> None:
     """PLANTED control: a fresh lock is never relocked (``_never`` in every other test)."""
     work, head, _ = _world(tmp_path)
