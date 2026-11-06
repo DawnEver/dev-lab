@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev._dep_project import installed_uv_version, uv_remedy
+from dev_lab.dev._dep_project import follow_pin, uv_remedy
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
@@ -258,10 +258,10 @@ def rerender(tree: Path) -> int:
     return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
 
 
-def _host_uv() -> str:
-    """The version of the uv on this host's PATH; empty when there is none."""
+def _follow_host_uv(version: str) -> str:
+    """Move the uv on this host's PATH to *version* (:func:`~dev_lab.dev.uvfollow.follow`); ``''`` once it is."""
     uv = shutil.which('uv')
-    return installed_uv_version(uv) if uv else ''
+    return follow_pin(uv, version) if uv else 'this host has no uv on PATH'
 
 
 def _uv_raise(lines: Sequence[str]) -> str | None:
@@ -326,7 +326,7 @@ def carry(
     resolve: Callable[[Path], Report] | None = None,
     stable: Callable[[], str] = newest_stable,
     uv: Callable[[], str] = newest_uv,
-    host_uv: Callable[[], str] = _host_uv,
+    follow_uv: Callable[[str], str] = _follow_host_uv,
     upgrade: Callable[[Path, Sequence[str]], int] = door_upgrade,
     rerender: Callable[[Path], int] = rerender,
     remote_head: Callable[[Path], str] = _remote_head,
@@ -336,10 +336,11 @@ def carry(
 
     *pulls* lists the open pull requests, *create* opens one (``Client.pr_create``), *edit* rewrites one's body and
     *close* closes one (``Client.issue_edit``/``issue_close``); *now* is the epoch clock the cadence reads.
-    *resolve*, *stable*, *uv*, *host_uv*, *upgrade*, *rerender*, *remote_head* and *push* are the resolution, the
-    newest Rust stable, the newest uv, this host's uv, the door, the render, origin's relock head and the leased
-    push -- each a seam a test plants. A relock that raises the uv pin is written BY the new uv: on a host without
-    it, it RAISES naming the update rather than writing a lock with the old one.
+    *resolve*, *stable*, *uv*, *follow_uv*, *upgrade*, *rerender*, *remote_head* and *push* are the resolution, the
+    newest Rust stable, the newest uv, this host's uv moved to a version, the door, the render, origin's relock head
+    and the leased push -- each a seam a test plants. A relock that raises the uv pin is written BY the new uv: the
+    host's uv follows to it first, and where it cannot, the relock RAISES naming why and the update rather than
+    writing with the old one.
     """
     rolling = next((pull for pull in pulls() if pull.head == BRANCH), None)
     base = f'origin/{policy.integration}'
@@ -361,9 +362,9 @@ def carry(
         lease = remote_head(root)
         if rolling is not None and lease and carried(root, lease, tip, lines):
             return f'#{rolling.number} already carries the {len(lines)} move(s) {policy.integration} needs'
-        if (raised := _uv_raise(lines)) is not None and (have := host_uv()) != raised:
+        if (raised := _uv_raise(lines)) is not None and (why := follow_uv(raised)):
             msg = (
-                f'the relock raises {UV_PIN} to uv {raised}, but this host has uv {have or "(none)"} and a lock is '
+                f'the relock raises {UV_PIN} to uv {raised}, but {why}, and a lock is '
                 f'written by the uv it pins: {uv_remedy(raised)} on this host'
             )
             raise RelockFailed(msg)

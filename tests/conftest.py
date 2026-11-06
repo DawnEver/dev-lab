@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
@@ -17,8 +18,9 @@ import pytest
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev import _dep_project, forgeserve, metrics, reviewruntime
+from dev_lab.dev import _dep_project, forgeserve, metrics, reviewruntime, uvfollow
 from dev_lab.dev.lockcheck import uv_version
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 
 
@@ -131,3 +133,10 @@ def _the_declared_uv(monkeypatch: pytest.MonkeyPatch) -> None:
     A test that means another uv says so itself. Planted control: test_one_uv_writes_every_lock.
     """
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: uv_version())
+    monkeypatch.setattr(uvfollow, 'run_network_verb', _no_installer)
+
+
+def _no_installer(argv: Sequence[str], **_kwargs: object) -> Report:
+    """No test reaches an installer or the network: the uv update fails, so a stale uv stays stale and is refused."""
+    said = 'no installer runs in a test; inject `run` into dev_lab.dev.uvfollow.follow'
+    return Report(argv=tuple(argv), attempts=(Attempt(1, 1, said, Diagnosis.UNCLASSIFIED),), allowed_attempts=1)
