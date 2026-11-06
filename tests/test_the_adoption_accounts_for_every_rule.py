@@ -68,6 +68,7 @@ _ENFORCED = {
     'CODE-IN-CODE-ROOTS': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
     'SCRATCH-IS-NEVER-COMMITTED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_scratch.py')),
     'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
+    'WRITES-STAY-IN-THE-TREE': (guard('tests/test_dev_writeroots.py'), guard('tests/test_dev_tmpsweep.py')),
     'DECLARATION-LIES': (
         guard('tests/test_arch_public_surface.py'),
         guard('tests/test_arch_rules_pages.py'),
