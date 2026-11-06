@@ -35,6 +35,12 @@ _ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
 _DAY = 86400.0
 
 
+@pytest.fixture(autouse=True)
+def _outside_every_write_prone_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pytest's tmp_path lives in the OS temp dir, a WRITES-STAY-IN-THE-TREE root; that rule has its own tests."""
+    monkeypatch.setattr('dev_lab.dev.codeplace.refuse_outside_tree', lambda _path: None)
+
+
 def _plant(root, rel: str, *, age_days: float = 0.0) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
