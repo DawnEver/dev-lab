@@ -1,4 +1,10 @@
-"""AUTO-SYNC: the forge merges integration INTO a behind ``pr/*`` head, so no PR waits for a hand ``forge sync``.
+"""AUTO-SYNC: the forge merges integration INTO a ``pr/*`` head only when its lock alone conflicts, never when behind.
+
+A head that is merely behind is LEFT ALONE: the merge decision trial-merges every head against the current
+integration tip, so being behind blocks nothing, and every new head restarts every ``tests/<part>`` -- syncing
+each behind head on each integration move kept every PR's tests from ever finishing (user report 2026-11-06).
+The one conflict the machine resolves is ``uv.lock`` (relocked); any other conflict is the owner's. So no PR waits
+for a hand ``forge sync`` it needs, and none is restarted by one it does not.
 
 User ruling 2026-10-21: integration is an automatic mechanism; an integrator cannot hand-merge every PR whose base
 moved. On wherever the forge merges PRs (``[tool.dev_lab.integrator] pr_merges_since``; no switch of its own),
@@ -6,11 +12,12 @@ the integration step of ``forge serve`` (:func:`dev_lab.dev.forgeintegration.tic
 :func:`plan` of each open PR into integration that the forge did not merge this tick, and :func:`sync` carries
 out a ``sync`` plan:
 
-* a head that does not contain ``origin/<integration>`` is merged with it in a worktree under the repository's git
-  directory -- a MERGE COMMIT on the head (first parent the head, ``Merged-Branch: <integration>``), never a
-  rebase or a force -- and pushed under the head's own name, so origin's compare-and-swap refuses it if the author
-  pushed meanwhile. The new head gets its parts by the normal path;
-* its lock is relocked when the merge leaves it stale or conflicted, through the dependency door
+* a head whose trial merge with ``origin/<integration>`` conflicts in the lock alone is merged with it in a
+  worktree under the repository's git directory -- a MERGE COMMIT on the head (first parent the head,
+  ``Merged-Branch: <integration>``), never a rebase or a force -- and pushed under the head's own name, so
+  origin's compare-and-swap refuses it if the author pushed meanwhile. The new head gets its parts by the normal
+  path;
+* its conflicted lock is relocked through the dependency door
   (:func:`dev_lab.dev.relock.door_upgrade`, the one writer of a lock) and the same staleness reading as
   the relock (:func:`dev_lab.dev.lockcheck.stale`) -- inside the merge commit, so no hand relock follows;
 * a sync never rolls a lane back: every git pin both sides hold is carried to the side whose pin contains the
@@ -198,14 +205,26 @@ def plan(
     if attempted(status, tip, now):
         return Plan('skip', status.description if status is not None else '')
     age = now - datetime.fromtimestamp(int(_must(root, 'show', '-s', '--format=%ct', head)), UTC)
+    conflicts = trial(root, tip, head).conflicts
+    if not conflicts:
+        return Plan('skip')  # merely behind: the merge decision trial-merges it, a sync would only restart its parts
     if ephemeral and age < quiet_after(policy):
         return Plan('skip', QUIET.format(quiet=policy.auto_sync_quiet))
-    refused = _refusal(root, policy, branch=branch, head=head, tip=tip, ephemeral=ephemeral, others=others)
+    refused = _refusal(root, policy, branch=branch, head=head, tip=tip, ephemeral=ephemeral, others=others,
+                       conflicts=conflicts)  # fmt: skip
     return Plan('sync') if refused is None else Plan('refuse', refused)
 
 
 def _refusal(
-    root: Path, policy: Policy, *, branch: str, head: str, tip: str, ephemeral: bool, others: Sequence[Open]
+    root: Path,
+    policy: Policy,
+    *,
+    branch: str,
+    head: str,
+    tip: str,
+    ephemeral: bool,
+    others: Sequence[Open],
+    conflicts: Sequence[str],
 ) -> str | None:
     """Why the head may not be synced for tip *tip* at all: not ephemeral, stacked, or conflicting."""
     if not ephemeral:
@@ -213,9 +232,8 @@ def _refusal(
     for other in others:
         if other.head != head and shares_unmerged(root, head, other.head, tip):
             return STACKED.format(number=other.number, branch=other.branch)
-    conflicts = [path for path in trial(root, tip, head).conflicts if path != LOCK]
-    if conflicts:
-        paths = ', '.join(f'`{path}`' for path in conflicts)
+    if outside := [path for path in conflicts if path != LOCK]:
+        paths = ', '.join(f'`{path}`' for path in outside)
         return CONFLICTED.format(integration=policy.integration, paths=paths)
     return None
 

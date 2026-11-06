@@ -370,7 +370,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`dev_lab.dev.forgelanes` -- the origin branches tracked, a PR head fetched, the PR a pushed lane lands by.
 * :mod:`dev_lab.dev.forgemerge` -- the forge's server-side merge of a reviewed, clean PR into integration.
-* :mod:`dev_lab.dev.forgeautosync` -- the serve tick merges integration into a behind ``pr/*`` PR head.
+* :mod:`dev_lab.dev.forgeautosync` -- the serve tick merges integration into a ``pr/*`` head whose lock alone conflicts.
 * :mod:`dev_lab.dev.syncpins` -- a sync never rolls a lane back: each git pin carried to the side containing the other.
 * :mod:`dev_lab.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
 * :mod:`dev_lab.dev.forgetry` -- ``forge try <paths>``: named tests on a host with room now, or ``no room`` at once.

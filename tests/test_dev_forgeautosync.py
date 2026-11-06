@@ -1,4 +1,6 @@
-"""AUTO-SYNC: the serve tick merges integration INTO a behind ``pr/*`` head and pushes it -- once per tip, never raced.
+"""AUTO-SYNC: the serve tick merges integration INTO a ``pr/*`` head whose lock alone conflicts -- once per tip.
+
+A head merely behind is never synced: the merge decision trial-merges it, and a new head restarts its parts.
 
 Real git (a bare ``origin`` and a clone) and the stateful fake forge; the evidence is what ``origin`` holds after
 the tick, the head's ``integration/sync`` status and the PR's one integration comment. Every refusal has its
@@ -39,9 +41,9 @@ def _fresh(_tree: Path) -> _Report:
     return _Report()
 
 
-def _never(_tree: Path) -> int:
-    msg = 'a fresh, unconflicted lock is never relocked'
-    raise AssertionError(msg)
+def _door(tree: Path) -> int:
+    (tree / 'uv.lock').write_text('relocked\n', encoding='utf-8')
+    return 0
 
 
 def _push(tree: Path, branch: str, to: str = '') -> None:
@@ -50,7 +52,7 @@ def _push(tree: Path, branch: str, to: str = '') -> None:
 
 
 def _synced(**seams: object) -> functools.partial[str]:
-    return functools.partial(sync, **({'resolve': _fresh, 'upgrade': _never, 'push': _push} | seams))
+    return functools.partial(sync, **({'resolve': _fresh, 'upgrade': _door, 'push': _push} | seams))
 
 
 def _world(tmp_path: Path, branch: str = 'pr/x') -> tuple[Path, str, str]:
@@ -67,6 +69,12 @@ def _world(tmp_path: Path, branch: str = 'pr/x') -> tuple[Path, str, str]:
     run_git(work, 'branch', '-q', '-D', f'tmp-{branch.replace("/", "-")}', 'tmp-integrate-main')
     (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
     return work, head, tip
+
+
+def _lock_apart(work: Path, branch: str = 'pr/x') -> str:
+    """*branch*'s new head: it and integration each commit their own ``uv.lock``, the one conflict a sync resolves."""
+    advance(work, 'integrate/main', 'uv.lock', 'ours\n')
+    return advance(work, branch, 'uv.lock', 'theirs\n')
 
 
 def _tick(work: Path, forge: StateForge, heads: dict[int, str], *, policy: Policy = POLICY, now: datetime = _LATER,
@@ -91,9 +99,24 @@ def _status(forge: StateForge, sha: str) -> dict[str, object]:
     return [one for one in forge.statuses.get(sha, []) if one['context'] == CONTEXT][-1]
 
 
-def test_a_behind_pr_head_is_merged_with_integration_and_pushed_under_its_own_name(tmp_path: Path) -> None:
+def test_a_behind_head_whose_trial_merge_is_clean_is_never_synced(tmp_path: Path) -> None:
+    """User report 2026-11-06: every sync restarts every part. PLANTED control: the lock-conflicted head is synced."""
+    work, head, _ = _world(tmp_path)
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    _tick(work, forge, {number: head})
+    assert _origin(work, 'pr/x') == head, 'a merely behind head does not move'
+    assert not [one for one in forge.statuses.get(head, []) if one['context'] == CONTEXT]
+    assert 'auto-sync' not in ''.join(c['body'] for c in forge.comments.get(number, []))
+
+
+def test_a_head_conflicting_in_the_lock_is_merged_with_integration_and_pushed_under_its_own_name(
+    tmp_path: Path,
+) -> None:
     """PLANTED control: no forge merges (``pr_merges_since`` undeclared), or no serving host: the PR is left alone."""
-    work, head, tip = _world(tmp_path)
+    work, _, _ = _world(tmp_path)
+    head = _lock_apart(work)
+    tip = git_out(work, 'rev-parse', 'origin/integrate/main')
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     _tick(work, forge, {number: head}, policy=_DECLARED)
@@ -111,7 +134,8 @@ def test_a_behind_pr_head_is_merged_with_integration_and_pushed_under_its_own_na
 
 def test_one_sync_per_integration_tip(tmp_path: Path) -> None:
     """PLANTED control: a new integration tip earns the same head one new attempt."""
-    work, head, _ = _world(tmp_path)
+    work, _, _ = _world(tmp_path)
+    head = _lock_apart(work)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     calls: list[str] = []
@@ -130,7 +154,7 @@ def test_one_sync_per_integration_tip(tmp_path: Path) -> None:
 
 
 def test_a_textual_conflict_is_said_once_and_never_resolved(tmp_path: Path) -> None:
-    """PLANTED control: the clean PR of the first test is synced."""
+    """PLANTED control: the PR conflicting in the lock alone is synced."""
     work, _, _ = _world(tmp_path, 'feat/x')  # a PR-less pr/x would get its PR opened (open_lanes)
     head = advance(work, 'pr/c', 'i.txt', 'theirs\n')
     forge = StateForge()
@@ -152,6 +176,7 @@ def test_a_stacked_pr_names_the_pr_it_waits_behind_and_syncs_once_that_one_merge
     run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/y')
     run_git(work, 'checkout', '-q', '--detach')
     run_git(work, 'branch', '-q', '-D', 'tmp-up')
+    upper = _lock_apart(work, 'pr/y')
     forge = StateForge()
     a = forge.add_pull('pr/x', 'integrate/main', sha=lower)
     b = forge.add_pull('pr/y', 'integrate/main', sha=upper)
@@ -171,7 +196,8 @@ def test_a_stacked_pr_names_the_pr_it_waits_behind_and_syncs_once_that_one_merge
 
 def test_a_head_committed_inside_the_quiet_period_is_not_raced(tmp_path: Path) -> None:
     """PLANTED control: the same head past the quiet period is synced."""
-    work, head, _ = _world(tmp_path)
+    work, _, _ = _world(tmp_path)
+    head = _lock_apart(work)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     _tick(work, forge, {number: head}, now=datetime.now(UTC) + timedelta(minutes=1))
@@ -183,7 +209,8 @@ def test_a_head_committed_inside_the_quiet_period_is_not_raced(tmp_path: Path) -
 
 def test_a_head_outside_the_ephemeral_namespace_is_never_synced(tmp_path: Path) -> None:
     """PLANTED control: the same PR on a ``pr/*`` head is synced (the first test)."""
-    work, head, _ = _world(tmp_path, 'feat/x')
+    work, _, _ = _world(tmp_path, 'feat/x')
+    head = _lock_apart(work, 'feat/x')
     forge = StateForge()
     number = forge.add_pull('feat/x', 'integrate/main', sha=head)
     _tick(work, forge, {number: head})
@@ -194,16 +221,10 @@ def test_a_head_outside_the_ephemeral_namespace_is_never_synced(tmp_path: Path) 
 def test_a_conflict_in_the_lock_alone_is_relocked_inside_the_merge(tmp_path: Path) -> None:
     """PLANTED control: a conflict in any other file is refused (the conflict test)."""
     work, _, _ = _world(tmp_path)
-    advance(work, 'integrate/main', 'uv.lock', 'ours\n')
-    head = advance(work, 'pr/l', 'uv.lock', 'theirs\n')
+    head = _lock_apart(work, 'pr/l')
     forge = StateForge()
     number = forge.add_pull('pr/l', 'integrate/main', sha=head)
-
-    def door(tree: Path) -> int:
-        (tree / 'uv.lock').write_text('relocked\n', encoding='utf-8')
-        return 0
-
-    _tick(work, forge, {number: head}, run=_synced(upgrade=door))
+    _tick(work, forge, {number: head})
     new = _origin(work, 'pr/l')
     assert new != head
     assert git_out(work, 'show', f'{new}:uv.lock') == 'relocked'
@@ -247,9 +268,10 @@ def test_diverged_family_pins_refuse_the_sync_naming_the_package_and_both_pins(t
     assert {'ai-lab', 'a2', 'b2'} <= set(said.replace(',', ' ').split())
 
 
-def test_a_stale_lock_after_a_clean_merge_is_relocked_and_an_unrunnable_resolution_refuses(tmp_path: Path) -> None:
-    """PLANTED control: a fresh lock is never relocked (``_never`` in every other test)."""
-    work, head, _ = _world(tmp_path)
+def test_an_unrunnable_relock_refuses_the_sync(tmp_path: Path) -> None:
+    """PLANTED control: a runnable resolution syncs the same head (the lock-conflict test)."""
+    work, _, _ = _world(tmp_path)
+    head = _lock_apart(work)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
 
@@ -263,7 +285,8 @@ def test_a_stale_lock_after_a_clean_merge_is_relocked_and_an_unrunnable_resoluti
 
 def test_a_merge_the_audit_refuses_is_never_pushed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED: the audit names a deviation. Control: the unplanted audit passes the same merge (the first test)."""
-    work, head, _ = _world(tmp_path)
+    work, _, _ = _world(tmp_path)
+    head = _lock_apart(work)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     monkeypatch.setattr(forgeautosync, 'judge', lambda *_a, **_k: ('LOST tests/test_a.py::test_a',))
@@ -273,7 +296,8 @@ def test_a_merge_the_audit_refuses_is_never_pushed(tmp_path: Path, monkeypatch: 
 
 
 def test_a_local_branch_of_the_heads_name_is_an_authors_and_is_refused(tmp_path: Path) -> None:
-    work, head, _ = _world(tmp_path)
+    work, _, _ = _world(tmp_path)
+    head = _lock_apart(work)
     run_git(work, 'branch', 'pr/x', head)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
