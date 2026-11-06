@@ -116,18 +116,68 @@ def test_upgrade_builds_exactly_the_configured_command(tmp_path: Path) -> None:
     ]  # fmt: skip
 
 
-def test_upgrade_reports_old_to_new_and_runs_only_the_configured_install(tmp_path: Path) -> None:
-    versions = iter(['1.0', '1.1'])
-    installed: list[list[str]] = []
+OLD, NEW = 'a' * 40, 'b' * 40
 
-    def fake(argv: Sequence[str]) -> tuple[int, str]:
+
+def _upgrade_fakes(
+    installed_after: list[str], *, passes: bool
+) -> tuple[list[list[str]], list[list[str]], upgrade.Runner, upgrade.Runner]:
+    """An install that records its line; a probe answering the commit from ``installed_after`` and failing checks."""
+    installed: list[list[str]] = []
+    checked: list[list[str]] = []
+    state = {'sha': OLD}
+
+    def install(argv: Sequence[str]) -> tuple[int, str]:
         installed.append(list(argv))
+        state['sha'] = installed_after[len(installed) - 1]
         return 0, ''
 
+    def probe(argv: Sequence[str]) -> tuple[int, str]:
+        if 'direct_url.json' in argv[-1]:
+            return 0, state['sha']
+        checked.append(list(argv))
+        return (0 if passes or state['sha'] != NEW else 1), ''
+
+    return installed, checked, install, probe
+
+
+def test_a_passing_self_check_keeps_the_tip(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the rollback: a passing check installs once and restores nothing."""
     host = _config(tmp_path, UPGRADE)
-    said = upgrade.run(host, install=fake, probe=lambda _argv: (0, next(versions)))
-    assert said == (0, 'dev-lab 1.0 -> 1.1')
+    installed, checked, install, probe = _upgrade_fakes([NEW], passes=True)
+    assert upgrade.run(host, install=install, probe=probe) == (0, f'dev-lab {OLD} -> {NEW}')
     assert installed == [upgrade.command(host)]
+    assert checked == list(upgrade.checks(host).values())
+
+
+def test_a_failing_self_check_restores_the_recorded_commit(tmp_path: Path) -> None:
+    host = _config(tmp_path, UPGRADE)
+    installed, _checked, install, probe = _upgrade_fakes([NEW, OLD], passes=False)
+    code, said = upgrade.run(host, install=install, probe=probe)
+    assert code != 0
+    assert said == f'self-check loads FAILED on tip {NEW}; restored {OLD}'
+    assert installed == [upgrade.command(host), upgrade.command(host, OLD)]
+    assert installed[1][-2].endswith(f'dev-lab.git@{OLD}')
+
+
+def test_no_recordable_commit_refuses_before_installing(tmp_path: Path) -> None:
+    host = _config(tmp_path, UPGRADE)
+    installed: list[list[str]] = []
+    code, said = upgrade.run(
+        host, install=lambda argv: (installed.append(list(argv)), (0, ''))[1], probe=lambda _a: (0, '')
+    )
+    assert code != 0
+    assert 'no rollback' in said
+    assert installed == []
+
+
+def test_the_self_check_loads_this_host_s_config_and_reaches_breakglass(tmp_path: Path) -> None:
+    host = _config(tmp_path, UPGRADE)
+    found = upgrade.checks(host)
+    assert found['loads'][-1] == str(host.path)
+    assert found['breakglass'] == [
+        '/opt/ops/bin/python', '-m', 'dev_lab.ops', '--config', str(host.path), 'breakglass', '--help',
+    ]  # fmt: skip
 
 
 @pytest.mark.parametrize('extra', [['deadbeef'], ['--ref', 'x'], ['https://forge.example/other.git']])
