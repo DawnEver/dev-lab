@@ -5,7 +5,7 @@ a tracked file, since the forge, its repos and the login host are private to the
 
     [deploy]
     host = "<login host>"          # the ONE host whose crontab serves this account (cron is per host)
-    root = "src"                   # the served checkouts live in ~/<root>/<name>
+    root = ".local/share/lab-forge/repos"  # the served checkouts live in ~/<root>/<name> (the forge home)
     python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
