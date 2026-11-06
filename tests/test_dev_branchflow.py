@@ -227,7 +227,7 @@ def test_only_a_pushed_unlanded_lane_without_a_pr_gets_one(server, tmp_path: Pat
     advance(work, 'pr/open', 'o.txt', 'o\n')
     advance(work, 'pr/refused', 'r.txt', 'r\n')
     advance(work, 'feat/mine', 'm.txt', 'm\n')
-    advance(work, 'pr/relock-1', 'k.txt', 'k\n')
+    advance(work, 'pr/relock', 'k.txt', 'k\n')  # THE rolling relock opens its own PR (dev_lab.dev.relock)
     run_git(work, 'fetch', '-q', 'origin')
     declared = (work / 'pyproject.toml').read_text(encoding='utf-8')
     (work / 'pyproject.toml').write_text(f"{declared}[tool.dev_lab.branchset]\ntrunk = 'main'\n", encoding='utf-8')

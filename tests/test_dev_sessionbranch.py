@@ -24,7 +24,7 @@ from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
-from dev_lab.dev.relock import branch_for
+from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
 from dev_lab.dev.sessionbranch import P2, P3, P5, P6, refusals
 
 _GIT = shutil.which('git') or 'git'
@@ -553,7 +553,7 @@ def test_the_declared_branches_land(repo: Path) -> None:
     assert done.returncode == 0, done.stderr
 
 
-@pytest.mark.parametrize('branch', [LANE, branch_for('lab-commons', 'a' * 40), 'integrate/main', 'main'])
+@pytest.mark.parametrize('branch', [LANE, RELOCK_BRANCH, 'integrate/main', 'main'])
 def test_every_machine_pusher_targets_a_branch_the_family_default_admits(branch: str) -> None:
     """The forge's own pushers (component bump, relock; autosync pushes only pr/ heads) and the declared pair."""
     declared = branchset_from("[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n", 'p')
