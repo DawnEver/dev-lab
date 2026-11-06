@@ -16,6 +16,10 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 * ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpchost.fleet`) starts, detached over ssh,
   every declared account's own ``deploy``, one log per account.
 
+EVERY ACCOUNT DECLARES ITS ROLE (user ruling 2026-11-06), ``[deploy] role`` in its own machine file
+(:mod:`~dev_lab.dev.hpchost.spec`): only a ``verification`` account (a Forge Verification account) runs the serve
+cron; a ``research`` account is deployed for research and never carries one. Undeclared, ``deploy`` refuses.
+
 Everything else about the cluster -- plan, submit, run, gather, clean -- stays ``python -m lab_commons.hpc``.
 """
 

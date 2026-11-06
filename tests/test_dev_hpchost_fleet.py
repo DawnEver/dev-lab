@@ -139,3 +139,12 @@ def test_an_undeclared_root_is_the_forge_home_never_home_src() -> None:
     assert DEFAULT_ROOT == '.local/share/lab-forge/repos'
     assert DEFAULT_ROOT.split('/')[0] != 'src'
     assert Target('login02.example', 'elsewhere').root == 'elsewhere'
+
+
+def test_the_fleet_view_prints_each_accounts_declared_role(tmp_path: Path) -> None:
+    """User ruling 2026-11-06: the role is read from the account's own [deploy]; PLANTED CONTROL: bob declares none."""
+    deploy = {**_DEPLOY, 'alice': '[deploy]\nhost = "login02.example"\nrole = "research"\n'}
+    code, _started, said = _run(tmp_path, ('alice', 'bob'), deploy)
+    assert code == 0
+    assert any(line.startswith('alice (research): started') for line in said)
+    assert any(line.startswith('bob (role undeclared): started') for line in said)

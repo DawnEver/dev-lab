@@ -25,7 +25,7 @@ from dev_lab.dev.hpchost.steps import Tools
 
 URL: Final = 'https://forge.example/team'
 LAB: Final = ('--repo', f'dev-lab={URL}/dev-lab.git@trunk')
-GRANT: Final = ('--partition', 'shortq', '--partition', 'defq')
+GRANT: Final = ('--partition', 'shortq', '--partition', 'defq', '--role', 'verification')
 DECLARE: Final = (
     '--host', 'login02', *LAB, '--repo', f'alpha={URL}/alpha.git@trunk', '--repo', f'beta={URL}/beta.git@trunk', *GRANT
 )  # fmt: skip
@@ -602,7 +602,8 @@ def test_a_tick_whose_declared_need_no_longer_runs_serves_nothing_and_alarms_nam
 
 def _cron_spec(text: str, tmp_path: Path) -> deploy_spec.Deployment:
     lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
-    base = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', (lab, deploy_spec.Repo('a', URL, 'r'))))
+    repos = (lab, deploy_spec.Repo('a', URL, 'r'))
+    base = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', repos, role=deploy_spec.VERIFICATION))
     spec = deploy_spec.load(_write(tmp_path / 'config.toml', base + text))
     assert spec is not None
     return spec
@@ -675,3 +676,72 @@ def test_the_deploy_ticks_now_only_the_repos_its_cron_ticks(box: Box) -> None:
     assert box.run() == 0
     assert 'hpchost tick alpha' in box.logged()
     assert 'hpchost tick beta' not in box.logged()
+
+
+def _as_role(box: Box, role: str | None) -> None:
+    """Rewrite the stored ``[deploy] role`` as *role*; ``None`` removes the key."""
+    text = box.machine.read_text(encoding='utf-8').replace('role = "verification"\n', '')
+    line = '' if role is None else f'role = "{role}"\n'
+    box.machine.write_text(text.replace('[deploy]\n', f'[deploy]\n{line}', 1), encoding='utf-8')
+
+
+def _marked(box: Box) -> set[str]:
+    lines = box.crontab.read_text(encoding='utf-8').splitlines() if box.crontab.exists() else []
+    return {line.rsplit(deploy_spec.MARK, 1)[1] for line in lines if deploy_spec.MARK in line}
+
+
+def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_marked_ones(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """User ruling 2026-11-06: only a Forge Verification account serves. PLANTED CONTROL: verification writes them."""
+    _write(box.crontab, '0 1 * * * echo mine\n')
+    assert box.run(*DECLARE) == 0
+    assert _marked(box) == {'dev-lab', 'alpha', 'beta'}, 'the planted control: a verification account serves'
+    _as_role(box, deploy_spec.RESEARCH)
+    capsys.readouterr()
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 0
+    assert _marked(box) == set()
+    assert box.crontab.read_text(encoding='utf-8') == '0 1 * * * echo mine\n', 'every other line kept'
+    assert capsys.readouterr().out.count('crontab: remove ') == 3, 'each removed line is printed'
+    calls = box.logged()
+    assert 'hpchost tick' not in calls, 'a research account is never ticked'
+    assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'
+
+
+def test_an_undeclared_role_is_refused_naming_the_key_and_nothing_changes(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert box.run(*DECLARE) == 0
+    before = box.crontab.read_text(encoding='utf-8')
+    _as_role(box, None)
+    capsys.readouterr()
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 2
+    err = capsys.readouterr().err
+    assert '[deploy] role is undeclared' in err
+    assert str(box.machine) in err
+    assert box.crontab.read_text(encoding='utf-8') == before
+    assert 'crontab -' not in box.logged()
+
+
+def test_a_role_outside_the_two_is_refused_naming_the_key(tmp_path: Path) -> None:
+    lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
+    text = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', (lab,), role='serving'))
+    with pytest.raises(ValueError, match=r"\[deploy\] role .* is 'serving'"):
+        deploy_spec.load(_write(tmp_path / 'config.toml', text))
+
+
+def test_a_serve_tick_on_a_research_account_refuses_naming_the_role(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stale cron line surviving on a research account never serves. PLANTED CONTROL: verification serves."""
+    assert box.run(*DECLARE) == 0
+    served: list[tuple[list[str], Path, str]] = []
+    assert _tick(box, 'alpha', served) == 0
+    assert len(served) == 1, 'the planted control: a verification tick serves'
+    _as_role(box, deploy_spec.RESEARCH)
+    capsys.readouterr()
+    assert _tick(box, 'alpha', served) == 2
+    assert len(served) == 1, 'nothing served'
+    assert 'role is research' in capsys.readouterr().err

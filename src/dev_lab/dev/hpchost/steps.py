@@ -15,9 +15,9 @@ import lab_commons.launch as _door
 from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
-from dev_lab.dev.hpchost.spec import Deployment, Repo, checkout_of
+from dev_lab.dev.hpchost.spec import MARK, Deployment, Repo, checkout_of, merge_crontab
 
-__all__ = ['Step', 'Tools', 'build', 'declared', 'update']
+__all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'update']
 
 
 @dataclass(frozen=True)
@@ -164,4 +164,23 @@ def update(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
     return step.change(
         f'{repo.name}: git submodule update --init --recursive',
         [*git, '-C', str(checkout), 'submodule', 'update', '-q', '--init', '--recursive'],
+    )
+
+
+def crontab(step: Step, lines: Sequence[str]) -> int:
+    """Replace this tool's marked crontab lines with *lines*, every other line kept; each line dropped is printed."""
+    listed = step.read([*step.tools.crontab, '-l'])
+    current = listed.stdout if listed.returncode == 0 else ''
+    if listed.returncode and 'no crontab' not in listed.stderr:
+        emit(f'  crontab -l exited {listed.returncode}: {listed.stderr.strip()}', err=True)
+        return 2
+    wanted = merge_crontab(current, lines)
+    if wanted == current:
+        emit(f'  crontab: the {len(lines)} marked line(s) are already in place')
+        return 0
+    for line in current.splitlines():
+        if MARK in line and line not in lines:
+            emit(f'  crontab: remove {line}')
+    return step.change(
+        f'crontab: write {len(lines)} marked line(s), every other line kept', [*step.tools.crontab, '-'], stdin=wanted
     )
