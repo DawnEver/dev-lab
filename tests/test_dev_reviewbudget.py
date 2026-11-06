@@ -10,9 +10,11 @@ from pathlib import Path
 
 import pytest
 from _branch_repos import advance
+from _forge_state import StateForge
 from test_dev_forgereview import JUDGE, FakeCommand, _forge, _work
 from test_dev_forgereview_rounds import _doc, _finding, _state
 
+from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, comment_upsert
 from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_claim import CAPPED
@@ -232,10 +234,18 @@ def test_a_raise_line_pasted_into_another_authors_comment_is_ignored(tmp_path: P
     assert _raised_as_seen_by(forge, number, 'github-actions[bot]') is None
 
 
-def test_a_raise_by_an_author_without_write_permission_is_ignored(tmp_path: Path) -> None:
-    """F-d5d3c6e517a0: naming yourself proves authorship, not authority. PLANTED control: the same raise by a writer."""
+def test_a_raise_by_an_author_without_write_permission_is_ignored_on_github(tmp_path: Path) -> None:
+    """F-d5d3c6e517a0: naming yourself proves authorship, not authority. PLANTED control: the same raise by a writer.
+
+    Only GitHub vets authors; on Gitea, the private forge, the same raise is admitted (user ruling 2026-11-06).
+    """
     _, head = _work(tmp_path)
-    forge, number = _forge(head)
+    gitea, number = _forge(head)
+    gitea.login = 'mallory'
+    raise_cap(gitea, number, Raised(None, 99, 'self-raised'), by=Identity('mallory', 'box', 'S-m'))
+    assert _raised_as_seen_by(gitea, number, 'github-actions[bot]').rounds == 99
+    forge = StateForge(Forge('github.com', 'o', 'r'))
+    number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     forge.login = 'mallory'
     raise_cap(forge, number, Raised(None, 99, 'self-raised'), by=Identity('mallory', 'box', 'S-m'))
     assert _raised_as_seen_by(forge, number, 'github-actions[bot]') is None
