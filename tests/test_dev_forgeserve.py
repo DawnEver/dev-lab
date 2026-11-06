@@ -815,7 +815,7 @@ def test_a_part_whose_infrastructure_did_not_answer_demotes_its_tools(monkeypatc
     """D21 (4): exit 4 on a femm part demotes femm here; a red part (exit 1) is the code's, never the tool's."""
     demoted: list = []
     monkeypatch.setattr(forgeproduce, 'demote', lambda tools, why: demoted.append((tools, why)))
-    monkeypatch.setattr(forgeproduce, 'needs_of', lambda _platform: frozenset({'femm', 'windows'}))
+    monkeypatch.setattr(forgeproduce, 'needs_of_row', lambda _platform: frozenset({'femm', 'windows'}))
     red = Produced('r', 'a' * 40, 'femm', (), 1)
     forgeproduce.demote_unreachable([red])
     assert demoted == [], 'PLANTED CONTROL: a failed test is not a failed tool'
@@ -1587,3 +1587,21 @@ def test_every_tick_reads_the_host_pressure_as_its_host(monkeypatch: pytest.Monk
     monkeypatch.setattr(forgeserve, 'pressed', lambda root, _repo, **kw: called.append({'root': root, **kw}))
     _serve(monkeypatch, tmp_path, TickReport((), (), ()))
     assert [(one['root'], one['who']) for one in called] == [(tmp_path, 'G')]
+
+
+def test_an_os_row_reaching_the_producer_is_read_as_its_part(monkeypatch, tmp_path: Path) -> None:
+    """A status row (``femm@windows``) needs what its part (``femm``) needs: produce prices and demotes it so.
+
+    PLANTED CONTROL: the bare part claims the same box figure, and its row is never refused as a part name.
+    """
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    bare, row = (
+        forgeproduce.box_claim(Work('integrate/main', SHA, part, 'mine', ME), BOX, root=tmp_path)
+        for part in ('base', 'base@windows')
+    )
+    assert row == bare
+    demoted: list = []
+    monkeypatch.setattr(forgeproduce, 'demote', lambda tools, _why: demoted.append(tools))
+    forgeproduce.demote_unreachable([Produced('r', 'a' * 40, 'femm@windows', (), ProducerExit.UNREACHABLE)])
+    assert demoted == [sorted({'femm'} & forgeproduce.CHECKS.keys())]

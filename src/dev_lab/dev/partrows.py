@@ -10,9 +10,9 @@ import sys
 from typing import Final
 
 from lab_commons.compute.probe import OS_NAMES, os_name
-from lab_commons.hpc.needsets import PART_NAME
+from lab_commons.hpc.needsets import PART_NAME, needs_of
 
-__all__ = ['ROW_SEPARATOR', 'is_row', 'row_part', 'row_system', 'this_platform']
+__all__ = ['ROW_SEPARATOR', 'is_row', 'needs_of_row', 'row_part', 'row_system', 'this_platform']
 
 #: Joins a part to the OS a row of it runs on, off its own runner: ``base@windows`` (:mod:`dev_lab.dev.jobparts`).
 ROW_SEPARATOR: Final = '@'
@@ -21,6 +21,15 @@ ROW_SEPARATOR: Final = '@'
 def row_part(row: str) -> str:
     """The part (need-set) a row produces: *row* less any ``@<os>``; a bare part is its own row."""
     return row.partition(ROW_SEPARATOR)[0]
+
+
+def needs_of_row(row: str) -> frozenset[str]:
+    """What *row* needs: its part's need-set -- the ONE door dev-lab reads a need-set through.
+
+    :func:`lab_commons.hpc.needsets.needs_of` takes a bare part and raises on ``base@windows``; every
+    dev-lab caller holds a row or a part, so it asks here (``test_arch_need_sets_are_read_through_a_row``).
+    """
+    return frozenset(needs_of(row_part(row)))
 
 
 def row_system(row: str) -> str:
