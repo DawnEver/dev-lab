@@ -16,7 +16,7 @@ from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 from test_dev_githook_scripts import _plant_judging_commitizen
 
-from dev_lab.dev import forgeintegration
+from dev_lab.dev import forgeintegration, forgemerge
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import Ticked, tick
 from dev_lab.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
@@ -416,3 +416,28 @@ def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
         assert any(one.startswith('its review: ') for one in found.missing), found.missing
         assert not found.unreviewed
         assert 'Unreviewed' not in found.message
+
+
+def test_a_missing_integration_ref_is_a_NAMED_reason_never_a_crash(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + _CZ_ROW, encoding='utf-8')
+    said = forgemerge.message_wait(work, 'refs/remotes/origin/no-such-branch', head)
+    assert said is not None
+    assert 'no-such-branch' in said
+    assert 'does not resolve' in said
+
+
+def test_a_message_check_past_its_timeout_is_a_NAMED_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    work, head = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + _CZ_ROW, encoding='utf-8')
+    monkeypatch.setattr(forgemerge, 'MESSAGE_TIMEOUT_S', 0.001)
+    said = forgemerge.message_wait(work, 'refs/remotes/origin/integrate/main', head)
+    assert said is not None
+    assert 'timed out' in said
+
+
+def test_a_ready_decision_with_no_message_row_SAYS_messages_are_not_declared(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    assert found.ready, found.missing
+    assert 'messages: not declared' in found.notes

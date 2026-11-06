@@ -613,3 +613,11 @@ def test_planted_a_lanes_own_off_format_commit_in_a_sync_push_is_still_refused(r
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'data(lane)' in argv_log.read_text(encoding='utf-8')
+
+
+def test_a_CRLF_reasonless_line_says_it_carries_no_reason(repo: Path, tmp_path: Path) -> None:
+    _plant_judging_commitizen(repo, tmp_path)
+    head = _git(repo, 'rev-parse', 'HEAD')
+    done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{head}\r\n')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'carries no reason' in done.stderr, done.stderr

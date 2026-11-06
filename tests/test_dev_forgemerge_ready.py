@@ -13,7 +13,7 @@ from test_dev_forgemerge import _MANIFEST, _work
 from dev_lab.dev import forgecli, forgemerge
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
-from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
+from dev_lab.dev.forgemerge import EXTERNAL, MESSAGES_NOT_DECLARED, READY, judged, ready
 from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
@@ -52,8 +52,9 @@ def test_a_green_pr_is_posted_ready_once_and_a_stale_red_decision_is_never_read_
     work, forge, number, head = _pr(tmp_path)
     status_post(forge, head, context=MERGE_READY_CONTEXT, state='failure', description='waits on: an earlier run')
     said = ready(work, forge, number)
-    assert _merge_ready(forge, head) == ('success', READY)
-    assert said.endswith(f'success: {READY}')
+    no_row = f'{READY} ({MESSAGES_NOT_DECLARED})'  # this PR's repo declares no message row
+    assert _merge_ready(forge, head) == ('success', no_row)
+    assert said.endswith(f'success: {no_row}')
     assert MERGE_READY_CONTEXT in NOT_PARTS, 'the decision is never a part'
 
 
@@ -334,3 +335,11 @@ def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, post
     found = judged(hub_work, hub, load_policy(hub_work), branch='pr/x', number=hub_number, head=hub_head)
     assert not found.ready
     assert any('tests/review' in one for one in found.missing)
+
+
+def test_a_ready_status_without_a_message_row_says_messages_are_not_declared(tmp_path: Path) -> None:
+    work, forge, number, head = _pr(tmp_path)
+    ready(work, forge, number)
+    state, description = _merge_ready(forge, head)
+    assert state == 'success'
+    assert description == f'{READY} ({MESSAGES_NOT_DECLARED})'
