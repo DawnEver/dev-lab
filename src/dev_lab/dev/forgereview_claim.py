@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.forgereview_batch import BATCH_PENDING
-from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgestatus import status_history, status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import post_review
 
@@ -73,7 +73,7 @@ def retried(client: Client, head: str) -> bool:
     """Whether a review attempt on *head* already failed once (a :data:`RETRYING` status in its history)."""
     return any(
         one.context == REVIEW_CONTEXT and one.state == 'error' and one.description.startswith(RETRYING)
-        for one in status_list(client, head)
+        for one in status_history(client, head)
     )
 
 
