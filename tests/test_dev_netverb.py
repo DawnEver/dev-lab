@@ -23,6 +23,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -218,6 +219,34 @@ def test_the_wall_terminates_an_attempt_and_the_next_one_still_runs(tmp_path: Pa
     assert _ran(counter) == 2, 'the wall must end the attempt, not the loop'
     assert [a.diagnosis for a in report.attempts] == [Diagnosis.TIMED_OUT, Diagnosis.TIMED_OUT]
     assert report.disposition is Disposition.EXHAUSTED
+
+
+def test_a_deadline_bounds_every_attempt_together_not_each(tmp_path: Path) -> None:
+    """A planted slow verb: three 60 s attempts under a 2 s DEADLINE end inside it, the later ones never started.
+
+    PLANTED CONTROL: the same verb with ``timeout`` alone runs every attempt
+    (test_the_wall_terminates_an_attempt_and_the_next_one_still_runs).
+    """
+    script = tmp_path / 'slow.py'
+    script.write_text(
+        'import pathlib, sys, time\n'
+        'counter = pathlib.Path(sys.argv[1])\n'
+        'seen = int(counter.read_text()) if counter.exists() else 0\n'
+        'counter.write_text(str(seen + 1))\n'
+        'time.sleep(60)\n',
+        encoding='utf-8',
+    )
+    counter = tmp_path / 'slow-count.txt'
+    began = time.monotonic()
+    report = run_network_verb(
+        [sys.executable, str(script), str(counter)], attempts=3, backoff_s=0.0, timeout=60.0,
+        deadline=began + 2.0, sleep=_Clock(),
+    )  # fmt: skip
+    took = time.monotonic() - began
+    assert took < 10, f'three attempts took {took:.1f} s under one 2 s deadline'
+    assert _ran(counter) == 1, 'no attempt starts once the deadline has passed'
+    assert {a.diagnosis for a in report.attempts} == {Diagnosis.TIMED_OUT}
+    assert not report.ok
 
 
 def test_a_callers_veto_stops_the_loop_and_is_named_in_the_report(tmp_path: Path) -> None:

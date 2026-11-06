@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+import http.client
 import json
+import socket
+import time
 from collections.abc import Iterator
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -14,11 +17,13 @@ import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 from lab_commons.compute.model import Candidate
 from lab_commons.hpc.shell import FULL
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgequeue
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import Claim
 from dev_lab.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
+from dev_lab.dev.platformparts import Part
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 NOW_HTTP = 'Sun, 11 Oct 2026 12:00:00 GMT'
@@ -301,3 +306,62 @@ def test_a_card_withholding_jmag_skips_a_jmag_part_and_round_trips_through_its_c
     assert 'skipped' not in forgequeue._why(femm_part, [keeps], NOW)
     raw = json.loads(keeps.text().split('```json\n', 1)[1].split('\n```', 1)[0])
     assert raw['withholds'] == ['jmag']
+
+
+def test_a_pr_head_with_an_os_row_part_is_queued_not_refused(server, tmp_path: Path, monkeypatch) -> None:
+    """A posted ``tests/base@windows`` is a ROW, not a part name: the queue reads its part, never raises on it.
+
+    PLANTED CONTROL: the same head with a bare ``tests/base`` status reads too (the path that always worked).
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, tips = _origin(tmp_path)
+    built = client(FORGE, Loopback(server))
+    for row in ('base', 'base@windows'):
+        _forge_of(tips, [])
+        posted = Part(row, 'full', Conclusion.PASS, 3).description()
+        status = {'id': 2, 'context': f'tests/{row}', 'status': 'success', 'description': posted}
+        answer('GET', f'{API}/statuses/{tips["feat/a"]}', (200, [status]))
+        seen = forgequeue.view(repo, built, fetch=lambda _root: None)
+        assert not [r for r in seen['queue'] if 'not a part name' in r['blocked']], row
+
+
+def test_a_forge_that_never_answers_is_named_within_the_queues_bound(tmp_path: Path, monkeypatch, capsys) -> None:
+    """NETWORK-RETRY-THEN-REPORT: a silent forge costs the queue its budget, then names the call it waited on.
+
+    PLANTED CONTROL: the same budget against the answering forge prints the queue (test_the_queue_cli_prints_json).
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, _tips = _origin(tmp_path)
+    with socket.socket() as silent:
+        silent.bind(('127.0.0.1', 0))
+        silent.listen(8)  # accepts every connection, answers none
+        host, port = silent.getsockname()
+        address = f'{host}:{port}'
+        began = time.monotonic()
+        code = forgequeue.main(
+            [], cwd=repo, env=credential_env(tmp_path), fetch=lambda _root: None, budget_s=1.0,
+            transport=lambda _host, timeout: http.client.HTTPConnection(address, timeout=timeout),
+        )  # fmt: skip
+        took = time.monotonic() - began
+    assert code == 1
+    assert took < 10, f'the queue took {took:.1f} s against a 1 s budget'
+    said = capsys.readouterr().err
+    assert '/api/v1/' in said, f'the slow call is named: {said!r}'
+
+
+def test_a_slow_fetch_spends_the_one_budget_the_reads_share(server, tmp_path: Path, monkeypatch, capsys) -> None:
+    """ONE deadline covers fetch + reads: a fetch that eats the budget leaves the forge calls none, and says so.
+
+    PLANTED CONTROL: the same answering forge with an instant fetch prints the queue (test_the_queue_cli_prints_json).
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, _tips = _origin(tmp_path)
+    began = time.monotonic()
+    code = forgequeue.main(
+        [], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server), budget_s=0.5,
+        fetch=lambda _root: time.sleep(0.6),
+    )  # fmt: skip
+    took = time.monotonic() - began
+    assert code == 1
+    assert took < 5, f'the queue took {took:.1f} s against a 0.5 s budget'
+    assert 'spent its 0.5 s read budget' in capsys.readouterr().err
