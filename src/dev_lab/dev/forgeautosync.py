@@ -13,6 +13,8 @@ out a ``sync`` plan:
 * its lock is relocked when the merge leaves it stale or conflicted, through the dependency door
   (:func:`dev_lab.dev.relock.door_upgrade`, the one writer of a lock) and the same staleness reading as
   the relock (:func:`dev_lab.dev.lockcheck.stale`) -- inside the merge commit, so no hand relock follows;
+* a sync never rolls a lane back: every git pin both sides hold is carried to the side whose pin contains the
+  other (:func:`dev_lab.dev.syncpins.carry`), and two pins that diverged refuse the sync (:data:`PINS`);
 * the merge passes the merge audit (:func:`dev_lab.dev.mergeaudit.judge`) before it is committed, and the
   commit runs the repository's hooks (``MERGE-DEVIATIONS-NAMED``).
 
@@ -25,6 +27,7 @@ It REFUSES, naming why once in the head's :data:`CONTEXT` status and the PR's in
 * :data:`QUIET` -- a head committed inside the declared ``auto_sync_quiet`` (default ``"10 min"``): a live
   author is not raced;
 * :data:`NOT_EPHEMERAL` -- a head outside ``[tool.dev_lab.branchset] ephemeral`` is the author's branch;
+* :data:`PINS` -- a git pin the two sides moved apart, or whose ancestry could not be read;
 * :data:`AUDIT`, :data:`RELOCK`, :data:`LOCAL_BRANCH`, :data:`PUSH` -- the merge, relock or push could not finish.
 
 ONCE PER INTEGRATION TIP. Every outcome is a status on the head naming the tip it was judged against, and a head
@@ -54,6 +57,7 @@ from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import door_upgrade
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
+from dev_lab.dev.syncpins import Ancestry, ancestor, carry
 from dev_lab.dev.trialmerge import contains, shares_unmerged, trial
 
 if TYPE_CHECKING:
@@ -63,7 +67,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.netverb import Report
 
 __all__ = [
-    'AUDIT', 'CLAIM_STALE', 'CONFLICTED', 'CONTEXT', 'LOCAL_BRANCH', 'NOT_EPHEMERAL', 'PUSH', 'QUIET', 'RELOCK',
+    'AUDIT', 'CLAIM_STALE', 'CONFLICTED', 'CONTEXT', 'LOCAL_BRANCH', 'NOT_EPHEMERAL', 'PINS', 'PUSH', 'QUIET', 'RELOCK',
     'STACKED', 'Open', 'Plan', 'SyncRefused', 'attempted', 'claim', 'merge_message', 'outcome', 'plan', 'quiet_after',
     'step', 'sync',
 ]  # fmt: skip
@@ -78,6 +82,7 @@ QUIET: Final = 'its head was committed inside auto_sync_quiet {quiet}: a live au
 NOT_EPHEMERAL: Final = '{branch} is not an ephemeral head ([tool.dev_lab.branchset] ephemeral): never synced'
 AUDIT: Final = 'the merge audit refuses the machine merge: {problems}'
 RELOCK: Final = 'the lock could not be relocked: {why}'
+PINS: Final = 'the lock would roll a pin back: {why}'
 LOCAL_BRANCH: Final = 'a local branch {branch} exists on this host: its owner pushes it'
 PUSH: Final = 'the push of {branch} failed: {why}'
 
@@ -119,7 +124,10 @@ def quiet_after(policy: Policy) -> timedelta:
 
 
 #: How the machine resolves the one conflict it may (MERGE-RESOLUTION-DECLARED): integration's lock, relocked.
-LOCK_RESOLUTION: Final = f"{LOCK}: newer-structure -- integration's lock, relocked through the dependency door"
+LOCK_RESOLUTION: Final = (
+    f"{LOCK}: newer-structure -- integration's lock, relocked through the dependency door, "
+    'each git pin carried to the side that contains the other'
+)
 
 
 def merge_message(policy: Policy, branch: str, tip: str, *, lock_conflicted: bool = False) -> str:
@@ -254,6 +262,25 @@ def _relock(
     _must(tree, 'add', '--', *(path for path in FRESHENED if (tree / path).is_file()))
 
 
+def _carry_pins(root: Path, tree: Path, head: str, tip: str, ancestry: Ancestry | None) -> None:
+    """Carry every git pin of the merged lock to the newer of *head*'s and *tip*'s; refuse a diverged one."""
+    lock = tree / LOCK
+    (head_code, ours), (tip_code, theirs) = _git(root, 'show', f'{head}:{LOCK}'), _git(root, 'show', f'{tip}:{LOCK}')
+    if head_code or tip_code or not lock.is_file():
+        return  # a side with no lock pins nothing to roll back
+    if ancestry is None:
+        ancestry = ancestor(Path(_must(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')) / 'syncpins')
+    merged = lock.read_text(encoding='utf-8')
+    try:
+        carried = carry(ours, theirs, merged, ancestry)
+    except (OSError, ValueError) as why:
+        _git(tree, 'merge', '--abort')
+        raise SyncRefused(PINS.format(why=why)) from why
+    if carried != merged:
+        lock.write_text(carried, encoding='utf-8', newline='')
+        _must(tree, 'add', '--', LOCK)
+
+
 def sync(
     root: Path,
     policy: Policy,
@@ -263,10 +290,12 @@ def sync(
     resolve: Callable[[Path], Report] | None = None,
     upgrade: Callable[[Path], int] = door_upgrade,
     push: Callable[[Path, str], None] = _push,
+    ancestry: Ancestry | None = None,
 ) -> str:
     """Merge ``origin/<integration>`` into *branch* at *head*, relock, audit, commit and push; the new head.
 
-    *resolve*, *upgrade* and *push* are the staleness resolution, the door and the push -- each a seam a test plants.
+    *resolve*, *upgrade*, *push* and *ancestry* (a pin's ancestry, default each dependency's own repository) are
+    seams a test plants.
     """
     base = f'refs/remotes/origin/{policy.integration}'
     tip = _must(root, 'rev-parse', '--verify', f'{base}^{{commit}}')
@@ -279,6 +308,7 @@ def sync(
             paths = ', '.join(f'`{path}`' for path in unmerged)
             raise SyncRefused(CONFLICTED.format(integration=policy.integration, paths=paths))
         _relock(tree, conflicted=LOCK in unmerged, resolve=resolve, upgrade=upgrade)
+        _carry_pins(root, tree, head, tip, ancestry)
         merged = _must(tree, 'write-tree')
         try:
             problems = judge(root, [head, tip], merged, message, roots=policy.test_roots, label=branch)

@@ -80,6 +80,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgerecords',
     'forgetick',
     'forgeautosync',
+    'syncpins',
     'forgeintegration',
     'forgelanes',
     'forgemerge',
