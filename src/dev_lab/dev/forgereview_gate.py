@@ -41,4 +41,4 @@ def review_gate(client: Client, head: str, *, base: str) -> Reviewed:
     if review.where == JUDGE:
         reviews = head_reviews(client, head)
         return lambda statuses: judge_missing(statuses, reviews, head=head, judge=review.judge_login)
-    return status_gate(forge_posted(client, head, base=base))
+    return status_gate(forge_posted(client))

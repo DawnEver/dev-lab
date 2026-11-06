@@ -15,6 +15,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
 from dev_lab.dev.forgereview_claim import CAPPED
+from dev_lab.dev.forgereview_rounds import Ledger
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
 from dev_lab.dev.lanepolicy import load_policy
@@ -36,13 +37,9 @@ def _pr(
     (work / 'pyproject.toml').write_text(manifest, encoding='utf-8')
     forge = StateForge()
     number = forge.add_pull('pr/x', base, sha=head)
-    _, run = forge.add_run(head)
     for context, description in _GREEN if green else _GREEN[:2]:
-        job = context == 'tests/review'  # the review job: null creator, naming its run at this head (D11)
-        forge.login = GITEA_ACTIONS_LOGIN if job else 'a'
-        status_post(
-            forge, head, context=context, state='success', description=description, target_url=run if job else ''
-        )
+        forge.login = GITEA_ACTIONS_LOGIN if context == 'tests/review' else 'a'  # the review job: null creator
+        status_post(forge, head, context=context, state='success', description=description)
     forge.login = 'a'
     return work, forge, number, head
 
@@ -238,6 +235,31 @@ def test_an_internal_pr_capped_on_its_dollar_budget_merges_warned(tmp_path: Path
     assert said.endswith('merged')
 
 
+@pytest.mark.parametrize('rounds', [5, 4])
+def test_on_gitea_a_review_capped_at_its_rounds_is_ready_warned_never_waiting_on_pending(
+    tmp_path: Path, rounds: int
+) -> None:
+    """Motronics #5541 (2026-11-06): the review job's ledgers reached the round cap; tests/review stays ``pending``.
+
+    The Merge tick (an Actions job) posts ready, WARNED with the ``Unreviewed:`` line -- never a wait on the pending.
+    PLANTED CONTROL: a ledger one round short of the cap is no waiver; the pending review still holds it.
+    """
+    work, forge, number, head = _pr(tmp_path)
+    forge.login = GITEA_ACTIONS_LOGIN
+    forge.issue_comment(number, Ledger(head, rounds, ()).line())
+    forge.login = 'a'
+    status_post(forge, head, context='tests/review', state='pending', description=f'{CAPPED} round cap reached: 5/5')
+    forge.login = GITEA_ACTIONS_LOGIN
+    ready(work, forge, number)
+    state, description = _merge_ready(forge, head)
+    if rounds == 5:
+        assert state == 'success'
+        assert 'WARNED -- Unreviewed: review capped at 5 rounds; open findings: none' in description
+    else:
+        assert state == 'failure'
+        assert description.startswith(f'waits on: its review: tests/review is pending: {CAPPED}')
+
+
 def test_a_capped_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -> None:
     """PLANTED CONTROL: the same status, its record pasted by the PR author: the review still holds it."""
     work, forge, number, head = _hub_pr(tmp_path)
@@ -279,3 +301,23 @@ def test_gitea_vets_no_author_so_the_serve_tick_has_no_external_pr(tmp_path: Pat
     found = judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head)
     assert EXTERNAL not in found.missing
     assert found.ready
+
+
+@pytest.mark.parametrize('poster', ['a', 'serve-host', 'github-actions[bot]'])
+def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, poster: str) -> None:
+    """User ruling 2026-11-06, "Gitea is safe; vetting is for GitHub": an agent's or the serve's success counts.
+
+    PLANTED CONTROL: the same success posted by the same non-bot login on GitHub waits on the review.
+    """
+    work, forge, number, head = _pr(tmp_path)
+    forge.login = poster
+    status_post(forge, head, context='tests/review', state='success', description='review round 1: no blocking')
+    assert judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head).ready
+
+    (tmp_path / 'hub').mkdir()
+    hub_work, hub, hub_number, hub_head = _hub_pr(tmp_path / 'hub')
+    hub.login = 'serve-host'
+    status_post(hub, hub_head, context='tests/review', state='success', description='review round 1: no blocking')
+    found = judged(hub_work, hub, load_policy(hub_work), branch='pr/x', number=hub_number, head=hub_head)
+    assert not found.ready
+    assert any('tests/review' in one for one in found.missing)

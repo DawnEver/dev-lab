@@ -176,17 +176,15 @@ def test_a_plain_break_glass_commit_is_taken_over_with_no_pr(tmp_path: Path) -> 
     assert sha[:12] in said[0]
 
 
-def test_a_head_the_forge_reviewed_is_refused_and_a_users_success_is_not_that(tmp_path: Path) -> None:
-    """PLANTED CONTROL for the two above: the door runs only where the FORGE's review is missing (D11)."""
+@pytest.mark.parametrize('poster', ['a', GITEA_ACTIONS_LOGIN])
+def test_on_gitea_a_head_with_a_review_success_is_refused_whoever_posted_it(tmp_path: Path, poster: str) -> None:
+    """User ruling 2026-11-06: Gitea vets no poster, so a user's success is as much the review as the job's.
+
+    PLANTED CONTROL: the same head with its review an ``error`` is taken over (the two tests above).
+    """
     work, forge, _, head = _merged(tmp_path)
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed')  # written by login a
-    said = takeover(  # a's success is a user's, not the forge's
-        work, forge, _SLICED, head, pull=pull_for(forge, head), base='integrate/main', host='box', run=FakeCommand()
-    )
-    assert 'advisory' in said[0]
-    forge.login = GITEA_ACTIONS_LOGIN  # the review job: null creator, naming its run at this head
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed',
-                target_url=forge.add_run(head)[1])  # fmt: skip
+    forge.login = poster
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='reviewed')
     with pytest.raises(TakeoverRefused, match='already reviewed by the forge'):
         takeover(
             work, forge, _SLICED, head, pull=pull_for(forge, head), base='integrate/main', host='box', run=FakeCommand()

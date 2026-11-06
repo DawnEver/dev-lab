@@ -197,7 +197,7 @@ def _scope(
     sliceable = PATHS_FIELD in review.command
     scope = plan(root, target, pull.head_sha, review.budget, done, sliceable=sliceable)
     earlier = reviewed_ancestor(root, pull.head_sha, done)
-    if scope.slices or not earlier or counted_success(client, earlier, base=pull.base) is not None:
+    if scope.slices or not earlier or counted_success(client, earlier) is not None:
         return scope
     return plan(root, target, pull.head_sha, review.budget, (), sliceable=sliceable)
 
@@ -310,14 +310,14 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     retried on that head.
     """
     head, target = pull.head_sha, f'origin/{pull.base}'
-    counted = forge_posted(client, head, base=pull.base) if runner.verifies else None
+    counted = forge_posted(client) if runner.verifies else None
     if (
         stands := passed(root, client, head, runner.clock(), review.stale, counted=counted, ended=run_ended(client))
     ) is not None:
         return f'#{pull.number} {head[:12]}: {stands}' if stands else None
     # the forge's own rounds only: a pasted marker naming an unreviewed sha would shrink the range or seed a carry
     done = reviewed_heads(trusted_bodies(client, pull.number, review.reviewers))
-    if (source := synced_from(root, target, head, done)) and (why := synced(client, head, source, base=pull.base)):
+    if (source := synced_from(root, target, head, done)) and (why := synced(client, head, source)):
         return f'#{pull.number} {head[:12]}: {why}'
     if (wait := _young(root, head, runner)) is not None:
         return f'#{pull.number} {head[:12]}: {wait}'

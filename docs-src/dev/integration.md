@@ -175,7 +175,9 @@ reached: <spent>/<cap> USD`, then `; open findings: <ids>`; `tests/merge-ready` 
 a status description. **Only an internal PR auto-merges** (`forgemerge.external`): on GitHub a
 fork's head, or an author without write permission (`Client.trusts`, the one trust test cap raises use), is tested
 and reviewed but never merged by the forge -- `tests/merge-ready` stays `pending` `external PR: a maintainer merges
-it`. Gitea is private and vets no author (`Backend.vets_authors`, user ruling 2026-11-06).
+it`. Gitea is private and vets no author (`Backend.vets_authors`, user ruling 2026-11-06): nor whoever posted a
+`tests/review` success -- the serve's login, an Actions job's null creator, an agent -- while on GitHub only its
+Actions bot's counts (`reviewgate.forge_posted`).
 
 **What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
 slice, not whether a head is read at all:

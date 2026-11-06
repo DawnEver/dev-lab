@@ -49,15 +49,13 @@ class StateForge(Client):
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         #: ``{login: repository permission}`` as the forge records it; an absent login reads ``read``.
         self.permissions: dict[str, str] = {'a': 'write'}  # the default PR author is a maintainer: internal
-        #: The repository's teams as ``GET .../teams`` lists them, each with its members' logins (none by default).
-        self.teams: list[tuple[dict[str, Any], set[str]]] = []
         self._next_comment = 1000
         #: The forge's clock, the ``Date`` of every answer; an issue written is updated at it.
         self.now_http = NOW_HTTP
         #: Every call as ``METHOD path?query``, in order: what a test counts requests by.
         self.asked: list[str] = []
-        #: ``pyproject.toml`` at every ref (default: it adopts the Actions review), ``pyproject_at`` overriding one ref.
-        self.pyproject = '[tool.dev_lab.ci."review.yml"]\n'
+        #: ``pyproject.toml`` at every ref, ``pyproject_at`` overriding one ref.
+        self.pyproject = "[project]\nname = 'r'\n"
         self.pyproject_at: dict[str, str | None] = {}  # ``None``: the file is absent at that ref
         #: Every PR review by pull number, as ``GET .../pulls/{n}/reviews`` lists them (:meth:`add_review`).
         self.reviews: dict[int, list[dict[str, Any]]] = {}
@@ -100,8 +98,8 @@ class StateForge(Client):
         listed = [r for r in mine if r['head_sha'] == query.get('head_sha', r['head_sha'])][::-1]  # newest first
         return {'workflow_runs': listed, 'total_count': len(listed)}
 
-    def _contents(self, ref: str) -> dict[str, Any]:
-        text = self.pyproject_at.get(ref, self.pyproject)
+    def _contents(self, path: str, ref: str) -> dict[str, Any]:
+        text = self.pyproject_at.get(ref, self.pyproject) if path == 'pyproject.toml' else None
         if text is None:
             missing = Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED)
             raise ForgeCallFailed(Report(('GET', 'contents'), (missing,), 1))
@@ -167,12 +165,9 @@ class StateForge(Client):
             f'{api}/issues': 'issues',
             f'{api}/pulls': 'pulls',
             f'{api}/actions/runs': 'runs',
-            f'{api}/teams': 'teams',
         }
         if route in fixed:
             return fixed[route], ''
-        if route.startswith(f'{self.backend.api_root}/teams/'):
-            return 'team_member', route.removeprefix(f'{self.backend.api_root}/teams/')
         for prefix, kind in (
             (f'{api}/actions/runs/', 'run'),
             (f'{api}/contents/', 'contents'),
@@ -285,14 +280,6 @@ class StateForge(Client):
     def _permission(self, key: str) -> str:
         return self.permissions.get(urllib.parse.unquote(key.removesuffix('/permission')), 'read')
 
-    def _team_member_of(self, key: str) -> dict[str, str]:
-        """Gitea's ``GET /teams/{id}/members/{login}``: the user when the team lists them, else a 404."""
-        team, _, login = key.partition('/members/')
-        if any(t['id'] == int(team) and urllib.parse.unquote(login) in members for t, members in self.teams):
-            return {'login': urllib.parse.unquote(login)}
-        missing = Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED)
-        raise ForgeCallFailed(Report(('GET', 'team_member'), (missing,), 1))
-
     def _delete_comment(self, comment_id: int) -> None:
         for listed in self.comments.values():
             listed[:] = [c for c in listed if c['id'] != comment_id]
@@ -321,10 +308,8 @@ class StateForge(Client):
         handlers = {
             ('GET', 'user'): lambda: {'login': self.login},
             ('GET', 'permission'): lambda: {'permission': self._permission(key)},
-            ('GET', 'teams'): lambda: [team for team, _ in self.teams],
-            ('GET', 'team_member'): lambda: self._team_member_of(key),
             ('GET', 'runs'): lambda: self._runs(query),
-            ('GET', 'contents'): lambda: self._contents(query['ref']),
+            ('GET', 'contents'): lambda: self._contents(key, query['ref']),
             ('GET', 'run'): lambda: next(r for r in self.runs if r['id'] == number),
             ('GET', 'repo'): lambda: {
                 'open_issues_count': opened,
