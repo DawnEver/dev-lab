@@ -5,9 +5,10 @@ agent marks it ready. Every job of a PR-triggered workflow is guarded by :data:`
 :mod:`dev_lab.dev.ciworkflows`), and the serve produces no part, syncs and gates no head of a draft
 (:func:`dev_lab.dev.forgeschedule.candidates`, :func:`dev_lab.dev.forgeintegration.tick`).
 
-A review round is spent only on new work (D52): an author mid-task pushes many heads, and each one reviewed was a
-round and a budget spent on work its author had not finished. So the DOOR opens a draft -- ``forge pr create``
-unless it is given ``--ready`` -- and the author marks it ready when its own work is done. One mechanism per forge,
+A PR is reviewed once, at its first ready head (D52, user ruling 2026-11-06): an author mid-task pushes many heads,
+and a review of an unfinished one is spent on work its author had not finished. So the DOOR opens a draft --
+``forge pr create`` unless it is given ``--ready`` -- and the author marks it ready when its own work is done. One
+mechanism per forge,
 behind the client:
 
 * GitHub: ``draft: true`` on create; GraphQL ``markPullRequestReadyForReview`` / ``convertPullRequestToDraft``.
@@ -18,7 +19,7 @@ behind the client:
 Only a ready PR is reviewed (:mod:`dev_lab.dev.forgereview`, both the serve tick and the review job) or merged
 (:func:`dev_lab.dev.forgemerge.judged` names :data:`WAITING`). Marking ready is a review trigger
 (``ready_for_review`` in the workflows' types; the serve's next tick, Gitea's one trigger). A push after ready
-keeps the PR ready: a fix push gets its round, and the serve's debounce (``quiet``) coalesces a burst of them.
+keeps the PR ready, and its review stands: a fix push is not reviewed again.
 
 A DRAFT NEVER STALLS SILENTLY -- a session that has not read this rule would not know to mark it ready:
 

@@ -1,25 +1,19 @@
 """REVIEW-SCOPE: what one PR review reads, cut into slices a reviewer can hold, and how the slices merge.
 
-The branch's own change, minus generated files, since the last reviewed head; each slice under the lens its
-paths earn.
+The branch's own change since its merge base with integration, minus generated files; each slice under the lens
+its paths earn.
 
-A HEAD IS NEVER HELD FOR ITS SIZE (D123, user ruling 2026-10-31 "too many files: then review by reading the
-directories", superseding the 2026-10-26 hold-on-oversize). The budget bounds a SLICE (``max_diff_bytes``); past
-the TOTAL (``max_total_bytes``), when one file alone outgrows a slice, or when a command that takes no paths would
-need several slices, the head is ONE review of the whole range with no paths (:data:`WHOLE`, :attr:`Scope.structure`
-says why): the method hands the reviewer the change map at the directory level, and it reads what it chooses.
+A HEAD IS NEVER HELD, AND NEVER REVIEWED WITHOUT A DIFF (D123, user rulings 2026-10-31 and 2026-11-06). Every
+slice names its paths, so every call is a diff review -- the one call mode the forge's headless run allows. The
+budget bounds a SLICE (``max_diff_bytes``; one file over it is a slice of its own) and the TOTAL
+(``max_total_bytes``): slices are taken strictest lens first (code that refuses or declares before the rest, prose
+last), and what the total leaves out is LISTED (:attr:`Scope.unread`) in the review comment. There is no
+whole-range "structure" review: its path-less slice was rendered by ai-lab as an ``agent`` call the headless run
+mode refuses, so every reviewer reported ``unsupported`` and the head was never reviewed.
 
 * THE RANGE is ``<base>..<head>`` where *base* is the merge base with the integration branch -- a merge of
-  ``integrate/main`` moves the merge base with it, so the branch's own change is what is read -- or, when an
-  earlier head R of the same PR was reviewed and *head* descends from it, R: a push is reviewed for what it added
-  (:func:`own_base`). When integration was merged in since R, *base* is the AUTOMATIC merge of R with the
-  integration commit *head* holds (:func:`_automerge`, ``git merge-tree --write-tree``, committed locally and
-  never pushed): what the head holds beyond it is R's own new content -- a hand resolution, an evil merge, a
-  commit before or after the sync -- and upstream content is never read again (D52, user ruling 2026-11-01:
-  consumer #5397 took two forge syncs in a day, and each restarted its review at the merge base).
-* A PURE SYNC IS NO NEW WORK (D52): a head whose tree IS that clean automatic merge (:func:`synced_from`) holds
-  R's reviewed content plus integration's, and nothing else, so R's verdict carries
-  (:func:`dev_lab.dev.forgereview_claim.synced`); no round is spent.
+  ``integrate/main`` moves the merge base with it, so the branch's own change is what is read, and a review (the
+  first, or one after the PR grew or was asked for) reads the PR's whole own change, never an increment.
 * GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev.famfiles.GENERATED`) and
   the globs the repo declares (``derived``). Their generator is reviewed, not its output.
 * CODE ONLY (user ruling 2026-10-29): a review reads what executes -- source, tests, scripts, and the build and
@@ -44,7 +38,6 @@ from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.famfiles import GENERATED
-from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview_command import ReviewPending
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
@@ -59,26 +52,18 @@ __all__ = [
     'LENSES',
     'PRINCIPLES_FIELD',
     'SUMMARY_FIELD',
-    'WHOLE',
     'Budget',
     'Scope',
     'Slice',
+    'code_bytes',
     'gather',
     'git',
     'landed_base',
     'lens_of',
-    'own_base',
     'plan',
     'prefetch',
     'reviewable',
-    'reviewed_ancestor',
-    'reviewed_heads',
-    'synced_from',
 ]  # fmt: skip
-
-#: The lens of the ONE slice an oversize head is reviewed as: no paths, so the method maps the whole range at the
-#: directory level and the reviewer reads what it chooses (D123, user ruling 2026-10-31).
-WHOLE: Final = 'standard'
 
 #: In the ``synthesis`` command: replaced by the merged slice findings' path.
 FINDINGS_FIELD: Final = '{findings}'
@@ -92,8 +77,8 @@ PRINCIPLES_FIELD: Final = '{principles}'
 #: summary is produced once per head (user ruling D83).
 SUMMARY_FIELD: Final = '{summary}'
 
-#: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: the findings disposed earlier (the
-#: forge's own dispositions only; an author's trailer never reaches the engine), which the engine drops and lists.
+#: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: findings the engine drops and lists
+#: as disposed earlier. Nothing is disposed of in a one-shot review, so the forge hands it an empty list.
 DISPOSED_FIELD: Final = '{disposed}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.
@@ -117,11 +102,11 @@ class Slice:
 
 @dataclass(frozen=True)
 class Scope:
-    """What a head's review reads: the range and its slices; past the bounds, why it is one structure-level review."""
+    """What a head's review reads: the range, its slices, and the code paths the total budget left unread."""
 
     range: str
     slices: tuple[Slice, ...] = ()
-    structure: str | None = None  # why the head is ONE whole-range review (:data:`WHOLE`), or None
+    unread: tuple[str, ...] = ()  # code paths past ``max_total_bytes``: listed in the comment, never read
     outside: int = 0  # changed files that are not code: counted, never read
     moved: tuple[str, ...] = ()  # pure moves (new paths): read for their path change, cost ~0
 
@@ -151,72 +136,6 @@ def prefetch(root: Path, *ranges: str) -> int:
             wanted |= {oid for mode, oid in ((old_mode, old), (new_mode, new))
                        if mode in _BLOB_MODES and not _NO_OBJECT.fullmatch(oid)}  # fmt: skip
     return fetch_blobs(root, wanted)
-
-
-def _ancestor(root: Path, older: str, newer: str) -> bool:
-    return git(root, 'merge-base', '--is-ancestor', older, newer, ok=(0, 1))[0] == 0
-
-
-def reviewed_ancestor(root: Path, head: str, reviewed: Sequence[str]) -> str:
-    """The newest of *reviewed* (oldest first) that *head* descends from, other than *head*; ``''`` when none."""
-    return next((one for one in reversed(reviewed) if one != head and _ancestor(root, one, head)), '')
-
-
-#: Who commits the local automatic merge :func:`own_base` measures from: it is never pushed, and git refuses a
-#: commit without an identity (a review job's runner has none).
-_AUTOMERGE_IDENTITY: Final = ('-c', 'user.name=dev-lab review', '-c', 'user.email=review@dev-lab.invalid')
-
-
-def _automerge(root: Path, reviewed: str, integration: str) -> tuple[str, bool]:
-    """The tree git's automatic merge of *reviewed* and *integration* writes, and whether it merged clean.
-
-    ``git merge-tree --write-tree`` exits 1 on a conflict and still writes the tree, conflict markers in it.
-    """
-    code, out = git(root, 'merge-tree', '--write-tree', '--no-messages', reviewed, integration, ok=(0, 1))
-    return out.splitlines()[0].strip(), code == 0
-
-
-def _since(root: Path, target: str, head: str, reviewed: Sequence[str]) -> tuple[str, str, bool]:
-    """``(merge base, R, whether integration was merged since R)``; R is :func:`reviewed_ancestor`, or ``''``."""
-    base = git(root, 'merge-base', target, head)[1].strip()
-    earlier = reviewed_ancestor(root, head, reviewed)
-    return base, earlier, bool(earlier) and not _ancestor(root, base, earlier)
-
-
-def own_base(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str:
-    """Where *head*'s review starts (module docstring, THE RANGE); *reviewed* is oldest first.
-
-    No reviewed ancestor: the merge base with *target*. One, R, with no integration merged since: R. Integration
-    merged since: a local commit of the automatic merge of R and the integration *head* holds, parents R and it --
-    so ``<it>..<head>`` diffs only what *head* holds beyond that merge and logs only *head*'s own commits.
-    """
-    base, earlier, merged = _since(root, target, head, reviewed)
-    if not merged:
-        return earlier or base
-    tree, _ = _automerge(root, earlier, base)
-    message = f'the automatic merge of {base[:12]} into the reviewed {earlier[:12]} (D52, never pushed)'
-    made = git(root, *_AUTOMERGE_IDENTITY, 'commit-tree', tree, '-p', earlier, '-p', base, '-m', message)[1]
-    return made.strip()
-
-
-def synced_from(root: Path, target: str, head: str, reviewed: Sequence[str]) -> str:
-    """The reviewed head R whose verdict *head* carries as a PURE SYNC (D52), ``''`` when *head* holds new work.
-
-    *head* carries when its tree is exactly what R plus the integration it holds makes -- git's CLEAN automatic
-    merge of the two, or R's own tree when nothing was merged since (an empty commit). Content, not history,
-    decides: a hand-resolved conflict, a hand edit inside a clean merge, or any commit that changes a byte makes
-    the trees differ, and the head is reviewed. The integration commit is the merge base with *target* -- an
-    ancestor of the trusted integration branch -- so a carry can never admit content no review read.
-    """
-    base, earlier, merged = _since(root, target, head, reviewed)
-    if not earlier:
-        return ''
-    tree, clean = _automerge(root, earlier, base) if merged else (_tree(root, earlier), True)
-    return earlier if clean and tree == _tree(root, head) else ''
-
-
-def _tree(root: Path, commit: str) -> str:
-    return git(root, 'rev-parse', f'{commit}^{{tree}}')[1].strip()
 
 
 def reviewable(path: str, derived: Iterable[str]) -> bool:
@@ -311,57 +230,59 @@ def plan(
     target: str,
     head: str,
     budget: Budget,
-    reviewed: Sequence[str] = (),
     *,
     sliceable: bool = True,
 ) -> Scope:
-    """The :class:`Scope` of *head*'s review against *target*, cut by *budget*.
+    """The :class:`Scope` of *head*'s review against *target*, cut by *budget* (the module docstring).
 
-    Past the bounds -- the total, one file over a slice, or several slices for a command that cannot be told a
-    slice's paths (not *sliceable*) -- the head is ONE structure-level review of the whole range (:data:`WHOLE`).
+    A command that cannot be told a slice's paths (not *sliceable*) is run once, its slice naming every path.
     """
-    reviewed_range = f'{own_base(root, target, head, reviewed)}..{head}'
+    reviewed_range = f'{git(root, "merge-base", target, head)[1].strip()}..{head}'
     every, moves, pure = _diff(root, reviewed_range)
-    read = {path: n for path, n in every.items() if reviewable(path, budget.derived)}
-    sizes = {path: n for path, n in read.items() if is_code(path, budget.code, budget.not_code)}
-    outside = len(read) - len(sizes)
-    total = sum(sizes.values())
+    sizes = _code(every, budget)
+    outside = sum(reviewable(path, budget.derived) for path in every) - len(sizes)
     moved = tuple(path for path in pure if path in sizes)
+    if not sliceable:
+        whole = (Slice('standard', tuple(sorted(sizes)), sum(sizes.values())),) if sizes else ()
+        return Scope(reviewed_range, whole, outside=outside, moved=moved)
     by_lens: dict[str, dict[str, int]] = {}
     for path, n in sizes.items():
         by_lens.setdefault(lens_of(path, budget.strict, budget.light), {})[path] = n
     slices = [
         one for lens in LENSES if lens in by_lens for one in _pack(lens, by_lens[lens], budget.slice_bytes, moves)
     ]
-    huge = sorted(path for path, n in sizes.items() if n > budget.slice_bytes)
-    if total > budget.total_bytes:
-        why = f'{total} reviewable code bytes > max_total_bytes={budget.total_bytes}'
-    elif huge:
-        why = f'{huge[0]} alone is over max_diff_bytes={budget.slice_bytes}'
-    elif len(slices) > 1 and not sliceable:
-        why = f'{len(slices)} slices, and the command takes no paths'
-    else:
-        return Scope(reviewed_range, tuple(slices), outside=outside, moved=moved)
-    whole = Slice(WHOLE, (), total)
-    return Scope(reviewed_range, (whole,), outside=outside, moved=moved, structure=why)
+    kept: list[Slice] = []
+    for one in slices:  # strictest lens first: the total leaves out the least risky code
+        if kept and sum(s.size for s in kept) + one.size > budget.total_bytes:
+            break
+        kept.append(one)
+    unread = tuple(path for one in slices[len(kept) :] for path in one.paths)
+    return Scope(reviewed_range, tuple(kept), unread=unread, outside=outside, moved=moved)
 
 
-_REVIEWED: Final = re.compile(re.escape(marker(Marker.REVIEW, 'SHA')).replace('SHA', '(?P<sha>[0-9a-f]{7,40})'))
+def _code(every: Mapping[str, int], budget: Budget) -> dict[str, int]:
+    """``{path: diff bytes}`` of the reviewable code in *every*: what a review reads and what its budget counts."""
+    return {
+        path: n
+        for path, n in every.items()
+        if reviewable(path, budget.derived) and is_code(path, budget.code, budget.not_code)
+    }
 
 
-def reviewed_heads(bodies: Iterable[str]) -> tuple[str, ...]:
-    """The heads the PR comment *bodies* (oldest first) record a review of, oldest first."""
-    return tuple(found['sha'] for body in bodies if (found := _REVIEWED.search(body)))
+def code_bytes(root: Path, target: str, head: str, budget: Budget) -> int:
+    """The reviewable code bytes of *head*'s whole own change against *target*: what a PR's growth is measured in."""
+    since = git(root, 'merge-base', target, head)[1].strip()
+    return sum(_code(_diff(root, f'{since}..{head}')[0], budget).values())
 
 
 def gather(
     reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path, *,
-    pr_body: str, disposed: Mapping[str, str],
+    pr_body: str,
 ) -> str:  # fmt: skip
     """The slices' outputs merged over *reviewed*; with several, the *synthesis* command's reading of them merged in.
 
     *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
-    the principles file as :data:`PRINCIPLES_FIELD` and the *disposed* file as :data:`DISPOSED_FIELD`; the first
+    the principles file as :data:`PRINCIPLES_FIELD` and an empty disposed file as :data:`DISPOSED_FIELD`; the first
     slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``. A slice whose
     batch is still running (:class:`~dev_lab.dev.forgereview_command.ReviewPending`) does not stop the slices after
     it: each submits its own, and the first pending is raised once all have run.
@@ -372,8 +293,7 @@ def gather(
         body = Path(scratch) / 'pr-body.md'
         body.write_text(pr_body, encoding='utf-8')
         gone = Path(scratch) / 'disposed.json'
-        rows = [{'id': fid, 'reason': why} for fid, why in disposed.items()]
-        gone.write_text(json.dumps({'disposed': rows}, ensure_ascii=False), encoding='utf-8')
+        gone.write_text(json.dumps({'disposed': []}), encoding='utf-8')
 
         def filled(argv: Sequence[str], *, summarizes: bool = False) -> list[str]:
             flags = ['--pr-body', str(body)] if summarizes else ['--no-summary']

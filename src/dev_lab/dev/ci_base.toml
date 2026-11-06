@@ -7,7 +7,7 @@
 # parsed back. Re-render with `python -m dev_lab.dev.ciworkflows render`.
 
 # ONE PR LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29). ci.yml is GitHub's half of the model Gitea's
-# `forge serve` runs: the same tests/<part> parts, the same review round, the same merge decision -- only
+# `forge serve` runs: the same tests/<part> parts, the same review, the same merge decision -- only
 # who PRODUCES and who TRIGGERS differ. Every job runs a dev_lab door; none holds logic of its own:
 #
 #   parts         `jobparts matrix --event`: the commit's parts and the runner each need-set needs, an
@@ -144,7 +144,7 @@ pull-requests = "read"
 # 2026-10-31: "cannot import 'ai_lab.review'", nothing posted): the job installs ai-lab, from this owner's forge,
 # into an environment of its own and hands THAT interpreter to the command. A job that still cannot run it holds
 # the head and fails (forgereview_job.review_run), never exits green with no review.
-# The method's install and key are the shared `method` steps (below, with `setup`): the review job and the claims
+# The method's install and key are the shared `method` steps (below, with `setup`): the review job and the review-again
 # workflow use the same ones. The job holds the review key and a write token, so it acts on NOTHING the PR
 # supplies (F-76c85dbc4b77, F-46e412ee799d): the head is checked out as DATA only -- never `setup`'s `uv sync`,
 # whose lock and project are the PR's, and never a module path (forgereview_command.SAFE_PATH). THE TRUST CHAIN:
@@ -288,10 +288,10 @@ setup = [
 # A FORK PR HOLDS SECRET-FREE (F-dd353e505b47, dev-lab #38): under Gitea's pull_request_target a fork PR's run is
 # handed the repository's secrets, so every secret these shared steps read is withheld when the PR's head repo is not
 # this one -- no review key is stored (the review then holds the head for a maintainer, NEEDS_MAINTAINER) and no
-# FAMILY_READ_TOKEN is handed out. Outside a PR event (review-claims' issue_comment) the guard is open. Gitea's
+# FAMILY_READ_TOKEN is handed out. Outside a PR event (review-again's issue_comment) the guard is open. Gitea's
 # proxy forbids forks today (D44), but the template is family-wide. GitHub gives a fork PR no secret regardless.
 #
-# THE REVIEW METHOD, installed and keyed once for every job that reviews or judges (ci.yml review, review-claims.yml).
+# THE REVIEW METHOD, installed and keyed once for every job that reviews or judges (ci.yml review, review-again.yml).
 # The method is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3, 2026-10-31:
 # "cannot import 'ai_lab.review'", nothing posted): ai-lab is installed from this owner's forge into an environment of
 # its own, whose interpreter the door is handed. The ai-lab COMMIT is the one the DOOR's dev-lab lock pins (its
@@ -613,40 +613,41 @@ steps = [
     { name = "Attach the review bundle to this run", uses = "actions/upload-artifact@v4", with = { name = "review-bundle", path = "${{ runner.temp }}/review-bundle/bundle.json", if-no-files-found = "error", overwrite = true } },
 ]
 
-# CLAIMS ARE ADJUDICATED BY THE FORGE (user ruling 2026-10-31): a `forge review dispose` comment carrying the claim
-# marker triggers this job, which rules on every pending claim of that PR or ledger issue as the job's own identity
-# -- never the claimant's session (dev_lab.dev.forgereview_judge). A separate workflow, so a comment never runs the
-# parts of ci.yml.
-["review-claims.yml"]
-name = "Review claims"
+# A REVIEW ASKED AGAIN IS RUN BY THE FORGE (user ruling 2026-11-06): the review is one-shot, and `forge review again
+# <pr>` -- after a security finding is fixed -- leaves a comment carrying the review-again marker. That comment
+# triggers this job, which runs the PR's review as the job's own identity (forgereview.review_pull honours the
+# request). A separate workflow, so a comment never runs the parts of ci.yml. GitHub runs an issue_comment workflow
+# from the default branch only, so the door is the trusted one.
+["review-again.yml"]
+name = "Review again"
 
-["review-claims.yml".on.issue_comment]
+["review-again.yml".on.issue_comment]
 types = ["created", "edited"]
 
-["review-claims.yml".concurrency]
-group = "claims-${{ github.event.issue.number }}"
+["review-again.yml".concurrency]
+group = "review-again-${{ github.event.issue.number }}"
 cancel-in-progress = false
 
-["review-claims.yml".permissions]
+["review-again.yml".permissions]
 contents = "read"
 
-["review-claims.yml".env]
+["review-again.yml".env]
 HEAD_SHA = "${{ github.sha }}"
 INTEGRATION_SHA = "${{ github.sha }}"  # the door's trusted commit: an issue_comment runs the default branch's tip
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # the family repos sit beside this one
 GITHUB_TOKEN = "${{ github.token }}"
 
-["review-claims.yml".jobs.adjudicate]
-if = "${{ contains(github.event.comment.body, '<!-- lab-commons:review-claim:') }}"
+["review-again.yml".jobs.again]
+if = "${{ github.event.issue.pull_request && contains(github.event.comment.body, '<!-- lab-commons:review-again:') }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
     { use-steps = "door" },
     { use-steps = "method" },
-    { name = "Adjudicate the claims", run = 'trap "git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { AI_LAB_KEYS_PR_REVIEW = "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}" } },
+    { name = "Review the PR again", run = 'trap "git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit" EXIT; uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.issue.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"', env = { AI_LAB_KEYS_PR_REVIEW = "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}" } },
 ]
 
-["review-claims.yml".jobs.adjudicate.permissions]
+["review-again.yml".jobs.again.permissions]
 contents = "read"
 statuses = "write"
 pull-requests = "write"

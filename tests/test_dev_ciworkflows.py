@@ -49,7 +49,7 @@ from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 _ROOT = Path(__file__).resolve().parents[1]
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
-_GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-claims.yml'}
+_GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-again.yml'}
 _GITEA_BASE = {'review.yml', 'merge.yml'}
 
 
@@ -173,9 +173,10 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     (tmp_path / 'hub').mkdir()
     rendered = {**workflows(_ROOT), 'review.yml': _gitea_review(tmp_path / 'hub')}
     assert {key: _PROVIDERS.findall(render(body)) for key, body in rendered.items()} == {key: [] for key in rendered}
-    claims = rendered['review-claims.yml']['jobs']['adjudicate']['steps'][-1]
-    assert f'--keys-env {name}' in claims['run']
-    assert set(claims['env']) == {name}
+    again = rendered['review-again.yml']['jobs']['again']['steps'][-1]
+    assert 'forge review run --pr ${{ github.event.issue.number }}' in again['run']
+    assert f'--keys-env {name}' in again['run']
+    assert set(again['env']) == {name}
     assert _PROVIDERS.findall('env: { ANTHROPIC_' + 'API_KEY: x }'), 'PLANTED CONTROL'
 
 
@@ -318,7 +319,7 @@ def test_the_base_of_each_forge_is_every_base_table_placed_on_it() -> None:
 def test_a_repo_that_declares_nothing_renders_its_forge_s_whole_base(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str, expected: set[str]
 ) -> None:
-    """The base is never an opt-in a repo can forget: merge-tick and review-claims went undeployed that way."""
+    """The base is never an opt-in a repo can forget: merge-tick and the review-again workflow went undeployed so."""
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
     (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
     assert set(workflows(tmp_path)) == expected
@@ -536,7 +537,7 @@ def test_every_job_installing_the_method_installs_the_door_first(tmp_path: Path)
             users += 1
             assert 'Install the review door' in steps, name
             assert steps.index('Install the review door') < steps.index('Install the review method'), name
-    assert users >= 2, 'PLANTED CONTROL: the review and the claims jobs install the method'
+    assert users >= 2, 'PLANTED CONTROL: the review and the review-again jobs install the method'
 
 
 def test_ai_lab_ref_is_gone_everywhere() -> None:
@@ -905,12 +906,12 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
     """
     _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
+        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-again.yml"]\n',
         encoding='utf-8',
     )
     rendered = workflows(tmp_path)
     readers = {name for name, workflow in rendered.items() if '${FAMILY_SOURCE}' in render(workflow)}
-    assert readers == {'ci.yml', 'merge-tick.yml', 'review.yml', 'review-claims.yml'}  # merge-tick: GitHub's base
+    assert readers == {'ci.yml', 'merge-tick.yml', 'review.yml', 'review-again.yml'}  # merge-tick: GitHub's base
     for name in readers:
         assert rendered[name]['env'].get('FAMILY_SOURCE'), f'{name} reads FAMILY_SOURCE but declares none'
         assert 'FAMILY_SOURCE:-' not in render(rendered[name]), f'{name}: a second source'
@@ -939,7 +940,7 @@ def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None
 def _full_adoption(tmp_path: Path) -> dict[str, Any]:
     _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-claims.yml"]\n',
+        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-again.yml"]\n',
         encoding='utf-8',
     )
     return workflows(tmp_path)
@@ -996,7 +997,7 @@ def test_a_fork_pr_s_review_job_holds_secret_free(tmp_path: Path) -> None:
 
     Every secret the rendered review.yml reads is guarded by the PR's head repo being this one: a fork stores no
     review key (the job then holds the head, NEEDS_MAINTAINER) and hands out no FAMILY_READ_TOKEN.
-    PLANTED CONTROL: a same-repo PR, and an event with no PR (review-claims' issue_comment), get them.
+    PLANTED CONTROL: a same-repo PR, and an event with no PR (review-again's issue_comment), get them.
     """
     text = render(_gitea_review(tmp_path))
     secrets = [one for one in re.findall(r'\$\{\{ (.*?) \}\}', text) if 'secrets.' in one]

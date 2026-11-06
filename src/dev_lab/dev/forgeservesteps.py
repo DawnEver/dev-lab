@@ -32,13 +32,11 @@ from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgereview import step as review_step
-from dev_lab.dev.forgereview_dispose import alarms as blocked_reviews
 from dev_lab.dev.forgeroute import reconcile
 from dev_lab.dev.forgescarce import red_alarms as scarce_red
 from dev_lab.dev.forgeschedule import load_schedule, starved_alarms
 from dev_lab.dev.forgesecurity import step as security_step
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgetakeover import alarms as held_reviews
 from dev_lab.dev.forgetidy import load_hygiene
 from dev_lab.dev.forgetidy import tidy as issue_tidy
 from dev_lab.dev.forgework import Client
@@ -127,8 +125,6 @@ def prompt(
                 *sync_alarms(ticked.said, policy, repo, now=forge_now(built)),
                 *glass,
                 *red,
-                *held_reviews(built, policy.integration, repo),  # an over-cap head: the integrator's takeover
-                *blocked_reviews(built, policy.integration, repo),  # a blocking finding: fixed, or a claim adjudicated
                 *idle_drafts(root, built, policy.integration, repo, now=forge_now(built)),  # D53: waits on its author
                 *late_reviews(  # a ready head nothing reviewed: the 11-02/03 backlog
                     built, policy.integration, repo, now=forge_now(built), wait=declared_wait(root)

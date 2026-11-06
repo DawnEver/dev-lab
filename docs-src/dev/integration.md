@@ -113,16 +113,10 @@ Each tick, and nothing else:
    that moves `pr_merges_since` past the commit.
 6. A PR left open after its head landed is closed by the forge's tick; to do it now:
    `python -m dev_lab.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
-7. A head whose review is HELD over the cap (`python -m dev_lab.dev.forge review held`) is yours: run
-   `python -m dev_lab.dev.forge review takeover <sha>`, which reviews it, posts the findings and releases the hold
-   ([the PR reviewer](#the-pr-reviewer-blocks-on-high-or-security)). Ask the user only for a decision a finding
-   raises.
-8. A head a blocking finding holds (`python -m dev_lab.dev.forge review blocked`) is never yours to clear: the
-   author fixes it (the next round re-judges it), or claims it is not a defect --
-   `python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why "<claim>"` -- and an independent reviewer
-   adjudicates the claim (`forge review adjudicate <pr>`, run by the forge). Humans take no part (user ruling
-   2026-10-31).
-9. A head whose `tests/security` failure says its findings are "all covered by the head's new exemptions" changes
+7. A PR's review is one-shot advice ([the PR review](#the-pr-review-is-one-shot-advice)): nothing in it is
+   yours to clear, and a PR is never split for it. A security finding is fixed by its author, who then runs
+   `python -m dev_lab.dev.forge review again <pr>`.
+8. A head whose `tests/security` failure says its findings are "all covered by the head's new exemptions" changes
    `[tool.dev_lab.security]`; the table that judges a head is integration's, never its own, so the release is
    explicit and recorded (nothing checks who runs it; the record is what makes it auditable): `python -m dev_lab.dev.forge security release <pr> --why "<reason>"` re-judges the head under ITS
    table and, only when that finds nothing, records the reason and the exemption delta as one keyed PR comment and
@@ -132,60 +126,49 @@ Each tick, and nothing else:
 
 An integrator runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
-## The PR reviewer blocks on HIGH or security
+## The PR review is one-shot advice
 
-`PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY` (`dev_lab.dev.forgereview`, user ruling 2026-10-26). The forge only
-orchestrates: each open, non-draft PR into `integrate/main` on gitea is reviewed ONCE per head sha by the command
-the repo declares; its stdout is the sharp-review findings JSON (`schema_version` 3, read by
-`dev_lab.dev.forgereview_findings`; any other version is refused by name). The forge posts one PR comment per
-head -- a review ROUND -- and a `tests/review` commit status.
+`PR-REVIEW-IS-ONE-SHOT-ADVICE` (`dev_lab.dev.forgereview`, user rulings 2026-11-06). The PR review is ONE
+small-scale independent acceptance check per PR, with suggestions. One session keeps one task in one PR: a PR is
+never split for its review, and acting on its advice happens in the same PR. The forge only orchestrates: each
+ready PR into `integrate/main` is reviewed by the command the repo declares; its stdout is the sharp-review findings
+JSON (`schema_version` 3, read by `dev_lab.dev.forgereview_findings`; any other version is refused by name). The
+forge posts ONE PR comment (`dev_lab.dev.forgereview_advice`) and a `tests/review` commit status.
 
-**Tagged findings.** Every finding carries `severity` (`HIGH`/`MEDIUM`/`LOW`), `security` (bool) and `rule` --
-the one principle id (ai-lab's `principles.json`) or registry rule id (`dev_lab.dev.rules`) it violates; ai-lab's
-method reads the registry at load and keeps no list of its own. Its id is `F-<12 hex>` of (rule, file, anchor
-line): the same finding in every round, never a line number.
+**Once per PR.** The review runs at the PR's first ready head. A fix push or a sync with `integrate/main` is not
+reviewed again: the standing review's verdict is posted on the new head, naming the head it reviewed. It is
+reviewed again only when the PR's own reviewable code has grown to `forgereview.REVIEW_AGAIN_GROWTH` (2) times what
+the review measured, or when a session asks: `python -m dev_lab.dev.forge review again <pr>` (on GitHub the
+comment it leaves starts the `review-again.yml` workflow; on Gitea the serve's next tick honours it).
 
-**Blocking.** `tests/review` is `failure` while any open finding is `HIGH` or `security` and not disposed, else
-`success`. The merge waits on EVERY state but `success` with no pending hold (`reviewgate.review_missing`, user
-ruling 2026-10-31): absent, reviewing, `takeover pending`, `error` and `failure` all wait, nothing is advisory, and a
-review that could not run is taken over (`forge review takeover <sha>`). A finding CLOSES when a later round's
-judge (`forgereview_judge.judge`, re-run on every open finding each round) calls it `fixed` or `false-positive`,
-evidence recorded, or when a CLAIM against it (`python -m dev_lab.dev.forge review dispose <pr> <finding-id> --why
-"<claim>"`, which moves no status) is UPHELD by an independent adjudicator (`forge review adjudicate <pr>`, run by
-the `review-claims.yml` workflow a claim comment triggers). Every claim and ruling names its claimant and
-adjudicator; the claimant's session may not adjudicate its claim, and no session reviews or rules on a head it
-authored. A PR-less head's ledger is its `review of commit <sha>` issue, numbered like a PR. A raw `status post` on `tests/review` is refused like the hold's.
+**Tagged findings, all advice but security.** Every finding carries `severity` (`HIGH`/`MEDIUM`/`LOW`), `security`
+(bool) and `rule` -- the one principle id (ai-lab's `principles.json`) or registry rule id (`dev_lab.dev.rules`) it
+violates. `tests/review` is `success` once the review ran, its description counting the advice by severity; it is
+`failure` ONLY while a security finding stands (`forgereview_findings.BLOCKING`), and the author fixes it and asks
+for the review again. A HIGH finding is advice like any other. No session reviews a head it authored, and only the
+forge posts `tests/review` (`forgereview_identity`); a raw `status post` on `tests/review` is refused. A PR-less
+head's review comment is its `review of commit <sha>` issue, numbered like a PR.
 
-**Rounds** (`dev_lab.dev.forgereview_rounds`). Round 1 reads the whole branch change and opens its comment with a
-summary -- what changed, why (the commit subjects), which layers. Round k > 1 reads only what the branch added
-since its last reviewed head and re-checks every open finding; a new finding below `HIGH` on a line the round did
-not add is dropped (no moving goalposts). Past `max_rounds` (family default 3, `forgereview_rounds.FAMILY_MAX_ROUNDS`)
-no command runs: the open blocking findings are re-checked alone and the non-blocking ones move to ONE follow-up
-issue. Each round's comment records its ledger (a hidden `review-ledger` line), which the next round starts from.
-
-**A capped review warns and merges** (`dev_lab.dev.reviewcap`, user ruling 2026-11-05). A review that reached a
-cap -- the trusted ledger's round at the base's `max_rounds` (or a trusted raise's), or the reviewing host's
-`review-capped` record of its dollar or monthly budget -- has the review condition alone waived at the merge, open
-findings (security ones included) named: the `tests/security` status, tests, conflicts, the audit, messages and
-draft still hold. `tests/review` is never posted `success` for it (it stays `pending` `review capped, merges
-unreviewed: ...`) and is not a required context (`forgeprotect.required_contexts`: the merge decision enforces
-the review). The merge commit carries `Unreviewed: review capped at N rounds` or `Unreviewed: review budget
-reached: <spent>/<cap> USD`, then `; open findings: <ids>`; `tests/merge-ready` and the integration comment say
-`WARNED`, and the merging job comments it on the PR. The waiver is read from the PR's trusted comments, never from
-a status description. **Only an internal PR auto-merges** (`forgemerge.external`): on GitHub a
-fork's head, or an author without write permission (`Client.trusts`, the one trust test cap raises use), is tested
-and reviewed but never merged by the forge -- `tests/merge-ready` stays `pending` `external PR: a maintainer merges
-it`. Gitea is private and vets no author (`Backend.vets_authors`, user ruling 2026-11-06): nor whoever posted a
-`tests/review` success -- the serve's login, an Actions job's null creator, an agent -- while on GitHub only its
-Actions bot's counts (`reviewgate.forge_posted`).
+**A review that did not run never holds the merge** (`dev_lab.dev.reviewcap`, user rulings 2026-11-05 and
+2026-11-06). A failed attempt on the serve tick is `error` `review attempt failed, retried once: ...`, and the next
+tick tries once more. A second failure, a failure in a review job, every reviewer unsupported, exhausted or
+unauthorised, no review key (a fork PR's job), or a reached dollar cap (`dev_lab.dev.reviewbudget`, raised by the
+integrator with `forge review cap <pr> --usd <n> --why`) is recorded on the PR (`review-capped`) with its cause,
+and `tests/review` is `pending` `not reviewed, merges unreviewed: ...`. The merge waives the review condition alone:
+the `tests/security` status, tests, conflicts, the audit, messages and draft still hold. The merge commit carries
+`Unreviewed: <cause>`; `tests/merge-ready` and the integration comment say `WARNED`. The waiver is read from the
+PR's trusted comments, never from a status description, and a later review record supersedes it. **Only an
+internal PR auto-merges** (`forgemerge.external`): on GitHub a fork's head, or an author without write permission
+(`Client.trusts`, the one trust test cap raises use), is tested and reviewed but never merged by the forge --
+`tests/merge-ready` stays `pending` `external PR: a maintainer merges it`. Gitea is private and vets no author
+(`Backend.vets_authors`, user ruling 2026-11-06): nor whoever posted a `tests/review` success -- the serve's login,
+an Actions job's null creator, an agent -- while on GitHub only its Actions bot's counts (`reviewgate.forge_posted`).
 
 **What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
 slice, not whether a head is read at all:
 
 - *The branch's own change.* The range starts at the merge base with `integrate/main`, which a merge of
   `integrate/main` moves with it -- so merged-in upstream work is never re-read.
-- *Since the last review.* When an earlier head of the same PR was reviewed (its review comment is the record)
-  and no merge of `integrate/main` came after it, the range starts there: a push is read for what it added.
 - *Minus generated files.* The family's whole-file renders (`famfiles.GENERATED`: `uv.lock`, the rendered
   ignores, hooks and workflows) and the repo's `derived` globs (goldens, rendered blocks). Their generator is
   reviewed, not its output. A head of only generated files is `success`, nothing to review.
@@ -196,18 +179,12 @@ slice, not whether a head is read at all:
   `synthesis` command then reads it (`{findings}`) over the whole range for what crosses slices.
 
 **It is not a part**: `integrate promote` and push admission never wait on `tests/review`. A head is NEVER
-held for its size (D123, user ruling 2026-10-31): a head the slices cannot hold -- its reviewable change over
-`max_total_bytes`, one file alone over `max_diff_bytes`, or several slices for a command without `{paths}` -- is
-ONE whole-range structure review with no paths (`forgereview_scope.WHOLE`; the comment says why): the method maps
-the range at the directory level, the reviewer reads what it chooses, and its findings gate the merge like any
-round's. `forge review plan <sha>` prints the slices, or the one whole-range review. `tests/review-hold` is
-`pending` only when the review could not run for the PR at all (no review secret, or a host that cannot run the
-command), and the forge's re-run releases it. A second tick on the same head runs nothing and posts nothing. A failed command posts `error` and is not retried on that head; a HOST that cannot run the review
-(a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run on host
-<host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
-When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
-`takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
-through the same method (takeover chain: the task's API keys, then a ccc session, then a ccds session).
+held for its size, and NEVER reviewed without a diff (D123, user rulings 2026-10-31 and 2026-11-06): every slice
+names its paths, so every call is a diff review -- the one call mode the forge's headless run allows. Past
+`max_total_bytes`, slices are taken strictest lens first and the code left out is LISTED in the review comment
+(`Scope.unread`). `forge review plan <sha>` prints the slices and what is left out. A HOST that cannot run the
+review (a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run
+on host <host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
 
 It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
 integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the
@@ -227,14 +204,14 @@ naming `[runtimes.ai_lab]` refused until `workstation deploy` drops it (`dev_lab
 model = "<id>"             # the default is forgereview_declared.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff_bytes = 400000    # one slice
-max_total_bytes = 800000   # one head
+max_total_bytes = 800000   # one review: slices past it are listed, not read
 derived = []               # generated-file globs beyond famfiles.GENERATED
 strict = ["**/hooks/**", "**/rules/**", "tests/architecture/**", "**/contracts/**"]  # the default
 light = ["docs-src/**", "**/.claude/memory/**", "**/*.md"]                          # the default
 claim_stale = "1 h"        # the default
 batch = true               # the default (forgereview_batch.FAMILY_BATCH): model calls via the vendor batch endpoint
 on_expiry = "sync"         # the default: a batch request expired at 24 h is answered at once ("fail": a failed reviewer)
-batch_wait = "20 min"      # the default: what one round waits on its batches before it posts pending
+batch_wait = "20 min"      # the default: what one review waits on its batches before it posts pending
 ```
 
 Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
@@ -248,11 +225,11 @@ Undeclared, nothing is reviewed. Exit 2 is the command's named refusal (bad meth
 stderr reason is the `error` status. Exit 75 is a model BATCH still running (`{batch}`, user ruling 2026-11-04):
 no verdict -- `tests/review` is `pending` `review batch pending, merge waits: ...` naming the batch, its state
 (batch ids, no reply, no key) is a `review-batch` comment on the PR, and the next run of that head (a tick, a job
-re-run, a takeover, the judge's next tick, `forge review adjudicate`) resumes it instead of resubmitting
+re-run, a takeover, the judge's next tick) resumes it instead of resubmitting
 (`forgereview_batch`).
 
-The in-process reviewer's keys (`model`, `max_tokens`, `rules`) and its machine-file capability are retired
-and refused by name (`lab_commons.hpc.retired`).
+The in-process reviewer's keys (`max_tokens`, `rules`), the round cap (`max_rounds`) and the re-judging
+command (`judge`) are retired and refused by name (`forgereview_declared.RETIRED_KEYS`).
 
 ## Session branches: one writer, by git
 

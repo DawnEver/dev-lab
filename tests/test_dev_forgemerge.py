@@ -41,7 +41,7 @@ def _green() -> list[dict[str, object]]:
             'id': 2,
             'context': 'tests/review',
             'status': 'success',
-            'description': 'review round 1: no blocking',
+            'description': 'reviewed abc: advice 0 HIGH, 0 MEDIUM, 0 LOW; none blocks',
             'creator': None,
         },  # the review job: a null creator, which Gitea counts as it counts every poster
         {'id': 3, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
@@ -360,55 +360,55 @@ def test_a_repo_declaring_no_message_row_is_not_judged_on_messages(tmp_path: Pat
     assert found.ready, found.missing
 
 
-# --- a capped review warns and merges (user ruling 2026-11-05) ----------------------------------------
+# --- a review that did not run warns and merges (user rulings 2026-11-05, 2026-11-06) ----------------
 
-_CAPPED = 'Unreviewed: review capped at 5 rounds; open findings: F-1'
+_UNREVIEWED = 'Unreviewed: no reviewer returned findings (a unsupported)'
 
 
-def _capped_review(raw: list[dict[str, object]]) -> list[dict[str, object]]:
-    """*raw* with ``tests/review`` the pending cap the serve posts: never a success."""
+def _unreviewed_review(raw: list[dict[str, object]]) -> list[dict[str, object]]:
+    """*raw* with ``tests/review`` the pending the serve posts for a review that did not run: never a success."""
     review = {
         'id': 2,
         'context': 'tests/review',
         'status': 'pending',
-        'description': 'review capped, merges unreviewed: x',
+        'description': 'not reviewed, merges unreviewed: x',
     }
     return [review if r['context'] == 'tests/review' else r for r in raw]
 
 
-def test_a_capped_review_with_green_tests_merges_warned_in_its_message(tmp_path: Path) -> None:
+def test_a_unreviewed_review_with_green_tests_merges_warned_in_its_message(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     found = decide(
-        work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_capped_review(_green())),
-        reviewed=status_gate(github_posted), capped=_CAPPED,
+        work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_unreviewed_review(_green())),
+        reviewed=status_gate(github_posted), waiver=_UNREVIEWED,
     )  # fmt: skip
     assert found.ready, found.missing
-    assert found.unreviewed == _CAPPED
-    assert _CAPPED in found.message
+    assert found.unreviewed == _UNREVIEWED
+    assert _UNREVIEWED in found.message
     assert merged_branch(found.message) == 'pr/x'
 
 
-def test_a_capped_review_with_red_tests_does_not_merge(tmp_path: Path) -> None:
+def test_a_unreviewed_review_with_red_tests_does_not_merge(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
-    raw = [r for r in _capped_review(_green()) if r['context'] != 'tests/base']
+    raw = [r for r in _unreviewed_review(_green()) if r['context'] != 'tests/base']
     raw.append({'id': 7, 'context': 'tests/base', 'status': 'failure', 'description': 'scope=full ran=3 hands=-'})
     found = decide(
         work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(raw),
-        reviewed=status_gate(github_posted), capped=_CAPPED,
+        reviewed=status_gate(github_posted), waiver=_UNREVIEWED,
     )  # fmt: skip
     assert not found.ready
     assert any(one.startswith('its test parts: ') for one in found.missing), found.missing
     assert not any(one.startswith('its review: ') for one in found.missing), found.missing
 
 
-def test_a_blocking_review_not_capped_still_blocks(tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same blocking review with no cap reached waits on the review, unwarned."""
+def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a security finding with no waiver recorded waits on the review, unwarned."""
     work, head = _work(tmp_path)
     raw = [
-        {**r, 'status': 'failure', 'description': 'review round 2: 1 blocking'} if r['context'] == 'tests/review' else r
+        {**r, 'status': 'failure', 'description': 'security finding(s) F-1'} if r['context'] == 'tests/review' else r
         for r in _green()
     ]
-    for statuses in (raw, _capped_review(_green())):  # a status saying "capped" is no waiver: only the ledger is
+    for statuses in (raw, _unreviewed_review(_green())):  # a status saying "unreviewed" is no waiver: the record is
         found = decide(
             work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(statuses),
             reviewed=status_gate(github_posted),

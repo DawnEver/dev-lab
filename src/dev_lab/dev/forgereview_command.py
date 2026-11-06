@@ -136,9 +136,9 @@ class Runner:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     #: Whether the review command's secret is present; absent (a fork PR's job) holds the head for a maintainer.
     secret: bool = True
-    #: Whether this is the ``forge serve`` process: its rounds are the forge's ruling (:func:`identity`).
+    #: Whether this is the ``forge serve`` process: its reviews are the forge's (:func:`identity`).
     serving: bool = False
-    #: This host's ai-lab spend report (:func:`dev_lab.dev.reviewbudget.read_spend`); ``None``: rounds cap only.
+    #: This host's ai-lab spend report (:func:`dev_lab.dev.reviewbudget.read_spend`); ``None``: no dollar cap.
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend
     #: Whether a standing success the gate does not count is reviewed afresh rather than stood on -- the review JOB
     #: (dev-lab #38): Gitea re-runs a run in place, its conclusion reset, so a re-run cannot verify the success its

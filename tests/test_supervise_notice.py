@@ -70,9 +70,9 @@ CASES = {
             sha_url=f'{FORGE}/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778',
             run_url=f'{FORGE}/actions/runs/812',
         ),
-        findings=('review blocks the merge on F-2a7e8020c00a',),
+        findings=('security finding F-2a7e8020c00a holds the merge',),
         action='Fix the finding, or claim it is not a defect.',
-        commands=('python -m dev_lab.dev.forge review dispose 5443 F-2a7e8020c00a',),
+        commands=('python -m dev_lab.dev.forge review again 5443',),
     ),
     'test': Notice(
         title='alert channels reached',
@@ -241,10 +241,10 @@ GOLDEN = {
             '• <b>Run:</b> <a href="https://git.example.org/DawnEver/motronics-studio/actions/runs/812">open</a>\n'
             '\n'
             '<b>Details</b>\n'
-            '• review blocks the merge on F-2a7e8020c00a\n'
+            '• security finding F-2a7e8020c00a holds the merge\n'
             '\n'
             '<b>Remedy</b>\n'
-            '<pre>python -m dev_lab.dev.forge review dispose 5443 F-2a7e8020c00a</pre>'
+            '<pre>python -m dev_lab.dev.forge review again 5443</pre>'
         ),
         'markdown': (
             '**CRITICAL** · Gitea · review blocks 3f2a9c81d7e4 (#5443)\n'
@@ -258,11 +258,11 @@ GOLDEN = {
             '- **Run:** [open](https://git.example.org/DawnEver/motronics-studio/actions/runs/812)\n'
             '\n'
             '**Details**\n'
-            '- review blocks the merge on F-2a7e8020c00a\n'
+            '- security finding F-2a7e8020c00a holds the merge\n'
             '\n'
             '**Remedy**\n'
             '```\n'
-            'python -m dev_lab.dev.forge review dispose 5443 F-2a7e8020c00a\n'
+            'python -m dev_lab.dev.forge review again 5443\n'
             '```'
         ),
         'email_html': (
@@ -281,11 +281,10 @@ GOLDEN = {
             '</ul>\n'
             '<p><b>Details</b></p>\n'
             '<ul>\n'
-            '<li>review blocks the merge on F-2a7e8020c00a</li>\n'
+            '<li>security finding F-2a7e8020c00a holds the merge</li>\n'
             '</ul>\n'
             '<p><b>Remedy</b></p>\n'
-            '<pre style="background:#f4f4f4;padding:8px">python -m dev_lab.dev.forge review dispose 5443 '
-            'F-2a7e8020c00a</pre>\n'
+            '<pre style="background:#f4f4f4;padding:8px">python -m dev_lab.dev.forge review again 5443</pre>\n'
             '</body></html>'
         ),
         'headline': ('CRITICAL · Gitea · review blocks 3f2a9c81d7e4 (#5443)'),

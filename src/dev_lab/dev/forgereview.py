@@ -1,94 +1,34 @@
-"""PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on every open PR into the PR base, per head.
+"""PR-REVIEW-IS-ONE-SHOT-ADVICE: ONE independent review per PR, its findings advice, the declared command run once.
 
-Step 4 of the branch flow (user ruling 2026-10-19). ONE review on both forges (user ruling 2026-10-29); only who
-TRIGGERS it differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR; on GitHub a workflow
-job runs ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgereview_job.review_run`) for the one PR its event
-names. Both run the same round (:func:`review_pull`). A job whose review secret is absent -- a fork PR, which
-GitHub never hands a secret -- holds
-the head (:data:`NEEDS_MAINTAINER`) until a maintainer re-runs the forge's review with the secret; nothing new is
-stored.
+User rulings 2026-11-06: the review is "a small-scale independent acceptance check with suggestions", and "one
+session maintains one task, one PR". ONE review on both forges (user ruling 2026-10-29); only who TRIGGERS it
+differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR; on GitHub a workflow job runs
+``forge review run --pr <N>`` (:func:`dev_lab.dev.forgereview_job.review_run`) for the one PR its event names. Both
+run :func:`review_pull`.
 
-THE FORGE ONLY ORCHESTRATES. The review itself -- profiles, prompts, providers, models, keys, merging -- is
-the method's, run by the command the repo declares (``[tool.dev_lab.review] command``); this module runs
-it on ``<merge base>..<head>`` and reads its stdout as the findings JSON
-(:mod:`dev_lab.dev.forgereview_findings`). It holds no model client, no prompt and no key.
+ONCE PER PR. A PR is reviewed at its first ready head; every later head -- a fix push, a sync with integration --
+gets the standing review's verdict posted on it, and nothing runs. It is reviewed again only when:
 
-WHERE IT RUNS follows what it needs -- the declared command -- never the poller lease. Every ``forge serve`` tick
-runs :func:`step` (via :func:`dev_lab.dev.forgeservesteps.review`), poller or not; a host whose ``[runtimes]``
-cannot fill or start the command
-(:func:`~dev_lab.dev.forgereview_declared.command_for`, :func:`can_start`) says so once and reads no PR. Among the
-capable hosts the claim below makes each head reviewed once.
+* its own change has GROWN to :data:`REVIEW_AGAIN_GROWTH` times the reviewable code bytes the review measured
+  (:func:`~dev_lab.dev.forgereview_scope.code_bytes`, from the merge base, so a sync never grows it), or
+* a session ASKS (:func:`ask_again`, ``forge review again <pr>``): what clears a security finding once it is fixed.
 
-WHAT IT POSTS, per open, non-draft PR into ``[tool.dev_lab.integrator] integration`` whose head carries no
-:data:`REVIEW_CONTEXT` status yet:
+WHAT IT POSTS: the review's one comment and ``tests/review`` (:mod:`dev_lab.dev.forgereview_advice`): ``success``
+once the review ran, naming the advice by severity; ``failure`` ONLY on a security finding. A review that DID NOT RUN
+never holds the merge (:mod:`dev_lab.dev.reviewcap`): a failed attempt on the serve tick is retried once
+(:data:`~dev_lab.dev.forgereview_claim.RETRYING`); a second failure, a failure in a review job, every reviewer
+unsupported, exhausted or unauthorised, no review key (a fork PR's job), or a reached dollar cap
+(:mod:`dev_lab.dev.reviewbudget`) records its cause on the PR and posts ``pending``
+:data:`~dev_lab.dev.forgereview_claim.UNREVIEWED_STATUS` (:func:`unreviewed`): the PR merges ``Unreviewed:``.
 
-* the head's review ROUND as ONE comment keyed by the head sha (``Marker.REVIEW``): its tagged findings carried
-  from the earlier rounds, re-checked, and recorded as a ledger (:mod:`dev_lab.dev.forgereview_rounds`; round 1
-  opens with the change's context summary). Past ``max_rounds`` or the PR's dollar cap nothing runs: the cap is
-  named and recorded (:mod:`dev_lab.dev.reviewbudget`), and the merge goes on WARNED (:mod:`dev_lab.dev.reviewcap`);
-* a :data:`REVIEW_CONTEXT` status on the head: ``failure`` while an open ``HIGH`` or security finding is neither
-  fixed nor disposed (``forge review dispose``, :mod:`dev_lab.dev.forgereview_dispose`), else ``success`` -- the
-  auto-merge waits on every state but ``success`` (:func:`dev_lab.dev.reviewgate.review_missing`);
-  ``pending`` saying
-  :data:`TAKEOVER_PENDING` when every reviewer was ``exhausted`` or ``auth`` (nothing is commented; the integrator
-  session reviews that head through the same method -- the task's API keys, then a ccc, then a ccds session), ``error``
-  when the command failed or printed no known findings version. NONE of these is advisory: each waits the merge
-  until the FORGE posts ``success`` (D11: :mod:`dev_lab.dev.reviewgate` reads the status's recorded creator).
-  It is not a PART (:func:`dev_lab.dev.platformparts.parts_of` skips it): promotion and push admission never wait
-  on it, the merge does;
-* a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` beside a ``pending`` :data:`REVIEW_CONTEXT` ONLY
-  when the review could not run for this PR: its job has no review secret (:data:`NEEDS_MAINTAINER`) or its host
-  cannot run the command (:class:`HostCannot`, on a workflow job). The forge's review is re-run, and its round
-  releases the hold; a session's ``forge review takeover <sha>`` is advisory only (D11). A head is never held for
-  its SIZE (D123, user ruling 2026-10-31, superseding 2026-10-26): an oversize head is one structure-level review.
-
-WHAT IS READ is :mod:`dev_lab.dev.forgereview_scope`'s: the branch's own change since its last reviewed head,
-minus generated files, in slices of at most ``max_diff_bytes`` under one lens each -- or, past the bounds, ONE
-whole-range slice the reviewer explores from the directory level. Each slice runs the command
-once; their outputs merge into one document, and a declared ``synthesis`` command then reads that document
-(``{findings}``) over the whole range for what crosses slices.
-
-THE COST IS BOUNDED: one review per head sha (the status is the record; a second tick on the same head runs
-nothing and posts nothing), drafts skipped, generated files never read, ``max_total_bytes`` per head.
-
-A ROUND IS SPENT ONLY ON NEW WORK (D52, user ruling 2026-11-01): every push was a round and every forge sync of
-integration into a PR restarted its review at the merge base (consumer #5397, twice in a day), against a cap of
-:data:`~dev_lab.dev.forgereview_rounds.FAMILY_MAX_ROUNDS`.
-
-* A PURE SYNC carries: a head whose tree is git's clean automatic merge of its last reviewed head with integration
-  posts that head's counted success (:func:`~dev_lab.dev.forgereview_claim.synced`), and runs nothing. Any other
-  head since a reviewed one is read from that merge (:func:`~dev_lab.dev.forgereview_scope.own_base`): its own new
-  work only. An increment with no code to read stands on its reviewed head only when that head's success is
-  counted; otherwise the PR is read whole again -- an empty push never turns a ``failure`` into a ``success``.
-* DEBOUNCE, on the serve tick: a head committed inside ``quiet``
-  (:data:`~dev_lab.dev.forgereview_declared.DEFAULT_QUIET`) is not reviewed yet --
-  nothing is posted, no round is spent -- and the next tick past it reviews it, so a burst of pushes costs one
-  round. The tick re-reads every PR anyway, so waiting holds no runner.
-* DRAFTS are never reviewed (skipped here and by the review job); marking one ready is a trigger
-  (``ready_for_review`` in the workflows' types; the serve's next tick). A push after ready does NOT turn the PR
-  back into a draft (D53): a fix push gets its round, and the debounce coalesces a burst of them.
-
-A BATCH STILL RUNNING IS NO VERDICT (user ruling 2026-11-04, :mod:`dev_lab.dev.forgereview_batch`): the model calls
-go through the vendor's batch endpoint by default; a round whose batch has not returned within ``batch_wait`` posts
-``pending`` :data:`~dev_lab.dev.forgereview_batch.BATCH_PENDING` naming it -- no findings, no round, no verdict --
-and leaves the batch state on the PR, so the next run of that head (a tick, a re-run, a takeover) resumes it.
-
-ANY FAILURE IS ``error`` WITH ITS REASON (P4). A HOST that cannot run the review -- a host value the command names
-but this host's ``[runtimes]`` does not declare, or a command it cannot start (:func:`can_start`: a missing
-executable or module) -- is checked BEFORE the claim and posts NOTHING: a fact about the host is not the head's
-status. One that started and turned out unable (:class:`ReviewUnsupported`) replaces its own claim with
-:data:`~dev_lab.dev.forgereview_claim.HOST_UNABLE` naming the host and why, and that head stays
-claimable by a capable host, or by this one once fixed. A command that ran and refused or printed no known
-findings is the head's own ``error``, and that head is not retried. Otherwise the host CLAIMS the head:
-a ``pending`` status ``claimed by <host> at <time>, reviewing``. Every other host skips a head whose review status is
-anything but a released (``released by``) or stale claim (:func:`~dev_lab.dev.forgereview_claim.claimable`), so
-N serving hosts review a head once.
-
-Undeclared, nothing is reviewed and the step says so. Exit :data:`REFUSED_EXIT` is the command's named refusal
-(:class:`ReviewRefused`): its stderr reason is the ``error`` status.
-
-WHAT A REPO DECLARES -- ``[tool.dev_lab.review]``, the family's command and its placeholders, read from the
-integration branch a PR trusts -- is :mod:`dev_lab.dev.forgereview_declared`.
+THE FORGE ONLY ORCHESTRATES. The review itself -- profiles, prompts, providers, models, keys, merging -- is the
+method's, run by the command the repo declares (``[tool.dev_lab.review] command``, :mod:`forgereview_declared`) over
+:mod:`dev_lab.dev.forgereview_scope`'s diff slices; its stdout is the findings JSON
+(:mod:`dev_lab.dev.forgereview_findings`). WHERE IT RUNS follows what it needs: a host whose ``[runtimes]`` cannot
+fill or start the command says so once and reads no PR; among capable hosts, the claim
+(:mod:`dev_lab.dev.forgereview_claim`) makes each head reviewed once. DEBOUNCE (D52): the serve reviews a head only
+once it is ``quiet`` old. DRAFTS are never reviewed. A BATCH STILL RUNNING IS NO VERDICT
+(:mod:`dev_lab.dev.forgereview_batch`): ``pending`` names it, and the next run of that head resumes it.
 """
 
 from __future__ import annotations
@@ -103,16 +43,18 @@ from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev import forgereview_scope
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
+from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comment_upsert, marker, pr_list
+from dev_lab.dev.forgereview_advice import post_review_comment, record_of, recorded_usd, trusted_bodies, verdict
 from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_claim import (
-    CAPPED,
     DESCRIPTION,
+    RETRYING,
+    UNREVIEWED_STATUS,
     claim_of,
-    counted_success,
-    passed,
+    claimable,
+    latest_review,
+    retried,
     run_ended,
-    synced,
     unable,
 )  # fmt: skip
 from dev_lab.dev.forgereview_command import (
@@ -123,83 +65,84 @@ from dev_lab.dev.forgereview_command import (
     can_start,
     run_command,
 )
-from dev_lab.dev.forgereview_declared import JUDGE, PATHS_FIELD, Review, command_for, judge_for, review_at
-from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_judge import (
-    AdjudicationRefused,
-    identity,
-    ruling,
-    self_review,
-    upheld,
-)
-from dev_lab.dev.forgereview_rounds import ledger_of, post_round, recorded_usd, trailed, trusted_bodies
+from dev_lab.dev.forgereview_declared import JUDGE, PATHS_FIELD, Review, command_for, review_at
+from dev_lab.dev.forgereview_findings import FindingsInvalid, UnknownSchemaVersion, parse_findings
+from dev_lab.dev.forgereview_identity import ReviewerRefused, identity, ruling, self_review
 from dev_lab.dev.forgereview_runtimes import retired_table
-from dev_lab.dev.forgereview_scope import (
-    Scope,
-    gather,
-    plan,
-    reviewed_ancestor,
-    reviewed_heads,
-    synced_from,
-)
-from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
+from dev_lab.dev.forgereview_scope import Scope, code_bytes, gather, plan
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
-from dev_lab.dev.reviewcap import capped_line
+from dev_lab.dev.reviewcap import unreviewed_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
 from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
+    from dev_lab.dev.forgereview_advice import Record
     from dev_lab.dev.forgework import Client, PullRequest
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
     'NEEDS_MAINTAINER',
-    'REVIEW_CONTEXT',
-    'TAKEOVER_KINDS',
-    'TAKEOVER_PENDING',
+    'REVIEW_AGAIN_GROWTH',
     'HostCannot',
-    'hold',
+    'ask_again',
     'review_pull',
     'review_tick',
     'step',
+    'unreviewed',
 ]  # fmt: skip
 
-#: A reviewer status meaning its provider cannot serve this run at all: the review needs a takeover.
-TAKEOVER_KINDS: Final = frozenset({'exhausted', 'auth'})
+#: A PR is reviewed again when its own reviewable code has grown to this many times what its review measured: a PR
+#: that doubled is mostly work no review has seen, while a fix push or a follow-up commit is not.
+REVIEW_AGAIN_GROWTH: Final = 2
 
-#: What :data:`REVIEW_CONTEXT` says when every reviewer is one of :data:`TAKEOVER_KINDS` (a ``pending`` status).
-TAKEOVER_PENDING: Final = 'takeover pending'
-
-#: What :data:`REVIEW_CONTEXT` and the hold say (``pending``) when the job running the review has no review secret:
-#: a fork PR. The head is held until a maintainer re-runs the forge's review with the secret present.
-NEEDS_MAINTAINER: Final = 'review needs a maintainer: the review secret is absent (a fork PR)'
+#: Why a review job with no review secret (a fork PR) does not review: the PR merges unreviewed, named.
+NEEDS_MAINTAINER: Final = 'the review secret is absent (a fork PR)'
 
 
 class HostCannot(OSError):
     """The host cannot fill or start the review command: a fact about the HOST, checked before any claim.
 
     The serve tick says it and leaves the head to a capable host; a workflow job -- the ONLY reviewer of its PR
-    -- holds the head for the takeover door and fails (:func:`dev_lab.dev.forgereview_job.review_run`).
+    -- records the PR unreviewed (:func:`dev_lab.dev.forgereview_job.review_run`).
     """
 
 
-def _scope(
-    root: Path, client: Client, review: Review, pull: PullRequest, target: str, *, done: Sequence[str]
-) -> Scope:  # fmt: skip
-    """What *pull*'s head review reads: its new work since the reviewed heads *done*, cut by *review*'s budget.
+def ask_again(client: Client, number: int, head: str, who: str) -> str:
+    """Record *who*'s request to review PR *number* again at *head*; the forge's next review run honours it."""
+    comment_upsert(client, number, kind=Marker.REVIEW_AGAIN, key=head,
+                   text=f'Review asked again at `{head[:12]}` by {who}.')  # fmt: skip
+    return f'#{number} {head[:12]}: review asked again; the next review run reviews this head'
 
-    An increment with no code to read stands on its reviewed head only when that head's success is counted; else
-    the whole PR is read (D52, module docstring): an empty push after a ``failure`` is never "nothing to review".
+
+def _asked(client: Client, number: int, head: str) -> bool:
+    key = marker(Marker.REVIEW_AGAIN, head)
+    return any(key in comment.body for comment in comment_list(client, number))
+
+
+def unreviewed(client: Client, pull: PullRequest, why: str) -> str:
+    """Record that *pull*'s review did not run and why, and post ``pending`` :data:`UNREVIEWED_STATUS`; the line.
+
+    The merge reads the cause from the trusted comment (:func:`~dev_lab.dev.reviewcap.waiver_of`) and merges with
+    an ``Unreviewed:`` line; it is said once per head.
     """
-    sliceable = PATHS_FIELD in review.command
-    scope = plan(root, target, pull.head_sha, review.budget, done, sliceable=sliceable)
-    earlier = reviewed_ancestor(root, pull.head_sha, done)
-    if scope.slices or not earlier or counted_success(client, earlier) is not None:
-        return scope
-    return plan(root, target, pull.head_sha, review.budget, (), sliceable=sliceable)
+    head, said = pull.head_sha, f'{UNREVIEWED_STATUS} {why}'[:DESCRIPTION]
+    latest = latest_review(client, head)
+    if latest is None or (latest.state, latest.description) != ('pending', said):
+        post_review(client, head, state='pending', description=said)
+        client.issue_comment(pull.number, f'Not reviewed: {why}. This PR merges unreviewed once all else is green.'
+                             f'\n\n{unreviewed_line(why)}')  # fmt: skip
+    return f'#{pull.number} {head[:12]}: {said}'
+
+
+def _failed(client: Client, pull: PullRequest, why: str, runner: Runner) -> str:
+    """A review attempt that gave no review: retried once on the serve tick, else recorded :func:`unreviewed`."""
+    if runner.serving and not retried(client, pull.head_sha):
+        said = f'{RETRYING} {why}'[:DESCRIPTION]
+        post_review(client, pull.head_sha, state='error', description=said)
+        return f'#{pull.number} {pull.head_sha[:12]}: {said}'
+    return unreviewed(client, pull, why)
 
 
 def _young(root: Path, head: str, runner: Runner) -> str | None:
@@ -212,157 +155,91 @@ def _young(root: Path, head: str, runner: Runner) -> str | None:
     return f'not reviewed yet: committed {int(age.total_seconds())} s ago, inside quiet {runner.quiet}'
 
 
-def _settle(root: Path, client: Client, pull: PullRequest, review: Review, scope: Scope, *, found: Findings,
-            authored: Mapping[str, str], runner: Runner, usd: float = 0.0,
-            run: Callable[[Sequence[str], Path], str], batching: Sequence[str]) -> str:  # fmt: skip
-    """Replace the claim on *pull*'s head with the final status *found* earns (and its round); the line said."""
-    head = pull.head_sha
-    if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
-        kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
-        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); waits for the forge review to be re-run'[
-            :DESCRIPTION
-        ]
-        post_review(client, head, state='pending', description=why)
-        return f'#{pull.number} {head[:12]}: {why}'
-    if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
-        kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
-        why = f'not reviewed: no reviewer returned findings ({kinds}); waits for a takeover'[:DESCRIPTION]
-        post_review(client, head, state='error', description=why)
-        return f'#{pull.number} {head[:12]}: {why}'
-    return post_round(root, client, pull, scope.range, found=found, max_rounds=review.max_rounds,
-                      outside=scope.outside, authored=authored, usd=usd, reviewers=review.reviewers,
-                      **_judging(root, client, review, pull, runner=runner, run=run, batching=batching))  # fmt: skip
-
-
-def _judging(
-    root: Path, client: Client, review: Review, pull: PullRequest, *, runner: Runner,
-    run: Callable[[Sequence[str], Path], str], batching: Sequence[str],
-) -> dict:  # fmt: skip
-    """The judge, the reviewer and the head's author sessions every round is posted with.
-
-    The JUDGE reads the PR's whole change at its head (merge base..head), never the round's increment: a finding
-    about a file the increment did not touch is judged on that file as the head holds it (#7 round 3).
-    """
-    since = forgereview_scope.git(root, 'merge-base', f'origin/{pull.base}', pull.head_sha)[1].strip()
-    return {
-        'judged': judge_for(root, review, f'{since}..{pull.head_sha}', run, runner.runtimes, batching=batching),
-        'reviewer': identity(client, runner.host, serving=runner.serving),
-        'authors': sessions(root, f'origin/{pull.base}', pull.head_sha),
-    }
-
-
-def _without_command(client: Client, pull: PullRequest, scope: Scope) -> str | None:
-    """The line said when *pull*'s head is settled with no command run (nothing but generated files to read)."""
-    if scope.slices:
-        return None
-    post_review(client, pull.head_sha, state='success', description=ONLY_GENERATED[:DESCRIPTION])
-    return f'#{pull.number} {pull.head_sha[:12]}: {ONLY_GENERATED}'
-
-
-def capped(
-    root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner
-) -> tuple[Review | None, str | None]:
-    """*review* as *pull*'s next round may run it (:mod:`dev_lab.dev.reviewbudget`), and a note or the WAIT line.
-
-    A waiting head gets a ``pending`` :data:`~dev_lab.dev.forgereview_claim.CAPPED` status naming the cap and the
-    remedy, and the review is ``None`` -- posted and said once (``None, None`` after), and read again every tick,
-    so a raise or a new month releases it. The cap is also RECORDED on the PR
-    (:func:`~dev_lab.dev.reviewcap.capped_line`): the merge reads its waiver from that trusted comment, never from
-    the status.
-    """
-    head, bodies = pull.head_sha, trusted_bodies(client, pull.number, review.reviewers)
-    prior = ledger_of(bodies)
-    rounds_done = 0 if prior is None else prior.round - (prior.head == head)
-    spend = runner.spend(runner.runtimes, root)
-    tag = tag_of(pull.url, pull.number)
-    spent = max(recorded_usd(bodies), 0.0 if spend is None else spend.of(tag))  # the rounds every host recorded
-    allowed = gate(number=pull.number, spent_usd=spent, rounds_done=rounds_done,
-                   max_rounds=review.max_rounds, spend=spend, raised=raised_of(bodies))  # fmt: skip
-    if allowed.state == 'run':
-        model = review.model if allowed.model is None else allowed.model
-        unknown = '' if spend is not None else ' (no spend report on this host: the round cap alone holds)'
-        return dataclasses.replace(review, max_rounds=allowed.max_rounds, model=model), unknown
-    said = f'{CAPPED} {allowed.why}'[:DESCRIPTION]
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if latest is not None and (latest.state, latest.description) == ('pending', said[:DESCRIPTION_LIMIT]):
-        return None, None
-    post_review(client, head, state='pending', description=said)
-    client.issue_comment(
-        pull.number, f'Review stopped at its cap; this PR merges unreviewed once all else is green: {allowed.why}'
-        f'\n\n{capped_line(allowed.why)}',
-    )  # fmt: skip
-    return None, f'#{pull.number} {head[:12]}: {said}'
-
-
-def hold(client: Client, pull: PullRequest, why: str) -> str:
-    """Hold *pull*'s head for the takeover door: :data:`REVIEW_CONTEXT` and the hold both ``pending`` *why*."""
-    post_review(client, pull.head_sha, state='pending', description=why[:DESCRIPTION])
-    status_post(client, pull.head_sha, context=HOLD_CONTEXT, state='pending', description=why[:DESCRIPTION])
+def _stands(client: Client, pull: PullRequest, record: Record) -> str:
+    """Post *record*'s verdict on *pull*'s head, naming the head it reviewed: nothing runs. The line said."""
+    state, said = verdict(record, pull.number)
+    why = f'review of {record.head[:12]} stands: {said}'[:DESCRIPTION]
+    post_review(client, pull.head_sha, state=state, description=why)
     return f'#{pull.number} {pull.head_sha[:12]}: {why}'
+
+
+def _grown(record: Record, size: int) -> bool:
+    """Whether the PR's own code (*size* bytes) grew :data:`REVIEW_AGAIN_GROWTH` times what *record* measured."""
+    return bool(record.size) and size >= REVIEW_AGAIN_GROWTH * record.size
+
+
+def _budget(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> tuple[Review | None, str]:
+    """*review* as the PR's dollar budget lets it run (:mod:`dev_lab.dev.reviewbudget`), else ``None``; and why."""
+    bodies = trusted_bodies(client, pull.number, review.reviewers)
+    spend = runner.spend(runner.runtimes, root)
+    spent = max(recorded_usd(bodies), 0.0 if spend is None else spend.of(tag_of(pull.url, pull.number)))
+    allowed = gate(number=pull.number, spent_usd=spent, spend=spend, raised=raised_of(bodies))
+    if allowed.state != 'run':
+        return None, allowed.why
+    return dataclasses.replace(review, model=allowed.model or review.model), allowed.why
 
 
 def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str | None:
-    """Review *pull*'s head once (the round in the module docstring); the line said, ``None`` when nothing was.
+    """Review *pull* once (the module docstring), or post the standing review on its head; ``None`` when nothing.
 
-    The declared command reviews ``<merge base>..<head>`` and prints the findings JSON; one comment and one
-    :data:`REVIEW_CONTEXT` status per head are posted from it. A host that cannot start it posts nothing;
-    a command that fails or prints anything but a known findings version posts ``error`` naming why, and is not
-    retried on that head.
+    A head that holds its own review status (posted, or a live claim) is left alone; a request to review it again
+    (:func:`ask_again`) overrides a settled status.
     """
     head, target = pull.head_sha, f'origin/{pull.base}'
-    counted = forge_posted(client) if runner.verifies else None
+    record = record_of(trusted_bodies(client, pull.number, review.reviewers))
+    asked = (record is None or record.head != head) and _asked(client, pull.number, head)
+    latest = latest_review(client, head)
+    if latest is not None and latest.state == 'success' and runner.verifies and not forge_posted(client)(latest):
+        latest = None  # a success the gate does not count is no review (dev-lab #38)
+    settled = latest is not None and (latest.state != 'pending' or latest.description.startswith(UNREVIEWED_STATUS))
+    if not claimable(latest, runner.clock(), review.stale, run_ended(client)) and not (asked and settled):
+        return None
     if (
-        stands := passed(root, client, head, runner.clock(), review.stale, counted=counted, ended=run_ended(client))
-    ) is not None:
-        return f'#{pull.number} {head[:12]}: {stands}' if stands else None
-    # the forge's own rounds only: a pasted marker naming an unreviewed sha would shrink the range or seed a carry
-    done = reviewed_heads(trusted_bodies(client, pull.number, review.reviewers))
-    if (source := synced_from(root, target, head, done)) and (why := synced(client, head, source)):
-        return f'#{pull.number} {head[:12]}: {why}'
+        record is not None
+        and not asked
+        and (record.head == head or not _grown(record, code_bytes(root, target, head, review.budget)))
+    ):
+        return _stands(client, pull, record)
     if (wait := _young(root, head, runner)) is not None:
         return f'#{pull.number} {head[:12]}: {wait}'
-    allowed, note = capped(root, client, review, pull, runner)
+    allowed, note = _budget(root, client, review, pull, runner)
     if allowed is None:
-        return note
-    review = allowed
-    scope = _scope(root, client, review, pull, target, done=done)
-    said = _without_command(client, pull, scope)
-    if said is None and not runner.secret:
-        said = hold(client, pull, NEEDS_MAINTAINER)
-    if said is not None:
-        return said
+        return unreviewed(client, pull, f'review {note}')
+    return f'{_run(root, client, allowed, pull, runner)} ({note})'
+
+
+def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str:
+    """Review *pull*'s head now: nothing to read is ``success``, no review key merges unreviewed; the line said."""
+    head = pull.head_sha
+    scope = plan(root, f'origin/{pull.base}', head, review.budget, sliceable=PATHS_FIELD in review.command)
+    if not scope.slices:
+        post_review(client, head, state='success', description=ONLY_GENERATED[:DESCRIPTION])
+        return f'#{pull.number} {head[:12]}: {ONLY_GENERATED}'
+    if not runner.secret:
+        return unreviewed(client, pull, NEEDS_MAINTAINER)
     with charged_to(tag_of(pull.url, pull.number)):
-        said = _command_round(root, client, review, pull, scope=scope, runner=runner)
-    return said + (note or '')
+        return _command_review(root, client, review, pull, scope=scope, runner=runner)
 
 
-def _command_round(
+def _command_review(
     root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner
 ) -> str:
-    """Claim *pull*'s head, run the command over *scope*'s slices and settle the head; the line said.
+    """Claim *pull*'s head, run the command over *scope*'s slices and post the review; the line said.
 
-    Every command of the round batches through the head's state on the PR and shares ONE wait
-    (:mod:`dev_lab.dev.forgereview_batch`); a batch still running ends the round :func:`_batch_pending`.
+    Every command batches through the head's state on the PR and shares ONE wait (:mod:`forgereview_batch`).
     """
     with held_state(client, pull.number, pull.head_sha, trusted_logins(client)) as state:
         run = within(runner.run, runner.clock() + wait_of(review), runner.clock)
-        return _round(root, client, review, pull, scope=scope, runner=runner, run=run,
-                      batching=batch_args(review, state))  # fmt: skip
+        return _review(root, client, review, pull, scope=scope, runner=runner, run=run,
+                       batching=batch_args(review, state))  # fmt: skip
 
 
-def _batch_pending(client: Client, pull: PullRequest, waiting: ReviewPending) -> str:
-    """Replace the claim with ``pending`` :data:`BATCH_PENDING` naming the batch: no verdict; the line said."""
-    why = f'{BATCH_PENDING} {waiting}'[:DESCRIPTION]
-    post_review(client, pull.head_sha, state='pending', description=why)
-    return f'#{pull.number} {pull.head_sha[:12]}: {why}'
-
-
-def _round(
+def _review(
     root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner,
     run: Callable[[Sequence[str], Path], str], batching: Sequence[str],
 ) -> str:  # fmt: skip
-    """:func:`_command_round` once its batch state is held: *run* is the timed runner, *batching* the flags."""
-    head, clock = pull.head_sha, runner.clock
+    """:func:`_command_review` once its batch state is held: *run* is the timed runner, *batching* the flags."""
+    head, target = pull.head_sha, f'origin/{pull.base}'
     try:
         argvs = [command_for(review, scope.range, runner.runtimes, paths=s.paths, lens=s.lens, batching=batching)
                  for s in scope.slices]  # fmt: skip
@@ -371,45 +248,35 @@ def _round(
         cannot = str(unsupported)
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
         raise HostCannot(cannot)
-    # the reviewer and the judge read these ranges with no forge token: a partial clone holds their blobs first
-    forgereview_scope.prefetch(root, scope.range, f'origin/{pull.base}...{head}')
-    # checked before the claim too: a session that authored the head posts nothing on it
-    me = identity(client, runner.host, serving=runner.serving)
+    forgereview_scope.prefetch(root, scope.range)  # the reviewer holds no forge token: a partial clone fetches first
+    me = identity(client, runner.host, serving=runner.serving)  # checked before the claim too
+    authors = sessions(root, target, head)
     ruling(me, f'reviewing #{pull.number}')
-    self_review(me, sessions(root, f'origin/{pull.base}', head), f'reviewing #{pull.number}')
-    post_review(client, head, state='pending', description=claim_of(runner.host, clock()))
+    self_review(me, authors, f'reviewing #{pull.number}')
+    post_review(client, head, state='pending', description=claim_of(runner.host, runner.clock()))
     before = _tagged(root, pull, runner)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True, batching=batching)
-        gone = upheld(trusted_bodies(client, pull.number, review.reviewers))
-        found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body, disposed=gone))
+        found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body))
     except ReviewPending as waiting:
-        return _batch_pending(client, pull, waiting)
+        why = f'{BATCH_PENDING} {waiting}'[:DESCRIPTION]
+        post_review(client, head, state='pending', description=why)
+        return f'#{pull.number} {head[:12]}: {why}'
     except ReviewUnsupported as unsupported:  # started, then the host could not: replaces the claim
         return unable(client, pull, runner.host, str(unsupported))
-    except (UnknownSchemaVersion, ReviewRefused) as named:
-        why = f'not reviewed: {named}'[:DESCRIPTION]
-        post_review(client, head, state='error', description=why)
-        return f'#{pull.number} {head[:12]}: {why}'
-    except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
-        why = f'the review command failed ({type(failed).__name__}); not retried here, waits for a takeover'
-        post_review(client, head, state='error', description=why)
-        return f'#{pull.number} {head[:12]}: {why}: {failed}'
-    authored = trailed(root, f'origin/{pull.base}', head)
+    except (UnknownSchemaVersion, ReviewRefused, OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
+        return _failed(client, pull, f'the review command failed ({type(failed).__name__}: {failed})', runner)
+    if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
+        kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
+        return _failed(client, pull, f'no reviewer returned findings ({kinds})', runner)
     usd = max(0.0, _tagged(root, pull, runner) - before)
-    try:
-        return _settle(root, client, pull, review, scope, found=found, authored=authored, runner=runner, usd=usd,
-                       run=run, batching=batching)  # fmt: skip
-    except ReviewPending as waiting:  # the judge's batch: the round is posted by the run that settles it
-        return _batch_pending(client, pull, waiting)
+    return post_review_comment(root, client, pull, scope.range, found=found, reviewer=me, authors=authors,
+                               outside=scope.outside, unread=scope.unread, usd=usd,
+                               size=code_bytes(root, target, head, review.budget))  # fmt: skip
 
 
 def _tagged(root: Path, pull: PullRequest, runner: Runner) -> float:
-    """What this host's ai-lab has charged to *pull* so far; 0 without a spend report.
-
-    A round's dollars are the difference across it, recorded in its ledger
-    (:func:`~dev_lab.dev.forgereview_rounds.recorded_usd`).
-    """
+    """What this host's ai-lab has charged to *pull* so far; 0 without a spend report."""
     spend = runner.spend(runner.runtimes, root)
     return 0.0 if spend is None else spend.of(tag_of(pull.url, pull.number))
 
@@ -444,7 +311,7 @@ def review_tick(
             return review_pull(root, client, review, pull, runner)
         except HostCannot as cannot:  # another serving host may run it: nothing is posted
             return f'#{pull.number} {pull.head_sha[:12]}: not reviewed on this host -- {cannot}'
-        except AdjudicationRefused as author:  # the head's own author session: another reviewer runs it
+        except ReviewerRefused as author:  # the head's own author session: another reviewer runs it
             return f'#{pull.number} {pull.head_sha[:12]}: not reviewed here -- {author}'
 
     pulls = (pull for pull in pr_list(client) if pull.base == base and not pull.draft and pull.head_sha)

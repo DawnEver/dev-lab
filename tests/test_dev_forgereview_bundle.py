@@ -7,7 +7,7 @@ naming that very run, a run of another workflow, event or pull request (on GitHu
 pull request, and a run naming two), a prepare run that failed or was cancelled, and a GitHub bot pointer are each
 never read -- the run's artifact on BOTH forges, each through its own fake; a tampered forge diff,
 another merge base, a Ref not bound to the head, a corrupt artifact and a binary code file are each REQUEST_CHANGES;
-a failure to read posts nothing and never stops the next PR; a blocking finding is REQUEST_CHANGES; a head
+a failure to read posts nothing and never stops the next PR; a security finding is REQUEST_CHANGES; a head
 already judged is not judged again; a ``serve`` repo is never judged and a ``judge`` repo is never served; a reviewer
 that did not run posts nothing.
 """
@@ -52,7 +52,7 @@ _FORGES = {
 _CREATED = {GITEA: 'created', GITHUB: 'created_at'}
 
 
-def _findings(severity: str | None, *, statuses: tuple[str, ...] = ('ok',)) -> str:
+def _findings(severity: str | None, *, statuses: tuple[str, ...] = ('ok',), security: bool = False) -> str:
     rows = [
         {'name': f'r{at}', 'provider': 'anthropic', 'status': status, 'dropped_findings': 0}
         for at, status in enumerate(statuses)
@@ -61,7 +61,7 @@ def _findings(severity: str | None, *, statuses: tuple[str, ...] = ('ok',)) -> s
         []
         if severity is None
         else [{
-            'id': 'F-0123456789ab', 'severity': severity, 'security': False, 'rule': 'R', 'file': 'kept.py',
+            'id': 'F-0123456789ab', 'severity': severity, 'security': security, 'rule': 'R', 'file': 'kept.py',
             'anchor': 'x', 'summary': 's', 'category': 'Bug', 'status': 'OPEN', 'suggestion': '', 'detail': '',
             'confidence': 'single', 'reviewers': [{'name': 'r0', 'provider': 'anthropic'}],
         }]
@@ -552,18 +552,26 @@ def test_a_dismissed_verdict_is_judged_again(prepared: Prepared) -> None:
     assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
 
 
-def test_the_forges_disposals_reach_the_reviewer(prepared: Prepared, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(fb, 'upheld', lambda _bodies: {'F-0123456789ab': 'adjudicated false positive'})
+def test_the_reviewer_is_handed_no_disposals(prepared: Prepared) -> None:
+    """Nothing is disposed in a one-shot review (user ruling 2026-11-06): the disposed file is empty."""
     read: list[dict[str, str]] = []
     _judged(prepared.forge, _findings(None), read=read)
-    assert 'F-0123456789ab' in read[0]['disposed']
+    assert json.loads(read[0]['disposed']) == {'disposed': []}
 
 
-def test_a_blocking_finding_requests_changes(prepared: Prepared) -> None:
-    _judged(prepared.forge, _findings('HIGH'))
+@pytest.mark.parametrize(('security', 'event'), [(False, 'APPROVED'), (True, 'REQUEST_CHANGES')])
+def test_a_high_finding_is_advice_and_a_security_finding_requests_changes(
+    prepared: Prepared, *, security: bool, event: str
+) -> None:
+    """User ruling 2026-11-06: a HIGH finding is advice -- APPROVED, the finding listed as advice.
+
+    PLANTED CONTROL: the same finding tagged security is REQUEST_CHANGES.
+    """
+    _judged(prepared.forge, _findings('HIGH', security=security))
     (review,) = prepared.forge.verdicts()
-    assert review['event'] == 'REQUEST_CHANGES'
+    assert review['state'] == event
     assert 'F-0123456789ab' in review['body']
+    assert ('Advice' in review['body']) is not security
 
 
 @pytest.mark.parametrize('statuses', [('ok', 'timeout'), ('skipped',), ('exhausted',)])
@@ -795,12 +803,12 @@ def test_an_app_judge_posts_its_verdict_as_a_check_run_never_a_review(on_github:
     assert _judged(forge, _findings(None)) == ([], [])  # idempotent per head
 
 
-def test_an_app_judge_concludes_failure_on_a_blocking_finding(on_github: Prepared) -> None:
+def test_an_app_judge_concludes_failure_on_a_security_finding(on_github: Prepared) -> None:
     forge = _as_app(on_github.forge)
-    _judged(forge, _findings('HIGH'))
+    _judged(forge, _findings('LOW', security=True))
     (run,) = forge.checks[forge.pull.head_sha]
     assert run['conclusion'] == 'failure'
-    assert 'Blocking' in run['output']['summary']
+    assert 'Security' in run['output']['summary']
 
 
 def test_a_same_named_run_from_another_app_is_not_this_judges_verdict(on_github: Prepared) -> None:

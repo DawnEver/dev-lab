@@ -30,7 +30,7 @@ def test_the_schema_is_pinned(tmp_path: Path, capsys: pytest.CaptureFixture[str]
         'not_code': list(NOT_CODE),
         'max_total_bytes': 800_000,
         'max_file_bytes': 400_000,
-        'blocking': ['HIGH', 'security'],
+        'blocking': ['security'],
         'summary': {'cite': ['commits', 'memory', 'merge_audit', 'pr_body']},
     }
 
@@ -46,15 +46,15 @@ def test_a_repo_override_overlays_the_family_defaults(tmp_path: Path) -> None:
 
 
 def test_the_forge_review_and_the_export_agree(tmp_path: Path) -> None:
-    """The bounds the forge review cuts by and the severities it blocks on are the exported ones."""
+    """The bounds the forge review cuts by and what it blocks on (security alone: HIGH is advice) are exported."""
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.review]\nnot_code = ["x/**"]\n', encoding='utf-8')
     got, budget = policy(tmp_path), load_review(tmp_path).budget
     assert (got['code'], got['not_code']) == (list(budget.code), list(budget.not_code))
     assert (got['max_total_bytes'], got['max_file_bytes']) == (budget.total_bytes, budget.slice_bytes)
-    assert _finding('HIGH').blocking
+    assert not _finding('HIGH').blocking, 'user ruling 2026-11-06: a HIGH finding is advice'
     assert _finding('LOW', security=True).blocking
-    assert not _finding('MEDIUM').blocking  # planted control: a non-blocking severity does not block
-    assert 'MEDIUM' not in got['blocking']
+    assert _finding('HIGH', security=True).blocking  # planted control: security blocks at any severity
+    assert got['blocking'] == ['security']
 
 
 def test_an_unknown_override_is_refused(tmp_path: Path) -> None:

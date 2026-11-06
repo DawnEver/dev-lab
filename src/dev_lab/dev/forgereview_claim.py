@@ -1,4 +1,4 @@
-"""A head's review CLAIM: who may take a head, what stands on it already, and a host that cannot run the review.
+"""A head's review CLAIM: who may take a head, the statuses a review that did not run leaves, and a host unable.
 
 :mod:`dev_lab.dev.forgereview` claims a head (:data:`CLAIMED`) before it runs the command; every other host skips
 it until the claim is released, goes stale, or the host posts :data:`HOST_UNABLE` -- a fact about the host, so the
@@ -7,9 +7,10 @@ ENDED is free at once (:func:`run_ended`): a cancelled run never releases its cl
 without running a trap or an ``always()`` step it could post from -- so the forge's record of the run is the one
 signal that survives a cancellation (2026-11-04, dev-lab #79: a claim held its head 10 h until it went stale).
 
-A PURE SYNC carries its reviewed head's verdict (D52, user ruling 2026-11-01; :func:`synced`): only a success the
-gate itself counts at that head (:func:`counted_success`, the gate's own :func:`~dev_lab.dev.reviewgate.forge_posted`)
-is carried, so no planted or self-posted status can be inherited.
+A REVIEW THAT DID NOT RUN NEVER HOLDS THE MERGE (user ruling 2026-11-06): a failed attempt on the serve tick is
+``error`` :data:`RETRYING` (claimable, so the next tick tries once more); a second failure, a failure in a review
+job (it has no next tick), a missing review key or a reached cap is ``pending`` :data:`UNREVIEWED_STATUS`, and the
+cause is recorded on the PR for the merge's waiver (:func:`dev_lab.dev.reviewcap.unreviewed_line`).
 """
 
 from __future__ import annotations
@@ -19,22 +20,20 @@ import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
-from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgereview_batch import BATCH_PENDING
-from dev_lab.dev.forgestatus import CARRIED_FROM, status_list
+from dev_lab.dev.forgestatus import status_history, status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import forge_posted, post_review
+from dev_lab.dev.reviewgate import post_review
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
-    from pathlib import Path
 
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'CAPPED', 'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'PURE_SYNC', 'RELEASED', 'claim_of', 'claimable',
-    'counted_success', 'live_claim', 'passed', 'run_ended', 'standing', 'synced', 'unable',
+    'CLAIMED', 'DESCRIPTION', 'HOST_UNABLE', 'RELEASED', 'RETRYING', 'UNREVIEWED_STATUS', 'claim_of', 'claimable',
+    'latest_review', 'live_claim', 'retried', 'run_ended', 'unable',
 ]  # fmt: skip
 
 #: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
@@ -47,16 +46,35 @@ RELEASED: Final = 'released by'
 #: not the head, so the head stays claimable -- by a capable host, or by this one once it is fixed.
 HOST_UNABLE: Final = 'not reviewed: cannot run on host'
 
-#: What a ``pending`` status opens with when the PR's review cap stops its review (:mod:`dev_lab.dev.reviewbudget`):
-#: the merge goes on WARNED (:mod:`dev_lab.dev.reviewcap`), and the head stays claimable so a raised cap or a new
-#: month is read on the next tick.
-CAPPED: Final = 'review capped, merges unreviewed:'
+#: What an ``error`` opens with after a review attempt failed on the serve tick: the head is claimable, and the next
+#: tick tries ONCE more (:func:`retried`).
+RETRYING: Final = 'review attempt failed, retried once:'
+
+#: What a ``pending`` status opens with when the review did not run and will not be retried: the merge waives it
+#: from the cause recorded on the PR (:mod:`dev_lab.dev.reviewcap`).
+UNREVIEWED_STATUS: Final = 'not reviewed, merges unreviewed:'
+
+#: A commit-status description is short: every one posted is cut to this.
+DESCRIPTION: Final = 240
 
 _CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing(?: \(run (?P<run>\d+)\))?')
 
 
 def _never(_run: str) -> bool:
     return False
+
+
+def latest_review(client: Client, head: str) -> CommitStatus | None:
+    """*head*'s latest :data:`REVIEW_CONTEXT` status, else ``None``."""
+    return next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+
+
+def retried(client: Client, head: str) -> bool:
+    """Whether a review attempt on *head* already failed once (a :data:`RETRYING` status in its history)."""
+    return any(
+        one.context == REVIEW_CONTEXT and one.state == 'error' and one.description.startswith(RETRYING)
+        for one in status_history(client, head)
+    )
 
 
 def claim_of(host: str, at: datetime, env: Mapping[str, str] | None = None) -> str:
@@ -95,77 +113,29 @@ def live_claim(status: CommitStatus | None, ended: Callable[[str], bool]) -> boo
     return bool(claim['run']) and not ended(claim['run'])
 
 
-#: Why a pure sync's status carries (D52): ``carried from <sha12>: pure sync``, as a docs-only carry names its source.
-PURE_SYNC: Final = 'pure sync'
-
-#: A commit-status description is short: every one posted is cut to this.
-DESCRIPTION: Final = 240
-
-
 def claimable(
     status: CommitStatus | None, now: datetime, stale: timedelta, ended: Callable[[str], bool] = _never
 ) -> bool:
     """Whether a head whose review status is *status* may be claimed: none, a released, stale or ended claim.
 
     A head whose batch is pending (:data:`~dev_lab.dev.forgereview_batch.BATCH_PENDING`) is claimable at once: its
-    state is on the PR, so whoever claims it resumes the batch, never resubmits it.
-
-    A claim is ended when the run it names has ended (*ended*, :func:`run_ended`); one naming no run is not.
-
-    A host that could not run the review (:data:`HOST_UNABLE`) is the host's fault, never the head's.
+    state is on the PR, so whoever claims it resumes the batch, never resubmits it. A host that could not run the
+    review (:data:`HOST_UNABLE`) is the host's fault, never the head's; a first failed attempt (:data:`RETRYING`) is
+    tried once more. A claim is ended when the run it names has ended (*ended*, :func:`run_ended`).
     """
-    if status is None or (status.state, status.description.startswith(HOST_UNABLE)) == ('error', True):
+    if status is None or (status.state == 'error' and status.description.startswith((HOST_UNABLE, RETRYING))):
         return True
     if status.state != 'pending':
         return False
-    if status.description.startswith((RELEASED, CAPPED, BATCH_PENDING)):
+    if status.description.startswith((RELEASED, BATCH_PENDING)):
         return True
     if (claim := _CLAIM.match(status.description)) is None:
-        return False  # takeover pending, or any other pending: not ours to take
+        return False  # not reviewed for good, or any other pending: not ours to take
     try:
         at = datetime.fromisoformat(claim['at'])
     except ValueError:
         return True  # an unreadable claim cannot hold a head forever
     return now - at >= stale or (bool(claim['run']) and ended(claim['run']))
-
-
-def standing(
-    client: Client, now: datetime, stale: timedelta, ended: Callable[[str], bool] = _never
-) -> Callable[[str], CommitStatus | str]:
-    """A sha's review as :func:`dev_lab.dev.forgecarry.docs_only` reads it: posted, live claim, else none."""
-
-    def stood(sha: str) -> CommitStatus | str:
-        latest = next((one for one in status_list(client, sha) if one.context == REVIEW_CONTEXT), None)
-        if latest is not None and latest.state == 'success':
-            return latest
-        return (
-            RUNNING
-            if latest is not None and latest.state == 'pending' and not claimable(latest, now, stale, ended)
-            else ''
-        )
-
-    return stood
-
-
-def passed(
-    root: Path, client: Client, head: str, now: datetime, stale: timedelta, *,
-    counted: Callable[[CommitStatus], bool] | None = None, ended: Callable[[str], bool] = _never,
-) -> str | None:  # fmt: skip
-    """Why *head* is not reviewed now: ``''`` its own review is posted or held, else what carries; ``None``: review it.
-
-    DOCS-ONLY-CARRIES: an earlier head's review stands (posted on *head*, no command run) or is still running.
-    A ``success`` *counted* refuses (:func:`dev_lab.dev.reviewgate.forge_posted`) is no review: the head is reviewed.
-    """
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if latest is not None and latest.state == 'success' and counted is not None and not counted(latest):
-        latest = None
-    if not claimable(latest, now, stale, ended):
-        return ''
-    carry = docs_only(root, head, standing(client, now, stale, ended), data_waits=False)
-    if carry is not None and carry.verdict is not None:
-        why = f'{carry.hold}: the review of {carry.source[:12]} stands'[:DESCRIPTION]
-        post_review(client, head, state=carry.verdict.state, description=why, target_url=carry.verdict.url)
-    return None if carry is None else carry.hold
 
 
 def unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
@@ -175,35 +145,7 @@ def unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     """
     head = pull.head_sha
     said = f'{HOST_UNABLE} {host}: {why}'[:DESCRIPTION]
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    latest = latest_review(client, head)
     if latest is None or (latest.state, latest.description) != ('error', said):
         post_review(client, head, state='error', description=said)
     return f'#{pull.number} {head[:12]}: {said}'
-
-
-def counted_success(client: Client, sha: str) -> CommitStatus | None:
-    """*sha*'s latest review status when it is a ``success`` the merge gate counts there, else ``None``.
-
-    The gate's own test (:func:`~dev_lab.dev.reviewgate.forge_posted`): on GitHub only the Actions bot's success
-    counts; on Gitea every success does.
-    """
-    latest = next((one for one in status_list(client, sha) if one.context == REVIEW_CONTEXT), None)
-    if latest is None or latest.state != 'success' or not forge_posted(client)(latest):
-        return None
-    return latest
-
-
-def synced(client: Client, head: str, source: str) -> str | None:
-    """A PURE SYNC (D52): post *source*'s counted success on *head*, naming it; the description, else ``None``.
-
-    *source* is :func:`dev_lab.dev.forgereview_scope.synced_from`'s: *head*'s tree is its reviewed content plus
-    integration's. Nothing runs and no round is spent. Posted through the one review door
-    (:func:`~dev_lab.dev.reviewgate.post_review`). A *source* without a counted success -- a ``failure``, an
-    ``error``, a status the gate does not count -- carries nothing: the head is reviewed.
-    """
-    stood = counted_success(client, source)
-    if stood is None:
-        return None
-    why = f'{CARRIED_FROM} {source[:12]}: {PURE_SYNC}'
-    post_review(client, head, state='success', description=why, target_url=stood.url)
-    return why

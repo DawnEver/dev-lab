@@ -3,8 +3,9 @@
 User ruling 2026-10-31, "every PR must get a review". A head is reviewed when, and only when, its latest
 :data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no
 :data:`~dev_lab.dev.forgecontexts.HOLD_CONTEXT` is pending. Every other state -- absent, a claim still reviewing,
-a takeover pending, an ``error``, a ``failure`` -- is not a review, and :func:`review_missing` names it. Nothing is
-advisory: ai-lab #3 and dev-lab #5 were auto-merged with ``tests/review=error`` when an error was.
+an ``error``, a ``failure`` (a security finding) -- is not a review, and :func:`review_missing` names it. A review
+that DID NOT RUN is waived at the merge from its recorded cause (:mod:`dev_lab.dev.reviewcap`), never by a status
+(ai-lab #3 and dev-lab #5 were auto-merged with ``tests/review=error`` when a status could waive it).
 
 WHO POSTED A SUCCESS COUNTS ONLY WHERE THE FORGE VETS AUTHORS (:func:`forge_posted`; user ruling 2026-11-06,
 "Gitea is safe; vetting is for GitHub", extended to review statuses the same day). GitHub
@@ -200,7 +201,7 @@ def post_review(client: Client, head: str, *, state: str, description: str, targ
     """Post *head*'s :data:`REVIEW_CONTEXT` -- the ONE door every review status is posted through.
 
     Inside Gitea's review job the status links the job's own run (:func:`job_run_url`); anywhere else it links
-    *target_url* (the round's comment, a carried verdict).
+    *target_url* (the review's comment, a standing verdict).
     """
     status_post(client, head, context=REVIEW_CONTEXT, state=state, description=description,
                 target_url=job_run_url(client) or target_url)  # fmt: skip

@@ -185,7 +185,7 @@ def _serve(
     table: dict | None = None,
     retain=lambda _root, **_kw: None,
     observe=None,
-    held=None,
+    drafts=None,
     issues: _Issues | None = None,
     prune=lambda _root, _client, **_kw: (),
     close_landed=lambda *_a, **_k: None,
@@ -239,9 +239,7 @@ def _serve(
         return proc
 
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
-    monkeypatch.setattr(forgeservesteps, 'held_reviews', held or (lambda *_a, **_k: []))  # reads open PRs
-    monkeypatch.setattr(forgeservesteps, 'blocked_reviews', lambda *_a, **_k: [])  # reads open PRs too
-    monkeypatch.setattr(forgeservesteps, 'idle_drafts', lambda *_a, **_k: [])  # reads open PRs too (D53)
+    monkeypatch.setattr(forgeservesteps, 'idle_drafts', drafts or (lambda *_a, **_k: []))  # reads open PRs (D53)
     monkeypatch.setattr(forgeservesteps, 'late_reviews', lambda *_a, **_k: [])  # reads open PRs too (backlog)
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
@@ -1083,9 +1081,9 @@ def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch,
         records_prune=lambda *_a, **_k: ran.append('records') or (),
         issue_tidy=lambda *_a: ran.append('tidy') or [],
         observe=lambda *_a, **_k: ran.append('observe') or [],
-        held=lambda *_a, **_k: ran.append('held') or [],
+        drafts=lambda *_a, **_k: ran.append('drafts') or [],
     )
-    assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'held']
+    assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'drafts']
 
 
 def test_every_repo_wide_step_reads_through_one_pass_memo_and_the_review_through_none(
@@ -1121,9 +1119,9 @@ def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, t
         records_prune=lambda *_a, **_k: ran.append('records') or (),
         issue_tidy=lambda *_a: ran.append('tidy') or [],
         observe=lambda *_a, **_k: ran.append('observe') or [],
-        held=lambda *_a, **_k: ran.append('held') or [],
+        drafts=lambda *_a, **_k: ran.append('drafts') or [],
     )
-    assert ran == ['prune', 'records', 'tidy', 'observe', 'held']
+    assert ran == ['prune', 'records', 'tidy', 'observe', 'drafts']
 
 
 def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:

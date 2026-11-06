@@ -3,9 +3,9 @@
 ONE SOURCE PER LAYER: the family base is ``ci_base.toml`` beside this module; a repo's layer is
 ``[tool.dev_lab.ci."<file>.yml"]`` in its ``pyproject.toml``. EVERY REPO RENDERS ITS FORGE'S WHOLE BASE
 (:func:`base_names`: each base table placed on the forge :func:`repo_forge` reads from ``origin``, else from the
-repo's declared tables) -- never an opt-in
-a repo can forget, which is how merge-tick and review-claims went undeployed outside dev-lab (2026-11-04). A repo's
-table layers over a base workflow, renders another forge's base workflow, or declares one of its own. The layers are
+repo's declared tables) -- never an opt-in a repo can forget, which is how merge-tick and the comment-triggered
+review workflow went undeployed outside dev-lab (2026-11-04). A repo's table layers over a base workflow, renders
+another forge's base workflow, or declares one of its own. The layers are
 deep-merged (tables key by key; anything else replaces) and each workflow is written to
 ``.github/workflows/<file>.yml`` as JSON -- JSON is YAML, so the stdlib renders it and no YAML library
 is needed. Nothing ever parses a workflow back: the drift check compares RENDERED BYTES to the file,

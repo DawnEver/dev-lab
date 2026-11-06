@@ -1,6 +1,6 @@
 # Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
 {
-  "name": "Review claims",
+  "name": "Review again",
   "on": {
     "issue_comment": {
       "types": [
@@ -10,7 +10,7 @@
     }
   },
   "concurrency": {
-    "group": "claims-${{ github.event.issue.number }}",
+    "group": "review-again-${{ github.event.issue.number }}",
     "cancel-in-progress": false
   },
   "permissions": {
@@ -23,8 +23,8 @@
     "GITHUB_TOKEN": "${{ github.token }}"
   },
   "jobs": {
-    "adjudicate": {
-      "if": "${{ contains(github.event.comment.body, '<!-- lab-commons:review-claim:') }}",
+    "again": {
+      "if": "${{ github.event.issue.pull_request && contains(github.event.comment.body, '<!-- lab-commons:review-again:') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -67,8 +67,8 @@
           "run": "git config --global credential.helper \"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket\""
         },
         {
-          "name": "Adjudicate the claims",
-          "run": "trap \"git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit\" EXIT; uv run --no-sync python -m dev_lab.dev.forge review adjudicate ${{ github.event.issue.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"",
+          "name": "Review the PR again",
+          "run": "trap \"git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit\" EXIT; uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.issue.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"",
           "env": {
             "AI_LAB_KEYS_PR_REVIEW": "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}"
           }

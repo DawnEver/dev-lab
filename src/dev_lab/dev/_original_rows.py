@@ -336,21 +336,20 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the forge's review/security gate, new here; and the in-kit splits of `metrics` and
     # `forge` (a split of a kit module supersedes no CONSUMER file, so it inherits the parent's kind).
     'forgecontexts',
-    'forgereview_dispose',
-    'forgereview_rounds',
+    'forgereview_advice',
     'forgereview_summary',
     'forgesecurity',
     'forgetakeover',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',
-    'reviewbudget',  # the review's round and dollar caps, new here
-    'reviewcap',  # a capped review warns and merges, new here
+    'reviewbudget',  # the review's dollar cap, new here
+    'reviewcap',  # a review that did not run warns and merges, new here
     'commandpart',  # a non-pytest repo's one command part, new here
     'forgeaffinity',  # HPC account affinity of verify parts, new here
     'forgeapp',  # a GitHub App as a forge identity (the judge's), new here
     'forgereview_gate',  # the one review gate every merge door reads, split from forgereview_declared
-    'forgereview_judge',  # independent re-judging and claim adjudication, new here
+    'forgereview_identity',  # who reviews: the forge's status, never a head's author, new here
     'forgerunshow',  # a cluster run's findings published on the forge, new here
     'memoryadds',  # memory is added to, never edited, new here
     'remconfig',  # the family's rem.json, new here

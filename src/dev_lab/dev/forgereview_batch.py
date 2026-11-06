@@ -10,12 +10,12 @@ it what a forge run must: a place its state survives in, and a budget it waits w
   holds a seed and the batch ids the commands submitted -- no reply, no key -- so the next run of that head (a serve
   tick, a job re-run, a takeover, the judge's next tick) hands the same file to the same commands, and they resume
   polling those batches instead of resubmitting: no double spend.
-* THE WAIT IS THE ROUND'S OWN (:func:`within`): every command of a round shares ``batch_wait`` (one deadline, so a
-  round of several slices never waits several times over); a command still waiting at the deadline exits
+* THE WAIT IS THE REVIEW'S OWN (:func:`within`): every command of a review shares ``batch_wait`` (one deadline, so a
+  review of several slices never waits several times over); a command still waiting at the deadline exits
   :data:`~dev_lab.dev.forgereview_command.PENDING_EXIT`, raised as
   :class:`~dev_lab.dev.forgereview_command.ReviewPending`. The slices after it still SUBMIT (wait 0), so one more
-  round of polling settles all of them.
-* NO FAKE VERDICT: a pending round posts no findings, no round comment and no verdict -- the head's review status is
+  pass of polling settles all of them.
+* NO FAKE VERDICT: a pending review posts no findings, no review comment and no verdict -- the head's review status is
   ``pending`` :data:`BATCH_PENDING` naming the batch, which the merge waits on and the next run may claim at once.
 * THE TOTAL WAIT IS THE VENDOR'S expiry (24 h); past it the method answers each expired request synchronously or
   fails it, per ``on_expiry`` (:data:`ON_EXPIRY`, default :data:`FAMILY_ON_EXPIRY`).
@@ -66,7 +66,7 @@ FAMILY_BATCH: Final = True
 ON_EXPIRY: Final = ('sync', 'fail')
 FAMILY_ON_EXPIRY: Final = 'sync'
 
-#: How long ONE round waits on its batches before it posts :data:`BATCH_PENDING` and ends: below the command's own
+#: How long ONE review waits on its batches before it posts :data:`BATCH_PENDING` and ends: below the command's own
 #: timeout, so a waiting command is never killed mid-poll.
 DEFAULT_BATCH_WAIT: Final = '20 min'
 
@@ -76,10 +76,10 @@ BATCH_FIELD: Final = '{batch}'
 #: What :data:`BATCH_FIELD` becomes for a caller that keeps no state: it could not resume a batch, so it calls at once.
 NO_BATCH: Final = ('--no-batch',)
 
-#: Replaced when a command STARTS by the seconds left of its round's wait (:func:`within`).
+#: Replaced when a command STARTS by the seconds left of its review's wait (:func:`within`).
 WAIT_LEFT: Final = '{wait_left}'
 
-#: What a ``pending`` review status opens with while a round's batch runs: the merge waits; the head is claimable.
+#: What a ``pending`` review status opens with while a review's batch runs: the merge waits; the head is claimable.
 BATCH_PENDING: Final = 'review batch pending, merge waits:'
 
 _STATE: Final = re.compile(r'```json\n(?P<state>.*?)\n```', re.DOTALL)

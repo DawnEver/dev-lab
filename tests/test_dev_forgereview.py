@@ -1,4 +1,4 @@
-"""PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY: the declared review command on each open PR, once per head.
+"""PR-REVIEW-IS-ONE-SHOT-ADVICE: the declared review command, once per PR; its findings advice.
 
 Real git repositories (a bare ``origin`` and a clone), the stateful fake forge, and a fake review command printing
 the findings JSON: the evidence is what the forge was asked to write and what the command was run with. Every
@@ -10,9 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
-import shutil
 import socket
-import subprocess
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -22,19 +20,36 @@ import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
+from _review_doubles import _state
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgereview_command
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
-from dev_lab.dev.forgereview import NEEDS_MAINTAINER, REVIEW_CONTEXT, TAKEOVER_PENDING, review_tick, step
-from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE
-from dev_lab.dev.forgereview_command import REFUSED_EXIT, ReviewRefused, ReviewUnsupported, can_start, run_command
+from dev_lab.dev.forgereview import (
+    NEEDS_MAINTAINER,
+    REVIEW_AGAIN_GROWTH,
+    ask_again,
+    review_pull,
+    review_tick,
+    step,
+)
+from dev_lab.dev.forgereview_advice import ONE_SHOT, trusted_bodies
+from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE, RETRYING, UNREVIEWED_STATUS
+from dev_lab.dev.forgereview_command import (
+    REFUSED_EXIT,
+    ReviewRefused,
+    ReviewUnsupported,
+    Runner,
+    can_start,
+    run_command,
+)
 from dev_lab.dev.forgereview_declared import (
     DEFAULT_CLAIM_STALE,
     EMPTY_COMMAND_FIX,
     FAMILY_COMMAND,
+    PATHS_FIELD,
     RANGE_FIELD,
     RETIRED_KEYS,
     Review,
@@ -42,32 +57,33 @@ from dev_lab.dev.forgereview_declared import (
     review_from,
 )
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
-from dev_lab.dev.forgereview_scope import FINDINGS_FIELD
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
+from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT, standing
+from dev_lab.dev.reviewbudget import Spend
+from dev_lab.dev.reviewcap import UNREVIEWED, unreviewed_line, waiver_of
 from dev_lab.dev.reviewgate import github_posted, status_gate
 
 _LANE_POLICY = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
-#: The judge every test review declares: :class:`FakeCommand` answers it.
-JUDGE = ('judge', '--range', RANGE_FIELD, '--findings', FINDINGS_FIELD)
-_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'), judge=JUDGE)
+_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
-    "judge = ['judge', '--range', '{range}', '--findings', '{findings}']\n"
     "quiet = '0 s'\n"  # the step reviews at once; the debounce has its own test
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
 
 
 def _output(
-    *, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), severity: str = 'MEDIUM', **top: object
+    *,
+    reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),),
+    severity: str = 'MEDIUM',
+    security: bool = False,
+    **top: object,
 ) -> str:
     """A findings-output v3 document: one tagged finding anchored on ``x.py``'s line, when any reviewer is ok."""
     rows = [
@@ -75,7 +91,7 @@ def _output(
     ]
     ok = [{'name': row['name'], 'provider': 'anthropic'} for row in rows if row['status'] == 'ok']
     finding = {
-        'id': 'F-0123456789ab', 'severity': severity, 'security': False, 'rule': 'NEVER-DO-X', 'file': 'x.py',
+        'id': 'F-0123456789ab', 'severity': severity, 'security': security, 'rule': 'NEVER-DO-X', 'file': 'x.py',
         'anchor': 'x', 'summary': 'adds x, which NEVER-DO-X forbids', 'category': 'Bug', 'status': 'OPEN',
         'suggestion': 'drop x', 'detail': 'x is forbidden', 'confidence': 'single', 'reviewers': ok,
     }  # fmt: skip
@@ -87,40 +103,14 @@ def _output(
 
 
 class FakeCommand:
-    """Prints one findings document, and records every argv it was run with and where.
+    """Prints one findings document, and records every argv it was run with and where."""
 
-    Run as the JUDGE (:data:`JUDGE`, argv ``judge ...``) it answers a verdict per finding instead: a *rulings* entry
-    when one names the id, else ``present`` while the finding's anchor line is still in its file at the head and
-    ``fixed`` once it is gone -- what a real judge would see. Its runs are recorded in ``judged``, never ``ran``.
-    """
-
-    def __init__(self, out: str | None = None, rulings: dict[str, tuple[str, str]] | None = None) -> None:
-        """No run yet; *out* is what it prints (default :func:`_output`); *rulings* scripts the judge."""
+    def __init__(self, out: str | None = None) -> None:
+        """No run yet; *out* is what it prints (default :func:`_output`)."""
         self.ran: list[tuple[list[str], Path]] = []
-        self.judged: list[list[dict]] = []
         self.out = _output() if out is None else out
-        self.rulings = rulings or {}
-
-    def _judge(self, argv: Sequence[str], root: Path) -> str:
-        head = argv[argv.index('--range') + 1].rsplit('..', 1)[-1]
-        rows = json.loads(Path(argv[argv.index('--findings') + 1]).read_text(encoding='utf-8'))['findings']
-        self.judged.append(rows)
-        verdicts = []
-        for row in rows:
-            if row['id'] in self.rulings:
-                outcome, evidence = self.rulings[row['id']]
-            else:
-                git = shutil.which('git') or 'git'
-                shown = subprocess.run([git, 'show', f'{head}:{row["file"]}'], cwd=root, capture_output=True,
-                                       text=True, encoding='utf-8', check=False).stdout  # fmt: skip
-                there = ' '.join(row['anchor'].split()) in {' '.join(line.split()) for line in shown.splitlines()}
-                outcome, evidence = ('present', 'still there') if there else ('fixed', f'gone from {row["file"]}')
-            verdicts.append({'id': row['id'], 'outcome': outcome, 'evidence': evidence})
-        return json.dumps({'schema_version': 1, 'verdicts': verdicts})
 
     def __call__(self, argv: Sequence[str], root: Path) -> str:
-        if argv and argv[0] == 'judge':
-            return self._judge(argv, root)
         self.ran.append((list(argv), root))
         return self.out
 
@@ -151,13 +141,13 @@ def _tick(work: Path, forge: StateForge, command: FakeCommand, review: Review | 
     return review_tick(work, forge, review or _DECLARED, base='integrate/main', run=command, ready=_can, host='box')
 
 
-def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_posted(tmp_path: Path) -> None:
-    """An open HIGH finding is round 1's ``failure``. PLANTED control: the same finding at MEDIUM is ``success``."""
+def test_the_declared_command_reviews_the_merge_base_range_and_its_advice_is_posted(tmp_path: Path) -> None:
+    """A HIGH finding is advice: ``success`` naming it. PLANTED control: the same finding as security is ``failure``."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     command = FakeCommand(_output(severity='HIGH'))
     base = git_out(work, 'merge-base', 'origin/integrate/main', head)
-    _tick(work, forge, command, Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD)))
+    _tick(work, forge, command, Review(command=('reviewer', '--range', RANGE_FIELD)))
     ((argv, where),) = command.ran
     assert argv == ['reviewer', '--range', f'{base}..{head}']
     assert where == work
@@ -167,14 +157,14 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert 'F-0123456789ab' in comment['body']
     assert 'correctness@anthropic' in comment['body']
     assert 'rule `NEVER-DO-X`' in comment['body']
-    assert f'**Review round 1/{FAMILY_MAX_ROUNDS}**' in comment['body']
-    assert '**What changed**: 1 file(s)' in comment['body'], 'round 1 opens with the context summary'
-    (status,) = [s for s in status_list(forge, head) if s.context == REVIEW_CONTEXT]
-    assert status.state == 'failure'
-    assert '1 blocking finding(s) open (F-0123456789ab)' in status.description
-    medium, _ = _forge(head)
-    _tick(work, medium, FakeCommand(), Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD)))
-    assert [s.state for s in status_list(medium, head) if s.context == REVIEW_CONTEXT] == ['success']
+    assert '**What changed**: 1 file(s)' in comment['body'], 'the review opens with the context summary'
+    assert _state(forge, head)[0] == 'success'
+    assert '1 HIGH' in _state(forge, head)[1]
+    secure, _ = _forge(head)
+    _tick(work, secure, FakeCommand(_output(severity='LOW', security=True)), Review(command=_DECLARED.command))
+    state, said = _state(secure, head)
+    assert state == 'failure'
+    assert 'F-0123456789ab' in said
 
 
 def test_an_empty_command_is_a_loud_config_error_naming_the_one_fix() -> None:
@@ -243,34 +233,42 @@ def test_exit_2_is_the_commands_named_refusal_and_its_reason_is_the_status(tmp_p
         raise ReviewRefused(msg)
 
     review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing, ready=_can, host='box')
-    (status,) = status_list(forge, head)
-    assert status.state == 'error'
-    assert 'refused: unknown method version 9' in status.description
+    state, said = _state(forge, head)
+    assert state == 'error'
+    assert said.startswith(RETRYING)
+    assert 'refused: unknown method version 9' in said
     assert forge.comments[number] == []
 
 
-@pytest.mark.parametrize('kinds', [('exhausted',), ('auth',), ('exhausted', 'auth')], ids=['exhausted', 'auth', 'both'])
-def test_every_reviewer_exhausted_or_auth_is_takeover_pending_and_never_a_failure(tmp_path: Path, kinds) -> None:
-    """PLANTED controls: one ok reviewer among them posts the findings; a timeout among them is not a takeover."""
+@pytest.mark.parametrize(
+    'kinds', [('exhausted',), ('auth',), ('unsupported',), ('exhausted', 'auth', 'unsupported')],
+    ids=['exhausted', 'auth', 'unsupported', 'all'],
+)  # fmt: skip
+def test_a_review_no_reviewer_could_run_is_retried_once_then_merges_unreviewed(tmp_path: Path, kinds) -> None:
+    """A reviewer that cannot review NEVER blocks (user ruling 2026-11-06): one retry, then ``Unreviewed``.
+
+    PLANTED CONTROL: one ok reviewer among them posts the review, and no Unreviewed record.
+    """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     reviewers = tuple((f'r{at}', kind) for at, kind in enumerate(kinds))
-    lines = _tick(work, forge, FakeCommand(_output(reviewers=reviewers)))
-    (status,) = status_list(forge, head)
-    assert status.state == 'pending'
-    assert status.description.startswith(TAKEOVER_PENDING)
-    assert forge.comments[number] == []
-    assert TAKEOVER_PENDING in lines[0]
-    assert standing((_status('tests/base', 'success', 'scope=full ran=3 hands=-'), status), head='h').result is (
-        Conclusion.PASS
-    )
-    for mixed, state in (((*reviewers, ('c', 'ok')), 'success'), ((*reviewers, ('c', 'timeout')), 'error')):
-        moved = advance(work, 'pr/x', f'{state}{len(mixed)}{kinds[0]}.py', 'z\n')
-        forge.pulls[number]['head']['sha'] = moved
-        _tick(work, forge, FakeCommand(_output(reviewers=mixed)))
-        (posted,) = status_list(forge, moved)
-        assert posted.state == state
-        assert TAKEOVER_PENDING not in posted.description
+    _tick(work, forge, FakeCommand(_output(reviewers=reviewers)))
+    state, said = _state(forge, head)
+    assert (state, said.startswith(RETRYING)) == ('error', True)
+    assert waiver_of(trusted_bodies(forge, number)) is None, 'one failure is retried, not waived'
+    _tick(work, forge, FakeCommand(_output(reviewers=reviewers)))
+    state, said = _state(forge, head)
+    assert (state, said.startswith(UNREVIEWED_STATUS)) == ('pending', True)
+    waived = waiver_of(trusted_bodies(forge, number))
+    assert waived is not None
+    assert waived.startswith(f'{UNREVIEWED}: no reviewer returned findings')
+    later = FakeCommand()
+    _tick(work, forge, later)
+    assert later.ran == [], 'not retried again: the head merges unreviewed'
+    ok, control = _forge(head)
+    _tick(work, ok, FakeCommand(_output(reviewers=(*reviewers, ('c', 'ok')))))
+    assert _state(ok, head)[0] == 'success'
+    assert waiver_of(trusted_bodies(ok, control)) is None
 
 
 def _can(_argv: Sequence[str], _root: Path) -> str | None:
@@ -309,9 +307,7 @@ def test_the_declared_command_is_the_ai_lab_review_module_on_the_hosts_python() 
 
 def test_a_host_value_field_is_replaced_by_the_hosts_declared_runtime() -> None:
     """The repo declares WHAT, the host WHERE: ``{runtimes.<name>.<key>}`` reads this host's machine file."""
-    declared = Review(
-        judge=JUDGE, command=('{runtimes.ai_lab.python}', '--data', '{runtimes.corpus.path}', RANGE_FIELD)
-    )
+    declared = Review(command=('{runtimes.ai_lab.python}', '--data', '{runtimes.corpus.path}', RANGE_FIELD))
     host = {'ai_lab': {'python': 'C:/rt/python.exe'}, 'corpus': {'path': '~/corpus'}}
     argv = command_for(declared, 'a..b', host)
     assert argv == ['C:/rt/python.exe', '--data', str(Path('~/corpus').expanduser()), 'a..b']
@@ -320,7 +316,7 @@ def test_a_host_value_field_is_replaced_by_the_hosts_declared_runtime() -> None:
 @pytest.mark.parametrize('host', [{}, {'ai_lab': {}}], ids=['no capability', 'no key'])
 def test_a_host_value_this_host_does_not_declare_is_skipped_unposted(tmp_path: Path, host) -> None:
     """Checked BEFORE the claim: the line names the capability, nothing is posted. PLANTED: a declaring host runs it."""
-    declared = Review(judge=JUDGE, command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
+    declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
     with pytest.raises(ReviewUnsupported, match=r'\[runtimes\.ai_lab\] python'):
         command_for(declared, 'a..b', host)
     work, head = _work(tmp_path)
@@ -355,11 +351,11 @@ def test_a_command_that_turns_out_unsupported_replaces_its_claim_with_error(tmp_
 def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp_path: Path) -> None:
     """A fact about the HOST, not the head: nothing is posted, and a capable host still reviews.
 
-    PLANTED control: a command that ran and was refused on the head stays a settled error nobody re-runs.
+    PLANTED control: a command refused on the head is retried once, then merges unreviewed, never re-run.
     """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
-    declared = Review(judge=JUDGE, command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
+    declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
     command = FakeCommand()
     kw = {'base': 'integrate/main', 'run': command}
     review_tick(work, forge, declared, ready=_can, host='A', **kw)
@@ -384,12 +380,15 @@ def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp
         msg = 'bad range'
         raise ReviewRefused(msg)
 
-    forge, _ = _forge(head)
+    forge, number = _forge(head)
     review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing, ready=_can, host='A')
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing, ready=_can, host='B')
     later = FakeCommand()
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=later, ready=_can, host='B')
-    assert later.ran == []
-    assert status_list(forge, head)[0].state == 'error'
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=later, ready=_can, host='C')
+    assert later.ran == [], 'a refusal tried twice merges unreviewed; nobody re-runs it'
+    assert _state(forge, head)[1].startswith(UNREVIEWED_STATUS)
+    waived = f'{UNREVIEWED}: the review command failed (ReviewRefused: bad range)'
+    assert waiver_of(trusted_bodies(forge, number)) == waived
 
 
 def test_two_hosts_on_one_new_head_only_the_first_claims_and_reviews(tmp_path: Path) -> None:
@@ -427,7 +426,7 @@ def test_a_stale_claim_is_re_claimable_after_the_declared_age(tmp_path: Path) ->
             work, forge, _DECLARED, base='integrate/main', run=lambda *_: _die(), ready=_can, host='A', clock=lambda: t0
         )
     assert status_list(forge, head)[0].description.startswith(f'{CLAIMED} A at 2026-10-20T09:00:00')
-    declared = Review(judge=JUDGE, command=_DECLARED.command, claim_stale='30 min')
+    declared = Review(command=_DECLARED.command, claim_stale='30 min')
     for minutes, runs in ((29, 0), (30, 1)):
         at = t0 + timedelta(minutes=minutes)
         review_tick(
@@ -455,9 +454,9 @@ def test_an_unknown_schema_version_is_refused_by_name_and_nothing_is_commented(t
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     _tick(work, forge, FakeCommand(_output(schema_version=version)))
-    (status,) = status_list(forge, head)
-    assert status.state == 'error'
-    assert f'schema_version {version!r}' in status.description
+    state, said = _state(forge, head)
+    assert state == 'error'
+    assert f'schema_version {version!r}' in said
     assert forge.comments[number] == []
     with pytest.raises(UnknownSchemaVersion, match='schema_version 2'):
         parse_findings(_output(schema_version=2))
@@ -470,9 +469,9 @@ def test_output_that_is_not_the_findings_json_posts_an_error_naming_the_failure(
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     lines = _tick(work, forge, FakeCommand(out))
-    (status,) = status_list(forge, head)
-    assert status.state == 'error'
-    assert 'FindingsInvalid' in status.description
+    state, said = _state(forge, head)
+    assert state == 'error'
+    assert 'FindingsInvalid' in said
     assert forge.comments[number] == []
     assert len(lines) == 1
 
@@ -493,27 +492,77 @@ def test_the_command_runner_returns_stdout_and_names_a_non_zero_exit(tmp_path: P
         run_command([interpreter, '-c', 'import sys; sys.stderr.write("boom"); sys.exit(3)'], tmp_path)
 
 
-def test_a_second_tick_on_the_same_head_posts_nothing_and_runs_nothing(tmp_path: Path) -> None:
-    """PLANTED control: a new head on the same PR is reviewed again."""
+def test_one_review_per_pr_a_fix_push_posts_the_standing_verdict_and_runs_nothing(tmp_path: Path) -> None:
+    """User ruling 2026-11-06: the review is one-shot. A second tick, and a later head, run no command.
+
+    PLANTED CONTROL: the first head of the PR is reviewed.
+    """
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     command = FakeCommand()
     _tick(work, forge, command)
+    assert len(command.ran) == 1
     posted = (len(forge.comments[number]), len(forge.statuses[head]))
     _tick(work, forge, command)
-    assert len(command.ran) == 1
     assert (len(forge.comments[number]), len(forge.statuses[head])) == posted
-    moved = advance(work, 'pr/x', 'y.py', 'y\n')
-    forge.pulls[number]['head']['sha'] = moved
+    fix = advance(work, 'pr/x', 'x.py', 'x fixed\n')
+    forge.pulls[number]['head']['sha'] = fix
+    lines = _tick(work, forge, command)
+    assert len(command.ran) == 1, 'a fix push is not reviewed again'
+    state, said = _state(forge, fix)
+    assert state == 'success'
+    assert said.startswith(f'review of {head[:12]} stands')
+    assert lines == (f'#{number} {fix[:12]}: {said}',)
+    assert len(forge.comments[number]) == 1
+
+
+def test_a_standing_security_finding_holds_every_later_head_until_the_review_is_asked_again(tmp_path: Path) -> None:
+    """A security failure carries to a fix push; ``ask_again`` re-reviews that head once.
+
+    PLANTED CONTROL: without the request, the fix push stays ``failure`` and nothing runs.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    _tick(work, forge, FakeCommand(_output(security=True)))
+    fix = advance(work, 'pr/x', 'x.py', 'x fixed\n')
+    forge.pulls[number]['head']['sha'] = fix
+    command = FakeCommand(_output(reviewers=(('c', 'skipped'),)))
+    _tick(work, forge, command)
+    assert command.ran == []
+    assert _state(forge, fix)[0] == 'failure'
+    ask_again(forge, number, fix, 'dev@box')
+    _tick(work, forge, command)
+    assert len(command.ran) == 1
+    assert _state(forge, fix)[0] == 'success'
+    _tick(work, forge, command)
+    assert len(command.ran) == 1, 'a request is honoured once'
+
+
+def test_a_pr_grown_to_the_declared_multiple_is_reviewed_once_more(tmp_path: Path) -> None:
+    """REVIEW_AGAIN_GROWTH: a PR whose own code doubled is mostly unread work.
+
+    PLANTED CONTROL: a push that grows it less is not reviewed again.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    command = FakeCommand()
+    _tick(work, forge, command)
+    small = advance(work, 'pr/x', 'x.py', 'x\ny\n')
+    forge.pulls[number]['head']['sha'] = small
+    _tick(work, forge, command)
+    assert len(command.ran) == 1
+    assert REVIEW_AGAIN_GROWTH == 2
+    big = advance(work, 'pr/x', 'big.py', ''.join(f'line_{n} = {n}\n' for n in range(400)))
+    forge.pulls[number]['head']['sha'] = big
     _tick(work, forge, command)
     assert len(command.ran) == 2
-    assert [s.context for s in status_list(forge, moved)] == [REVIEW_CONTEXT]
+    assert marker(Marker.REVIEW, big) in forge.comments[number][-1]['body']
 
 
 @pytest.mark.parametrize('key', sorted(RETIRED_KEYS))
 def test_a_key_of_the_retired_in_process_reviewer_is_refused_by_name(key: str) -> None:
     """PLANTED control: the same table without the retired key loads (the declaration test)."""
-    with pytest.raises(ValueError, match=f'{key} is retired: the review'):
+    with pytest.raises(ValueError, match=f'{key} is retired: '):
         review_from(f"[tool.dev_lab.review]\n{key} = 'x'\nmax_diff_bytes = 5\n", 'p')
     assert review_from('[tool.dev_lab.review]\nmax_diff_bytes = 5\n', 'p').max_diff_bytes == 5
 
@@ -524,9 +573,9 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     That the retired reviewer's names are gone is the retired-spelling scan's (``lab_commons.hpc.retired``).
     """
     assert {field.name for field in dataclasses.fields(Review)} == {
-        'command', 'model', 'synthesis', 'judge', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
+        'command', 'model', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code', 'reviewers', 'backlog',
-        'claim_stale', 'max_rounds', 'quiet', 'where', 'bundle', 'judge_login', 'judge_app', 'preparers',
+        'claim_stale', 'quiet', 'where', 'bundle', 'judge_login', 'judge_app', 'preparers',
         'batch', 'on_expiry', 'batch_wait',
     }  # fmt: skip
 
@@ -545,18 +594,27 @@ def test_a_draft_is_skipped(tmp_path: Path) -> None:
         assert len(command.ran) == 1
 
 
-def test_a_diff_over_the_cap_is_reviewed_once_over_the_whole_range_never_held(tmp_path: Path) -> None:
-    """D123: past the bounds the head is one structure-level review. PLANTED control: a second tick runs nothing."""
-    work, head = _work(tmp_path)
-    forge, _ = _forge(head)
+def test_a_diff_past_the_total_is_sliced_and_the_code_left_out_is_listed_never_held(tmp_path: Path) -> None:
+    """D123, 2026-11-06: every slice names its paths (no path-less ``agent`` call the headless mode refuses).
+
+    PLANTED CONTROL: within the total, every path is read and nothing is listed.
+    """
+    work, _ = _work(tmp_path)
+    head = advance(work, 'pr/x', 'y.py', 'y\n')
+    forge, number = _forge(head)
     command = FakeCommand()
-    _tick(work, forge, command, Review(judge=JUDGE, command=_DECLARED.command, max_diff_bytes=10))
-    assert len(command.ran) == 1
-    statuses = status_list(forge, head)
-    assert HOLD_CONTEXT not in {s.context for s in statuses}
-    assert next(s for s in statuses if s.context == REVIEW_CONTEXT).state == 'success'
-    _tick(work, forge, command, Review(judge=JUDGE, command=_DECLARED.command, max_diff_bytes=10))
-    assert len(command.ran) == 1
+    sliced = ('reviewer', '--range', RANGE_FIELD, PATHS_FIELD)
+    _tick(work, forge, command, Review(command=sliced, max_diff_bytes=10, max_total_bytes=1))
+    ((argv, _),) = command.ran
+    assert argv[3:] in (['x.py'], ['y.py']), 'one slice, with its paths'
+    left = 'y.py' if argv[3:] == ['x.py'] else 'x.py'
+    assert f'not read (1): `{left}`' in forge.comments[number][0]['body']
+    assert _state(forge, head)[0] == 'success'
+    whole, again = _forge(head)
+    every = FakeCommand()
+    _tick(work, whole, every, Review(command=sliced))
+    assert [argv[3:] for argv, _ in every.ran] == [['x.py', 'y.py']]
+    assert 'not read' not in whole.comments[again][0]['body']
 
 
 def test_a_pr_into_another_base_is_not_reviewed(tmp_path: Path) -> None:
@@ -568,20 +626,80 @@ def test_a_pr_into_another_base_is_not_reviewed(tmp_path: Path) -> None:
     assert command.ran == []
 
 
-def test_a_failed_command_posts_an_error_once(tmp_path: Path) -> None:
+def test_a_failed_command_is_retried_once_on_the_serve_tick_then_merges_unreviewed(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a successful review posts no Unreviewed record (the first test's forge)."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    runs: list[int] = []
 
     def broken(_argv: Sequence[str], _root: Path) -> str:
+        runs.append(1)
         msg = 'the review command exited 1: no provider'
         raise OSError(msg)
 
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can, host='box')
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can, host='box')
-    (status,) = status_list(forge, head)
-    assert status.state == 'error'
-    assert 'OSError' in status.description
-    assert forge.comments[number] == []
+    for _ in range(3):
+        review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can, host='box')
+    assert len(runs) == 2, 'tried, retried once, then left'
+    state, said = _state(forge, head)
+    assert (state, said.startswith(UNREVIEWED_STATUS)) == ('pending', True)
+    assert 'OSError' in said
+    (comment,) = forge.comments[number]
+    assert (
+        unreviewed_line('the review command failed (OSError: the review command exited 1: no provider)')
+        in (comment['body'])
+    )
+    clean, control = _forge(head)
+    _tick(work, clean, FakeCommand())
+    assert waiver_of(trusted_bodies(clean, control)) is None
+
+
+def test_no_review_key_and_a_reached_budget_merge_unreviewed_and_run_nothing(tmp_path: Path) -> None:
+    """A fork PR's job holds no key; a PR past its dollar cap gets no review: neither holds the merge."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    command = FakeCommand()
+    keyless = Runner(host='job', run=command, ready=_can, secret=False)
+    review_pull(work, forge, _DECLARED, forge.pr_view(number), keyless)
+    assert command.ran == []
+    assert _state(forge, head)[1] == f'{UNREVIEWED_STATUS} {NEEDS_MAINTAINER}'
+    assert waiver_of(trusted_bodies(forge, number)) == f'{UNREVIEWED}: {NEEDS_MAINTAINER}'
+    spent = Spend(budget_usd=10.0, spent_usd=10.0)
+    capped, again = _forge(head)
+    broke = Runner(host='box', run=command, ready=_can, spend=lambda *_: spent)
+    review_pull(work, capped, _DECLARED, capped.pr_view(again), broke)
+    assert command.ran == []
+    assert 'monthly review budget spent' in _state(capped, head)[1]
+    assert (waiver_of(trusted_bodies(capped, again)) or '').startswith(f'{UNREVIEWED}: review monthly')
+
+
+def test_no_review_status_or_comment_asks_to_divide_the_pr(tmp_path: Path) -> None:
+    """One session, one task, one PR (user ruling 2026-11-06): no text the review posts suggests otherwise.
+
+    The forbidden word is spelled in parts so the retired-spellings scan does not read it here. PLANTED CONTROL:
+    the scan does see the word in a text that carries it.
+    """
+    forbidden = 'sp' + 'lit'
+    texts: list[str] = []
+    cases = ((_output(severity='HIGH'), 1), (_output(security=True), 1), (_output(reviewers=(('c', 'auth'),)), 2))
+    for at, (out, runs) in enumerate(cases):
+        where = tmp_path / f'case{at}'  # a fresh directory per case: clone_pair fills the one it is given
+        where.mkdir()
+        work, head = _work(where)
+        forge, number = _forge(head)
+        for _ in range(runs):
+            _tick(work, forge, FakeCommand(out))
+        texts += [one['description'] for one in forge.statuses[head]]
+        texts += [one['body'] for one in forge.comments[number]]
+    spent = Spend(budget_usd=10.0, spent_usd=10.0)
+    (tmp_path / 'cap').mkdir()
+    work, head = _work(tmp_path / 'cap')
+    forge, number = _forge(head)
+    review_pull(work, forge, _DECLARED, forge.pr_view(number), Runner(host='b', ready=_can, spend=lambda *_: spent))
+    texts += [one['description'] for one in forge.statuses[head]] + [one['body'] for one in forge.comments[number]]
+    assert texts
+    offending = [text for text in texts if forbidden in text.lower().replace(ONE_SHOT.lower(), '')]
+    assert offending == []
+    assert [t for t in (f'please {forbidden} the PR',) if forbidden in t.lower()], 'PLANTED: the scan sees it'
 
 
 # --- blocking: the merge waits on a failed or unposted review, never a part ----------------------------
@@ -592,7 +710,7 @@ def _status(context: str, state: str, description: str) -> CommitStatus:
 
 
 def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_path: Path) -> None:
-    """``failure`` (an open blocking finding), an unposted review and a live claim wait; the rest merge.
+    """``failure`` (a security finding), an unposted review and a live claim wait; the rest merge.
 
     PLANTED controls: a FAIL in a real part context does fail the standing; every review state but ``success``
     waits the merge, even in a repo that declares no review command (user ruling 2026-10-31).
@@ -600,7 +718,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
     for review in ('failure', 'error', 'pending'):
-        statuses = (passed, _status(REVIEW_CONTEXT, review, 'review round 1: 3 findings'))
+        statuses = (passed, _status(REVIEW_CONTEXT, review, 'reviewed: advice 3 MEDIUM'))
         assert standing(statuses, head='h').result is Conclusion.PASS
     failed = (passed, _status('tests/jmag', 'failure', 'scope=full ran=3 hands=-'))
     assert standing(failed, head='h').result is Conclusion.FAIL
@@ -613,12 +731,11 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
             work, policy, branch='pr/x', number=1, head=head, statuses=statuses, reviewed=status_gate(github_posted)
         ).ready
 
-    assert not ready(('failure', 'review round 1: 1 blocking finding(s) open'))
+    assert not ready(('failure', 'security finding(s) F-1: fix them'))
     assert not ready()
     assert not ready(('pending', f'{CLAIMED} A at 2026-10-26T09:00:00+00:00, reviewing'))
-    assert ready(('success', 'review round 1: no blocking finding open'))
-    assert not ready(('error', 'the review command failed (OSError)')), 'nothing is advisory (2026-10-31)'
-    assert not ready(('pending', f'{TAKEOVER_PENDING}: no reviewer could run'))
+    assert ready(('success', 'reviewed: advice 1 HIGH, 0 MEDIUM, 0 LOW; none blocks'))
+    assert not ready(('error', 'the review command failed (OSError)')), 'a status never waives the review'
 
 
 def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> None:
@@ -638,7 +755,7 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
     released = (
         _status(HOLD_CONTEXT, 'success', 'released by box after the integrator review'),
-        _status(REVIEW_CONTEXT, 'success', 'integrator takeover: review round 1: no blocking finding open'),
+        _status(REVIEW_CONTEXT, 'success', 'review: reviewed: advice 0 HIGH; none blocks'),
         passed,
         secured,
     )
@@ -699,7 +816,7 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
     said: list[str] = []
     step(work, forge, policy=_LANE_POLICY, say=said.append, host='box', run=command, ready=_can)
     assert len(command.ran) == 1
-    assert any('review round 1, success' in line for line in said)
+    assert any('review, success' in line for line in said)
 
     class Down(StateForge):
         def call(self, *_a: object, **_k: object) -> object:
@@ -722,34 +839,6 @@ def test_the_steps_claim_names_the_serve_host_not_the_box(tmp_path: Path) -> Non
     assert socket.gethostname() not in posted[0]
 
 
-@pytest.mark.parametrize('change', ['docs', 'code'])
-def test_a_docs_only_head_carries_the_previous_heads_review_and_runs_no_command(tmp_path: Path, change: str) -> None:
-    """DOCS-ONLY-CARRIES (user ruling 2026-10-21): the rem pass's memory push after a reviewed head costs nothing.
-
-    PLANTED CONTROL: the next head touches a path a test reads -- the command reviews it.
-    """
-    work, _ = _work(tmp_path)
-    (work / 'tests').mkdir(exist_ok=True)  # pr/x starts from main, which holds neither directory
-    head = advance(work, 'pr/x', 'tests/test_a.py', 'def test_a():\n    assert True\n')
-    forge, number = _forge(head)
-    _tick(work, forge, FakeCommand())
-    path = '.claude/memory/after.md' if change == 'docs' else 'tests/test_a.py'
-    (work / path).parent.mkdir(parents=True, exist_ok=True)
-    after = advance(work, 'pr/x', path, 'def test_b():\n    assert True\n')
-    forge.pulls[number]['head']['sha'] = after
-    command = FakeCommand()
-    lines = _tick(work, forge, command)
-    if change == 'code':
-        assert len(command.ran) == 1
-        return
-    assert command.ran == []
-    (status,) = [s for s in status_list(forge, after) if s.context == REVIEW_CONTEXT]
-    assert status.state == 'success'
-    assert status.description.startswith(f'carried from {head[:12]}: docs-only')
-    assert len(forge.comments[number]) == 1, 'the earlier head s comment stands; nothing new is posted'
-    assert lines == (f'#{number} {after[:12]}: carried from {head[:12]}: docs-only',)
-
-
 def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> None:
     """The forge host's serve tick said only "declares no [runtimes.ai_lab]"; the retired spelling names its remedy."""
     command = ('{runtimes.ai_lab.python}', RANGE_FIELD)
@@ -761,7 +850,7 @@ def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> No
     assert retired_table(command, {}, {'jmag': {}}) is None
 
 
-# --- D52: a round is spent only on new work ------------------------------------------------------------
+# --- a sync with integration never re-reviews -----------------------------------------------------------
 
 
 def _reviewed_then_synced(tmp_path: Path, host: str = 'forge.example.org') -> tuple[Path, StateForge, int, str, str]:
@@ -771,7 +860,7 @@ def _reviewed_then_synced(tmp_path: Path, host: str = 'forge.example.org') -> tu
     forge = StateForge(Forge(host, 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     _tick(work, forge, FakeCommand())
-    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
+    advance(work, 'integrate/main', 'theirs.py', ''.join(f'theirs_{n} = {n}\n' for n in range(400)))
     run_git(work, 'checkout', '-q', '-B', 'sync', 'origin/pr/x')
     run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', '--no-edit', 'origin/integrate/main')
     synced = git_out(work, 'rev-parse', 'HEAD')
@@ -781,50 +870,18 @@ def _reviewed_then_synced(tmp_path: Path, host: str = 'forge.example.org') -> tu
     return work, forge, number, head, synced
 
 
-def test_a_pure_sync_carries_the_reviewed_heads_success_and_runs_nothing(tmp_path: Path) -> None:
-    """D52 (user ruling 2026-11-01): a forge sync of integration into a reviewed PR spends no round.
+@pytest.mark.parametrize('host', ['forge.example.org', 'github.com'])
+def test_a_sync_with_integration_never_re_reviews_however_large_upstream_is(tmp_path: Path, host: str) -> None:
+    """Growth is the PR's OWN code, measured from the merge base: integration's work never counts.
 
-    PLANTED CONTROL: the same sync, where the reviewed head's success is one the gate does not count (on GitHub,
-    a success its Actions bot did not post), carries nothing -- the head is reviewed.
+    PLANTED CONTROL: the PR's own growth does (the growth test).
     """
-    work, forge, number, head, synced = _reviewed_then_synced(tmp_path)
-    command = FakeCommand()
-    lines = _tick(work, forge, command)
-    assert command.ran == []
-    assert lines == (f'#{number} {synced[:12]}: carried from {head[:12]}: pure sync',)
-    (status,) = [s for s in status_list(forge, synced) if s.context == REVIEW_CONTEXT]
-    assert status.state == 'success'
-    assert len(forge.comments[number]) == 1, 'no round is posted'
-
-    work, forge, number, head, synced = _reviewed_then_synced(tmp_path / 'control', host='github.com')
+    work, forge, number, head, synced = _reviewed_then_synced(tmp_path, host)
     command = FakeCommand()
     _tick(work, forge, command)
-    assert len(command.ran) == 1
-
-
-def test_an_empty_push_after_a_failure_is_reviewed_never_nothing_to_review(tmp_path: Path) -> None:
-    """D52: content equal to a FAILED head carries nothing and is no empty increment: the PR is read whole.
-
-    PLANTED CONTROL: an empty push after a counted success stands on it, carried, with nothing run.
-    """
-    for severity, runs in (('HIGH', 1), ('MEDIUM', 0)):
-        (tmp_path / severity).mkdir()
-        work, head = _work(tmp_path / severity)
-        forge, number = _forge(head)
-        _tick(work, forge, FakeCommand(_output(severity=severity)))
-        run_git(work, 'checkout', '-q', '-B', 'empty', 'origin/pr/x')
-        run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'nudge')
-        empty = git_out(work, 'rev-parse', 'HEAD')
-        run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
-        run_git(work, 'fetch', '-q', 'origin')
-        forge.pulls[number]['head']['sha'] = empty
-        command = FakeCommand(_output(severity=severity))
-        _tick(work, forge, command)
-        assert len(command.ran) == runs, severity
-        if runs:
-            assert command.ran[0][0][command.ran[0][0].index('--range') + 1].startswith(
-                git_out(work, 'merge-base', 'origin/integrate/main', empty)
-            )
+    assert command.ran == []
+    assert _state(forge, synced)[1].startswith(f'review of {head[:12]} stands')
+    assert len(forge.comments[number]) == 1
 
 
 def test_a_head_inside_the_quiet_period_waits_and_spends_nothing(tmp_path: Path) -> None:

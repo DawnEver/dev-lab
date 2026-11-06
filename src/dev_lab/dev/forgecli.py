@@ -11,8 +11,8 @@ for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` 
 ``pr close-landed [N...]`` to close landed PRs, ``pr close-superseded N... --by <M|sha>``
 to close salvaged ones (neither deletes a branch),
 ``cancel-stuck <sha>`` for the forge's own stuck tasks, ``watch <sha>`` to follow a verdict read-only,
-``notices`` for a session's PR notices, ``review takeover|plan <sha>`` / ``review held`` for the
-integrator's review of a head held over the cap, ``security release <pr> --why`` for a head's new
+``notices`` for a session's PR notices, ``review again <pr>`` to have a PR reviewed again,
+``review takeover|plan <sha>`` for a session's advisory review, ``security release <pr> --why`` for a head's new
 security exemptions, ``secrets sync --task <task>`` for a task's key bundle on every declared repo; anything
 else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its

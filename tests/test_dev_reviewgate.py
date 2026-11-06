@@ -46,7 +46,7 @@ def _status(context: str, state: str, description: str, creator: str = ACTIONS_B
     [
         None,
         ('error', 'the review command failed (OSError)'),
-        ('pending', 'takeover pending: no reviewer could run (diff exhausted)'),
+        ('pending', 'not reviewed, merges unreviewed: no reviewer returned findings (diff exhausted)'),
         ('pending', 'claimed by box at 2026-10-31T16:40:00, reviewing'),
         ('failure', '1 blocking finding open'),
     ],

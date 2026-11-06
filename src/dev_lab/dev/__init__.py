@@ -378,19 +378,17 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
 * :mod:`dev_lab.dev.taskkeys` -- an ai-lab task's ONE key-bundle secret: its derived name and stdin loader.
 * :mod:`dev_lab.dev.forgesecrets` -- ``forge secrets sync --task``: a task's bundle set on every declared repo.
-* :mod:`dev_lab.dev.forgereview` -- the review of each open PR head by the declared command; HIGH/security block.
-* :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, what stands on it, a host unable.
+* :mod:`dev_lab.dev.forgereview` -- ONE review per PR by the declared command: advice; only security blocks.
+* :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, a retry, a review that did not run.
 * :mod:`dev_lab.dev.forgereview_declared` -- the review a repo declares, read from the integration branch a PR trusts.
 * :mod:`dev_lab.dev.forgereview_command` -- whether this host can start the review command, and running it.
-* :mod:`dev_lab.dev.forgereview_batch` -- the review's model batch: its state on the PR, one wait per round, resumed.
+* :mod:`dev_lab.dev.forgereview_batch` -- the review's model batch: its state on the PR, one wait per review, resumed.
 * :mod:`dev_lab.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
-* :mod:`dev_lab.dev.forgereview_rounds` -- review rounds: findings carried by stable id, re-judged each round.
-* :mod:`dev_lab.dev.forgereview_summary` -- a round's opening: what the PR does, and what changed and why.
-* :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in rounds and USD inside the family's month, fitted.
-* :mod:`dev_lab.dev.reviewcap` -- a review past its round cap is waived at the merge, warned and recorded, never passed.
-* :mod:`dev_lab.dev.forgereview_dispose` -- ``forge review dispose`` records a claim; ``adjudicate`` rules on it.
-* :mod:`dev_lab.dev.forgereview_judge` -- every round re-judges each open finding; a claim is adjudicated
-  by an independent reviewer, never the head's author session.
+* :mod:`dev_lab.dev.forgereview_advice` -- the one-shot review's comment and status: advice; a security finding holds.
+* :mod:`dev_lab.dev.forgereview_identity` -- who reviews: only the forge posts a status; no author reviews its head.
+* :mod:`dev_lab.dev.forgereview_summary` -- a review's opening: what the PR does, and what changed and why.
+* :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in USD inside the family's month, fitted.
+* :mod:`dev_lab.dev.reviewcap` -- a review that did not run is waived at the merge, warned and recorded, never passed.
 * :mod:`dev_lab.dev.reviewbundle` -- a PR head's review bundle: the changed files both sides, checked against the forge.
 * :mod:`dev_lab.dev.forgereview_pointer` -- where the judge's bundle comes from: the prepare run's artifact, a preparer.
 * :mod:`dev_lab.dev.actionsartifact` -- an artifact only its own Actions run can attach, and what a reader takes of it.
@@ -401,7 +399,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgerunshow` -- what a cluster run learned, published on the forge for ``forge run show``.
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
-* :mod:`dev_lab.dev.forgetakeover` -- ``forge review takeover``: an ADVISORY session review; never the gate (D11).
+* :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
 * :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.

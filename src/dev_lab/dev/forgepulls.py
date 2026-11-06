@@ -167,13 +167,10 @@ class Marker(StrEnum):
     HOST = 'host'  #: one card comment per serving host, keyed by the host (:mod:`dev_lab.dev.forgehosts`)
     INTEGRATION = 'integration'  #: a child PR's one integration comment (:mod:`dev_lab.dev.forgeintegration`)
     TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`dev_lab.dev.forgetidy`)
-    REVIEW = 'review'  #: one review round per PR head, keyed by the sha (:mod:`dev_lab.dev.forgereview`)
-    CLAIM = (
-        'review-claim'  #: an author's claim against a finding, keyed by its id (:mod:`dev_lab.dev.forgereview_judge`)
-    )
-    ADJUDICATION = 'review-adjudication'  #: an independent ruling on a claim, keyed by the finding id
+    REVIEW = 'review'  #: a PR's one-shot review, keyed by the reviewed sha (:mod:`dev_lab.dev.forgereview`)
+    REVIEW_AGAIN = 'review-again'  #: a request to review a PR again at a head, keyed by the sha (``review again``)
     REVIEW_BATCH = 'review-batch'  #: a head's batched model calls, keyed by the sha (forgereview_batch)
-    REVIEW_CAP = 'review-cap'  #: the integrator's raise of one PR's review caps (:mod:`dev_lab.dev.reviewbudget`)
+    REVIEW_CAP = 'review-cap'  #: the integrator's raise of one PR's review cap (:mod:`dev_lab.dev.reviewbudget`)
     SECURITY_RELEASE = 'security-release'  #: the integrator's release of new exemptions (``forge security``)
     LANDED = 'landed'  #: a landed PR's one closing comment, keyed by the head sha (:mod:`dev_lab.dev.prlanded`)
     POLLER = 'poller'  #: the hosts issue's one poller lease (:mod:`dev_lab.dev.forgepoller`)
