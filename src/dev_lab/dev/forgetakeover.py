@@ -1,16 +1,15 @@
-"""REVIEW TAKEOVER: an ADVISORY review by the integrator session of a head the forge's review has not reached.
+"""``forge review``: the session's doors onto the PR review, and the review job's own verb.
 
-D11 (#11 round 3, F-4eee841cf16c): every identity a local session asserts is forgeable by a same-user agent, so a
-session's review is never the gate. The gate is :func:`dev_lab.dev.reviewgate.review_missing`, which counts only a
-``tests/review`` success the FORGE recorded as written by its own identity. The remedy for "the forge could not run
-the review" is :data:`~dev_lab.dev.reviewgate.RERUN` -- the forge's review run again; its round releases any hold.
+The review is a one-shot independent acceptance with advice (:mod:`dev_lab.dev.forgereview`). D11 (#11 round 3,
+F-4eee841cf16c): every identity a local session asserts is forgeable by a same-user agent, so a session's review is
+never the forge's -- only the forge posts ``tests/review``.
 
-* :func:`held` -- the open PR heads into integration whose latest :data:`HOLD_CONTEXT` is ``pending``; the forge
-  prompts the integrator with each (:func:`alarms`, one ``integration`` issue per head, and
-  ``forge notices --integrator``), naming the remedy.
-* ``python -m dev_lab.dev.forge review takeover <sha>`` (:func:`takeover`) runs the SAME method and scope and posts
-  the findings comment marked as an emergency, ADVISORY review: no status, no release, no merge.
-  ``review plan <sha>`` prints the slices only.
+* ``review again <pr>`` (:func:`~dev_lab.dev.forgereview.ask_again`) asks the forge to review the PR's head again:
+  after fixing a security finding, or to have grown work read. The forge's next review run honours it.
+* ``review takeover <sha>`` (:func:`takeover`) runs the SAME method and scope and posts the findings comment as a
+  session's ADVISORY review: no status, no merge. ``review plan <sha>`` prints the slices only.
+* ``review cap <pr> --usd <n> --why`` records the integrator's raise of one PR's dollar cap.
+* ``review run --pr N`` is the review job's (:mod:`dev_lab.dev.forgereview_job`).
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ import argparse
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -26,35 +26,30 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
-from dev_lab.dev.forgepulls import comment_list, pages, pr_list
+from dev_lab.dev.forgepulls import Marker, comment_upsert, pages, pr_list
+from dev_lab.dev.forgereview import ask_again
+from dev_lab.dev.forgereview_advice import post_review_comment
 from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_command import ReviewPending, Runner, can_start, run_command
 from dev_lab.dev.forgereview_declared import (
     PATHS_FIELD,
     Review,
     command_for,
-    judge_for,
     operator_integration,
     review_at,
     trusted_integration,
 )
-from dev_lab.dev.forgereview_dispose import adjudicate_thread, dispose, raise_cap
-from dev_lab.dev.forgereview_dispose import blocked as review_blocked
-from dev_lab.dev.forgereview_dispose import line as blocked_line
 from dev_lab.dev.forgereview_findings import parse_findings
+from dev_lab.dev.forgereview_identity import Identity, ReviewerRefused, identity
 from dev_lab.dev.forgereview_job import job_exit, resume_batches, review_run
-from dev_lab.dev.forgereview_judge import AdjudicationRefused, identity, upheld
-from dev_lab.dev.forgereview_rounds import post_round, trailed, trusted_bodies
-from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest, client_for
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.platformparts import HOLD_CONTEXT
-from dev_lab.dev.reviewbudget import Raised
+from dev_lab.dev.reviewbudget import Raised, raise_line
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
 from dev_lab.dev.reviewruntime import review_runtimes
@@ -63,46 +58,11 @@ from dev_lab.dev.taskkeys import REVIEW_TASK, keys_loaded
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = [
-    'LEDGER_TITLE', 'TakeoverRefused', 'alarms', 'held', 'ledger_of', 'main', 'pull_for',
-    'scope_of', 'takeover',
-]  # fmt: skip
+__all__ = ['LEDGER_TITLE', 'TakeoverRefused', 'ledger_of', 'main', 'pull_for', 'raise_cap', 'scope_of', 'takeover']
 
 
 class TakeoverRefused(ValueError):
-    """The door will not review or release this head, and says why."""
-
-
-def held(client: Client, base: str) -> tuple[PullRequest, ...]:
-    """The open, non-draft PRs into *base* whose head's latest :data:`HOLD_CONTEXT` is ``pending``."""
-    out = []
-    for pull in pr_list(client):
-        if pull.base != base or pull.draft or not pull.head_sha:
-            continue
-        latest = next((one for one in status_list(client, pull.head_sha) if one.context == HOLD_CONTEXT), None)
-        if latest is not None and latest.state == 'pending':
-            out.append(pull)
-    return tuple(out)
-
-
-def line(pull: PullRequest) -> str:
-    """The prompt line for a held *pull*: what it is and the exact door."""
-    return f'#{pull.number} {pull.head_sha[:12]}: review held -- {RERUN}'
-
-
-def alarms(client: Client, base: str, repo: str) -> list[Alarm]:
-    """One ``integration`` prompt per held head, keyed by its sha, naming the door."""
-    return [
-        Alarm(
-            INTEGRATION,
-            repo,
-            f'review held {pull.head_sha[:12]} (#{pull.number})',
-            f"{line(pull)}. Only the forge's own review releases tests/review-hold and counts; a session's "
-            '`forge review takeover` is advisory. A human is asked only for a decision the review surfaces.',
-            context=pull_context(pull),
-        )
-        for pull in held(client, base)
-    ]
+    """The door will not review this head, and says why."""
 
 
 def pull_for(client: Client, sha: str) -> PullRequest | None:
@@ -117,15 +77,14 @@ def pull_for(client: Client, sha: str) -> PullRequest | None:
     return None
 
 
-#: The title of the issue that holds a PR-less head's review ledger; ``{sha}`` is the full head.
+#: The title of the issue that holds a PR-less head's review comment; ``{sha}`` is the full head.
 LEDGER_TITLE: Final = 'review of commit {sha}'
 
 
 def ledger_of(client: Client, head: str, base: str) -> PullRequest:
-    """Where a PR-less *head*'s review ledger lives: its one issue (made on first use), as the thread a PR would be.
+    """Where a PR-less *head*'s review comment lives: its one issue (made on first use), as the thread a PR would be.
 
-    A Break-Glass commit has no PR, so its findings comment and every ``dispose <number> <id>`` go to this issue:
-    the round, the dispositions and the verdict are the SAME code a PR's are, keyed by the issue number.
+    A Break-Glass commit has no PR, so its findings comment goes to this issue, keyed by the issue number.
 
     Only an issue the FORGE opened is the ledger (F-7fbe6eafaadf, security): its own login, or its workflow job's
     Actions login -- never a squatter's issue of the same title, and never a PR (GitHub's issues API lists PRs too).
@@ -142,7 +101,7 @@ def ledger_of(client: Client, head: str, base: str) -> PullRequest:
 
 
 def _opened(client: Client, title: str, head: str) -> tuple[int, str]:
-    issue = client.issue_create(title, f'The review of {head}, a commit with no pull request: its ledger lives here.')
+    issue = client.issue_create(title, f'The review of {head}, a commit with no pull request: its comment lives here.')
     return issue.number, issue.url
 
 
@@ -155,11 +114,29 @@ def _commit(root: Path, sha: str) -> str:
         raise TakeoverRefused(msg) from missing
 
 
-def scope_of(root: Path, client: Client, review: Review, head: str, *, base: str, pull: PullRequest | None) -> Scope:
-    """What the takeover reads: the head's own change (``landed_base``), cut as the program review cuts it."""
-    done = () if pull is None else reviewed_heads(comment.body for comment in comment_list(client, pull.number))
-    sliceable = PATHS_FIELD in review.command
-    return plan(root, landed_base(root, base, head), head, review.budget, done, sliceable=sliceable)
+def scope_of(root: Path, review: Review, head: str, *, base: str) -> Scope:
+    """What the takeover reads: the head's own change (``landed_base``), cut as the forge's review cuts it."""
+    return plan(root, landed_base(root, base, head), head, review.budget, sliceable=PATHS_FIELD in review.command)
+
+
+def raise_cap(client: Client, number: int, raised: Raised, *, by: Identity) -> str:
+    """Record the integrator's raise of PR *number*'s dollar cap, with its reason; the line said.
+
+    The record names its raiser's login (*by*), and is read only from a comment the forge records as that login's
+    (:func:`~dev_lab.dev.forgereview_advice.trusted_bodies`); the month's remainder still bounds the raised cap.
+    """
+    if raised.usd is None:
+        msg = 'a raise names --usd'
+        raise ValueError(msg)
+    if not raised.why.strip():
+        msg = 'a raise records its reason: --why "<reason>"'
+        raise ValueError(msg)
+    text = (
+        f'Review cap of #{number} raised by {by.text()}: {raised.usd:.2f} USD -- {raised.why}\n\n'
+        f'{raise_line(replace(raised, by=by.login))}'
+    )
+    comment_upsert(client, number, kind=Marker.REVIEW_CAP, text=text)
+    return f'#{number}: review cap raised ({raised.why})'
 
 
 def takeover(
@@ -167,16 +144,16 @@ def takeover(
     run: Callable[[Sequence[str], Path], str] = run_command,
     runtimes: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),
 ) -> tuple[str, ...]:  # fmt: skip
-    """Review *head* where the forge's review is missing and post the findings as an ADVISORY emergency review.
+    """Review *head* where the forge's review is missing and post the findings as an ADVISORY session review.
 
-    D11: it posts no status and releases nothing, so it never satisfies a merge or Break-Glass; the remedy that
-    does is :data:`~dev_lab.dev.reviewgate.RERUN`. It refuses a head the forge already reviewed. A head with no PR
-    keeps its ledger in its own issue (:func:`ledger_of`).
+    D11: it posts no status, so it never satisfies a merge or Break-Glass; the remedy that does is
+    :data:`~dev_lab.dev.reviewgate.RERUN`. It refuses a head the forge already reviewed. A head with no PR keeps its
+    comment in its own issue (:func:`ledger_of`).
     """
     if review_missing(status_list(client, head), forge_posted(client)) is None:
         msg = f'{head[:12]} is already reviewed by the forge: nothing to take over'
         raise TakeoverRefused(msg)
-    scope = scope_of(root, client, review, head, base=base, pull=pull)
+    scope = scope_of(root, review, head, base=base)
     thread = pull if pull is not None else ledger_of(client, head, base)
     with held_state(client, thread.number, head, trusted_logins(client)) as state:
         try:
@@ -194,68 +171,54 @@ def _taken(
     host: str, run: Callable[[Sequence[str], Path], str], runtimes: Mapping[str, Mapping[str, Any]],
     batching: Sequence[str],
 ) -> str:  # fmt: skip
-    """The takeover's round over *scope*, posted on *thread*; the line said."""
-    since = landed_base(root, base, head)
+    """The takeover's review over *scope*, posted on *thread* as advice; the line said."""
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens, batching=batching)
              for s in scope.slices]  # fmt: skip
     synth = command_for(review, scope.range, runtimes, synthesis=True, batching=batching)
-    gone = upheld(
-        trusted_bodies(client, thread.number, review.reviewers)
-    )  # upheld claims only: a trailer never reaches the engine
-    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=thread.body, disposed=gone))
+    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=thread.body))
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         msg = f'no reviewer returned findings ({kinds}); nothing is posted'
         raise TakeoverRefused(msg)
-    return post_round(
-        root, client, thread, scope.range, found=found, max_rounds=review.max_rounds, by='integrator takeover',
-        outside=scope.outside, authored=trailed(root, since, head), judged=judge_for(root, review, scope.range, run,
-        runtimes, batching=batching), reviewer=identity(client, host), authors=sessions(root, since, head),
-        emergency=True, reviewers=review.reviewers,
+    return post_review_comment(
+        root, client, thread, scope.range, found=found, by='integrator takeover', outside=scope.outside,
+        unread=scope.unread, reviewer=identity(client, host), authors=sessions(root, landed_base(root, base, head),
+        head), advisory=True,
     )  # fmt: skip
 
 
-#: The verbs the forge's own jobs run (``review.yml``, ``review-claims.yml``): they ask the forge for the trusted
+#: The verbs the forge's own job runs (``review.yml``, ``review-again.yml``): it asks the forge for the trusted
 #: integration branch, because an Actions checkout sets no ``origin/HEAD``.
-_FORGE_JOBS: Final = frozenset({'run', 'adjudicate'})
+_FORGE_JOBS: Final = frozenset({'run'})
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge review', description=__doc__.splitlines()[0])
     parser.set_defaults(repo=None)
     verbs = parser.add_subparsers(dest='verb', required=True)
-    for verb, what in (('takeover', 'review a head whose review is missing, post it, release any hold'),
+    for verb, what in (('takeover', "review a head the forge's review has not reached, posted as advice"),
                        ('plan', 'print the slices a takeover of a head reads')):  # fmt: skip
         door = verbs.add_parser(verb, help=what)
         door.add_argument('sha')
         door.add_argument('--repo', type=Path, help='the checkout that holds the sha (default: the working directory)')
-    verbs.add_parser('held', help='list the held heads and the door for each')
-    disposal = verbs.add_parser('dispose', help='claim a finding is not a defect; an independent reviewer rules')
-    disposal.add_argument('pr', type=int, help="the PR, or a PR-less head's ledger issue")
-    disposal.add_argument('finding')
-    disposal.add_argument('--why', required=True, help='the claim: why it is not a defect (cite code or tests)')
-    raising = verbs.add_parser('cap', help="raise one PR's review caps, the reason recorded on the PR (integrator)")
+    again = verbs.add_parser('again', help="ask the forge to review a PR's head again (a security finding fixed)")
+    again.add_argument('pr', type=int)
+    raising = verbs.add_parser('cap', help="raise one PR's review dollar cap, the reason recorded on the PR")
     raising.add_argument('pr', type=int)
-    raising.add_argument('--usd', type=float, help='the dollar cap; the month remainder still bounds it')
-    raising.add_argument('--rounds', type=int, help='the round cap')
+    raising.add_argument('--usd', type=float, required=True, help='the dollar cap; the month remainder bounds it')
     raising.add_argument('--why', required=True, help='the recorded reason for the raise')
-    ruling = verbs.add_parser('adjudicate', help='rule on every pending claim of a thread (the forge runs this)')
-    ruling.add_argument('number', type=int, help="the PR, or a PR-less head's ledger issue")
-    ruling.add_argument('--dry-run', action='store_true', help='print the verdicts, post nothing (any session)')
-    _keys_env(ruling, 'empty or unset: the judge runs on the keys this host already stores')
-    ruling.add_argument(
-        '--runtime', action='append', default=[], metavar='NAME.KEY=VALUE',
-        help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
-    )  # fmt: skip
-    verbs.add_parser('blocked', help='list the heads a blocking finding holds, with their ids and the door')
-    running = verbs.add_parser('run', help="review one PR's head: what a GitHub workflow job runs for its event")
+    running = verbs.add_parser('run', help="review one PR's head: what a workflow job runs for its event")
     which = running.add_mutually_exclusive_group(required=True)
     which.add_argument('--pr', type=int)
     which.add_argument(
         '--batch-pending', action='store_true',
         help='resume every open head whose review batch is pending, from its PR (the scheduled job runs this)',
     )  # fmt: skip
-    _keys_env(running, 'empty or unset (a fork PR) holds the head for a maintainer')
+    running.add_argument(
+        '--keys-env', metavar='NAME',
+        help=f'the variable holding the {REVIEW_TASK} key bundle, piped to the ai-lab loader and unset; empty or '
+        'unset (a fork PR) records the PR unreviewed',
+    )  # fmt: skip
     running.add_argument(
         '--git-token-file', type=Path, metavar='PATH',
         help="a file holding the forge read token: read once, removed, sent only to the door's git",
@@ -269,33 +232,6 @@ def _parser() -> argparse.ArgumentParser:
         help="a [runtimes] value over this host's machine file (a runner has none), e.g. ai_lab.python=python",
     )  # fmt: skip
     return parser
-
-
-def _keys_env(verb: argparse.ArgumentParser, unset: str) -> None:
-    verb.add_argument(
-        '--keys-env', metavar='NAME',
-        help=f'the variable holding the {REVIEW_TASK} key bundle, piped to the ai-lab loader and unset; {unset}',
-    )  # fmt: skip
-
-
-def _listed(args: argparse.Namespace, root: Path, origin: Client, base: str, run: Callable[..., str]) -> list[str]:
-    """``held`` and ``blocked`` list heads; ``dispose`` records a claim; ``adjudicate`` rules (the forge runs it)."""
-    if args.verb == 'held':
-        return [line(pull) for pull in held(origin, base)]
-    if args.verb == 'blocked':
-        return [blocked_line(pull, ids) for pull, ids in review_blocked(origin, base)]
-    me = identity(origin, this_machine())
-    if args.verb == 'dispose':
-        return [f'[review] {dispose(origin, args.pr, args.finding, args.why, by=me)}']
-    if args.verb == 'cap':
-        return [f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.rounds, args.why), by=me)}']
-    runtimes = review_runtimes(args.runtime)
-    keys_loaded(args.keys_env, runtimes)
-    ruled = adjudicate_thread(
-        root, origin, review_at(root, base), args.number, base=base, adjudicator=me, run=run, dry_run=args.dry_run,
-        runtimes=runtimes,
-    )  # fmt: skip
-    return [f'[review] {one}' for one in ruled]
 
 
 def _job(
@@ -316,15 +252,29 @@ def _job(
     return job_exit(origin, args.pr, said, base=base)
 
 
+def _plan(root: Path, review: Review, head: str, *, base: str, pull: PullRequest | None) -> None:
+    scope = scope_of(root, review, head, base=base)
+    emit(
+        f'{f"#{pull.number} " if pull else ""}{scope.range}: {len(scope.slices)} slice(s), '
+        f'{scope.outside} non-code file(s) outside, {len(scope.unread)} code path(s) past the budget'
+    )
+    emit(f'  code bytes: {sum(one.size for one in scope.slices)}')
+    emit(f'  moved (path change only): {len(scope.moved)}')
+    for one in scope.slices:
+        emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
+    if scope.unread:
+        emit(f'  not read: {" ".join(scope.unread)}')
+
+
 def main(
     argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None,
     run: Callable[[Sequence[str], Path], str] = run_command,
     ready: Callable[[Sequence[str], Path], str | None] = can_start,
     fetch: Callable[[Path, int], object] | None = None,
 ) -> int:  # fmt: skip
-    """``forge review takeover|plan <sha>``, ``held``, ``blocked``, ``dispose <pr> <id> --why``, ``cap <pr>``, ``run``.
+    """``forge review takeover|plan <sha>``, ``again <pr>``, ``cap <pr> --usd --why``, ``run``.
 
-    Exit 0 done, 1 held or blocked heads listed (``run``: the head not reviewed by it, :func:`job_exit`), 2 refused.
+    Exit 0 done (``run``: :func:`job_exit`), 2 refused.
     """
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = args.repo or (Path.cwd() if cwd is None else cwd)
@@ -334,45 +284,29 @@ def main(
         # the task's key bundle (--keys-env) is unset once loaded, before any reviewer starts (keys_loaded).
         api = take(args.git_token_file, args.api_token_file) if args.verb == 'run' else ''
         origin = client or client_for(root, token=api)
-        # never the working tree's: the head's (F-169e99e6c68c); the forge's jobs ask the forge (an Actions
+        # never the working tree's: the head's (F-169e99e6c68c); the forge's job asks the forge (an Actions
         # checkout sets no origin/HEAD), the operator's verbs read their clone's origin/HEAD offline (dev-lab #40)
-        job = args.verb in _FORGE_JOBS
-        base = trusted_integration(root, origin) if job else operator_integration(root)
+        base = trusted_integration(root, origin) if args.verb in _FORGE_JOBS else operator_integration(root)
         if args.verb == 'run':
             return _job(args, root, origin, base, run=run, ready=ready, fetch=pull_in)
-        if args.verb in {'held', 'blocked', 'dispose', 'cap', 'adjudicate'}:
-            said = _listed(args, root, origin, base, run)
-            for one in said:
-                emit(one)
-            return 1 if said and args.verb in {'held', 'blocked'} else 0
+        me = identity(origin, this_machine())
+        if args.verb == 'again':
+            emit(f'[review] {ask_again(origin, args.pr, origin.pr_view(args.pr).head_sha, me.text())}')
+            return 0
+        if args.verb == 'cap':
+            emit(f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.why), by=me)}')
+            return 0
         review, pull = review_at(root, base), pull_for(origin, args.sha)  # the forge first: the PR brings its head
         if pull is not None:
             pull_in(root, pull.number)
         head = _commit(root, pull.head_sha if pull is not None else args.sha)
         if args.verb == 'plan':
-            scope = scope_of(root, origin, review, head, base=base, pull=pull)
-            emit(
-                f'{f"#{pull.number} " if pull else ""}{scope.range}: {len(scope.slices)} slice(s), '
-                f'{scope.outside} non-code file(s) outside'
-                f'{f" -- one structure-level review: {scope.structure}" if scope.structure else ""}'
-            )
-            emit(f'  code bytes: {sum(one.size for one in scope.slices)}')
-            emit(f'  moved (path change only): {len(scope.moved)}')
-            for one in scope.slices:
-                emit(f'  {one.lens} {one.size} B: {" ".join(one.paths)}')
+            _plan(root, review, head, base=base, pull=pull)
             return 0
-        here = review_runtimes()
         for said in takeover(root, origin, review, head, pull=pull, base=base, host=this_machine(), run=run,
-                             runtimes=here):  # fmt: skip
+                             runtimes=review_runtimes()):  # fmt: skip
             emit(f'[review] {said}')
-    except (
-        TakeoverRefused,
-        AdjudicationRefused,
-        ForgeCallFailed,
-        OSError,
-        ValueError,
-        subprocess.SubprocessError,
-    ) as failed:
-        emit(f'[review] refused: {failed}', err=True)
+    except (TakeoverRefused, ReviewerRefused, ForgeCallFailed, OSError, ValueError, subprocess.SubprocessError) as e:
+        emit(f'[review] refused: {e}', err=True)
         return 2
     return 0

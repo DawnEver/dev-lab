@@ -1,8 +1,8 @@
-"""REVIEW-BUDGET: a PR's review is capped in rounds and US dollars, inside the family's month (ruling 2026-10-31).
+"""REVIEW-BUDGET: a PR's review is capped in US dollars, inside the family's month (ruling 2026-10-31).
 
 WHERE EACH FACT LIVES. The family's monthly budget and every call's cost are ai-lab's (``python -m ai_lab.spend
 --json``: the token ledger priced at each call's time, one row per call, tagged with what it was charged to). What
-ONE PR may spend of that month is the policy here; it restates no number of ai-lab's. A review round runs its
+ONE PR may spend of that month is the policy here; it restates no number of ai-lab's. A review runs its
 commands with :data:`TAG_ENV` set to the PR (:func:`tag_of`), so its calls are charged to it.
 
 THE CAP IS FITTED, NOT GUESSED (:func:`fit`). From the last 90 days of per-PR spend: the expected PRs a month
@@ -12,17 +12,14 @@ Below :data:`MIN_FITTED_PRS` measured PRs the cap is the INITIAL one, ``budget /
 ``python -m dev_lab.dev.reviewbudget`` prints the fit and the month (``--json`` for a reader).
 
 THE MONTH BOUNDS EVERY CAP (:func:`gate`). A PR's cap -- fitted, or raised by the integrator -- is never above what
-the month has left. Below :data:`DEGRADE_BELOW` of the budget left, a round DEGRADES before anything stops: one
-round per PR (:data:`DEGRADED_ROUNDS`) on the cheaper :data:`DEGRADED_MODEL`. With nothing left, nothing runs.
+the month has left. Below :data:`DEGRADE_BELOW` of the budget left, a review runs on the cheaper
+:data:`DEGRADED_MODEL`. With nothing left, nothing runs.
 
-A REACHED CAP STOPS THE REVIEW, NAMED -- NEVER THE MERGE (user ruling 2026-11-05, :mod:`dev_lab.dev.reviewcap`).
-A PR at its round cap or its dollar cap is neither reviewed again nor passed: it merges WARNED, and its
-review status is ``pending`` saying which cap (``budget reached: <spent>/<cap> USD``, ``round cap reached: r/R``)
-and the remedy -- split the PR, or the integrator raises its cap with a recorded reason (:data:`RAISE_DOOR`, a
-trusted ``review-cap`` comment, :func:`raised_of`).
+A REACHED CAP SKIPS THE REVIEW, NAMED -- NEVER THE MERGE (user rulings 2026-11-05, 2026-11-06,
+:mod:`dev_lab.dev.reviewcap`): the PR merges with an ``Unreviewed:`` line naming the cap. The integrator may raise one
+PR's cap with a recorded reason (:data:`RAISE_DOOR`, a trusted ``review-cap`` comment, :func:`raised_of`).
 
-A host whose ai-lab cannot report spend (an older ai-lab, no ``[runtimes.ai_lab]``) enforces the round cap only,
-and the line it says names that.
+A host whose ai-lab cannot report spend (an older ai-lab, no ``[runtimes.ai_lab]``) caps nothing, and says so.
 """
 
 from __future__ import annotations
@@ -49,7 +46,6 @@ if TYPE_CHECKING:
 __all__ = [
     'CAP_QUANTILE',
     'DEGRADED_MODEL',
-    'DEGRADED_ROUNDS',
     'DEGRADE_BELOW',
     'INITIAL_PRS_PER_MONTH',
     'MIN_FITTED_PRS',
@@ -78,27 +74,24 @@ TAG_ENV: Final = 'AI_LAB_SPEND_TAG'
 SPEND_SCHEMA: Final = 1
 
 #: INITIAL, until :data:`MIN_FITTED_PRS` PRs are measured: about 100 reviewed PRs a month across the family's six
-#: repos (each push re-reviewed, up to five rounds), so a PR's initial cap is 1000/100 = 10 USD -- several full
-#: rounds of a 200 kB slice on the family model, and a hard stop on a runaway one.
+#: repos, so a PR's initial cap is 1000/100 = 10 USD -- a one-shot review of the full budget, a re-review after
+#: growth, and a hard stop on a runaway one.
 INITIAL_PRS_PER_MONTH: Final = 100
 
 #: Below this many measured PRs a 0.9 quantile is the maximum of a handful: the initial cap holds instead.
 MIN_FITTED_PRS: Final = 20
 
-#: The fitted cap covers this share of measured PRs; the rest wait, named, for a split or a raise.
+#: The fitted cap covers this share of measured PRs; the rest merge unreviewed, named, unless raised.
 CAP_QUANTILE: Final = 0.9
 
-#: Below this share of the monthly budget left, rounds degrade (:data:`DEGRADED_ROUNDS` on :data:`DEGRADED_MODEL`).
+#: Below this share of the monthly budget left, a review degrades to :data:`DEGRADED_MODEL`.
 DEGRADE_BELOW: Final = 0.25
 
-#: Rounds per PR while degraded: the first review still runs, its re-reviews wait.
-DEGRADED_ROUNDS: Final = 1
-
-#: The cheaper tier a degraded round runs on (ai-lab's ``haiku`` role of the family provider).
+#: The cheaper tier a degraded review runs on (ai-lab's ``haiku`` role of the family provider).
 DEGRADED_MODEL: Final = 'claude-haiku-5-5'
 
 #: The integrator's door to raise one PR's cap, with its reason recorded on the PR.
-RAISE_DOOR: Final = 'forge review cap {pr} --usd <n> --rounds <n> --why "<reason>"'
+RAISE_DOOR: Final = 'forge review cap {pr} --usd <n> --why "<reason>"'
 
 _DAYS_PER_MONTH: Final = 30
 _SPEND_TIMEOUT_S: Final = 300
@@ -174,17 +167,16 @@ def fit(spend: Spend) -> Fit:
 
 @dataclass(frozen=True)
 class Raised:
-    """The integrator's raise of one PR's caps, with its reason and the forge login of its raiser."""
+    """The integrator's raise of one PR's dollar cap, with its reason and the forge login of its raiser."""
 
     usd: float | None
-    rounds: int | None
     why: str
     by: str = ''
 
 
 def raise_line(raised: Raised) -> str:
     """The hidden line a ``review-cap`` comment records *raised* by (``>`` escaped)."""
-    doc = {'usd': raised.usd, 'rounds': raised.rounds, 'why': raised.why, 'by': raised.by}
+    doc = {'usd': raised.usd, 'why': raised.why, 'by': raised.by}
     return f'<!-- review-cap {json.dumps(doc, ensure_ascii=False).replace(">", "\\u003e")} -->'
 
 
@@ -200,18 +192,16 @@ def _parsed(text: str) -> Raised | None:
         return None
     if not isinstance(doc, dict):
         return None
-    usd, rounds, why, by = doc.get('usd'), doc.get('rounds'), doc.get('why', ''), doc.get('by', '')
-    if not (_number(usd) and (rounds is None or (isinstance(rounds, int) and not isinstance(rounds, bool)))):
+    usd, why, by = doc.get('usd'), doc.get('why', ''), doc.get('by', '')
+    if not (_number(usd) and isinstance(why, str) and isinstance(by, str)):
         return None
-    if not (isinstance(why, str) and isinstance(by, str)):
-        return None
-    return Raised(usd, rounds, why, by)
+    return Raised(usd, why, by)
 
 
 def raised_of(bodies: Iterable[str]) -> Raised | None:
     """The newest raise among *bodies*; ``None`` when the PR was never raised.
 
-    Only AUTHORISED records arrive here: :func:`~dev_lab.dev.forgereview_rounds.trusted_bodies` admits a raise only
+    Only AUTHORISED records arrive here: :func:`~dev_lab.dev.forgereview_advice.trusted_bodies` admits a raise only
     from the forge's own logins or from a raiser the forge records with write permission. Among those, newest wins.
     """
     found = None
@@ -224,10 +214,10 @@ def raised_of(bodies: Iterable[str]) -> Raised | None:
 def raise_record(body: str, author: str) -> str | None:
     """The raise record alone in *body*, when the login it names (``by``) is its forge-recorded *author*; else ``None``.
 
-    The claim pattern (:func:`~dev_lab.dev.forgereview_judge.claim_record`): only the matched line is returned, so
-    nothing else the comment carries is read as forge state, and a raise naming anyone but its author is no raise.
-    This binds the record to its author only; whether that author may RAISE is the forge's permission, asked by
-    :func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`. A malformed payload is no record.
+    Only the matched line is returned, so nothing else the comment carries is read as forge state, and a raise
+    naming anyone but its author is no raise. This binds the record to its author only; whether that author may
+    RAISE is the forge's permission, asked by :func:`~dev_lab.dev.forgereview_advice.trusted_bodies`. A malformed
+    payload is no record.
     """
     for match in _RAISED.finditer(body):
         if (raised := _parsed(match['json'])) is not None and raised.by == author:
@@ -237,38 +227,28 @@ def raise_record(body: str, author: str) -> str | None:
 
 @dataclass(frozen=True)
 class Gate:
-    """Whether a PR's next round runs (``run``) or waits (``wait``), why, and the rounds and model it runs with."""
+    """Whether a PR's review runs (``run``) or is skipped (``skip``), why, and the model it runs with."""
 
     state: str
     why: str
-    max_rounds: int
-    model: str | None = None  # a degraded round's cheaper model; ``None`` keeps the review's
+    model: str | None = None  # a degraded review's cheaper model; ``None`` keeps the review's
 
 
-def gate(
-    *, number: int, spent_usd: float, rounds_done: int, max_rounds: int, spend: Spend | None,
-    raised: Raised | None = None,
-) -> Gate:  # fmt: skip
-    """Whether PR *number*, having spent *spent_usd* over *rounds_done* rounds, gets another (the module docstring)."""
+def gate(*, number: int, spent_usd: float, spend: Spend | None, raised: Raised | None = None) -> Gate:
+    """Whether PR *number*, having spent *spent_usd* on its reviews, gets one now (the module docstring)."""
     door = RAISE_DOOR.format(pr=number)
-    rounds = raised.rounds if raised is not None and raised.rounds is not None else max_rounds
     if spend is None:
-        cap, model, note = math.inf, None, ''
-    else:
-        if spend.remaining_usd <= 0:
-            why = f'monthly review budget spent: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD; waits for next month'
-            return Gate('wait', why, rounds)
-        own = raised.usd if raised is not None and raised.usd is not None else fit(spend).cap_usd
-        cap = min(own, spend.remaining_usd)
-        model, note = None, ''
-        if spend.remaining_usd < DEGRADE_BELOW * spend.budget_usd:
-            rounds, model, note = min(rounds, DEGRADED_ROUNDS), DEGRADED_MODEL, ' (degraded: month low)'
-    if rounds_done >= rounds:
-        return Gate('wait', f'round cap reached: {rounds_done}/{rounds} rounds{note}; split the PR, or {door}', rounds)
+        return Gate('run', f'{spent_usd:.2f} USD spent (no spend report on this host: no dollar cap)')
+    if spend.remaining_usd <= 0:
+        return Gate('skip', f'monthly review budget spent: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD')
+    own = raised.usd if raised is not None and raised.usd is not None else fit(spend).cap_usd
+    cap = min(own, spend.remaining_usd)
+    model, note = None, ''
+    if spend.remaining_usd < DEGRADE_BELOW * spend.budget_usd:
+        model, note = DEGRADED_MODEL, ' (degraded: month low)'
     if spent_usd >= cap:
-        why = f'budget reached: {spent_usd:.2f}/{cap:.2f} USD{note}; split the PR, or {door}'
-        return Gate('wait', why, rounds)
-    return Gate('run', f'round {rounds_done + 1}/{rounds}, {spent_usd:.2f}/{cap:.2f} USD{note}', rounds, model)
+        return Gate('skip', f'budget reached: {spent_usd:.2f}/{cap:.2f} USD{note}; the integrator may {door}')
+    return Gate('run', f'{spent_usd:.2f}/{cap:.2f} USD{note}', model)
 
 
 def tag_of(pull_url: str, number: int) -> str:

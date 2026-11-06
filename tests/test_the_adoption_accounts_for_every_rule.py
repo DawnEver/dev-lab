@@ -113,7 +113,7 @@ _ENFORCED = {
         guard('tests/test_dev_forgemerge.py'),
     ),
     'PRS-TARGET-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
-    'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY': (guard('tests/test_dev_forgereview.py'),),
+    'PR-REVIEW-IS-ONE-SHOT-ADVICE': (guard('tests/test_dev_forgereview.py'),),
     'DOWNSTREAM-SYNCS-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
     'FLOOR-ON-EVERY-SCAN': (
         guard('tests/test_arch_every_scan_binds_a_floor.py'),

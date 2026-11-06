@@ -14,12 +14,13 @@ trusts NOTHING the producer wrote that it can read or derive from the forge (D3)
   - it reads only the bundle that source holds, located by data the judge derives itself, never by a status;
   - it verifies the bundle (:func:`~dev_lab.dev.reviewbundle.load`, :func:`~dev_lab.dev.reviewbundle.current`
     against the FORGE's merge base, :func:`~dev_lab.dev.reviewbundle.matches_forge` against the forge's own diff);
-  - it reads the declaration FRESH from the forge's integration branch, the disposals the forge records on the PR
-    (:func:`~dev_lab.dev.forgereview_judge.upheld`), and hands the reviewer the FORGE's diff, never the producer's;
+  - it reads the declaration FRESH from the forge's integration branch, and hands the reviewer the FORGE's diff,
+    never the producer's;
   - a binary change to a path the declaration calls code (:func:`~dev_lab.dev.forgereview_scope.is_code`) is
     ``REQUEST_CHANGES``: no reviewer can read it, so it is never approved unread;
   - it posts its verdict as its own identity: ``APPROVED`` only when every reviewer ran (``ok`` or ``skipped``,
-    at least one ``ok``) and none found a blocking finding, ``REQUEST_CHANGES`` naming them otherwise. A login
+    at least one ``ok``) and none found a security finding -- every other finding is advice (user ruling 2026-11-06)
+    -- ``REQUEST_CHANGES`` naming them otherwise. A login
     (Gitea's ``judge_login``) posts a PR REVIEW; a GitHub App (``judge_app``, :mod:`~dev_lab.dev.forgeapp`) posts
     the check run :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` on the head, ``success`` or ``failure`` with the
     findings as its output -- the one verdict a ruleset can require from that App alone.
@@ -66,9 +67,7 @@ from dev_lab.dev.forgereview_declared import (
     forge_review,
 )
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
-from dev_lab.dev.forgereview_judge import upheld
 from dev_lab.dev.forgereview_pointer import prepare, trusted_bundle
-from dev_lab.dev.forgereview_rounds import trusted_bodies
 from dev_lab.dev.forgereview_scope import gather, is_code
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.reviewbundle import BundleRefused
@@ -147,7 +146,7 @@ def _rendered(found: Findings, bundle: reviewbundle.Bundle) -> Verdict:
         f'**Review** of `{bundle.head_sha[:12]}` over `{bundle.base_sha[:12]}..{bundle.head_sha[:12]}` (bundle)',
         f'Reviewers: {who}',
     ]
-    for title, rows in (('Blocking', blocking), ('Not blocking', rest)):
+    for title, rows in (('Security (holds the merge)', blocking), ('Advice', rest)):
         if rows:
             lines = [
                 f'- `{one.id}` **{one.severity}** {one.file}:{one.anchor} [{one.rule}] {one.summary}' for one in rows
@@ -193,7 +192,6 @@ def judge_one(
             if bundle is None:
                 return None
             diff, merge_base = client.pull_diff(pull.number), forge_merge_base(client, pull)
-            gone = upheld(trusted_bodies(client, pull.number, review.reviewers))
             reviewbundle.current(bundle, pull, repo=client.forge.repo, merge_base=merge_base)
             reviewbundle.matches_forge(bundle, diff)
         except BundleRefused as refused:
@@ -202,13 +200,13 @@ def judge_one(
             return f'{said}: the bundle or the forge could not be read, retried next run: {failed}'
         if (unread := _unread_code(bundle, review)) is not None:
             return unread
-        out = _reviewed(client, review, pull, bundle, diff=diff, gone=gone, runtimes=runtimes, run=run, where=where)
+        out = _reviewed(client, review, pull, bundle, diff=diff, runtimes=runtimes, run=run, where=where)
     return out if isinstance(out, str) else _verdict_of(out, bundle, said)
 
 
 def _reviewed(
     client: Client, review: Review, pull: PullRequest, bundle: reviewbundle.Bundle, *, diff: str,
-    gone: Mapping[str, str], runtimes: Mapping[str, Mapping[str, Any]],
+    runtimes: Mapping[str, Mapping[str, Any]],
     run: Callable[[Sequence[str], Path, Mapping[str, str]], str], where: Path,
 ) -> Findings | str:  # fmt: skip
     """The bundle command's findings over *bundle*, or the line said when there are none yet (retried next run).
@@ -226,7 +224,7 @@ def _reviewed(
             return reviewbundle.judge(bundle, filled, diff=diff, run=lambda final, env: timed(final, where, env))
 
         try:
-            return parse_findings(gather(reviewed, [argv], (), once, where, pr_body=pull.body, disposed=gone))
+            return parse_findings(gather(reviewed, [argv], (), once, where, pr_body=pull.body))
         except ReviewPending as waiting:
             return f'{said}: {BATCH_PENDING} {waiting}; nothing posted, the next run resumes it'
         except (OSError, FindingsInvalid) as failed:

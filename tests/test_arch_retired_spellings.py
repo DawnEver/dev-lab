@@ -29,8 +29,30 @@ MOVED_TABLES: Final = (
 RETIRED_SPELLINGS: Final = {
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
-        'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY',
-        'user ruling 2026-10-26 (review redesign): an open HIGH or security finding blocks the merge',
+        'PR-REVIEW-IS-ONE-SHOT-ADVICE',
+        'user ruling 2026-10-26 (review redesign), then 2026-11-06: one review per PR, advice, only security blocks',
+    ),
+    'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY': (
+        'PR-REVIEW-IS-ONE-SHOT-ADVICE',
+        'user ruling 2026-11-06: the review is a one-shot independent acceptance with advice; only security blocks',
+    ),
+    **dict.fromkeys(
+        (
+            'forgereview_rounds', 'forgereview_judge', 'forgereview_dispose', 'AdjudicationRefused',
+            'FAMILY_MAX_ROUNDS', 'review dispose', 'review adjudicate', 'review-claims', 'capped_waiver',
+            'capped_line',
+        ),
+        (
+            'forgereview_advice / forgereview_identity / reviewcap.unreviewed_waiver / forge review again',
+            'user ruling 2026-11-06: one review per PR -- no rounds, no re-judging, no claims to adjudicate',
+        ),
+    ),
+    **dict.fromkeys(
+        ('split the PR', 'held over the cap', 'structure-level review'),
+        (
+            'review again after growth; Scope.unread lists what the budget left out',
+            'user ruling 2026-11-06: a PR is never split for its review; one session, one task, one PR',
+        ),
     ),
     **dict.fromkeys(
         ('review_blocks', 'review_hold'),
@@ -42,8 +64,8 @@ RETIRED_SPELLINGS: Final = {
     **dict.fromkeys(
         ('disposition_text', 'DisposeRefused', 'review-disposition'),
         (
-            'forgereview_judge.claim + adjudicate',
-            'user ruling 2026-10-31: a dispose is a claim an independent reviewer rules on',
+            'nothing: findings are advice (user ruling 2026-11-06)',
+            'user ruling 2026-10-31, retired with the claims 2026-11-06: a one-shot review disposes of nothing',
         ),
     ),
     **dict.fromkeys(
@@ -54,10 +76,10 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     'review capped, merge waits': (
-        'forgereview_claim.CAPPED (review capped, merges unreviewed)',
+        'forgereview_claim.UNREVIEWED_STATUS (not reviewed, merges unreviewed)',
         'user ruling 2026-11-05: a capped review no longer holds the merge; it merges WARNED',
     ),
-    'OVER_CAP_TAKEOVER': ('Scope.structure', 'D123 2026-10-31: an oversize head is one structure-level review'),
+    'OVER_CAP_TAKEOVER': ('Scope.unread', 'D123 2026-10-31, then 2026-11-06: an oversize head is sliced, never held'),
     **{
         f'tool.lab_commons.{table}': (
             f'tool.dev_lab.{table}',

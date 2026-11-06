@@ -28,10 +28,10 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 * its head is REVIEWED (:func:`dev_lab.dev.forgereview_gate.review_gate`, user ruling 2026-10-31): the
   latest ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold``
   is pending -- or, where the base declares ``where = "judge"``, the declared judge login's latest verdict review
-  at the head is APPROVED. Absent, reviewing, ``error``, ``failure`` and a success any other login posted all
-  wait -- nothing is advisory; a review that cannot run is re-run by the forge. ONE WAIVER (user ruling 2026-11-05):
-  a review that reached a cap (:func:`dev_lab.dev.reviewcap.capped_waiver`, read from trusted comments) no
-  longer blocks -- the merge proceeds WARNED, its commit message and decision carrying ``Unreviewed: ...``;
+  at the head is APPROVED. The review is a one-shot acceptance with advice: it is ``success`` once it has run, and
+  ``failure`` only on a security finding. A review that DID NOT RUN never holds the merge (user rulings 2026-11-05,
+  2026-11-06): its recorded cause (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`, read from trusted comments)
+  waives it, and the merge proceeds WARNED, its commit message and decision carrying ``Unreviewed: ...``;
 * it is an INTERNAL PR (:func:`external`, user ruling 2026-11-05): a fork's, or a non-writer's, is never merged by
   the forge -- ``tests/merge-ready`` stays ``pending`` :data:`EXTERNAL`;
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
@@ -89,7 +89,7 @@ from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.platformparts import standing
-from dev_lab.dev.reviewcap import capped_waiver
+from dev_lab.dev.reviewcap import unreviewed_waiver
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 from dev_lab.dev.unproduced import unproduced_waived
@@ -184,7 +184,7 @@ class Decision:
 
     missing: tuple[str, ...]
     message: str
-    unreviewed: str = ''  # the capped-review warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
+    unreviewed: str = ''  # the unreviewed warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
 
     @property
     def ready(self) -> bool:
@@ -221,11 +221,11 @@ def decide(
     head: str,
     statuses: Sequence[CommitStatus],
     reviewed: Reviewed,
-    capped: str | None = None,
+    waiver: str | None = None,
 ) -> Decision:
     """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing.
 
-    *capped* (:func:`dev_lab.dev.reviewcap.capped_waiver`) waives the review condition alone, and the message and
+    *waiver* (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`) waives the review condition alone, and the message and
     the decision carry it.
     """
     into = policy.integration
@@ -238,10 +238,10 @@ def decide(
         missing.append(f'its review config: {config}')
     waived = ''
     if (unreviewed := reviewed(statuses)) is not None:
-        if capped:
-            waived = capped
+        if waiver:
+            waived = waiver
             title, _, trailers = message.partition('\n\n')
-            message = f'{title}\n\n{capped}\n\n{trailers}'
+            message = f'{title}\n\n{waiver}\n\n{trailers}'
         else:
             missing.append(f'its review: {unreviewed}')
     if (unsafe := security_wait(statuses)) is not None:
@@ -296,9 +296,9 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:
             return f'the review gate cannot be read: {why}'
 
-    capped = capped_waiver(client, number, base=policy.integration)
+    waiver = unreviewed_waiver(client, number, base=policy.integration)
     found = decide(
-        root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, capped=capped
+        root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, waiver=waiver
     )
     pull, missing = client.pr_view(number), found.missing
     if external(client, pull):  # INTERNAL-ONLY (2026-11-05): never merged by the forge, whatever else is green

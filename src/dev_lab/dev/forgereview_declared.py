@@ -1,9 +1,9 @@
 """THE REVIEW A REPO DECLARES: ``[tool.dev_lab.review]``, the family's command, and where a PR's review reads it.
 
-:mod:`dev_lab.dev.forgereview` runs the round; this module says WHAT runs -- the :class:`Review` a manifest
+:mod:`dev_lab.dev.forgereview` runs the review; this module says WHAT runs -- the :class:`Review` a manifest
 declares (:func:`review_from`), read from the integration branch the repository's default branch trusts
 (:func:`trusted_integration`, :func:`review_at`), and the declared command with every placeholder filled for
-this host (:func:`command_for`, :func:`judge_for`).
+this host (:func:`command_for`).
 
 THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where it differs, every key optional::
 
@@ -13,20 +13,19 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
     # {principles}: a JSON file of dev_lab.dev.principles (written per run; ai-lab holds no copy);
     # {summary}: --pr-body <file> on the one summarizing call, --no-summary on the rest;
-    # {disposed}: a JSON file of the findings disposed earlier (the forge's own dispositions only);
+    # {disposed}: a JSON file of findings disposed earlier (a one-shot review hands an empty one);
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
-    max_rounds = 5             # full review rounds per PR (FAMILY_MAX_ROUNDS); past it, the head waits
     max_diff_bytes = 400000    # one slice: what one reviewer reads
-    max_total_bytes = 800000   # one head: past it, ONE whole-range structure review
+    max_total_bytes = 800000   # one review: slices past it are listed, not read (strictest lens first)
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
     code = [...]               # globs of what executes (reviewcode.CODE): nothing else is read or capped
     not_code = [...]           # globs never code whatever their extension (reviewcode.NOT_CODE)
     claim_stale = "1 h"        # the default: a claim older than this may be taken over
     quiet = "10 min"           # the default (DEFAULT_QUIET): the serve reviews a head only once it is this old
-    reviewers = []             # forge logins the review producers post as (serve hosts, jobs): their rounds are read
+    reviewers = []             # forge logins the review producers post as (serve hosts, jobs): their reviews are read
     where = "serve"            # WHO reviews: "serve" (a checkout runs `command`) or "judge" (an isolated host runs
                                # `bundle` over a verified review bundle, posting a PR review) -- ONE per repo
     bundle = [...]             # the judge's command over {bundle} (FAMILY_BUNDLE): declared only to differ
@@ -36,9 +35,9 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     preparers = []             # logins (never the Actions bot) whose review/bundle pointer the judge reads
     batch = true               # FAMILY_BATCH: model calls via the vendor batch endpoint ({batch}); false: at once
     on_expiry = "sync"         # a request the batch let expire (24 h): answered at once ("sync") or failed ("fail")
-    batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one round waits this long on its batches, then pending
+    batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one review waits this long on its batches, then pending
 
-The keys of the retired in-process reviewer (``max_tokens``, ``rules``) are refused by name.
+Retired keys (:data:`RETIRED_KEYS`: ``max_tokens``, ``rules``, ``max_rounds``, ``judge``) are refused by name.
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ from __future__ import annotations
 import dataclasses
 import re
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -59,9 +58,6 @@ from dev_lab.dev import forgereview_scope, reviewcode
 from dev_lab.dev._forgebackends import ACTIONS_BOT
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_command import ReviewUnsupported
-from dev_lab.dev.forgereview_findings import Finding
-from dev_lab.dev.forgereview_judge import Judge, Verdict, judge
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS
 from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
 from dev_lab.dev.forgereview_scope import Budget
 from dev_lab.dev.lanepolicy import policy_from
@@ -78,7 +74,6 @@ __all__ = [
     'EMPTY_COMMAND_FIX',
     'FAMILY_BUNDLE',
     'FAMILY_COMMAND',
-    'FAMILY_JUDGE',
     'FAMILY_MODEL',
     'FAMILY_RUNTIMES',
     'JUDGE',
@@ -97,7 +92,6 @@ __all__ = [
     'command_for',
     'forge_integration',
     'forge_review',
-    'judge_for',
     'load_review',
     'operator_integration',
     'review_at',
@@ -135,14 +129,6 @@ FAMILY_COMMAND: Final = (
     '--disposed', forgereview_scope.DISPOSED_FIELD, batching_.BATCH_FIELD,
 )  # fmt: skip
 
-#: The family's JUDGE (:mod:`dev_lab.dev.forgereview_judge`): ai-lab re-judges open findings and adjudicates
-#: claims over ``{findings}`` (each with its claim) at the head of ``{range}``. Declared only to differ.
-FAMILY_JUDGE: Final = (
-    '{runtimes.ai_lab.python}', '-m', 'ai_lab.review.judge', '--range', RANGE_FIELD, '--model', MODEL_FIELD,
-    '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD,
-    '--findings', forgereview_scope.FINDINGS_FIELD, batching_.BATCH_FIELD,
-)  # fmt: skip
-
 #: The placeholder the judge's bundle command carries (:data:`dev_lab.dev.reviewbundle.BUNDLE_FIELD`).
 BUNDLE_FIELD: Final = '{bundle}'
 
@@ -162,7 +148,7 @@ WHERE: Final = (SERVE, JUDGE)
 
 #: The runtimes the family's commands read from a host's ``[runtimes]``: the ONE set a deploy migrates. A derived
 #: runtime (``ai_lab``, built from the lock) is not one: no host declares it.
-FAMILY_RUNTIMES: Final = runtime_names((*FAMILY_COMMAND, *FAMILY_JUDGE, *FAMILY_BUNDLE)) - DERIVED_RUNTIMES.keys()
+FAMILY_RUNTIMES: Final = runtime_names((*FAMILY_COMMAND, *FAMILY_BUNDLE)) - DERIVED_RUNTIMES.keys()
 
 #: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
 STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
@@ -173,7 +159,7 @@ LIGHT: Final = ('docs-src/**', '**/.claude/memory/**', '**/*.md')
 DEFAULT_CLAIM_STALE: Final = '1 h'
 
 #: DEBOUNCE (D52): how long a head must have been committed before the serve reviews it. A burst of pushes inside
-#: it is ONE round, of its last head; a head older than it is reviewed on the first tick that sees it.
+#: it is ONE review, of its last head; a head older than it is reviewed on the first tick that sees it.
 DEFAULT_QUIET: Final = '10 min'
 #: How long a ready head may wait on ``tests/review`` before the backlog alarm pages (:mod:`dev_lab.dev.forgebacklog`).
 DEFAULT_BACKLOG: Final = '6 h'
@@ -182,6 +168,8 @@ DEFAULT_BACKLOG: Final = '6 h'
 RETIRED_KEYS: Final = {
     'max_tokens': 'the review command bounds its own output',
     'rules': 'the review command reads the rules and profiles of the method it packages',
+    'max_rounds': 'a PR is reviewed once (user ruling 2026-11-06): there are no rounds to cap',
+    'judge': 'a one-shot review re-judges nothing and adjudicates no claim (user ruling 2026-11-06)',
 }
 
 _TABLE: Final = 'review'
@@ -200,10 +188,8 @@ class Review:
     command: tuple[str, ...] = FAMILY_COMMAND  # declare only a genuinely different method
     model: str = FAMILY_MODEL  # fills ``{model}``
     synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
-    judge: tuple[str, ...] = FAMILY_JUDGE  # re-judges open findings and adjudicates claims, every round
-    max_rounds: int = FAMILY_MAX_ROUNDS  # full rounds per PR; past it, the head waits (reviewbudget)
     max_diff_bytes: int = 400_000  # one slice: every slice pays the fixed prompt again, so few and large
-    max_total_bytes: int = 800_000  # one head: past it, ONE whole-range review, never N slices (spend 2026-11-03)
+    max_total_bytes: int = 800_000  # one review: slices past it are listed, not read (spend 2026-11-03)
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = STRICT
     light: tuple[str, ...] = LIGHT
@@ -212,7 +198,7 @@ class Review:
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
     quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
     backlog: str = DEFAULT_BACKLOG  # a duration: a ready head unreviewed this long pages (forgebacklog)
-    reviewers: tuple[str, ...] = ()  # the producer logins whose review rounds every host reads (never any writer)
+    reviewers: tuple[str, ...] = ()  # the producer logins whose review records every host reads (never any writer)
     where: str = SERVE  # who reviews: SERVE or JUDGE, one per repo
     bundle: tuple[str, ...] = FAMILY_BUNDLE  # the judge's command over {bundle}
     judge_login: str = ''  # where = JUDGE (Gitea): the ONE login whose PR review gates the merge, never inferred
@@ -220,7 +206,7 @@ class Review:
     preparers: tuple[str, ...] = ()  # where = JUDGE: logins (never the Actions bot) whose bundle pointer is read
     batch: bool = batching_.FAMILY_BATCH  # via the vendor batch endpoint; False: at once (forgereview_batch)
     on_expiry: str = batching_.FAMILY_ON_EXPIRY  # an expired batch request: one of batching_.ON_EXPIRY
-    batch_wait: str = batching_.DEFAULT_BATCH_WAIT  # a duration: one round waits this long, then posts pending
+    batch_wait: str = batching_.DEFAULT_BATCH_WAIT  # a duration: one review waits this long, then posts pending
 
     def __post_init__(self) -> None:
         """Refuse a ``where`` outside :data:`WHERE`, a judge with no login, a bad ``bundle`` or duration."""
@@ -379,7 +365,7 @@ def review_at(root: Path, base: str) -> Review:
     F-46e412ee799d, F-ef3a6c8b86b2 (dev-lab #38 round 2): the review job checks out the PR head, and the declared
     ``command`` runs beside the review key, so a head's own declaration would choose the code that runs -- under
     ``pull_request_target`` too, whose WORKFLOW alone is the base's. *base* is the integration branch
-    :func:`trusted_integration` names (the job, a takeover, an adjudication) or the serve's own policy, read from
+    :func:`trusted_integration` names (the job, a takeover) or the serve's own policy, read from
     the operator's checkout, never a PR head. A PR changing its review declaration is reviewed under the base's
     until it lands, like the Actions adoption (:mod:`dev_lab.dev.reviewgate`). Read from git (``git show``, never
     the working tree), so the serve's tick reads no forge before it knows its host can run the command. An
@@ -436,7 +422,7 @@ def _duration(key: str, value: str) -> timedelta:
 
 def command_for(
     review: Review, reviewed: str, runtimes: Mapping[str, Mapping[str, Any]], *,
-    paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False, judge: bool = False,
+    paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False,
     bundle: bool = False, batching: Sequence[str] = batching_.NO_BATCH,
 ) -> list[str]:  # fmt: skip
     """The declared command (or *synthesis*), every placeholder replaced: the range, the slice, this host's values.
@@ -468,24 +454,5 @@ def command_for(
             .replace(RULES_FIELD, ','.join(rule.id for rule in RULES))
         ]
 
-    declared = review.bundle if bundle else review.judge if judge else review.synthesis if synthesis else review.command
+    declared = review.bundle if bundle else review.synthesis if synthesis else review.command
     return [one for arg in declared for one in filled(arg)]
-
-
-def judge_for(
-    root: Path, review: Review, reviewed: str, run: Callable[[Sequence[str], Path], str],
-    runtimes: Mapping[str, Mapping[str, Any]], *, batching: Sequence[str] = batching_.NO_BATCH,
-) -> Judge:  # fmt: skip
-    """The :data:`~dev_lab.dev.forgereview_judge.Judge` of *review*'s declared judge over *reviewed*, on this host.
-
-    The command is filled only when there is something to judge: a first round has no open finding.
-    """
-
-    def judged(items: Sequence[tuple[Finding, str]]) -> Mapping[str, Verdict]:
-        if not items:
-            return {}
-        argv = command_for(review, reviewed, runtimes, judge=True, batching=batching)
-        return judge(argv, items, run, root, findings_field=forgereview_scope.FINDINGS_FIELD,
-                     principles_field=forgereview_scope.PRINCIPLES_FIELD)  # fmt: skip
-
-    return judged

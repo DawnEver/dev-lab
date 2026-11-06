@@ -3,7 +3,7 @@
 The format is the sharp-review method's findings output (``findings-output.schema.json``, owned by ai-lab's
 packaged method, not here): one review run's merged result -- the range, the profiles that ran, every planned
 reviewer with its status, and the deduplicated findings, each TAGGED (``severity``, ``security``, ``rule``) under
-an id stable across rounds (a hash of rule, file and anchor line). This reader checks what the forge relies on (the
+an id stable across reviews (a hash of rule, file and anchor line). This reader checks what the forge relies on (the
 version, the required fields, the closed vocabularies) and builds frozen records; it never guesses at a
 version it does not know (:class:`UnknownSchemaVersion`), because a renamed field or a new status is exactly
 what a reader of the old version would misread.
@@ -44,12 +44,13 @@ REVIEWER_STATUSES: Final = frozenset(
     {'ok', 'exhausted', 'auth', 'rate_limit', 'timeout', 'unsupported', 'unavailable', 'skipped'}
 )
 
-#: A finding's severity, most severe first: ``HIGH`` blocks the merge, the rest never do.
+#: A finding's severity, most severe first: ADVICE at every severity (user ruling 2026-11-06), none blocks.
 SEVERITIES: Final = ('HIGH', 'MEDIUM', 'LOW')
 
-#: What blocks the merge while open: these severities, and ``security`` (any severity). One value, read by
+#: What blocks the merge: a ``security`` finding (any severity), and nothing else -- a ``HIGH`` finding is advice
+#: (user ruling 2026-11-06: the review is a one-shot independent acceptance with suggestions). One value, read by
 #: :attr:`Finding.blocking` and exported by :mod:`dev_lab.dev.reviewpolicy`.
-BLOCKING: Final = ('HIGH', 'security')
+BLOCKING: Final = ('security',)
 
 _TOP: Final = ('schema_version', 'range', 'profiles', 'reviewers', 'findings')
 _REVIEWER: Final = ('name', 'provider', 'status', 'dropped_findings')
@@ -81,7 +82,7 @@ class Reviewer:
 class Finding:
     """One deduplicated, tagged finding and the reviewers (``name@provider``) that reported it.
 
-    *id* is stable across rounds: the same rule, file and anchor line is the same finding.
+    *id* is stable across reviews: the same rule, file and anchor line is the same finding.
     """
 
     id: str
@@ -99,8 +100,8 @@ class Finding:
 
     @property
     def blocking(self) -> bool:
-        """Whether, while open, it blocks the merge: a ``HIGH`` or a security finding."""
-        return self.severity in BLOCKING or ('security' in BLOCKING and self.security)
+        """Whether it blocks the merge: a security finding; every other finding is advice."""
+        return self.security
 
 
 @dataclass(frozen=True)

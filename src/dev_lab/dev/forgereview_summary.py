@@ -1,8 +1,8 @@
-"""A REVIEW ROUND'S SUMMARY: what the PR does, as the engine said it, and what changed and why, as git says it.
+"""A REVIEW'S SUMMARY: what the PR does, as the engine said it, and what changed and why, as git says it.
 
-Split from :mod:`dev_lab.dev.forgereview_rounds` (2026-11-03, the module-size band): the two readings that OPEN a
-round's comment. :func:`what_it_does` renders the engine's summary with its cites linked; :func:`context_summary`
-is round 1's shared context -- the files and layers changed, and the WHY cited from each of :data:`SUMMARY_CITES`.
+The two readings that OPEN a review's comment (:mod:`dev_lab.dev.forgereview_advice`). :func:`what_it_does`
+renders the engine's summary with its cites linked; :func:`context_summary` is the review's shared context -- the
+files and layers changed, and the WHY cited from each of :data:`SUMMARY_CITES`.
 """
 
 from __future__ import annotations

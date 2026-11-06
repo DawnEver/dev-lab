@@ -199,15 +199,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
     ),
     (
-        'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY',
+        'PR-REVIEW-IS-ONE-SHOT-ADVICE',
         (
-            'The PR review is the repo-declared command (`[tool.dev_lab.review] command`), run by the forge -- '
-            'which holds no model client, prompt or key -- inside its integration step on each open, non-draft PR '
-            'into integration once per head sha, its stdout read as the versioned findings JSON (an unknown '
-            '`schema_version` refused by name) whose every finding is tagged severity, security and rule under an '
-            'id stable across rounds; its `tests/review` status is never a part, but it is `failure` -- and the '
-            'auto-merge waits -- while an open HIGH or security finding is neither fixed nor disposed by the '
-            'integrator with a reason.'
+            'The PR review is ONE independent acceptance check per PR with advice: the repo-declared command '
+            '(`[tool.dev_lab.review] command`), run by the forge -- which holds no model client, prompt or key -- '
+            'once on a ready PR and again only when its own change has grown or a session asks, its stdout read as '
+            'the versioned findings JSON (an unknown `schema_version` refused by name); its `tests/review` is '
+            '`success` once it ran and `failure` only on a security finding, a review that could not run merges '
+            'with an `Unreviewed:` line, and one session keeps one task in one PR -- a PR is never split for its '
+            'review.'
         ),
         ('tests/test_dev_forgereview.py', 'tests/test_dev_forgeserve.py'),
     ),
