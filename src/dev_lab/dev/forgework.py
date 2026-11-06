@@ -72,6 +72,7 @@ from dev_lab.dev.forge import (
     forge_of_url,
     forge_transport,
 )
+from dev_lab.dev.forgecred import CredentialRefresh
 from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, BudgetSpent, ForgeCallFailed, diagnose
 from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgestamp import provenance
@@ -121,17 +122,16 @@ class Client:
     #: The outbox journal each write is recorded in before it is attempted (:mod:`dev_lab.dev._forge_journal`);
     #: :func:`client_for` always sets it -- ``None`` only where a test drives the bare door.
     journal: Journal | None = None
-    #: Given the refused ``(username, token)``, the credential git's store hands out AFTER refreshing it
+    #: Given the refused ``(username, token)``, the typed provider refresh/preservation outcome
     #: (:func:`dev_lab.dev.forgecred.refresh_credential`); :func:`stored_client` sets it. Asked once per client.
-    refresh: Callable[[str, str], tuple[str, str]] | None = None
+    refresh: Callable[[str, str], CredentialRefresh] | None = None
     #: Where this repository's read caches live (:func:`dev_lab.dev.forgepulls.issues`); :func:`client_for`
     #: sets it -- ``None`` reads everything afresh.
     cache_dir: Path | None = None
     #: The pass memo answering repeated GETs (:class:`~dev_lab.dev.forgememo.ReadMemo`); ``None`` reads afresh.
     memo: ReadMemo | None = None
-    #: Whether :attr:`refresh` was spent, and whether it left the store empty.
+    #: Whether :attr:`refresh` was spent, and whether the original credential was retained.
     _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
-    _gone: bool = dataclasses.field(default=False, init=False, repr=False)
     _kept: bool = dataclasses.field(default=False, init=False, repr=False)
     #: The ``Location`` of the latest answer, ``''`` when it named none: where a redirect points.
     _location: str = dataclasses.field(default='', init=False, repr=False)
@@ -183,22 +183,15 @@ class Client:
         return Diagnosis.TRANSIENT if status == UNAUTHENTICATED and self._refresh() else Diagnosis.FORGE_REFUSED
 
     def _refresh(self) -> bool:
-        """Refresh the refused credential once, as git does after a 401; whether a DIFFERENT one came back.
-
-        An expired OAuth access token is the usual 401 (``docs-src/dev/forge.md#credentials``); the refreshed
-        one is sent on the retry. A store left empty is recorded, so the failure names the one re-login case.
-        """
+        """Ask one verified provider refresh; unknown stores retain their credential, never erase it."""
         if self.refresh is None or self._refreshed:
             return False
         self._refreshed = True
-        try:
-            username, token = self.refresh(self.username, self.token)
-        except _forge.NoCredential:
-            self._gone = True
+        outcome = self.refresh(self.username, self.token)
+        self._kept = outcome.state == 'kept'
+        if self._kept:
             return False
-        if token == self.token:
-            self._kept = self.username != _forge.REFRESHABLE_USER
-            return False
+        username, token = outcome.credential
         self.username, self.token = username, token
         return True
 
@@ -315,7 +308,7 @@ class Client:
                     if found is not None:
                         return found
         report = Report((write.method, write.path), tuple(made), DEFAULT_ATTEMPTS)
-        raise ForgeCallFailed(report, credential_gone=self._gone, credential_kept=self._kept)
+        raise ForgeCallFailed(report, credential_kept=self._kept)
 
     def landed(self, write: Write) -> Any:  # noqa: ANN401 -- JSON
         """The object *write* made under this login, if it landed though its answer was lost; else ``None``."""
@@ -450,7 +443,7 @@ def stored_client(
         return Client(forge, job, transport=transport, username=backend_for(forge).actions_login, stamp=stamp)
     username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
 
-    def refresh(refused_user: str, refused: str) -> tuple[str, str]:
+    def refresh(refused_user: str, refused: str) -> CredentialRefresh:
         return _forge.refresh_credential(forge.host, (refused_user, refused), cwd=cwd, env=env)
 
     return Client(forge, secret, transport=transport, username=username, stamp=stamp, refresh=refresh)
