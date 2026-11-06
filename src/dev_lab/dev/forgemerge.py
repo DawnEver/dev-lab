@@ -279,11 +279,11 @@ def decide(
 def external(client: Client, pull: PullRequest) -> bool:
     """Whether *pull* is an EXTERNAL contributor's, which the forge never merges (user ruling 2026-11-05).
 
-    External is a fork's head, or an author the forge does not record with write permission
-    (:meth:`~dev_lab.dev.forgework.Client.can_write` -- the one trust test a cap raise passes,
-    :func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`). It is still tested and reviewed; a human merges it.
+    Only a forge that vets authors has one (:attr:`~dev_lab.dev._forgebackends.Backend.vets_authors`, GitHub): a
+    fork's head, or an author it does not trust (:meth:`~dev_lab.dev.forgework.Client.trusts`). Gitea is private,
+    so nothing on it is external (user ruling 2026-11-06). It is still tested and reviewed; a human merges it.
     """
-    return pull.fork or not client.can_write(pull.author)
+    return client.backend.vets_authors and (pull.fork or not client.trusts(pull.author))
 
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:

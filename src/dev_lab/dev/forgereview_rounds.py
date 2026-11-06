@@ -134,8 +134,8 @@ def trusted_bodies(client: Client, number: int, reviewers: Iterable[str] = ()) -
     forge records as its author. Without this the forge's own job never sees a claim (#11: the claim was DawnEver's,
     the job is the Actions bot). A cap RAISE is read the same way
     (:func:`~dev_lab.dev.reviewbudget.raise_record`, #17: DawnEver's raise never reached the Actions job), and
-    admitted only when the forge records its author with write permission (:meth:`Client.can_write`): naming
-    yourself proves who wrote it, never that you may raise.
+    admitted only from an author the forge trusts (:meth:`Client.trusts`): naming yourself proves who wrote it,
+    never that you may raise.
 
     A ROUND posted by another review producer is read only from a DECLARED reviewer login (*reviewers*, the base's
     ``[tool.dev_lab.review] reviewers``), never from any writer: a ledger decides which findings stay open, and an
@@ -150,7 +150,7 @@ def trusted_bodies(client: Client, number: int, reviewers: Iterable[str] = ()) -
             out.append(comment.body)
         elif (
             (record := claim_record(comment.body, comment.author))
-            or ((record := raise_record(comment.body, comment.author)) and client.can_write(comment.author))
+            or ((record := raise_record(comment.body, comment.author)) and client.trusts(comment.author))
             or (comment.author in producers and (record := review_record(comment.body)))
         ):
             out.append(record)

@@ -264,10 +264,18 @@ def test_an_external_green_pr_is_never_merged_and_waits_on_a_maintainer(tmp_path
     assert said.endswith(f'pending: {EXTERNAL}')
 
 
-def test_the_serve_tick_never_merges_an_external_pr(tmp_path: Path) -> None:
-    """Gitea's serve tick reads the same decision: an external head is said, never merged."""
+@pytest.mark.parametrize('how', ['non-writer', 'fork'])
+def test_gitea_vets_no_author_so_the_serve_tick_has_no_external_pr(tmp_path: Path, how: str) -> None:
+    """Gitea is the private forge (user ruling 2026-11-06): nothing on it is external.
+
+    Its Actions token cannot read team rosters, and every team writer's PR read as external. PLANTED CONTROL: the
+    same PR on GitHub is external (the test above).
+    """
     work, forge, number, head = _pr(tmp_path)
-    forge.pulls[number]['user'] = {'login': 'stranger'}
+    if how == 'fork':
+        forge.pulls[number]['head']['repo'] = {'full_name': 'stranger/r'}
+    else:
+        forge.pulls[number]['user'] = {'login': 'stranger'}
     found = judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head)
-    assert EXTERNAL in found.missing
-    assert not found.ready
+    assert EXTERNAL not in found.missing
+    assert found.ready
