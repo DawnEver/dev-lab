@@ -103,6 +103,7 @@ class Diagnosis(StrEnum):
 
     SUCCEEDED = 'succeeded'
     TRANSIENT = 'transient'
+    RATE_LIMITED = 'rate-limited'
     TIMED_OUT = 'timed-out'
     UNCLASSIFIED = 'unclassified'
     HOOK_REFUSED = 'hook-refused'

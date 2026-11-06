@@ -16,8 +16,8 @@ credential fill`` for the host (user ruling 2026-10-09: the person's own credent
 token variable a process tree inherits). Nothing is written to disk and the token never reaches output.
 
 RETRY, THEN REPORT, IN NETVERB'S VOCABULARY: how an answer reads -- success, transient, a refusal, a refused
-credential -- is :mod:`dev_lab.dev.forgefailure`. A 401/403 is MEASURED before it is named: the same credential
-is asked ``GET /user`` (:meth:`Client._diagnosis`).
+credential, a rate limit -- and the one retry loop are :mod:`dev_lab.dev.forgefailure`. A 401/403 that is no rate
+limit is MEASURED before it is named: the same credential is asked ``GET /user`` (:meth:`Client._diagnosis`).
 A create whose response was lost may still have landed, so before a create is RETRIED the newest
 objects are read back and the token's own identical one created since the attempt began is returned
 instead (:class:`~dev_lab.dev._forge_journal.Probe`); when that read itself fails the create is
@@ -40,7 +40,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from dev_lab.dev import forge as _forge
 from dev_lab.dev._forge_journal import (
@@ -73,10 +73,19 @@ from dev_lab.dev.forge import (
     forge_transport,
 )
 from dev_lab.dev.forgecred import CredentialRefresh
-from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, BudgetSpent, ForgeCallFailed, diagnose
+from dev_lab.dev.forgefailure import (
+    HTTP_ERROR_FLOOR,
+    RATE_HEADERS,
+    UNAUTHENTICATED,
+    Answer,
+    ForgeCallFailed,
+    diagnose,
+    rate_limited,
+    retried,
+)
 from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgestamp import provenance
-from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 __all__ = [
     'ACTIONS_BOT',
@@ -144,7 +153,7 @@ class Client:
     def _once(
         self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *,
         accept: str = '', authed: bool = True,
-    ) -> tuple[int, bytes]:  # fmt: skip
+    ) -> Answer:  # fmt: skip
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
         conn = self.transport(host or backend.host(self.forge), self.timeout)
@@ -157,25 +166,28 @@ class Client:
             response = conn.getresponse()
             self.answered = response.getheader('Date') or self.answered
             self._location = response.getheader('Location') or ''
-            return response.status, response.read()
+            said = {name: value for name in RATE_HEADERS if (value := response.getheader(name))}
+            return Answer(response.status, response.read(), said)
         finally:
             conn.close()
 
-    def _diagnosis(self, status: int, text: str, path: str) -> Diagnosis:
-        """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401/403 is MEASURED against ``GET /user`` first.
+    def _diagnosis(self, answer: Answer, text: str, path: str) -> Diagnosis:
+        """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401/403 that is no rate limit is MEASURED first.
 
-        Refused only when ``GET /user`` refuses the credential too.
+        Refused only when ``GET /user`` refuses the credential too. A rate limit is never measured: ``GET /user``
+        is rate limited as well, and its 403 would name the credential (2026-11-05).
 
         The incident (2026-10-18): one 401 was read as "permanent, re-store the credential" while ``git
         credential fill`` held a credential that authenticated minutes later. A check that cannot be made
         (dropped, 5xx) is not evidence against the credential, so the attempt stays transient.
         """
-        if status not in _forge.AUTH_REFUSED:
-            return diagnose(status, text)
+        status = answer.status
+        if status not in _forge.AUTH_REFUSED or rate_limited(status, text, answer.headers):
+            return diagnose(status, text, answer.headers)
         user = f'{self.backend.api_root}/user'
         if path != user:
             try:
-                status, _ = self._once('GET', user, None, 'application/json', None)
+                status = self._once('GET', user, None, 'application/json', None).status
             except OSError:
                 return Diagnosis.TRANSIENT
         if status not in _forge.AUTH_REFUSED:
@@ -255,13 +267,15 @@ class Client:
         return self._raw('GET', f'{self.repo}/pulls/{number}{suffix}', accept=accept).decode('utf-8', 'replace')
 
     def _raw(self, method: str, path: str, *, host: str | None = None, accept: str = '', authed: bool = True) -> bytes:
-        """One call's raw answer: not retried and not JSON; a refusal raises :class:`ForgeCallFailed`."""
-        status, payload = self._once(method, path, None, _OCTETS, host, accept=accept, authed=authed)
-        if not 0 < status < HTTP_ERROR_FLOOR:
-            text = payload.decode(errors='replace')[:300]
-            diagnosis = self._diagnosis(status, text, path)
-            raise ForgeCallFailed(Report((method, path), (Attempt(1, status or 1, text, diagnosis),), 1))
-        return payload
+        """One read's raw answer, not JSON, retried as every call is; a refusal raises :class:`ForgeCallFailed`."""
+        answer = retried(
+            (method, path),
+            lambda: self._once(method, path, None, _OCTETS, host, accept=accept, authed=authed),
+            diagnosis=lambda failed, text: self._diagnosis(failed, text, path),
+            sleep=self.sleep,
+            failed=lambda report: ForgeCallFailed(report, credential_kept=self._kept),
+        )
+        return cast('Answer', answer).payload  # no *landed*: only an Answer comes back
 
     def _request(
         self, method: str, path: str, data: bytes | None, content_type: str, durable: Durable | None, *, host: str = ''
@@ -282,33 +296,18 @@ class Client:
         return answer
 
     def _attempts(self, write: Write, data: bytes | None) -> Any:  # noqa: ANN401 -- JSON
-        """*data* sent as *write* until answered; before each retry a create's probe asks if the lost attempt landed."""
-        made: list[Attempt] = []
-        for index in range(1, DEFAULT_ATTEMPTS + 1):
-            try:
-                status, payload = self._once(write.method, write.path, data, write.content_type, write.host or None)
-            except BudgetSpent as spent:
-                msg = f'{write.method} {write.path}: {spent}'
-                raise BudgetSpent(msg) from spent
-            except OSError as exc:
-                status, payload = 0, str(exc).encode()
-            if 0 < status < HTTP_ERROR_FLOOR:
-                return json.loads(payload) if payload else None
-            text = payload.decode(errors='replace')[:300]
-            made.append(Attempt(index, status or 1, text, self._diagnosis(status, text, write.path)))
-            if not made[-1].retryable:
-                break
-            if index < DEFAULT_ATTEMPTS:
-                self.sleep(DEFAULT_BACKOFF_S)
-                if write.probe is not None:
-                    try:
-                        found = self.landed(write)
-                    except ForgeCallFailed:
-                        break  # whether it landed is unknowable, and a blind retry may duplicate it
-                    if found is not None:
-                        return found
-        report = Report((write.method, write.path), tuple(made), DEFAULT_ATTEMPTS)
-        raise ForgeCallFailed(report, credential_kept=self._kept)
+        """*data* sent as *write* through :func:`~dev_lab.dev.forgefailure.retried`, a create's probe its *landed*."""
+        got = retried(
+            (write.method, write.path),
+            lambda: self._once(write.method, write.path, data, write.content_type, write.host or None),
+            diagnosis=lambda failed, text: self._diagnosis(failed, text, write.path),
+            sleep=self.sleep,
+            landed=None if write.probe is None else lambda: self.landed(write),
+            failed=lambda report: ForgeCallFailed(report, credential_kept=self._kept),
+        )
+        if not isinstance(got, Answer):
+            return got
+        return json.loads(got.payload) if got.payload else None
 
     def landed(self, write: Write) -> Any:  # noqa: ANN401 -- JSON
         """The object *write* made under this login, if it landed though its answer was lost; else ``None``."""

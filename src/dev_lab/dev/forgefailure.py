@@ -1,4 +1,4 @@
-"""HOW A FORGE ANSWER READS: an answer, a transient failure, a refusal of the call, or a refused credential.
+"""HOW A FORGE ANSWER READS: an answer, a transient, a rate limit, a refusal of the call, or a refused credential.
 
 RETRY, THEN REPORT, IN NETVERB'S VOCABULARY. Every call is bounded by
 :data:`~dev_lab.dev.netverb.DEFAULT_ATTEMPTS` and its outcome is a
@@ -8,18 +8,41 @@ says); a 5xx or a dropped connection is retried. A 401/403 is MEASURED before it
 credential is asked ``GET /user``; a refusal there is a credential refusal (not retried, the ``auth
 login`` remedy), an answer there makes the 401/403 transient (retried, and never told to re-store).
 
-:mod:`dev_lab.dev.forgework`'s :class:`~dev_lab.dev.forgework.Client` makes the calls and measures a 401/403;
-this module names the outcome, and :class:`ForgeCallFailed` is what every caller of a forge verb catches.
+A RATE LIMIT IS NAMED BEFORE ANY OF THAT (2026-11-05: GitHub's 403 "API rate limit exceeded" was measured
+against ``GET /user``, rate limited too, and reported as a refused credential, never retried). A 429, or a 403
+whose headers or body say rate limit, is :attr:`~dev_lab.dev.netverb.Diagnosis.RATE_LIMITED`: retried after the
+wait the forge names (``Retry-After``, else ``X-RateLimit-Reset``), and reported without another attempt when
+that wait is past :data:`RATE_WAIT_CAP_S` -- an attempt before the reset is refused by construction.
+
+:func:`retried` IS THE ONE LOOP every forge HTTP exchange runs through: the client's JSON calls and raw reads
+(:class:`~dev_lab.dev.forgework.Client`) and the Actions artifact protocol (:mod:`dev_lab.dev.actionsartifact`).
+:class:`ForgeCallFailed` is what every caller of a forge verb catches.
 """
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from typing import Final
 
 from dev_lab.dev import forge as _forge
-from dev_lab.dev.netverb import Diagnosis, Report, classify
+from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 
-__all__ = ['HTTP_ERROR_FLOOR', 'UNAUTHENTICATED', 'BudgetSpent', 'ForgeCallFailed', 'diagnose']
+__all__ = [
+    'HTTP_ERROR_FLOOR',
+    'RATE_HEADERS',
+    'RATE_WAIT_CAP_S',
+    'UNAUTHENTICATED',
+    'Answer',
+    'BudgetSpent',
+    'ForgeCallFailed',
+    'diagnose',
+    'pause',
+    'rate_limited',
+    'retried',
+]
 
 #: Statuses below this are answers; at or above it the call failed.
 HTTP_ERROR_FLOOR: Final = 400
@@ -30,8 +53,35 @@ _HTTP_SERVER_FLOOR: Final = 500
 #: The one status that says the credential did not authenticate (a 403 authenticated it and refused the act).
 UNAUTHENTICATED: Final = 401
 
+#: The status a forge answers a rate limit with when it does not answer 429 (GitHub's primary limit).
+_FORBIDDEN: Final = 403
+
+#: The status that is a rate limit whatever else the answer says.
+_TOO_MANY: Final = 429
+
 #: 4xx statuses that are NOT a refusal of the request itself: timeout and rate limit clear by waiting.
-_HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
+_HTTP_RETRYABLE_4XX: Final = frozenset({408, _TOO_MANY})
+
+#: The answer headers a rate limit is read off, on both forges; an :class:`Answer` carries only these.
+RATE_HEADERS: Final = ('Retry-After', 'X-RateLimit-Remaining', 'X-RateLimit-Reset')
+
+#: The longest wait for a rate limit's reset inside one call. Past it the call is reported, not slept through:
+#: GitHub's primary limit resets hourly, and a caller blocked for an hour is a hang, not a retry.
+RATE_WAIT_CAP_S: Final = 60.0
+
+
+@dataclass(frozen=True, slots=True)
+class Answer:
+    """One HTTP exchange: its status (``0``: no answer), its body, and whichever :data:`RATE_HEADERS` it sent."""
+
+    status: int
+    payload: bytes
+    headers: Mapping[str, str] = field(default_factory=dict)
+
+    @property
+    def ok(self) -> bool:
+        """Whether the forge answered below :data:`HTTP_ERROR_FLOOR`."""
+        return 0 < self.status < HTTP_ERROR_FLOOR
 
 
 class BudgetSpent(TimeoutError):
@@ -46,12 +96,14 @@ class ForgeCallFailed(OSError):
 
         *credential_gone*: the refresh left the store holding no credential -- retried and measured, never a re-login.
         *credential_kept*: the store cannot refresh, so the refused credential was kept -- retried and measured.
+        A rate limit says nothing about the credential, so its message adds nothing.
         """
         last = report.attempts[-1].returncode if report.attempts else 0
         said = _forge.AUTH_TRANSIENT
         if _credential_refused(report):
             said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_KEPT if credential_kept else _forge.AUTH_REMEDY
-        super().__init__(f'{report.remedy}. {said}' if last in _forge.AUTH_REFUSED else report.remedy)
+        auth = last in _forge.AUTH_REFUSED and report.diagnosis is not Diagnosis.RATE_LIMITED
+        super().__init__(f'{report.remedy}. {said}' if auth else report.remedy)
         self.report = report
 
     @property
@@ -78,12 +130,96 @@ def _credential_refused(report: Report) -> bool:
     return last is not None and last.returncode in _forge.AUTH_REFUSED and last.diagnosis is Diagnosis.FORGE_REFUSED
 
 
-def diagnose(status: int, text: str) -> Diagnosis:
-    """Read through netverb's table first; an answered 4xx it does not know is a refusal, never a transient.
+def rate_limited(status: int, text: str, headers: Mapping[str, str]) -> bool:
+    """A 429, or a 403 whose headers (no request left, a ``Retry-After``) or body say rate limit."""
+    if status == _TOO_MANY:
+        return True
+    if status != _FORBIDDEN:
+        return False
+    spent = headers.get('X-RateLimit-Remaining') == '0' or bool(headers.get('Retry-After'))
+    return spent or classify(text) is Diagnosis.RATE_LIMITED
 
-    A 401/403 never reaches here: :meth:`dev_lab.dev.forgework.Client._diagnosis` measures it against ``GET /user``
-    first.
+
+def diagnose(status: int, text: str, headers: Mapping[str, str] | None = None) -> Diagnosis:
+    """A rate limit first; then netverb's table; an answered 4xx it does not know is a refusal, never a transient.
+
+    A 401/403 that is no rate limit never reaches here: :meth:`dev_lab.dev.forgework.Client._diagnosis` measures
+    it against ``GET /user`` first.
     """
+    if rate_limited(status, text, headers or {}):
+        return Diagnosis.RATE_LIMITED
     found = classify(f'error: {status} {text}')
     answered = HTTP_ERROR_FLOOR <= status < _HTTP_SERVER_FLOOR and status not in _HTTP_RETRYABLE_4XX
     return Diagnosis.FORGE_REFUSED if found is Diagnosis.UNCLASSIFIED and answered else found
+
+
+def pause(diagnosis: Diagnosis, headers: Mapping[str, str], now: float) -> float | None:
+    """Seconds to wait before the next attempt; ``None`` when the forge's named wait is past :data:`RATE_WAIT_CAP_S`.
+
+    A rate limit waits what ``Retry-After`` (seconds or an HTTP date) names, else until ``X-RateLimit-Reset`` (epoch
+    seconds); a limit naming neither, and every other failure, waits :data:`~dev_lab.dev.netverb.DEFAULT_BACKOFF_S`.
+    """
+    if diagnosis is not Diagnosis.RATE_LIMITED:
+        return DEFAULT_BACKOFF_S
+    named = _seconds_until(headers.get('Retry-After', ''), headers.get('X-RateLimit-Reset', ''), now)
+    wait = DEFAULT_BACKOFF_S if named is None else max(named, 0.0)
+    return wait if wait <= RATE_WAIT_CAP_S else None
+
+
+def _seconds_until(retry_after: str, reset: str, now: float) -> float | None:
+    """The wait a ``Retry-After`` (delta seconds or HTTP date) or an ``X-RateLimit-Reset`` (epoch) names."""
+    if retry_after.strip().isdigit():
+        return float(retry_after)
+    if retry_after:
+        try:
+            return parsedate_to_datetime(retry_after).timestamp() - now
+        except (TypeError, ValueError):
+            pass
+    return float(reset) - now if reset.strip().isdigit() else None
+
+
+def retried(
+    label: tuple[str, ...],
+    once: Callable[[], Answer],
+    *,
+    diagnosis: Callable[[Answer, str], Diagnosis] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.time,
+    landed: Callable[[], object] | None = None,
+    failed: Callable[[Report], Exception] = ForgeCallFailed,
+) -> object:
+    """*once* until it answers below :data:`HTTP_ERROR_FLOOR`, is refused, or the attempts run out.
+
+    The answering :class:`Answer` (or what *landed* found) is returned; otherwise ``failed(report)`` is raised
+    after at most :data:`~dev_lab.dev.netverb.DEFAULT_ATTEMPTS`. *diagnosis* reads a failed answer (default
+    :func:`diagnose`); a dropped connection (``OSError``) is status 0 and transient. Before each retry the loop
+    waits :func:`pause`, then asks *landed* whether the lost attempt landed: what it returns, unless ``None``, is
+    the result, and a :class:`ForgeCallFailed` from it stops the loop -- whether a write landed is then unknowable,
+    and a blind retry may duplicate it. A :class:`BudgetSpent` is re-raised naming *label*, never retried.
+    """
+    read = diagnosis or (lambda answer, text: diagnose(answer.status, text, answer.headers))
+    made: list[Attempt] = []
+    for index in range(1, DEFAULT_ATTEMPTS + 1):
+        try:
+            answer = once()
+        except BudgetSpent as spent:
+            msg = f'{" ".join(label)}: {spent}'
+            raise BudgetSpent(msg) from spent
+        except OSError as exc:
+            answer = Answer(0, str(exc).encode())
+        if answer.ok:
+            return answer
+        text = answer.payload.decode(errors='replace')[:300]
+        made.append(Attempt(index, answer.status or 1, text, read(answer, text)))
+        wait = pause(made[-1].diagnosis, answer.headers, now())
+        if not made[-1].retryable or wait is None or index == DEFAULT_ATTEMPTS:
+            break
+        sleep(wait)
+        if landed is not None:
+            try:
+                found = landed()
+            except ForgeCallFailed:
+                break
+            if found is not None:
+                return found
+    raise failed(Report(label, tuple(made), DEFAULT_ATTEMPTS))
