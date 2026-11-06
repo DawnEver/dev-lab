@@ -1,4 +1,4 @@
-"""REVIEW-BUDGET: every PR's review capped in USD inside the family's month (user ruling 2026-10-31).
+"""REVIEW-BUDGET: every PR's review capped in USD inside the review allotment's month (user ruling 2026-10-31).
 
 Every skip has its planted control: the same PR one step under the cap runs. A skipped review merges
 Unreviewed (user ruling 2026-11-06), so no gate text sends its author anywhere but the raise door.
@@ -28,14 +28,19 @@ from dev_lab.dev.reviewbudget import (
     DEGRADED_MODEL,
     INITIAL_PRS_PER_MONTH,
     MIN_FITTED_PRS,
+    REVIEW_ALLOTMENT,
+    SCOPE_ENV,
+    SPEND_SCHEMA,
     TAG_ENV,
     Raised,
+    ShareRefused,
     Spend,
     charged_to,
     fit,
     gate,
     raise_line,
     raised_of,
+    share_of,
     tag_of,
 )
 
@@ -123,8 +128,31 @@ def test_with_no_spend_report_nothing_is_capped() -> None:
 
 
 def test_an_unknown_spend_report_schema_is_refused() -> None:
-    with pytest.raises(ValueError, match='schema 2'):
-        Spend.from_report({'schema': 2})
+    with pytest.raises(ValueError, match='schema 1'):
+        Spend.from_report({'schema': 1, 'budget_usd': 1000.0})
+
+
+def _report(budgets: dict) -> dict:
+    return {'schema': SPEND_SCHEMA, 'budgets': budgets, 'spent_usd': 99.0, 'unpriced_calls': 0,
+            'window': {'days': 3, 'by_tag': {'o/r#1': 2.0}}}  # fmt: skip
+
+
+def test_the_review_month_is_the_review_allotment_ai_lab_reports_never_a_number_of_ours() -> None:
+    """PLANTED CONTROL: another allotment's dollars (a campaign's) never move the review's month."""
+    got = Spend.from_report(_report({
+        REVIEW_ALLOTMENT: {'provider': 'anthropic', 'allotted_usd': 300.0, 'spent_usd': 40.0, 'standing': True},
+        'campaign:T3': {'provider': 'anthropic', 'allotted_usd': 50.0, 'spent_usd': 49.0, 'standing': False},
+    }))  # fmt: skip
+    assert (got.budget_usd, got.spent_usd, got.of('o/r#1')) == (300.0, 40.0, 2.0)
+
+
+def test_a_report_with_no_review_allotment_is_refused_naming_the_row_to_declare() -> None:
+    with pytest.raises(ValueError, match=r'\[ai_lab\.standing\] review'):
+        Spend.from_report(_report({}))
+
+
+def test_a_pr_share_is_a_child_of_the_review_allotment() -> None:
+    assert share_of('o/r#5') == 'review>o/r#5'
 
 
 # --- the raise, the tag ----------------------------------------------------------------------------------------
@@ -143,11 +171,45 @@ def test_a_pr_is_charged_by_owner_repo_and_number_on_either_forge() -> None:
     assert tag_of('https://forge.example.org/o/r/pulls/3', 3) == 'o/r#3'
 
 
-def test_charged_to_sets_the_tag_for_the_commands_and_restores_it() -> None:
-    before = os.environ.get(TAG_ENV)
-    with charged_to('o/r#1'):
-        assert os.environ[TAG_ENV] == 'o/r#1'
-    assert os.environ.get(TAG_ENV) == before
+def test_charged_to_sets_the_tag_and_the_share_for_the_commands_and_restores_them() -> None:
+    before = (os.environ.get(TAG_ENV), os.environ.get(SCOPE_ENV))
+    with charged_to('o/r#1', 'review>o/r#1'):
+        assert (os.environ[TAG_ENV], os.environ[SCOPE_ENV]) == ('o/r#1', 'review>o/r#1')
+    assert (os.environ.get(TAG_ENV), os.environ.get(SCOPE_ENV)) == before
+
+
+@pytest.mark.parametrize('refuse', [False, True], ids=['opens', 'refused'])
+def test_a_review_opens_the_prs_cap_as_its_share_and_runs_charged_in_it(tmp_path: Path, *, refuse: bool) -> None:
+    """The gate's cap (the initial 1000/100) is the share opened; the command sees it in ``AI_LAB_SCOPE``.
+
+    PLANTED CONTROL: a share ai-lab refuses to open runs no command, and the line names the refusal.
+    """
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    opened: list[tuple[str, float]] = []
+    seen: list[str | None] = []
+    command = FakeCommand(_doc())
+    refusal = 'review: cannot hold the share'
+
+    def allot(_runtimes: object, _root: Path, share: str, usd: float) -> str:
+        if refuse:
+            raise ShareRefused(refusal)
+        opened.append((share, usd))
+        return share
+
+    def run(argv: list[str], root: Path) -> str:
+        seen.append(os.environ.get(SCOPE_ENV))
+        return command(argv, root)
+
+    said = review_tick(work, forge, _REVIEW, base='integrate/main', run=run, ready=lambda *_: None, host='box',
+                       spend=lambda *_: _spend(), allot=allot)  # fmt: skip
+    if refuse:
+        assert seen == []
+        assert f'did not open: {refusal}' in said[0]
+    else:
+        assert opened == [(f'review>o/r#{number}', _BUDGET / INITIAL_PRS_PER_MONTH)]
+        assert seen
+        assert set(seen) == {f'review>o/r#{number}'}
 
 
 # --- the forge -------------------------------------------------------------------------------------------------
