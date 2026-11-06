@@ -165,8 +165,10 @@ What every host still reads, kept small:
   The same relock keeps every other pinned input at the newest (`dev_lab.dev.lockcheck.FRESHENED`): a
   `rust-toolchain.toml` below the newest stable, and dev-lab's uv pin (`src/dev_lab/dev/uv.toml`, THE uv that writes
   every family lock and that host deploys install) below the newest uv release tag (user directive 2026-11-05).
-  A relock raising the uv pin is written BY the new uv; on a host without it the relock is refused naming
-  `uv self update <version>`, never written by the old one.
+  A relock raising the uv pin is written BY the new uv, and every lock by the pinned one: a host whose uv is
+  another FOLLOWS first (`dev_lab.dev.uvfollow`, user ruling 2026-11-06) -- `winget install --id astral-sh.uv
+  --exact --version <version>` for a WinGet install, `uv self update <version>` otherwise, retried as a network
+  verb -- and only when that cannot land is the lock refused naming why, never written by the old uv.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards dev-lab and then each `[serve]` repo to its upstream and

@@ -484,9 +484,15 @@ def test_a_uv_pin_behind_the_newest_release_is_carried_like_a_stale_lock(world: 
     """User directive 2026-11-05: the forge raises dev-lab's uv pin by the same relock pull request."""
     clone, origin, _ = world
     sha = _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\n'})
-    said = _carry(clone, _Forge(), resolve=_fresh, uv=lambda: '0.13.8', host_uv=lambda: '0.13.8', upgrade=_uv_bumped)
+    said = _carry(
+        clone, _Forge(), resolve=_fresh, uv=lambda: '0.13.8', follow_uv=lambda _version: '', upgrade=_uv_bumped
+    )
     assert said.startswith(f'relocked integrate/main at {sha[:12]} onto {BRANCH}')
     assert _git(origin, 'diff', '--name-only', sha, BRANCH) == UV_PIN
+
+
+def _not_followed(version: str) -> str:
+    return f'uv 0.13.7 did not follow to {version}'
 
 
 def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the_update(
@@ -496,5 +502,12 @@ def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the
     clone, origin, _ = world
     _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\n'})
     with pytest.raises(RelockFailed, match=r'uv self update 0\.13\.8'):
-        _carry(clone, _Forge(), resolve=_fresh, uv=lambda: '0.13.8', host_uv=lambda: '0.13.7', upgrade=_never)
+        _carry(
+            clone,
+            _Forge(),
+            resolve=_fresh,
+            uv=lambda: '0.13.8',
+            follow_uv=lambda version: f'uv 0.13.7 did not follow to {version}',
+            upgrade=_never,
+        )
     assert _git(origin, 'branch', '--list', BRANCH) == ''

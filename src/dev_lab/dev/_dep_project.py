@@ -24,6 +24,7 @@ from dev_lab.dev.lockcheck import (
     unreasoned_holds,
     uv_version,
 )
+from dev_lab.dev.uvfollow import follow
 from dev_lab.dev.venvpath import venv_interpreter
 
 
@@ -80,15 +81,24 @@ def uv_remedy(version: str) -> str:
 
 
 def lock_writer(uv: str, required: str) -> str:
-    """*uv*, if it is *required*, the one uv that writes every lock in the family; else refused with the remedy."""
+    """*uv*, moved to *required* first (:func:`~dev_lab.dev.uvfollow.follow`), the one uv that writes every lock.
+
+    A uv that cannot follow is refused with why and the remedy: a lock written by another uv churns its revision line.
+    """
     found = installed_uv_version(uv)
-    if found != required:
+    if found != required and (why := follow_pin(uv, required)):
         msg = (
             f'{uv} is uv {found or "(unreadable)"}, but every lock is written by uv {required} '
-            f'({UV_PIN}): a lock written by another uv churns its revision line. {uv_remedy(required).capitalize()}'
+            f'({UV_PIN}): a lock written by another uv churns its revision line, and {why}. '
+            f'{uv_remedy(required).capitalize()}'
         )
         raise OtherUvRefused(msg)
     return uv
+
+
+def follow_pin(uv: str, required: str) -> str:
+    """Move the host's *uv* to *required* through its own installer; ``''`` once it is, else why it is not."""
+    return follow(uv, required, version_of=installed_uv_version)
 
 
 def uv_command(
