@@ -57,9 +57,6 @@ class StateForge(Client):
         #: ``pyproject.toml`` at every ref, ``pyproject_at`` overriding one ref.
         self.pyproject = "[project]\nname = 'r'\n"
         self.pyproject_at: dict[str, str | None] = {}  # ``None``: the file is absent at that ref
-        #: Whether every ref holds Gitea's review workflow (default: it adopts the Actions review), and per ref.
-        self.review_workflow = True
-        self.review_workflow_at: dict[str, bool] = {}
         #: Every PR review by pull number, as ``GET .../pulls/{n}/reviews`` lists them (:meth:`add_review`).
         self.reviews: dict[int, list[dict[str, Any]]] = {}
 
@@ -102,13 +99,7 @@ class StateForge(Client):
         return {'workflow_runs': listed, 'total_count': len(listed)}
 
     def _contents(self, path: str, ref: str) -> dict[str, Any]:
-        if path == 'pyproject.toml':
-            text = self.pyproject_at.get(ref, self.pyproject)
-        else:  # the review workflow file, the only other one read
-            if not self.review_workflow_at.get(ref, self.review_workflow):  # gitea answers an absent file 404
-                absent = Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED)
-                raise ForgeCallFailed(Report(('GET', 'contents'), (absent,), 1))
-            text = 'name: Review\n'
+        text = self.pyproject_at.get(ref, self.pyproject) if path == 'pyproject.toml' else None
         if text is None:
             missing = Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED)
             raise ForgeCallFailed(Report(('GET', 'contents'), (missing,), 1))

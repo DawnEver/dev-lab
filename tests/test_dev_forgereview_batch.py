@@ -226,22 +226,15 @@ def _batched_work(tmp_path: Path) -> tuple[Path, str]:
     return work, head
 
 
-@pytest.mark.parametrize(('host', 'code'), [('github.com', 0), ('forge.example.org', 1)])
-def test_a_pending_batch_is_not_a_failed_job_where_the_gate_reads_the_status_creator(
-    tmp_path: Path, host: str, code: int
-) -> None:
-    """Pending is not failure, and where the gate reads the status creator the job is not red for it.
-
-    On GitHub the gate trusts the status CREATOR, so the job exits 0 and the head's ``pending`` status alone holds
-    the merge. On Gitea the gate trusts the review RUN's success, so a pending run
-    must not conclude success (a planted status would then count): it exits 1 there.
-    """
+@pytest.mark.parametrize('host', ['github.com', 'forge.example.org'])
+def test_a_pending_batch_is_not_a_failed_job(tmp_path: Path, host: str) -> None:
+    """Pending is not failure on either forge: the job exits 0; the head's ``pending`` status alone holds the merge."""
     work, head = _batched_work(tmp_path)
     forge = StateForge(Forge(host, 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     forge.login = ACTIONS_BOT
     command = BatchedCommand(polls=99)
-    assert review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == code
+    assert review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 0
     status = _review_status(forge, head)
     assert (status.state, status.description.startswith(BATCH_PENDING)) == ('pending', True)
 

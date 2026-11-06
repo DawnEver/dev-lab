@@ -181,29 +181,27 @@ def unable(client: Client, pull: PullRequest, host: str, why: str) -> str:
     return f'#{pull.number} {head[:12]}: {said}'
 
 
-def counted_success(client: Client, sha: str, *, base: str) -> CommitStatus | None:
+def counted_success(client: Client, sha: str) -> CommitStatus | None:
     """*sha*'s latest review status when it is a ``success`` the merge gate counts there, else ``None``.
 
-    The gate's own test (:func:`~dev_lab.dev.reviewgate.forge_posted`): on Gitea a null-creator success counts
-    only beside the base's review run at *sha* that concluded success, so a PR-head workflow's planted status
-    never stands for a review.
+    The gate's own test (:func:`~dev_lab.dev.reviewgate.forge_posted`): on GitHub only the Actions bot's success
+    counts; on Gitea every success does.
     """
     latest = next((one for one in status_list(client, sha) if one.context == REVIEW_CONTEXT), None)
-    if latest is None or latest.state != 'success' or not forge_posted(client, sha, base=base)(latest):
+    if latest is None or latest.state != 'success' or not forge_posted(client)(latest):
         return None
     return latest
 
 
-def synced(client: Client, head: str, source: str, *, base: str) -> str | None:
+def synced(client: Client, head: str, source: str) -> str | None:
     """A PURE SYNC (D52): post *source*'s counted success on *head*, naming it; the description, else ``None``.
 
     *source* is :func:`dev_lab.dev.forgereview_scope.synced_from`'s: *head*'s tree is its reviewed content plus
     integration's. Nothing runs and no round is spent. Posted through the one review door
-    (:func:`~dev_lab.dev.reviewgate.post_review`), so inside the review job it names the job's own run and counts
-    only when that run concludes success. A *source* without a counted success -- a ``failure``, an ``error``, a
-    planted status -- carries nothing: the head is reviewed.
+    (:func:`~dev_lab.dev.reviewgate.post_review`). A *source* without a counted success -- a ``failure``, an
+    ``error``, a status the gate does not count -- carries nothing: the head is reviewed.
     """
-    stood = counted_success(client, source, base=base)
+    stood = counted_success(client, source)
     if stood is None:
         return None
     why = f'{CARRIED_FROM} {source[:12]}: {PURE_SYNC}'

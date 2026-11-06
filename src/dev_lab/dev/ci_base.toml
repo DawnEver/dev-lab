@@ -471,13 +471,13 @@ git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
 ''' },
 ]
 
-# GITEA'S REVIEW JOB (2026-11-01): tests/review on a Gitea-hosted repo is posted by its Actions job, so the status's
-# recorded creator is the forge's Actions ghost (D11) -- but so is EVERY Actions job's, a PR-head workflow's too.
-# TRIGGERED BY pull_request_target (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a pull_request
+# GITEA'S REVIEW JOB (2026-11-01): tests/review on a Gitea-hosted repo is posted by its Actions job. Gitea vets no
+# poster (reviewgate.forge_posted, user ruling 2026-11-06): the trigger below guards the review KEY and the job, not
+# whose status counts. TRIGGERED BY pull_request_target (dev-lab #30, user ruling 2026-11-01, option (b)): Gitea runs a pull_request
 # workflow from the PR HEAD, so a same-repo PR could rewrite this file to post success itself or print the review
 # key; a pull_request_target workflow is detected from the BASE commit (notifier_helper.go, 1.27), so the BASE's
-# workflow runs -- the PR can neither change what runs nor read the secret -- and reviewgate counts a success only
-# when that run concluded success (the job fails unless it posted success, forgereview_job.job_exit). Safe ONLY because
+# workflow runs -- the PR can neither change what runs nor read the secret; the job fails unless it posted success
+# (forgereview_job.job_exit). Safe ONLY because
 # what the job takes from the head is the DIFF, read as data; what it acts on is the base's -- the workflow,
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).

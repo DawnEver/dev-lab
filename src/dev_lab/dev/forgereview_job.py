@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgereview import HostCannot, hold, review_pull
 from dev_lab.dev.forgereview_batch import BATCH_PENDING
@@ -108,28 +107,24 @@ def job_exit(
 ) -> int:
     """The review job's exit: ``0`` only when the PR's head is reviewed by what this job did (dev-lab #30).
 
-    Gitea's gate counts a review only when the base's ``pull_request_target`` run concluded success
-    (:mod:`dev_lab.dev.reviewgate`), so a run must FAIL unless it posted success. *posted* is what this job's
-    :func:`~dev_lab.dev.reviewgate.post_review` calls posted, in order
-    (:func:`~dev_lab.dev.reviewgate.posted_verdicts`): its LAST state decides. A job that posted none (a head whose
-    counted review stands, a PR it does not review) exits ``0`` only when the gate itself counts the head's review,
-    or when another Actions run still running holds the head's claim (:func:`live_claim`, *ended* defaulting to
-    :func:`run_ended`): that run posts the verdict, and its conclusion is the one the gate reads.
+    *posted* is what this job's :func:`~dev_lab.dev.reviewgate.post_review` calls posted, in order
+    (:func:`~dev_lab.dev.reviewgate.posted_verdicts`): its LAST state decides, so a run FAILS unless it posted
+    success. A job that posted none (a head whose counted review stands, a PR it does not review) exits ``0`` only
+    when the gate itself counts the head's review, or when another Actions run still running holds the head's claim
+    (:func:`live_claim`, *ended* defaulting to :func:`run_ended`): that run posts the verdict.
 
-    A BATCH STILL RUNNING is no failure: on GitHub, whose gate trusts the status CREATOR, a job that left the head
-    ``pending`` :data:`BATCH_PENDING` exits ``0`` -- the status alone holds the merge, and the scheduled resume
-    (:func:`resume_batches`) settles it. On Gitea the gate trusts the review RUN's success, so a pending run must not
-    conclude success (a planted status would count beside it): it exits ``1`` there.
+    A BATCH STILL RUNNING is no failure: a job that left the head ``pending`` :data:`BATCH_PENDING` exits ``0`` on
+    either forge -- the status alone holds the merge, and the scheduled resume (:func:`resume_batches`) settles it.
     """
     pull = client.pr_view(number)
     if pull.base != base:  # not a PR into the trusted integration: never reviewed, so never a success
         return 1
     if posted:
-        if posted[-1] == 'pending' and client.backend is GITHUB and _batch_waits(client, pull.head_sha):
-            return 0  # pending is not failure: GitHub's gate trusts the status creator, and the status holds the merge
+        if posted[-1] == 'pending' and _batch_waits(client, pull.head_sha):
+            return 0  # pending is not failure: the status holds the merge
         return 0 if posted[-1] == 'success' else 1
     head = pull.head_sha
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None) if head else None
     if live_claim(latest, run_ended(client) if ended is None else ended):
         return 0
-    return 0 if head and review_missing(status_list(client, head), forge_posted(client, head, base=base)) is None else 1
+    return 0 if head and review_missing(status_list(client, head), forge_posted(client)) is None else 1

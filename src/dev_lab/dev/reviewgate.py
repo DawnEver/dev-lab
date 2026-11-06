@@ -6,51 +6,12 @@ User ruling 2026-10-31, "every PR must get a review". A head is reviewed when, a
 a takeover pending, an ``error``, a ``failure`` -- is not a review, and :func:`review_missing` names it. Nothing is
 advisory: ai-lab #3 and dev-lab #5 were auto-merged with ``tests/review=error`` when an error was.
 
-THE SUCCESS IS VERIFIED AT READ TIME FROM WHAT THE FORGE RECORDS (D11, #11 round 3, F-e4d5c529db40): it counts only
-when the forge's own review JOB posted it (:func:`forge_posted`). A status a developer's or an agent's token posted
-never satisfies it, whatever environment the poster claimed: every identity the local side asserts is forgeable by a
-same-user agent, the forge's record of who wrote is not.
-
-- GitHub records the job token's post as its Actions bot (:data:`~dev_lab.dev._forgebackends.ACTIONS_BOT`).
-- Gitea stores it with ``creator_id = -2`` (its Actions user) but its status converter loads the creator with
-  ``GetUserByID``, which finds no row for a system user, so the API answers ``"creator": null`` -- exactly as it
-  does for a DELETED user's status (``services/convert/status.go``; measured on 1.27.1, 2026-11-01). A null creator
-  alone is therefore ambiguous (F-4708098a59c5), and on Gitea the success must ALSO name, as its ``target_url``,
-  an Actions run of this repository that the forge's API lists at this very head (:func:`job_run_url` is how the
-  job names its own run). A deleted user's status carries no such run; a live user's token is never null.
-
-ON GITEA THE VERDICT IS THE RUN'S, NOT A STATUS'S (dev-lab #30, user ruling 2026-11-01, option (b)). Gitea runs a
-``pull_request`` workflow from the PR HEAD, and EVERY Actions job's status is ``creator: null``: a PR adding an
-``on: pull_request`` workflow could post that same null-creator success naming the honest run. So review.yml is
-triggered by ``pull_request_target``, which Gitea detects from the BASE commit (``notifier_helper.go``, 1.27) -- the
-PR can neither change what runs nor read the secret -- and a success counts only when, besides the status checks
-above, the latest CONCLUDED run at this head that is that workflow (``event == "pull_request_target"``, ``path``
-``review.yml@<ref>``, :func:`review_runs`) concluded ``success``. A PR-head workflow can neither create nor alter
-such a run, and the job exits non-zero unless it posted success (:func:`dev_lab.dev.forgereview_job.job_exit`, from
-what :func:`post_review` recorded in :func:`posted_verdicts`). A run with no conclusion -- queued, running, or
-RE-RUN IN PLACE (Gitea keeps its id and resets its conclusion while it executes) -- decides nothing, and the newest
-run that has one decides. A head whose only review run is being re-run therefore waits for it to conclude: its
-earlier conclusion is no longer observable, so a success naming it cannot be told from one a PR-head workflow
-planted during a first run. That re-run reviews the head afresh
-(:attr:`~dev_lab.dev.forgereview_command.Runner.verifies`) and concludes by its own post.
-
-ON GITEA THE BASE'S REVIEW WORKFLOW ALONE SAYS WHICH IDENTITY IS THE FORGE (:func:`adopts_actions_review`): a repo
-whose integration branch holds :data:`ACTIONS_REVIEW_FILE` -- the file Gitea runs for ``pull_request_target`` --
-is judged by the Actions rule above. The FILE is read, never a ``[tool.dev_lab.ci]`` table: every Gitea repo renders
-it from the base set without declaring it (dev-lab #92), and a table read as "not adopted" sent the job's null-creator
-success to the serve rule, which refuses every one (motronics #5540, 2026-11-06). Under ``pull_request_target`` only
-the base's workflow ever runs, so a PR that adds review.yml is reviewed by the serve rule until it lands -- an
-adoption read at the head would wait forever for an Actions review that cannot come -- and a PR never removes it:
-the base is the integration branch, which the PR cannot edit. A base without the file has no review job: its review
-is posted by ``forge serve``, and the forge is the login the judging client authenticates as
-(:meth:`~dev_lab.dev.forgework.Client.whoami`) -- the pre-#14
-rule (be39f7a6, ``forge_bots`` with ``[tool.dev_lab.review] forge_bot`` = "the login forge serve posts as"), its
-identity now read from the forge rather than declared. RESIDUAL, ACCEPTED ON RECORD (D18, "fake isolation"): on a
-Gitea host the serve's login is shared with the agents on that host, so until the repo adopts the Actions review a
-same-host agent's token is indistinguishable from the serve's.
-A base whose file cannot be read -- any failure but the forge's 404, an answer without content -- refuses
-(:class:`DeclarationUnread`); only a 404 is "not adopted". A runs listing the forge
-answers without a list refuses too (:class:`RunsUnread`), as a failed call does: never a pass.
+WHO POSTED A SUCCESS COUNTS ONLY WHERE THE FORGE VETS AUTHORS (:func:`forge_posted`; user ruling 2026-11-06,
+"Gitea is safe; vetting is for GitHub", extended to review statuses the same day). GitHub
+(:attr:`~dev_lab.dev._forgebackends.Backend.vets_authors`) counts its Actions bot's post alone
+(:data:`~dev_lab.dev._forgebackends.ACTIONS_BOT`, D11): a developer's or an agent's token never satisfies it. Gitea
+is private and vets no author, so a success counts whoever posted it -- the serve's login, an Actions job's null
+creator, an agent -- exactly as :meth:`~dev_lab.dev.forgework.Client.trusts` trusts every login there.
 
 The remedy for a head whose review could not run is :data:`RERUN`: the forge's own review, run again.
 """
@@ -60,10 +21,8 @@ from __future__ import annotations
 import base64
 import contextlib
 import os
-import re
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Final
-from urllib.parse import urlsplit
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, JUDGE_CHECK, REVIEW_CONTEXT
@@ -82,15 +41,12 @@ if TYPE_CHECKING:
     type Reviewed = Callable[[Sequence[CommitStatus]], str | None]
 
 __all__ = [
-    'ACTIONS_REVIEW',
-    'ACTIONS_REVIEW_FILE',
     'APPROVED',
     'PREPARE_WORKFLOW',
     'RERUN',
     'VERDICT_STATES',
     'DeclarationUnread',
     'RunsUnread',
-    'adopts_actions_review',
     'app_missing',
     'app_verdicts',
     'forge_posted',
@@ -103,19 +59,12 @@ __all__ = [
     'posted_verdicts',
     'review_missing',
     'review_runs',
-    'run_path',
     'standing_verdicts',
     'status_gate',
 ]
 
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
 RERUN: Final = "re-run the forge's review of the head (the PR's review job)"
-
-#: The workflow whose run is Gitea's review job (:func:`review_runs` lists runs by it).
-ACTIONS_REVIEW: Final = 'review.yml'
-
-#: Where the base holds :data:`ACTIONS_REVIEW` on Gitea; holding it adopts Gitea Actions as the forge's reviewer.
-ACTIONS_REVIEW_FILE: Final = f'.gitea/workflows/{ACTIONS_REVIEW}'
 
 #: The base's workflow whose run attaches a judge repo's bundle (:mod:`~dev_lab.dev.forgereview_pointer`);
 #: :mod:`~dev_lab.dev.ciworkflows` renders it, on either forge, under this name: the one the judge lists runs by.
@@ -139,14 +88,6 @@ def github_posted(status: CommitStatus) -> bool:
     return status.creator == ACTIONS_BOT
 
 
-def run_path(url: str, owner: str, repo: str) -> str:
-    """``/<owner>/<repo>/actions/runs/<n>`` named in *url* (absolute or relative), lower-cased; ``''`` when none."""
-    found = re.search(
-        rf'/{re.escape(owner)}/{re.escape(repo)}/actions/runs/\d+(?=/|$)', urlsplit(url).path, re.IGNORECASE
-    )
-    return found.group(0).lower() if found else ''
-
-
 class DeclarationUnread(ValueError):
     """The repo's ``pyproject.toml`` at a ref could not be read: whose review counts is undecided, so none does."""
 
@@ -155,52 +96,29 @@ class RunsUnread(ValueError):
     """The forge's runs at a head could not be read: whether its review run concluded success is undecided."""
 
 
-def _content_at(client: Client, path: str, ref: str) -> str | None:
-    """The repo's file *path* at *ref*, as the forge holds it -- never a working tree; ``None`` on the forge's 404.
+def manifest_at(client: Client, ref: str) -> str:
+    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree.
 
     Raises:
-        DeclarationUnread: any other failure, or an answer that carries no content.
+        DeclarationUnread: the file is absent at *ref*, cannot be read, or the answer carries no content.
 
     """
     try:
-        answer: Any = client.call('GET', f'{client.repo}/contents/{path}?ref={ref}')
+        answer: Any = client.call('GET', f'{client.repo}/contents/pyproject.toml?ref={ref}')
     except ForgeCallFailed as failed:
-        if failed.final == _NOT_FOUND:
-            return None
-        msg = f'{path} at {ref} cannot be read: {failed}'
+        msg = f'pyproject.toml at {ref} cannot be read: {failed}'
         raise DeclarationUnread(msg) from failed
     content = answer.get('content') if isinstance(answer, dict) else None
     if not content:
-        msg = f'{path} at {ref}: the forge answered no content'
+        msg = f'pyproject.toml at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
     return base64.b64decode(content).decode()
 
 
-def manifest_at(client: Client, ref: str) -> str:
-    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it (:func:`_content_at`).
+def review_runs(client: Client, head: str, *, workflow: str, pull: int | None = None) -> list[dict[str, Any]]:
+    """The runs of the base's *workflow* at *head*, newest first, as the forge lists them.
 
-    Raises:
-        DeclarationUnread: the file is absent at *ref*, or cannot be read.
-
-    """
-    text = _content_at(client, 'pyproject.toml', ref)
-    if text is None:
-        msg = f'pyproject.toml at {ref} is absent'
-        raise DeclarationUnread(msg)
-    return text
-
-
-def adopts_actions_review(client: Client, ref: str) -> bool:
-    """Whether the repo holds :data:`ACTIONS_REVIEW_FILE` at *ref*: the review job Gitea runs for its PRs."""
-    return _content_at(client, ACTIONS_REVIEW_FILE, ref) is not None
-
-
-def review_runs(
-    client: Client, head: str, *, workflow: str = ACTIONS_REVIEW, pull: int | None = None
-) -> list[dict[str, Any]]:
-    """The runs of the base's *workflow* (:data:`ACTIONS_REVIEW`) at *head*, newest first, as the forge lists them.
-
-    Only a :data:`REVIEW_EVENT` run whose ``path`` is ``review.yml@<ref>`` (Gitea's converter:
+    Only a :data:`REVIEW_EVENT` run whose ``path`` is ``<workflow>@<ref>`` (Gitea's converter:
     ``fmt.Sprintf("%s@%s", run.WorkflowID, run.Ref)``, the entry file's name) -- the one workflow a PR cannot edit.
     Given *pull*, only a run of THAT pull request (:func:`_of_workflow`; Gitea: ``<ref>`` is its
     ``refs/pull/<n>/head``, GitHub: its ``pull_requests``), so a second PR of the same head into a branch whose
@@ -237,48 +155,20 @@ def _of_workflow(run: dict[str, Any], workflow: str, pull: int | None, backend: 
     return path == backend.run_path.format(workflow=workflow, pull=pull)
 
 
-def forge_posted(client: Client, head: str, *, base: str) -> Callable[[CommitStatus], bool]:
-    """The test of whether a status on *head* was posted by *client*'s forge's own review (module docstring).
+def forge_posted(client: Client) -> Callable[[CommitStatus], bool]:
+    """The test of whether a status counts as *client*'s forge's own review (module docstring).
 
-    On Gitea the runs at *head* are read once, on the first null-creator status asked about; a repo that has not
-    adopted the Actions review at *base* (:func:`adopts_actions_review`) is reviewed by the serve, the client's own
-    login.
+    Where the backend vets authors (GitHub) only its Actions bot's post counts (:func:`github_posted`); elsewhere
+    (Gitea) every post does.
     """
-    if client.backend is GITHUB:
-        return github_posted
-    if not adopts_actions_review(client, base):
-        serve = client.whoami()
-        return lambda status: bool(serve) and status.creator == serve
-    owner, repo = client.forge.owner, client.forge.repo
-    read: list[tuple[frozenset[str], bool]] = []
-
-    def at_head() -> tuple[frozenset[str], bool]:
-        """The honest review runs' paths at the head, and whether the latest of them to conclude concluded success."""
-        if not read:
-            runs = review_runs(client, head)
-            concluded = next((run for run in runs if run.get('conclusion')), None)
-            paths = frozenset(path for run in runs if (path := run_path(run.get('html_url') or '', owner, repo)))
-            read.append((paths, concluded is not None and concluded.get('conclusion') == 'success'))
-        return read[0]
-
-    def posted(status: CommitStatus) -> bool:
-        if status.creator != '':
-            return False
-        named = run_path(status.url, owner, repo)
-        if not named:
-            return False
-        paths, succeeded = at_head()
-        return named in paths and succeeded
-
-    return posted
+    return github_posted if client.backend.vets_authors else lambda _status: True
 
 
 def job_run_url(client: Client, env: Mapping[str, str] | None = None) -> str:
     """The web URL of the Actions run this process is a job of, on *client*'s Gitea forge; ``''`` anywhere else.
 
     Read from the forge (``GET .../actions/runs/{GITHUB_RUN_ID}``), never assembled: a run's web path is its index
-    on some Gitea releases and its id on others, and the forge's own ``html_url`` is what :func:`forge_posted`
-    compares against.
+    on some Gitea releases and its id on others; the status links the run that posted it.
     """
     env = os.environ if env is None else env
     run_id = env.get('GITHUB_RUN_ID', '')
@@ -296,7 +186,7 @@ def posted_verdicts() -> Iterator[list[str]]:
     """The states every :func:`post_review` inside the block posts, in order -- what THIS process said.
 
     The review job's exit is read from it (:func:`dev_lab.dev.forgereview_job.job_exit`): the door that posts is the
-    one that knows, never a re-read of the head, where a PR-head workflow's null-creator status may stand.
+    one that knows, never a re-read of the head.
     """
     said: list[str] = []
     token = _POSTED.set(said)
@@ -309,8 +199,8 @@ def posted_verdicts() -> Iterator[list[str]]:
 def post_review(client: Client, head: str, *, state: str, description: str, target_url: str = '') -> None:
     """Post *head*'s :data:`REVIEW_CONTEXT` -- the ONE door every review status is posted through.
 
-    Inside Gitea's review job the status names the job's own run (:func:`job_run_url`), which is what
-    :func:`forge_posted` verifies; anywhere else it links *target_url* (the round's comment, a carried verdict).
+    Inside Gitea's review job the status links the job's own run (:func:`job_run_url`); anywhere else it links
+    *target_url* (the round's comment, a carried verdict).
     """
     status_post(client, head, context=REVIEW_CONTEXT, state=state, description=description,
                 target_url=job_run_url(client) or target_url)  # fmt: skip
@@ -416,7 +306,7 @@ def app_missing(
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:
     """Why the head *statuses* (newest first) describe is not reviewed, or ``None`` when it is.
 
-    A ``success`` counts only when *posted* (:func:`forge_posted`) says the forge's review job posted it.
+    A ``success`` counts only when *posted* (:func:`forge_posted`) counts its poster.
     """
     latest: dict[str, CommitStatus] = {}
     for one in statuses:

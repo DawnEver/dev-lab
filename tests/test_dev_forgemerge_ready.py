@@ -37,13 +37,9 @@ def _pr(
     (work / 'pyproject.toml').write_text(manifest, encoding='utf-8')
     forge = StateForge()
     number = forge.add_pull('pr/x', base, sha=head)
-    _, run = forge.add_run(head)
     for context, description in _GREEN if green else _GREEN[:2]:
-        job = context == 'tests/review'  # the review job: null creator, naming its run at this head (D11)
-        forge.login = GITEA_ACTIONS_LOGIN if job else 'a'
-        status_post(
-            forge, head, context=context, state='success', description=description, target_url=run if job else ''
-        )
+        forge.login = GITEA_ACTIONS_LOGIN if context == 'tests/review' else 'a'  # the review job: null creator
+        status_post(forge, head, context=context, state='success', description=description)
     forge.login = 'a'
     return work, forge, number, head
 
@@ -305,3 +301,23 @@ def test_gitea_vets_no_author_so_the_serve_tick_has_no_external_pr(tmp_path: Pat
     found = judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head)
     assert EXTERNAL not in found.missing
     assert found.ready
+
+
+@pytest.mark.parametrize('poster', ['a', 'serve-host', 'github-actions[bot]'])
+def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, poster: str) -> None:
+    """User ruling 2026-11-06, "Gitea is safe; vetting is for GitHub": an agent's or the serve's success counts.
+
+    PLANTED CONTROL: the same success posted by the same non-bot login on GitHub waits on the review.
+    """
+    work, forge, number, head = _pr(tmp_path)
+    forge.login = poster
+    status_post(forge, head, context='tests/review', state='success', description='review round 1: no blocking')
+    assert judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head).ready
+
+    (tmp_path / 'hub').mkdir()
+    hub_work, hub, hub_number, hub_head = _hub_pr(tmp_path / 'hub')
+    hub.login = 'serve-host'
+    status_post(hub, hub_head, context='tests/review', state='success', description='review round 1: no blocking')
+    found = judged(hub_work, hub, load_policy(hub_work), branch='pr/x', number=hub_number, head=hub_head)
+    assert not found.ready
+    assert any('tests/review' in one for one in found.missing)

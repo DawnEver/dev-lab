@@ -43,8 +43,7 @@ def _green() -> list[dict[str, object]]:
             'status': 'success',
             'description': 'review round 1: no blocking',
             'creator': None,
-            'target_url': '/o/r/actions/runs/1/jobs/1',  # relative, as Gitea's job status names its run
-        },  # the review job: a null creator naming its run at this head (D11)
+        },  # the review job: a null creator, which Gitea counts as it counts every poster
         {'id': 3, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
     ]
 
@@ -227,7 +226,6 @@ def test_the_tick_merges_a_green_pr_once_declared_and_never_without(tmp_path: Pa
     work, head = _work(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    forge.add_run(head)  # the review job's run
     forge.statuses[head] = _green()
     _tick(work, forge, head, _DECLARED)
     assert forge.merges == []
@@ -246,7 +244,6 @@ def test_the_tick_leaves_the_merge_to_a_repo_s_merge_job_and_still_says_the_deci
     (work / 'pyproject.toml').write_text(_MANIFEST + '[tool.dev_lab.ci."merge.yml"]\n', encoding='utf-8')
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    forge.add_run(head)
     forge.statuses[head] = _green()
     _tick(work, forge, head, POLICY)
     assert forge.merges == []
@@ -259,7 +256,6 @@ def test_a_pr_with_a_failed_part_stays_open(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    forge.add_run(head)  # the review job's run
     red = {'id': 1, 'context': 'tests/base', 'status': 'failure', 'description': 'scope=full ran=3 hands=-'}
     forge.statuses[head] = [red, *(r for r in _green() if r['context'] != 'tests/base')]
     _tick(work, forge, head, POLICY)
@@ -271,7 +267,6 @@ def test_an_unsafe_pr_stays_open_with_what_is_missing_in_its_one_comment(tmp_pat
     work, head = _work(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    forge.add_run(head)  # the review job's run
     unsafe = {'id': 3, 'context': 'tests/security', 'status': 'failure', 'description': 'B602 shell=True'}
     forge.statuses[head] = [*(r for r in _green() if r['context'] != 'tests/security'), unsafe]
     _tick(work, forge, head, POLICY)
