@@ -222,9 +222,17 @@ def assess(history: Sequence[CommitStatus], context: str, *, me: Claim, now: dat
 
 
 def forge_now(client: Client) -> datetime:
-    """The FORGE's time: the ``Date`` of its latest answer, asking it once when none came yet (module docstring)."""
+    """The FORGE's time: the ``Date`` of its latest answer, asking it once when none came yet (module docstring).
+
+    The ask bypasses a pass memo (:mod:`~dev_lab.dev.forgememo`): a memoed ``whoami`` sends nothing, so no Date
+    comes back (2026-11-06: every poller-pass integration step raised, and no ``tests/security`` was posted).
+    """
     if not client.answered:
-        client.whoami()
+        memo, client.memo = client.memo, None
+        try:
+            client.whoami()
+        finally:
+            client.memo = memo
     if not client.answered:
         msg = f'{client.forge.host} answered without a Date header, so no lease can be judged against its clock'
         raise OSError(msg)
