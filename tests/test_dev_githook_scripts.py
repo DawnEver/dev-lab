@@ -21,13 +21,10 @@ push increment arrives as git's own pre-push lines on stdin.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import shutil
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -347,18 +344,17 @@ def test_a_script_path_is_run_as_a_SCRIPT_and_not_as_a_module(repo: Path) -> Non
 # -------------------------------------------------------------------------------- cz-push-range.sh
 
 
-def _plant_commitizen(root: Path, tmp_path: Path) -> tuple[Path, Path]:
-    """A venv whose ``commitizen`` is a planted package recording the argv it was handed."""
-    where = tmp_path / 'czsrc'
-    (where / 'commitizen').mkdir(parents=True)
-    argv_log = tmp_path / 'cz-argv.log'
-    (where / 'commitizen' / '__init__.py').write_text('', encoding='utf-8')
-    (where / 'commitizen' / '__main__.py').write_text(
-        f'import sys\nopen(r"{argv_log}", "a").write(" ".join(sys.argv[1:]) + "\\n")\n',
-        encoding='utf-8',
-    )
-    _plant_venv(root, pythonpath=where)
-    return where, argv_log
+def _plant_checker(root: Path) -> Path:
+    """A venv whose interpreter logs its argv, then runs the REAL checker (dev_lab.dev.commitmsg); the log path."""
+    return _plant_venv(root) / 'calls.log'
+
+
+def _judged(argv_log: Path) -> list[str]:
+    """What the checker was handed, one invocation per line, from ``--`` on (the interpreter prefix dropped)."""
+    if not argv_log.is_file():
+        return []
+    lines = argv_log.read_text(encoding='utf-8').splitlines()
+    return [line.split(' -m dev_lab.dev.commitmsg ', 1)[1] for line in lines if ' -m dev_lab.dev.commitmsg ' in line]
 
 
 def _cz(repo: Path, stdin: str | None = None, **env: str) -> subprocess.CompletedProcess[str]:
@@ -370,18 +366,18 @@ def _line(remote_sha: str, local_sha: str) -> str:
     return f'refs/heads/feat {local_sha} refs/heads/feat {remote_sha}\n'
 
 
-def test_the_base_ref_has_NO_DEFAULT_and_its_absence_refuses(repo: Path, tmp_path: Path) -> None:
+def test_the_base_ref_has_NO_DEFAULT_and_its_absence_refuses(repo: Path) -> None:
     """THE SEAM. A default here would judge every other repo's lane against this repo's trunk."""
-    _, argv_log = _plant_commitizen(repo, tmp_path)
+    argv_log = _plant_checker(repo)
     done = _cz(repo)
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'LAB_CZ_BASE_REF' in done.stderr, done.stderr
-    assert not argv_log.is_file(), 'the checker ran despite an unanswerable range'
+    assert not _judged(argv_log), 'the checker ran despite an unanswerable range'
 
 
-def test_the_increment_is_the_range_the_checker_receives(repo: Path, tmp_path: Path) -> None:
+def test_the_increment_is_the_range_the_checker_receives(repo: Path) -> None:
     """The defect this script exists for: judge what is being PUBLISHED, not the whole lane."""
-    _, argv_log = _plant_commitizen(repo, tmp_path)
+    argv_log = _plant_checker(repo)
     first = _git(repo, 'rev-parse', 'HEAD')
     (repo / 'g.txt').write_text('y', encoding='utf-8')
     _git(repo, 'add', '-A')
@@ -389,15 +385,13 @@ def test_the_increment_is_the_range_the_checker_receives(repo: Path, tmp_path: P
     head = _git(repo, 'rev-parse', 'HEAD')
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range {first}..{head}', argv_log.read_text(
-        encoding='utf-8'
-    )
+    assert _judged(argv_log) == [f'--rev-range {first}..{head} --published=--remotes'], _judged(argv_log)
     assert 'as git stated it' in done.stdout
 
 
-def test_an_all_zero_remote_side_falls_back_to_the_declared_base(repo: Path, tmp_path: Path) -> None:
+def test_an_all_zero_remote_side_falls_back_to_the_declared_base(repo: Path) -> None:
     """A brand-new branch has no remote object to start a range at, and says which range it used."""
-    _, argv_log = _plant_commitizen(repo, tmp_path)
+    argv_log = _plant_checker(repo)
     _git(repo, 'branch', 'base-for-test')
     (repo / 'g.txt').write_text('y', encoding='utf-8')
     _git(repo, 'add', '-A')
@@ -406,12 +400,12 @@ def test_an_all_zero_remote_side_falls_back_to_the_declared_base(repo: Path, tmp
     done = _cz(repo, _line('0' * 40, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'new branch' in done.stdout, done.stdout
-    assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range base-for-test..{head}'
+    assert _judged(argv_log) == [f'--rev-range base-for-test..{head} --published=base-for-test --published=--remotes']
 
 
-def test_a_sha_this_checkout_does_not_have_falls_back_and_SAYS_SO(repo: Path, tmp_path: Path) -> None:
+def test_a_sha_this_checkout_does_not_have_falls_back_and_SAYS_SO(repo: Path) -> None:
     """A fallback that does not announce itself makes a legacy refusal look like a fresh one."""
-    _, argv_log = _plant_commitizen(repo, tmp_path)
+    argv_log = _plant_checker(repo)
     _git(repo, 'branch', 'base-for-test')
     (repo / 'g.txt').write_text('y', encoding='utf-8')
     _git(repo, 'add', '-A')
@@ -420,65 +414,20 @@ def test_a_sha_this_checkout_does_not_have_falls_back_and_SAYS_SO(repo: Path, tm
     done = _cz(repo, _line('b' * 40, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'does not have' in done.stdout, done.stdout
-    assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range base-for-test..{head}'
+    assert _judged(argv_log) == [f'--rev-range base-for-test..{head} --published=base-for-test --published=--remotes']
 
 
-def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path, tmp_path: Path) -> None:
-    """Measured: ``commitizen check`` exits 3 on an empty range, which made an up-to-date branch unpushable."""
-    _, argv_log = _plant_commitizen(repo, tmp_path)
+def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path) -> None:
+    """Measured: commitizen exited 3 on an empty range, which made an up-to-date branch unpushable."""
+    argv_log = _plant_checker(repo)
     head = _git(repo, 'rev-parse', 'HEAD')
     done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'nothing to check' in done.stdout
-    assert not argv_log.is_file(), 'the checker was invoked on an empty range'
+    assert not _judged(argv_log), 'the checker was invoked on an empty range'
 
 
-# ------------------------------------------------------------- cz-push-range.sh: the NAMED exemption
-
-_JUDGING_CZ = r"""import hashlib, json, subprocess, sys
-from pathlib import Path
-args = sys.argv[1:]
-if sum(len(arg) + 1 for arg in args) > 32767:
-    sys.exit(99)  # Plant the Windows command-line ceiling on every platform.
-if "--message" in args:
-    sys.exit(98)  # Message transport is file-backed, even for a short subject.
-if "--commit-msg-file" in args:
-    path = Path(args[args.index("--commit-msg-file") + 1])
-    raw = path.read_bytes()
-    subjects = [raw.decode("utf-8")]
-    open(LOG + ".paths", "a").write(str(path) + "\n")
-    with open(LOG + ".identities", "a") as log:
-        log.write(json.dumps({"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}) + "\n")
-else:
-    rng = args[args.index("--rev-range") + 1]
-    subjects = subprocess.run(["git", "log", "--format=%s", rng], capture_output=True, text=True).stdout.splitlines()
-logged = [*args]
-if "--commit-msg-file" in args:
-    logged[-1] = subjects[0].splitlines()[0]
-open(LOG, "a").write(" ".join(a.splitlines()[0] if a else a for a in logged) + "\n")
-sys.exit(1 if any(s.startswith("data(") for s in subjects) else 0)
-"""
-
-
-def _plant_judging_commitizen(root: Path, tmp_path: Path) -> Path:
-    """A planted checker that refuses ``data(...)`` by file/range and refuses all argv message transport."""
-    where = tmp_path / 'czjudge'
-    (where / 'commitizen').mkdir(parents=True)
-    argv_log = tmp_path / 'cz-argv.log'
-    (where / 'commitizen' / '__init__.py').write_text('', encoding='utf-8')
-    (where / 'commitizen' / '__main__.py').write_text('from .cli import main\nmain()\n', encoding='utf-8')
-    (where / 'commitizen' / 'cli.py').write_text(
-        f'LOG = r"{argv_log}"\ndef main():\n'
-        + textwrap.indent(_JUDGING_CZ, '    ')
-        + '\ndef commitizen_excepthook(*args):\n    raise AssertionError(args)\n',
-        encoding='utf-8',
-    )
-    (where / 'commitizen' / 'exceptions.py').write_text(
-        'class CommitizenException(Exception):\n    pass\n',
-        encoding='utf-8',
-    )
-    _plant_venv(root, pythonpath=where)
-    return argv_log
+# ------------------------------------------- cz-push-range.sh: history is not re-judged, nothing is exempt
 
 
 def _commit(repo: Path, message: str) -> str:
@@ -490,88 +439,102 @@ def _commit(repo: Path, message: str) -> str:
     return _git(repo, 'rev-parse', 'HEAD')
 
 
-def test_an_EXEMPT_sha_passes_and_every_other_commit_is_judged_unchanged(repo: Path, tmp_path: Path) -> None:
-    argv_log = _plant_judging_commitizen(repo, tmp_path)
+def test_a_PUBLISHED_off_format_commit_on_the_base_is_not_judged(repo: Path) -> None:
+    """The reason LAB_CZ_EXEMPT existed, answered without it: what the base holds is history."""
+    argv_log = _plant_checker(repo)
     first = _git(repo, 'rev-parse', 'HEAD')
-    off = _commit(repo, 'data(femm): landed past every hook')
+    _commit(repo, 'data(femm): published long ago')
+    _git(repo, 'branch', 'base-for-test')
     head = _commit(repo, 'feat: after it')
-    exempt = f'{off} landed on integration via #5311 before the forge judged messages'
-    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=exempt)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert f'exempt {off}' in done.stdout, done.stdout
-    assert argv_log.read_text(encoding='utf-8').splitlines() == ['check --commit-msg-file feat: after it']
+    assert 'already published' in done.stdout, done.stdout
+    assert _judged(argv_log) == [f'--rev-range {first}..{head} --published=base-for-test --published=--remotes']
 
 
 @pytest.mark.parametrize('invalid', [False, True])
-def test_large_messages_use_bounded_argv_and_one_cleaned_file_beside_exact_exemptions(
-    repo: Path, tmp_path: Path, *, invalid: bool
-) -> None:
-    argv_log = _plant_judging_commitizen(repo, tmp_path)
+def test_large_messages_are_judged_whole_with_bounded_argv(repo: Path, *, invalid: bool) -> None:
+    """Ported from integrate/main's argv-ceiling fix: a body above Windows' 32767 limit never travels as argv."""
+    argv_log = _plant_checker(repo)
+    _git(repo, 'branch', 'base-for-test')
     first = _git(repo, 'rev-parse', 'HEAD')
-    off = _commit(repo, 'data(history): precisely exempt')
-    # Neither byte length nor unicode quoting may become a process-argument limit.
-    body = '\n\n' + ('unicode-\u03bb "quoted" $literal\n' * 2000)
-    large = _commit(repo, 'feat: large valid message' + body)
+    body = '\n\n' + ('unicode-λ "quoted" $literal\n' * 2000)
+    _commit(repo, 'feat: large valid message' + body)
     head = _commit(repo, ('data(ordinary): must refuse' if invalid else 'fix: second large message') + body)
-    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{off} named history')
+    raw = subprocess.run(
+        [GIT, 'log', '-1', '--format=%B', head], cwd=repo, capture_output=True, check=True, timeout=120
+    )
+    assert len(raw.stdout) > 32767
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == int(invalid), done.stdout + done.stderr
-    assert f'exempt {off}' in done.stdout
-    judged = argv_log.read_text(encoding='utf-8').splitlines()
-    assert len(judged) == 2
-    assert all(line.startswith('check --commit-msg-file ') for line in judged)
-    identities = [json.loads(line) for line in Path(str(argv_log) + '.identities').read_text().splitlines()]
-    expected = []
-    for sha in (large, head):
-        raw = subprocess.run(
-            [GIT, 'log', '-1', '--format=%B', sha], cwd=repo, capture_output=True, check=True, timeout=120
-        ).stdout
-        assert len(raw) > 32767
-        assert ('unicode-\u03bb "quoted" $literal\n' * 2000).encode() in raw
-        expected.append({'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)})
-    assert identities == expected, 'the checker must receive every body byte, not just the subject or a prefix'
-    paths = Path(str(argv_log) + '.paths').read_text(encoding='utf-8').splitlines()
-    assert len(paths) == 2
-    assert len(set(paths)) == 1, 'reuse one scratch file, not a file/message retained for every commit'
-    assert all(not Path(path).exists() for path in paths), 'success and refusal must both clean the scratch file'
+    judged = _judged(argv_log)
+    assert len(judged) == 1
+    assert all(len(line) < 1000 for line in judged), 'a message body reached argv'
 
 
-def test_a_data_message_NOT_declared_still_fails_beside_an_exempt_one(repo: Path, tmp_path: Path) -> None:
-    """PLANTED CONTROL: the exemption names shas, never a type -- another ``data(...)`` is refused."""
-    _plant_judging_commitizen(repo, tmp_path)
+@pytest.mark.parametrize('message', ['data(x): y', 'rem(x): y', 'wip'])
+def test_planted_an_UNPUBLISHED_off_format_commit_is_refused(repo: Path, message: str) -> None:
+    """PLANTED CONTROL: a new commit is always judged, and no variable can exempt it."""
+    _plant_checker(repo)
+    _git(repo, 'branch', 'base-for-test')
     first = _git(repo, 'rev-parse', 'HEAD')
-    off = _commit(repo, 'data(femm): exempt one')
-    head = _commit(repo, 'data(x): y')
-    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{off} named')
+    head = _commit(repo, message)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test', LAB_CZ_EXEMPT=f'{head} retired knob')
     assert done.returncode == 1, done.stdout + done.stderr
+    assert 'refused' in done.stdout + done.stderr
 
 
-def test_a_data_message_with_no_exemption_in_range_fails_over_the_range(repo: Path, tmp_path: Path) -> None:
-    argv_log = _plant_judging_commitizen(repo, tmp_path)
+def _push_feature_branch(repo: Path, message: str) -> tuple[str, str]:
+    """``feature`` carries *message* and is PUBLISHED (``refs/remotes/origin/feature``) but not on the base."""
     first = _git(repo, 'rev-parse', 'HEAD')
-    head = _commit(repo, 'data(x): y')
-    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{first} the seed')
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range {first}..{head}'
+    _git(repo, 'branch', 'base-for-test')
+    _git(repo, 'switch', '-q', '-c', 'feature')
+    off = _commit(repo, message)
+    _git(repo, 'update-ref', 'refs/remotes/origin/feature', off)
+    _git(repo, 'switch', '-q', '-')
+    return first, off
 
 
-@pytest.mark.parametrize(
-    ('entry', 'said'),
-    [
-        ('SHORT reason', 'not a full 40-hex sha'),
-        ('{unknown} reason', 'names no commit'),
-        ('{head}', 'carries no reason'),
-    ],
-)
-def test_a_declaration_naming_no_full_existing_sha_with_a_reason_is_REFUSED(
-    repo: Path, tmp_path: Path, entry: str, said: str
-) -> None:
-    argv_log = _plant_judging_commitizen(repo, tmp_path)
+def test_pre_push_an_off_format_commit_published_on_ANOTHER_branch_is_not_judged(repo: Path) -> None:
+    """User ruling 2026-11-05: an existing ``rem(`` commit, already pushed on a feature branch, never blocks."""
+    first, _ = _push_feature_branch(repo, 'rem(x): pushed long ago on a feature branch')
+    _plant_checker(repo)  # after the branch switches, which would carry the planted venv away
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'chore(merge): feature into the lane', 'feature')
     head = _git(repo, 'rev-parse', 'HEAD')
-    declared = entry.replace('SHORT', head[:12]).format(unknown='c' * 40, head=head)
-    done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=declared)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert 'already published' in done.stdout, done.stdout
+
+
+def test_planted_pre_push_a_NEW_local_off_format_commit_beside_it_is_refused(repo: Path) -> None:
+    first, _ = _push_feature_branch(repo, 'rem(x): pushed long ago on a feature branch')
+    _plant_checker(repo)  # after the branch switches, which would carry the planted venv away
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'chore(merge): feature into the lane', 'feature')
+    head = _commit(repo, 'data(lane): never pushed')
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 1, done.stdout + done.stderr
-    assert said in done.stderr, done.stderr
-    assert not argv_log.is_file(), 'the checker ran under a refused declaration'
+    assert 'data(lane)' in done.stdout + done.stderr
+
+
+def test_merge_decision_judges_a_PRs_published_off_format_commit_not_on_the_base(repo: Path) -> None:
+    """At the merge the PR's commits ARE on the remote; only the base is history there, so this is refused."""
+    first, off = _push_feature_branch(repo, 'rem(x): on the PR branch, not on the base')
+    _plant_checker(repo)  # after the branch switches, which would carry the planted venv away
+    done = _run(
+        'cz-push-range',
+        ['--merge-decision'],
+        cwd=repo,
+        env={'LAB_CZ_BASE_REF': 'base-for-test'},
+        stdin=_line(first, off),
+    )
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'rem(x)' in done.stdout + done.stderr
+
+
+def test_an_unknown_mode_argument_is_refused(repo: Path) -> None:
+    done = _run('cz-push-range', ['--exempt'], cwd=repo, env={'LAB_CZ_BASE_REF': 'base-for-test'}, stdin='')
+    assert done.returncode == 1
+    assert 'unknown argument' in done.stderr
 
 
 # ------------------------------------------------------- cz-push-range.sh: a sync re-judges nothing upstream
@@ -590,34 +553,25 @@ def _sync_with_an_off_format_upstream_commit(repo: Path) -> tuple[str, str]:
     return first, _git(repo, 'rev-parse', 'HEAD')
 
 
-def test_a_sync_increment_does_not_re_judge_what_the_base_already_holds(repo: Path, tmp_path: Path) -> None:
+def test_a_sync_increment_does_not_re_judge_what_the_base_already_holds(repo: Path) -> None:
     """A commit reachable from LAB_CZ_BASE_REF was judged where it landed; only the lane's own are judged here.
 
     MEASURED 2026-11-01: a consumer lane's sync push was refused for two ``data(femm)`` commits integrate/main
     already held.
     """
-    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    argv_log = _plant_checker(repo)
     first, head = _sync_with_an_off_format_upstream_commit(repo)
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
-    judged = argv_log.read_text(encoding='utf-8')
-    assert 'data(femm)' not in judged, judged
-    assert 'chore(merge)' in judged, judged
+    assert _judged(argv_log) == [f'--rev-range {first}..{head} --published=base-for-test --published=--remotes']
+    assert '1 commit(s) already published' in done.stdout, done.stdout
 
 
-def test_planted_a_lanes_own_off_format_commit_in_a_sync_push_is_still_refused(repo: Path, tmp_path: Path) -> None:
+def test_planted_a_lanes_own_off_format_commit_in_a_sync_push_is_still_refused(repo: Path) -> None:
     """PLANTED CONTROL: the same sync, plus a ``data(...)`` commit the LANE wrote -- refused."""
-    argv_log = _plant_judging_commitizen(repo, tmp_path)
+    _plant_checker(repo)
     first, _ = _sync_with_an_off_format_upstream_commit(repo)
     head = _commit(repo, 'data(lane): written on the lane')
     done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 1, done.stdout + done.stderr
-    assert 'data(lane)' in argv_log.read_text(encoding='utf-8')
-
-
-def test_a_CRLF_reasonless_line_says_it_carries_no_reason(repo: Path, tmp_path: Path) -> None:
-    _plant_judging_commitizen(repo, tmp_path)
-    head = _git(repo, 'rev-parse', 'HEAD')
-    done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main', LAB_CZ_EXEMPT=f'{head}\r\n')
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert 'carries no reason' in done.stderr, done.stderr
+    assert 'data(lane)' in done.stdout + done.stderr

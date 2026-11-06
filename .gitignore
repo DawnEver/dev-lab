@@ -18,7 +18,6 @@
 .pytest_cache/
 .ruff_cache/
 .venv*
-.verify/
 /build/
 /config/
 /dist/

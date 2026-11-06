@@ -36,10 +36,10 @@ from __future__ import annotations
 import io
 import re
 import tokenize
+import tomllib
 from pathlib import Path
 from typing import Final
 
-import rtoml
 from _arch_corpus import ROOT, SOURCE_FLOOR, TEST_FLOOR, assert_floor, rel, source_modules, suite_modules
 
 #: A suppression site: ``(repo-relative path, rule code, anchor)``. The anchor is the suppressed
@@ -538,7 +538,7 @@ def python_sites(paths: tuple[Path, ...]) -> tuple[Site, ...]:
 
 def pyproject_sites(pyproject: Path) -> tuple[Site, ...]:
     """Every per-file ``ruff`` ignore -- a suppression that appears in no Python file at all."""
-    lint = rtoml.load(pyproject).get('tool', {}).get('ruff', {}).get('lint', {})
+    lint = tomllib.loads(pyproject.read_text(encoding='utf-8')).get('tool', {}).get('ruff', {}).get('lint', {})
     tables = (lint.get('per-file-ignores') or {}, lint.get('extend-per-file-ignores') or {})
     return tuple((_name(pyproject), code, glob) for t in tables for glob, codes in t.items() for code in codes)
 

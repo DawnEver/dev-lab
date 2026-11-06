@@ -54,7 +54,8 @@ def _ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, marked: bool) ->
         _PLANTED.format(ledger=str(ledger), mark=mark), encoding='utf-8'
     )
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.pytest.ini_options]\naddopts = "--strict-markers"\n', encoding='utf-8'
+        '[tool.pytest.ini_options]\naddopts = "--strict-markers"\n[tool.dev_lab.parts]\noutput = "out/logs"\n',
+        encoding='utf-8',
     )
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
     monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())

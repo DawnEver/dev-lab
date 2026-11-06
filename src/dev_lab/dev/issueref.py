@@ -7,7 +7,7 @@ will never see: the lane reads ``todo`` while somebody works on it. The author i
 who can fix that cheaply, at the moment they type it, so the check speaks then.
 
 WHY IT NEVER BLOCKS. A malformed reference is a typo in prose, and the family's commit gate is
-commitizen's; a second gate on the free-text body would refuse commits for something that costs
+:mod:`dev_lab.dev.commitmsg`; a second gate on the free-text body would refuse commits for something that costs
 nothing to repair with a follow-up ``Refs #N``. So :func:`main` returns 0 on every path, including
 the ones where it cannot read the message -- and SAYS so, because a silent skip reads the same as a
 clean message.

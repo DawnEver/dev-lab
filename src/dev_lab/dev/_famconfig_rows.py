@@ -122,7 +122,6 @@ GITIGNORE_CONSUMER_CORE: Final[tuple[str, ...]] = (
 #: every repo uses) writes that path in every checkout -- not because three files happen to spell it.
 #: A consumer delta that restates one of these is refused at render time like any other restatement.
 GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
-    '.verify/': 'the logs dev_lab.dev.verify writes -- the family verdict entry point.',
     '**/__version__.py': 'the version file hatch-vcs / setuptools-scm write at build time, in every repo.',
     '/build/': 'the build backend`s staging directory, at the root of every repo that builds a wheel.',
     '/dist/': 'the built wheels and sdists, at the root of every repo that builds one.',

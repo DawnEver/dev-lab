@@ -15,8 +15,8 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
-    'czbatch',  # an in-kit extraction of the existing shell hook's per-message checking, not a consumer fork
     'ab_bench',
+    'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
     'envseat',
     'verifybox',

@@ -5,7 +5,7 @@ GIT HOOKS ARE NOT A DELTA HERE: they are TOML (`[tool.dev_lab.hooks]` in pyproje
 
 `.gitignore` IS ADOPTED AS OF 2026-10-03, on the user's ruling that every project-level file has ONE
 source in this package. The base grew the family-mandated lines (`_famconfig_rows.GITIGNORE_FAMILY_LINES`)
-that made it cover this tree: `.verify/`, `**/__version__.py` (which reaches the hatch-vcs file
+that made it cover this tree: `**/__version__.py` (which reaches the hatch-vcs file
 `src/lab_commons/__version__.py`), `/build/`, `/dist/` and the ordered Claude project-state section, which
 covers `.claude/worktrees/`. What stays is ONE line, `*.py[cod]` -- a compiled file OUTSIDE a `__pycache__/`,
 which no consumer ignores and this repo always has. :data:`DELTAS` now holds all three artefacts, so
@@ -76,7 +76,7 @@ MAKEFILE_DELTA: Final = Delta(
         '\tpython -m pytest tests/test_the_adoption_accounts_for_every_rule.py -v',
         '.PHONY: verify',
         '.PHONY: clean',
-        "\tpython -c \"import shutil; [shutil.rmtree(d, True) for d in ('dist', 'build', '.verify')]\"",
+        "\tpython -c \"import shutil; [shutil.rmtree(d, True) for d in ('dist', 'build')]\"",
         "\tpython -c \"import shutil; [shutil.rmtree(d, True) for d in ('.pytest_cache', '.ruff_cache')]\"",
         '\tpython -c "import pathlib, shutil; [shutil.rmtree(d, True) for d in pathlib.Path().rglob(\'__pycache__\')]"',
         '.PHONY: all',
