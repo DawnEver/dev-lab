@@ -145,7 +145,17 @@ from dev_lab.dev.forgereview_scope import (
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
-from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
+from dev_lab.dev.reviewbudget import (
+    ShareRefused,
+    Spend,
+    charged_to,
+    gate,
+    open_share,
+    raised_of,
+    read_spend,
+    share_of,
+    tag_of,
+)
 from dev_lab.dev.reviewcap import capped_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
@@ -261,8 +271,8 @@ def _without_command(client: Client, pull: PullRequest, scope: Scope) -> str | N
 
 def capped(
     root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner
-) -> tuple[Review | None, str | None]:
-    """*review* as *pull*'s next round may run it (:mod:`dev_lab.dev.reviewbudget`), and a note or the WAIT line.
+) -> tuple[Review | None, str | None, float]:
+    """*review* as *pull*'s next round may run it (:mod:`dev_lab.dev.reviewbudget`), a note or the WAIT line, its cap.
 
     A waiting head gets a ``pending`` :data:`~dev_lab.dev.forgereview_claim.CAPPED` status naming the cap and the
     remedy, and the review is ``None`` -- posted and said once (``None, None`` after), and read again every tick,
@@ -281,17 +291,17 @@ def capped(
     if allowed.state == 'run':
         model = review.model if allowed.model is None else allowed.model
         unknown = '' if spend is not None else ' (no spend report on this host: the round cap alone holds)'
-        return dataclasses.replace(review, max_rounds=allowed.max_rounds, model=model), unknown
+        return dataclasses.replace(review, max_rounds=allowed.max_rounds, model=model), unknown, allowed.usd
     said = f'{CAPPED} {allowed.why}'[:DESCRIPTION]
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
     if latest is not None and (latest.state, latest.description) == ('pending', said[:DESCRIPTION_LIMIT]):
-        return None, None
+        return None, None, 0.0
     post_review(client, head, state='pending', description=said)
     client.issue_comment(
         pull.number, f'Review stopped at its cap; this PR merges unreviewed once all else is green: {allowed.why}'
         f'\n\n{capped_line(allowed.why)}',
     )  # fmt: skip
-    return None, f'#{pull.number} {head[:12]}: {said}'
+    return None, f'#{pull.number} {head[:12]}: {said}', 0.0
 
 
 def hold(client: Client, pull: PullRequest, why: str) -> str:
@@ -321,7 +331,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
         return f'#{pull.number} {head[:12]}: {why}'
     if (wait := _young(root, head, runner)) is not None:
         return f'#{pull.number} {head[:12]}: {wait}'
-    allowed, note = capped(root, client, review, pull, runner)
+    allowed, note, usd = capped(root, client, review, pull, runner)
     if allowed is None:
         return note
     review = allowed
@@ -331,9 +341,25 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
         said = hold(client, pull, NEEDS_MAINTAINER)
     if said is not None:
         return said
-    with charged_to(tag_of(pull.url, pull.number)):
-        said = _command_round(root, client, review, pull, scope=scope, runner=runner)
-    return said + (note or '')
+    return _charged_round(root, client, review, pull, scope=scope, runner=runner, usd=usd) + (note or '')
+
+
+def _charged_round(
+    root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner, usd: float
+) -> str:
+    """:func:`_command_round` charged in *pull*'s share of the review allotment, opened at its cap *usd*.
+
+    The PR's cap is a CHILD of ai-lab's ``review`` allotment (:func:`~dev_lab.dev.reviewbudget.share_of`), so
+    ai-lab refuses a call past the PR's cap or the review's month, naming the level. A share ai-lab will not open
+    runs nothing; ``inf`` (no spend report on this host) opens none and charges the tag alone.
+    """
+    tag = tag_of(pull.url, pull.number)
+    try:
+        share = None if usd == float('inf') else runner.allot(runner.runtimes, root, share_of(tag), usd)
+    except ShareRefused as refused:
+        return f'#{pull.number} {pull.head_sha[:12]}: not reviewed -- its review budget share did not open: {refused}'
+    with charged_to(tag, share):
+        return _command_round(root, client, review, pull, scope=scope, runner=runner)
 
 
 def _command_round(
@@ -427,6 +453,7 @@ def review_tick(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend,
     quiet: timedelta = timedelta(0),
+    allot: Callable[[Mapping[str, Mapping[str, Any]], Path, str, float], str | None] = open_share,
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
 
@@ -436,7 +463,15 @@ def review_tick(
     if review.where == JUDGE:
         return ()
     runner = Runner(
-        host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True, spend=spend, quiet=quiet
+        host=host,
+        runtimes=runtimes,
+        run=run,
+        ready=ready,
+        clock=clock,
+        serving=True,
+        spend=spend,
+        quiet=quiet,
+        allot=allot,
     )
 
     def said(pull: PullRequest) -> str | None:
