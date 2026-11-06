@@ -14,8 +14,11 @@ extends it (``temp``, ``census``, ``excluded``: lists of absolute paths). Three 
 * :mod:`dev_lab.dev.tmpsweep` is the census, the Stop report and the sweep.
 
 A root's KIND decides what the sweep may do: ``temp`` is swept by age, ``census`` (``var``, ``src``: may hold a
-person's work) and ``home`` (loose non-dot files directly in the home) are only ever reported. A path inside a
-checkout is that checkout's own, wherever it sits, never this rule's.
+person's work) and ``home`` (loose non-dot files directly in the home) are only ever reported.
+
+NO CHECKOUT EXEMPTION, in either half: a write beneath a write-prone root is refused EVEN INSIDE A CHECKOUT
+there (user ruling 2026-11-06: a checkout under such a root, e.g. the home ``src``, is an abandoned old
+version, never a place to work).
 """
 
 from __future__ import annotations
@@ -154,13 +157,13 @@ def _norm(path: Path) -> Path:
 def refuse_outside_tree(
     path: Path, *, roots: Iterable[Root] | None = None, excluded: Iterable[Path] | None = None
 ) -> str | None:
-    """The refusal for writing *path* into a write-prone root; ``None`` when it is not one, or in a checkout.
+    """The refusal for writing *path* into a write-prone root; ``None`` when it is not one.
+
+    A checkout beneath the root changes nothing (user ruling 2026-11-06).
 
     A ``home`` root refuses only a loose non-dot entry directly in it; the others refuse anything beneath.
     """
     target = _norm(Path(path))
-    if any((parent / '.git').exists() for parent in Path(path).resolve().parents):  # the checkout's own
-        return None
     roots = write_prone_roots() if roots is None else tuple(roots)
     excluded = excluded_paths(roots) if excluded is None else excluded
     if any(_within(target, _norm(one)) for one in excluded):

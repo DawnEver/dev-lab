@@ -3,7 +3,7 @@
 User requirement 2026-11-05: an agent session left scripts in the OS temp dir (Git Bash ``/tmp``). The roots are
 declared once (:func:`dev_lab.dev.writeroots.write_prone_roots`), injected here so no test touches the real temp
 dir. Planted controls on both halves: reading a root, writing into the harness ``claude/`` subtree and writing
-into a checkout are admitted.
+into a checkout outside every root are admitted; a checkout INSIDE a root is no exemption (user ruling 2026-11-06).
 """
 
 from __future__ import annotations
@@ -97,11 +97,13 @@ def test_a_write_into_a_root_is_refused_and_its_near_misses_are_not(
         assert 'scratch/' in reason
 
 
-def test_a_checkout_inside_a_root_is_its_own_tree(machine: dict[str, Path]) -> None:
+def test_a_checkout_inside_a_root_is_refused_too(machine: dict[str, Path]) -> None:
+    """User ruling 2026-11-06: a checkout under the home ``src`` is an abandoned old version; both halves refuse."""
     repo = machine['home'] / 'src' / 'repo'
     (repo / '.git').mkdir(parents=True)
-    roots = _roots(machine)
-    assert refuse_outside_tree(repo / 'src' / 'a.py', roots=roots, excluded=()) is None
+    reason = refuse_outside_tree(repo / 'x.py', roots=_roots(machine), excluded=())
+    assert reason is not None
+    assert reason.startswith('WRITES-STAY-IN-THE-TREE: ')
 
 
 def test_the_write_hook_denies_a_write_into_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
@@ -112,12 +114,20 @@ def test_the_write_hook_denies_a_write_into_temp(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv('TMP', str(temp))
     monkeypatch.setenv('TMPDIR', str(temp))
     monkeypatch.setattr('tempfile.tempdir', str(temp))
+    home = tmp_path / 'home'
+    (home / 'src' / 'repo' / '.git').mkdir(parents=True)
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('USERPROFILE', str(home))
     for tool, key in (('Write', 'file_path'), ('NotebookEdit', 'notebook_path')):
         bad = json.dumps({'tool_name': tool, 'tool_input': {key: str(temp / 'probe.ipynb')}})
         assert main(stdin=io.StringIO(bad)) == 0
         decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
         assert decision['permissionDecision'] == 'deny'
         assert 'WRITES-STAY-IN-THE-TREE' in decision['permissionDecisionReason']
+    old = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': str(home / 'src' / 'repo' / 'x.py')}})
+    assert main(stdin=io.StringIO(old)) == 0
+    decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
+    assert 'WRITES-STAY-IN-THE-TREE' in decision['permissionDecisionReason']
     harness = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': str(temp / 'claude' / 'x' / 'o.txt')}})
     assert main(stdin=io.StringIO(harness)) == 0
     assert capsys.readouterr().out == ''
@@ -141,6 +151,9 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'mv out.csv "C:/tmp/out.csv"',
         'mkdir -p /c/temp/probe',
         'touch $HOME/src/x.py',
+        'touch $HOME/src/repo/x',
+        'touch ~/src/repo/x',
+        'echo x > D:/src/repo/a.txt',
         'Get-Content a | Out-File -FilePath $env:TEMP\\x.txt',
         'Set-Content -Path D:\\work\\AppData\\Local\\Temp\\x.ps1 -Value 1',
         'New-Item -ItemType File D:\\var\\x.txt',

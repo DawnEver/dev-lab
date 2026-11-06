@@ -71,6 +71,7 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'mv out.csv "C:/tmp/out.csv"',
         'mkdir -p /c/temp/probe',
         'touch $HOME/src/x.py',
+        'touch $HOME/src/repo/x',  # a checkout there is no exemption: user ruling 2026-11-06
         'Get-Content a | Out-File -FilePath $env:TEMP\\x.txt',
         'New-Item -ItemType File D:\\var\\x.txt',
         'Copy-Item a.py %TEMP%\\a.py',

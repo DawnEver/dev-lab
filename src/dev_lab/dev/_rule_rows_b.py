@@ -59,7 +59,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'because nothing scans, ignores or cleans a file there: the artefact of a program goes to the dated output '
             'tree and an experiment to scratch of the checkout it works in. The roots are one declared set the '
             'machine file may extend; the write hook and the shell guard refuse the write, the Stop hook names '
-            'what a session left there, and the sweep ages old temp entries out, never those of the harness.'
+            'what a session left there, and the sweep ages old temp entries out, never those of the harness. A write '
+            'beneath such a root is refused even inside a checkout there: per the user ruling of 2026-11-06 a '
+            'checkout under one is an abandoned old version.'
         ),
         ('tests/test_dev_writeroots.py', 'tests/test_dev_tmpsweep.py'),
     ),
