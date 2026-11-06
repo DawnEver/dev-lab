@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from _forge_fake import oauth_env
 from lab_commons.credentials import credential_for, store_credential
 
 from dev_lab.dev import forgecred
@@ -16,12 +15,14 @@ if TYPE_CHECKING:
 HOST = 'forge.example.org'
 
 
-def test_a_refresh_rejects_the_refused_secret_and_fills_again_as_git_does_after_a_401(tmp_path: Path) -> None:
-    """The GCM OAuth shape: ``reject`` drops the expired access token, the next ``fill`` answers a fresh one."""
-    env = oauth_env(tmp_path)
-    stale = credential_for(HOST, cwd=tmp_path, env=env)
-    assert stale == ('OAUTH_USER', 'stale')
-    assert refresh_credential(HOST, stale, cwd=tmp_path, env=env) == ('OAUTH_USER', 'fresh')
+def test_a_verified_provider_can_refresh_without_erasing_the_refused_secret(monkeypatch) -> None:
+    """Verified provider-native refresh, not username-based destructive invalidation."""
+    monkeypatch.setattr(forgecred, '_refresh_support', lambda *_a, **_kw: '')
+    monkeypatch.setattr(forgecred, 'credential_for', lambda *_a, **_kw: ('oauth2', 'fresh'))
+    outcome = refresh_credential(HOST, ('oauth2', 'stale'))
+    assert outcome.credential == ('oauth2', 'fresh')
+    assert outcome.state == 'refreshed'
+    assert outcome.attempted
 
 
 def test_a_store_with_no_refresh_token_is_never_erased_by_one_401(tmp_path: Path) -> None:
@@ -33,7 +34,10 @@ def test_a_store_with_no_refresh_token_is_never_erased_by_one_401(tmp_path: Path
     config.write_text(f'[credential]\n\thelper = "store --file={(tmp_path / "creds").as_posix()}"\n', encoding='utf-8')
     env = {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
     store_credential(HOST, 'alice', 'good', cwd=tmp_path, env=env)
-    assert refresh_credential(HOST, ('alice', 'good'), cwd=tmp_path, env=env) == ('alice', 'good')
+    outcome = refresh_credential(HOST, ('alice', 'good'), cwd=tmp_path, env=env)
+    assert outcome.credential == ('alice', 'good')
+    assert outcome.state == 'kept'
+    assert not outcome.attempted
     assert credential_for(HOST, cwd=tmp_path, env=env) == ('alice', 'good')
 
 
