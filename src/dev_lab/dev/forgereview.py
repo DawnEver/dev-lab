@@ -72,6 +72,7 @@ from dev_lab.dev.forgereview_runtimes import retired_table
 from dev_lab.dev.forgereview_scope import Scope, code_bytes, gather, plan
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.reviewbudget import (
+    Gate,
     ShareRefused,
     Spend,
     charged_to,
@@ -180,15 +181,15 @@ def _grown(record: Record, size: int) -> bool:
 
 def _budget(
     root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner
-) -> tuple[Review | None, str, float]:
+) -> tuple[Review | None, str, Gate]:
     """*review* as the PR's dollar budget lets it run (:mod:`dev_lab.dev.reviewbudget`), else ``None``; why; its cap."""
     bodies = trusted_bodies(client, pull.number, review.reviewers)
     spend = runner.spend(runner.runtimes, root)
     spent = max(recorded_usd(bodies), 0.0 if spend is None else spend.of(tag_of(pull.url, pull.number)))
     allowed = gate(number=pull.number, spent_usd=spent, spend=spend, raised=raised_of(bodies))
     if allowed.state != 'run':
-        return None, allowed.why, 0.0
-    return dataclasses.replace(review, model=allowed.model or review.model), allowed.why, allowed.usd
+        return None, allowed.why, allowed
+    return dataclasses.replace(review, model=allowed.model or review.model), allowed.why, allowed
 
 
 def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str | None:
@@ -214,16 +215,17 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
         return _stands(client, pull, record)
     if (wait := _young(root, head, runner)) is not None:
         return f'#{pull.number} {head[:12]}: {wait}'
-    allowed, note, usd = _budget(root, client, review, pull, runner)
+    allowed, note, held = _budget(root, client, review, pull, runner)
     if allowed is None:
         return unreviewed(client, pull, f'review {note}')
-    return f'{_run(root, client, allowed, pull, runner, usd=usd)} ({note})'
+    return f'{_run(root, client, allowed, pull, runner, held=held)} ({note})'
 
 
-def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner, *, usd: float) -> str:
+def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner, *, held: Gate) -> str:
     """Review *pull*'s head now: nothing to read is ``success``, no review key merges unreviewed; the line said.
 
-    The review runs charged in *pull*'s share of ai-lab's ``review`` allotment, opened at its cap *usd*
+    The review runs charged in *pull*'s share of ai-lab's ``review`` allotment (on a reserve raise, of its
+    provider's reserve), opened at *held*'s cap
     (:func:`~dev_lab.dev.reviewbudget.share_of`), so ai-lab refuses a call past the PR's cap or the review's month,
     naming the level. A share ai-lab will not open runs nothing; ``inf`` (no spend report) opens none.
     """
@@ -236,7 +238,12 @@ def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: 
         return unreviewed(client, pull, NEEDS_MAINTAINER)
     tag = tag_of(pull.url, pull.number)
     try:
-        share = None if usd == float('inf') else runner.allot(runner.runtimes, root, share_of(tag), usd)
+        if held.usd == float('inf'):
+            share = None
+        elif held.reserve is not None:
+            share = runner.allot(runner.runtimes, root, share_of(tag, reserve=True), held.usd, held.reserve)
+        else:
+            share = runner.allot(runner.runtimes, root, share_of(tag), held.usd)
     except ShareRefused as refused:
         return f'#{pull.number} {head[:12]}: not reviewed -- its review budget share did not open: {refused}'
     with charged_to(tag, share):
@@ -316,7 +323,7 @@ def review_tick(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend,
     quiet: timedelta = timedelta(0),
-    allot: Callable[[Mapping[str, Mapping[str, Any]], Path, str, float], str | None] = open_share,
+    allot: Callable[..., str | None] = open_share,  # (runtimes, root, share, usd[, provider]),
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
 

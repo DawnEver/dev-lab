@@ -22,6 +22,12 @@ A REACHED CAP SKIPS THE REVIEW, NAMED -- NEVER THE MERGE (user rulings 2026-11-0
 :mod:`dev_lab.dev.reviewcap`): the PR merges with an ``Unreviewed:`` line naming the cap. The integrator may raise one
 PR's cap with a recorded reason (:data:`RAISE_DOOR`, a trusted ``review-cap`` comment, :func:`raised_of`).
 
+A RAISE MAY DRAW THE RESERVE (user ruling 2026-11-03, kept 2026-11-06). The reserve is what the provider's month
+(``[ai_lab.spend_cap]``) leaves beside every standing allotment. A raise recorded with ``--reserve`` opens the PR's
+share as its own provider-level allotment ``reserve>owner/repo#n`` (:func:`share_of`) instead of a child of the
+review's: it runs past a spent review month, at its raised cap, never degraded -- a deliberate, recorded spend --
+and ai-lab refuses it, naming the level, when the provider's free month cannot hold it.
+
 A host with no ``[runtimes.ai_lab]`` caps nothing, and says so; an ai-lab whose report has no ``review`` allotment
 is refused naming the row to declare.
 """
@@ -105,6 +111,9 @@ DEGRADE_BELOW: Final = 0.25
 #: The cheaper tier a degraded review runs on (ai-lab's ``haiku`` role of the family provider).
 DEGRADED_MODEL: Final = 'claude-haiku-5-5'
 
+#: The ai-lab allotment prefix of a PR's share drawn on the provider's reserve (:func:`share_of`).
+RESERVE_ALLOTMENT: Final = 'reserve'
+
 #: The integrator's door to raise one PR's cap, with its reason recorded on the PR.
 RAISE_DOOR: Final = 'forge review cap {pr} --usd <n> --why "<reason>"'
 
@@ -122,6 +131,7 @@ class Spend:
     window_days: int = 1
     window_by_tag: Mapping[str, float] | None = None
     unpriced_calls: int = 0
+    provider: str = ''  # the provider the review allotment is carved from: a reserve draw opens on it
 
     @property
     def remaining_usd(self) -> float:
@@ -147,8 +157,9 @@ class Spend:
             raise ValueError(msg)
         window = doc['window']
         return cls(
-            review['allotted_usd'], review['spent_usd'], window['days'], dict(window['by_tag']), doc['unpriced_calls']
-        )
+            review['allotted_usd'], review['spent_usd'], window['days'], dict(window['by_tag']), doc['unpriced_calls'],
+            review.get('provider', ''),
+        )  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -196,11 +207,12 @@ class Raised:
     usd: float | None
     why: str
     by: str = ''
+    reserve: bool = False  # draws the provider's reserve, past the review's month
 
 
 def raise_line(raised: Raised) -> str:
     """The hidden line a ``review-cap`` comment records *raised* by (``>`` escaped)."""
-    doc = {'usd': raised.usd, 'why': raised.why, 'by': raised.by}
+    doc = {'usd': raised.usd, 'why': raised.why, 'by': raised.by, 'reserve': raised.reserve}
     return f'<!-- review-cap {json.dumps(doc, ensure_ascii=False).replace(">", "\\u003e")} -->'
 
 
@@ -216,10 +228,10 @@ def _parsed(text: str) -> Raised | None:
         return None
     if not isinstance(doc, dict):
         return None
-    usd, why, by = doc.get('usd'), doc.get('why', ''), doc.get('by', '')
-    if not (_number(usd) and isinstance(why, str) and isinstance(by, str)):
+    usd, why, by, reserve = doc.get('usd'), doc.get('why', ''), doc.get('by', ''), doc.get('reserve', False)
+    if not (_number(usd) and isinstance(why, str) and isinstance(by, str) and isinstance(reserve, bool)):
         return None
-    return Raised(usd, why, by)
+    return Raised(usd, why, by, reserve)
 
 
 def raised_of(bodies: Iterable[str]) -> Raised | None:
@@ -257,6 +269,7 @@ class Gate:
     why: str
     model: str | None = None  # a degraded review's cheaper model; ``None`` keeps the review's
     usd: float = math.inf  # the PR's dollar cap, opened as its share of the review allotment; inf: no spend report
+    reserve: str | None = None  # the provider whose reserve this review draws; ``None``: the review allotment
 
 
 def gate(*, number: int, spent_usd: float, spend: Spend | None, raised: Raised | None = None) -> Gate:
@@ -264,9 +277,15 @@ def gate(*, number: int, spent_usd: float, spend: Spend | None, raised: Raised |
     door = RAISE_DOOR.format(pr=number)
     if spend is None:
         return Gate('run', f'{spent_usd:.2f} USD spent (no spend report on this host: no dollar cap)')
-    if spend.remaining_usd <= 0:
-        return Gate('skip', f'monthly review budget spent: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD')
     own = raised.usd if raised is not None and raised.usd is not None else fit(spend).cap_usd
+    if raised is not None and raised.reserve:  # bounded by the provider's free month, which ai-lab enforces
+        if spent_usd >= own:
+            why = f'budget reached: {spent_usd:.2f}/{own:.2f} USD (reserve drawn)'
+            return Gate('skip', f'{why}; the integrator may {door}')
+        return Gate('run', f'{spent_usd:.2f}/{own:.2f} USD (reserve drawn)', None, own, spend.provider)
+    if spend.remaining_usd <= 0:
+        why = f'monthly review budget spent: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD'
+        return Gate('skip', f'{why}; the integrator may draw the reserve: {door} --reserve')
     cap = min(own, spend.remaining_usd)
     model, note = None, ''
     if spend.remaining_usd < DEGRADE_BELOW * spend.budget_usd:
@@ -282,17 +301,21 @@ def tag_of(pull_url: str, number: int) -> str:
     return f'{owner_repo}#{number}'
 
 
-def share_of(tag: str) -> str:
-    """The ai-lab allotment one PR's review is charged in: a child of :data:`REVIEW_ALLOTMENT`."""
-    return f'{REVIEW_ALLOTMENT}>{tag}'
+def share_of(tag: str, *, reserve: bool = False) -> str:
+    """One PR's ai-lab allotment: a child of :data:`REVIEW_ALLOTMENT`, or its reserve draw."""
+    return f'{RESERVE_ALLOTMENT if reserve else REVIEW_ALLOTMENT}>{tag}'
 
 
 class ShareRefused(RuntimeError):
     """ai-lab refused to open a PR's share of the review allotment (the review's month cannot hold it)."""
 
 
-def open_share(runtimes: Mapping[str, Mapping[str, Any]], root: Path, share: str, usd: float) -> str | None:
+def open_share(
+    runtimes: Mapping[str, Mapping[str, Any]], root: Path, share: str, usd: float, provider: str | None = None
+) -> str | None:
     """Open (or re-allot) *share* at *usd* in this host's ai-lab; the allotment's name, ``None`` with no ai-lab.
+
+    A reserve draw names its *provider*: a top-level allotment is carved from that provider's free month.
 
     A raise or a refit re-allots the same path; ai-lab refuses one its parent cannot hold: :class:`ShareRefused`.
     """
@@ -300,7 +323,8 @@ def open_share(runtimes: Mapping[str, Mapping[str, Any]], root: Path, share: str
     if not python:
         return None
     done = _door.run(
-        [python, '-m', 'ai_lab.budget', 'allot', share, '--usd', repr(usd)], cwd=root, capture_output=True,
+        [python, '-m', 'ai_lab.budget', 'allot', share, '--usd', repr(usd),
+         *(['--provider', provider] if provider else [])], cwd=root, capture_output=True,
         text=True, encoding='utf-8', errors='replace', timeout=_SPEND_TIMEOUT_S, check=False,
     )  # fmt: skip
     if done.returncode != 0:

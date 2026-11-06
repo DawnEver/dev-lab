@@ -153,6 +153,53 @@ def test_a_report_with_no_review_allotment_is_refused_naming_the_row_to_declare(
 
 def test_a_pr_share_is_a_child_of_the_review_allotment() -> None:
     assert share_of('o/r#5') == 'review>o/r#5'
+    assert share_of('o/r#5', reserve=True) == 'reserve>o/r#5'
+
+
+# --- the reserve (user ruling 2026-11-03, kept 2026-11-06) -----------------------------------------------------
+
+
+def test_once_the_review_month_is_spent_a_pr_is_skipped_naming_the_reserve_door() -> None:
+    held = gate(number=7, spent_usd=0.0, spend=_spend(spent=_BUDGET))
+    assert held.state == 'skip'
+    assert held.why.startswith(f'monthly review budget spent: {_BUDGET:.2f}/{_BUDGET:.2f} USD')
+    assert 'forge review cap 7' in held.why
+    assert '--reserve' in held.why
+    assert gate(number=7, spent_usd=0.0, spend=_spend(spent=_BUDGET - 10.0)).state == 'run', 'planted: one step under'
+
+
+def test_a_raise_that_draws_the_reserve_runs_past_the_review_month_undegraded_on_its_provider() -> None:
+    month = Spend(_BUDGET, _BUDGET, 30, {}, 0, 'anthropic')
+    drawn = Raised(20.0, 'the release blocker', reserve=True)
+    got = gate(number=7, spent_usd=0.0, spend=month, raised=drawn)
+    assert (got.state, got.model, got.usd, got.reserve) == ('run', None, 20.0, 'anthropic')
+    assert 'reserve' in got.why
+    plain = Raised(20.0, 'no draw')  # planted control: a raise without the draw stays in the review's month
+    assert gate(number=7, spent_usd=0.0, spend=month, raised=plain).state == 'skip'
+    assert gate(number=7, spent_usd=20.0, spend=month, raised=drawn).state == 'skip', 'the raised cap still bounds it'
+
+
+def test_the_reserve_draw_is_recorded_in_the_raise_and_read_back() -> None:
+    drawn = Raised(20.0, 'the release blocker', 'DawnEver', reserve=True)
+    assert '"reserve": true' in raise_line(drawn)
+    assert raised_of([raise_line(drawn)]) == drawn
+    assert raised_of([raise_line(Raised(5.0, 'plain', 'DawnEver'))]).reserve is False
+
+
+def test_a_reserve_review_opens_its_share_on_the_provider_not_under_the_review(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    opened: list[tuple] = []
+
+    def allot(_runtimes: object, _root: Path, share: str, usd: float, provider: str | None = None) -> str:
+        opened.append((share, usd, provider))
+        return share
+
+    raise_cap(forge, number, Raised(25.0, 'release', reserve=True), by=Identity('i', 'box', 'S-int'))
+    month = Spend(_BUDGET, _BUDGET, 30, {}, 0, 'anthropic')
+    review_tick(work, forge, _REVIEW, base='integrate/main', run=FakeCommand(_doc()), ready=lambda *_: None,
+                host='box', spend=lambda *_: month, allot=allot)  # fmt: skip
+    assert opened == [(f'reserve>o/r#{number}', 25.0, 'anthropic')]
 
 
 # --- the raise, the tag ----------------------------------------------------------------------------------------

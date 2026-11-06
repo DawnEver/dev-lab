@@ -8,7 +8,7 @@ never the forge's -- only the forge posts ``tests/review``.
   after fixing a security finding, or to have grown work read. The forge's next review run honours it.
 * ``review takeover <sha>`` (:func:`takeover`) runs the SAME method and scope and posts the findings comment as a
   session's ADVISORY review: no status, no merge. ``review plan <sha>`` prints the slices only.
-* ``review cap <pr> --usd <n> --why`` records the integrator's raise of one PR's dollar cap.
+* ``review cap <pr> --usd <n> [--reserve] --why`` records the integrator's raise of one PR's dollar cap.
 * ``review run --pr N`` is the review job's (:mod:`dev_lab.dev.forgereview_job`).
 """
 
@@ -132,7 +132,8 @@ def raise_cap(client: Client, number: int, raised: Raised, *, by: Identity) -> s
         msg = 'a raise records its reason: --why "<reason>"'
         raise ValueError(msg)
     text = (
-        f'Review cap of #{number} raised by {by.text()}: {raised.usd:.2f} USD -- {raised.why}\n\n'
+        f'Review cap of #{number} raised by {by.text()}: {raised.usd:.2f} USD'
+        f'{" drawn from the reserve" if raised.reserve else ""} -- {raised.why}\n\n'
         f'{raise_line(replace(raised, by=by.login))}'
     )
     comment_upsert(client, number, kind=Marker.REVIEW_CAP, text=text)
@@ -206,6 +207,7 @@ def _parser() -> argparse.ArgumentParser:
     raising = verbs.add_parser('cap', help="raise one PR's review dollar cap, the reason recorded on the PR")
     raising.add_argument('pr', type=int)
     raising.add_argument('--usd', type=float, required=True, help='the dollar cap; the month remainder bounds it')
+    raising.add_argument('--reserve', action='store_true', help="draw the provider's reserve, past the review month")
     raising.add_argument('--why', required=True, help='the recorded reason for the raise')
     running = verbs.add_parser('run', help="review one PR's head: what a workflow job runs for its event")
     which = running.add_mutually_exclusive_group(required=True)
@@ -294,7 +296,7 @@ def main(
             emit(f'[review] {ask_again(origin, args.pr, origin.pr_view(args.pr).head_sha, me.text())}')
             return 0
         if args.verb == 'cap':
-            emit(f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.why), by=me)}')
+            emit(f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.why, reserve=args.reserve), by=me)}')
             return 0
         review, pull = review_at(root, base), pull_for(origin, args.sha)  # the forge first: the PR brings its head
         if pull is not None:
