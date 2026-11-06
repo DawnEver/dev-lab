@@ -8,7 +8,9 @@ chose are what that run wrote. A later delete can remove them, never forge them:
 
 * :func:`upload` -- from inside a job: one zip of named members through the artifact v4 protocol the forge serves
   under :data:`TWIRP` (Gitea 1.22+, GitHub) -- CreateArtifact, the zip as one block, the block list,
-  FinalizeArtifact with the zip's sha256.
+  FinalizeArtifact with the zip's sha256. Every exchange is retried through the one forge loop
+  (:func:`~dev_lab.dev.forgefailure.retried`): a 5xx, a dropped connection or a rate limit is tried again, a
+  refusal is not, and a lost CreateArtifact answer retried is refused by the forge as a duplicate, never doubled.
 * :func:`run_member` -- one member of the one unexpired artifact of a name in a run, the archive capped before and
   after download, the member capped, nothing else extracted.
 """
@@ -22,20 +24,28 @@ import io
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from typing import TYPE_CHECKING, Any, Final
 
+from dev_lab.dev.forgefailure import RATE_HEADERS, Answer, retried
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+    from email.message import Message
 
     from dev_lab.dev.forgework import Client
 
     #: One HTTP exchange: ``(method, url, body, headers) -> answer bytes``; a refusal raises :class:`OSError`.
     type Send = Callable[[str, str, bytes, Mapping[str, str]], bytes]
 
-__all__ = ['TWIRP', 'ArtifactRefused', 'run_member', 'upload', 'zipped']
+    #: One HTTP exchange as answered, a refusal included: ``(method, url, body, headers) -> Answer``.
+    type Exchange = Callable[[str, str, bytes, Mapping[str, str]], Answer]
+
+__all__ = ['TWIRP', 'ArtifactRefused', 'retrying', 'run_member', 'upload', 'zipped']
 
 #: The artifact v4 service, under the forge's results URL.
 TWIRP: Final = 'twirp/github.actions.results.api.v1.ArtifactService/'
@@ -74,13 +84,35 @@ def _results_url(env: Mapping[str, str]) -> str:
     return url.rstrip('/') + '/'
 
 
-def _urllib_send(method: str, url: str, body: bytes, headers: Mapping[str, str]) -> bytes:
+def _urllib_once(method: str, url: str, body: bytes, headers: Mapping[str, str]) -> Answer:
     if urllib.parse.urlsplit(url).scheme not in {'http', 'https'}:
         msg = f'the artifact service named a non-HTTP URL: {url[:80]!r}'
         raise ArtifactRefused(msg)
     request = urllib.request.Request(url, data=body, method=method, headers=dict(headers))  # noqa: S310
-    with urllib.request.urlopen(request, timeout=60) as answer:  # noqa: S310
-        return answer.read()
+    try:
+        with urllib.request.urlopen(request, timeout=60) as answer:  # noqa: S310
+            return Answer(answer.status, answer.read(), _rate(answer.headers))
+    except urllib.error.HTTPError as refused:
+        return Answer(refused.code, refused.read(), _rate(refused.headers))
+
+
+def _rate(headers: Message | None) -> dict[str, str]:
+    """The :data:`RATE_HEADERS` an answer sent (a bare ``HTTPError`` may carry no headers)."""
+    return {name: value for name in RATE_HEADERS if headers is not None and (value := headers.get(name))}
+
+
+def retrying(exchange: Exchange, *, sleep: Callable[[float], None] = time.sleep) -> Send:
+    """*exchange* as a :data:`Send` through the one forge retry loop; its last refusal raises ``ForgeCallFailed``.
+
+    The report names the URL's path only: a signed upload URL's query is its credential.
+    """
+
+    def send(method: str, url: str, body: bytes, headers: Mapping[str, str]) -> bytes:
+        label = (method, urllib.parse.urlsplit(url).path)
+        answer = retried(label, lambda: exchange(method, url, body, headers), sleep=sleep)
+        return answer.payload if isinstance(answer, Answer) else b''
+
+    return send
 
 
 def zipped(members: Mapping[str, bytes]) -> bytes:
@@ -97,7 +129,7 @@ def upload(
 ) -> str:
     """Attach *members* to THIS job's run as artifact *name*; the forge's artifact id."""
     env = os.environ if env is None else env
-    send = _urllib_send if send is None else send
+    send = retrying(_urllib_once) if send is None else send
     token = env.get('ACTIONS_RUNTIME_TOKEN', '')
     run, job = _scope(token)
     twirp = _results_url(env) + TWIRP

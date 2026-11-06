@@ -66,6 +66,15 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         ('[rejected]', 'non-fast-forward', 'fetch first', 'updates were rejected'),
     ),
     (
+        # A RATE LIMIT, ABOVE THE 403 ROW BECAUSE IT IS ANSWERED AS A 403. Measured 2026-11-05: GitHub's
+        # `403 API rate limit exceeded` read as a refused credential and was never retried. The limit
+        # resets on its own clock, so an attempt after the wait clears it; the forge door reads that
+        # wait off `Retry-After` / `X-RateLimit-Reset` (`forgefailure.pause`).
+        'rate-limited',
+        True,
+        ('rate limit exceeded', 'secondary rate limit', 'too many requests', 'error: 429', 'http 429'),
+    ),
+    (
         # THE FORGE REFUSED THE IDENTITY IT ALREADY RESOLVED. A 403 is an answered request: the
         # server read the credential, matched it against a protected branch or a missing scope, and
         # said no. Repeating it three seconds later asks the same question of the same policy.
@@ -73,7 +82,16 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         # `GET /user` first (2026-10-18, a single API 401 whose credential authenticated minutes later).
         'forge-refused',
         False,
-        ('403 forbidden', 'error: 403', 'protected branch', 'you are not allowed to push', 'permission denied to'),
+        (
+            '403 forbidden',
+            'error: 403',
+            'protected branch',
+            'you are not allowed to push',
+            'permission denied to',
+            # `gh`'s spelling of a token the API does not accept (`HTTP 401: Bad credentials`): a stored
+            # token, never git's expiring OAuth one, so no refresh between attempts can change it.
+            'bad credentials',
+        ),
     ),
     (
         # THE REMOTE DOES NOT EXIST. No backoff creates a repository.
@@ -87,6 +105,8 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
             # git's own spelling for a path or URL with no repository behind it: `repository '<x>'
             # does not exist` (git 2.42, Linux, measured on Ada 2026-10-19) or `... not found`.
             "fatal: repository '",
+            # `gh`'s spelling of a repository (or a path under it) the API does not hold.
+            'http 404: not found',
         ),
     ),
     (
