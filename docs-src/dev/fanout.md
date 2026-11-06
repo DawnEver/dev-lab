@@ -26,6 +26,19 @@ forge's job, not yours.
   extras = ["all", "dev"]
   ```
 
+- An environment is the lock. To run against a family sibling's LOCAL checkout instead of its locked version,
+  declare it: per machine in the machine file, or for one run with `--local <name>` (repeatable). The sync
+  then installs it over the lock, editable and with `--no-deps`, and prints `LOCAL OVERLAY: <name> -> <path>@<tree>`
+  every time. Remove the declaration and sync again to return to the lock. The path is `[repos] <name>` when set,
+  else the checkout beside this one; a name the lock does not hold, a missing checkout, or one naming another
+  project is refused (`dev_lab.dev._dep_local`).
+
+  ```toml
+  # ~/.config/lab-commons/config.toml -- per machine, never committed
+  [dep]
+  local = ["lab-commons"]
+  ```
+
 - A run in worktree A blocks mutation of A's environment only, not bootstrap or sync of B's; CPU contention is
   the box seat's job ([box resources](box-resources.md)).
 - A log name is a NAME, not a path: the runner places it under its own dated directory and refuses a separator.

@@ -26,11 +26,16 @@ from dev_lab.dev.lockcheck import (
     DOOR,
     REMEDY,
     UNRESOLVED,
+    UV_PIN,
     lock_problems,
     newest_stable,
+    newest_uv,
     pin_stable,
+    pin_uv,
+    refreshable,
     stale,
     unreasoned_holds,
+    uv_version,
 )
 from dev_lab.dev.relock import detached_worktree
 
@@ -410,3 +415,51 @@ def test_a_toolchain_behind_the_newest_stable_is_stale_and_pinning_moves_only_it
     )
     assert stale(tmp_path, resolve=fresh, stable=lambda: '1.99.1') == ()
     assert stale(tmp_path / 'none', resolve=fresh, stable=lambda: '9.9.9') == (), 'no toolchain, no reading'
+
+
+def _tags(*names: str, ok: bool = True) -> object:
+    attempt = type('Attempt', (), {'output': ''.join(f'{"0" * 40}\trefs/tags/{name}\n' for name in names)})()
+    return type('Report', (), {'ok': ok, 'remedy': 'retry later', 'attempts': (attempt,)})()
+
+
+def test_the_newest_uv_is_the_highest_release_tag_numerically() -> None:
+    """User directive 2026-11-05: uv as new as possible; ``0.13.10`` outranks ``0.13.7``, a pre-release never counts."""
+    assert newest_uv(check=lambda: _tags('0.9.9', '0.13.7', '0.13.10', '0.14.0-rc1')) == '0.13.10'
+
+
+def test_planted_control_no_release_tag_or_a_failed_listing_raises() -> None:
+    with pytest.raises(OSError, match='listed no uv release'):
+        newest_uv(check=lambda: _tags('0.14.0-rc1'))
+    with pytest.raises(OSError, match='retry later'):
+        newest_uv(check=lambda: _tags('0.13.7', ok=False))
+
+
+def test_a_uv_pin_below_the_newest_release_is_stale_refreshable_and_pinning_moves_only_its_version(
+    tmp_path: Path,
+) -> None:
+    """PLANTED control: the same tree pinned at the newest uv is fresh, and a tree with no pin is never read."""
+    pin = tmp_path / UV_PIN
+    pin.parent.mkdir(parents=True)
+    pin.write_text('# why\nversion = "0.13.7"\n', encoding='utf-8')
+
+    def fresh(_tree: Path) -> object:
+        return _rustup('')
+
+    found = stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8')
+    assert found == (f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.13.8',)
+    assert refreshable(found[0])
+    pin_uv(tmp_path, '0.13.8')
+    assert pin.read_text(encoding='utf-8') == '# why\nversion = "0.13.8"\n'
+    assert uv_version(tmp_path) == '0.13.8'
+    assert stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8') == ()
+
+    def unread() -> str:
+        msg = 'a tree without the uv pin reads no uv release'
+        raise AssertionError(msg)
+
+    assert stale(tmp_path / 'none', resolve=fresh, uv=unread) == ()
+
+
+def test_the_uv_pin_is_raised_to_the_newest_release_of_2026_11_05() -> None:
+    """The first freshening, by hand: 0.13.5 -> 0.13.7 (the newest release on 2026-11-05)."""
+    assert uv_version() == '0.13.7'

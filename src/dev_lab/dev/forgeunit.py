@@ -53,7 +53,7 @@ from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client, client_for
 
-__all__ = ['ForgeResults', 'UnitJob', 'main', 'offering', 'result_name', 'unit_request']
+__all__ = ['ForgeResults', 'UnitJob', 'main', 'offering', 'offering_for', 'result_name', 'unit_request']
 
 _HASH: Final = r'[0-9a-f]{64}'
 #: The bundle's manifest, beside ``files/``.
@@ -241,6 +241,17 @@ def offering(
         return f'#{issue.number}'
 
     return offer
+
+
+def offering_for(repo: Path, sha: str) -> Offer:
+    """The ``offer`` for units of *repo* at *sha*, with this repo's forge client built here.
+
+    THE ONE CALL A CONSUMER NEEDS. A product reaches it through an entry point
+    (``motronics.compute.offering = "dev_lab.dev.forgeunit:offering_for"``) and never imports the dev kit, so it
+    must not know how a forge client is made: two names in its seam (``client_for`` and ``offering``) were two
+    signatures to keep in step across repos (user ruling 2026-11-05).
+    """
+    return offering(repo, client_for(repo), sha)
 
 
 def main(

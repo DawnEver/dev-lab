@@ -67,7 +67,7 @@ _TABLE: Final = 'drift'
 _KEYS: Final = frozenset({'max_behind'})
 _SHORT: Final = 12
 _RELOCK_REMEDY: Final = (
-    'Merge the open `pr/relock-*` pull request; if none is open, relock on a lane: '
+    'Merge the open `pr/relock` pull request; if none is open, relock on a lane: '
     '`python -m dev_lab.dev.dep --lock-upgrade .` then `python -m dev_lab.dev.ciworkflows render`.'
 )
 

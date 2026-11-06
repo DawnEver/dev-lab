@@ -1,17 +1,19 @@
-"""The forge relocks integration: a stale lock becomes ONE pull request, a fresh one nothing, an open one waits.
+"""The forge relocks integration through ONE ROLLING pull request, in-house moves at once, third-party on a cadence.
 
-The staleness reading is ``lockcheck.stale`` -- the one staleness reading -- so these cases
-plant that reading (and the door's rewrite of the lock) and run everything else for real: a bare ``origin``, a
-clone fetching ``origin/integrate/main``, a worktree, a commit and a push.
+The staleness reading is ``lockcheck.stale`` -- the one staleness reading -- so these cases plant that reading
+(and the door's rewrite of the lock) and run everything else for real: a bare ``origin``, a clone fetching
+``origin/integrate/main``, a worktree, a commit, ``ls-remote`` and a leased force-push.
 """
 
 from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable, Sequence
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -19,23 +21,44 @@ from dev_lab.dev import forgeservesteps, relock
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.lockcheck import UV_PIN
 from dev_lab.dev.relock import (
-    PREFIX,
-    Relock,
+    BRANCH,
+    DEFAULT_CADENCE,
+    SCOPE,
+    TITLE,
     RelockFailed,
     _tree_python,
-    branch_for,
+    cadence,
     carry,
-    decision,
+    chosen,
     dist_of,
+    in_house,
     rerender,
 )
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
-_SHA = 'dca72b71758ee4c70fb991fbcb44c56a9e52498d'
 _GIT = shutil.which('git') or 'git'
-_CHANGE = 'Update pint v0.26.1 -> v0.26.2'
+_PINT = 'uv.lock is not the newest resolution: Update pint v0.26.1 -> v0.26.2'
+_SIBLING = 'uv.lock is not the newest resolution: Update lab-commons v0.3.1 -> v0.3.2'
+_DAY = 86400.0
+
+#: A lock sourcing one sibling from git FOLLOWING its line, one git package held at a tag, and one index package.
+_LOCK = """version = 1
+
+[[package]]
+name = "lab-commons"
+source = { git = "https://github.com/DawnEver/lab-commons.git#ed24ab516a140b62b77a89a1b546d5fee8903d22" }
+
+[[package]]
+name = "held_dep"
+source = { git = "https://example.invalid/held.git?tag=v1#0123456789abcdef0123456789abcdef01234567" }
+
+[[package]]
+name = "pint"
+source = { registry = "https://pypi.org/simple" }
+"""
 
 
 class _Attempt:
@@ -53,42 +76,13 @@ class _Report:
         self.attempts = (_Attempt(output),) if output else ()
 
 
-def _fresh(_tree: Path) -> _Report:
-    return _Report()
+def _resolving(*changes: str) -> Callable[[Path], _Report]:
+    output = ''.join(f'{change.partition("resolution: ")[2]}\n' for change in changes)
+    return lambda _tree: _Report(output)
 
 
-def _stale(_tree: Path) -> _Report:
-    return _Report(f'{_CHANGE}\n')
-
-
-def _never(_tree: Path) -> _Report:
-    msg = 'nothing may resolve while a relock pull request is open'
-    raise AssertionError(msg)
-
-
-def test_a_fresh_lock_needs_no_relock(tmp_path: Path) -> None:
-    assert decision(tmp_path, _SHA, resolve=_fresh) is None
-
-
-def test_a_stale_lock_names_the_dist_its_branch_and_its_pull_request(tmp_path: Path) -> None:
-    """PLANTED control: the same checkout with a fresh lock needs nothing (the test above)."""
-    found = decision(tmp_path, _SHA, resolve=_stale)
-    assert isinstance(found, Relock)
-    assert (found.dist, found.branch) == ('pint', f'{PREFIX}-pint-{_SHA[:12]}')
-    assert found.title == 'build(deps): relock pint to the newest resolution'
-    assert _CHANGE in found.body
-    assert found.branch in found.body
-
-
-def test_the_dist_is_the_word_the_change_names() -> None:
-    assert dist_of('uv.lock is not the newest resolution: Update pint v0.26.1 -> v0.26.2') == 'pint'
-    assert dist_of('uv.lock is not the newest resolution: Add ruff v0.17.1') == 'ruff'
-    assert dist_of('uv.lock is not the newest resolution: something else entirely') == 'lock'
-
-
-def test_one_branch_per_dist_and_short_sha() -> None:
-    assert branch_for('pint', _SHA) == f'pr/relock-pint-{_SHA[:12]}'
-    assert branch_for('pint', _SHA) != branch_for('ruff', _SHA)
+_fresh = _resolving()
+_stale = _resolving(_PINT)
 
 
 def _git(root: Path, *argv: str) -> str:
@@ -99,6 +93,20 @@ def _git(root: Path, *argv: str) -> str:
     return done.stdout.strip()
 
 
+def _commit(world: tuple[Path, Path, str], message: str, files: dict[str, str]) -> str:
+    """Commit *files* on the seed's integration, push it, fetch it into the clone; the new tip."""
+    clone, origin, _ = world
+    seed = origin.parent / 'seed'
+    for name, text in files.items():
+        (seed / name).parent.mkdir(parents=True, exist_ok=True)
+        (seed / name).write_text(text, encoding='utf-8')
+    _git(seed, 'add', '-A')
+    _git(seed, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', message)
+    _git(seed, 'push', '-q', str(origin), 'integrate/main')
+    _git(clone, 'fetch', '-q', 'origin')
+    return _git(clone, 'rev-parse', 'origin/integrate/main')
+
+
 @pytest.fixture
 def world(tmp_path: Path) -> tuple[Path, Path, str]:
     """``(clone, origin, integration sha)``: a clone whose ``origin/integrate/main`` commits a lock."""
@@ -106,7 +114,7 @@ def world(tmp_path: Path) -> tuple[Path, Path, str]:
     _git(tmp_path, 'init', '-q', '--bare', str(origin))
     _git(tmp_path, 'init', '-q', '-b', 'integrate/main', str(seed))
     (seed / 'pyproject.toml').write_text('[project]\nname = "x"\nversion = "0"\n', encoding='utf-8')
-    (seed / 'uv.lock').write_text('version = 1\n', encoding='utf-8')
+    (seed / 'uv.lock').write_text(_LOCK, encoding='utf-8')
     _git(seed, 'add', '-A')
     _git(seed, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'seed')
     _git(seed, 'push', '-q', str(origin), 'integrate/main')
@@ -116,57 +124,232 @@ def world(tmp_path: Path) -> tuple[Path, Path, str]:
     return clone, origin, _git(clone, 'rev-parse', 'origin/integrate/main')
 
 
-def _relocked(tree: Path) -> int:
-    (tree / 'uv.lock').write_text('version = 1\n# pint 0.26.2\n', encoding='utf-8')
-    return 0
+class _Door:
+    """The dependency door: appends a line to the lock and records which packages it was told to move."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, ...]] = []
+
+    def __call__(self, tree: Path, packages: Sequence[str]) -> int:
+        self.calls.append(tuple(packages))
+        with (tree / 'uv.lock').open('a', encoding='utf-8') as lock:
+            lock.write(f'# relocked {len(self.calls)}\n')
+        return 0
+
+
+def _never(_tree: Path, _packages: Sequence[str]) -> int:
+    msg = 'the door must not run'
+    raise AssertionError(msg)
 
 
 class _Forge:
-    """The two forge calls a relock makes: list the open pull requests, open one."""
+    """The forge calls a relock makes: list the open pull requests, open one, rewrite one's body, close one."""
 
-    def __init__(self, *open_heads: str) -> None:
-        self.open = [_pull(n, head) for n, head in enumerate(open_heads, 1)]
+    def __init__(self) -> None:
+        self.open: list[PullRequest] = []
         self.created: list[tuple[str, str, str, str]] = []
+        self.edited: list[tuple[int, str]] = []
+        self.closed: list[int] = []
 
     def pulls(self) -> list[PullRequest]:
         return self.open
 
-    def create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
+    def create(self, title: str, body: str, *, head: str, base: str, draft: bool) -> PullRequest:
+        assert draft is False, 'a relock is done work'
         self.created.append((title, body, head, base))
-        return _pull(99, head)
+        pull = PullRequest(99, title, 'open', body, 'https://forge/pulls/99', 'serve', head, base)
+        self.open.append(pull)
+        return pull
+
+    def edit(self, number: int, body: str) -> None:
+        self.edited.append((number, body))
+
+    def close(self, number: int) -> None:
+        self.closed.append(number)
+        self.open = [pull for pull in self.open if pull.number != number]
 
 
-def _pull(number: int, head: str) -> PullRequest:
-    return PullRequest(number, 't', 'open', '', f'https://forge/pulls/{number}', 'serve', head, 'integrate/main')
+def _carry(clone: Path, forge: _Forge, *, now: float = 0.0, **seams: object) -> str:
+    seams.setdefault('upgrade', _Door())
+    return carry(
+        clone, _DECLARED, pulls=forge.pulls, create=forge.create, edit=forge.edit, close=forge.close, now=now,
+        **cast('dict[str, Any]', seams),
+    )  # fmt: skip
 
 
-def test_a_stale_integration_lock_is_carried_as_one_pull_request(world: tuple[Path, Path, str]) -> None:
+def _scope(origin: Path) -> str:
+    return _git(origin, 'log', '-1', f'--format=%(trailers:key={SCOPE},valueonly)', BRANCH)
+
+
+# --- reading ------------------------------------------------------------------------------------------------
+
+
+def test_the_dist_is_the_word_the_change_names() -> None:
+    assert dist_of(_PINT) == 'pint'
+    assert dist_of('uv.lock is not the newest resolution: Add ruff v0.17.1') == 'ruff'
+    assert dist_of('uv.lock is not the newest resolution: something else entirely') == 'lock'
+    assert dist_of(f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.13.8') == 'uv'
+
+
+def test_in_house_is_a_git_source_following_a_line_read_off_the_lock() -> None:
+    """PLANTED control: a git source held at a tag and an index package are third-party."""
+    assert in_house(_LOCK) == {'lab-commons'}
+    assert in_house('not toml [') == frozenset(), 'an unreadable lock follows nothing'
+
+
+def test_before_the_cadence_only_sibling_moves_are_chosen() -> None:
+    """PLANTED control: due, every move is chosen; the toolchain and the uv pin are never siblings."""
+    rust = 'rust-toolchain.toml is not the newest stable: 1.99.0 -> 1.99.1'
+    found = (_PINT, _SIBLING, rust)
+    assert chosen(found, frozenset({'lab-commons'}), due=False) == (_SIBLING,)
+    assert chosen(found, frozenset({'lab-commons'}), due=True) == found
+
+
+def test_the_cadence_is_declared_once_in_the_repo_default_daily() -> None:
+    assert cadence('[project]\nname = "x"\n') == DEFAULT_CADENCE == timedelta(days=1)
+    assert cadence('[tool.dev_lab.relock]\nthird_party_every = "12 h"\n') == timedelta(hours=12)
+    with pytest.raises(ValueError, match='unknown key'):
+        cadence('[tool.dev_lab.relock]\nevery = "1 d"\n')
+    with pytest.raises(ValueError, match='needs a unit'):
+        cadence('[tool.dev_lab.relock]\nthird_party_every = "24"\n')
+
+
+# --- the rolling pull request --------------------------------------------------------------------------------
+
+
+def test_a_stale_integration_lock_is_carried_as_the_one_rolling_pull_request(world: tuple[Path, Path, str]) -> None:
     """PLANTED control: the same integration with a fresh lock pushes and opens nothing."""
     clone, origin, sha = world
     forge = _Forge()
-    said = carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_fresh, upgrade=_relocked)
-    assert said == f'the lock of integrate/main at {sha[:12]} is the newest resolution'
-    assert (forge.created, _git(origin, 'branch', '--list', f'{PREFIX}-*')) == ([], '')
+    said = _carry(clone, forge, resolve=_fresh, upgrade=_never)
+    assert said == f'the lock of integrate/main at {sha[:12]} needs no relock'
+    assert (forge.created, _git(origin, 'branch', '--list', BRANCH)) == ([], '')
 
-    said = carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=_relocked)
-    branch = branch_for('pint', sha)
-    assert said == f'relocked pint onto {branch}: https://forge/pulls/99'
+    door = _Door()
+    said = _carry(clone, forge, resolve=_stale, upgrade=door)
+    assert said == f'relocked integrate/main at {sha[:12]} onto {BRANCH} (full, 1 move(s)): https://forge/pulls/99'
     ((title, body, head, base),) = forge.created
-    assert (head, base, title) == (branch, 'integrate/main', 'build(deps): relock pint to the newest resolution')
-    assert _CHANGE in body
-    assert _git(origin, 'rev-parse', f'{branch}^') == sha, 'the relock is one commit on integration'
-    assert _git(origin, 'diff', '--name-only', sha, branch) == 'uv.lock', 'it moves the lock and nothing else'
-    assert _git(origin, 'log', '-1', '--format=%s', branch) == title
+    assert (head, base, title) == (BRANCH, 'integrate/main', TITLE)
+    assert _PINT in body
+    assert door.calls == [()], 'never relocked before: third-party is due, the door upgrades everything'
+    assert _git(origin, 'rev-parse', f'{BRANCH}^') == sha, 'the relock is one commit on integration'
+    assert _git(origin, 'diff', '--name-only', sha, BRANCH) == 'uv.lock', 'it moves the lock and nothing else'
+    assert _git(origin, 'log', '-1', '--format=%s', BRANCH) == TITLE
+    assert _scope(origin) == 'full'
     assert _git(clone, 'worktree', 'list', '--porcelain').count('worktree ') == 1, 'its worktree is removed'
     assert _git(clone, 'status', '--porcelain') == '', 'the serving checkout is never written'
 
 
-def test_an_open_relock_pull_request_is_waited_for_and_nothing_resolves(world: tuple[Path, Path, str]) -> None:
-    clone, _, _ = world
-    forge = _Forge('pr/other', f'{PREFIX}-pint-0123456789ab')
-    said = carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_never, upgrade=_relocked)
-    assert said == f'a relock is already open: #2 {PREFIX}-pint-0123456789ab'
-    assert forge.created == []
+def test_an_open_relock_carrying_these_moves_on_this_tip_is_left_alone(world: tuple[Path, Path, str]) -> None:
+    clone, origin, _ = world
+    forge = _Forge()
+    _carry(clone, forge, resolve=_stale)
+    head = _git(origin, 'rev-parse', BRANCH)
+    said = _carry(clone, forge, resolve=_stale, upgrade=_never)
+    assert said == '#99 already carries the 1 move(s) integrate/main needs'
+    assert (_git(origin, 'rev-parse', BRANCH), len(forge.created), forge.edited) == (head, 1, [])
+
+
+def test_a_newer_resolution_updates_the_same_pull_request_in_place(world: tuple[Path, Path, str]) -> None:
+    """At most ONE relock PR: a tick finding new staleness rewrites the one branch and body, opens nothing."""
+    clone, origin, sha = world
+    forge = _Forge()
+    _carry(clone, forge, resolve=_stale)
+    newer = 'uv.lock is not the newest resolution: Update pint v0.26.1 -> v0.26.3'
+    said = _carry(clone, forge, resolve=_resolving(newer))
+    assert said == f'rebuilt #99 on {sha[:12]} (full, 1 move(s)): https://forge/pulls/99'
+    assert len(forge.created) == 1
+    ((number, body),) = forge.edited
+    assert number == 99
+    assert newer in body
+    assert _PINT not in body
+    assert _git(origin, 'rev-parse', f'{BRANCH}^') == sha, 'still ONE commit on integration'
+    assert newer in _git(origin, 'log', '-1', '--format=%B', BRANCH)
+
+
+def test_an_integration_that_moved_while_the_pull_request_was_open_is_rebuilt_on(
+    world: tuple[Path, Path, str],
+) -> None:
+    clone, origin, _ = world
+    forge = _Forge()
+    _carry(clone, forge, resolve=_stale)
+    tip = _commit(world, 'feat: integration moves', {'a.txt': 'a\n'})
+    said = _carry(clone, forge, resolve=_stale)
+    assert said.startswith(f'rebuilt #99 on {tip[:12]}')
+    assert _git(origin, 'rev-parse', f'{BRANCH}^') == tip, 'rebuilt on the new tip, never merged into'
+    assert _git(origin, 'diff', '--name-only', tip, BRANCH) == 'uv.lock'
+
+
+def test_an_open_relock_integration_no_longer_needs_is_closed(world: tuple[Path, Path, str]) -> None:
+    clone, _, sha = world
+    forge = _Forge()
+    _carry(clone, forge, resolve=_stale)
+    said = _carry(clone, forge, resolve=_fresh, upgrade=_never)
+    assert said == f'closed #99: integrate/main at {sha[:12]} needs no relock'
+    assert forge.closed == [99]
+
+
+def test_a_push_that_lost_its_lease_to_a_racing_writer_is_a_named_refusal(world: tuple[Path, Path, str]) -> None:
+    """PLANTED control: the same push with origin's real head as its lease lands (every case above)."""
+    clone, origin, _ = world
+    forge = _Forge()
+    _carry(clone, forge, resolve=_stale)
+    raced = _git(origin, 'rev-parse', BRANCH)
+    with pytest.raises(RelockFailed, match='lease'):
+        _carry(clone, forge, resolve=_resolving(_SIBLING), remote_head=lambda _root: '0' * 39 + '1')
+    assert _git(origin, 'rev-parse', BRANCH) == raced, "the racing writer's head stands"
+
+
+# --- the cadence --------------------------------------------------------------------------------------------
+
+
+def _relocked_fully(world: tuple[Path, Path, str]) -> float:
+    """Give integration's history a full relock commit; its commit time."""
+    _commit(world, f'{TITLE}\n\n{SCOPE}: full', {'uv.lock': _LOCK + '# relocked\n'})
+    return float(_git(world[0], 'log', '-1', '--format=%ct', 'origin/integrate/main'))
+
+
+def test_an_in_house_move_before_the_cadence_moves_only_the_sibling(world: tuple[Path, Path, str]) -> None:
+    """PLANTED control: the same staleness a cadence later moves everything, through one full upgrade."""
+    clone, origin, _ = world
+    at = _relocked_fully(world)
+    forge, door = _Forge(), _Door()
+    said = _carry(clone, forge, now=at + 3600, resolve=_resolving(_PINT, _SIBLING), upgrade=door)
+    assert '(in-house, 1 move(s))' in said
+    assert door.calls == [('lab-commons',)], 'only the sibling is named to the door'
+    ((_, body, _, _),) = forge.created
+    carried, _, held = body.partition('held for the cadence')
+    assert _SIBLING in carried
+    assert _PINT in held
+    assert _PINT not in carried
+    assert _scope(origin) == 'in-house'
+
+    said = _carry(clone, forge, now=at + _DAY, resolve=_resolving(_PINT, _SIBLING), upgrade=door)
+    assert '(full, 2 move(s))' in said
+    assert door.calls[-1] == ()
+    assert _scope(origin) == 'full'
+
+
+def test_third_party_only_staleness_waits_for_the_cadence(world: tuple[Path, Path, str]) -> None:
+    """PLANTED control: a cadence after the last full relock, the same staleness is carried."""
+    clone, origin, _ = world
+    at = _relocked_fully(world)
+    forge = _Forge()
+    said = _carry(clone, forge, now=at + 3600, resolve=_stale, upgrade=_never)
+    assert said.endswith('needs no relock; 1 third-party move(s) held for the cadence')
+    assert (forge.created, _git(origin, 'branch', '--list', BRANCH)) == ([], '')
+    assert '(full, 1 move(s))' in _carry(clone, forge, now=at + _DAY, resolve=_stale)
+
+
+def test_a_declared_cadence_is_read_at_the_tip(world: tuple[Path, Path, str]) -> None:
+    """PLANTED control: the default cadence holds this move an hour after a full relock (the case above)."""
+    at = _relocked_fully(world)
+    manifest = '[project]\nname = "x"\nversion = "0"\n[tool.dev_lab.relock]\nthird_party_every = "1 h"\n'
+    _commit(world, 'build: hourly third-party relock', {'pyproject.toml': manifest})
+    assert '(full, 1 move(s))' in _carry(world[0], _Forge(), now=at + 3600, resolve=_stale)
+
+
+# --- refusals and seams kept from the single-shot relock -----------------------------------------------------
 
 
 def test_a_door_that_moves_nothing_is_a_named_refusal(world: tuple[Path, Path, str]) -> None:
@@ -174,18 +357,17 @@ def test_a_door_that_moves_nothing_is_a_named_refusal(world: tuple[Path, Path, s
     clone, origin, _ = world
     forge = _Forge()
     with pytest.raises(RelockFailed, match=r'left uv\.lock unchanged'):
-        carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=lambda _t: 0)
+        _carry(clone, forge, resolve=_stale, upgrade=lambda _t, _p: 0)
     with pytest.raises(RelockFailed, match='the dependency door exited 1'):
-        carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=lambda _t: 1)
-    assert (forge.created, _git(origin, 'branch', '--list', f'{PREFIX}-*')) == ([], '')
+        _carry(clone, forge, resolve=_stale, upgrade=lambda _t, _p: 1)
+    assert (forge.created, _git(origin, 'branch', '--list', BRANCH)) == ([], '')
     assert _git(clone, 'worktree', 'list', '--porcelain').count('worktree ') == 1
 
 
 def test_no_integration_branch_is_a_named_refusal(tmp_path: Path) -> None:
     _git(tmp_path, 'init', '-q')
-    forge = _Forge()
     with pytest.raises(RelockFailed, match='no origin/integrate/main'):
-        carry(tmp_path, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_never, upgrade=_relocked)
+        _carry(tmp_path, _Forge(), resolve=_stale, upgrade=_never)
 
 
 def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure(
@@ -213,7 +395,10 @@ def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure
     assert 'no origin/integrate/main' in alarm.body
 
 
-_CLIENT = cast('Client', SimpleNamespace(pr_create=lambda *_a, **_k: None))
+_CLIENT = cast(
+    'Client',
+    SimpleNamespace(pr_create=lambda *_a, **_k: None, issue_edit=lambda *_a: None, issue_close=lambda _n: None),
+)
 
 
 def test_a_relock_commit_is_the_forges_and_carries_no_session(monkeypatch, tmp_path: Path) -> None:
@@ -234,26 +419,15 @@ def test_a_relock_commit_is_the_forges_and_carries_no_session(monkeypatch, tmp_p
 def test_a_toolchain_behind_the_newest_stable_is_carried_like_a_stale_lock(world: tuple[Path, Path, str]) -> None:
     """User ruling 2026-10-25: the forge refreshes ``rust-toolchain.toml`` by the same pull request as the lock."""
     clone, origin, _ = world
-    seed = origin.parent / 'seed'
-    (seed / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.0"\n', encoding='utf-8')
-    _git(seed, 'add', '-A')
-    _git(seed, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'pin')
-    _git(seed, 'push', '-q', str(origin), 'integrate/main')
-    _git(clone, 'fetch', '-q', 'origin')
-    sha = _git(clone, 'rev-parse', 'origin/integrate/main')
+    sha = _commit(world, 'pin', {'rust-toolchain.toml': '[toolchain]\nchannel = "1.99.0"\n'})
 
-    def bumped(tree: Path) -> int:
+    def bumped(tree: Path, _packages: Sequence[str]) -> int:
         (tree / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.1"\n', encoding='utf-8')
         return 0
 
-    forge = _Forge()
-    said = carry(
-        clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_fresh, stable=lambda: '1.99.1',
-        upgrade=bumped,
-    )  # fmt: skip
-    branch = branch_for('rust', sha)
-    assert said == f'relocked rust onto {branch}: https://forge/pulls/99'
-    assert _git(origin, 'diff', '--name-only', sha, branch) == 'rust-toolchain.toml'
+    said = _carry(clone, _Forge(), resolve=_fresh, stable=lambda: '1.99.1', upgrade=bumped)
+    assert said.startswith(f'relocked integrate/main at {sha[:12]} onto {BRANCH} (full, 1 move(s))')
+    assert _git(origin, 'diff', '--name-only', sha, BRANCH) == 'rust-toolchain.toml'
 
 
 def test_a_relock_rerenders_the_generated_workflows_in_the_same_commit(world: tuple[Path, Path, str]) -> None:
@@ -261,10 +435,9 @@ def test_a_relock_rerenders_the_generated_workflows_in_the_same_commit(world: tu
 
     2026-11-03: lab-commons pinned a dev-lab 224 commits old, so its rendered review job could not import
     the review method and passed silently.
-    PLANTED control: a render that writes nothing leaves the relock the lock alone (the case above).
+    PLANTED control: a render that writes nothing leaves the relock the lock alone (the first carry case).
     """
     clone, origin, sha = world
-    forge = _Forge()
     rendered: list[Path] = []
 
     def render(tree: Path) -> int:
@@ -274,22 +447,18 @@ def test_a_relock_rerenders_the_generated_workflows_in_the_same_commit(world: tu
         workflow.write_text('{"jobs": {"review": {"steps": ["install the review method"]}}}\n', encoding='utf-8')
         return 0
 
-    carry(clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=_relocked, rerender=render)
-    branch = branch_for('pint', sha)
+    _carry(clone, _Forge(), resolve=_stale, rerender=render)
     assert len(rendered) == 1, 'the render runs once, after the door moved the lock'
-    assert _git(origin, 'diff', '--name-only', sha, branch).splitlines() == ['.github/workflows/ci.yml', 'uv.lock']
-    assert _git(origin, 'rev-parse', f'{branch}^') == sha, 'still ONE commit on integration'
+    assert _git(origin, 'diff', '--name-only', sha, BRANCH).splitlines() == ['.github/workflows/ci.yml', 'uv.lock']
+    assert _git(origin, 'rev-parse', f'{BRANCH}^') == sha, 'still ONE commit on integration'
 
 
 def test_a_render_that_fails_is_a_named_refusal_and_pushes_nothing(world: tuple[Path, Path, str]) -> None:
     clone, origin, _ = world
     forge = _Forge()
     with pytest.raises(RelockFailed, match='the render of the generated files exited 3'):
-        carry(
-            clone, _DECLARED, pulls=forge.pulls, create=forge.create, resolve=_stale, upgrade=_relocked,
-            rerender=lambda _t: 3,
-        )  # fmt: skip
-    assert (forge.created, _git(origin, 'branch', '--list', f'{PREFIX}-*')) == ([], '')
+        _carry(clone, forge, resolve=_stale, rerender=lambda _t: 3)
+    assert (forge.created, _git(origin, 'branch', '--list', BRANCH)) == ([], '')
 
 
 def test_a_tree_without_its_venv_is_refused_not_rendered_with_this_interpreter(tmp_path: Path) -> None:
@@ -304,3 +473,28 @@ def test_planted_control_a_tree_with_its_venv_renders_with_that_interpreter(tmp_
         python.parent.mkdir(parents=True, exist_ok=True)
         python.write_text('', encoding='utf-8')
     assert Path(_tree_python(tmp_path)).parent.parent == tmp_path / '.venv'
+
+
+def _uv_bumped(tree: Path, _packages: Sequence[str]) -> int:
+    (tree / UV_PIN).write_text('version = "0.13.8"\n', encoding='utf-8')
+    return 0
+
+
+def test_a_uv_pin_behind_the_newest_release_is_carried_like_a_stale_lock(world: tuple[Path, Path, str]) -> None:
+    """User directive 2026-11-05: the forge raises dev-lab's uv pin by the same relock pull request."""
+    clone, origin, _ = world
+    sha = _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\n'})
+    said = _carry(clone, _Forge(), resolve=_fresh, uv=lambda: '0.13.8', host_uv=lambda: '0.13.8', upgrade=_uv_bumped)
+    assert said.startswith(f'relocked integrate/main at {sha[:12]} onto {BRANCH}')
+    assert _git(origin, 'diff', '--name-only', sha, BRANCH) == UV_PIN
+
+
+def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the_update(
+    world: tuple[Path, Path, str],
+) -> None:
+    """A lock is never written by the old uv: the relock RAISES naming ``uv self update`` and pushes nothing."""
+    clone, origin, _ = world
+    _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\n'})
+    with pytest.raises(RelockFailed, match=r'uv self update 0\.13\.8'):
+        _carry(clone, _Forge(), resolve=_fresh, uv=lambda: '0.13.8', host_uv=lambda: '0.13.7', upgrade=_never)
+    assert _git(origin, 'branch', '--list', BRANCH) == ''
