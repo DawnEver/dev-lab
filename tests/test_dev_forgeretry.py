@@ -221,6 +221,6 @@ def test_a_refused_gitea_secret_write_is_sent_once(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         forgesecrets, 'stored_client', lambda f, **_: Client(f, 'tok', transport=wire, sleep=slept.append)
     )
-    with pytest.raises(OSError, match='404'):
+    with pytest.raises(OSError, match='REFUSED on attempt 1'):
         forgesecrets.set_secret(Target('tea', Path(), Forge('forge.example', 'o', 'tea')), 'AI_LAB_KEYS_LIVE', 'b')
     assert (wire.asked, slept) == ([path], [])
