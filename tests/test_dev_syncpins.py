@@ -62,3 +62,8 @@ def test_a_package_from_the_index_follows_the_normal_resolution() -> None:
     """The index package numpy moved differently on each side; the merged resolution is never touched for it."""
     merged_lock = _lock('a3', numpy='2.2.0')
     assert carry(_lock('a3', numpy='2.0.0'), _lock('a3', numpy='2.1.0'), merged_lock, _ancestry) == merged_lock
+
+
+def test_a_lock_that_is_not_toml_pins_nothing_and_is_never_refused() -> None:
+    """The lock-only conflict test's ``ours``/``theirs`` locks: no git pin to carry, so the merged lock stands."""
+    assert carry('ours', 'theirs', 'relocked', _ancestry) == 'relocked'

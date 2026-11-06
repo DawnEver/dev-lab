@@ -21,6 +21,7 @@ the same fetch the drift watch already makes from every serving host (:func:`anc
 from __future__ import annotations
 
 import re
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Final
@@ -98,9 +99,17 @@ def _transplant(lock: str, dist: str, block: str) -> str:
     return ''.join(parts)
 
 
+def _pins(lock: str) -> dict[str, tuple[str, str]]:
+    """*lock*'s git pins; a lock that is not TOML pins nothing (as :func:`dev_lab.dev.relock.in_house` reads it)."""
+    try:
+        return sources(lock)
+    except tomllib.TOMLDecodeError:
+        return {}
+
+
 def carry(head_lock: str, tip_lock: str, merged_lock: str, ancestry: Ancestry) -> str:
     """*merged_lock* with every git pin holding both sides' pins; :class:`Diverged` when the two sides diverged."""
-    head_pins, tip_pins, merged_pins = sources(head_lock), sources(tip_lock), sources(merged_lock)
+    head_pins, tip_pins, merged_pins = _pins(head_lock), _pins(tip_lock), _pins(merged_lock)
     head_blocks, tip_blocks = _blocks(head_lock), _blocks(tip_lock)
     out = merged_lock
     for dist in sorted(head_pins.keys() & tip_pins.keys() & merged_pins.keys()):
