@@ -8,17 +8,22 @@ dropped connection are retried after the backoff; a not-found and a refused cred
 
 from __future__ import annotations
 
+import functools
+import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from dev_lab.dev import forgesecrets
 from dev_lab.dev.actionsartifact import retrying
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgefailure import RATE_WAIT_CAP_S, Answer, ForgeCallFailed, pause
+from dev_lab.dev.forgesecrets import Target
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Diagnosis, Disposition, classify
+from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Diagnosis, Disposition, classify, run_network_verb
 
 _GITHUB = Forge('github.com', 'o', 'r')
 _ISSUE = '/repos/o/r/issues/1'
@@ -191,3 +196,31 @@ def test_a_refused_artifact_call_is_not_repeated_and_its_report_holds_no_signed_
 )
 def test_gh_s_own_spellings_are_classified(said: str, diagnosis: Diagnosis) -> None:
     assert classify(said) is diagnosis
+
+
+def test_a_gh_secret_set_is_retried_through_netverb_and_its_output_never_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    codes = [1, 0]
+
+    def run(argv: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        calls.append(kw)
+        return subprocess.CompletedProcess(argv, codes.pop(0), stdout='', stderr='HTTP 502: Bad Gateway')
+
+    monkeypatch.setattr(forgesecrets._door, 'run', run)
+    monkeypatch.setattr(forgesecrets, 'run_network_verb', functools.partial(run_network_verb, sleep=lambda _: None))
+    forgesecrets.set_secret(Target('hub', Path(), _GITHUB), 'AI_LAB_KEYS_LIVE', 'bundle')
+    assert [call['input'] for call in calls] == ['bundle', 'bundle']
+
+
+def test_a_refused_gitea_secret_write_is_sent_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """THE DEFECT (2026-11-05): a loop here around the door's own re-sent a REFUSED write three times."""
+    path = '/api/v1/repos/o/tea/actions/secrets/AI_LAB_KEYS_LIVE'
+    wire, slept = _Wire({path: [(404, b'{"message": "repository not found"}', {})]}), []
+    monkeypatch.setattr(
+        forgesecrets, 'stored_client', lambda f, **_: Client(f, 'tok', transport=wire, sleep=slept.append)
+    )
+    with pytest.raises(OSError, match='404'):
+        forgesecrets.set_secret(Target('tea', Path(), Forge('forge.example', 'o', 'tea')), 'AI_LAB_KEYS_LIVE', 'b')
+    assert (wire.asked, slept) == ([path], [])

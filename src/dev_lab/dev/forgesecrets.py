@@ -6,10 +6,14 @@ machine declares -- each at its serve checkout (:func:`dev_lab.dev.servetask.che
 that checkout's own ``origin`` remote; a name with no checkout is skipped with its reason:
 
 * GitHub: ``gh secret set <NAME> -R <owner>/<repo>``, the value on stdin (GitHub seals it client-side, which
-  ``gh`` does and the REST door does not);
+  ``gh`` does and the REST door does not), retried through :func:`~dev_lab.dev.netverb.run_network_verb`, whose
+  table names a rate limit transient and a bad credential or a missing repository refused;
 * Gitea: ``PUT <repo>/actions/secrets/<NAME>`` through the forge door (:class:`~dev_lab.dev.forgework.Client`),
   WITHOUT its outbox journal -- a journaled write keeps its body on disk to replay it, and a bundle never touches
-  disk. The write is idempotent, so a lost answer is simply sent again.
+  disk. The write is idempotent, so the door's own retry sends a lost answer again.
+
+ONE LOOP EACH, never one around another: a loop here around the door's re-sent a REFUSED write three times
+(nine requests), and named nothing but the last message.
 
 The bundle is read from stdin -- never argv, never a file, never a log line: a line names the repo, the secret and
 the bundle's sha256 prefix only. ``--dry-run`` lists the targets and reads and writes nothing.
@@ -22,7 +26,7 @@ import hashlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import lab_commons.launch as _door
 from lab_commons.config import section
@@ -30,19 +34,17 @@ from lab_commons.log import emit
 
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
-from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import stored_client
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.servelock import forge_home
 from dev_lab.dev.servetask import checkout
 from dev_lab.dev.taskkeys import secret_name
 
 if TYPE_CHECKING:
+    import subprocess
     from collections.abc import Callable, Mapping, Sequence
 
 __all__ = ['Target', 'declared', 'main', 'set_secret', 'targets']
-
-#: Tries per repo before its refusal is reported (NETWORK-RETRY-THEN-REPORT); a secret set is idempotent.
-_ATTEMPTS: Final = 3
 
 
 @dataclass(frozen=True)
@@ -75,11 +77,15 @@ def targets(repos: Mapping[str, Path]) -> tuple[list[Target], list[str]]:
 
 
 def _gh(target: Target, name: str, bundle: str) -> None:
+    """``gh secret set``, the bundle on stdin; a failure names the report's remedy, never the output (it may echo)."""
     argv = ['gh', 'secret', 'set', name, '-R', f'{target.forge.owner}/{target.forge.repo}']
-    done = _door.run(argv, input=bundle, capture_output=True, text=True, encoding='utf-8', check=False)
-    if done.returncode != 0:
-        msg = f'gh secret set exited {done.returncode}: {done.stderr.strip()[-200:]}'
-        raise OSError(msg)
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return _door.run(command, input=bundle, capture_output=True, check=False, **kwargs)
+
+    report = run_network_verb(argv, run=run)
+    if not report.ok:
+        raise OSError(report.remedy)
 
 
 def _gitea(target: Target, name: str, bundle: str) -> None:
@@ -88,22 +94,13 @@ def _gitea(target: Target, name: str, bundle: str) -> None:
 
 
 def set_secret(target: Target, name: str, bundle: str) -> None:
-    """Set secret *name* to *bundle* on *target*'s forge, retried; the last refusal raises.
+    """Set secret *name* to *bundle* on *target*'s forge, retried by its one door; the last refusal raises.
 
     Raises:
-        OSError: every attempt was refused (``gh`` failed, or the forge answered an error).
+        OSError: the door refused or ran out (``gh``'s report, or the forge's ``ForgeCallFailed``).
 
     """
-    write = _gh if target.forge.host == GITHUB_HOST else _gitea
-    last = ''
-    for _ in range(_ATTEMPTS):
-        try:
-            write(target, name, bundle)
-        except (OSError, ForgeCallFailed) as refused:
-            last = str(refused)
-        else:
-            return
-    raise OSError(last)
+    (_gh if target.forge.host == GITHUB_HOST else _gitea)(target, name, bundle)
 
 
 def _parser() -> argparse.ArgumentParser:
