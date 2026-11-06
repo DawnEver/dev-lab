@@ -27,6 +27,7 @@ from lab_commons.compute.model import Demand
 
 from dev_lab.dev import dep as dep_module
 from dev_lab.dev import liverun
+from dev_lab.dev._dep_pip import has_pip
 from dev_lab.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
@@ -34,7 +35,6 @@ from dev_lab.dev.dep import (
     Port,
     Version,
     current_env_key,
-    has_pip,
     mutate,
     pip_argv,
 )

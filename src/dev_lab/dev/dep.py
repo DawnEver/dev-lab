@@ -59,11 +59,9 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -78,9 +76,10 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_project
+from dev_lab.dev import _dep_local, _dep_project
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
+from dev_lab.dev._dep_pip import has_pip
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
@@ -93,7 +92,6 @@ __all__ = [
     'Report',
     'Version',
     'current_env_key',
-    'has_pip',
     'init_submodules',
     'main',
     'mutate',
@@ -176,7 +174,7 @@ class Port:
 
     def env_key(self, python: str | None = None) -> str:
         """The key of the environment as it is RIGHT NOW -- called once before and once after."""
-        return self.key() if self.key is not None else _snapshot(python)[1]
+        return self.key() if self.key is not None else _dep_local.keyed(*_snapshot(python))
 
 
 def current_env_key() -> str:
@@ -209,21 +207,6 @@ def retire_anchors(paths: Sequence[Path]) -> tuple[str, ...]:
     for path in retired:
         path.unlink()
     return tuple(str(path) for path in retired)
-
-
-def has_pip(python: str) -> bool:
-    """Whether *python* can run ``-m pip``. A uv-created venv cannot: uv seeds no pip into it.
-
-    The invoking interpreter is answered in-process; any other is asked, because a venv's packages
-    are a fact about THAT interpreter and not about this one.
-    """
-    if python == sys.executable:
-        return importlib.util.find_spec('pip') is not None
-    try:
-        done = _door.run([python, '-c', 'import pip'], capture_output=True, timeout=60, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return done.returncode == 0
 
 
 def pip_argv(
@@ -378,6 +361,7 @@ def _change(
     cwd: Path | None = None,
     environment: dict[str, str] | None = None,
     census: Census = processes,
+    then: Callable[[], int] | None = None,
 ) -> Report:
     """Hold the seat, refuse an environment any live process executes from, run *argv* (retried when it resolves)."""
     gaps = []
@@ -399,6 +383,8 @@ def _change(
                 return Report(port.name, prefix, tuple(argv), None, before, None, (), tuple(gaps))
             try:
                 returncode = run_change(argv, run=run, timeout=timeout, cwd=cwd, environment=environment)
+                if not returncode and then is not None:
+                    returncode = then()  # in the SAME seat: nothing runs between the sync and what lands on it
             finally:
                 after = key()
                 retired = retire_anchors(declared) if declared and after != before else ()
@@ -414,7 +400,11 @@ def main(
     cwd: Path | None = None,
     census: Census = processes,
 ) -> int:
-    """Bootstrap, sync or lock-upgrade the named worktree's own environment, with declared full extras."""
+    """Bootstrap, sync or lock-upgrade the named worktree's own environment, with declared full extras.
+
+    A sibling declared local (``--local NAME``, or the machine file's ``[dep] local``) is overlaid on the synced
+    lock (:mod:`dev_lab.dev._dep_local`); with none declared the sync IS the lock.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     targets = parser.add_mutually_exclusive_group()
     targets.add_argument('--bootstrap', type=Path)
@@ -424,6 +414,7 @@ def main(
     parser.add_argument('--extra', action='append')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--upgrade-package', action='append', default=[])
+    parser.add_argument('--local', action='append', default=[], metavar='NAME', help='overlay this sibling for one run')
     args = parser.parse_args(argv)
     locking = args.lock_upgrade is not None
     if args.bootstrap is None and not locking and not args.sync and not args.upgrade_package:
@@ -442,7 +433,9 @@ def main(
         emit(f'REFUSED: {why}')
         return 1
     if locking:
-        code = _dep_project.lock_upgrade(root, python, run=run, dry_run=args.dry_run, environment=environment)
+        code = _dep_project.lock_upgrade(
+            root, python, run=run, dry_run=args.dry_run, environment=environment, packages=args.upgrade_package
+        )
         if code:
             return code
     try:
@@ -455,7 +448,10 @@ def main(
             frozen=args.bootstrap is not None or locking,
             reinstall_packages=changed(root, prefix) if syncing else (),
         )
-    except _dep_project.OtherUvRefused as exc:
+        overlay = _dep_local.step(
+            root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment
+        )
+    except (_dep_project.OtherUvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
@@ -470,6 +466,7 @@ def main(
             cwd=root,
             environment=environment,
             census=census,
+            then=overlay,
         )
     except HeldEnvironmentError as exc:
         emit(f'REFUSED: {exc}')

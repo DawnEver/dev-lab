@@ -78,6 +78,7 @@ __all__ = [
     'changed_paths',
     'data_only',
     'docs_only',
+    'env_carries',
     'equivalent',
     'nearest',
     'part_standing',
@@ -152,6 +153,28 @@ def equivalent(root: Path, a: str, b: str) -> bool:
     if not tests or test_files(prints.pyproject, sorted(set(changed) - prints.tracked)):
         return False
     return not any(prints.reaches(test, changed) for test in tests)
+
+
+def env_carries(root: Path, a: str, b: str, *, env_a: str, env_b: str) -> bool:
+    """Whether an outcome judged in env *env_a* at *a* may be offered to *b*'s run in env *env_b*.
+
+    The same env always. Another env only when ``a..b`` moves the committed lock and :func:`resolve_lock` resolved
+    that move to the imports it reaches: the lock IS the env (PIN, :mod:`dev_lab.dev.lockcheck`), so the env moved
+    by exactly those distributions, and :func:`carried` then keeps only the outcomes no reached import can change.
+    Without this a relock -- whose whole point is a new env -- carried nothing on a cluster (user ruling
+    2026-11-05: a relock PR runs only the tests its move reaches). An env that moved WITHOUT a lock move (a new
+    interpreter on the account) still carries nothing; one landing TOGETHER with a lock move is not told apart, since
+    :func:`lab_commons.hpc.run.submit_run` hands the carry the env key alone, not the manifest it hashes.
+    """
+    if env_a == env_b:
+        return True
+    changed = changed_paths(root, a, b)
+    if changed is None or LOCK not in changed:
+        return False
+    try:
+        return LOCK not in resolve_lock(root, a, b, changed)
+    except (ValueError, subprocess.SubprocessError):
+        return False
 
 
 def nearest(root: Path, b: str, shas: Iterable[str]) -> list[str]:

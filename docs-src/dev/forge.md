@@ -146,8 +146,13 @@ What every host still reads, kept small:
   that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
   pin, a git rev) with no reason on its line or the comment line above. A reasoned range is the only way to
   stay below latest. Every commit is judged on its pin alone (user ruling 2026-10-22): freshness is ONE party's job, the forge's --
-  each serve tick relocks `origin/<integration>` itself through one `pr/relock-<dist>-<sha>` pull request
-  (`dev_lab.dev.relock`), which merges like any other, and a lane takes it with `forge sync`. Every open PR head into integration
+  each serve tick relocks `origin/<integration>` itself through THE one rolling `pr/relock` pull request
+  (`dev_lab.dev.relock`; user ruling 2026-11-05): a tick that finds the lock stale again rebuilds it on the current
+  integration tip and force-pushes it with a lease, so at most one relock PR exists and it carries the newest
+  resolution. In-house siblings (a git source following a line) move at the next tick; third-party moves (index
+  packages, the Rust toolchain, the uv pin) wait for `[tool.dev_lab.relock] third_party_every` (default `1 day`),
+  and an in-house relock before then moves only the sibling names. It merges like any other, and its parts run only
+  the tests whose footprint imports a moved distribution (`dev_lab.dev.lockreach`); a lane takes it with `forge sync`. Every open PR head into integration
   carries a `lock/fresh` status (`dev_lab.dev.forgeheadgate`, once per head sha). A PR never chases the lock
   (user ruling 2026-10-28): a move its merge-base with integration lags too -- a sibling or dist published after it
   branched -- is the relock pull request's to carry, so only the head's OWN moves (a lock older than its base's, a
@@ -157,6 +162,11 @@ What every host still reads, kept small:
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
   fixes, tests and commits. A
   resolution that cannot run (the network is down) refuses with its diagnosis; a deletion is never judged.
+  The same relock keeps every other pinned input at the newest (`dev_lab.dev.lockcheck.FRESHENED`): a
+  `rust-toolchain.toml` below the newest stable, and dev-lab's uv pin (`src/dev_lab/dev/uv.toml`, THE uv that writes
+  every family lock and that host deploys install) below the newest uv release tag (user directive 2026-11-05).
+  A relock raising the uv pin is written BY the new uv; on a host without it the relock is refused naming
+  `uv self update <version>`, never written by the old one.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards dev-lab and then each `[serve]` repo to its upstream and
