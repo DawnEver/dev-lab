@@ -72,8 +72,10 @@ def wave_main(
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forge breakglass', description=__doc__.splitlines()[0])
     parser.add_argument('action', choices=('open', 'close', 'ack', 'status'))
     parser.add_argument('id', nargs='?', default='', help='ack: the wave (default: the oldest unacknowledged)')
-    parser.add_argument('--hours', type=float, default=None, help='open: shorter than the server-declared maximum')
-    parser.add_argument('--max-merges', type=int, default=None, help='open: a tighter cap than the server declares')
+    parser.add_argument('--hours', type=float, default=None, help='open: the window, up to the server-declared ceiling')
+    parser.add_argument(
+        '--max-merges', type=int, default=None, help='open: the merge cap, up to the server-declared ceiling'
+    )
     args = parser.parse_args(argv)
     if (config := _endpoint(table)) is None:
         return 2
