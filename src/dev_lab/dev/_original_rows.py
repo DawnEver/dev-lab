@@ -361,6 +361,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostalarm',  # a pressed host tells its agents and its humans (D54), new here
     'drift',  # a lock pin left behind its dependency, or a host off its lock, alarms; new here
     'escapes',  # the tick's census of writes that escaped every allowed root, new here
+    'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
+    'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'forgebacklog',  # a ready head unreviewed past the bound pages once, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',

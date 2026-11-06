@@ -19,6 +19,12 @@ from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.reportplace import refuse_report
 
 
+@pytest.fixture(autouse=True)
+def _outside_every_write_prone_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pytest's tmp_path lives in the OS temp dir, a WRITES-STAY-IN-THE-TREE root; that rule has its own tests."""
+    monkeypatch.setattr('dev_lab.dev.codeplace.refuse_outside_tree', lambda _path: None)
+
+
 @pytest.fixture
 def checkout(tmp_path: Path) -> Path:
     (tmp_path / '.git').mkdir()

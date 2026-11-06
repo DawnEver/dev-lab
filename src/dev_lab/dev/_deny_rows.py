@@ -62,6 +62,7 @@ from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
+from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
 from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
@@ -364,5 +365,6 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     RECURSIVE_GREP,
     RECURSIVE_DELETE,
     REPORTS_LIVE_IN_MEMORY,
+    WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
 )
