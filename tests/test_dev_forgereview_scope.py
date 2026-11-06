@@ -1,6 +1,7 @@
-"""REVIEW-SCOPE: a PR review reads its own change in slices; a head it cannot read so is held, never skipped.
+"""REVIEW-SCOPE: a PR review reads its own change in diff slices; a head is never held, never read path-less.
 
-The branch's own change, minus generated files, since its last reviewed head, in slices under one lens each.
+The branch's own change since its merge base, minus generated files, in slices under one lens each; past the total
+budget the rest is listed as unread, strictest lens first.
 
 Real git repositories, the stateful fake forge and a fake review command, as in ``test_dev_forgereview.py``;
 every refusal has its planted control.
@@ -9,33 +10,27 @@ every refusal has its planted control.
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from test_dev_forgereview import JUDGE
 
 from dev_lab.dev.famfiles import GENERATED
-from dev_lab.dev.forgepulls import Marker, comment_upsert
-from dev_lab.dev.forgereview import REVIEW_CONTEXT, review_tick
+from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_declared import LENS_FIELD, PATHS_FIELD, RANGE_FIELD, Review, review_from
 from dev_lab.dev.forgereview_findings import merge_outputs, parse_findings
 from dev_lab.dev.forgereview_scope import (
     FINDINGS_FIELD,
     Budget,
+    Slice,
     lens_of,
-    own_base,
     plan,
     reviewable,
-    reviewed_heads,
-    synced_from,
 )
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.platformparts import HOLD_CONTEXT
+from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, ONLY_GENERATED, is_code
 
 _SLICED = ('reviewer', '--range', RANGE_FIELD, '--lens', LENS_FIELD, '--paths', PATHS_FIELD)
@@ -95,94 +90,6 @@ def test_a_merge_of_the_integration_branch_is_not_the_branchs_own_change(tmp_pat
     assert [path for one in scope.slices for path in one.paths] == ['own.py']
 
 
-def test_a_push_after_a_review_is_read_from_the_reviewed_head(tmp_path: Path) -> None:
-    """Incremental. PLANTED control: an integration merge after the review reads NOTHING of upstream (D52)."""
-    _, work = clone_pair(tmp_path)
-    first = advance(work, 'pr/x', 'one.py', '1\n')
-    second = advance(work, 'pr/x', 'two.py', '2\n')
-    assert own_base(work, 'origin/integrate/main', second, (first,)) == first
-    assert _paths(work, plan(work, 'origin/integrate/main', second, _WIDE, (first,)).range) == ['two.py']
-    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
-    merged = _merge_integration(work, 'pr/x')
-    assert _paths(work, plan(work, 'origin/integrate/main', merged, _WIDE, (first,)).range) == ['two.py']
-
-
-_TARGET = 'origin/integrate/main'
-
-
-def _synced_pair(work: Path) -> str:
-    """A reviewed head on ``pr/x`` (own.py) and an integration commit since (theirs.py, and shared.py); R."""
-    reviewed = advance(work, 'pr/x', 'own.py', 'mine\n')
-    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
-    advance(work, 'integrate/main', 'shared.py', 'upstream\n')
-    return reviewed
-
-
-def test_a_pure_sync_carries_its_reviewed_head_and_reads_nothing(tmp_path: Path) -> None:
-    """D52: a clean merge of integration into a reviewed head is no new work.
-
-    PLANTED CONTROLS: the same sync with a hand edit inside the merge is new work, read alone; a head with no
-    reviewed ancestor carries nothing.
-    """
-    _, work = clone_pair(tmp_path)
-    reviewed = _synced_pair(work)
-    merged = _merge_integration(work, 'pr/x')
-    assert synced_from(work, _TARGET, merged, (reviewed,)) == reviewed
-    assert _paths(work, plan(work, _TARGET, merged, _WIDE, (reviewed,)).range) == []
-    assert synced_from(work, _TARGET, merged, ()) == ''
-    run_git(work, 'checkout', '-q', '-B', 'evil', f'{reviewed}')
-    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', '--no-commit', _TARGET)
-    (work / 'evil.py').write_text('slipped in\n', encoding='utf-8')
-    run_git(work, 'add', 'evil.py')
-    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'sync')
-    evil = git_out(work, 'rev-parse', 'HEAD')
-    assert synced_from(work, _TARGET, evil, (reviewed,)) == ''
-    assert _paths(work, plan(work, _TARGET, evil, _WIDE, (reviewed,)).range) == ['evil.py']
-
-
-def test_a_sync_with_a_hand_resolved_conflict_reads_the_resolution_alone(tmp_path: Path) -> None:
-    """D52: the range starts at git's automatic merge, so upstream's theirs.py is never read again.
-
-    PLANTED CONTROL: the conflicted file, resolved by hand, is read -- the resolution is the author's work.
-    """
-    _, work = clone_pair(tmp_path)
-    reviewed = advance(work, 'pr/x', 'shared.py', 'mine\n')
-    advance(work, 'integrate/main', 'theirs.py', 'theirs\n')
-    advance(work, 'integrate/main', 'shared.py', 'upstream\n')
-    run_git(work, 'checkout', '-q', '-B', 'resolve', reviewed)
-    subprocess.run(
-        [shutil.which('git') or 'git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', _TARGET],
-        cwd=work,
-        check=False,
-        capture_output=True,
-    )  # conflicts: exits 1
-    (work / 'shared.py').write_text('mine and upstream\n', encoding='utf-8')
-    run_git(work, 'add', 'shared.py')
-    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-edit')
-    resolved = git_out(work, 'rev-parse', 'HEAD')
-    assert synced_from(work, _TARGET, resolved, (reviewed,)) == ''
-    assert _paths(work, plan(work, _TARGET, resolved, _WIDE, (reviewed,)).range) == ['shared.py']
-
-
-def test_a_sync_plus_one_own_commit_reads_the_own_commit_alone(tmp_path: Path) -> None:
-    """D52. PLANTED CONTROL: the sync alone carries; the commit after it is new work, read without upstream's."""
-    _, work = clone_pair(tmp_path)
-    reviewed = _synced_pair(work)
-    merged = _merge_integration(work, 'pr/x')
-    assert synced_from(work, _TARGET, merged, (reviewed,)) == reviewed
-    after = advance(work, 'pr/x', 'next.py', 'next\n')
-    assert synced_from(work, _TARGET, after, (reviewed,)) == ''
-    assert _paths(work, plan(work, _TARGET, after, _WIDE, (reviewed,)).range) == ['next.py']
-
-
-def test_the_reviewed_heads_are_read_from_the_review_comments() -> None:
-    forge = StateForge()
-    number = forge.add_pull('pr/x', 'integrate/main', sha='a' * 40)
-    comment_upsert(forge, number, kind=Marker.REVIEW, key='b' * 40, text='reviewed')
-    comment_upsert(forge, number, kind=Marker.LANDED, key='c' * 40, text='landed')
-    assert reviewed_heads(one['body'] for one in forge.comments[number]) == ('b' * 40,)
-
-
 # --- what is read ------------------------------------------------------------------------------------
 
 
@@ -203,9 +110,7 @@ def test_a_head_of_only_generated_files_is_posted_as_nothing_to_review(tmp_path:
     forge = StateForge()
     forge.add_pull('pr/x', 'integrate/main', sha=head)
     command = Recorder()
-    review_tick(
-        work, forge, Review(judge=JUDGE, command=_SLICED), base='integrate/main', run=command, ready=_can, host='box'
-    )
+    review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=command, ready=_can, host='box')
     assert command.ran == []
     found = {(s.context, s.state, s.description) for s in status_list(forge, head)}
     assert found == {(REVIEW_CONTEXT, 'success', ONLY_GENERATED)}, 'nothing to read is no hold to release'
@@ -241,7 +146,7 @@ def test_a_head_past_one_slice_is_read_in_slices_each_under_one_lens(tmp_path: P
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     command = Recorder()
-    review = Review(judge=JUDGE, command=_SLICED, max_diff_bytes=400)
+    review = Review(command=_SLICED, max_diff_bytes=400)
     review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
     assert [argv[4] for argv in command.ran] == ['strict', 'standard', 'standard', 'standard']
     read = sorted(path for argv in command.ran for path in argv[6:])
@@ -258,39 +163,69 @@ def test_a_synthesis_reads_the_merged_slices_once(tmp_path: Path) -> None:
         forge = StateForge()
         forge.add_pull('pr/x', 'integrate/main', sha=head)
         command = Recorder()
-        review = Review(judge=JUDGE, command=_SLICED, synthesis=synthesis, max_diff_bytes=400)
+        review = Review(command=_SLICED, synthesis=synthesis, max_diff_bytes=400)
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
         assert len(command.ran) == runs
     assert command.ran[-1][0] == 'synth'
     assert command.ran[-1][2].endswith('findings.json')
 
 
-def test_an_oversize_head_gets_one_structure_level_review_over_the_whole_range(tmp_path: Path) -> None:
-    """D123: an oversize head gets one whole-range review from the directory level, never a hold.
+def test_an_oversize_head_is_read_in_diff_slices_and_the_rest_is_listed(tmp_path: Path) -> None:
+    """D123 and the 2026-11-06 fix: an oversize head is never held and never one path-less review.
 
-    User ruling 2026-10-31, superseding the 2026-10-26 hold-on-oversize: too many files means read the
-    directories, never hold. Over the total, one file over a slice, or several slices for a command without paths:
-    ONE reviewer over the whole range, no paths (ai-lab maps it at directory level), success posted, no hold.
+    The path-less "structure" slice was rendered by ai-lab as an ``agent`` call the forge's headless run mode
+    refuses, so every reviewer was ``unsupported`` (motronics #5490). Now: past the total, slices run strictest lens
+    first and the code left out is listed in the comment; one file over a slice is a slice of its own.
 
-    PLANTED control: the same head under wide bounds is cut into its per-path slices (the slices test).
+    PLANTED control: the same head under wide bounds reads every path and lists nothing.
     """
     work, head = _many(tmp_path)
-    for review in (
-        Review(judge=JUDGE, command=_SLICED, max_diff_bytes=400, max_total_bytes=500),
-        Review(judge=JUDGE, command=_SLICED, max_diff_bytes=100),
-        Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD), max_diff_bytes=400),
+    for review, unread in (
+        (Review(command=_SLICED, max_diff_bytes=400, max_total_bytes=500), True),
+        (Review(command=_SLICED, max_diff_bytes=100), False),
     ):
         forge = StateForge()
-        forge.add_pull('pr/x', 'integrate/main', sha=head)
+        number = forge.add_pull('pr/x', 'integrate/main', sha=head)
         command = Recorder()
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
-        (argv,) = [one for one in command.ran if one[0] == 'reviewer']
-        assert not any(arg.endswith('.py') for arg in argv), 'no path list: the whole range'
+        runs = [one for one in command.ran if one[0] == 'reviewer']
+        assert runs, 'reviewed'
+        assert all(any(arg.endswith('.py') for arg in argv) for argv in runs), 'every call names its paths'
+        assert runs[0][4] == 'strict', 'the strictest lens is read first'
         statuses = status_list(forge, head)
-        assert HOLD_CONTEXT not in {s.context for s in statuses}, 'an oversize head is reviewed, never held'
         assert next(s for s in statuses if s.context == REVIEW_CONTEXT).state == 'success'
+        (comment,) = forge.comments[number]
+        assert ('Past the review budget, not read' in comment['body']) is unread
     wide = plan(work, 'origin/integrate/main', head, _WIDE)
     assert all(one.paths for one in wide.slices)
+    assert wide.unread == ()
+
+
+def test_a_command_without_paths_runs_once_over_every_path(tmp_path: Path) -> None:
+    work, head = _many(tmp_path)
+    scope = plan(work, 'origin/integrate/main', head, Budget(slice_bytes=100, total_bytes=200), sliceable=False)
+    (whole,) = scope.slices
+    assert len(whole.paths) == 4
+    assert scope.unread == ()
+
+
+def _diff_call(one: Slice) -> bool:
+    """Whether *one* renders as a diff ``review`` call, the one call mode the headless run mode allows.
+
+    A slice naming no paths was rendered as an ``agent`` call (ai-lab ``method.json``, headless ``call_modes``).
+    """
+    return bool(one.paths)
+
+
+def test_every_slice_the_scope_emits_is_a_call_the_headless_run_mode_allows(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a path-less slice -- the retired whole-range one -- is refused by the same predicate."""
+    assert not _diff_call(Slice('standard', (), 0))
+    work, head = _many(tmp_path)
+    for budget in (_WIDE, Budget(slice_bytes=100, total_bytes=10**7), Budget(slice_bytes=400, total_bytes=500),
+                   Review().budget):  # fmt: skip
+        scope = plan(work, 'origin/integrate/main', head, budget)
+        assert scope.slices
+        assert all(_diff_call(one) for one in scope.slices), budget
 
 
 def test_the_slice_outputs_merge_once_per_finding_id() -> None:
@@ -331,7 +266,7 @@ def test_a_moved_file_is_read_whole_in_one_slice(tmp_path: Path) -> None:
     run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'move')
     run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
     head = git_out(work, 'rev-parse', 'HEAD')
-    scope = plan(work, 'origin/integrate/main', head, Budget(slice_bytes=600, total_bytes=10**6), reviewed=[first])
+    scope = plan(work, first, head, Budget(slice_bytes=600, total_bytes=10**6))
     assert len(scope.slices) > 1, 'the budget must cut the head into slices, else the control is vacuous'
     (holder,) = [one for one in scope.slices if 'a/old.py' in one.paths]
     assert 'z/new.py' in holder.paths
@@ -364,14 +299,15 @@ def test_only_code_is_reviewed_and_the_rest_is_counted(tmp_path: Path) -> None:
 
 
 def test_the_cap_counts_code_bytes_only(tmp_path: Path) -> None:
-    """A head whose bulk is prose fits the cap; PLANTED control: the same cap holds it when code is the bulk."""
+    """A head whose bulk is prose fits the cap; PLANTED control: code past the same cap is left unread."""
     work, head = _mixed(tmp_path, 'x = 1\n' * 50)
     code_bytes = sum(s.size for s in plan(work, 'origin/integrate/main', head, _WIDE).slices)
     tight = Budget(slice_bytes=10**6, total_bytes=code_bytes)
     assert all(one.paths for one in plan(work, 'origin/integrate/main', head, tight).slices)
-    everything = Budget(slice_bytes=10**6, total_bytes=code_bytes, code=('**',), not_code=())
-    (whole,) = plan(work, 'origin/integrate/main', head, everything).slices
-    assert whole.paths == (), 'past the cap: one structure-level review of the whole range'
+    everything = Budget(slice_bytes=200, total_bytes=code_bytes, code=('**',), not_code=())
+    over = plan(work, 'origin/integrate/main', head, everything)
+    assert all(one.paths for one in over.slices)
+    assert over.unread, 'past the cap: the rest is listed, never a path-less review'
 
 
 def test_a_head_of_only_prose_is_nothing_to_review(tmp_path: Path) -> None:
@@ -393,9 +329,7 @@ def test_the_review_comment_names_the_files_outside_scope(tmp_path: Path) -> Non
     work, head = _mixed(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    review_tick(
-        work, forge, Review(judge=JUDGE, command=_SLICED), base='integrate/main', run=Recorder(), ready=_can, host='box'
-    )
+    review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=Recorder(), ready=_can, host='box')
     (comment,) = forge.comments[number]
     assert f'{len(_NOT_CODE)} non-code file(s) outside the review scope' in comment['body']
 
@@ -432,7 +366,7 @@ def _moved(tmp_path: Path, edit: str = '', *, unrelated: bool = False) -> tuple[
 def test_a_pure_rename_costs_nothing_and_is_listed_as_moved(tmp_path: Path) -> None:
     """A move is still read (both paths, one slice) but its bytes are the rename header, not the file twice."""
     work, first, head = _moved(tmp_path)
-    scope = plan(work, 'origin/integrate/main', head, _WIDE, reviewed=[first])
+    scope = plan(work, first, head, _WIDE)
     (one,) = scope.slices
     assert set(one.paths) == {'a/old.py', 'z/new.py'}
     assert one.size < 200 < len(_BODY)
@@ -442,7 +376,7 @@ def test_a_pure_rename_costs_nothing_and_is_listed_as_moved(tmp_path: Path) -> N
 def test_a_rename_with_an_edit_costs_its_hunk(tmp_path: Path) -> None:
     """The edited move costs about its hunk; it is not listed as a pure move."""
     work, first, head = _moved(tmp_path, 'added = 1\n')
-    scope = plan(work, 'origin/integrate/main', head, _WIDE, reviewed=[first])
+    scope = plan(work, first, head, _WIDE)
     (one,) = scope.slices
     assert 0 < one.size < 600 < len(_BODY)
     assert scope.moved == ()
@@ -451,7 +385,7 @@ def test_a_rename_with_an_edit_costs_its_hunk(tmp_path: Path) -> None:
 def test_a_delete_and_an_unrelated_add_cost_both(tmp_path: Path) -> None:
     """PLANTED control: no rename is detected between unrelated files, so both full diffs count."""
     work, first, head = _moved(tmp_path, unrelated=True)
-    scope = plan(work, 'origin/integrate/main', head, _WIDE, reviewed=[first])
+    scope = plan(work, first, head, _WIDE)
     assert sum(one.size for one in scope.slices) > 2 * len(_BODY) * 0.9
     assert scope.moved == ()
 
@@ -466,12 +400,11 @@ def test_a_derived_glob_matches_whole_paths_on_the_declared_minimum_python() -> 
     assert reviewable('docs/a/c.py', derived)
 
 
-def test_a_large_head_is_one_whole_range_review_under_the_family_budget_never_many_slices(tmp_path: Path) -> None:
-    """Review spend 2026-11-03: #5115, #5429 and #5450 were cut into 8 to 20 slices, each paying the fixed prompt.
+def test_a_large_head_is_read_strictest_first_up_to_the_family_total_and_the_rest_listed(tmp_path: Path) -> None:
+    """Review spend 2026-11-03 and 2026-11-06: past ``max_total_bytes``, slices up to the total, the rest listed.
 
-    Under the family's declared budget (``Review().budget``) a head past ``max_total_bytes`` is ONE whole-range
-    structure review (:data:`WHOLE`), and a slice packs twice the old bytes. PLANTED CONTROL: the same head under the
-    old budget (200 kB a slice, 4 MB a head) is cut into many slices.
+    A head past the total reads slices up to it, never a
+    path-less review, and lists what it left out. PLANTED CONTROL: the old 4 MB total reads every directory.
     """
     _, work = clone_pair(tmp_path)
     head = ''
@@ -480,11 +413,11 @@ def test_a_large_head_is_one_whole_range_review_under_the_family_budget_never_ma
         head = advance(work, 'pr/x', f'd{at}/m.py', ''.join(f'v{n} = {n}\n' for n in range(11_000)))
     old = plan(work, 'origin/integrate/main', head, Budget(slice_bytes=200_000, total_bytes=4_000_000))
     new = plan(work, 'origin/integrate/main', head, Review().budget)
-    assert (len(old.slices), old.structure) == (12, None), 'before: one slice per directory'
-    assert len(new.slices) == 1
-    assert new.structure is not None
-    assert 'max_total_bytes' in new.structure
-    assert new.slices[0].paths == (), 'one whole-range review: no path list'
+    assert (len(old.slices), old.unread) == (12, ()), 'before: one slice per directory, nothing left out'
+    assert new.slices
+    assert all(one.paths for one in new.slices)
+    assert sum(one.size for one in new.slices) <= Review().budget.total_bytes
+    assert len(new.unread) + sum(len(one.paths) for one in new.slices) == 12
 
 
 def test_the_family_budget_packs_a_mid_size_head_into_fewer_larger_slices(tmp_path: Path) -> None:
@@ -500,5 +433,5 @@ def test_the_family_budget_packs_a_mid_size_head_into_fewer_larger_slices(tmp_pa
     old = plan(work, 'origin/integrate/main', head, Budget(slice_bytes=200_000, total_bytes=4_000_000))
     new = plan(work, 'origin/integrate/main', head, Review().budget)
     assert (len(old.slices), len(new.slices)) == (4, 2)
-    assert new.structure is None
+    assert new.unread == ()
     assert all(one.paths for one in new.slices)

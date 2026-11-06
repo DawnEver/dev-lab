@@ -191,7 +191,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     latest = latest_review(client, head)
     if latest is not None and latest.state == 'success' and runner.verifies and not forge_posted(client)(latest):
         latest = None  # a success the gate does not count is no review (dev-lab #38)
-    settled = latest is not None and latest.state != 'pending'
+    settled = latest is not None and (latest.state != 'pending' or latest.description.startswith(UNREVIEWED_STATUS))
     if not claimable(latest, runner.clock(), review.stale, run_ended(client)) and not (asked and settled):
         return None
     if (

@@ -14,18 +14,17 @@ from dev_lab.dev import forgecli, forgemerge
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
-from dev_lab.dev.forgereview_claim import CAPPED
-from dev_lab.dev.forgereview_rounds import Ledger
+from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.reviewcap import capped_line
+from dev_lab.dev.reviewcap import unreviewed_line
 
 _INTEGRATOR = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
 
 _GREEN = (
     ('tests/base', 'scope=full ran=3 hands=-'),
-    ('tests/review', 'review round 1: no blocking'),
+    ('tests/review', 'reviewed abc: advice 1 HIGH, 0 MEDIUM, 0 LOW; none blocks'),
     ('tests/security', 'nothing found'),
 )
 
@@ -220,11 +219,11 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
 # --- INTERNAL-ONLY (user ruling 2026-11-05): only an internal PR is merged by the forge ----------------------------
 
 
-def test_an_internal_pr_capped_on_its_dollar_budget_merges_warned(tmp_path: Path) -> None:
-    """The reviewing host's trusted cap record waives the review; the merge says it merged unreviewed."""
+def test_an_internal_pr_over_its_dollar_budget_merges_warned(tmp_path: Path) -> None:
+    """The reviewing host's trusted record waives the review; the merge says it merged unreviewed."""
     work, forge, number, head = _hub_pr(tmp_path)
-    status_post(forge, head, context='tests/review', state='pending', description=f'{CAPPED} budget reached')
-    forge.issue_comment(number, capped_line('budget reached: 11.00/10.00 USD; split the PR'))
+    status_post(forge, head, context='tests/review', state='pending', description=f'{UNREVIEWED_STATUS} budget')
+    forge.issue_comment(number, unreviewed_line('review budget reached: 11.00/10.00 USD'))
     said = ready(work, forge, number)
     state, description = _merge_ready(forge, head)
     assert state == 'success'
@@ -235,37 +234,51 @@ def test_an_internal_pr_capped_on_its_dollar_budget_merges_warned(tmp_path: Path
     assert said.endswith('merged')
 
 
-@pytest.mark.parametrize('rounds', [5, 4])
-def test_on_gitea_a_review_capped_at_its_rounds_is_ready_warned_never_waiting_on_pending(
-    tmp_path: Path, rounds: int
+@pytest.mark.parametrize('record', ['trusted', 'none'])
+def test_on_gitea_a_review_that_did_not_run_is_ready_warned_never_waiting_on_pending(
+    tmp_path: Path, record: str
 ) -> None:
-    """Motronics #5541 (2026-11-06): the review job's ledgers reached the round cap; tests/review stays ``pending``.
+    """Motronics #5490 (2026-11-06): every reviewer was unsupported and the PR waited; it now merges Unreviewed.
 
     The Merge tick (an Actions job) posts ready, WARNED with the ``Unreviewed:`` line -- never a wait on the pending.
-    PLANTED CONTROL: a ledger one round short of the cap is no waiver; the pending review still holds it.
+    PLANTED CONTROL: the same pending status with no trusted record is no waiver; it still holds.
     """
     work, forge, number, head = _pr(tmp_path)
-    forge.login = GITEA_ACTIONS_LOGIN
-    forge.issue_comment(number, Ledger(head, rounds, ()).line())
+    if record == 'trusted':
+        forge.login = GITEA_ACTIONS_LOGIN
+        forge.issue_comment(number, unreviewed_line('no reviewer returned findings (a unsupported)'))
     forge.login = 'a'
-    status_post(forge, head, context='tests/review', state='pending', description=f'{CAPPED} round cap reached: 5/5')
+    status_post(forge, head, context='tests/review', state='pending', description=f'{UNREVIEWED_STATUS} x')
     forge.login = GITEA_ACTIONS_LOGIN
     ready(work, forge, number)
     state, description = _merge_ready(forge, head)
-    if rounds == 5:
+    if record == 'trusted':
         assert state == 'success'
-        assert 'WARNED -- Unreviewed: review capped at 5 rounds; open findings: none' in description
+        assert 'WARNED -- Unreviewed: no reviewer returned findings (a unsupported)' in description
     else:
         assert state == 'failure'
-        assert description.startswith(f'waits on: its review: tests/review is pending: {CAPPED}')
+        assert description.startswith(f'waits on: its review: tests/review is pending: {UNREVIEWED_STATUS}')
 
 
-def test_a_capped_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -> None:
+def test_a_high_finding_never_holds_the_merge_and_a_security_one_does(tmp_path: Path) -> None:
+    """User ruling 2026-11-06: findings are advice. PLANTED CONTROL: a security finding's failure holds the merge."""
+    work, forge, number, head = _hub_pr(tmp_path)
+    ready(work, forge, number)
+    assert _merge_ready(forge, head)[0] == 'success', 'a success carrying HIGH advice is ready'
+    (tmp_path / 'security').mkdir()
+    work, forge, number, head = _hub_pr(tmp_path / 'security')
+    status_post(forge, head, context='tests/review', state='failure', description='security finding(s) F-1')
+    ready(work, forge, number)
+    assert _merge_ready(forge, head)[0] == 'failure'
+    assert forge.merges == []
+
+
+def test_a_unreviewed_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -> None:
     """PLANTED CONTROL: the same status, its record pasted by the PR author: the review still holds it."""
     work, forge, number, head = _hub_pr(tmp_path)
-    status_post(forge, head, context='tests/review', state='pending', description=f'{CAPPED} budget reached')
+    status_post(forge, head, context='tests/review', state='pending', description=f'{UNREVIEWED_STATUS} budget')
     forge.login = 'a'
-    forge.issue_comment(number, capped_line('budget reached: 11.00/10.00 USD; split the PR'))
+    forge.issue_comment(number, unreviewed_line('review budget reached: 11.00/10.00 USD'))
     forge.login = 'github-actions[bot]'
     ready(work, forge, number)
     assert _merge_ready(forge, head)[0] == 'failure'
@@ -311,13 +324,13 @@ def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, post
     """
     work, forge, number, head = _pr(tmp_path)
     forge.login = poster
-    status_post(forge, head, context='tests/review', state='success', description='review round 1: no blocking')
+    status_post(forge, head, context='tests/review', state='success', description='reviewed abc: advice; none blocks')
     assert judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head).ready
 
     (tmp_path / 'hub').mkdir()
     hub_work, hub, hub_number, hub_head = _hub_pr(tmp_path / 'hub')
     hub.login = 'serve-host'
-    status_post(hub, hub_head, context='tests/review', state='success', description='review round 1: no blocking')
+    status_post(hub, hub_head, context='tests/review', state='success', description='reviewed abc: advice; none blocks')
     found = judged(hub_work, hub, load_policy(hub_work), branch='pr/x', number=hub_number, head=hub_head)
     assert not found.ready
     assert any('tests/review' in one for one in found.missing)

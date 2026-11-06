@@ -77,7 +77,7 @@ def test_the_principles_reach_the_method_as_a_file(tmp_path: Path) -> None:
         raise _Ran
 
     with pytest.raises(_Ran):
-        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path, pr_body='', disposed={})
+        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path, pr_body='')
     assert seen == [payload()]
 
 
@@ -88,7 +88,7 @@ def _slice_doc(**top: object) -> str:
     })  # fmt: skip
 
 
-def test_one_call_summarizes_with_the_pr_body_and_every_call_is_handed_the_dispositions(tmp_path: Path) -> None:
+def test_one_call_summarizes_with_the_pr_body_and_every_call_is_handed_no_dispositions(tmp_path: Path) -> None:
     """The FIRST slice carries ``--pr-body``; the other slices and the synthesis pass ``--no-summary``.
 
     PLANTED control: a summary only the first call printed is the merged document's; the rest printed none.
@@ -105,10 +105,10 @@ def test_one_call_summarizes_with_the_pr_body_and_every_call_is_handed_the_dispo
 
     shape = ['r', SUMMARY_FIELD, '--disposed', DISPOSED_FIELD]
     merged = gather('a..b', [shape, shape], ['s', '{findings}', *shape], run, tmp_path,
-                    pr_body='Why: x.', disposed={'F-1': 'upstream'})  # fmt: skip
+                    pr_body='Why: x.')  # fmt: skip
     assert [body for _, body, _ in seen] == ['Why: x.', '', '']
     assert ['--no-summary' in argv for argv, _, _ in seen] == [False, True, True]
-    assert all(gone == {'disposed': [{'id': 'F-1', 'reason': 'upstream'}]} for _, _, gone in seen)
+    assert all(gone == {'disposed': []} for _, _, gone in seen), 'a one-shot review disposes of nothing'
     assert json.loads(merged)['summary'] == summary
 
 

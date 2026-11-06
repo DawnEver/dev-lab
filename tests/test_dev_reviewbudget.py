@@ -1,6 +1,7 @@
-"""REVIEW-BUDGET: every PR's review capped in rounds and USD inside the family's month (user ruling 2026-10-31).
+"""REVIEW-BUDGET: every PR's review capped in USD inside the family's month (user ruling 2026-10-31).
 
-Every refusal has its planted control: the same PR one step under the cap runs.
+Every skip has its planted control: the same PR one step under the cap runs. A skipped review merges
+Unreviewed (user ruling 2026-11-06), so no gate text sends its author anywhere but the raise door.
 """
 
 from __future__ import annotations
@@ -11,21 +12,20 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance
 from _forge_state import StateForge
-from test_dev_forgereview import JUDGE, FakeCommand, _forge, _work
-from test_dev_forgereview_rounds import _doc, _finding, _state
+from _review_doubles import _doc, _state
+from test_dev_forgereview import FakeCommand, _forge, _work
 
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, comment_upsert
-from dev_lab.dev.forgereview import review_tick
-from dev_lab.dev.forgereview_claim import CAPPED
+from dev_lab.dev.forgereview import ask_again, review_tick
+from dev_lab.dev.forgereview_advice import Record, record_of, recorded_usd, trusted_bodies
+from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgereview_declared import RANGE_FIELD, Review
-from dev_lab.dev.forgereview_dispose import raise_cap
-from dev_lab.dev.forgereview_judge import Identity
-from dev_lab.dev.forgereview_rounds import FAMILY_MAX_ROUNDS, Ledger, ledger_of, recorded_usd, trusted_bodies
+from dev_lab.dev.forgereview_identity import Identity
+from dev_lab.dev.forgetakeover import raise_cap
 from dev_lab.dev.reviewbudget import (
     CAP_QUANTILE,
     DEGRADED_MODEL,
-    DEGRADED_ROUNDS,
     INITIAL_PRS_PER_MONTH,
     MIN_FITTED_PRS,
     TAG_ENV,
@@ -40,7 +40,7 @@ from dev_lab.dev.reviewbudget import (
 )
 
 _BUDGET = 1000.0
-_REVIEW = Review(judge=JUDGE, command=('reviewer', '--range', RANGE_FIELD))
+_REVIEW = Review(command=('reviewer', '--range', RANGE_FIELD))
 
 
 def _spend(spent: float = 0.0, by_tag: dict[str, float] | None = None, days: int = 30) -> Spend:
@@ -90,46 +90,36 @@ def test_a_planted_spend_record_moves_the_fit() -> None:
 # --- the gate ------------------------------------------------------------------------------------------------
 
 
-def test_a_pr_over_its_round_cap_waits_named_and_one_under_runs() -> None:
-    held = gate(number=7, spent_usd=0.0, rounds_done=3, max_rounds=3, spend=_spend())
-    assert held.state == 'wait'
-    assert held.why.startswith('round cap reached: 3/3 rounds; split the PR, or forge review cap 7')
-    assert gate(number=7, spent_usd=0.0, rounds_done=2, max_rounds=3, spend=_spend()).state == 'run'
-
-
-def test_a_pr_over_its_usd_cap_waits_named_and_one_under_runs() -> None:
-    held = gate(number=7, spent_usd=12.0, rounds_done=1, max_rounds=3, spend=_spend())
-    assert held.state == 'wait'
-    assert held.why.startswith('budget reached: 12.00/10.00 USD; split the PR, or forge review cap 7 --usd')
-    assert gate(number=7, spent_usd=9.99, rounds_done=1, max_rounds=3, spend=_spend()).state == 'run'
+def test_a_pr_over_its_usd_cap_is_skipped_named_and_one_under_runs() -> None:
+    skipped = gate(number=7, spent_usd=12.0, spend=_spend())
+    assert skipped.state == 'skip'
+    assert skipped.why.startswith('budget reached: 12.00/10.00 USD; the integrator may forge review cap 7 --usd')
+    assert 'sp' + 'lit' not in skipped.why
+    assert gate(number=7, spent_usd=9.99, spend=_spend()).state == 'run'
 
 
 def test_the_months_remainder_bounds_every_cap_even_a_raised_one() -> None:
     month = _spend(spent=_BUDGET - 3.0)
-    raised = Raised(50.0, 9, 'one large refactor')
-    held = gate(number=7, spent_usd=4.0, rounds_done=0, max_rounds=3, spend=month, raised=raised)
-    assert held.state == 'wait'
-    assert 'budget reached: 4.00/3.00 USD' in held.why
-    spent = gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=_spend(spent=_BUDGET), raised=raised)
-    assert (spent.state, spent.why.split(':')[0]) == ('wait', 'monthly review budget spent')
+    raised = Raised(50.0, 'one large refactor')
+    skipped = gate(number=7, spent_usd=4.0, spend=month, raised=raised)
+    assert skipped.state == 'skip'
+    assert 'budget reached: 4.00/3.00 USD' in skipped.why
+    spent = gate(number=7, spent_usd=0.0, spend=_spend(spent=_BUDGET), raised=raised)
+    assert (spent.state, spent.why.split(':')[0]) == ('skip', 'monthly review budget spent')
 
 
-def test_a_raise_lifts_the_pr_caps_within_the_month() -> None:
-    raised = Raised(40.0, 5, 'the split would separate one migration')
-    assert gate(number=7, spent_usd=12.0, rounds_done=3, max_rounds=3, spend=_spend(), raised=raised).state == 'run'
+def test_a_raise_lifts_the_pr_cap_within_the_month() -> None:
+    assert gate(number=7, spent_usd=12.0, spend=_spend(), raised=Raised(40.0, 'one migration')).state == 'run'
 
 
-def test_a_low_month_degrades_rounds_and_tier_before_anything_stops() -> None:
-    low = _spend(spent=_BUDGET * 0.8)
-    first = gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=low)
-    assert (first.state, first.max_rounds, first.model) == ('run', DEGRADED_ROUNDS, DEGRADED_MODEL)
-    assert gate(number=7, spent_usd=0.0, rounds_done=DEGRADED_ROUNDS, max_rounds=3, spend=low).state == 'wait'
-    assert gate(number=7, spent_usd=0.0, rounds_done=0, max_rounds=3, spend=_spend()).model is None
+def test_a_low_month_degrades_the_tier_before_anything_stops() -> None:
+    low = gate(number=7, spent_usd=0.0, spend=_spend(spent=_BUDGET * 0.8))
+    assert (low.state, low.model) == ('run', DEGRADED_MODEL)
+    assert gate(number=7, spent_usd=0.0, spend=_spend()).model is None
 
 
-def test_with_no_spend_report_the_round_cap_alone_holds() -> None:
-    assert gate(number=7, spent_usd=0.0, rounds_done=2, max_rounds=3, spend=None).state == 'run'
-    assert gate(number=7, spent_usd=0.0, rounds_done=3, max_rounds=3, spend=None).state == 'wait'
+def test_with_no_spend_report_nothing_is_capped() -> None:
+    assert gate(number=7, spent_usd=99.0, spend=None).state == 'run'
 
 
 def test_an_unknown_spend_report_schema_is_refused() -> None:
@@ -141,10 +131,10 @@ def test_an_unknown_spend_report_schema_is_refused() -> None:
 
 
 def test_the_newest_raise_wins_and_its_reason_cannot_close_the_comment() -> None:
-    hostile = Raised(30.0, None, 'a --> b')
+    hostile = Raised(30.0, 'a --> b')
     line = raise_line(hostile)
     assert '-->' not in line.removesuffix(' -->')
-    assert raised_of([raise_line(Raised(20.0, 4, 'first')), f'x\n{line}']) == hostile
+    assert raised_of([raise_line(Raised(20.0, 'first')), f'x\n{line}']) == hostile
     assert raised_of(['nothing here']) is None
 
 
@@ -168,41 +158,22 @@ def _tick(work: Path, forge: object, command: FakeCommand, spend: Spend | None) 
                        spend=lambda *_: spend)  # fmt: skip
 
 
-def test_a_pr_over_its_usd_cap_gets_the_named_waiting_status_until_the_integrator_raises_it(tmp_path: Path) -> None:
+def test_a_pr_over_its_usd_cap_merges_unreviewed_until_the_integrator_raises_it(tmp_path: Path) -> None:
+    """User ruling 2026-11-06: a cap never holds the merge; its cause is recorded; a raise and a request run it."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     command = FakeCommand(_doc())
     _tick(work, forge, command, _spend(by_tag={f'o/r#{number}': 11.0}))
     assert command.ran == [], 'over its cap, no reviewer runs'
     state, why = _state(forge, head)
-    assert (state, why.startswith(f'{CAPPED} budget reached: 11.00/10.00 USD')) == ('pending', True)
-    assert _tick(work, forge, command, _spend(by_tag={f'o/r#{number}': 11.0})) == (), 'said once'
-    raise_cap(forge, number, Raised(25.0, None, 'one indivisible migration'), by=Identity('i', 'box', 'S-int'))
+    assert (state, why.startswith(f'{UNREVIEWED_STATUS} review budget reached: 11.00/10.00 USD')) == ('pending', True)
+    assert 'sp' + 'lit' not in why
+    assert any('review-capped' in one['body'] for one in forge.comments[number]), 'the cause is recorded for the merge'
+    raise_cap(forge, number, Raised(25.0, 'one indivisible migration'), by=Identity('i', 'box', 'S-int'))
+    ask_again(forge, number, head, 'i@box')
     _tick(work, forge, command, _spend(by_tag={f'o/r#{number}': 11.0}))
-    assert len(command.ran) == 1, 'the raise releases the head'
+    assert len(command.ran) == 1, 'the raise and the request run the review'
     assert _state(forge, head)[0] == 'success'
-
-
-def test_a_pr_over_its_round_cap_waits_named_and_runs_nothing(tmp_path: Path) -> None:
-    """Superseding the past-the-cap re-check (ruling 2026-10-31): the head waits for a split or a raise."""
-    work, head = _work(tmp_path)
-    forge, number = _forge(head)
-    capped = Review(judge=JUDGE, command=_REVIEW.command, max_rounds=1)
-    high = _finding('F-h', severity='HIGH', file='x.py', anchor='x')
-    review_tick(work, forge, capped, base='integrate/main', run=FakeCommand(_doc(high)), ready=lambda *_: None,
-                host='box', spend=lambda *_: _spend())  # fmt: skip
-    after = advance(work, 'pr/x', 'y.py', 'y = 1\n')
-    forge.pulls[number]['head']['sha'] = after
-    command = FakeCommand(_doc())
-    review_tick(work, forge, capped, base='integrate/main', run=command, ready=lambda *_: None, host='box',
-                spend=lambda *_: _spend())  # fmt: skip
-    assert command.ran == []
-    assert command.judged == [], 'not even the judge runs past the cap'
-    state, why = _state(forge, after)
-    assert state == 'pending'
-    assert why.startswith(f'{CAPPED} round cap reached: 1/1 rounds; split the PR, or forge review cap {number}')
-    # user ruling 2026-11-01: five rounds a PR (security PRs needed four)
-    assert FAMILY_MAX_ROUNDS == Review().max_rounds == 5
 
 
 def _raised_as_seen_by(forge: object, number: int, job: str) -> Raised | None:
@@ -216,21 +187,21 @@ def test_a_raise_is_read_from_its_raiser_by_a_job_of_another_login(tmp_path: Pat
     forge, number = _forge(head)
     forge.permissions['DawnEver'] = 'write'
     forge.login = 'DawnEver'
-    raise_cap(forge, number, Raised(None, 5, 'one indivisible migration'), by=Identity('DawnEver', 'box', 'S-int'))
-    assert _raised_as_seen_by(forge, number, 'github-actions[bot]') == Raised(None, 5, 'one indivisible migration',
+    raise_cap(forge, number, Raised(5.0, 'one indivisible migration'), by=Identity('DawnEver', 'box', 'S-int'))
+    assert _raised_as_seen_by(forge, number, 'github-actions[bot]') == Raised(5.0, 'one indivisible migration',
                                                                                'DawnEver')  # fmt: skip
     forge.login = 'mallory'
-    forged = raise_line(Raised(None, 99, 'forged', 'DawnEver'))
+    forged = raise_line(Raised(99.0, 'forged', 'DawnEver'))
     comment_upsert(forge, number, kind=Marker.REVIEW_CAP, key='own', text=f'raised: {forged}')
-    assert _raised_as_seen_by(forge, number, 'github-actions[bot]').rounds == 5, 'a raise naming another is ignored'
+    assert _raised_as_seen_by(forge, number, 'github-actions[bot]').usd == 5.0, 'a raise naming another is ignored'
 
 
 def test_a_raise_line_pasted_into_another_authors_comment_is_ignored(tmp_path: Path) -> None:
     _, head = _work(tmp_path)
     forge, number = _forge(head)
     forge.login = 'mallory'
-    pasted = raise_line(Raised(None, 99, 'pasted', 'DawnEver'))
-    comment_upsert(forge, number, kind=Marker.CLAIM, key='F-x', text=f'see the raise\n\n{pasted}')
+    pasted = raise_line(Raised(99.0, 'pasted', 'DawnEver'))
+    comment_upsert(forge, number, kind=Marker.REVIEW_AGAIN, key='x', text=f'see the raise\n\n{pasted}')
     assert _raised_as_seen_by(forge, number, 'github-actions[bot]') is None
 
 
@@ -242,19 +213,19 @@ def test_a_raise_by_an_author_without_write_permission_is_ignored_on_github(tmp_
     _, head = _work(tmp_path)
     gitea, number = _forge(head)
     gitea.login = 'mallory'
-    raise_cap(gitea, number, Raised(None, 99, 'self-raised'), by=Identity('mallory', 'box', 'S-m'))
-    assert _raised_as_seen_by(gitea, number, 'github-actions[bot]').rounds == 99
+    raise_cap(gitea, number, Raised(99.0, 'self-raised'), by=Identity('mallory', 'box', 'S-m'))
+    assert _raised_as_seen_by(gitea, number, 'github-actions[bot]').usd == 99.0
     forge = StateForge(Forge('github.com', 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     forge.login = 'mallory'
-    raise_cap(forge, number, Raised(None, 99, 'self-raised'), by=Identity('mallory', 'box', 'S-m'))
+    raise_cap(forge, number, Raised(99.0, 'self-raised'), by=Identity('mallory', 'box', 'S-m'))
     assert _raised_as_seen_by(forge, number, 'github-actions[bot]') is None
     forge.permissions['mallory'] = 'write'
-    assert _raised_as_seen_by(forge, number, 'github-actions[bot]').rounds == 99
+    assert _raised_as_seen_by(forge, number, 'github-actions[bot]').usd == 99.0
 
 
-@pytest.mark.parametrize('payload', ['{not json}', '[1, 2]', '"x"', '{"rounds": "5", "by": "mallory"}',
-                                     '{"rounds": 5, "by": ["mallory"]}', '{"usd": true, "by": "mallory"}'])  # fmt: skip
+@pytest.mark.parametrize('payload', ['{not json}', '[1, 2]', '"x"', '{"usd": "5", "by": "mallory"}',
+                                     '{"usd": 5, "by": ["mallory"]}', '{"usd": true, "by": "mallory"}'])  # fmt: skip
 def test_a_malformed_raise_payload_is_no_record_and_no_crash(tmp_path: Path, payload: str) -> None:
     """F-e08ae020d005. PLANTED control: a well-formed payload in the same comment shape is read."""
     _, head = _work(tmp_path)
@@ -264,87 +235,58 @@ def test_a_malformed_raise_payload_is_no_record_and_no_crash(tmp_path: Path, pay
     comment_upsert(forge, number, kind=Marker.REVIEW_CAP, text=f'<!-- review-cap {payload} -->')
     assert _raised_as_seen_by(forge, number, 'github-actions[bot]') is None
     assert raised_of([f'<!-- review-cap {payload} -->']) is None
-    good = '{"usd": null, "rounds": 5, "why": "w", "by": "mallory"}'
+    good = '{"usd": 5, "why": "w", "by": "mallory"}'
     forge.login = 'mallory'
     comment_upsert(forge, number, kind=Marker.REVIEW_CAP, text=f'<!-- review-cap {good} -->')
-    assert _raised_as_seen_by(forge, number, 'github-actions[bot]').rounds == 5
+    assert _raised_as_seen_by(forge, number, 'github-actions[bot]').usd == 5
 
 
-# --- the PR's spend is the rounds it recorded ------------------------------------------------------------------
+# --- the PR's spend is the reviews it recorded ------------------------------------------------------------------
 
 
-def test_a_ledger_records_its_rounds_dollars_and_the_pr_spend_sums_every_head() -> None:
+def test_a_record_holds_its_dollars_and_the_pr_spend_sums_every_head() -> None:
     """Review spend 2026-11-03: each host saw only its own local spend.
 
     PLANTED CONTROL: a head re-posted counts once.
     """
-    one, two = Ledger('a' * 40, 1, usd=1.5), Ledger('b' * 40, 2, usd=2.25)
-    assert ledger_of([one.line()]).usd == 1.5
-    reposted = Ledger('b' * 40, 2, usd=2.5)
+    one, two = Record('a' * 40, usd=1.5), Record('b' * 40, usd=2.25)
+    assert record_of([one.line()]).usd == 1.5
+    reposted = Record('b' * 40, usd=2.5)
     assert recorded_usd([one.line(), two.line()]) == 3.75
-    assert recorded_usd([one.line(), two.line(), reposted.line()]) == 4.0, 'the newest ledger of a head wins'
-    assert recorded_usd(['no ledger']) == 0.0
+    assert recorded_usd([one.line(), two.line(), reposted.line()]) == 4.0, 'the newest record of a head wins'
+    assert recorded_usd(['no record']) == 0.0
 
 
-def test_a_round_records_what_it_spent_in_its_ledger(tmp_path: Path) -> None:
-    """The round's dollars are the PR tag's spend after the round less before it, on the host that ran it."""
+def test_a_review_records_what_it_spent(tmp_path: Path) -> None:
+    """The review's dollars are the PR tag's spend after the review less before it, on the host that ran it."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     tag = f'o/r#{number}'
     reads = iter([_spend(by_tag={tag: 1.0}), _spend(by_tag={tag: 1.0}), _spend(by_tag={tag: 3.5})])
     review_tick(work, forge, _REVIEW, base='integrate/main', run=FakeCommand(_doc()), ready=lambda *_: None,
                 host='box', spend=lambda *_: next(reads))  # fmt: skip
-    assert ledger_of([forge.comments[number][-1]['body']]).usd == 2.5
+    assert record_of([one['body'] for one in forge.comments[number]]).usd == 2.5
 
 
-def test_the_pr_cap_reads_the_recorded_rounds_not_this_hosts_spend_alone(tmp_path: Path) -> None:
-    """Another host's rounds recorded 11 USD; this host spent nothing on the PR, and the PR still waits.
+def test_the_pr_cap_reads_the_recorded_reviews_not_this_hosts_spend_alone(tmp_path: Path) -> None:
+    """Another host's review recorded 11 USD; this host spent nothing on the PR, and the asked re-review is skipped.
 
-    PLANTED CONTROL: the same recorded rounds under the cap run.
+    PLANTED CONTROL: the same recorded review under the cap runs.
     """
     for recorded, runs in ((11.0, 0), (4.0, 1)):
         (tmp_path / str(recorded)).mkdir()
         work, earlier = _work(tmp_path / str(recorded))
         forge, number = _forge(earlier)
         forge.login = 'serve-host'  # a DECLARED review producer
-        comment_upsert(forge, number, kind=Marker.REVIEW, key=earlier, text=Ledger(earlier, 1, usd=recorded).line())
+        comment_upsert(forge, number, kind=Marker.REVIEW, key=earlier, text=Record(earlier, usd=recorded).line())
         forge.login = 'ci-job'
         head = advance(work, 'pr/x', 'y.py', 'y = 1\n')
         forge.pulls[number]['head']['sha'] = head
+        ask_again(forge, number, head, 'S-a')
         command = FakeCommand(_doc())
-        review = Review(judge=JUDGE, command=_REVIEW.command, reviewers=('serve-host',))
+        review = Review(command=_REVIEW.command, reviewers=('serve-host',))
         review_tick(work, forge, review, base='integrate/main', run=command, ready=lambda *_: None, host='box',
                     spend=lambda *_: _spend())  # fmt: skip
         assert len(command.ran) == runs
         if not runs:
-            assert _state(forge, head)[1].startswith(f'{CAPPED} budget reached: 11.00/10.00 USD')
-
-
-@pytest.mark.parametrize('cap', ['rounds', 'usd'])
-def test_a_capped_pr_spends_zero_calls_on_a_push(tmp_path: Path, cap: str) -> None:
-    """Review spend 2026-11-03: a push to a capped PR runs no reviewer, no judge and no synthesis -- a WAIT only.
-
-    PLANTED CONTROL: the same push one round under the cap runs the reviewer.
-    """
-    work, head = _work(tmp_path)
-    forge, number = _forge(head)
-    review = Review(judge=JUDGE, command=_REVIEW.command, max_rounds=1 if cap == 'rounds' else 5)
-    spent = {f'o/r#{number}': 11.0 if cap == 'usd' else 0.0}
-    calls: list[list[str]] = []
-    command = FakeCommand(_doc(_finding('F-h', severity='HIGH', file='x.py', anchor='x')))
-
-    def run(argv: list[str], root: Path) -> str:
-        calls.append(list(argv))
-        return command(argv, root)
-
-    review_tick(work, forge, review, base='integrate/main', run=run, ready=lambda *_: None, host='box',
-                spend=lambda *_: _spend())  # fmt: skip
-    assert calls, 'PLANTED CONTROL: under the cap, round 1 runs'
-    calls.clear()
-    pushed = advance(work, 'pr/x', 'x.py', 'x\nmore\n')
-    forge.pulls[number]['head']['sha'] = pushed
-    review_tick(work, forge, review, base='integrate/main', run=run, ready=lambda *_: None, host='box',
-                spend=lambda *_: _spend(by_tag=spent))  # fmt: skip
-    assert calls == [], 'a capped PR spends no call on a push'
-    assert _state(forge, pushed)[0] == 'pending'
-    assert _state(forge, pushed)[1].startswith(CAPPED)
+            assert _state(forge, head)[1].startswith(f'{UNREVIEWED_STATUS} review budget reached: 11.00/10.00 USD')
