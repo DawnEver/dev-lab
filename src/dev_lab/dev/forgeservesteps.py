@@ -6,6 +6,7 @@ so one broken step never stops the others (:func:`dev_lab.dev.forgeserve.serve` 
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -212,7 +213,7 @@ def pressed(root: Path, repo: str, *, who: str, say: Callable[[str], None], alar
 def relock(
     root: Path, repo: str, built: Client, *, say: Callable[[str], None], alarm: Callable[[Alarm], object]
 ) -> None:
-    """Keep integration's lock at the newest resolution through one relock PR (:func:`dev_lab.dev.relock.carry`).
+    """Keep integration's lock at the newest resolution through THE rolling relock (:func:`dev_lab.dev.relock.carry`).
 
     Only where the forge merges PRs into integration (``pr_merges_since`` declared): there the relock lands like
     any other PR, and nowhere else would it land by itself. A failure alarms; the next tick tries afresh.
@@ -222,7 +223,11 @@ def relock(
         return
     try:
         pulls = [pull for pull in pr_list(built) if pull.base == policy.integration]
-        say(f'[serve] relock: {carry(root, policy, pulls=lambda: pulls, create=built.pr_create)}')
+        said = carry(
+            root, policy, pulls=lambda: pulls, create=built.pr_create, edit=built.issue_edit, close=built.issue_close,
+            now=time.time(),
+        )  # fmt: skip
+        say(f'[serve] relock: {said}')
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
         alarm(Alarm(INTEGRATION, repo, f'the {policy.integration} lock could not be relocked', str(failed)))
 

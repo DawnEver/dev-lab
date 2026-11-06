@@ -450,7 +450,9 @@ def main(
         emit(f'REFUSED: {why}')
         return 1
     if locking:
-        code = _dep_project.lock_upgrade(root, python, run=run, dry_run=args.dry_run, environment=environment)
+        code = _dep_project.lock_upgrade(
+            root, python, run=run, dry_run=args.dry_run, environment=environment, packages=args.upgrade_package
+        )
         if code:
             return code
     try:

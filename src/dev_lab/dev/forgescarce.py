@@ -18,8 +18,10 @@ filter says. The full scarce parts run on the integration branch after the merge
 REACH is the carry's rule (:mod:`dev_lab.dev.forgecarry`): a scarce part's test files are read from the
 record its head's ``base`` part links (every id the base run handed to another part names that part); a part
 reaches the diff when any of its files' footprints at the head (:mod:`dev_lab.dev.footprint`) holds a
-changed path. ANY DOUBT -- no record, no merge-base, an unreadable declaration -- waives nothing: the part is
-produced, which only costs the run a waiver would have saved.
+changed path -- a changed ``uv.lock`` first resolved to the imports its moves reach
+(:func:`~dev_lab.dev.lockreach.resolve_lock`, as the carry does), so a relock reaches a scarce part only where one
+of its tests imports a moved distribution. ANY DOUBT -- no record, no merge-base, an unreadable declaration --
+waives nothing: the part is produced, which only costs the run a waiver would have saved.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgecarry import changed_paths
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.lockreach import resolve_lock
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of
 
@@ -116,6 +119,7 @@ def _waived(
     files = files_by_part(record)
     try:
         prints = Footprints.at(root, head)
+        changed = resolve_lock(root, fork, head, changed)
     except (ValueError, subprocess.SubprocessError):
         return frozenset()
     return frozenset(
