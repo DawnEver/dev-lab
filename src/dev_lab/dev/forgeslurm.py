@@ -65,7 +65,7 @@ from lab_commons.resources import Engine
 
 from dev_lab.dev import hpcusage
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
-from dev_lab.dev.forgecarry import carry_from, read_by
+from dev_lab.dev.forgecarry import carry_from, env_carries, read_by
 from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_items
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
@@ -194,15 +194,18 @@ class SlurmCluster:
         Its own earlier run is one stopped before it ended -- released retryable and claimed again -- whose
         finished shards stand as they are (:func:`dev_lab.dev.forgecarry.carry_from`).
 
-        A run of another part ran other ids; a run of another env is never read -- the env is the one
-        dependency no footprint holds.
+        A run of another part ran other ids; a run of another env is read only where the committed lock moved
+        between them (:func:`dev_lab.dev.forgecarry.env_carries`) -- the lock is the env, and the carry then keeps
+        only the outcomes no moved distribution reaches.
         """
         runners = self._runners()
         held = {}
         shas = run_shas(self.machine, runners, part)
         for ancestor in read_by(self.root, sha, shas):
             state, shell = load_state(ancestor, part, self.machine, runners)
-            if state.get('env') == env and state.get('platform') == part:
+            if state.get('platform') == part and env_carries(
+                self.root, ancestor, sha, env_a=str(state.get('env', '')), env_b=env
+            ):
                 held[ancestor] = held_cells(state, shell)
         return carry_from(self.root, sha, held)
 

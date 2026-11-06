@@ -21,7 +21,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgemerge import auto_merge
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.relock import PREFIX as RELOCK_PREFIX
+from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
 from dev_lab.dev.trialmerge import rev
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ def open_lanes(
     """Open the one PR each pushed ephemeral lane lands by; the lines said and each ``(branch, sha, pr)`` opened.
 
     A lane is an origin branch in a declared ephemeral namespace (``[tool.dev_lab.branchset] ephemeral``) holding
-    content integration lacks (:func:`dev_lab.dev.branchdelete.landed`), with no open PR (*open_heads*). A relock
+    content integration lacks (:func:`dev_lab.dev.branchdelete.landed`), with no open PR (*open_heads*). THE relock
     branch opens its own (:func:`dev_lab.dev.relock.carry`), and a lane whose PR was closed UNMERGED is its
     owner's "do not land": never reopened, only said. The title is the head's newest subject; on GitHub the PR
     is put on auto-merge (:func:`dev_lab.dev.forgemerge.auto_merge`), as ``forge pr create`` does.
@@ -101,7 +101,7 @@ def open_lanes(
         return [], []
     lanes = []
     for branch, sha in tracked(root):
-        if branch in open_heads or branch.startswith(f'{RELOCK_PREFIX}-') or not declared.is_ephemeral(branch):
+        if branch in open_heads or branch == RELOCK_BRANCH or not declared.is_ephemeral(branch):
             continue
         if landed(root, policy, f'{TRACKING}{branch}').lost:
             lanes.append((branch, sha))

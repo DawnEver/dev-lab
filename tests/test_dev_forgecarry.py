@@ -311,3 +311,33 @@ def test_a_part_carried_under_the_retired_spelling_still_reads_back() -> None:
     parts, problems = parts_of([CommitStatus('tests/base', 'success', old, '')])
     assert (problems, parts['base'].carried) == ((), 'a' * 12)
     assert parts['base'].description().endswith(': docs-only'), 'written back at the current spelling'
+
+
+def _locked(numpy: str, pint: str) -> str:
+    entries = (
+        f'\n[[package]]\nname = "{name}"\nversion = "{version}"\nsource = {{ registry = "https://pypi.org/simple" }}\n'
+        for name, version in (('numpy', numpy), ('pint', pint))
+    )
+    return 'version = 1\n' + ''.join(entries)
+
+
+def test_a_relock_carries_across_its_env_every_outcome_its_moves_cannot_reach(tmp_path: Path) -> None:
+    """User ruling 2026-11-05: a relock PR runs only the tests whose footprint imports a moved distribution.
+
+    A relock's whole point is a new env, so an env-keyed carry offered it nothing. PLANTED CONTROLS: the same
+    relock moving numpy, which the test imports, carries nothing; an env that moved with no lock move carries nothing.
+    """
+    run_git(tmp_path, 'init', '-q')
+    test = 'import numpy\n\n\ndef test_n():\n    assert numpy\n'
+    files = {'pyproject.toml': PYPROJECT, 'uv.lock': _locked('2.5.3', '0.26.1'), 'tests/test_n.py': test}
+    a = _commit(tmp_path, files, 'a')
+    node = 'tests/test_n.py::test_n'
+    pint = _commit(tmp_path, {'uv.lock': _locked('2.5.3', '0.26.2')}, 'build(deps): relock pint')
+    assert forgecarry.env_carries(tmp_path, a, pint, env_a='old', env_b='new')
+    assert forgecarry.carried(tmp_path, a, pint, [node]) == {node}
+    numpy = _commit(tmp_path, {'uv.lock': _locked('2.5.4', '0.26.2')}, 'build(deps): relock numpy')
+    assert forgecarry.env_carries(tmp_path, pint, numpy, env_a='old', env_b='new')
+    assert forgecarry.carried(tmp_path, pint, numpy, [node]) == frozenset()
+    docs = _commit(tmp_path, {'README.md': 'r\n'}, 'docs')
+    assert not forgecarry.env_carries(tmp_path, numpy, docs, env_a='old', env_b='new')
+    assert forgecarry.env_carries(tmp_path, numpy, docs, env_a='same', env_b='same')

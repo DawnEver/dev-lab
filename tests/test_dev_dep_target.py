@@ -472,3 +472,33 @@ def test_lock_upgrade_moves_a_pinned_rust_toolchain_to_the_newest_stable(tmp_pat
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.0"\n'
     assert upgrade(run=run, stable=lambda: '1.99.1') == 0
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.1"\n'
+
+
+def test_a_lock_upgrade_naming_packages_moves_only_them(tmp_path) -> None:
+    """The relock's in-house scope (user ruling 2026-11-05): ``--upgrade-package`` replaces ``--upgrade``.
+
+    PLANTED control: the same door naming no package upgrades everything (the case above).
+    """
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n',
+        encoding='utf-8',
+    )
+    calls, run = _recording()
+    assert dep.main(['--lock-upgrade', str(tmp_path), '--upgrade-package=peer'], cwd=tmp_path, run=run) == 0
+    lock, sync, _ = calls
+    assert lock[1:4] == ('lock', '--upgrade-package', 'peer')
+    assert '--upgrade' not in lock
+    assert '--frozen' in sync
+
+
+def test_a_lock_upgrade_naming_packages_holds_the_toolchain_where_it_is(tmp_path) -> None:
+    """The toolchain is third-party: an in-house relock never moves it. PLANTED control: the full door does."""
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
+    pin = tmp_path / 'rust-toolchain.toml'
+    pin.write_text('[toolchain]\nchannel = "1.99.0"\n', encoding='utf-8')
+    _, run = _recording()
+    upgrade = functools.partial(_dep_project.lock_upgrade, tmp_path, 'py', dry_run=False, environment={}, run=run)
+    assert upgrade(stable=lambda: '1.99.1', packages=('peer',)) == 0
+    assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.0"\n'
+    assert upgrade(stable=lambda: '1.99.1') == 0
+    assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.1"\n'

@@ -57,7 +57,7 @@ branch, or a branch in an `ephemeral` namespace -- by the set the PUSHED tip dec
 the declared branches, the ephemeral globs and the remedy: publish the feature as its one `pr/<feature>`, or keep
 the branch local. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
-push and is deleted by a human. The machine pushers all land: relock (`pr/relock-*`), forge autosync (`pr/*`
+push and is deleted by a human. The machine pushers all land: relock (`pr/relock`), forge autosync (`pr/*`
 heads only), the component bump (`pr/components-bump`), and the declared trunk and integration branch.
 
 The forge judges the same set after the push: every open PR head into integration carries a `branchset` status
