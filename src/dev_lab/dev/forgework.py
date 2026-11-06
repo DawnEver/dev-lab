@@ -65,6 +65,7 @@ from dev_lab.dev._forgebackends import (
     actions_token,
     backend_for,
 )
+from dev_lab.dev._forgeteams import team_grants_write
 from dev_lab.dev.forge import (
     Forge,
     Transport,
@@ -327,13 +328,18 @@ class Client:
         """Whether the forge records *login* with write permission on this repository (refused or unknown: no).
 
         ``GET .../collaborators/{login}/permission`` on both forges; the writing permissions are the backend's.
+        Where the backend names a :attr:`~Backend.writer_unit` (Gitea), a team granting write on that unit and
+        listing *login* as a member counts too: Gitea answers ``none`` for a login whose write comes from an org
+        team (2026-11-06: every internal motronics PR read as external, so nothing auto-merged).
         """
-        path = f'{self.repo}/collaborators/{urllib.parse.quote(login, safe="")}/permission'
+        quoted = urllib.parse.quote(login, safe='')
         try:
-            answer = self.call('GET', path)
+            answer = self.call('GET', f'{self.repo}/collaborators/{quoted}/permission')
+            if isinstance(answer, dict) and answer.get('permission') in self.backend.writer_permissions:
+                return True
+            return bool(self.backend.writer_unit) and team_grants_write(self, quoted)
         except ForgeCallFailed:
             return False
-        return isinstance(answer, dict) and answer.get('permission') in self.backend.writer_permissions
 
     def whoami(self) -> str:
         """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub.
