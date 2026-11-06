@@ -306,9 +306,13 @@ def on_origin(root: Path, sha: str) -> bool:
     return done.returncode == 0 and bool(done.stdout.strip())
 
 
-def fetch_origin(root: Path) -> None:
-    """``git fetch --prune origin``, retried then reported (:mod:`dev_lab.dev.netverb`); raises when it fails."""
-    report = run_network_verb([_GIT, 'fetch', '--prune', '--quiet', 'origin'], cwd=root, timeout=300)
+def fetch_origin(root: Path, *, timeout: float = 300.0, deadline: float | None = None) -> None:
+    """``git fetch --prune origin``, each attempt bounded by *timeout* s, retried then reported; raises on failure.
+
+    *deadline* (a :func:`time.monotonic` instant) bounds every attempt and backoff together.
+    """
+    argv = [_GIT, 'fetch', '--prune', '--quiet', 'origin']
+    report = run_network_verb(argv, cwd=root, timeout=timeout, deadline=deadline)
     if not report.ok:
         raise OSError(report.remedy)
 

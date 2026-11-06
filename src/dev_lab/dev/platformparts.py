@@ -84,7 +84,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.hpc.declared import kit_tables, pyproject_at
-from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
+from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, selecting, vocabulary_at
 from lab_commons.hpc.records import cells_of, read_record
 from lab_commons.hpc.retired import refusal
 from lab_commons.hpc.testcells import conclude
@@ -97,7 +97,7 @@ from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
-from dev_lab.dev.partrows import is_row, row_part
+from dev_lab.dev.partrows import is_row, needs_of_row, row_part
 from dev_lab.dev.producer import ProducerExit
 
 if TYPE_CHECKING:
@@ -227,7 +227,7 @@ def producer_argv(root: Path, part: str, *, sha: str) -> list[str]:
         UndeclaredPart: the producer is absent, malformed or never told its part; the message names the key.
 
     """
-    needs_of(row_part(part))  # a name that is no need-set is refused by name
+    needs_of_row(part)  # a name that is no need-set is refused by name
     declared = _declared(root, sha).get('tests', {}).get('produce')
     produce = _strings(declared, 'tool.lab_commons.tests', 'produce', _PRODUCE_EXAMPLE, required=True)
     if not any(PART_FIELD in item for item in produce):

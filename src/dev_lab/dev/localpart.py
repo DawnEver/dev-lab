@@ -27,7 +27,7 @@ from lab_commons.box.providers import inventory
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
 from lab_commons.compute.probe import os_name
 from lab_commons.config import section
-from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
+from lab_commons.hpc.needsets import BASE, need_sets, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.hpc.testcells import TestCell
@@ -35,7 +35,7 @@ from lab_commons.hpc.testcells import TestCell
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import verdict_commit
 from dev_lab.dev.jobparts import pytest_collector
-from dev_lab.dev.partrows import row_part, row_system, this_platform
+from dev_lab.dev.partrows import needs_of_row, row_part, row_system, this_platform
 from dev_lab.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory
 from dev_lab.dev.test_outcomes import outcomes_dir, read_cells
 from dev_lab.dev.verdictenv import verdict_env_record
@@ -168,7 +168,7 @@ def post_part(
         chosen = [part]
     else:
         here = present() if present else present_here(root)
-        chosen = sorted({owned[node] for node in cells if needs_of(owned[node]) <= here}) or [BASE]
+        chosen = sorted({owned[node] for node in cells if needs_of_row(owned[node]) <= here}) or [BASE]
     scope = INCREMENTAL if arguments else FULL
     return '\n'.join(
         post_local(

@@ -73,7 +73,7 @@ from dev_lab.dev.forge import (
     forge_transport,
 )
 from dev_lab.dev.forgecred import CredentialRefresh
-from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, ForgeCallFailed, diagnose
+from dev_lab.dev.forgefailure import HTTP_ERROR_FLOOR, UNAUTHENTICATED, BudgetSpent, ForgeCallFailed, diagnose
 from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report
@@ -287,6 +287,9 @@ class Client:
         for index in range(1, DEFAULT_ATTEMPTS + 1):
             try:
                 status, payload = self._once(write.method, write.path, data, write.content_type, write.host or None)
+            except BudgetSpent as spent:
+                msg = f'{write.method} {write.path}: {spent}'
+                raise BudgetSpent(msg) from spent
             except OSError as exc:
                 status, payload = 0, str(exc).encode()
             if 0 < status < HTTP_ERROR_FLOOR:

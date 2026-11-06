@@ -19,10 +19,10 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from lab_commons.hpc.declared import pyproject_at
-from lab_commons.hpc.needsets import needs_of, read_vocabulary
+from lab_commons.hpc.needsets import read_vocabulary
 
 from dev_lab.dev.family import declared_in
-from dev_lab.dev.partrows import row_part
+from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import UndeclaredPart, derived
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ def unproduced_at(root: Path, sha: str) -> frozenset[str]:
 
 def unproduced_parts(names: Iterable[str], resources: Collection[str]) -> frozenset[str]:
     """The parts (or rows) of *names* needing any of *resources*."""
-    return frozenset(name for name in names if needs_of(row_part(name)) & set(resources))
+    return frozenset(name for name in names if needs_of_row(name) & set(resources))
 
 
 def unproduced_waived(root: Path, sha: str, statuses: Sequence[CommitStatus]) -> frozenset[str]:

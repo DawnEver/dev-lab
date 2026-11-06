@@ -15,3 +15,8 @@ def test_a_row_names_one_os_and_its_part() -> None:
 
 def test_this_platform_is_an_os_a_row_may_name() -> None:
     assert partrows.is_row(f'base@{partrows.this_platform()}')
+
+
+def test_a_row_needs_what_its_part_needs() -> None:
+    """PLANTED CONTROL: the bare part reads the same set the OS row does."""
+    assert partrows.needs_of_row('base@windows') == partrows.needs_of_row('base')

@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
-from lab_commons.hpc.needsets import needs_of
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forge import forge_from_remote
@@ -47,7 +46,7 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.localpart import present_here
 from dev_lab.dev.lockpins import lock_freshness
-from dev_lab.dev.partrows import row_part
+from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictstore import WORKSTATION_KEY, ContentKey, Found, cite, lookup
@@ -98,12 +97,12 @@ def declared_refusal(serve: Mapping[str, Any], *, repo: str, part: str, present:
     if repo not in repos:
         return f'this box does not serve {repo} (machine file [{SERVE_TABLE}] repos)'
     try:
-        skipped = Serves.of(serve).skips(needs_of(row_part(part)))
+        skipped = Serves.of(serve).skips(needs_of_row(part))
     except ValueError as why:
         return str(why)
     if skipped:
         return f'its [{SERVE_TABLE}] rule does not claim {part_context(part)} ({skipped})'
-    if missing := sorted(needs_of(row_part(part)) - set(present)):
+    if missing := sorted(needs_of_row(part) - set(present)):
         return f'this box lacks {", ".join(missing)}, which {part_context(part)} needs'
     return ''
 

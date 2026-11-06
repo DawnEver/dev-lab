@@ -39,7 +39,7 @@ from lab_commons.compute.learned import BOX_WALL_S
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.hpc.declared import OutdatedKit
-from lab_commons.hpc.needsets import declared_at, needs_of
+from lab_commons.hpc.needsets import declared_at
 from lab_commons.resources import admits
 
 from dev_lab.dev.forgeaffinity import DEFERRED
@@ -71,6 +71,7 @@ from dev_lab.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgewait import Box, Outlook
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
 
 __all__ = ['ClaimPass', 'skips']
@@ -162,7 +163,7 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
-            skipped = wanted.kind != REQUEST and skips(self.serves, wanted.kind, needs_of(wanted.platform))
+            skipped = wanted.kind != REQUEST and skips(self.serves, wanted.kind, needs_of_row(wanted.platform))
             skipped = skipped or blocked.startswith(DEFERRED)  # its affined accounts serve it: not idle work here
             if not held(blocked) and not skipped and wanted.key not in self.unservable and self._servable(wanted):
                 self.pending.append(one)
@@ -196,7 +197,7 @@ class ClaimPass:
 
     def _needs(self, wanted: Candidate) -> frozenset[str]:
         """The need-set: a request's as its producer declares it, a part's as its name spells it."""
-        return self._declared(wanted).needs if wanted.kind == REQUEST else needs_of(wanted.platform)
+        return self._declared(wanted).needs if wanted.kind == REQUEST else needs_of_row(wanted.platform)
 
     def _job(self, wanted: Candidate, needed: frozenset[str]) -> Job:
         producer = wanted.producer if wanted.kind == REQUEST else wanted.platform
