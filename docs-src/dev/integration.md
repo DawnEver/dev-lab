@@ -172,9 +172,8 @@ unreviewed: ...`) and is not a required context (`forgeprotect.required_contexts
 the review). The merge commit carries `Unreviewed: review capped at N rounds` or `Unreviewed: review budget
 reached: <spent>/<cap> USD`, then `; open findings: <ids>`; `tests/merge-ready` and the integration comment say
 `WARNED`, and the merging job comments it on the PR. The waiver is read from the PR's trusted comments, never from
-a status description. **Only an internal PR auto-merges** (`forgemerge.external`): a fork's head, or an author the
-forge records without write permission (`Client.can_write`, the one trust test cap raises use), is tested and
-reviewed but never merged by the forge -- `tests/merge-ready` stays `pending` `external PR: a maintainer merges it`.
+a status description. **Only an internal PR auto-merges** (`forgemerge.external`): a fork's head is tested and reviewed
+but never merged (a head on the repository's own branch was pushed by a writer, whoever opened it) by the forge -- `tests/merge-ready` stays `pending` `external PR: a maintainer merges it`.
 
 **What is read** (`REVIEW-SCOPE`, `dev_lab.dev.forgereview_scope`). The budget is the reviewer's, so it bounds a
 slice, not whether a head is read at all:

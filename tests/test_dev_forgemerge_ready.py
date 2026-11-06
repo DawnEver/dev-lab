@@ -250,24 +250,32 @@ def test_a_capped_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -
     assert forge.merges == []
 
 
-@pytest.mark.parametrize('how', ['non-writer', 'fork'])
-def test_an_external_green_pr_is_never_merged_and_waits_on_a_maintainer(tmp_path: Path, how: str) -> None:
-    """PLANTED CONTROL: the same green PR by the internal author merges (the GitHub ready test above)."""
+def test_a_fork_green_pr_is_never_merged_and_waits_on_a_maintainer(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same green PR from a branch of the repository merges (the GitHub ready test above)."""
     work, forge, number, head = _hub_pr(tmp_path)
-    if how == 'fork':
-        forge.pulls[number]['head']['repo'] = {'full_name': 'stranger/r'}
-    else:
-        forge.pulls[number]['user'] = {'login': 'stranger'}
+    forge.pulls[number]['head']['repo'] = {'full_name': 'stranger/r'}
     said = ready(work, forge, number)
     assert _merge_ready(forge, head) == ('pending', EXTERNAL)
     assert forge.merges == []
     assert said.endswith(f'pending: {EXTERNAL}')
 
 
+def test_a_repository_branch_merges_whoever_opened_it(tmp_path: Path) -> None:
+    """A head on the repository's own branch was pushed by a writer: the opener's recorded permission never blocks it.
+
+    Gitea's Actions token cannot read org-team rosters, so a team writer read as external (2026-11-06).
+    """
+    work, forge, number, head = _hub_pr(tmp_path)
+    forge.pulls[number]['user'] = {'login': 'stranger'}
+    said = ready(work, forge, number)
+    assert [merged for merged, _ in forge.merges] == [number]
+    assert said.endswith('merged')
+
+
 def test_the_serve_tick_never_merges_an_external_pr(tmp_path: Path) -> None:
     """Gitea's serve tick reads the same decision: an external head is said, never merged."""
     work, forge, number, head = _pr(tmp_path)
-    forge.pulls[number]['user'] = {'login': 'stranger'}
+    forge.pulls[number]['head']['repo'] = {'full_name': 'stranger/r'}
     found = judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head)
     assert EXTERNAL in found.missing
     assert not found.ready

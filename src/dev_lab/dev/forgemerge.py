@@ -276,14 +276,14 @@ def decide(
     return Decision(tuple(missing), message, waived)
 
 
-def external(client: Client, pull: PullRequest) -> bool:
+def external(pull: PullRequest) -> bool:
     """Whether *pull* is an EXTERNAL contributor's, which the forge never merges (user ruling 2026-11-05).
 
-    External is a fork's head, or an author the forge does not record with write permission
-    (:meth:`~dev_lab.dev.forgework.Client.can_write` -- the one trust test a cap raise passes,
-    :func:`~dev_lab.dev.forgereview_rounds.trusted_bodies`). It is still tested and reviewed; a human merges it.
+    External is a fork's head. A head on the repository's own branch was pushed by a writer, whoever opened the PR,
+    so the opener's recorded permission is never read: Gitea's Actions token cannot read org-team rosters, and every
+    team writer's PR read as external (2026-11-06). It is still tested and reviewed; a human merges it.
     """
-    return pull.fork or not client.can_write(pull.author)
+    return pull.fork
 
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
@@ -301,7 +301,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, capped=capped
     )
     pull, missing = client.pr_view(number), found.missing
-    if external(client, pull):  # INTERNAL-ONLY (2026-11-05): never merged by the forge, whatever else is green
+    if external(pull):  # INTERNAL-ONLY (2026-11-05): never merged by the forge, whatever else is green
         missing = (EXTERNAL, *missing)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         missing = (WAITING.format(n=number), *missing)
@@ -322,7 +322,7 @@ def ready(root: Path, client: Client, number: int) -> str:
         decision = Decision((f'a PR into {policy.integration}, not {pull.base}',), '')
     elif pull.draft:  # D53: pending, naming the ready door -- it waits on its author, not on a check
         return waiting(client, pull) or f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: draft'
-    elif external(client, pull):  # pending: it waits on a maintainer, never on a check
+    elif external(pull):  # pending: it waits on a maintainer, never on a check
         status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=EXTERNAL)
         return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {EXTERNAL}'
     else:
