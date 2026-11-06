@@ -474,6 +474,27 @@ def test_the_forge_clock_is_the_date_the_forge_answered_with_not_the_hosts(serve
     assert forge_now(built) == datetime(2026, 10, 10, 12, 5, tzinfo=UTC), 'the latest answer is the clock'
 
 
+def test_the_forge_clock_is_asked_even_when_the_pass_memo_holds_the_user(server) -> None:
+    """A later client in a poller pass reads the forge's clock from the forge, not from the pass memo.
+
+    2026-11-06: its ``whoami`` was answered from the memo, so it never saw a Date and every motronics integration
+    step raised "answered without a Date header" -- no tests/security was posted.
+
+    PLANTED CONTROL: the client that filled the memo was asked, so its clock was read from that answer.
+    """
+    _Recorder.date = 'Sat, 10 Oct 2026 12:00:00 GMT'
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    memo, forge = ReadMemo(), Forge('forge.example.org', 'o', 'r')
+    first = _client(forge, _Loopback(server))
+    first.memo = memo
+    assert forge_now(first) == datetime(2026, 10, 10, 12, tzinfo=UTC)
+    _Recorder.date = 'Sat, 10 Oct 2026 12:07:00 GMT'
+    later = _client(forge, _Loopback(server))
+    later.memo = memo
+    assert forge_now(later) == datetime(2026, 10, 10, 12, 7, tzinfo=UTC), 'asked of the forge, never the memo'
+    assert later.memo is memo, "the memo is the pass's again once the clock was read"
+
+
 def test_download_returns_the_raw_bytes_with_the_credential_and_a_refusal_raises(server) -> None:
     """PLANTED CONTROL: the same call on a path the server does not hold raises instead of returning a body."""
     forge = Forge('forge.example.org', 'o', 'r')
