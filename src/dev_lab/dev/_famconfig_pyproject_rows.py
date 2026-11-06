@@ -106,7 +106,8 @@ PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
         'consumers and ABSENT in lab-commons, which mints versions from tags through hatch-vcs and '
         'publishes no changelog at all. Promoting them would make the publishing repo adopt a '
         'release workflow it deliberately does not run, on the strength of three other repos '
-        'agreeing with each other. `allowed_prefixes` is consumer-a-only and would be its delta.'
+        'agreeing with each other. `allowed_prefixes` (consumer-a-only) is retired, not a delta: no repo may '
+        'pass a commit message unjudged (user ruling 2026-11-05, dev_lab.dev.commitmsg).'
     ),
     ('tool', 'coverage'): (
         'THE SAME SHAPE, AND WEAKER. No table in the kit, which measures no coverage; and among the '

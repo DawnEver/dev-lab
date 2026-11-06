@@ -28,6 +28,9 @@
       },
       "if": "${{ github.event_name != 'status' || (startsWith(github.event.context, 'tests/') && github.event.context != 'tests/merge-ready' && github.event.state != 'pending') }}",
       "runs-on": "ubuntu-latest",
+      "outputs": {
+        "due": "${{ steps.ready.outputs.due }}"
+      },
       "steps": [
         {
           "uses": "actions/checkout@v4",
@@ -50,7 +53,7 @@
         {
           "id": "ready",
           "name": "tests/merge-ready",
-          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready)\"; echo \"$said\"; case \"$said\" in *\"; merged\"*) echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
+          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready)\"; echo \"$said\"; case \"$said\" in *\"; merged\"*) echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
         },
         {
           "name": "Run CI on the merged integration",
@@ -68,8 +71,11 @@
         "actions": "write"
       }
     },
-    "review-resume": {
-      "if": "${{ github.event_name != 'status' }}",
+    "review": {
+      "needs": [
+        "merge-tick"
+      ],
+      "if": "${{ always() && (github.event_name != 'status' || needs.merge-tick.outputs.due == 'true') }}",
       "runs-on": "ubuntu-latest",
       "env": {
         "HEAD_SHA": "${{ github.sha }}",
@@ -120,8 +126,8 @@
           }
         },
         {
-          "name": "Resume the pending review batches",
-          "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --batch-pending --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "name": "Review the due heads",
+          "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --due --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
           "env": {
             "AI_LAB_KEYS_PR_REVIEW": "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}"
           }

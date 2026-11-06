@@ -6,12 +6,17 @@ an output-hygiene sweeper). Four calendars that can drift apart, and four docstr
 same layout, is the duplication this module ends.
 
 **THE BASE IS THE REPO'S ANSWER AND HAS NO DEFAULT**, and that is a MEASUREMENT rather than caution.
-consumer-a writes under ``output/logs/`` because a user directive said so on 2026-09-03; this very
-package writes its own verify log to ``.verify/`` (:data:`dev_lab.dev.verifysteps.LOG_DIRECTORY`) and
-the two labs have no dated tree at all. So the family holds four answers to "where", and a default
-here would hand any of the other three consumer-a' directive while looking like a shared convention.
+consumer-a writes under ``output/logs/`` because a user directive said so on 2026-09-03; when this
+was migrated this very package wrote its verify log to ``.verify/`` (retired 2026-11-05) and the two labs
+had no dated tree at all. Today every family repo declares ``output = "output/logs"``, and a default here
+would still hand an undeclared repo another repo's answer while looking like a shared convention.
 What IS universal is the partition -- a date taken once, a kind beneath it, and a NAME that may not
 escape either.
+
+THE REPO'S ANSWER IS ``[tool.dev_lab.parts] output`` (every family repo declares ``"output/logs"``), read by
+:func:`declared_output`; :func:`output_dir` is the dated directory under it, for every artefact a program
+produces and can regenerate (verify's run log and records, its coverage, the durations ledger, part records).
+An undeclared output is REFUSED naming the key, never defaulted, for the reason above.
 
 WHAT THIS IS NOT. It does not name a verdict, address a tree, or stamp a log: a log's CONTENT and
 its citation belong to :mod:`dev_lab.dev.logref`, and this answers only where the file sits.
@@ -28,8 +33,18 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Final
 
-__all__ = ['date_parts', 'dated_log']
+from dev_lab.dev.family import declared_in
+
+__all__ = ['OUTPUT_KEY', 'UndeclaredOutput', 'date_parts', 'dated_log', 'declared_output', 'output_dir']
+
+#: The one key a repo answers "where does dated output live" with.
+OUTPUT_KEY: Final = '[tool.dev_lab.parts] output'
+
+
+class UndeclaredOutput(ValueError):
+    """The repo does not declare its output root; the message names :data:`OUTPUT_KEY`."""
 
 
 def _escapes(text: str) -> bool:
@@ -106,3 +121,29 @@ def dated_log(root: Path, name: str, *, base: str, kind: str) -> Path:
     dated = root.joinpath(*Path(base).parts, *date_parts(), kind)
     dated.mkdir(parents=True, exist_ok=True)
     return dated / given.name
+
+
+def declared_output(root: Path) -> str:
+    """*root*'s ``[tool.dev_lab.parts] output``, relative to *root* (e.g. ``'output/logs'``).
+
+    Raises:
+        UndeclaredOutput: no pyproject, or no non-empty string under the key.
+
+    """
+    pyproject = root / 'pyproject.toml'
+    text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
+    value = declared_in(text, 'parts').get('output')
+    if not isinstance(value, str) or not value:
+        msg = f'{root / "pyproject.toml"} must declare {OUTPUT_KEY} as a non-empty string, e.g. output = "output/logs"'
+        raise UndeclaredOutput(msg)
+    return value
+
+
+def output_dir(root: Path, kind: str) -> Path:
+    """Today's ``<declared output>/<yy>/<mm>/<dd>/<kind>/`` under *root*, created.
+
+    Raises:
+        UndeclaredOutput: *root* declares no output root.
+
+    """
+    return dated_log(root, kind, base=declared_output(root), kind=kind).parent

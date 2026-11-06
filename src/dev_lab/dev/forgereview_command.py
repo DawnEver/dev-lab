@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.reviewbudget import Spend, read_spend
+from dev_lab.dev.reviewbudget import Spend, open_share, read_spend
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -140,6 +140,8 @@ class Runner:
     serving: bool = False
     #: This host's ai-lab spend report (:func:`dev_lab.dev.reviewbudget.read_spend`); ``None``: no dollar cap.
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend
+    #: Opens a PR's share of the review allotment in this host's ai-lab (:func:`dev_lab.dev.reviewbudget.open_share`).
+    allot: Callable[..., str | None] = open_share  # (runtimes, root, share, usd[, provider])
     #: Whether a standing success the gate does not count is reviewed afresh rather than stood on -- the review JOB
     #: (dev-lab #38): Gitea re-runs a run in place, its conclusion reset, so a re-run cannot verify the success its
     #: earlier attempt posted from one a PR-head workflow planted, and reviews the head again.

@@ -6,7 +6,12 @@ differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR;
 ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgereview_job.review_run`) for the one PR its event names. Both
 run :func:`review_pull`.
 
-ONCE PER PR. A PR is reviewed at its first ready head; every later head -- a fix push, a sync with integration --
+REVIEW IS THE LAST GATE (user ruling 2026-11-05; integrator ruling M8 2026-11-06). The merge decision asks
+(:func:`dev_lab.dev.reviewturn.review_turn`): a head is reviewed only once the decision called it DUE -- tests
+green, no conflict, every other condition standing. A head with no review status, or the decision's WAITS, is
+not reviewed and nothing is posted or spent, whoever started the run; a push asks for nothing.
+
+ONCE PER PR. A PR is reviewed at its first merge-ready head; every later head -- a fix push, a sync with integration --
 gets the standing review's verdict posted on it, and nothing runs. It is reviewed again only when:
 
 * its own change has GROWN to :data:`REVIEW_AGAIN_GROWTH` times the reviewable code bytes the review measured
@@ -50,6 +55,7 @@ from dev_lab.dev.forgereview_claim import (
     DESCRIPTION,
     RETRYING,
     UNREVIEWED_STATUS,
+    WAITS,
     claim_of,
     claimable,
     latest_review,
@@ -71,7 +77,18 @@ from dev_lab.dev.forgereview_identity import ReviewerRefused, identity, ruling, 
 from dev_lab.dev.forgereview_runtimes import retired_table
 from dev_lab.dev.forgereview_scope import Scope, code_bytes, gather, plan
 from dev_lab.dev.labsession import sessions
-from dev_lab.dev.reviewbudget import Spend, charged_to, gate, raised_of, read_spend, tag_of
+from dev_lab.dev.reviewbudget import (
+    Gate,
+    ShareRefused,
+    Spend,
+    charged_to,
+    gate,
+    open_share,
+    raised_of,
+    read_spend,
+    share_of,
+    tag_of,
+)
 from dev_lab.dev.reviewcap import unreviewed_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
@@ -79,6 +96,7 @@ from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgereview_advice import Record
+    from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
     from dev_lab.dev.lanepolicy import Policy
 
@@ -107,6 +125,11 @@ class HostCannot(OSError):
     The serve tick says it and leaves the head to a capable host; a workflow job -- the ONLY reviewer of its PR
     -- records the PR unreviewed (:func:`dev_lab.dev.forgereview_job.review_run`).
     """
+
+
+def _not_called(latest: CommitStatus | None) -> bool:
+    """Whether the merge decision has not called this head's review: no status yet, or its WAITS."""
+    return latest is None or (latest.state == 'pending' and latest.description.startswith(WAITS))
 
 
 def ask_again(client: Client, number: int, head: str, who: str) -> str:
@@ -168,15 +191,17 @@ def _grown(record: Record, size: int) -> bool:
     return bool(record.size) and size >= REVIEW_AGAIN_GROWTH * record.size
 
 
-def _budget(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> tuple[Review | None, str]:
-    """*review* as the PR's dollar budget lets it run (:mod:`dev_lab.dev.reviewbudget`), else ``None``; and why."""
+def _budget(
+    root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner
+) -> tuple[Review | None, str, Gate]:
+    """*review* as the PR's dollar budget lets it run (:mod:`dev_lab.dev.reviewbudget`), else ``None``; why; its cap."""
     bodies = trusted_bodies(client, pull.number, review.reviewers)
     spend = runner.spend(runner.runtimes, root)
     spent = max(recorded_usd(bodies), 0.0 if spend is None else spend.of(tag_of(pull.url, pull.number)))
     allowed = gate(number=pull.number, spent_usd=spent, spend=spend, raised=raised_of(bodies))
     if allowed.state != 'run':
-        return None, allowed.why
-    return dataclasses.replace(review, model=allowed.model or review.model), allowed.why
+        return None, allowed.why, allowed
+    return dataclasses.replace(review, model=allowed.model or review.model), allowed.why, allowed
 
 
 def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str | None:
@@ -192,6 +217,8 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     if latest is not None and latest.state == 'success' and runner.verifies and not forge_posted(client)(latest):
         latest = None  # a success the gate does not count is no review (dev-lab #38)
     settled = latest is not None and (latest.state != 'pending' or latest.description.startswith(UNREVIEWED_STATUS))
+    if not asked and _not_called(latest):  # the last gate: no model call on a red or conflicting head
+        return None
     if not claimable(latest, runner.clock(), review.stale, run_ended(client)) and not (asked and settled):
         return None
     if (
@@ -202,14 +229,20 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
         return _stands(client, pull, record)
     if (wait := _young(root, head, runner)) is not None:
         return f'#{pull.number} {head[:12]}: {wait}'
-    allowed, note = _budget(root, client, review, pull, runner)
+    allowed, note, held = _budget(root, client, review, pull, runner)
     if allowed is None:
         return unreviewed(client, pull, f'review {note}')
-    return f'{_run(root, client, allowed, pull, runner)} ({note})'
+    return f'{_run(root, client, allowed, pull, runner, held=held)} ({note})'
 
 
-def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str:
-    """Review *pull*'s head now: nothing to read is ``success``, no review key merges unreviewed; the line said."""
+def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner, *, held: Gate) -> str:
+    """Review *pull*'s head now: nothing to read is ``success``, no review key merges unreviewed; the line said.
+
+    The review runs charged in *pull*'s share of ai-lab's ``review`` allotment (on a reserve raise, of its
+    provider's reserve), opened at *held*'s cap
+    (:func:`~dev_lab.dev.reviewbudget.share_of`), so ai-lab refuses a call past the PR's cap or the review's month,
+    naming the level. A share ai-lab will not open runs nothing; ``inf`` (no spend report) opens none.
+    """
     head = pull.head_sha
     scope = plan(root, f'origin/{pull.base}', head, review.budget, sliceable=PATHS_FIELD in review.command)
     if not scope.slices:
@@ -217,7 +250,17 @@ def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: 
         return f'#{pull.number} {head[:12]}: {ONLY_GENERATED}'
     if not runner.secret:
         return unreviewed(client, pull, NEEDS_MAINTAINER)
-    with charged_to(tag_of(pull.url, pull.number)):
+    tag = tag_of(pull.url, pull.number)
+    try:
+        if held.usd == float('inf'):
+            share = None
+        elif held.reserve is not None:
+            share = runner.allot(runner.runtimes, root, share_of(tag, reserve=True), held.usd, held.reserve)
+        else:
+            share = runner.allot(runner.runtimes, root, share_of(tag), held.usd)
+    except ShareRefused as refused:
+        return f'#{pull.number} {head[:12]}: not reviewed -- its review budget share did not open: {refused}'
+    with charged_to(tag, share):
         return _command_review(root, client, review, pull, scope=scope, runner=runner)
 
 
@@ -294,6 +337,7 @@ def review_tick(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend,
     quiet: timedelta = timedelta(0),
+    allot: Callable[..., str | None] = open_share,  # (runtimes, root, share, usd[, provider]),
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
 
@@ -303,7 +347,15 @@ def review_tick(
     if review.where == JUDGE:
         return ()
     runner = Runner(
-        host=host, runtimes=runtimes, run=run, ready=ready, clock=clock, serving=True, spend=spend, quiet=quiet
+        host=host,
+        runtimes=runtimes,
+        run=run,
+        ready=ready,
+        clock=clock,
+        serving=True,
+        spend=spend,
+        quiet=quiet,
+        allot=allot,
     )
 
     def said(pull: PullRequest) -> str | None:

@@ -14,9 +14,9 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from test_dev_githook_scripts import _plant_judging_commitizen
+from test_dev_githook_scripts import _plant_checker
 
-from dev_lab.dev import forgeintegration
+from dev_lab.dev import forgeintegration, forgemerge
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import Ticked, tick
 from dev_lab.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
@@ -65,8 +65,8 @@ def _tested(tmp_path: Path) -> Path:
 def _work(tmp_path: Path) -> tuple[Path, str]:
     """A clone whose ``pr/x`` is one commit off main, ``integrate/main`` two ahead of it, and the PR head."""
     work = _tested(tmp_path)
-    advance(work, 'integrate/main', 'i.txt', 'i\n')
-    head = advance(work, 'pr/x', 'x.txt', 'x\n')
+    advance(work, 'integrate/main', 'i.txt', 'i\n', 'feat: i')
+    head = advance(work, 'pr/x', 'x.txt', 'x\n', 'feat: x')
     (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
     return work, head
 
@@ -313,7 +313,7 @@ def test_the_integration_verb_prints_the_tick_lines_before_the_branch_rows(
 # --- the commit messages, judged at the merge by the repo's own declared row ----------------------
 
 _CZ_ROW = (
-    '[tool.dev_lab.hooks]\npre-push = [{ id = "commitizen-branch", run = ["python", "-m", "dev_lab.dev.githooks", '
+    '[tool.dev_lab.hooks]\npre-push = [{ id = "message-range", run = ["python", "-m", "dev_lab.dev.githooks", '
     '"script", "cz-push-range"], always_run = true, refs = "^refs/heads/", env = { LAB_CZ_BASE_REF = '
     '"origin/integrate/main" } }]\n'
 )
@@ -323,14 +323,14 @@ _CZ_ROW = (
 def test_a_pr_whose_commit_message_is_off_format_is_NOT_mergeable(
     tmp_path: Path, message: str, *, mergeable: bool
 ) -> None:
-    """A worktree without hooks (no venv: every commitizen row skipped) cannot land ``data(x): y``.
+    """A worktree without hooks (no venv: the hooks never ran) cannot land ``data(x): y``.
 
     PLANTED CONTROL: the same PR with a conventional subject is ready.
     """
     work, _ = _work(tmp_path)
     (work / 'pyproject.toml').write_text(_MANIFEST + _CZ_ROW, encoding='utf-8')
     head = advance(work, 'pr/x', 'y.txt', 'y\n', message)
-    _plant_judging_commitizen(work, tmp_path)
+    _plant_checker(work)
     found = decide(
         work,
         POLICY,
@@ -342,7 +342,9 @@ def test_a_pr_whose_commit_message_is_off_format_is_NOT_mergeable(
     )
     assert found.ready is mergeable, found.missing
     if not mergeable:
-        assert any(one.startswith('conventional commit messages') for one in found.missing), found.missing
+        assert any(one.startswith('conventional commit messages') and "'data(x): y'" in one for one in found.missing), (
+            found.missing
+        )
 
 
 def test_a_repo_declaring_no_message_row_is_not_judged_on_messages(tmp_path: Path) -> None:
@@ -416,3 +418,28 @@ def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
         assert any(one.startswith('its review: ') for one in found.missing), found.missing
         assert not found.unreviewed
         assert 'Unreviewed' not in found.message
+
+
+def test_a_missing_integration_ref_is_a_NAMED_reason_never_a_crash(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + _CZ_ROW, encoding='utf-8')
+    said = forgemerge.message_wait(work, 'refs/remotes/origin/no-such-branch', head)
+    assert said is not None
+    assert 'no-such-branch' in said
+    assert 'does not resolve' in said
+
+
+def test_a_message_check_past_its_timeout_is_a_NAMED_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    work, head = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + _CZ_ROW, encoding='utf-8')
+    monkeypatch.setattr(forgemerge, 'MESSAGE_TIMEOUT_S', 0.001)
+    said = forgemerge.message_wait(work, 'refs/remotes/origin/integrate/main', head)
+    assert said is not None
+    assert 'timed out' in said
+
+
+def test_a_ready_decision_with_no_message_row_SAYS_messages_are_not_declared(tmp_path: Path) -> None:
+    work, head = _work(tmp_path)
+    found = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(_green()))
+    assert found.ready, found.missing
+    assert 'messages: not declared' in found.notes

@@ -42,8 +42,9 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
   (:func:`dev_lab.dev.mergeaudit.judge`, the same judgement the commit-msg hook makes) -- its message
   names the branch (``Merged-Branch:``), so INTEGRATION-IS-MERGES-ONLY holds of it too;
 * every commit its head adds over integration passes the repo's OWN declared message row -- the pre-push row
-  running ``cz-push-range``, run here on the range ``origin/<integration>..<head>`` with that row's env, its named
-  exemptions included (:func:`message_wait`). A worktree with no venv skips that row at commit and push, so the
+  running ``cz-push-range``, run here on the range ``origin/<integration>..<head>`` with that row's env in its
+  ``--merge-decision`` mode -- commits the base already holds are history, the PR's own are all judged, none
+  exempt (:func:`message_wait`). A worktree with no venv skips that row at commit and push, so the
   merge is the one place no client can skip it; a repo declaring no such row is not judged on messages;
 * every merge commit its head adds over integration declares each file its parents conflict on
   (:func:`dev_lab.dev.mergeresolution.unresolved`, MERGE-RESOLUTION-DECLARED) -- the one place no client and no
@@ -90,6 +91,7 @@ from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.platformparts import standing
 from dev_lab.dev.reviewcap import unreviewed_waiver
+from dev_lab.dev.reviewturn import review_turn
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 from dev_lab.dev.unproduced import unproduced_waived
@@ -97,6 +99,7 @@ from dev_lab.dev.unproduced import unproduced_waived
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
+    from dev_lab.dev.githooks.table import Hook
     from dev_lab.dev.lanepolicy import Policy
     from dev_lab.dev.reviewgate import Reviewed
 
@@ -104,6 +107,8 @@ __all__ = [
     'CI_MERGER',
     'EXTERNAL',
     'FORGE_PULL',
+    'MESSAGES_NOT_DECLARED',
+    'MESSAGE_TIMEOUT_S',
     'READY',
     'Decision',
     'auto_merge',
@@ -114,6 +119,7 @@ __all__ = [
     'main',
     'merge',
     'merge_message',
+    'message_row',
     'message_wait',
     'ready',
 ]  # fmt: skip
@@ -148,30 +154,52 @@ _AUTO_MERGE: Final = (
 #: The shipped script judging commit messages over a range; the repo's pre-push row running it is the declaration.
 _MESSAGE_SCRIPT: Final = 'cz-push-range'
 
+#: Seconds the message row may run inside one merge decision before it is a named wait, never a hung tick.
+MESSAGE_TIMEOUT_S: Final[float] = 300.0
+
+#: What a decision notes when the repo declares no message row: nothing judged the messages.
+MESSAGES_NOT_DECLARED: Final = 'messages: not declared'
+
+
+def message_row(root: Path) -> Hook | None:
+    """The repo's pre-push row running ``cz-push-range``, or ``None`` when it declares none."""
+    return next((one for one in hook_table(root).get('pre-push', ()) if _MESSAGE_SCRIPT in one.run), None)
+
 
 def message_wait(root: Path, base: str, head: str) -> str | None:
     """Why *head*'s commits over *base* fail the repo's declared message row, or ``None`` (passed, or none declared).
 
     The SAME script and env the pre-push row runs, handed git's pre-push line for ``<base sha>..<head>``.
     """
-    row = next((one for one in hook_table(root).get('pre-push', ()) if _MESSAGE_SCRIPT in one.run), None)
+    row = message_row(root)
     if row is None:
         return None
     base_sha = _door.run(
-        ['git', 'rev-parse', base], cwd=str(root), capture_output=True, text=True, encoding='utf-8', check=True
-    )
-    line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
-    done = _door.run(
-        [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix()],
+        ['git', 'rev-parse', '--verify', '--quiet', base],
         cwd=str(root),
-        input=line,
         capture_output=True,
         text=True,
         encoding='utf-8',
-        errors='replace',
         check=False,
-        env={**os.environ, PYTHON_ENV: sys.executable, **row.env},
     )
+    if base_sha.returncode != 0:
+        return f'{row.id}: {base} does not resolve in this checkout -- fetch origin, then judge again'
+    line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
+    try:
+        done = _door.run(
+            [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix(), '--merge-decision'],
+            cwd=str(root),
+            input=line,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+            env={**os.environ, PYTHON_ENV: sys.executable, **row.env},
+            timeout=MESSAGE_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return f'{row.id} timed out after {MESSAGE_TIMEOUT_S} s over {base}..{head[:12]}'
     if done.returncode == 0:
         return None
     said = [one for one in (done.stdout + done.stderr).splitlines() if one.strip()]
@@ -182,9 +210,16 @@ def message_wait(root: Path, base: str, head: str) -> str | None:
 class Decision:
     """Whether one PR may be merged now: what is missing (nothing, when it may), and the message it merges with."""
 
-    missing: tuple[str, ...]
+    others: tuple[str, ...]  # every missing condition but the review
     message: str
+    review: str | None = None  # why the head is not reviewed; ``None``: it is (the last gate, reviewturn)
     unreviewed: str = ''  # the unreviewed warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
+    notes: tuple[str, ...] = ()
+
+    @property
+    def missing(self) -> tuple[str, ...]:
+        """Every missing condition, the review first."""
+        return (*((f'its review: {self.review}',) if self.review is not None else ()), *self.others)
 
     @property
     def ready(self) -> bool:
@@ -237,13 +272,10 @@ def decide(
     except ValueError as config:
         missing.append(f'its review config: {config}')
     waived = ''
-    if (unreviewed := reviewed(statuses)) is not None:
-        if waiver:
-            waived = waiver
-            title, _, trailers = message.partition('\n\n')
-            message = f'{title}\n\n{waiver}\n\n{trailers}'
-        else:
-            missing.append(f'its review: {unreviewed}')
+    if (unreviewed := reviewed(statuses)) is not None and waiver:  # waived: satisfied, warned
+        waived, unreviewed = waiver, None
+        title, _, trailers = message.partition('\n\n')
+        message = f'{title}\n\n{waiver}\n\n{trailers}'
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
     if (red := parts_wait(root, head, statuses)) is not None:
@@ -273,7 +305,8 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    return Decision(tuple(missing), message, waived)
+    notes = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
+    return Decision(tuple(missing), message, unreviewed, waived, notes)
 
 
 def external(client: Client, pull: PullRequest) -> bool:
@@ -300,12 +333,12 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     found = decide(
         root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, waiver=waiver
     )
-    pull, missing = client.pr_view(number), found.missing
+    pull, others = client.pr_view(number), found.others
     if external(client, pull):  # INTERNAL-ONLY (2026-11-05): never merged by the forge, whatever else is green
-        missing = (EXTERNAL, *missing)
+        others = (EXTERNAL, *others)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
-        missing = (WAITING.format(n=number), *missing)
-    return Decision(missing, found.message, found.unreviewed)
+        others = (WAITING.format(n=number), *others)
+    return Decision(others, found.message, found.review, found.unreviewed, found.notes)
 
 
 def ready(root: Path, client: Client, number: int) -> str:
@@ -328,11 +361,13 @@ def ready(root: Path, client: Client, number: int) -> str:
     else:
         decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
     missing = decision.missing
-    state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY)
+    suffix = f' ({"; ".join(decision.notes)})' if decision.notes else ''
+    state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY + suffix)
     if decision.unreviewed and not missing:
-        why = f'{READY}, WARNED -- {decision.unreviewed}'
+        why = f'{READY}{suffix}, WARNED -- {decision.unreviewed}'
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
-    said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}'
+    turn = review_turn(client, number, pull.head_sha, decision)  # the review is the last gate: asked here
+    said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}{turn}'
     if missing or (client.backend is not GITHUB and not ci_merges(root)):
         return said
     ephemeral = declared_branchset(root).is_ephemeral(pull.head)

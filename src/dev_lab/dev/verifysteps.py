@@ -29,6 +29,7 @@ from lab_commons.log import emit
 from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev.content import content_address
+from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.logref import LogRef
@@ -55,13 +56,18 @@ from dev_lab.dev.verifybox import (
 )
 
 __all__ = [
+    'COVERAGE_KIND',
     'LEDGER_PLUGIN',
-    'LOG_DIRECTORY',
+    'LOG_KIND',
     'MEASURED_TARGETS',
     'OUTCOME_PLUGIN',
     'PYTEST_ARGS',
     'RUFF_STEPS',
     'build_verdict',
+    'coverage_args',
+    'coverage_env',
+    'coverage_report',
+    'coverage_total',
     'run_verify',
 ]
 
@@ -71,9 +77,10 @@ __all__ = [
 #: branch here -- and a repo that ACQUIRES one changes its address, which is correct.
 MEASURED_TARGETS: Final[tuple[str, ...]] = ('src', 'tests', 'pyproject.toml')
 
-#: Where the log lives. Under the project root rather than a platform cache dir, because the log
-#: IS the evidence a verdict cites and a reader who was handed the tree must be able to find it.
-LOG_DIRECTORY: Final = '.verify'
+#: The output-tree kind the run log and its records live under: ``<output>/<yy>/<mm>/<dd>/verify/``
+#: (:func:`dev_lab.dev.datedlog.output_dir`; user ruling 2026-11-05, ``.verify/`` retired). Inside the
+#: checkout rather than a platform cache dir, because the log IS the evidence a verdict cites.
+LOG_KIND: Final = 'verify'
 
 #: The two lint steps, in order, as ``(name, module args)``. Both run through ``sys.executable -m``
 #: so the ruff that judges is the ruff installed in the interpreter that will run the suite -- a
@@ -115,6 +122,43 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 #: checkout read INCONCLUSIVE. ``--no-fold-skipped`` selects pytest's other skip summary --
 #: ``SKIPPED <node id> - <reason>``, one line per skip -- and a node id is the name of the test.
 PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
+
+#: THE COVERAGE REPORT (user ruling 2026-11-05): every pytest step measures coverage with pytest-cov and writes it
+#: as Markdown to ``<output>/<yy>/<mm>/<dd>/coverage/`` (:func:`dev_lab.dev.datedlog.output_dir`), named by its
+#: log. A REPORT, NEVER A GATE -- no ``--cov-fail-under``, so a coverage number cannot move a verdict.
+#: ``--cov`` names no source, so a repo's own ``[tool.coverage.run]`` decides what is measured.
+_COVERAGE_TOTAL: Final = '| **TOTAL**'
+
+
+#: The output-tree kind the coverage report and its data file go to (user ruling 2026-11-05).
+COVERAGE_KIND: Final = 'coverage'
+
+
+def coverage_report(root: Path, log: Path) -> Path:
+    """The Markdown coverage report of the run logged at *log*: ``<log stem>.coverage.md`` in today's coverage dir."""
+    return output_dir(root, COVERAGE_KIND) / f'{log.stem}.coverage.md'
+
+
+def coverage_env(root: Path, log: Path) -> dict[str, str]:
+    """The coverage DATA file of the run logged at *log*, beside its report, so no run writes ``.coverage`` here."""
+    return {'COVERAGE_FILE': str(output_dir(root, COVERAGE_KIND) / f'{log.stem}.coverage')}
+
+
+def coverage_args(root: Path, log: Path, *, append: bool = False) -> tuple[str, ...]:
+    """pytest-cov's arguments for the run logged at *log* under *root*; *append* adds to the stage before it."""
+    report = coverage_report(root, log).relative_to(root).as_posix()  # relative: a drive colon would split the option
+    return ('--cov', f'--cov-report=markdown:{report}', *(('--cov-append',) if append else ()))
+
+
+def coverage_total(report: Path) -> str | None:
+    """The TOTAL percentage *report* states, or ``None`` when there is no report to read."""
+    if not report.is_file():
+        return None
+    for line in report.read_text(encoding='utf-8').splitlines():
+        if line.startswith(_COVERAGE_TOTAL):
+            return line.rstrip(' |').rsplit('|', 1)[-1].strip(' *')
+    return None
+
 
 #: The durations ledger, loaded as a plugin so EVERY verify run records what it executed -- targeted
 #: or full, whichever conftest the selected tests sit under (:func:`dev_lab.dev.durations.pytest_configure`).
@@ -289,9 +333,7 @@ def run_verify(
     """
     allowed = declared_skips(root)
     vanished = vanished_shortfall(stale_declarations(root, allowed))
-    directory = root / LOG_DIRECTORY
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
+    path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
     seat = EnvironmentSeat(sys.prefix, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
     with seat.held(), path.open('w', encoding='utf-8') as handle:
@@ -304,18 +346,24 @@ def run_verify(
             durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
             durations.LEDGER_ENV_VAR: verdict_env(root),
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
+            **coverage_env(root, path),
         }
-        pytest = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN, *pytest_args]
+        head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
+        pytest = [*head, *pytest_args]
+        covered = [*head, *coverage_args(root, path), *pytest_args]
         seen = path.with_suffix('.serial-seen')
-        argv, record = boxed(root, pytest, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
+        argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
         codes = [_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'parallel', SEEN_ENV: str(seen)})]
         learn_ended(root, pytest, record)
         cut = ended_in_the_box(record)
         if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
             handle.write(SERIAL_BANNER)
-            argv, record = boxed(root, [*pytest, *serial_width()], queue_s=wait_s, outcome=seen.with_suffix('.json'))
+            appended = [*covered, '--cov-append', *serial_width()]
+            argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
             codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
             cut += ended_in_the_box(record)
+    report = coverage_report(root, path)
+    emit(f'coverage: {coverage_total(report) or "not measured"} -- {report.relative_to(root).as_posix()} (a report)')
     stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]
     stages += [distil_log(path, banner=SERIAL_BANNER) for _ in codes[1:]]
     complete_census, scope_refusal = census_scope(pytest_args)

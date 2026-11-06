@@ -82,9 +82,10 @@ id = "trailing-whitespace"
 run = ["python", "-m", "dev_lab.dev.filechecks", "trailing-whitespace"]
 pass_files = true
 
+# The conventional-commit shape, owned once in dev_lab.dev.commitmsg (an empty message is an abort, not a refusal).
 [[commit-msg]]
-id = "commitizen"
-run = ["cz", "check", "--allow-abort", "--commit-msg-file"]
+id = "conventional-commit"
+run = ["python", "-m", "dev_lab.dev.commitmsg", "--commit-msg-file"]
 
 # Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (dev_lab.dev.issueref).
 [[commit-msg]]

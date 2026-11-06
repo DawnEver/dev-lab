@@ -1,9 +1,12 @@
-"""REVIEW-BUDGET: a PR's review is capped in US dollars, inside the family's month (ruling 2026-10-31).
+"""REVIEW-BUDGET: a PR's review is capped in US dollars, inside the review's month (ruling 2026-10-31).
 
-WHERE EACH FACT LIVES. The family's monthly budget and every call's cost are ai-lab's (``python -m ai_lab.spend
---json``: the token ledger priced at each call's time, one row per call, tagged with what it was charged to). What
-ONE PR may spend of that month is the policy here; it restates no number of ai-lab's. A review runs its
-commands with :data:`TAG_ENV` set to the PR (:func:`tag_of`), so its calls are charged to it.
+WHERE EACH FACT LIVES. The review's monthly budget is ai-lab's STANDING allotment :data:`REVIEW_ALLOTMENT`
+(``[ai_lab.standing] review`` in the reviewing host's machine file), carved out of its provider's spend cap so no
+campaign can starve it; what it allots and has spent, and every call's cost, are read from ``python -m ai_lab.spend
+--json`` (its ``budgets``). What ONE PR may spend of that month is the policy here, and it restates no number of
+ai-lab's. Each review OPENS that cap as a child allotment of the standing one, ``review>owner/repo#n``
+(:func:`share_of`, :func:`open_share`), and runs its commands charged to it (:func:`charged_to`: :data:`TAG_ENV`
+and :data:`SCOPE_ENV`), so ai-lab itself refuses a call past the PR's cap or the review's month, naming the level.
 
 THE CAP IS FITTED, NOT GUESSED (:func:`fit`). From the last 90 days of per-PR spend: the expected PRs a month
 (``PRs seen / days * 30``) and a per-PR cap that is the :data:`CAP_QUANTILE` of measured per-PR cost, lowered until
@@ -19,7 +22,14 @@ A REACHED CAP SKIPS THE REVIEW, NAMED -- NEVER THE MERGE (user rulings 2026-11-0
 :mod:`dev_lab.dev.reviewcap`): the PR merges with an ``Unreviewed:`` line naming the cap. The integrator may raise one
 PR's cap with a recorded reason (:data:`RAISE_DOOR`, a trusted ``review-cap`` comment, :func:`raised_of`).
 
-A host whose ai-lab cannot report spend (an older ai-lab, no ``[runtimes.ai_lab]``) caps nothing, and says so.
+A RAISE MAY DRAW THE RESERVE (user ruling 2026-11-03, kept 2026-11-06). The reserve is what the provider's month
+(``[ai_lab.spend_cap]``) leaves beside every standing allotment. A raise recorded with ``--reserve`` opens the PR's
+share as its own provider-level allotment ``reserve>owner/repo#n`` (:func:`share_of`) instead of a child of the
+review's: it runs past a spent review month, at its raised cap, never degraded -- a deliberate, recorded spend --
+and ai-lab refuses it, naming the level, when the provider's free month cannot hold it.
+
+A host with no ``[runtimes.ai_lab]`` caps nothing, and says so; an ai-lab whose report has no ``review`` allotment
+is refused naming the row to declare.
 """
 
 from __future__ import annotations
@@ -50,19 +60,24 @@ __all__ = [
     'INITIAL_PRS_PER_MONTH',
     'MIN_FITTED_PRS',
     'RAISE_DOOR',
+    'REVIEW_ALLOTMENT',
+    'SCOPE_ENV',
     'SPEND_SCHEMA',
     'TAG_ENV',
     'Fit',
     'Gate',
     'Raised',
+    'ShareRefused',
     'Spend',
     'charged_to',
     'fit',
     'gate',
+    'open_share',
     'raise_line',
     'raise_record',
     'raised_of',
     'read_spend',
+    'share_of',
     'tag_of',
 ]
 
@@ -70,8 +85,14 @@ __all__ = [
 #: ``ai_lab.budget.TAG_ENV``), like the command's arguments -- dev-lab imports no ai-lab.
 TAG_ENV: Final = 'AI_LAB_SPEND_TAG'
 
-#: The ai-lab spend report version this reader knows.
-SPEND_SCHEMA: Final = 1
+#: The environment variable naming the ai-lab allotment a call is charged in (ai-lab's ``ai_lab.budget.SCOPE_ENV``).
+SCOPE_ENV: Final = 'AI_LAB_SCOPE'
+
+#: The ai-lab standing allotment every review draws on: its month is the review's budget.
+REVIEW_ALLOTMENT: Final = 'review'
+
+#: The ai-lab spend report version this reader knows: 2 reports each allotment's allotted and spent.
+SPEND_SCHEMA: Final = 2
 
 #: INITIAL, until :data:`MIN_FITTED_PRS` PRs are measured: about 100 reviewed PRs a month across the family's six
 #: repos, so a PR's initial cap is 1000/100 = 10 USD -- a one-shot review of the full budget, a re-review after
@@ -90,6 +111,9 @@ DEGRADE_BELOW: Final = 0.25
 #: The cheaper tier a degraded review runs on (ai-lab's ``haiku`` role of the family provider).
 DEGRADED_MODEL: Final = 'claude-haiku-5-5'
 
+#: The ai-lab allotment prefix of a PR's share drawn on the provider's reserve (:func:`share_of`).
+RESERVE_ALLOTMENT: Final = 'reserve'
+
 #: The integrator's door to raise one PR's cap, with its reason recorded on the PR.
 RAISE_DOOR: Final = 'forge review cap {pr} --usd <n> --why "<reason>"'
 
@@ -100,13 +124,14 @@ _RAISED: Final = re.compile(r'<!-- review-cap (?P<json>\{.*?\}) -->', re.DOTALL)
 
 @dataclass(frozen=True)
 class Spend:
-    """ai-lab's spend report: the month against its budget, and the per-PR history a cap is fitted from."""
+    """The review's month (its standing allotment, allotted and spent), and the per-PR history a cap is fitted from."""
 
     budget_usd: float
     spent_usd: float
     window_days: int = 1
     window_by_tag: Mapping[str, float] | None = None
     unpriced_calls: int = 0
+    provider: str = ''  # the provider the review allotment is carved from: a reserve draw opens on it
 
     @property
     def remaining_usd(self) -> float:
@@ -119,12 +144,22 @@ class Spend:
 
     @classmethod
     def from_report(cls, doc: Mapping[str, Any]) -> Spend:
-        """The :class:`Spend` an ai-lab report says; a schema this reader does not know is refused."""
+        """The :class:`Spend` an ai-lab report says of :data:`REVIEW_ALLOTMENT`; an unknown schema or none: refused."""
         if doc.get('schema') != SPEND_SCHEMA:
             msg = f'an ai-lab spend report of schema {doc.get("schema")!r}; this reader knows {SPEND_SCHEMA}'
             raise ValueError(msg)
+        review = doc['budgets'].get(REVIEW_ALLOTMENT)
+        if review is None:
+            msg = (
+                f"this host's ai-lab allots no {REVIEW_ALLOTMENT!r}: declare [ai_lab.standing] {REVIEW_ALLOTMENT} = "
+                "{ provider, amount, currency } in its machine file (the review's month, carved out of the cap)"
+            )
+            raise ValueError(msg)
         window = doc['window']
-        return cls(doc['budget_usd'], doc['spent_usd'], window['days'], dict(window['by_tag']), doc['unpriced_calls'])
+        return cls(
+            review['allotted_usd'], review['spent_usd'], window['days'], dict(window['by_tag']), doc['unpriced_calls'],
+            review.get('provider', ''),
+        )  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -172,11 +207,12 @@ class Raised:
     usd: float | None
     why: str
     by: str = ''
+    reserve: bool = False  # draws the provider's reserve, past the review's month
 
 
 def raise_line(raised: Raised) -> str:
     """The hidden line a ``review-cap`` comment records *raised* by (``>`` escaped)."""
-    doc = {'usd': raised.usd, 'why': raised.why, 'by': raised.by}
+    doc = {'usd': raised.usd, 'why': raised.why, 'by': raised.by, 'reserve': raised.reserve}
     return f'<!-- review-cap {json.dumps(doc, ensure_ascii=False).replace(">", "\\u003e")} -->'
 
 
@@ -192,10 +228,10 @@ def _parsed(text: str) -> Raised | None:
         return None
     if not isinstance(doc, dict):
         return None
-    usd, why, by = doc.get('usd'), doc.get('why', ''), doc.get('by', '')
-    if not (_number(usd) and isinstance(why, str) and isinstance(by, str)):
+    usd, why, by, reserve = doc.get('usd'), doc.get('why', ''), doc.get('by', ''), doc.get('reserve', False)
+    if not (_number(usd) and isinstance(why, str) and isinstance(by, str) and isinstance(reserve, bool)):
         return None
-    return Raised(usd, why, by)
+    return Raised(usd, why, by, reserve)
 
 
 def raised_of(bodies: Iterable[str]) -> Raised | None:
@@ -227,11 +263,13 @@ def raise_record(body: str, author: str) -> str | None:
 
 @dataclass(frozen=True)
 class Gate:
-    """Whether a PR's review runs (``run``) or is skipped (``skip``), why, and the model it runs with."""
+    """Whether a PR's review runs (``run``) or is skipped (``skip``), why, the model and the USD cap it runs with."""
 
     state: str
     why: str
     model: str | None = None  # a degraded review's cheaper model; ``None`` keeps the review's
+    usd: float = math.inf  # the PR's dollar cap, opened as its share of the review allotment; inf: no spend report
+    reserve: str | None = None  # the provider whose reserve this review draws; ``None``: the review allotment
 
 
 def gate(*, number: int, spent_usd: float, spend: Spend | None, raised: Raised | None = None) -> Gate:
@@ -239,16 +277,22 @@ def gate(*, number: int, spent_usd: float, spend: Spend | None, raised: Raised |
     door = RAISE_DOOR.format(pr=number)
     if spend is None:
         return Gate('run', f'{spent_usd:.2f} USD spent (no spend report on this host: no dollar cap)')
-    if spend.remaining_usd <= 0:
-        return Gate('skip', f'monthly review budget spent: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD')
     own = raised.usd if raised is not None and raised.usd is not None else fit(spend).cap_usd
+    if raised is not None and raised.reserve:  # bounded by the provider's free month, which ai-lab enforces
+        if spent_usd >= own:
+            why = f'budget reached: {spent_usd:.2f}/{own:.2f} USD (reserve drawn)'
+            return Gate('skip', f'{why}; the integrator may {door}')
+        return Gate('run', f'{spent_usd:.2f}/{own:.2f} USD (reserve drawn)', None, own, spend.provider)
+    if spend.remaining_usd <= 0:
+        why = f'monthly review budget spent: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD'
+        return Gate('skip', f'{why}; the integrator may draw the reserve: {door} --reserve')
     cap = min(own, spend.remaining_usd)
     model, note = None, ''
     if spend.remaining_usd < DEGRADE_BELOW * spend.budget_usd:
         model, note = DEGRADED_MODEL, ' (degraded: month low)'
     if spent_usd >= cap:
         return Gate('skip', f'budget reached: {spent_usd:.2f}/{cap:.2f} USD{note}; the integrator may {door}')
-    return Gate('run', f'{spent_usd:.2f}/{cap:.2f} USD{note}', model)
+    return Gate('run', f'{spent_usd:.2f}/{cap:.2f} USD{note}', model, cap)
 
 
 def tag_of(pull_url: str, number: int) -> str:
@@ -257,18 +301,53 @@ def tag_of(pull_url: str, number: int) -> str:
     return f'{owner_repo}#{number}'
 
 
+def share_of(tag: str, *, reserve: bool = False) -> str:
+    """One PR's ai-lab allotment: a child of :data:`REVIEW_ALLOTMENT`, or its reserve draw."""
+    return f'{RESERVE_ALLOTMENT if reserve else REVIEW_ALLOTMENT}>{tag}'
+
+
+class ShareRefused(RuntimeError):
+    """ai-lab refused to open a PR's share of the review allotment (the review's month cannot hold it)."""
+
+
+def open_share(
+    runtimes: Mapping[str, Mapping[str, Any]], root: Path, share: str, usd: float, provider: str | None = None
+) -> str | None:
+    """Open (or re-allot) *share* at *usd* in this host's ai-lab; the allotment's name, ``None`` with no ai-lab.
+
+    A reserve draw names its *provider*: a top-level allotment is carved from that provider's free month.
+
+    A raise or a refit re-allots the same path; ai-lab refuses one its parent cannot hold: :class:`ShareRefused`.
+    """
+    python = (runtimes.get('ai_lab') or {}).get('python')
+    if not python:
+        return None
+    done = _door.run(
+        [python, '-m', 'ai_lab.budget', 'allot', share, '--usd', repr(usd),
+         *(['--provider', provider] if provider else [])], cwd=root, capture_output=True,
+        text=True, encoding='utf-8', errors='replace', timeout=_SPEND_TIMEOUT_S, check=False,
+    )  # fmt: skip
+    if done.returncode != 0:
+        raise ShareRefused(done.stderr.strip() or f'ai_lab.budget allot exited {done.returncode}')
+    return share
+
+
 @contextmanager
-def charged_to(tag: str) -> Iterator[None]:
-    """Every command started inside charges its model calls to *tag* (:data:`TAG_ENV`), restored after."""
-    before = os.environ.get(TAG_ENV)
-    os.environ[TAG_ENV] = tag
+def charged_to(tag: str, share: str | None = None) -> Iterator[None]:
+    """Every command started inside charges its calls to *tag* (:data:`TAG_ENV`) in *share* (:data:`SCOPE_ENV`)."""
+    held = {TAG_ENV: tag, SCOPE_ENV: share}
+    before = {name: os.environ.get(name) for name in held}
+    for name, value in held.items():
+        if value is not None:
+            os.environ[name] = value
     try:
         yield
     finally:
-        if before is None:
-            os.environ.pop(TAG_ENV, None)
-        else:
-            os.environ[TAG_ENV] = before
+        for name, value in before.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def read_spend(runtimes: Mapping[str, Mapping[str, Any]], root: Path) -> Spend | None:
@@ -299,15 +378,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     got = fit(spend)
     doc = {
-        'budget_usd': spend.budget_usd, 'spent_usd': spend.spent_usd, 'remaining_usd': spend.remaining_usd,
-        'unpriced_calls': spend.unpriced_calls, 'cap_usd': got.cap_usd, 'prs_per_month': got.prs_per_month,
-        'samples': got.samples, 'source': got.source,
+        'allotment': REVIEW_ALLOTMENT, 'budget_usd': spend.budget_usd, 'spent_usd': spend.spent_usd,
+        'remaining_usd': spend.remaining_usd, 'unpriced_calls': spend.unpriced_calls, 'cap_usd': got.cap_usd,
+        'prs_per_month': got.prs_per_month, 'samples': got.samples, 'source': got.source,
     }  # fmt: skip
     if args.json:
         emit(json.dumps(doc, indent=1))
     else:
         emit(
-            f'month: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD spent ({spend.unpriced_calls} unpriced calls)\n'
+            f'{REVIEW_ALLOTMENT} month: {spend.spent_usd:.2f}/{spend.budget_usd:.2f} USD spent '
+            f'({spend.unpriced_calls} unpriced calls)\n'
             f'per-PR cap: {got.cap_usd:.2f} USD ({got.source}, {got.samples} PRs, {got.prs_per_month:.0f} PRs/month)'
         )
     return 0

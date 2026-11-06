@@ -30,7 +30,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   the shortfalls, and the two-sided skip ratchet a project declares in ``allowed_skips``.
 * :mod:`dev_lab.dev.verify` — the family's ONE entry point that PRODUCES one:
   ``python -m dev_lab.dev.verify`` runs ruff, ruff format and pytest, tees them into a log under
-  ``.verify/``, and prints a stamped verdict -- the portable half of consumer-a's 1770-line
+  ``<output>/<yy>/<mm>/<dd>/verify/`` (:func:`dev_lab.dev.datedlog.output_dir`), and prints a stamped
+  verdict -- the portable half of consumer-a's 1770-line
   gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
@@ -110,7 +111,6 @@ are too unqualified to survive being flattened into a namespace this wide.
   never rewrite).
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
   ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
-* :mod:`dev_lab.dev.czbatch` -- check shell-selected commit messages through the public Commitizen CLI in one process.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m
   dev_lab.dev.githooks run <stage>``), and the hook SCRIPTS shipped as a package payload and
   reached by NAME (``... githooks script bump-version``). They are not all hooks: ``with-venv`` is a
@@ -396,6 +396,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_gate` -- the one review gate merge, merge-ready and Break-Glass read.
 * :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review prepare`` / ``judge``: the judge host's review of a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
+* :mod:`dev_lab.dev.reviewturn` -- the review is the last gate: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
 * :mod:`dev_lab.dev.forgerunshow` -- what a cluster run learned, published on the forge for ``forge run show``.
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
@@ -420,6 +421,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
 * :mod:`dev_lab.dev.uvfollow` -- uv follows the version its pin needs, through WinGet or `uv self update`.
+* :mod:`dev_lab.dev.commitmsg` -- the commit-msg and push-range check: `type(scope)!: subject`, owned once.
 * :mod:`dev_lab.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`dev_lab.dev.forgecli` -- the ``python -m dev_lab.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`dev_lab.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
@@ -502,7 +504,7 @@ flattening them into one namespace beside :data:`dev_lab.dev.content.ABSENT` wou
 reader guessing which of two unrelated answers they are holding. Import them by module.
 
 NOR ARE THE MODULES THAT NEED AN EXTRA: :mod:`~dev_lab.dev.profile`, :mod:`~dev_lab.dev.rules`,
-:mod:`~dev_lab.dev.reports` and :mod:`~dev_lab.dev.quantity_values` reach ``platformdirs``, ``rtoml`` or
+:mod:`~dev_lab.dev.reports` and :mod:`~dev_lab.dev.quantity_values` reach ``platformdirs``, ``tomlkit`` or
 ``pint``. Every submodule import runs this file first, so re-exporting them here would make the stdlib-only
 hook runner (:mod:`dev_lab.dev.githooks`) fail in an environment installed without extras.
 Import them by module.

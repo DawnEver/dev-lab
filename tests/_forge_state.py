@@ -18,8 +18,11 @@ from typing import Any
 
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgereview_claim import DUE
+from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.platformparts import REVIEW_CONTEXT
 
 API = '/api/v1/repos/o/r'
 FORGE = Forge('forge.example.org', 'o', 'r')
@@ -59,6 +62,11 @@ class StateForge(Client):
         self.pyproject_at: dict[str, str | None] = {}  # ``None``: the file is absent at that ref
         #: Every PR review by pull number, as ``GET .../pulls/{n}/reviews`` lists them (:meth:`add_review`).
         self.reviews: dict[int, list[dict[str, Any]]] = {}
+        #: The repository's labels, and each issue's or PR's label ids, as the label routes answer them.
+        self.labels: list[dict[str, Any]] = []
+        self.issue_labels: dict[int, list[int]] = {}
+        #: Every ``labeled`` event the forge raised: ``(number, label name)``, in order.
+        self.labeled: list[tuple[int, str]] = []
 
     def add_run(
         self, head: str, *, repo: str = 'o/r', event: str = 'pull_request_target',
@@ -165,6 +173,7 @@ class StateForge(Client):
             f'{api}/issues': 'issues',
             f'{api}/pulls': 'pulls',
             f'{api}/actions/runs': 'runs',
+            f'{api}/labels': 'labels',
         }
         if route in fixed:
             return fixed[route], ''
@@ -190,6 +199,8 @@ class StateForge(Client):
             kind = 'reviews' if tail == 'reviews' else kind
             return kind, rest if kind == 'pull_pair' else number
         head, _, tail = route.removeprefix(f'{api}/issues/').partition('/')
+        if tail == 'labels' or tail.startswith('labels/'):
+            return ('issue_labels' if tail == 'labels' else 'issue_label'), f'{head}/{tail.removeprefix("labels")}'
         if head == 'comments':
             return 'comment', tail
         return ('comments' if tail == 'comments' else 'issue'), head
@@ -294,6 +305,28 @@ class StateForge(Client):
         self.issues_by_number[number] |= body | {'updated_at': self._updated()}
         return self.issues_by_number[number]
 
+    def _label(self, body: dict[str, Any]) -> dict[str, Any]:
+        made = {'id': len(self.labels) + 1, 'name': body['name'], 'color': body.get('color', '')}
+        self.labels.append(made)
+        return made
+
+    def _issue_labels(self, key: str) -> list[dict[str, Any]]:
+        held = self.issue_labels.get(int(key.partition('/')[0]), [])
+        return [one for one in self.labels if one['id'] in held]
+
+    def _add_labels(self, key: str, body: dict[str, Any]) -> list[dict[str, Any]]:
+        number = int(key.partition('/')[0])
+        held = self.issue_labels.setdefault(number, [])
+        for label in body['labels']:
+            if label not in held:
+                held.append(label)
+                self.labeled.append((number, next(one['name'] for one in self.labels if one['id'] == label)))
+        return self._issue_labels(key)
+
+    def _remove_label(self, key: str) -> None:
+        number, _, label = key.partition('/')
+        self.issue_labels[int(number)].remove(int(label.strip('/')))
+
     def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         """Answer from the in-memory state, as gitea would; a create needs no read-back here."""
         del durable
@@ -340,5 +373,18 @@ class StateForge(Client):
             ('DELETE', 'ref'): lambda: self.deleted_refs.append(key),
             ('GET', 'statuses'): lambda: self.statuses.get(key, []),
             ('POST', 'statuses'): lambda: self._post_status(key, sent),
+            ('GET', 'labels'): lambda: list(self.labels),
+            ('POST', 'labels'): lambda: self._label(sent),
+            ('GET', 'issue_labels'): lambda: self._issue_labels(key),
+            ('POST', 'issue_labels'): lambda: self._add_labels(key, sent),
+            ('DELETE', 'issue_label'): lambda: self._remove_label(key),
         }
         return handlers[method, kind]()
+
+
+def called_due(forge: Client, head: str) -> None:
+    """The merge decision's DUE on *head* (``reviewturn.review_turn``): what a review reads before it runs.
+
+    REVIEW IS THE LAST GATE: a test of the review ROUND starts here, as the forge's decision would leave the head.
+    """
+    status_post(forge, head, context=REVIEW_CONTEXT, state='pending', description=DUE)

@@ -204,7 +204,10 @@
       }
     },
     "review": {
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event_name == 'pull_request') }}",
+      "needs": [
+        "merge-ready"
+      ],
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && github.event_name == 'pull_request' && needs.merge-ready.outputs.due == 'true') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -271,12 +274,14 @@
       },
       "needs": [
         "security",
-        "review",
         "part",
         "absent-parts"
       ],
       "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && github.event_name == 'pull_request') }}",
       "runs-on": "ubuntu-latest",
+      "outputs": {
+        "due": "${{ steps.ready.outputs.due }}"
+      },
       "steps": [
         {
           "uses": "actions/checkout@v4",
@@ -299,7 +304,7 @@
         {
           "id": "ready",
           "name": "tests/merge-ready",
-          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})\"; echo \"$said\"; case \"$said\" in *\"; merged\") echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
+          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})\"; echo \"$said\"; case \"$said\" in *\"; merged\") echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
         },
         {
           "name": "Run CI on the merged integration",

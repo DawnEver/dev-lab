@@ -69,7 +69,7 @@ from pathlib import Path
 from typing import Final
 from urllib.parse import quote
 
-import rtoml
+import tomlkit
 from lab_commons.log import emit
 
 from dev_lab.dev import depversions
@@ -292,7 +292,7 @@ def write_observed(path: Path, rows: Iterable[Observed]) -> int:
             for name in sorted(by_name)
         }
     }
-    path.write_text(rtoml.dumps(document), encoding='utf-8')
+    path.write_text(tomlkit.dumps(document), encoding='utf-8')
     return len(by_name)
 
 

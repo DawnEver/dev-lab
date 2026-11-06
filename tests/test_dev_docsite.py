@@ -18,6 +18,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -159,18 +160,20 @@ def test_an_unset_pdoc_option_contributes_no_flag() -> None:
 # ------------------------------------------------------------------------ the browser branch
 
 
-def test_open_site_opens_EXACTLY_the_page_it_was_given(tmp_path: Path, mocker) -> None:
+def test_open_site_opens_EXACTLY_the_page_it_was_given(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Mocked, so no window opens; and the URL is pinned, which no predecessor's test did."""
     page = tmp_path / 'index.html'
     page.write_text('x', encoding='utf-8')
-    mock_open = mocker.patch('dev_lab.dev.docsite.webbrowser.open')
+    mock_open = Mock()
+    monkeypatch.setattr('dev_lab.dev.docsite.webbrowser.open', mock_open)
     docsite.open_site(page)
     mock_open.assert_called_once_with(page.resolve().as_uri())
 
 
-def test_building_a_site_opens_NOTHING(tmp_path: Path, mocker) -> None:
+def test_building_a_site_opens_NOTHING(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The other side of the same ratchet: no build path may default a browser open to on."""
-    mock_open = mocker.patch('dev_lab.dev.docsite.webbrowser.open')
+    mock_open = Mock()
+    monkeypatch.setattr('dev_lab.dev.docsite.webbrowser.open', mock_open)
     docsite.build_all([_site('python')], tmp_path, tmp_path / 'out', title='T', version='1.0')
     mock_open.assert_not_called()
 
