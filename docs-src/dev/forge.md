@@ -524,7 +524,7 @@ output. Every other task of the sha is listed as healthy; no other job is cancel
 ## Alarms
 
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
-"delivered", "repeat"}` to stderr for: `auth` (a credential `GET /user` still refuses after git's refresh, or none stored -- a 401/403 whose credential authenticates or refreshes is never an `auth` alarm; [why](#a-gitea-auth-refusal-is-an-expired-oauth-token-not-a-bad-credential)), `lease` (a lease lost or not
+"delivered", "repeat"}` to stderr for: `auth` (a credential `GET /user` still refuses after a verified provider refresh, or none stored -- a 401/403 whose credential authenticates or refreshes is never an `auth` alarm; [why](#a-refused-credential-is-preserved-unless-provider-refresh-is-verified)), `lease` (a lease lost or not
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
 pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
@@ -607,7 +607,7 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   `export` writes one `<username>@<host> <token>` line per credential git holds for every host a family
   checkout's remote lives on, plus `github.com` (`--host` narrows it), and refuses a terminal stdout; stderr
   names hosts and sha256 prefixes, never a token. `login --from-file <path|->` verifies EVERY token before
-  storing ANY. An `OAUTH_USER` (GCM OAuth) token expires, so that host may re-authenticate on its first push.
+  storing ANY. A username such as `OAUTH_USER` alone proves neither token expiry nor safe refresh capability.
 
 ### Model keys: one bundle per ai-lab task
 
@@ -630,22 +630,26 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   `Tianjie-Zou-Team`). So on Gitea the bundle is set by the user in the web UI with the admin account, once at the
   organisation level, where every repo of the organisation reads it; `secrets sync` sets the GitHub repos.
 
-### A gitea auth refusal is an expired OAuth token, not a bad credential
+### A refused credential is preserved unless provider refresh is verified
 
 THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 401 points here.
 
-- Measured 2026-10-21: on a Windows box `git credential fill` for the forge answers username `OAUTH_USER` --
-  Git Credential Manager's OAuth store. Its ACCESS token EXPIRES. git sends it, the forge answers 401
-  (`remote: Failed to authenticate user`), git `reject`s it, and the NEXT `fill` makes GCM spend its refresh
-  token on a new one. That is the whole "every git network verb fails on attempt 1 and succeeds on attempt 2"
-  -- not a flaky server, not a mystery transient. `netverb`'s retry is what lets git finish its own refresh.
-- The forge API client does the same (`dev_lab.dev.forgecred.refresh_credential`): on a 401 that `GET /user`
-  confirms it rejects the refused secret, fills again and retries the call once with the refreshed token.
-- Only a refusal AFTER that refresh is permanent, and it does NOT ask for `auth login`: the account, its scopes
-  or the forge refuse a credential that was just refreshed, so retry, measure with `auth status`, and report the
-  output. Even a refresh that leaves the store reading empty is answered that way: a credential existed.
-- So the forge never needs a re-login (ruling 2026-10-18). Never run `auth login` because of a 401/403; only a
-  box that never held a credential is told to log in.
+- The 2026-10-21 observation was a refused first attempt followed by success and an `OAUTH_USER` username.
+  Its former explanation as proven expiry/refresh was an inference, not evidence of the credential store's
+  capabilities. A 401 or that username cannot authorize erasing a secret.
+- The API client never issues `git credential reject`. Generic, unknown, opaque or ambiguous helper/provider
+  configurations KEEP the refused pair and perform no additional credential lookup. The typed outcome tells the
+  caller what actually happened; diagnostic selection is not based on a username.
+- Only explicitly selected GCM GitLab with the `oauth2` account is currently verified for native noninteractive
+  `fill`: its provider checks expiry and uses its own refresh token. Missing/unchanged results keep the original
+  pair; no automatic erasure or re-login is requested. Other providers need evidence before adding a capability.
+  See [GCM GitLab 2.9.1](https://github.com/git-ecosystem/git-credential-manager/blob/v2.9.1/src/shared/GitLab/GitLabHostProvider.cs)
+  and [3.0.2](https://github.com/git-ecosystem/git-credential-manager/blob/v3.0.2/src/GitLab/GitLabHostProvider.cs).
+- GitLab's explicit erase also deletes its refresh token; GitHub and generic erase remove their stored
+  credential. Provider-owned native refresh is not permission for the API caller to reject it first.
+- A confirmed request refusal is reported without a re-login instruction. Further credential changes require
+  explicit user authorization. This preservation fix does not restore an empty store or explain an initial 401;
+  upgrading GCM is not evidence that a lost secret will return.
 
 ## Protecting `main` on the server
 
