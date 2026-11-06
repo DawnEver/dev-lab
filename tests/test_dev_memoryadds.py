@@ -134,6 +134,17 @@ def test_ordinary_memory_cannot_turn_into_a_mutable_manual_list(repo: Path, path
     assert memoryadds.pending(repo)
 
 
+def test_manual_refusal_names_the_versioned_task_format_and_remedy(repo: Path) -> None:
+    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST)
+    _commit(repo, 'original task', MANUAL)
+    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST.replace('evidence bar', 'rewritten history'))
+    _git(repo, 'add', '--', MANUAL)
+    refusal = '\n'.join(memoryadds.pending(repo))
+    assert 'rem 2.2.0' in refusal
+    assert 'append tasks or toggle checkboxes' in refusal
+    assert 'immutable' in refusal
+
+
 @pytest.mark.parametrize('prefix', ['', 'src/x/'])
 def test_scoped_manual_task_format_preserves_crlf_operations(prefix: str) -> None:
     before = MANUAL_HEAD + MANUAL_FIRST

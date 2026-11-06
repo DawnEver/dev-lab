@@ -31,7 +31,12 @@ def check_file(path: Path) -> int:
         except CommitizenException as exc:
             commitizen_excepthook(type(exc), exc, exc.__traceback__)
     except SystemExit as exc:
-        return int(exc.code or 0)
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code
+        emit(str(exc.code), err=True)
+        return 1
     else:
         return 0
     finally:

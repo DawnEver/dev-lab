@@ -75,6 +75,21 @@ def test_unexpected_failure_restores_cli_state(tmp_path: Path, monkeypatch) -> N
     assert sys.excepthook is original_hook
 
 
+@pytest.mark.parametrize('case', [(None, 0, ''), (0, 0, ''), (3, 3, ''), ('refused', 1, 'refused\n')])
+def test_system_exit_retains_cli_semantics_and_restores_state(tmp_path: Path, monkeypatch, capsys, case) -> None:
+    code, expected, error = case
+    original_argv, original_hook = sys.argv, sys.excepthook
+
+    def exit_cli() -> Never:
+        raise SystemExit(code)
+
+    monkeypatch.setattr(czbatch, 'commitizen_main', exit_cli)
+    assert czbatch.check_file(tmp_path / 'message') == expected
+    assert capsys.readouterr().err == error
+    assert sys.argv is original_argv
+    assert sys.excepthook is original_hook
+
+
 def test_missing_git_refuses_explicitly(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(czbatch.shutil, 'which', lambda _name: None)
     with pytest.raises(FileNotFoundError, match='missing TOOL git'):

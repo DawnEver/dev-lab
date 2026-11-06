@@ -13,6 +13,11 @@ Three shapes are not narrative edits:
 * rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
   rewrite task text or turn narrative memory into a task list. Both versions must match the format.
 
+The task-list protocol is authored by rem 2.2.0, ``scripts/task-engine.js`` functions ``handleAdd``
+and ``handleMark``. This classifier recognizes that version's complete output, not arbitrary Markdown.
+If its producer changes format, update this boundary and its planted controls together; never
+broaden narrative-memory admission to make a malformed manual file pass.
+
 A MERGED ENTRY CITES. An added entry with ``merged_from:`` names sources that are memory files of its
 OWN scope existing at the base the change is judged against, and every body paragraph names a source
 file, so each claim keeps its evidence after the sources stop being read.
@@ -193,7 +198,13 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
         elif status == 'M' and _is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
             if not (_only_volatile_stripped(before, after) or _only_manual_tasks_updated(old, before, after)):
-                out.append(f'{old}: a memory entry is immutable -- write a new entry with `corrects:` instead')
+                remedy = 'a memory entry is immutable -- write a new entry with `corrects:` instead'
+                if _MANUAL.search(old):
+                    remedy += (
+                        '; rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
+                        'without changing existing task text, module or order'
+                    )
+                out.append(f'{old}: {remedy}')
         elif status in 'DRT' and _is_memory(old):
             out.append(f'{old}: a memory entry is never deleted or moved ({status})')
     return tuple(out)
