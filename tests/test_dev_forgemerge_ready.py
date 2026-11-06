@@ -15,6 +15,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
 from dev_lab.dev.forgereview_claim import CAPPED
+from dev_lab.dev.forgereview_rounds import Ledger
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
 from dev_lab.dev.lanepolicy import load_policy
@@ -236,6 +237,31 @@ def test_an_internal_pr_capped_on_its_dollar_budget_merges_warned(tmp_path: Path
     assert merged == number
     assert 'Unreviewed: review budget reached: 11.00/10.00 USD' in body['commit_message']
     assert said.endswith('merged')
+
+
+@pytest.mark.parametrize('rounds', [5, 4])
+def test_on_gitea_a_review_capped_at_its_rounds_is_ready_warned_never_waiting_on_pending(
+    tmp_path: Path, rounds: int
+) -> None:
+    """Motronics #5541 (2026-11-06): the review job's ledgers reached the round cap; tests/review stays ``pending``.
+
+    The Merge tick (an Actions job) posts ready, WARNED with the ``Unreviewed:`` line -- never a wait on the pending.
+    PLANTED CONTROL: a ledger one round short of the cap is no waiver; the pending review still holds it.
+    """
+    work, forge, number, head = _pr(tmp_path)
+    forge.login = GITEA_ACTIONS_LOGIN
+    forge.issue_comment(number, Ledger(head, rounds, ()).line())
+    forge.login = 'a'
+    status_post(forge, head, context='tests/review', state='pending', description=f'{CAPPED} round cap reached: 5/5')
+    forge.login = GITEA_ACTIONS_LOGIN
+    ready(work, forge, number)
+    state, description = _merge_ready(forge, head)
+    if rounds == 5:
+        assert state == 'success'
+        assert 'WARNED -- Unreviewed: review capped at 5 rounds; open findings: none' in description
+    else:
+        assert state == 'failure'
+        assert description.startswith(f'waits on: its review: tests/review is pending: {CAPPED}')
 
 
 def test_a_capped_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -> None:
