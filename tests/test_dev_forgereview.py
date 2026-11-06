@@ -681,14 +681,17 @@ def test_no_review_status_or_comment_asks_to_divide_the_pr(tmp_path: Path) -> No
     forbidden = 'sp' + 'lit'
     texts: list[str] = []
     cases = ((_output(severity='HIGH'), 1), (_output(security=True), 1), (_output(reviewers=(('c', 'auth'),)), 2))
-    for out, runs in cases:
-        work, head = _work(tmp_path / str(len(texts)))
+    for at, (out, runs) in enumerate(cases):
+        where = tmp_path / f'case{at}'  # a fresh directory per case: clone_pair fills the one it is given
+        where.mkdir()
+        work, head = _work(where)
         forge, number = _forge(head)
         for _ in range(runs):
             _tick(work, forge, FakeCommand(out))
         texts += [one['description'] for one in forge.statuses[head]]
         texts += [one['body'] for one in forge.comments[number]]
     spent = Spend(budget_usd=10.0, spent_usd=10.0)
+    (tmp_path / 'cap').mkdir()
     work, head = _work(tmp_path / 'cap')
     forge, number = _forge(head)
     review_pull(work, forge, _DECLARED, forge.pr_view(number), Runner(host='b', ready=_can, spend=lambda *_: spent))

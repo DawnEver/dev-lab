@@ -108,7 +108,7 @@ def test_one_call_summarizes_with_the_pr_body_and_every_call_is_handed_no_dispos
                     pr_body='Why: x.')  # fmt: skip
     assert [body for _, body, _ in seen] == ['Why: x.', '', '']
     assert ['--no-summary' in argv for argv, _, _ in seen] == [False, True, True]
-    assert all(gone == {'disposed': []} for _, _, gone in seen), 'a one-shot review disposes of nothing'
+    assert all(gone == {'disposed': []} for _, _, gone in seen), 'nothing is disposed of in a one-shot review'
     assert json.loads(merged)['summary'] == summary
 
 

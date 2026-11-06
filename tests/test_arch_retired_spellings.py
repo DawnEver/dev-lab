@@ -38,8 +38,15 @@ RETIRED_SPELLINGS: Final = {
     ),
     **dict.fromkeys(
         (
-            'forgereview_rounds', 'forgereview_judge', 'forgereview_dispose', 'AdjudicationRefused',
-            'FAMILY_MAX_ROUNDS', 'review dispose', 'review adjudicate', 'review-claims', 'capped_waiver',
+            'forgereview_rounds',
+            'forgereview_judge',
+            'forgereview_dispose',
+            'AdjudicationRefused',
+            'FAMILY_MAX_ROUNDS',
+            'review dispose',
+            'review adjudicate',
+            'review-claims',
+            'capped_waiver',
             'capped_line',
         ),
         (

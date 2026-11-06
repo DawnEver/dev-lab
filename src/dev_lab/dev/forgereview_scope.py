@@ -78,7 +78,7 @@ PRINCIPLES_FIELD: Final = '{principles}'
 SUMMARY_FIELD: Final = '{summary}'
 
 #: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: findings the engine drops and lists
-#: as disposed earlier. A one-shot review disposes of nothing, so the forge hands it an empty list.
+#: as disposed earlier. Nothing is disposed of in a one-shot review, so the forge hands it an empty list.
 DISPOSED_FIELD: Final = '{disposed}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.

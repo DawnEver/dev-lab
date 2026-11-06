@@ -114,7 +114,7 @@ INTENTS: Final[dict[str, str]] = {
     'monitor': 'Read-only monitoring of the forge: commit statuses, the queue, host cards and run progress.',
     'open-pr': 'Opening pull requests through the family forge door, as drafts unless the author marks them ready.',
     'review-again': (
-        'Asking the forge to review a PR again (`forge review again <pr>`) once a security finding is fixed '
+        'Asking the forge to review a PR again once a security finding in it is fixed '
         '(user ruling 2026-11-06: the review is one-shot advice; always allowed).'
     ),
     'correct-request': (

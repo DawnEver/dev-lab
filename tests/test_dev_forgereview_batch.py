@@ -46,6 +46,7 @@ from dev_lab.dev.forgereview_declared import (
     command_for,
     review_from,
 )
+from dev_lab.dev.forgereview_job import job_exit
 from dev_lab.dev.forgereview_scope import gather
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgetakeover import main as review_main
@@ -239,14 +240,28 @@ def test_a_pending_batch_is_not_a_failed_job(tmp_path: Path, host: str) -> None:
     assert (status.state, status.description.startswith(BATCH_PENDING)) == ('pending', True)
 
 
-def test_the_github_job_still_fails_when_its_pending_is_not_a_batch(tmp_path: Path) -> None:
-    """PLANTED CONTROL: a pending that is no batch (no reviewer could run: a takeover waits) still fails the job."""
+def test_the_github_job_passes_an_unreviewed_pr_and_fails_any_other_non_batch_pending(tmp_path: Path) -> None:
+    """No reviewer could run: the PR merges ``Unreviewed`` (user ruling 2026-11-06), so the job is no failure.
+
+    PLANTED CONTROL: a job whose last post is a pending that is neither a batch nor an unreviewed record (a claim
+    still standing) fails.
+    """
     work, head = _batched_work(tmp_path)
     forge = StateForge(Forge('github.com', 'o', 'r'))
     number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
     forge.login = ACTIONS_BOT
     exhausted = FakeCommand(_output(reviewers=(('correctness', 'exhausted'),)))
-    assert review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=exhausted, ready=_can) == 1
+    assert review_main(['run', '--pr', str(number)], cwd=work, client=forge, run=exhausted, ready=_can) == 0
+    latest = next(one for one in status_list(forge, head) if one.context == REVIEW_CONTEXT)
+    assert latest.description.startswith(UNREVIEWED_STATUS)
+    status_post(
+        forge,
+        head,
+        context=REVIEW_CONTEXT,
+        state='pending',
+        description='claimed by h at 2026-11-06T00:00:00+00:00, reviewing',
+    )
+    assert job_exit(forge, number, ['pending'], base='integrate/main', ended=lambda _run: True) == 1
 
 
 def test_the_scheduled_resume_settles_only_the_batch_pending_heads(tmp_path: Path) -> None:
