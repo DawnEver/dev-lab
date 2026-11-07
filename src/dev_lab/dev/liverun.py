@@ -330,7 +330,8 @@ def main(argv: Sequence[str] | None = None, *, stdin: TextIO | None = None, cens
     if args.tree is None:
         parser.error('give `hook` or --tree DIR')
     root = checkout_of(args.tree)
-    runs = live_runs(root, census=census) if root is not None else ()
+    # A dir no run of its checkout reads -- above all a worktree not yet created under .claude/ -- is judged by nobody.
+    runs = live_runs(root, census=census) if root is not None and in_tree(args.tree, root) else ()
     if runs:
         emit(refusal(root, runs))
         return 1

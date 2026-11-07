@@ -459,3 +459,37 @@ def test_several_holders_are_counted_not_listed(tree: Path) -> None:
     text = liverun.refusal(tree, runs)
     assert 'pid 11 (app) and 2 more' in text
     assert len(text.splitlines()) == 3
+
+
+def test_a_tree_not_yet_created_holds_no_run_even_inside_a_live_checkout(tree: Path) -> None:
+    """``git worktree add X && cd X && git switch -c lane``: X does not exist when the hook judges, so no run is in it.
+
+    PLANTED CONTROL: the live checkout X sits inside is refused; the not-yet-created X under it is not.
+    """
+    run = _proc(4242, _venv_python(tree))
+    assert liverun.main(['--tree', str(tree)], census=lambda: [run]) == 1
+    assert liverun.main(['--tree', str(tree / '.claude' / 'worktrees' / 'new')], census=lambda: [run]) == 0
+
+
+def test_the_real_engine_judges_the_target_worktree_not_the_checkout_holding_it(
+    live_tree: tuple[Path, int], tmp_path: Path
+) -> None:
+    """INCIDENT 2026-11-07: TREE-HAS-A-LIVE-RUN fired twenty times on lane commands inside ``.claude/worktrees/``.
+
+    The engine resolved a target that did not exist yet to the nearest ``.git`` above it -- the live main
+    checkout -- and judged THAT run. PLANTED CONTROL: the same verb aimed at the live checkout itself is refused.
+    """
+    root, _pid = live_tree
+    session = _checkout(tmp_path / 'session')
+    _junction(session / '.venv', Path(sys.prefix))
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    rules = hooks / 'deny-rules.json'
+    rules.write_text(render(HookAdoption(app_name='s', declared_absent=frozenset(_NEEDING))), encoding='utf-8')
+    lane = (root / '.claude' / 'worktrees' / 'fresh').as_posix()
+    created = f'git -C {root.as_posix()} worktree add -b lane/fresh {lane} HEAD && cd {lane} && git switch -c lane/x'
+    assert agenthooks.decide(created, rules, cwd=session) is None
+    assert agenthooks.decide(f'git -C {lane} switch -c lane/y', rules, cwd=session) is None
+    refused = agenthooks.decide(f'git -C {root.as_posix()} switch -c lane/z', rules, cwd=session)
+    assert refused is not None
+    assert refused.startswith('TREE-HAS-A-LIVE-RUN:'), refused

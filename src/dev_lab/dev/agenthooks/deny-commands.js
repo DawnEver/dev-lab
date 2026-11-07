@@ -538,7 +538,9 @@ for (const rule of rules) {
     // A PROBE judging which rule owns a shape sets this (run_engine(live_run=False)): its own suite is a
     // run in the checkout it probes. The tool never sends the key, so no agent command can set it.
     if (input.dev_lab_live_run_absent === true) continue;
-    liveReason = liveRunRefusal(input.cwd ? repoRoot(ruleTarget(rule, cmd, input.cwd)) : null, sessionRoot);
+    // The DIRECTORY, never its repoRoot: a worktree the line is about to create does not exist yet, and walking up
+    // from it lands on the checkout holding it -- whose run is not this command's (2026-11-07). liverun resolves it.
+    liveReason = liveRunRefusal(input.cwd ? ruleTarget(rule, cmd, input.cwd) : null, sessionRoot);
     hit = liveReason !== '';
   }
   if (hit && rule.severity === 'hint') {
