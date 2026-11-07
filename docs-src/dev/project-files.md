@@ -66,7 +66,8 @@ re-render; never hand-edit a rendered file.
 
 ## The interpreter spelling
 
-One owner: `dev_lab.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`, `INTERPRETER_ALLOW_ENTRY`).
-Rendered from it: the allow row `Bash(.venv/*/python* *)`, and the deny row `BARE-INTERPRETER`, which refuses
+One owner: `dev_lab.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`). Rendered from it: one allow row
+per door and layout (`dev_lab.dev.agentpolicy.INTERPRETERS`; no blanket interpreter row, user ruling
+2026-11-07), and the deny row `BARE-INTERPRETER`, which refuses
 `uv run`, `uvx` and a bare `python`/`python3`/`py` and names the venv interpreter instead. A repo whose
 user-facing CLI runs through `uv run` opens exactly that with its own `Remedy.allow`.
