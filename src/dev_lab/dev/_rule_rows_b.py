@@ -224,3 +224,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_arch_formats_upgrade_on_read.py',),
     ),
 )
+
+
+#: The rows dev-lab enforces in EVERY repo through its ``pytest11`` plugin (user ruling 2026-11-07).
+#: Read by :mod:`dev_lab.dev.rules` into :attr:`Rule.always_on`; nothing else names them.
+ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})
