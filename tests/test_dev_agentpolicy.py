@@ -53,7 +53,8 @@ def test_a_subagent_door_is_not_refused_to_a_subagent(door: Door) -> None:
 
 def test_a_user_door_renders_no_allow_row_and_no_intent() -> None:
     users = [door for door in POLICY if door.actor == USER]
-    assert users, 'a floor: opening a Break-Glass wave is the user`s'
+    assert users, 'a floor: granting a consent credential is the user`s'
+    assert ('dev_lab.ops.consent', 'grant') in {door.argv[2:] for door in users}
     rows = claude_rows()
     for door in users:
         assert door.allow_lines == ()
@@ -70,6 +71,7 @@ def test_each_granted_main_door_of_the_ruling_is_in_the_table() -> None:
         ('pr', 'draft'),
         ('sync',),
         ('pr', 'breakglass'),
+        ('breakglass', 'open'),
         ('review', 'takeover'),
         ('security', 'release'),
     ):

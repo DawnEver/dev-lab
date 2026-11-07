@@ -207,8 +207,13 @@ POLICY: Final[tuple[Door, ...]] = (
     ),
     Door(
         _forge('breakglass', 'open'),
+        MAIN,
+        'Opening a Break-Glass wave on a consent credential the user granted for it.',
+    ),
+    Door(
+        ('python', '-m', 'dev_lab.ops.consent', 'grant'),
         USER,
-        'Opening a Break-Glass wave: the user alone, with a one-time code from their authenticator.',
+        'Granting one consent credential: the user alone, in their own terminal, with their authenticator code.',
     ),
     Door(
         _forge('review', 'takeover'),

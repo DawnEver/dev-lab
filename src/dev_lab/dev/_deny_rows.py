@@ -55,6 +55,7 @@ from __future__ import annotations
 
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev._deny_consent_row import CONSENT_CODE_NEVER_TYPED
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
@@ -94,6 +95,7 @@ NETWORK_VERB_PATTERN = (
 DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     SUBAGENT_NO_PUSH,
+    CONSENT_CODE_NEVER_TYPED,
     {
         'id': 'BARE-TEST-INVOCATION',
         # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the

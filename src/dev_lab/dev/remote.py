@@ -17,7 +17,7 @@ from typing import IO, Any, Final
 
 import lab_commons.launch as _door
 
-__all__ = ['CONNECT_TIMEOUT_S', 'detached', 'run', 'ssh_argv']
+__all__ = ['CONNECT_TIMEOUT_S', 'detached', 'piped', 'run', 'ssh_argv']
 
 #: How long ssh waits for a host before it gives up.
 CONNECT_TIMEOUT_S: Final = 20
@@ -50,3 +50,14 @@ def detached(argv: Sequence[str], log: IO[Any]) -> object:
 def run(argv: Sequence[str], *, timeout_s: float) -> int:
     """Run *argv* in the foreground, attached to this terminal (a second factor is typed there); its exit code."""
     return _door.run(list(argv), check=False, timeout=timeout_s).returncode
+
+
+def piped(target: str, line: str, *, identity: str | None, timeout_s: float) -> tuple[int, str]:
+    """Send *line* on stdin to *target*'s forced command over ``ssh -T`` (key-only, never prompts).
+
+    ``(exit status, its output)``; the remote account's forced command decides what runs, never the caller.
+    """
+    key = ['-i', identity] if identity else []
+    argv = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}', *key, target]
+    done = _door.run(argv, input=line, capture_output=True, text=True, encoding='utf-8', check=False, timeout=timeout_s)
+    return done.returncode, (done.stdout + done.stderr).strip()

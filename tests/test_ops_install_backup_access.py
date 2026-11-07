@@ -145,31 +145,28 @@ def test_enrol_refuses_when_the_host_already_holds_its_secret(tmp_path: Path) ->
     assert not (tmp_path / 'users.oath').exists()
 
 
-_GLASS = """[ops.breakglass]
-account = "glass"
-totp = "/etc/breakglass/totp"
+_ISSUER = """[ops.consent]
+account = "consent"
+totp = "/etc/consent/totp"
+key = "/etc/consent/key"
 state = "/s"
-log = "/l"
-repos = ["https://forge.example/o/r.git"]
-[ops.breakglass.tokens]
-"forge.example" = "/t/token"
 """
 
 
-def test_access_reads_the_break_glass_secret_when_it_declares_none(tmp_path: Path) -> None:
-    glass = (tmp_path / 'breakglass-totp').as_posix()
-    tables = _GLASS.replace('/etc/breakglass/totp', glass)
+def test_access_reads_the_issuer_secret_when_it_declares_none(tmp_path: Path) -> None:
+    glass = (tmp_path / 'consent-totp').as_posix()
+    tables = _ISSUER.replace('/etc/consent/totp', glass)
     config = load(_config(tmp_path, _ACCESS + tables), environ={})
     assert secret_file(config) == glass
 
 
 def test_two_totp_secrets_on_one_host_are_refused(tmp_path: Path) -> None:
-    tables = _GLASS
+    tables = _ISSUER
     two = load(_config(tmp_path, _ACCESS + 'totp = "/etc/other/totp"\n' + tables), environ={})
     with pytest.raises(ValueError, match='two TOTP secrets on one host'):
         files(two)
-    one = load(_config(tmp_path, _ACCESS + 'totp = "/etc/breakglass/totp"\n' + tables), environ={})
-    assert secret_file(one) == '/etc/breakglass/totp'  # the planted control: the same file is one secret
+    one = load(_config(tmp_path, _ACCESS + 'totp = "/etc/consent/totp"\n' + tables), environ={})
+    assert secret_file(one) == '/etc/consent/totp'  # the planted control: the same file is one secret
 
 
 def test_install_derives_the_users_file_from_the_one_secret(tmp_path: Path) -> None:
@@ -346,13 +343,13 @@ def test_write_private_narrows_before_a_byte_is_written(tmp_path: Path, monkeypa
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
 
-@pytest.mark.parametrize('role', ['access', 'breakglass'])
+@pytest.mark.parametrize('role', ['access', 'consent'])
 def test_enrol_without_segno_prints_the_uri_and_still_enrols(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, role: str
 ) -> None:
     monkeypatch.setitem(sys.modules, 'segno', None)
-    glass = _GLASS.replace('/etc/breakglass/totp', (tmp_path / 'totp').as_posix())
-    path = _host(tmp_path, glass) if role == 'breakglass' else _host(tmp_path)
+    issuer = _ISSUER.replace('/etc/consent/totp', (tmp_path / 'totp').as_posix())
+    path = _host(tmp_path, issuer) if role == 'consent' else _host(tmp_path)
     assert main(['--config', str(path), role, 'enrol']) == 0
     said = capsys.readouterr()
     assert said.out.startswith('otpauth://totp/')
