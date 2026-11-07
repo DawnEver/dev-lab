@@ -7,13 +7,16 @@ judgement (:func:`judge`) refuses a head when either holds:
 * BEHIND -- ``origin/<integration>``, fetched afresh (that one ref), is not an ancestor of the head. A fetch that
   fails refuses with the network's reason, never passes unchecked;
 * STALE -- the head's lock lags a floated sibling's current head (dev-lab, lab-commons, ...): the floating-head
-  reading :func:`dev_lab.dev.relock.floating_stale` of the head's ``uv.lock`` (an ``ls-remote`` per sibling).
+  reading :func:`dev_lab.dev.locklag.floating_stale` of the head's ``uv.lock`` (an ``ls-remote`` per sibling).
 
 Both name the one remedy, :data:`SYNC` (``forge sync`` merges integration and relocks the floated siblings in the
-same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at two doors: the ``pr-current`` pre-push row
-(:func:`main`, ``refs = '^refs/heads/pr/'``) and ``forge pr ready`` (:func:`ready_refusals`). The forge's own
-pushers' branches (:data:`dev_lab.dev.sessionbranch.MACHINE_BRANCHES`) are not judged at push: the relock IS
-what makes a lock fresh. Integration is the pushed tip's ``[tool.dev_lab.integrator] integration``.
+same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at three doors: the forge's ``pr-current`` status on
+every open PR head, which the merge requires (:mod:`dev_lab.dev.forgeheadgate`, user ruling 2026-11-07: a family
+check never depends on a consumer's hook being current), ``forge pr ready`` (:func:`ready_refusals`), and the
+``pr-current`` pre-push row (:func:`main`, ``refs = '^refs/heads/pr/'``) -- EARLY FEEDBACK
+only; the forge decides. The forge's own pushers' branches (:data:`dev_lab.dev.sessionbranch.MACHINE_BRANCHES`) are
+not judged (:func:`judged`): the relock IS what makes a lock fresh.
+Integration is the pushed tip's ``[tool.dev_lab.integrator] integration``.
 """
 
 from __future__ import annotations
@@ -30,14 +33,26 @@ from lab_commons.log import emit
 
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.lockcheck import LOCK
+from dev_lab.dev.locklag import floating_stale
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.relock import floating_stale
 from dev_lab.dev.sessionbranch import MACHINE_BRANCHES
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['HOOK_ID', 'RULE', 'SYNC', 'behind', 'judge', 'lock_stale', 'main', 'ready_refusals', 'refusals']
+__all__ = [
+    'HOOK_ID',
+    'RULE',
+    'SYNC',
+    'behind',
+    'head_refusals',
+    'judge',
+    'judged',
+    'lock_stale',
+    'main',
+    'ready_refusals',
+    'refusals',
+]
 
 RULE: Final = 'PR-HEAD-IS-CURRENT'
 #: The id this guard runs under in ``githooks/base.toml``.
@@ -51,8 +66,14 @@ _FIELDS: Final = 4
 
 #: Fetches one ref of origin into *root*: ``None`` when it landed, else the network's reason.
 Fetch = Callable[[Path, str], str | None]
-#: The floating-head staleness of lock text, one sentence per lagging sibling (relock.floating_stale).
+#: The floating-head staleness of lock text, one sentence per lagging sibling (locklag.floating_stale).
 Read = Callable[[str], tuple[str, ...]]
+
+#: What every refusal here ends with: this hook is early feedback, the forge's status is the gate.
+EARLY: Final = (
+    f'  (early feedback: the forge posts this judgement as the {HOOK_ID!r} status on the PR head, and the merge '
+    'requires it)'
+)
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -95,20 +116,37 @@ def judge(
     return [why for why in (behind(root, sha, integration, fetch=fetch), lock_stale(root, sha, read=read)) if why]
 
 
+def head_refusals(
+    root: Path, sha: str, branch: str, integration: str, *, fetch: Fetch = fetch_ref, read: Read = floating_stale
+) -> list[str]:
+    """:func:`judge` on *branch* at *sha*; nothing where the rule does not apply (a machine branch, a non-``pr/``).
+
+    The one entry both the pre-push row (:func:`refusals`) and the forge's status (:mod:`~dev_lab.dev.forgeheadgate`)
+    call, so the two never disagree on which heads are judged.
+    """
+    return judge(root, sha, integration, fetch=fetch, read=read) if judged(branch) else []
+
+
+def judged(branch: str) -> bool:
+    """Whether *branch* is one this rule judges: a ``pr/`` head, the forge's own pushers' aside."""
+    return branch.startswith('pr/') and branch not in MACHINE_BRANCHES
+
+
 def refusals(root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = floating_stale) -> list[str]:
     """:func:`judge` over every created or updated branch git's pre-push *lines* name, machine branches aside."""
     found: list[str] = []
     for fields in (line.split() for line in lines.splitlines()):
         if len(fields) != _FIELDS or not fields[2].startswith(_HEADS) or set(fields[1]) == {'0'}:
             continue
-        if fields[2][len(_HEADS) :] in MACHINE_BRANCHES:
+        branch = fields[2][len(_HEADS) :]
+        if not judged(branch):
             continue
         try:
             integration = policy_at(root, fields[1]).integration
         except (ValueError, OSError, subprocess.CalledProcessError) as exc:
             found.append(f'{RULE}: {fields[1][:12]} declares no readable integrator: {exc}')
             continue
-        found += judge(root, fields[1], integration, fetch=fetch, read=read)
+        found += head_refusals(root, fields[1], branch, integration, fetch=fetch, read=read)
     return found
 
 
@@ -134,7 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     top = _git(Path.cwd(), 'rev-parse', '--show-toplevel').stdout.strip()
     found = refusals(Path(top or Path.cwd()), '' if sys.stdin.isatty() else sys.stdin.read())
     if found:
-        emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), '']), err=True)
+        emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), EARLY, '']), err=True)
         return 1
     return 0
 

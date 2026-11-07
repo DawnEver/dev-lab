@@ -40,6 +40,11 @@ The invariants refused here by name, with NO network call beyond the push itself
   undeclared branches may still be deleted -- never automatically here -- and take no new push. Tags are not
   branches and are not judged.
 
+THE FORGE DECIDES; this hook is EARLY FEEDBACK (user ruling 2026-11-07: a family check never depends on a consumer's
+local hook being current). The same :func:`refusals` runs on every open PR head as the forge's ``session-branch``
+status (:func:`head_refusals`, :mod:`dev_lab.dev.forgeheadgate`), which the merge requires; the integration branch
+itself is protected by the forge (:mod:`dev_lab.dev.forgeprotect`).
+
 Every ref is judged by the declaration its pushed tip carries, never the working tree's; a deletion carries
 no content, so it is judged by the integration branch's declaration (``origin/<integration>``, else the
 trunk's, else ``HEAD``'s) -- never the deleted tip's, nor a stale checkout's. There is no bypass:
@@ -77,6 +82,7 @@ __all__ = [
     'P4',
     'P5',
     'P6',
+    'head_refusals',
     'main',
     'merged_branch',
     'refusals',
@@ -100,6 +106,12 @@ _HEADS: Final = 'refs/heads/'
 _FIELDS: Final = 4
 _PARENTS: Final = 2
 _TRAILER: Final = re.compile(rf'^{MERGED_BRANCH}:\s*(\S+)\s*$', re.MULTILINE)
+
+#: What every refusal here ends with: this hook is early feedback, the forge's status is the gate.
+EARLY: Final = (
+    f'  (early feedback: the forge posts this judgement as the {HOOK_ID!r} status on the PR head, and the merge '
+    'requires it)'
+)
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -353,13 +365,23 @@ def refusals(root: Path, lines: str, *, reviewed: Reviewed = forge_unreviewed) -
     return found
 
 
+def head_refusals(root: Path, sha: str, branch: str) -> list[str]:
+    """:func:`refusals` for *branch* at *sha* as a forge holds an open PR head: published as itself, created.
+
+    The forge's ``session-branch`` status (:mod:`dev_lab.dev.forgeheadgate`) calls this, so a stale or missing
+    pre-push shim never disarms the rule.
+    """
+    ref = f'{_HEADS}{branch}'
+    return refusals(root, f'{ref} {sha} {ref} {"0" * 40}')
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """The pre-push hook: git's ref lines on stdin; exit 1 refuses, 0 publishes."""
     del argv  # git passes the remote name and url; nothing here reads the remote
     top = _git(Path.cwd(), 'rev-parse', '--show-toplevel').stdout.strip()
     found = refusals(Path(top or Path.cwd()), '' if sys.stdin.isatty() else sys.stdin.read())
     if found:
-        emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), '']), err=True)
+        emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), EARLY, '']), err=True)
         return 1
     return 0
 
