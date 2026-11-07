@@ -1,5 +1,8 @@
 ---
-created: 2026-11-07
+name: DECISIONS-integrator-1107-gates-policy-consent
+description: Integrator rulings and decisions of the 2026-11-07 evening -- merge gates, AgentPolicy, consent, family adoption.
+metadata:
+  type: project
 ---
 # Integrator decisions, 2026-11-07 (evening): gates, policy, consent, family adoption
 
