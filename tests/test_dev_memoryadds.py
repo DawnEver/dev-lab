@@ -377,3 +377,83 @@ def test_planted_a_lane_rewriting_an_entry_to_neither_text_is_still_refused(repo
     found = memoryadds.pending(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
+
+
+SAME_PUSH = (
+    '---\nname: m\ndescription: d\nmerged_from: [2026/11/04/x.md, 2026/11/04/y.md]\n---\n\n'
+    'The first finding (2026/11/04/x.md).\n\nThe second, from `2026/11/04/y.md`.\n'
+)
+
+
+def _add_sources(repo: Path, *names: str) -> None:
+    rels = [f'.claude/memory/2026/11/04/{name}' for name in names]
+    for rel in rels:
+        _write(repo, rel, '---\nname: s\ndescription: d\n---\n\nS.\n')
+    _commit(repo, 'sources', *rels)
+
+
+def test_merged_sources_added_in_the_same_pushed_range_are_accepted(repo: Path) -> None:
+    """The 2026-11-04 incident: a merge entry and the sources it names arrive in ONE push."""
+    base = _lane(repo)
+    _add_sources(repo, 'x.md', 'y.md')
+    rel = '.claude/memory/2026/11/04/m.md'
+    _write(repo, rel, SAME_PUSH)
+    _commit(repo, 'merge entry', rel)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+def test_merged_sources_added_in_the_same_commit_are_accepted(repo: Path) -> None:
+    """The commit-msg row: entry and sources staged together are one addition."""
+    rels = ['.claude/memory/2026/11/04/x.md', '.claude/memory/2026/11/04/y.md']
+    for rel in rels:
+        _write(repo, rel, '---\nname: s\ndescription: d\n---\n\nS.\n')
+    _write(repo, '.claude/memory/2026/11/04/m.md', SAME_PUSH)
+    _git(repo, 'add', '--', *rels, '.claude/memory/2026/11/04/m.md')
+    assert memoryadds.pending(repo) == ()
+
+
+def test_planted_a_merged_source_absent_from_base_and_range_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: only x.md is added; y.md exists in neither the base nor the range."""
+    base = _lane(repo)
+    _add_sources(repo, 'x.md')
+    rel = '.claude/memory/2026/11/04/m.md'
+    _write(repo, rel, SAME_PUSH)
+    _commit(repo, 'merge entry', rel)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == (
+        f'{rel}: merged_from 2026/11/04/y.md does not exist at the base (.claude/memory/2026/11/04/y.md)',
+    )
+
+
+def test_an_unpublished_entry_may_still_be_edited_or_deleted(repo: Path) -> None:
+    """Immutability starts at publication: an entry absent from origin/<integration> is a draft."""
+    _lane(repo)
+    rel = '.claude/memory/2026/11/04/draft.md'
+    _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nUncited claim.\n')
+    _commit(repo, 'draft', rel)
+    _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nCited claim (2026/10/01/a.md).\n')
+    _git(repo, 'add', '--', rel)
+    assert memoryadds.pending(repo) == ()
+    _commit(repo, 'cite', rel)
+    _git(repo, 'rm', '-q', '--', rel)
+    assert memoryadds.pending(repo) == ()
+
+
+def test_planted_an_edit_to_a_published_entry_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: ENTRY is on origin/integrate/main, so editing it stays refused."""
+    _lane(repo)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nRewritten.\n')
+    _git(repo, 'add', '--', ENTRY)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
+
+
+def test_planted_a_draft_entry_turning_into_a_task_list_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: the draft exemption is the immutability rule only, never the task-format rule."""
+    _lane(repo)
+    rel = '.claude/memory/2026/11/04/draft.md'
+    _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nImmutable prose.\n')
+    _commit(repo, 'draft', rel)
+    _write(repo, rel, MANUAL_HEAD + MANUAL_FIRST)
+    _git(repo, 'add', '--', rel)
+    assert memoryadds.pending(repo)
