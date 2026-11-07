@@ -49,7 +49,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dev_lab.dev.profile import RepoProfile
-from dev_lab.dev.rules import RULES, Adoption, assert_adopted, guard, lint, unadopted, waived
+from dev_lab.dev.rules import ALWAYS_ON, RULES, Adoption, assert_adopted, guard, lint, unadopted, waived
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -154,7 +154,6 @@ _ENFORCED = {
     ),
     'INJECTED-DOC-WIDTH-CEILING': (guard('tests/test_dev_docwidth.py'),),
     'INJECTED-TEXT-IS-PROGRESSIVE': (guard('tests/test_dev_disclosure.py'),),
-    'NO-CJK-IN-TRACKED-SOURCE': (guard('tests/test_dev_cjk.py'),),
     'NO-LAZY-IMPORT': (lint('PLC0415'),),
     'NO-REFLECTION': (guard('tests/test_arch_production_carries_no_reflection.py'),),
     'ONE-BRANCH-PER-SESSION': (guard('tests/test_dev_branchset.py'),),
@@ -278,7 +277,7 @@ def test_the_adoption_accounts_for_every_rule() -> None:
 
 def test_the_two_sets_account_for_the_registry_exactly() -> None:
     """A rule added to the registry must be typed into one of the sets, or this reds before the check."""
-    accounted = set(_ENFORCED) | _ABSENT
+    accounted = set(_ENFORCED) | _ABSENT | ALWAYS_ON
     live = {rule.id for rule in RULES}
     assert accounted == live, (
         f'rules neither enforced nor declared absent here: {sorted(live - accounted)}; names that are '
