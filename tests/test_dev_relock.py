@@ -199,22 +199,39 @@ def test_in_house_is_a_git_source_following_a_line_read_off_the_lock() -> None:
     assert in_house('not toml [') == frozenset(), 'an unreadable lock follows nothing'
 
 
-def test_the_floating_reading_names_a_sibling_lag_and_never_a_third_party_move(tmp_path: Path) -> None:
-    """User ruling 2026-11-07, the pre-push and ready reading. PLANTED CONTROL: a pint move alone is fresh."""
-    (tmp_path / 'uv.lock').write_text(_LOCK, encoding='utf-8')
-    assert floating_stale(tmp_path, resolve=_resolving(_PINT, _SIBLING)) == (_SIBLING,)
-    assert floating_stale(tmp_path, resolve=_resolving(_PINT)) == ()
+_SIBLING_SHA = 'ed24ab516a140b62b77a89a1b546d5fee8903d22'
+_BRANCHED = _LOCK.replace('lab-commons.git#', 'lab-commons.git?branch=release%2Fx#')
 
 
-def test_the_floating_reading_refuses_a_resolution_that_could_not_run(tmp_path: Path) -> None:
-    (tmp_path / 'uv.lock').write_text(_LOCK, encoding='utf-8')
+def test_the_floating_reading_compares_each_siblings_locked_commit_with_its_lines_head() -> None:
+    """User ruling 2026-11-07: an ls-remote per sibling, never a resolution. PLANTED CONTROL: at its head, fresh."""
+    asked: list[tuple[str, str]] = []
 
-    def offline(_tree: Path) -> _Report:
+    def moved(url: str, branch: str) -> str:
+        asked.append((url, branch))
+        return 'f' * 40
+
+    (why,) = floating_stale(_LOCK, head=moved)
+    assert 'lab-commons' in why
+    assert _SIBLING_SHA[:12] in why
+    assert asked == [('https://github.com/DawnEver/lab-commons.git', 'integrate/main')], 'held and index: not read'
+    assert floating_stale(_LOCK, head=lambda _url, _branch: _SIBLING_SHA) == ()
+
+
+def test_the_floating_reading_follows_the_sources_branch() -> None:
+    asked: list[str] = []
+    floating_stale(_BRANCHED, head=lambda _url, branch: asked.append(branch) or _SIBLING_SHA)
+    assert asked == ['release/x']
+
+
+def test_the_floating_reading_refuses_a_line_that_cannot_be_read() -> None:
+    def offline(_url: str, _branch: str) -> str:
         msg = 'no network'
-        raise OSError(msg)
+        raise RelockFailed(msg)
 
-    (why,) = floating_stale(tmp_path, resolve=offline)
+    (why,) = floating_stale(_LOCK, head=offline)
     assert 'no network' in why
+    assert floating_stale('not toml [', head=offline) == (), 'PLANTED CONTROL: nothing floats, nothing is read'
 
 
 def test_relock_floating_moves_only_the_siblings_and_raises_on_a_failed_door(tmp_path: Path) -> None:

@@ -7,7 +7,7 @@ judgement (:func:`judge`) refuses a head when either holds:
 * BEHIND -- ``origin/<integration>``, fetched afresh (that one ref), is not an ancestor of the head. A fetch that
   fails refuses with the network's reason, never passes unchecked;
 * STALE -- the head's lock lags a floated sibling's current head (dev-lab, lab-commons, ...): the floating-head
-  reading :func:`dev_lab.dev.relock.floating_stale`, in a detached worktree at the head.
+  reading :func:`dev_lab.dev.relock.floating_stale` of the head's ``uv.lock`` (an ``ls-remote`` per sibling).
 
 Both name the one remedy, :data:`SYNC` (``forge sync`` merges integration and relocks the floated siblings in the
 same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at two doors: the ``pr-current`` pre-push row
@@ -29,8 +29,9 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.lanepolicy import policy_at
+from dev_lab.dev.lockcheck import LOCK
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.relock import detached_worktree, floating_stale
+from dev_lab.dev.relock import floating_stale
 from dev_lab.dev.sessionbranch import MACHINE_BRANCHES
 
 if TYPE_CHECKING:
@@ -50,8 +51,8 @@ _FIELDS: Final = 4
 
 #: Fetches one ref of origin into *root*: ``None`` when it landed, else the network's reason.
 Fetch = Callable[[Path, str], str | None]
-#: The floating-head staleness of a tree: one sentence per lagging sibling (:func:`dev_lab.dev.relock.floating_stale`).
-Read = Callable[[Path], tuple[str, ...]]
+#: The floating-head staleness of lock text, one sentence per lagging sibling (relock.floating_stale).
+Read = Callable[[str], tuple[str, ...]]
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -80,11 +81,8 @@ def behind(root: Path, sha: str, integration: str, *, fetch: Fetch = fetch_ref) 
 
 def lock_stale(root: Path, sha: str, *, read: Read = floating_stale) -> str | None:
     """Why *sha*'s lock lags a floated sibling's current head, or ``None`` when it does not."""
-    try:
-        with detached_worktree(root, sha) as tree:
-            found = read(tree)
-    except OSError as why:
-        return f'{RULE}: the lock of {sha[:12]} could not be read: {why}'
+    shown = _git(root, 'show', f'{sha}:{LOCK}')
+    found = read(shown.stdout) if shown.returncode == 0 else ()  # no lock: nothing floats
     if not found:
         return None
     return f'{RULE}: the lock of {sha[:12]} is stale: {"; ".join(found)}; run `{SYNC}`, then push again'

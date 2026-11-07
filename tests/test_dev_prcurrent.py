@@ -33,11 +33,11 @@ def _git(cwd: Path, *args: str) -> str:
     return done.stdout.strip()
 
 
-def _fresh(_tree: Path) -> tuple[str, ...]:
+def _fresh(_lock: str) -> tuple[str, ...]:
     return ()
 
 
-def _lagging(_tree: Path) -> tuple[str, ...]:
+def _lagging(_lock: str) -> tuple[str, ...]:
     return (_LAG,)
 
 
@@ -49,6 +49,7 @@ def repo(tmp_path: Path) -> Path:
     work = tmp_path / 'work'
     _git(tmp_path, 'clone', str(origin), str(work))
     (work / 'pyproject.toml').write_text(_DECL, encoding='utf-8')
+    (work / 'uv.lock').write_text('seed lock\n', encoding='utf-8')
     _git(work, 'checkout', '-b', 'int/line')
     _git(work, 'add', '.')
     _git(work, 'commit', '-m', 'chore: seed')
@@ -97,15 +98,22 @@ def test_a_lock_lagging_a_floated_head_is_refused_naming_sync_and_a_fresh_one_pa
 
 
 def test_the_lock_is_read_at_the_pushed_head_never_the_working_tree(repo: Path) -> None:
+    """A later commit and an uncommitted edit move the lock; the reading is the pushed head's. PLANTED: no lock."""
+    old = _git(repo, 'rev-parse', 'HEAD')
+    (repo / 'uv.lock').write_text('newer lock\n', encoding='utf-8')
+    _git(repo, 'commit', '-am', 'build: newer lock')
+    (repo / 'uv.lock').write_text('dirty lock\n', encoding='utf-8')
     seen: list[str] = []
-    old = _git(repo, 'rev-parse', 'HEAD~1')
 
-    def read(tree: Path) -> tuple[str, ...]:
-        seen.append(_git(tree, 'rev-parse', 'HEAD'))
+    def read(lock: str) -> tuple[str, ...]:
+        seen.append(lock)
         return ()
 
     assert lock_stale(repo, old, read=read) is None
-    assert seen == [old]
+    assert seen == ['seed lock\n']
+    _git(repo, 'rm', '-q', 'uv.lock')
+    _git(repo, 'commit', '-m', 'build: no lock')
+    assert lock_stale(repo, _git(repo, 'rev-parse', 'HEAD'), read=_lagging) is None, 'no lock: nothing floats'
 
 
 def test_a_machine_branch_and_a_deletion_are_not_judged(repo: Path) -> None:
