@@ -22,6 +22,7 @@ from typing import Any, Final
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN
 
@@ -83,8 +84,6 @@ def sign(fields: Mapping[str, Any], key: Ed25519PrivateKey) -> dict[str, Any]:
 
 def public_text(key: Ed25519PublicKey) -> str:
     """*key* as the one line ``[consent] public_key`` holds: base64 of its 32 raw bytes."""
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
-
     return base64.b64encode(key.public_bytes(Encoding.Raw, PublicFormat.Raw)).decode()
 
 

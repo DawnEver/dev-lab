@@ -1,4 +1,4 @@
-"""THE CLIENT AND VERIFIER SIDE: ``grant`` (the user's), :func:`admit` (every irreversible action's), the public key.
+"""THE CLIENT AND VERIFIER SIDE: ``grant`` (the user's), :func:`redeem` (every irreversible action's), the public key.
 
 A client holds no secret. The machine file's ``[consent]`` table names the issuer's ``endpoint``
 (``<account>@<host>``, its ssh ForceCommand the issuer's serve verb), an optional ssh ``identity``, and the issuer's
@@ -10,7 +10,7 @@ A client holds no secret. The machine file's ``[consent]`` table names the issue
 :func:`dev_lab.dev.consentguard.state_dir` ``/<id>.json`` -- the directory no agent may write
 (CONSENT-CODE-NEVER-TYPED).
 
-:func:`admit` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
+:func:`redeem` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
 offline, then the use is registered online with the issuer; an issuer that cannot be reached REFUSES, never admits.
 """
 
@@ -34,7 +34,7 @@ from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_ke
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.totp import write_private
 
-__all__ = ['TABLE', 'Register', 'admit', 'grant', 'public_key', 'remote_register']
+__all__ = ['TABLE', 'Register', 'grant', 'public_key', 'redeem', 'remote_register']
 
 #: The machine-file table.
 TABLE: Final = 'consent'
@@ -60,7 +60,7 @@ def public_key(table: Mapping[str, Any] | None = None) -> Ed25519PublicKey:
     return public_key_from(text)
 
 
-def admit(
+def redeem(
     credential: Mapping[str, Any], *, action: str, key: Ed25519PublicKey, register: Register, now: float,
     amount: int = 1,
 ) -> Credential:  # fmt: skip

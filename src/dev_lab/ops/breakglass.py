@@ -23,7 +23,7 @@ One request is one JSON line with an ``action``:
   (never because an earlier audit is unacknowledged). The credential's params ``hours`` and ``max_merges`` may be
   anything up to ``wave_hours_max`` / ``max_merges_max`` (``0`` = no ceiling) -- above a ceiling it is REFUSED naming
   it, never clamped, and before its use is registered, so it is not spent. Then it verifies offline and its ONE use
-  is registered with the issuer (:func:`dev_lab.ops.consent.client.admit`): an issuer that cannot be reached refuses;
+  is registered with the issuer (:func:`dev_lab.ops.consent.client.redeem`): an issuer that cannot be reached refuses;
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
@@ -62,7 +62,7 @@ from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.config import Breakglass, OpsConfig
-from dev_lab.ops.consent.client import Register, admit
+from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.statelock import exclusive
 
@@ -262,7 +262,7 @@ class Server:
             raise BreakglassRefused(msg)
         hours, cap = _granted(asked.credential, self.role)  # before the use is registered: a refusal spends nothing
         try:
-            granted = admit(asked.credential, action='breakglass.wave', key=self.consent_key, register=self.register,
+            granted = redeem(asked.credential, action='breakglass.wave', key=self.consent_key, register=self.register,
                             now=self.now())  # fmt: skip
         except ConsentRefused as refused:
             raise BreakglassRefused(str(refused)) from refused

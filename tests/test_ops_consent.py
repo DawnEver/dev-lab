@@ -16,7 +16,7 @@ from _ops_fixtures import NOW, RFC_KEY, code
 from dev_lab.dev.consentguard import refuse_write, state_dir
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.actions import ACTIONS
-from dev_lab.ops.consent.client import admit, grant, public_key, remote_register
+from dev_lab.ops.consent.client import grant, public_key, redeem, remote_register
 from dev_lab.ops.consent.credential import FIELDS, SKEW_S, ConsentRefused, public_text, verify
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.ops.totp import STEP
@@ -57,7 +57,7 @@ def host(tmp_path: Path) -> Host:
 def test_a_valid_credential_verifies_and_registers(host: Host) -> None:
     """The planted control of every refusal below."""
     credential = host.issue(WAVE)
-    found = admit(credential, action='breakglass.wave', key=host.issuer.public(), register=host.issuer.register,
+    found = redeem(credential, action='breakglass.wave', key=host.issuer.public(), register=host.issuer.register,
                   now=host.clock[0])  # fmt: skip
     assert (found.action, found.params, found.cap) == ('breakglass.wave', {'hours': 4, 'max_merges': 3}, None)
     assert found.expires - found.issued == ACTIONS['breakglass.wave'].default_ttl
@@ -112,7 +112,7 @@ def test_an_unreachable_issuer_refuses_an_irreversible_action(host: Host) -> Non
         raise ConnectionError(unreachable)
 
     with pytest.raises(ConsentRefused, match='refused, never admitted'):
-        admit(credential, action='breakglass.wave', key=host.issuer.public(), register=down, now=host.clock[0])
+        redeem(credential, action='breakglass.wave', key=host.issuer.public(), register=down, now=host.clock[0])
 
 
 def test_an_issuer_answering_nonzero_over_ssh_is_unreachable_and_two_is_its_refusal(host: Host) -> None:
@@ -120,13 +120,13 @@ def test_an_issuer_answering_nonzero_over_ssh_is_unreachable_and_two_is_its_refu
     for status, kind in ((255, 'never admitted'), (2, 'already used')):
         register = remote_register({'endpoint': 'c@h'}, send=lambda _t, _r, s=status: (s, 'already used'))
         with pytest.raises(ConsentRefused, match=kind):
-            admit(credential, action='breakglass.wave', key=host.issuer.public(), register=register, now=host.clock[0])
+            redeem(credential, action='breakglass.wave', key=host.issuer.public(), register=register, now=host.clock[0])
 
 
 def test_a_credential_for_another_action_is_refused(host: Host) -> None:
     credential = host.issue(BUDGET)
     with pytest.raises(ConsentRefused, match=r'not breakglass.wave'):
-        admit(credential, action='breakglass.wave', key=host.issuer.public(), register=host.issuer.register,
+        redeem(credential, action='breakglass.wave', key=host.issuer.public(), register=host.issuer.register,
               now=host.clock[0])  # fmt: skip
 
 

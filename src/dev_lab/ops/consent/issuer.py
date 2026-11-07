@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +27,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
 
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
-from dev_lab.ops.consent.credential import ConsentRefused, params_hash, sign, verify
+from dev_lab.ops.consent.credential import ConsentRefused, Credential, params_hash, sign, verify
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.totp import TotpRefused, accept, write_private
@@ -129,9 +129,9 @@ class Issuer:
         """The public half of the signing key: what a verifier on this host checks with."""
         return self._private().public_key()
 
-    def _record(self, event: str, credential: Mapping[str, Any], amount: int | None = None) -> None:
-        line = {'event': event, 'id': credential['id'], 'action': credential['action'],
-                'subject': credential['subject']} | ({} if amount is None else {'amount': amount})  # fmt: skip
+    def _record(self, event: str, credential: Credential, amount: int | None = None) -> None:
+        line = {'event': event, 'id': credential.id, 'action': credential.action,
+                'subject': credential.subject} | ({} if amount is None else {'amount': amount})  # fmt: skip
         self.ledger.parent.mkdir(parents=True, exist_ok=True)
         with self.ledger.open('a', encoding='utf-8') as out:
             out.write(json.dumps(line, sort_keys=True) + '\n')
@@ -163,7 +163,7 @@ class Issuer:
                       'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'issued': now,
                       'expires': now + ttl, 'issuer': self.name}  # fmt: skip
             credential = sign(fields, key)
-            self._record('granted', credential)
+            self._record('granted', verify(credential, key.public_key(), now=now))
             return credential
 
     def register(self, credential: object, amount: int = 1) -> int | None:
@@ -178,17 +178,16 @@ class Issuer:
             raise ConsentRefused(msg)
         with exclusive(self.state):
             found = verify(credential, self.public(), now=self.now())
-            assert isinstance(credential, dict)  # noqa: S101 -- verify refused anything else
             uses = [event for event in self._events(found.id) if event.get('event') == 'used']
             if found.cap is None:
                 if uses or amount != 1:
                     msg = f'single-use credential {found.id} was already used' if uses else 'a single use spends 1'
                     raise ConsentRefused(msg)
-                self._record('used', credential, 1)
+                self._record('used', found, 1)
                 return None
             spent = sum(int(event.get('amount', 0)) for event in uses)
             if spent + amount > found.cap:
                 msg = f'campaign {found.id} has {found.cap - spent} of {found.cap} left; {amount} asked'
                 raise ConsentRefused(msg)
-            self._record('used', credential, amount)
+            self._record('used', found, amount)
             return found.cap - spent - amount

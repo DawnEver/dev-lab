@@ -47,7 +47,7 @@ CONSENT_CODE_NEVER_TYPED: dict[str, object] = {
         'echo 654321 | python -m dev_lab.dev.forge breakglass open',
         'python -m dev_lab.ops totp 123456',
         'echo {} > ~/.motronics/state/consent/x.json',
-        'cp cred.json C:/Users/u/.motronics/state/consent/',
+        'cp cred.json C:/Users/<user>/.motronics/state/consent/',
         'Set-Content -Path $HOME\\.motronics\\state\\consent\\x.json -Value x',
     ),
     'permits': (

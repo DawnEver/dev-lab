@@ -25,7 +25,7 @@ RULE_ID: Final = 'CONSENT-CODE-NEVER-TYPED'
 STATE_PARTS: Final = ('.motronics', 'state', 'consent')
 HAZARD: Final = "a consent code is the USER's word: an agent typing, piping or planting one forges the consent."
 REMEDY: Final = (
-    'Write the request JSON, hand the user `python -m dev_lab.ops.consent grant <request.json>` to run in their own '
+    'Write the request JSON, hand the user `{python} -m dev_lab.ops.consent grant <request.json>` to run in their own '
     'terminal, then read the credential it wrote.'
 )
 
