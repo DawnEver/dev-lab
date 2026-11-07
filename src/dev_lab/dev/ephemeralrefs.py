@@ -118,6 +118,9 @@ _TRAILING = '.:!?*'
 _PROBE: Final = 'ephemeralrefs-probe'
 #: A locator suffix that is not part of the path: ``::test``, ``#anchor``, ``:line[:col]`` or ``:a-b``.
 _SUFFIX = re.compile(r'(?:::.*|#.*|(?::\d+)+(?:-\d+)?)$')
+#: A C-string escape (``\n``, ``\t``, ...): source text quoted in a string, never a path separator, so a token is
+#: cut there -- ``output\n#define X`` names no path under ``output/``.
+_C_ESCAPE = re.compile(r'\\[nrt0]')
 _RELATIVE = re.compile(r'^[\w.+@-]+(?:/[\w.+@-]*)+$')
 
 
@@ -154,9 +157,13 @@ def load_escapes(root: Path) -> Escapes:
 
 def _candidates(text: str) -> Iterable[str]:
     for match in _TOKEN.finditer(text):
-        token = match.group().rstrip(_TRAILING)
-        if '/' in token.replace('\\', '/') or MACHINE_LOCAL.match(token):
-            yield token
+        whole = match.group()
+        # A machine-local path (`<drive>:\<tool>\bin`) keeps its backslashes: `\f`, `\b` there are separators.
+        pieces = [whole] if MACHINE_LOCAL.match(whole.replace('\\', '/')) else _C_ESCAPE.split(whole)
+        for piece in pieces:
+            token = piece.rstrip(_TRAILING)
+            if '/' in token.replace('\\', '/') or MACHINE_LOCAL.match(token):
+                yield token
 
 
 def _pieces(path: str, text: str) -> list[tuple[int, str, bool]]:

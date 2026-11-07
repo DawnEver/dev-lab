@@ -69,6 +69,21 @@ def test_the_pre_commit_entry_reds_on_a_staged_citation(tmp_path: Path, monkeypa
     assert ephemeralrefs.main(['doc.md']) == 0
 
 
+@pytest.mark.parametrize(
+    ('text', 'cited'),
+    [
+        (r'code = "output\n#define X 1"', False),  # a C-string escape after the root word is not a separator
+        (r'code = "output\t/* x */"', False),
+        ('see output/logs/x.txt', True),  # planted control: a real separator still cites
+        (r'see output\logs\data.txt', True),
+        (r'see c:\femm-qt\bin\tools', True),  # a drive path keeps its backslashes, escape letters or not
+    ],
+)
+def test_a_c_string_escape_is_not_a_path_separator(tmp_path: Path, *, text: str, cited: bool) -> None:
+    problems, _ = ephemeralrefs.scan(_repo(tmp_path, text))
+    assert bool(problems) is cited, problems
+
+
 def test_an_unread_tree_reds_on_the_floor(tmp_path: Path) -> None:
     root = _repo(tmp_path, 'clean\n')
     with pytest.raises(floors.FloorUnmet):
