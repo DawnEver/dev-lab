@@ -228,25 +228,31 @@ def pending(root: Path) -> tuple[str, ...]:
     if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
         return ()
     tree = _git(root, 'write-tree').strip()
-    rows = _published_only(root, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
+    rows = _published_only(root, tree, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
     return _judge(root, 'HEAD', tree, rows)
 
 
-def _published_only(root: Path, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+def _published_only(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
     """*rows* without edits, deletions and moves of a memory entry not yet on ``origin/<integration>``.
 
     Immutability starts when an entry is PUBLISHED: one added in an unpushed range is still a draft, and its
-    author may cite, fix or drop it. An entry the integration ref holds stays judged; without that ref
-    nothing is a draft.
+    author may cite, fix or drop it. The exemption covers ONLY that immutability rule for an ordinary entry:
+    a rem task list (``manual.md``) and an entry whose new text is task-shaped stay judged, because the
+    task-format and injection rules hold for drafts too. An entry the integration ref holds stays judged;
+    without that ref nothing is a draft.
     """
     ref = f'origin/{policy_at(root, "HEAD").integration}'
     if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
         return rows
 
-    def draft(status: str, old: str) -> bool:
-        return status in 'MDRT' and _is_memory(old) and _run(root, 'cat-file', '-e', f'{ref}:{old}')[0] != 0
+    def draft(status: str, old: str, new: str) -> bool:
+        if status not in 'MDRT' or not _is_memory(old) or _MANUAL.search(old) or _MANUAL.search(new):
+            return False
+        if status in 'MRT' and _MANUAL_ROW.search(_git(root, 'show', f'{tree}:{new}')):
+            return False
+        return _run(root, 'cat-file', '-e', f'{ref}:{old}')[0] != 0
 
-    return [(status, old, new) for status, old, new in rows if not draft(status, old)]
+    return [(status, old, new) for status, old, new in rows if not draft(status, old, new)]
 
 
 def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:

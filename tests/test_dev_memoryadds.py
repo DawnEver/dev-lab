@@ -446,3 +446,14 @@ def test_planted_an_edit_to_a_published_entry_is_still_refused(repo: Path) -> No
     found = memoryadds.pending(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
+
+
+def test_planted_a_draft_entry_turning_into_a_task_list_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: the draft exemption is the immutability rule only, never the task-format rule."""
+    _lane(repo)
+    rel = '.claude/memory/2026/11/04/draft.md'
+    _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nImmutable prose.\n')
+    _commit(repo, 'draft', rel)
+    _write(repo, rel, MANUAL_HEAD + MANUAL_FIRST)
+    _git(repo, 'add', '--', rel)
+    assert memoryadds.pending(repo)
