@@ -238,24 +238,6 @@ def producer_argv(root: Path, part: str, *, sha: str) -> list[str]:
     return [item.replace(PART_FIELD, part) for item in produce]
 
 
-def part_refs(root: Path, platform: str, scope: str) -> dict[str, tuple[str, ...]]:
-    """The ref filters (fnmatch patterns) *platform*'s part at *scope* is produced under, keyed by the resource.
-
-    One per resource the part needs that declares a filter at *scope*; empty when none does.
-
-    Raises:
-        UndeclaredPart: a declaration is present and not a list of strings.
-
-    """
-    declared = _declared(root, name='parts').get('refs', {})
-    filters: dict[str, tuple[str, ...]] = {}
-    for resource in sorted(needs_of_row(platform) & declared.keys()):
-        if (patterns := declared[resource].get(scope)) is not None:
-            table = f'tool.dev_lab.parts.refs.{resource}'
-            filters[resource] = tuple(_strings(patterns, table, scope, '["integrate/main", "main"]', required=True))
-    return filters
-
-
 def _declared(root: Path, sha: str | None = None, name: str = '') -> dict[str, Any]:
     """The kit's tables at commit *sha* (else *root*'s working tree); ``[tool.dev_lab.<name>]`` when named."""
     text = pyproject_at(root, sha) if sha else (root / 'pyproject.toml').read_text(encoding='utf-8')

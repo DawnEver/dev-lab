@@ -91,8 +91,8 @@ from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.partrefs import part_refs
 from dev_lab.dev.partrows import row_part
-from dev_lab.dev.platformparts import part_refs
 
 __all__ = [
     'NOT_ADMITTED',
@@ -384,7 +384,7 @@ def candidates(
 
     The integration branch, every open PR into it (labels from the PR), every branch ``classes_by_ref``
     classes, and every request issue -- each kept only where its part's ref filter admits its ref
-    (:func:`dev_lab.dev.platformparts.part_refs`, the exclusion said through *say*) -- PRs and requests
+    (:func:`dev_lab.dev.partrefs.part_refs`, the exclusion said through *say*) -- PRs and requests
     :func:`optional`, a failure said through *say*. A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
     """
