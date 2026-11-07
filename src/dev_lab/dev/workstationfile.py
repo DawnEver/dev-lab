@@ -50,9 +50,10 @@ __all__ = [
 #: The resource a developer workstation provides: the live checkout and the agent tooling its guards run on.
 WORKSTATION: Final = 'workstation'
 
-#: HEAVY COMPUTE: every tool with a presence probe (:data:`lab_commons.compute.toolchecks.CHECKS`) -- a vendor
-#: solver and its licence seat. Derived, so a newly probed tool is heavy without an edit here.
-HEAVY: Final = tuple(sorted(CHECKS))
+#: HEAVY COMPUTE: every presence-probed tool (:data:`lab_commons.compute.toolchecks.CHECKS`) its probe marks
+#: ``heavy`` -- a vendor solver and its licence seat. Derived, so a newly probed heavy tool needs no edit here; a
+#: plain probed tool (ngspice, node) is not heavy.
+HEAVY: Final = tuple(sorted(name for name, check in CHECKS.items() if check.heavy))
 
 
 #: The images whose running count is the JMAG seats in use: ONE per solve. The solver kernel family as the
@@ -73,7 +74,7 @@ class Role:
 
 
 #: THE ONE PLACE a workstation role is declared. ``light`` (user ruling 2026-10-28, HOST1 and HOST2): it serves forge
-#: parts and requests but never heavy compute -- every probed tool is withheld, because a probe finds an installed
+#: parts and requests but never heavy compute -- every heavy probed tool is withheld, because a probe finds an installed
 #: JMAG whether or not it is declared, and a heavy capability is refused at deploy.
 ROLES: Final = {'light': Role(capabilities=(WORKSTATION,), parts=EVERY, withhold=HEAVY)}
 

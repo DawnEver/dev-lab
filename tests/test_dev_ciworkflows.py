@@ -1064,7 +1064,7 @@ def test_no_credential_or_pr_influence_persists_in_the_mirror(tmp_path: Path) ->
     assert writes_header(run + '\ngit -C "$MIRROR" config http.extraHeader "$H"') != []
     assert 'core.hooksPath /dev/null' in run
     assert '--template=' in run
-    mirror_fetches = [line for line in run.splitlines() if '-C "$MIRROR" fetch' in line]
+    mirror_fetches = [line for line in run.splitlines() if '-C "$MIRROR"' in line and ' fetch ' in line]
     assert mirror_fetches
     assert all('refs/pull' not in line for line in mirror_fetches)
 
@@ -1177,7 +1177,8 @@ def test_a_use_steps_guard_reaches_every_step_it_expands_to() -> None:
 def test_the_mirror_follows_the_forge_when_it_moves_hosts(tmp_path: Path) -> None:
     """2026-11-03: after the forge moved hosts every job failed reading the mirror's first-clone origin URL."""
     run = _fetch_the_head(tmp_path)['run']
-    assert run.index('git -C "$MIRROR" remote set-url origin "$REPO"') < run.index('git -C "$MIRROR" fetch')
+    set_url = run.index('git -C "$MIRROR" remote set-url origin "$REPO"')
+    assert set_url < run.index('git -C "$MIRROR" -c gc.auto=0 fetch')
 
 
 def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: Path) -> None:

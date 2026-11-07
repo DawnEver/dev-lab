@@ -15,6 +15,7 @@ from _review_doubles import _doc, _state
 from test_dev_forgereview import FakeCommand, _forge, _tick, _work
 
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
+from dev_lab.dev.forgereview_claim import DUE
 from dev_lab.dev.forgereview_identity import Identity, ReviewerRefused, identity, ruling, self_review
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ACTIONS_BOT
@@ -65,7 +66,8 @@ def test_a_review_run_by_the_head_author_session_is_refused(tmp_path: Path, monk
     (said,) = _tick(work, forge, command)
     assert 'authored this head' in said
     assert command.ran == []
-    assert [one for one in status_list(forge, head) if one.context == REVIEW_CONTEXT] == [], 'nothing is posted'
+    reviewed = [one for one in status_list(forge, head) if one.context == REVIEW_CONTEXT]
+    assert [one.description for one in reviewed] == [DUE], 'nothing is posted past the DUE'
     monkeypatch.delenv(SESSION_ENV)
     _tick(work, forge, FakeCommand(_doc()))
     assert _state(forge, head)[0] == 'success'

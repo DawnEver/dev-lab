@@ -68,10 +68,10 @@ class TestResolvingTheRoot:
         declared = _profile(checkout, root=None, anchor=checkout / 'src' / 'widget' / '__init__.py')
         assert declared.repo_root() == checkout.resolve()
 
-    def test_with_no_root_no_home_and_no_anchor_it_refuses_rather_than_guessing(self, monkeypatch, mocker) -> None:
+    def test_with_no_root_no_home_and_no_anchor_it_refuses_rather_than_guessing(self, monkeypatch) -> None:
         """An installed wheel has no source tree, and grading one as though it had is the defect."""
         monkeypatch.delenv('WIDGET_HOME', raising=False)
-        mocker.patch.object(profile_module, 'resolve_home', return_value=None)
+        monkeypatch.setattr(profile_module, 'resolve_home', lambda *_a, **_k: None)
         bare = RepoProfile(app_name='widget', package='widget')
         with pytest.raises(NotACheckout) as refusal:
             bare.repo_root()

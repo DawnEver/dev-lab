@@ -15,7 +15,8 @@ from _forge_state import StateForge
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 
 from dev_lab.dev.ciworkflows import workflows
-from dev_lab.dev.forgemerge import ready
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgemerge import Decision, ready
 from dev_lab.dev.forgereview_claim import DUE, WAITS
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_job import review_run
@@ -23,7 +24,7 @@ from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
-from dev_lab.dev.reviewturn import REVIEW_DUE_SAID, REVIEW_LABEL
+from dev_lab.dev.reviewturn import REVIEW_DUE_SAID, REVIEW_LABEL, review_turn
 
 _BASE = 'integrate/main'
 _PARTS = 'scope=full ran=3 hands=-'
@@ -163,7 +164,7 @@ def test_a_head_whose_pr_holds_its_review_is_never_reviewed_again_when_called_du
     command = FakeCommand()
     _run(work, forge, number, command)
     assert len(command.ran) == 1
-    pushed = advance(work, 'pr/x', 'y.py', 'y\n')
+    pushed = advance(work, 'pr/x', 'x.py', 'z\n')  # the same size: under REVIEW_AGAIN_GROWTH, no growth re-review
     forge.pulls[number]['head']['sha'] = pushed
     _settle(forge, pushed)
     ready(work, forge, number)
@@ -171,3 +172,22 @@ def test_a_head_whose_pr_holds_its_review_is_never_reviewed_again_when_called_du
     _run(work, forge, number, command)
     assert len(command.ran) == 1, 'the standing review stands: no second model call'
     assert _review(forge, pushed)[0] == 'success'
+
+
+def test_on_github_a_users_success_is_no_review_and_the_decision_still_calls_it_due() -> None:
+    """dev-lab #38 at the last gate: GitHub counts its Actions bot's review alone, so a token's success asks again.
+
+    PLANTED CONTROL: the bot's own success stands; on Gitea the same user's success counts and stands.
+    """
+    decision = Decision(others=(), message='m', review='not reviewed')
+    for host, poster, said in (
+        ('github.com', 'a', REVIEW_DUE_SAID),
+        ('github.com', ACTIONS_BOT, ''),
+        ('forge.example.org', 'a', ''),
+    ):
+        forge = StateForge(Forge(host, 'o', 'r'))
+        number = forge.add_pull('pr/x', _BASE, title='add x', sha='c' * 40)
+        forge.login = poster
+        status_post(forge, 'c' * 40, context=REVIEW_CONTEXT, state='success', description='clean')
+        forge.login = ACTIONS_BOT
+        assert review_turn(forge, number, 'c' * 40, decision, env={}) == said, (host, poster)

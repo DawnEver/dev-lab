@@ -59,7 +59,6 @@ namespace is deleted by the forge with the merge.
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 import tomllib
@@ -68,7 +67,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
@@ -77,14 +75,13 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING, waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITHUB, client_for
-from dev_lab.dev.githooks import PYTHON_ENV, bash_executable, hook_path
-from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.jobparts import pull_request_waived
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
@@ -99,7 +96,6 @@ from dev_lab.dev.unproduced import unproduced_waived
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, PullRequest
-    from dev_lab.dev.githooks.table import Hook
     from dev_lab.dev.lanepolicy import Policy
     from dev_lab.dev.reviewgate import Reviewed
 
@@ -107,8 +103,6 @@ __all__ = [
     'CI_MERGER',
     'EXTERNAL',
     'FORGE_PULL',
-    'MESSAGES_NOT_DECLARED',
-    'MESSAGE_TIMEOUT_S',
     'READY',
     'Decision',
     'auto_merge',
@@ -119,8 +113,6 @@ __all__ = [
     'main',
     'merge',
     'merge_message',
-    'message_row',
-    'message_wait',
     'ready',
 ]  # fmt: skip
 
@@ -149,61 +141,6 @@ _AUTO_MERGE: Final = (
     'mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) '
     '{ clientMutationId } }'
 )
-
-
-#: The shipped script judging commit messages over a range; the repo's pre-push row running it is the declaration.
-_MESSAGE_SCRIPT: Final = 'cz-push-range'
-
-#: Seconds the message row may run inside one merge decision before it is a named wait, never a hung tick.
-MESSAGE_TIMEOUT_S: Final[float] = 300.0
-
-#: What a decision notes when the repo declares no message row: nothing judged the messages.
-MESSAGES_NOT_DECLARED: Final = 'messages: not declared'
-
-
-def message_row(root: Path) -> Hook | None:
-    """The repo's pre-push row running ``cz-push-range``, or ``None`` when it declares none."""
-    return next((one for one in hook_table(root).get('pre-push', ()) if _MESSAGE_SCRIPT in one.run), None)
-
-
-def message_wait(root: Path, base: str, head: str) -> str | None:
-    """Why *head*'s commits over *base* fail the repo's declared message row, or ``None`` (passed, or none declared).
-
-    The SAME script and env the pre-push row runs, handed git's pre-push line for ``<base sha>..<head>``.
-    """
-    row = message_row(root)
-    if row is None:
-        return None
-    base_sha = _door.run(
-        ['git', 'rev-parse', '--verify', '--quiet', base],
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=False,
-    )
-    if base_sha.returncode != 0:
-        return f'{row.id}: {base} does not resolve in this checkout -- fetch origin, then judge again'
-    line = f'refs/heads/pr {head} refs/heads/pr {base_sha.stdout.strip()}\n'
-    try:
-        done = _door.run(
-            [bash_executable(), hook_path(_MESSAGE_SCRIPT).as_posix(), '--merge-decision'],
-            cwd=str(root),
-            input=line,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            check=False,
-            env={**os.environ, PYTHON_ENV: sys.executable, **row.env},
-            timeout=MESSAGE_TIMEOUT_S,
-        )
-    except subprocess.TimeoutExpired:
-        return f'{row.id} timed out after {MESSAGE_TIMEOUT_S} s over {base}..{head[:12]}'
-    if done.returncode == 0:
-        return None
-    said = [one for one in (done.stdout + done.stderr).splitlines() if one.strip()]
-    return f'{row.id} refuses a message over {base}..{head[:12]}: {said[-1] if said else done.returncode}'
 
 
 @dataclass(frozen=True)

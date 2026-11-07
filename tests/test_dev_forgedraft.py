@@ -18,6 +18,7 @@ from dev_lab.dev import forgedraft
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgedraft import STALE_DRAFT, alarms, mark_draft, mark_ready, opened_line
 from dev_lab.dev.forgemerge import READY, ready
+from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_job import review_run
 from dev_lab.dev.forgeservesteps import raise_once
@@ -84,7 +85,7 @@ def test_merge_ready_refuses_a_draft_with_every_other_status_green(tmp_path: Pat
     assert description.startswith(f'draft: mark ready with `python -m dev_lab.dev.forge pr ready {number}`')
     mark_ready(forge, number)
     ready(work, forge, number)
-    assert _merge_ready(forge, head) == ('success', READY)
+    assert _merge_ready(forge, head) == ('success', f'{READY} ({MESSAGES_NOT_DECLARED})')  # no message row declared
 
 
 def test_the_review_job_skips_a_draft_and_marking_ready_reviews_it(tmp_path: Path) -> None:

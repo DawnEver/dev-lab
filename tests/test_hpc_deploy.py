@@ -147,7 +147,7 @@ def test_twice_gives_one_marked_line_per_repo_and_keeps_the_users_own(box: Box) 
     assert alpha.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
     assert 'flock -n' in alpha
     assert alpha.split(' >> ')[0].endswith('dev_lab.dev.hpchost tick alpha'), 'the host ticks the repo'
-    assert f'cd {shlex.quote(str(box.home / "src" / "dev-lab"))} &&' in alpha, (
+    assert f'cd {shlex.quote(str(box.home / deploy_spec.DEFAULT_ROOT / "dev-lab"))} &&' in alpha, (
         "from the host's kit, never the repo's venv"
     )
     calls = box.logged()
@@ -160,7 +160,7 @@ def test_a_repo_declaring_a_retired_table_is_refused_alone_and_the_others_are_se
 ) -> None:
     """The 2026-10-13 incident: one repo's retired table stopped the whole deploy, so the host served none."""
     assert box.run(*DECLARE) == 0
-    beta = box.home / 'src' / 'beta' / 'pyproject.toml'
+    beta = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
     retired = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))  # its spelling lives in the registry
     _write(beta, f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{retired}\nx = 1\n')
     capsys.readouterr()
@@ -182,7 +182,7 @@ def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others
 ) -> None:
     """The 2026-10-18 Ada incident: ``read_builds`` refused one repo's table inside ``[tools]``; the deploy crashed."""
     assert box.run(*DECLARE) == 0
-    beta = box.home / 'src' / 'beta' / 'pyproject.toml'
+    beta = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
     _write(beta, '[tool.lab_commons.hpc]\ninstall = "uv sync"\ndependency_inputs = ["uv.lock"]\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
@@ -272,7 +272,7 @@ def test_every_served_venv_is_exactly_its_committed_lock(box: Box) -> None:
     its commit was tested with.
     """
     assert box.run(*DECLARE) == 0
-    (box.home / 'src' / 'dev-lab' / '.git' / 'HEAD_SHA').write_text('b' * 40, encoding='utf-8')
+    (box.home / deploy_spec.DEFAULT_ROOT / 'dev-lab' / '.git' / 'HEAD_SHA').write_text('b' * 40, encoding='utf-8')
     assert box.run() == 0
     assert _overlays(box) == []
 
@@ -513,7 +513,7 @@ def test_a_tick_refreshes_its_repo_before_the_repos_own_forge_serve(box: Box) ->
     alpha's venv is its committed lock, so nothing is installed over it.
     """
     assert box.run(*DECLARE) == 0
-    src = box.home / 'src'
+    src = box.home / deploy_spec.DEFAULT_ROOT
     start, served = len(box.logged()), []
     assert _tick(box, 'alpha', served) == 0
     [(argv, cwd, logged)] = served
@@ -533,7 +533,7 @@ def test_only_the_lab_commons_tick_writes_the_shared_kit_checkout(box: Box) -> N
     tick is the one that refreshes it.
     """
     assert box.run(*DECLARE) == 0
-    kit = box.home / 'src' / 'dev-lab'
+    kit = box.home / deploy_spec.DEFAULT_ROOT / 'dev-lab'
     (kit / '.git' / 'HEAD_SHA').write_text('b' * 40, encoding='utf-8')
     lock = kit / '.git' / 'index.lock'
     lock.write_text('', encoding='utf-8')  # the kit's own tick, mid-update
@@ -552,7 +552,7 @@ def test_a_repo_whose_refresh_fails_is_released_by_name_and_its_forge_never_runs
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert box.run(*DECLARE) == 0
-    _write(box.home / 'src' / 'alpha' / 'pyproject.toml', '[project]\nname = "alpha"\n')
+    _write(box.home / deploy_spec.DEFAULT_ROOT / 'alpha' / 'pyproject.toml', '[project]\nname = "alpha"\n')
     capsys.readouterr()
     served: list[tuple[list[str], Path, str]] = []
     assert _tick(box, 'alpha', served) == 2

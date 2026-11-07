@@ -36,7 +36,7 @@ from dev_lab.dev.forgereview import (
     step,
 )
 from dev_lab.dev.forgereview_advice import ONE_SHOT, trusted_bodies
-from dev_lab.dev.forgereview_claim import CLAIMED, HOST_UNABLE, RETRYING, UNREVIEWED_STATUS
+from dev_lab.dev.forgereview_claim import CLAIMED, DUE, HOST_UNABLE, RETRYING, UNREVIEWED_STATUS
 from dev_lab.dev.forgereview_command import (
     REFUSED_EXIT,
     ReviewRefused,
@@ -136,6 +136,11 @@ def _forge(head: str, **pull: object) -> tuple[StateForge, int]:
     called_due(forge, head)  # the merge decision called its review due
     forge.pulls[number] |= pull
     return forge, number
+
+
+def _posted(forge: StateForge, head: str) -> list[dict]:
+    """What the review posted on *head*: every status but the decision's DUE that :func:`_forge` planted."""
+    return [one for one in forge.statuses.get(head, []) if one['description'] != DUE]
 
 
 def _tick(work: Path, forge: StateForge, command: FakeCommand, review: Review | None = None) -> tuple[str, ...]:
@@ -291,7 +296,7 @@ def test_a_host_without_the_commands_interpreter_or_module_says_why_and_posts_no
     assert 'not installed' in lines[0]
     assert command.ran == []
     assert "'reviewer' is not installed" in lines[0]
-    assert status_list(forge, head) == ()
+    assert _posted(forge, head) == []
     assert forge.comments[number] == []
 
 
@@ -327,7 +332,7 @@ def test_a_host_value_this_host_does_not_declare_is_skipped_unposted(tmp_path: P
     lines = review_tick(work, forge, declared, runtimes=host, **kw)
     assert '[runtimes.ai_lab] python' in lines[0]
     assert command.ran == []
-    assert status_list(forge, head) == ()
+    assert _posted(forge, head) == []
     forge, _ = _forge(head)
     review_tick(work, forge, declared, runtimes={'ai_lab': {'python': 'py'}}, **kw)
     ((argv, _),) = command.ran
@@ -360,7 +365,7 @@ def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp
     command = FakeCommand()
     kw = {'base': 'integrate/main', 'run': command}
     review_tick(work, forge, declared, ready=_can, host='A', **kw)
-    assert forge.statuses.get(head, []) == []
+    assert _posted(forge, head) == []
     review_tick(work, forge, declared, ready=_can, host='B', runtimes={'ai_lab': {'python': 'py'}}, **kw)
     assert len(command.ran) == 1
     assert status_list(forge, head)[0].state == 'success'
@@ -409,7 +414,7 @@ def test_two_hosts_on_one_new_head_only_the_first_claims_and_reviews(tmp_path: P
     assert len(first.ran) == 1
     assert second.ran == []
     assert seen == [()]
-    posted = [one['description'] for one in forge.statuses[head]]
+    posted = [one['description'] for one in _posted(forge, head)]
     assert posted[0].startswith(f'{CLAIMED} A at ')
     assert len(posted) == 2  # the claim, then the final status; B posted nothing
     assert status_list(forge, head)[0].state == 'success'
@@ -839,7 +844,7 @@ def test_the_steps_claim_names_the_serve_host_not_the_box(tmp_path: Path) -> Non
     forge, _ = _forge(head)
     said: list[str] = []
     step(work, forge, policy=_LANE_POLICY, say=said.append, host='cluster/acct', run=FakeCommand(), ready=_can)
-    posted = [one['description'] for one in forge.statuses[head]]
+    posted = [one['description'] for one in _posted(forge, head)]
     assert posted[0].startswith(f'{CLAIMED} cluster/acct at ')
     assert socket.gethostname() not in posted[0]
 
@@ -905,7 +910,7 @@ def test_a_head_inside_the_quiet_period_waits_and_spends_nothing(tmp_path: Path)
     lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=_can, host='box',
                         clock=lambda: committed + timedelta(minutes=3), quiet=quiet)  # fmt: skip
     assert command.ran == []
-    assert forge.statuses.get(head, []) == []
+    assert _posted(forge, head) == []
     assert forge.comments[number] == []
     assert lines[0].startswith(f'#{number} {head[:12]}: not reviewed yet')
     review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=_can, host='box',

@@ -32,7 +32,9 @@ from dev_lab.dev.taskkeys import REVIEW_TASK, loader
 from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.accounts import account_of, may_enter
-from dev_lab.ops.config import Backup, OpsConfig, Placement, Probe
+from dev_lab.ops.backuprole import Backup
+from dev_lab.ops.config import OpsConfig, Probe
+from dev_lab.ops.placement import Placement
 from dev_lab.ops.sshkey import ENV
 from dev_lab.ops.totp import write_private
 from dev_lab.supervise.daemon import watchdog_seconds
