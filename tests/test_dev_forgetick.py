@@ -436,7 +436,10 @@ def _sized(**by_ref: float) -> object:
 
 
 def _head_and_pr(tips: dict[str, str], *, claim_pr: bool = True, claim_head: bool = True) -> tuple[str, str]:
-    """The head and a boosted PR (it ranks first), each answering a claim that holds when posted."""
+    """The head (it ranks first) and a boosted PR, each answering a claim that holds when posted.
+
+    User ruling 2026-11-07: the integration tip ranks ahead of every PR head, a user-boosted one included.
+    """
     head, lane = tips['integrate/main'], tips['topic/a']
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane, 'priority:user')]))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -459,11 +462,14 @@ def test_a_running_demand_keeps_what_it_holds(server, tmp_path: Path) -> None:
 
 
 def test_two_small_jobs_are_both_admitted_on_one_tick(server, tmp_path: Path) -> None:
-    """No one-claim-per-tick rule: both fit the box, so both are claimed in rank order."""
+    """No one-claim-per-tick rule: both fit the box, so both are claimed in rank order, the head first.
+
+    User ruling 2026-11-07: the integration tip ranks ahead of the boosted PR.
+    """
     repo, tips = _origin(tmp_path)
     head, lane = _head_and_pr(tips)
     report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=8))
-    assert [w.sha for w in report.claimed] == [lane, head]
+    assert [w.sha for w in report.claimed] == [head, lane]
     assert [dict(w.demand) for w in report.claimed] == [{'cpu': 1, 'mem_gb': 8}] * 2, (
         'each carries what it was admitted at'
     )
@@ -479,7 +485,7 @@ def test_the_tick_takes_the_box_claim_before_it_claims_a_part(
     No claim, so no ``error`` can follow; a claimed part carries the box claim its producer adopts.
 
     The tick's supply (32 GB) says both fit; the ledger (10 GiB) holds room for one. PLANTED CONTROL: a 32 GiB
-    ledger admits both, each its own row.
+    ledger admits both, each its own row. The head is considered first (user ruling 2026-11-07).
     """
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'box.sqlite'))
     repo, tips = _origin(tmp_path)
@@ -491,13 +497,13 @@ def test_the_tick_takes_the_box_claim_before_it_claims_a_part(
     assert {w.box for w in report.claimed} == rows, 'each claimed part carries its own ledger row'
     posted = {r['path'] for r in Recorder.received if r['method'] == 'POST'}
     if box_gib == 32:
-        assert [w.sha for w in report.claimed] == [lane, head]
+        assert [w.sha for w in report.claimed] == [head, lane]
         assert len(rows) == 2
         return
-    assert [w.sha for w in report.claimed] == [lane]
-    assert f'{API}/statuses/{head}' not in posted, 'a part the box refused is not posted: no claim, no error'
+    assert [w.sha for w in report.claimed] == [head]
+    assert f'{API}/statuses/{lane}' not in posted, 'a part the box refused is not posted: no claim, no error'
     (waiting,) = report.queue
-    assert waiting.candidate.sha == head
+    assert waiting.candidate.sha == lane
     assert waiting.blocked.startswith(NOT_ADMITTED)
 
 
@@ -521,17 +527,20 @@ def test_the_producer_adopts_the_ticks_box_claim_and_drops_it_when_nothing_ran(t
 
 
 def test_a_big_job_is_skipped_and_a_smaller_lower_ranked_one_is_claimed(server, tmp_path: Path) -> None:
-    """The boosted PR ranks first and does not fit; the head behind it does. PLANTED CONTROL: 64 GB takes both."""
+    """The head ranks first and does not fit; the boosted PR behind it does. PLANTED CONTROL: 64 GB takes both.
+
+    User ruling 2026-11-07: the integration tip ranks ahead of every PR head, a user-boosted one included.
+    """
     repo, tips = _origin(tmp_path)
-    head, lane = _head_and_pr(tips, claim_pr=False)
-    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=40))
-    assert [w.sha for w in report.claimed] == [head]
+    head, lane = _head_and_pr(tips, claim_head=False)
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=40, topic_a=8))
+    assert [w.sha for w in report.claimed] == [lane]
     (waiting,) = report.queue
-    assert (waiting.candidate.sha, waiting.blocked) == (lane, f'{NOT_ADMITTED}: lacking mem_gb (40 asked, 32 free)')
+    assert (waiting.candidate.sha, waiting.blocked) == (head, f'{NOT_ADMITTED}: lacking mem_gb (40 asked, 32 free)')
     Recorder.received.clear()
     _head_and_pr(tips)
     roomy = Supply('G', Resources(cpu=4, mem_gb=64), BOX.listed)
-    assert [w.sha for w in _tick(repo, server, supply=roomy, demand=_sized(head=8, topic_a=40)).claimed] == [lane, head]
+    assert [w.sha for w in _tick(repo, server, supply=roomy, demand=_sized(head=40, topic_a=8)).claimed] == [head, lane]
 
 
 def _box_of(gib: int, *held: Holding) -> Box:
@@ -542,30 +551,30 @@ def _box_of(gib: int, *held: Holding) -> Box:
 def test_a_box_holds_back_a_smaller_part_that_would_delay_a_waiting_larger_one(server, tmp_path: Path) -> None:
     """The G starvation of 2026-10-25: smaller claims kept taking the memory a ranked-first part waited for.
 
-    The boosted PR (20 GB) waits for a verify's 16 GB claim to end in an hour; the head (14 GB) fits now but held
-    for its day it would leave 18 GB then, so it is held back, naming whom it waits behind. PLANTED CONTROL: a
-    4 GB head leaves 28 GB, delays nothing, and is claimed.
+    The head (20 GB, ranked first by the user ruling of 2026-11-07) waits for a verify's 16 GB claim to end in an
+    hour; the boosted PR (14 GB) fits now but held for its day it would leave 18 GB then, so it is held back,
+    naming whom it waits behind. PLANTED CONTROL: a 4 GB PR leaves 28 GB, delays nothing, and is claimed.
     """
     repo, tips = _origin(tmp_path)
-    head, lane = _head_and_pr(tips, claim_pr=False)
+    head, lane = _head_and_pr(tips, claim_head=False)
     verify = Holding('verify:lane', 4242, 1, 16 * GB, {}, NOW.timestamp() + 3600)
     free = Supply('G', Resources(cpu=4, mem_gb=16), BOX.listed)
-    report = _tick(repo, server, supply=free, demand=_sized(head=14, topic_a=20), box=_box_of(32, verify))
+    report = _tick(repo, server, supply=free, demand=_sized(head=20, topic_a=14), box=_box_of(32, verify))
     assert report.claimed == ()
     blocked = {item.candidate.sha: item.blocked for item in report.queue}
-    assert blocked[lane] == (
+    assert blocked[head] == (
         f'{NOT_ADMITTED}: lacking mem_gb (20 asked, 16 free); earliest start 2026-10-10T13:00Z (in 1.0 h), '
         'after verify:lane (pid 4242) until 2026-10-10T13:00Z'
     )
-    assert blocked[head].startswith(f'{NOT_ADMITTED}: queued behind topic/a@{lane[:12]}:base, which ranks first')
+    assert blocked[lane].startswith(f'{NOT_ADMITTED}: queued behind integrate/main@{head[:12]}:base, which ranks first')
     Recorder.received.clear()
-    _head_and_pr(tips, claim_pr=False)
-    control = _tick(repo, server, supply=free, demand=_sized(head=4, topic_a=20), box=_box_of(32, verify))
-    assert [w.sha for w in control.claimed] == [head]
+    _head_and_pr(tips, claim_head=False)
+    control = _tick(repo, server, supply=free, demand=_sized(head=20, topic_a=4), box=_box_of(32, verify))
+    assert [w.sha for w in control.claimed] == [lane]
 
 
 def test_a_part_larger_than_every_live_host_is_refused_on_its_commit_at_once(server, tmp_path: Path) -> None:
-    """No host can ever fit it: an answer naming the remedy, never an endless wait. The head behind it still runs.
+    """No host can ever fit it: an answer naming the remedy, never an endless wait. The head still runs.
 
     PLANTED CONTROL: a live host of 256 GB serving it is on the cards -- it waits for that host, refused nowhere.
     """
@@ -681,28 +690,29 @@ def _whole_box(*_args: object) -> Demand:
     return Demand(cpu=4, mem_gb=8.0)
 
 
-def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp_path: Path, monkeypatch) -> None:
-    """A user-boosted PR jumps the integration head. PLANTED CONTROL: the label removed, the head is claimed."""
+def test_a_tick_claims_the_integration_tip_ahead_of_a_boosted_pr(server, tmp_path: Path, monkeypatch) -> None:
+    """User ruling 2026-11-07: a boosted PR no longer jumps the integration head; the boost orders the PRs after it.
+
+    PLANTED CONTROL: the label moved to the other PR moves that PR ahead in the queue; the head is still claimed.
+    """
     monkeypatch.setattr(forgetick.Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
     repo, tips = _origin(tmp_path)
-    head, lane = tips['integrate/main'], tips['topic/a']
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane, 'priority:user')]))
-    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{head}', (200, []))
-    answer('GET', f'{API}/statuses/{lane}', (200, []), (200, [_post(1, ME)]))
-    answer('POST', f'{API}/statuses/{lane}', (201, {}))
-    report = _tick(repo, server, demand=_whole_box)
-    assert [w.ref for w in report.claimed] == ['topic/a']
-    (waiting,) = report.queue
-    assert waiting.candidate.ref == 'integrate/main'
-    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu (4 asked, 0 free), mem_gb (8 asked, 0 free)', (
-        'the claimed part holds the box the head asks'
-    )
-    Recorder.received.clear()
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
-    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
-    answer('POST', f'{API}/statuses/{head}', (201, {}))
-    assert [w.ref for w in _tick(repo, server, demand=_whole_box).claimed] == ['integrate/main']
+    head, lane, other = tips['integrate/main'], tips['topic/a'], tips['wip/b']
+    lacking = f'{NOT_ADMITTED}: lacking cpu (4 asked, 0 free), mem_gb (8 asked, 0 free)'
+    for boosted, trailing in (('topic/a', 'wip/b'), ('wip/b', 'topic/a')):
+        Recorder.received.clear()
+        pulls = [_pull(7, 'topic/a', lane), _pull(8, 'wip/b', other)]
+        pulls[0 if boosted == 'topic/a' else 1]['labels'] = [{'name': 'priority:user'}]
+        answer('GET', f'{API}/pulls', (200, pulls))
+        answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+        answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+        answer('POST', f'{API}/statuses/{head}', (201, {}))
+        report = _tick(repo, server, demand=_whole_box)
+        assert [w.ref for w in report.claimed] == ['integrate/main']
+        assert [(item.candidate.ref, item.blocked) for item in report.queue] == [
+            (boosted, lacking),
+            (trailing, lacking),
+        ], 'the claimed head holds the box; the boost orders the PRs trailing it'
 
 
 def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path: Path) -> None:
@@ -924,7 +934,8 @@ def test_a_cluster_claims_what_it_has_and_never_a_part_needing_workstation(serve
 def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(server, tmp_path: Path) -> None:
     """One PR head declares a table this kit does not know; the kit refuses it there and nowhere else.
 
-    PLANTED CONTROL: the boosted PR outranks the head, so without the refusal it -- not the head -- is claimed.
+    PLANTED CONTROL: the box admits both, so without the refusal the boosted PR would be claimed beside the head
+    (which ranks first by the user ruling of 2026-11-07).
     """
     repo, tips = _origin(tmp_path)
     bad = _declare(repo, tips, PRODUCE + '[tool.lab_commons.tomorrow]\nrows = 1\n')
@@ -1047,32 +1058,38 @@ def _stamped_lane(repo: Path, tips: dict[str, str], host: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ('favoured', 'owners', 'first'),
+    ('favoured', 'owners', 'second'),
     [
         ({'sessions': ['topic/a']}, {}, 'topic/a'),
         ({'hosts': ['B']}, {'B': ('bob',)}, 'topic/a'),  # bob authored the PR and publishes B: the trailer stands
-        ({'hosts': ['B']}, {'B': ('carol',)}, 'integrate/main'),  # CONTROL: B is carol's, bob cannot vouch for it
-        ({'sessions': ['fix/b']}, {}, 'integrate/main'),  # CONTROL: another session
+        ({'hosts': ['B']}, {'B': ('carol',)}, 'wip/b'),  # CONTROL: B is carol's, bob cannot vouch for it
+        ({'sessions': ['fix/b']}, {}, 'wip/b'),  # CONTROL: another session
     ],
 )
-def test_a_job_this_hosts_priority_names_ranks_first(server, tmp_path: Path, favoured: dict, owners, first) -> None:
-    """The PR (class pr) outscores nothing against the head (class integration) -- unless this host favours it."""
+def test_a_job_this_hosts_priority_names_ranks_first_after_the_integration_tip(
+    server, tmp_path: Path, favoured: dict, owners, second
+) -> None:
+    """User ruling 2026-11-07: the head ranks first always; host priority then orders the PRs, ahead of a boost.
+
+    A favoured PR precedes a user-boosted one; unfavoured, the boosted one leads the PRs.
+    """
     repo, tips = _origin(tmp_path)
     lane = _stamped_lane(repo, tips, 'B')
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane), _pull(8, 'wip/b', tips['wip/b'], 'priority:user')]))
     for sha in (lane, tips['integrate/main']):
         answer('GET', f'{API}/statuses/{sha}', (200, []))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     priority = Priority.of(favoured)
     report = _tick(repo, server, dry_run=True, priority=priority, owners=owners, demand=lambda *_: Demand(cpu=1))
-    assert report.queue[0].candidate.ref == first
+    assert [item.candidate.ref for item in report.queue[:2]] == ['integrate/main', second]
 
 
 def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claimed(server, tmp_path: Path) -> None:
     """A stale PR head declares no producer; it is refused there and nowhere else -- never the whole repo.
 
-    PLANTED CONTROL: the boosted PR outranks the head, so it is assessed first; a repo-wide refusal would
-    then block the head too (a downstream repo, 2026-10-13: one 13-day-old branch idled every Ada account).
+    PLANTED CONTROL: the stale PR is still refused on its own commit though the head is assessed before it (user
+    ruling 2026-11-07); a repo-wide refusal would block every head (a downstream repo, 2026-10-13: one 13-day-old
+    branch idled every Ada account).
     """
     repo, tips = _origin(tmp_path)
     stale = _declare(repo, tips, '')
