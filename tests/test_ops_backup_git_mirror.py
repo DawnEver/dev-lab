@@ -18,8 +18,9 @@ from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
 from dev_lab.ops.backup import BackupRefused, Dumper, export, git_mirror, metadata
-from dev_lab.ops.config import Backup, mirror_host
-from dev_lab.ops.config import mirror_name as slug
+from dev_lab.ops.backuprole import Backup
+from dev_lab.ops.mirrors import mirror_host
+from dev_lab.ops.mirrors import mirror_name as slug
 
 #: A planted password: built into each URL here so no literal credential sits in the tree.
 _PLANTED = 's3cret'

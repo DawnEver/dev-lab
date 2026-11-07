@@ -27,7 +27,7 @@ from typing import Protocol
 import lab_commons.launch as _door
 
 from dev_lab.ops.backup import BackupRefused
-from dev_lab.ops.config import Offsite
+from dev_lab.ops.backuprole import Offsite
 
 __all__ = ['AwsCli', 'Store', 'key_for', 'upload']
 

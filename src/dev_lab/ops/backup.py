@@ -35,7 +35,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.ops.config import Backup
+from dev_lab.ops.backuprole import Backup
 from dev_lab.ops.mirrors import mirror_host, mirror_name
 
 __all__ = ['DUMPERS', 'STAMP', 'BackupRefused', 'Dumper', 'export', 'git_mirror', 'metadata', 'pull']
