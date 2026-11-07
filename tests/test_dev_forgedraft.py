@@ -10,13 +10,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from _forge_state import StateForge
 from test_dev_forgemerge_ready import _merge_ready, _pr
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
 
 from dev_lab.dev import forgedraft
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgedraft import STALE_DRAFT, alarms, mark_draft, mark_ready, opened_line
+from dev_lab.dev.forgedraft import STALE_DRAFT, NotReady, alarms, mark_draft, mark_ready, opened_line
 from dev_lab.dev.forgemerge import READY, ready
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_command import Runner
@@ -25,6 +26,11 @@ from dev_lab.dev.forgeservesteps import raise_once
 from dev_lab.dev.forgework import ACTIONS_BOT, Client
 
 _NOW = datetime(2026, 11, 1, 12, tzinfo=UTC)
+
+
+def _current(_root: object, _client: object, _pull: object) -> tuple[str, ...]:
+    """A head the ready judgement finds nothing against (the judgement itself: ``test_dev_prcurrent``)."""
+    return ()
 
 
 class _Hub(Client):
@@ -47,14 +53,14 @@ def test_on_gitea_a_draft_is_the_wip_title_and_the_doors_move_it_both_ways() -> 
     assert mark_draft(forge, number).draft
     assert forge.pulls[number]['title'] == 'WIP: add x'
     assert mark_draft(forge, number).title == 'WIP: add x', 'one prefix, never two'
-    pull = mark_ready(forge, number)
+    pull = mark_ready(forge, number, root=Path(), judge=_current)
     assert (pull.draft, pull.title) == (False, 'add x')
 
 
 def test_on_github_the_doors_are_the_graphql_mutations_on_the_prs_node() -> None:
     hub = _Hub({'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'}, 'POST /graphql': {'data': {}}})
     hub.pr_view = lambda _n: None  # the answer's shape is the forge's; what was asked is the evidence
-    mark_ready(hub, 7)
+    mark_ready(hub, 7, root=Path(), judge=_current)
     mark_draft(hub, 7)
     queries = [body['query'] for method, path, body in hub.sent if (method, path) == ('POST', '/graphql')]
     assert ['markPullRequestReadyForReview' in queries[0], 'convertPullRequestToDraft' in queries[1]] == [True, True]
@@ -83,7 +89,7 @@ def test_merge_ready_refuses_a_draft_with_every_other_status_green(tmp_path: Pat
     state, description = _merge_ready(forge, head)
     assert state == 'pending'
     assert description.startswith(f'draft: mark ready with `python -m dev_lab.dev.forge pr ready {number}`')
-    mark_ready(forge, number)
+    mark_ready(forge, number, root=Path(), judge=_current)
     ready(work, forge, number)
     assert _merge_ready(forge, head) == ('success', f'{READY} ({MESSAGES_NOT_DECLARED})')  # no message row declared
 
@@ -122,5 +128,31 @@ def test_a_stale_draft_raises_one_integration_alarm_and_a_fresh_one_none(tmp_pat
     for _tick in range(2):
         raise_once(forge, 'integration', alarms(tmp_path, forge, 'integrate/main', 'o/r', now=_NOW), alarm=paged.append)
     assert len(paged) == 1
-    mark_ready(forge, number)
+    mark_ready(forge, number, root=Path(), judge=_current)
     assert alarms(tmp_path, forge, 'integrate/main', 'o/r', now=_NOW) == []
+
+
+def test_ready_is_refused_naming_the_failed_condition_and_the_pr_stays_a_draft() -> None:
+    """User ruling 2026-11-07: no override. PLANTED CONTROL: the same PR, judged current, is marked ready."""
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', title='WIP: add x', sha='a' * 40)
+    seen: list[str] = []
+
+    def behind(_root: object, _client: object, pull: object) -> tuple[str, ...]:
+        seen.append(pull.head_sha)
+        return ('PR-HEAD-IS-CURRENT: aaaa does not contain origin/integrate/main',)
+
+    with pytest.raises(NotReady, match='does not contain origin/integrate/main'):
+        mark_ready(forge, number, root=Path(), judge=behind)
+    assert seen == ['a' * 40], 'judged on the head the forge holds'
+    assert forge.pr_view(number).draft
+    assert not mark_ready(forge, number, root=Path(), judge=_current).draft
+
+
+def test_the_ready_door_exits_one_and_says_why(capsys) -> None:
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', title='WIP: add x', sha='a' * 40)
+    code = forgedraft.main(['ready', str(number)], judge=lambda *_: ('the lock is stale',), cwd=Path(), client=forge)
+    assert code == 1
+    assert f'pr ready #{number} refused: the lock is stale' in capsys.readouterr().err
+    assert forgedraft.main(['ready', str(number)], judge=_current, cwd=Path(), client=forge) == 0

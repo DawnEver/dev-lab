@@ -14,6 +14,11 @@ conflicts are reported BEFORE anything is merged, and if any ref would conflict 
 all -- the owner resolves by running the named ``git merge`` themself. The tree is never left half-merged
 by this command.
 
+THEN THE LOCK (user ruling 2026-11-07). A clean sync then relocks every floated sibling (dev-lab, lab-commons, ...)
+to its line's current head through the dependency door (:func:`relock_floating`) and commits
+the lock in the same sync (:func:`relock`), so ONE push of the result passes the ``pr-current`` pre-push row
+(:mod:`dev_lab.dev.prcurrent`), which refuses a ``pr/*`` head that lacks integration's tip or lags a sibling.
+
 THE OWNER'S CHECKOUT, THE OWNER'S PUSH. Run by the owner's agent in develop mode on a clean tree.
 It merges locally and stops: the owner runs their tests and pushes. It never pushes, and it refuses on
 the trunk, on the integration branch and on a detached HEAD, where a sync has no meaning.
@@ -34,14 +39,22 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.lockcheck import LOCK
+from dev_lab.dev.relock import RelockFailed, door_upgrade, siblings
 from dev_lab.dev.trialmerge import Trial, rev, trial
 
-__all__ = ['CONFIG_KEY', 'Plan', 'main', 'plan', 'refused', 'sync', 'unwatch', 'upstreams', 'watch']
+__all__ = [
+    'CONFIG_KEY', 'RELOCK_TITLE', 'Plan', 'main', 'plan', 'refused', 'relock', 'relock_floating', 'sync', 'unwatch',
+    'upstreams', 'watch',
+]  # fmt: skip
 
 #: The per-branch git config key holding the opt-in refs (``branch.<child>.labSyncFrom``).
 CONFIG_KEY: Final = 'labSyncFrom'
 
 _ORIGIN: Final = 'origin/'
+
+#: The subject of the commit a sync's relock lands as.
+RELOCK_TITLE: Final = 'build(deps): relock the floated siblings to their current heads'
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -158,6 +171,37 @@ def sync(root: Path, policy: Policy, refs: Sequence[str] | None = None) -> tuple
     return found, tuple(merged)
 
 
+def relock_floating(tree: Path, *, upgrade: Callable[[Path, Sequence[str]], int] | None = None) -> tuple[str, ...]:
+    """Relock *tree*'s floated siblings to their lines' current heads through the door; the names it moved.
+
+    Writes the lock only; committing it is the caller's. RAISES :class:`~dev_lab.dev.relock.RelockFailed` when the
+    door fails.
+    """
+    names = tuple(sorted(siblings(tree)))
+    if not names:
+        return ()
+    if (exited := (upgrade or door_upgrade)(tree, names)) != 0:
+        msg = f'the dependency door exited {exited} relocking {", ".join(names)} in {tree}'
+        raise RelockFailed(msg)
+    return names
+
+
+def relock(root: Path, *, door: Callable[[Path], Sequence[str]] = relock_floating) -> tuple[str, ...]:
+    """Relock *root*'s floated siblings (*door*) and commit the lock when it moved; the siblings it moved.
+
+    Nothing moved (no sibling, or each already at its head): nothing is committed and ``()`` is answered.
+    RAISES :class:`OSError` (:class:`~dev_lab.dev.relock.RelockFailed` among them) when the door or the commit fails.
+    """
+    names = tuple(door(root))
+    if not names or not _git(root, 'status', '--porcelain', '--', LOCK).stdout.strip():
+        return ()
+    for argv in (('add', '--', LOCK), ('commit', '-q', '-m', RELOCK_TITLE, '-m', f'Relocked: {", ".join(names)}')):
+        if (done := _git(root, *argv)).returncode != 0:
+            msg = f'git {argv[0]} of the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
+            raise RelockFailed(msg)
+    return names
+
+
 def _render(found: Plan) -> list[str]:
     lines = [f'[sync] {found.branch}: upstream set {", ".join(ref for ref, _ in found.trials)}']
     for ref, tried in found.trials:
@@ -167,9 +211,13 @@ def _render(found: Plan) -> list[str]:
 
 
 def main(
-    argv: Sequence[str] | None = None, *, cwd: Path | None = None, fetch: Callable[[Path], None] = fetch_origin
+    argv: Sequence[str] | None = None,
+    *,
+    cwd: Path | None = None,
+    fetch: Callable[[Path], None] = fetch_origin,
+    door: Callable[[Path], Sequence[str]] = relock_floating,
 ) -> int:
-    """``forge sync [--watch REF | --unwatch REF | --list]``; exit 2 on a refusal or a conflict."""
+    """``forge sync [--watch REF | --unwatch REF | --list]``: merge, then relock; exit 2 on a refusal or a conflict."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge sync', description=__doc__.splitlines()[0])
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--watch', metavar='REF', help='opt this branch in to also merge REF')
@@ -187,6 +235,7 @@ def main(
             return 0
         fetch(root)
         found, merged = sync(root, policy)
+        relocked = () if found.conflicting else relock(root, door=door)
     except (OSError, ValueError) as exc:
         emit(f'[sync] refused: {exc}', err=True)
         return 2
@@ -197,11 +246,11 @@ def main(
             emit(f'[sync] stopped: {ref} conflicts in {", ".join(tried.conflicts)}; nothing was merged.', err=True)
             emit(f'[sync] Remedy: git merge {ref}, resolve those files, commit, run your tests, push.', err=True)
         return 2
-    if not merged:
-        emit('[sync] up to date; nothing to merge')
+    if relocked:
+        emit(f'[sync] relocked {", ".join(relocked)} to their current heads and committed {LOCK}')
+    if not merged and not relocked:
+        emit('[sync] up to date; nothing to merge or relock')
         return 0
-    emit(
-        f'[sync] merged {", ".join(merged)}; now measure what you touched, then push {found.branch}; '
-        'the forge produces its parts'
-    )
+    did = ', '.join([*(f'merged {ref}' for ref in merged), *(['relocked'] if relocked else [])])
+    emit(f'[sync] {did}; now measure what you touched, then push {found.branch}; the forge produces its parts')
     return 0

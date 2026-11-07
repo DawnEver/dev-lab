@@ -19,14 +19,18 @@
 # commit-msg appends the message file to `run`; pre-push pipes git's ref lines to stdin and selects
 # among the paths those pushes change. The checks below report and never rewrite a file.
 #
-# WHAT RUNS HERE (toolchain plan P3, user-approved 2026-10-23): a local row is an irreversible-harm check or a
-# second-scale format check. Everything the forge already judges on the pushed sha is the forge's alone, and
-# a local copy only refused the same push twice: the tracked-tree scans (TRACKED-CITES-NO-EPHEMERAL,
-# SCRATCH-IS-NEVER-COMMITTED: dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set
-# (dev_lab.dev.famtests.branchset, dev_lab.dev.branchprune), the lock PIN (dev_lab.dev.famtests.lockpin) and its
-# FRESHNESS (dev_lab.dev.relock; user ruling 2026-10-24), the behind bound (an `integration` alarm,
-# dev_lab.dev.forgeintegration) and PR advice (`forge pr create`, dev_lab.dev.pradmit, never a refusal). No local half-gate
-# (a lock or behind bound read at push) remains. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
+# WHAT RUNS HERE (toolchain plan P3, user-approved 2026-10-23; amended by the user ruling of 2026-11-07): a local
+# row is an irreversible-harm check, a second-scale format check, or -- since 2026-11-07 -- the CURRENCY of a pr/*
+# head. Everything else the forge judges on the pushed sha is the forge's alone, and a local copy only refused the
+# same push twice: the tracked-tree scans (TRACKED-CITES-NO-EPHEMERAL, SCRATCH-IS-NEVER-COMMITTED:
+# dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set (dev_lab.dev.famtests.branchset,
+# dev_lab.dev.branchprune), the lock PIN (dev_lab.dev.famtests.lockpin) and PR advice (`forge pr create`,
+# dev_lab.dev.pradmit, never a refusal). THE 2026-11-07 RULING reverses P3's "no local behind bound or lock
+# freshness": agents kept pushing stale pr/* heads, and the forge's integration alarm and lock/fresh status came
+# after the harm. So the `pr-current` row (PR-HEAD-IS-CURRENT, dev_lab.dev.prcurrent) refuses a pr/* push whose
+# tip lacks origin/<integration> (fetched afresh) or whose lock lags a floated sibling's head
+# (dev_lab.dev.relock.floating_stale), naming `forge sync`; `forge pr ready` reads the same judgement. A finding
+# the forge cannot see (an untracked stray file) is a post-commit hint.
 
 [[pre-commit]]
 id = "check-added-large-files"
@@ -144,6 +148,14 @@ always_run = true
 id = "landed-pr"
 run = ["python", "-m", "dev_lab.dev.landedpush"]
 always_run = true
+
+# PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07): a pr/* head holds origin/<integration>'s
+# current tip and a lock fresh against the floated siblings' heads; the remedy is `forge sync`.
+[[pre-push]]
+id = "pr-current"
+run = ["python", "-m", "dev_lab.dev.prcurrent"]
+always_run = true
+refs = '^refs/heads/pr/'
 
 # FORGE NOTICES WHERE A SESSION ACTS ON ITS PR (user ruling 2026-10-21): a pr/* push, and every commit on a pr/*
 # branch, print that PR's open notices for this LAB_SESSION (dev_lab.dev.branchnotices: one reader, cached 60 s,

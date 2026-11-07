@@ -19,6 +19,7 @@ import pytest
 
 from dev_lab.dev import forgeservesteps, relock
 from dev_lab.dev.forgealarm import Alarm
+from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UV_PIN
@@ -33,6 +34,7 @@ from dev_lab.dev.relock import (
     carry,
     chosen,
     dist_of,
+    floating_stale,
     in_house,
     rerender,
 )
@@ -195,6 +197,53 @@ def test_in_house_is_a_git_source_following_a_line_read_off_the_lock() -> None:
     """PLANTED control: a git source held at a tag and an index package are third-party."""
     assert in_house(_LOCK) == {'lab-commons'}
     assert in_house('not toml [') == frozenset(), 'an unreadable lock follows nothing'
+
+
+_SIBLING_SHA = 'ed24ab516a140b62b77a89a1b546d5fee8903d22'
+_BRANCHED = _LOCK.replace('lab-commons.git#', 'lab-commons.git?branch=release%2Fx#')
+
+
+def test_the_floating_reading_compares_each_siblings_locked_commit_with_its_lines_head() -> None:
+    """User ruling 2026-11-07: an ls-remote per sibling, never a resolution. PLANTED CONTROL: at its head, fresh."""
+    asked: list[tuple[str, str]] = []
+
+    def moved(url: str, branch: str) -> str:
+        asked.append((url, branch))
+        return 'f' * 40
+
+    (why,) = floating_stale(_LOCK, head=moved)
+    assert 'lab-commons' in why
+    assert _SIBLING_SHA[:12] in why
+    assert asked == [('https://github.com/DawnEver/lab-commons.git', 'integrate/main')], 'held and index: not read'
+    assert floating_stale(_LOCK, head=lambda _url, _branch: _SIBLING_SHA) == ()
+
+
+def test_the_floating_reading_follows_the_sources_branch() -> None:
+    asked: list[str] = []
+    floating_stale(_BRANCHED, head=lambda _url, branch: asked.append(branch) or _SIBLING_SHA)
+    assert asked == ['release/x']
+
+
+def test_the_floating_reading_refuses_a_line_that_cannot_be_read() -> None:
+    def offline(_url: str, _branch: str) -> str:
+        msg = 'no network'
+        raise RelockFailed(msg)
+
+    (why,) = floating_stale(_LOCK, head=offline)
+    assert 'no network' in why
+    assert floating_stale('not toml [', head=offline) == (), 'PLANTED CONTROL: nothing floats, nothing is read'
+
+
+def test_relock_floating_moves_only_the_siblings_and_raises_on_a_failed_door(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a tree with no lock moves nothing and never calls the door."""
+    asked: list[Sequence[str]] = []
+    assert relock_floating(tmp_path, upgrade=lambda _t, names: asked.append(names) or 0) == ()
+    assert asked == []
+    (tmp_path / 'uv.lock').write_text(_LOCK, encoding='utf-8')
+    assert relock_floating(tmp_path, upgrade=lambda _t, names: asked.append(names) or 0) == ('lab-commons',)
+    assert asked == [('lab-commons',)]
+    with pytest.raises(RelockFailed, match='exited 3'):
+        relock_floating(tmp_path, upgrade=lambda _t, _names: 3)
 
 
 def test_before_the_cadence_only_sibling_moves_are_chosen() -> None:

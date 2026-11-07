@@ -23,7 +23,7 @@ which prints exactly this (a test pins this block to the command's output, so it
 [serve]
 repos = ["dev-lab", "lab-commons", "consumer-a"]
 parts = "every"
-withhold = ["femm", "jmag", "matlab", "simba"]
+withhold = ["aedt", "femm", "fluent", "jmag", "lsdyna", "mapdl", "matlab", "simba"]
 ```
 
 - `[capabilities.workstation]`: the live-checkout-and-agent-kit resource (`node` and `codex` on `PATH`); the

@@ -29,7 +29,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A PR is opened as a draft (`forge pr create`; `--ready` only for finished work) and its author marks it '
             'ready with `forge pr ready <N>` when its own work is done; only a ready PR is reviewed or merged, a draft '
             'runs nothing on either forge -- no part, review or merge-ready (user ruling 2026-11-05) -- and a '
-            'push after ready keeps it ready (D53, user ruling 2026-11-01; `forgedraft`).'
+            'push after ready keeps it ready (D53, user ruling 2026-11-01; `forgedraft`); `pr ready` is refused, '
+            'naming the failed condition and with no override, unless the checkout is clean and the head is '
+            'current (PR-HEAD-IS-CURRENT, user ruling 2026-11-07).'
         ),
         (
             'tests/test_dev_forgedraft.py',

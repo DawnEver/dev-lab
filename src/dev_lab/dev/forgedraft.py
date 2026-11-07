@@ -30,12 +30,18 @@ A DRAFT NEVER STALLS SILENTLY -- a session that has not read this rule would not
   alarm, so it pages once), naming the PR, its author and session and the ready door; marking ready closes it.
 
 ``python -m dev_lab.dev.forge pr ready <N>`` / ``pr draft <N>`` (:func:`main`) move a PR between the two.
+
+READY IS EARNED (user ruling 2026-11-07): :func:`mark_ready` refuses, naming which condition failed, unless the
+checkout is clean and the PR head is CURRENT -- it contains integration's tip and its lock is fresh against the
+floated siblings' heads (:func:`dev_lab.dev.prcurrent.ready_refusals`, the one judgement the pre-push row reads
+too). There is no override. The head's test statuses are NOT a condition: a draft runs nothing (D53), so ready is
+what starts the tests, and the merge gate already requires them to pass.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -55,7 +61,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'READY_DOOR', 'READY_ONLY', 'STALE_DRAFT', 'WAITING', 'alarms', 'main', 'mark_draft', 'mark_ready', 'opened_line',
+    'READY_DOOR', 'READY_ONLY', 'STALE_DRAFT', 'WAITING', 'Judge', 'NotReady', 'alarms', 'main', 'mark_draft',
+    'mark_ready', 'opened_line',
     'pushed', 'waiting',
 ]  # fmt: skip
 
@@ -99,8 +106,21 @@ def _graphql(client: Client, number: int, mutation: str) -> None:
         raise ValueError(msg)
 
 
-def mark_ready(client: Client, number: int) -> PullRequest:
-    """Mark PR *number* ready for review: its review and merge may proceed. The PR as the forge holds it now."""
+#: Why a PR may not be marked ready, one line per failed condition (:func:`dev_lab.dev.prcurrent.ready_refusals`).
+Judge = Callable[['Path', 'Client', 'PullRequest'], Sequence[str]]
+
+
+class NotReady(ValueError):
+    """``pr ready`` refused: the conditions that failed, one per line."""
+
+
+def mark_ready(client: Client, number: int, *, root: Path, judge: Judge) -> PullRequest:
+    """Mark PR *number* ready for review once *judge* finds nothing; RAISES :class:`NotReady` naming what failed.
+
+    The PR as the forge holds it now. *judge* is read on the PR as the forge holds it before the move.
+    """
+    if found := judge(root, client, client.pr_view(number)):
+        raise NotReady('; '.join(found))
     if client.backend is GITHUB:
         _graphql(client, number, _READY)
     else:
@@ -159,15 +179,19 @@ def alarms(root: Path, client: Client, base: str, repo: str, *, now: datetime) -
     return out
 
 
-def main(argv: Sequence[str], *, cwd: Path | None = None, client: Client | None = None) -> int:
-    """``forge pr ready <N>`` / ``forge pr draft <N>``: exit 0 moved, 1 the forge refused."""
+def main(argv: Sequence[str], *, judge: Judge, cwd: Path | None = None, client: Client | None = None) -> int:
+    """``forge pr ready <N>`` / ``forge pr draft <N>``: exit 0 moved, 1 refused (by *judge* or the forge)."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge pr', description=__doc__.splitlines()[0])
     parser.add_argument('verb', choices=('ready', 'draft'))
     parser.add_argument('number', type=int)
     args = parser.parse_args(list(argv))
-    client = client or client_for(Path.cwd() if cwd is None else cwd)
+    root = Path.cwd() if cwd is None else cwd
+    client = client or client_for(root)
     try:
-        pull = (mark_ready if args.verb == 'ready' else mark_draft)(client, args.number)
+        if args.verb == 'ready':
+            pull = mark_ready(client, args.number, root=root, judge=judge)
+        else:
+            pull = mark_draft(client, args.number)
     except (ForgeCallFailed, ValueError) as refused:
         emit(f'[forge] pr {args.verb} #{args.number} refused: {refused}', err=True)
         return 1

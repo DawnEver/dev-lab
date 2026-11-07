@@ -47,7 +47,8 @@ import tomllib
 from collections.abc import Callable, Iterator, Sequence
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, NamedTuple
+from urllib.parse import parse_qs, unquote
 
 import lab_commons.launch as _door
 
@@ -61,6 +62,7 @@ from dev_lab.dev.lockcheck import (
     FRESHENED,
     LOCK,
     TOOLCHAIN,
+    UNRESOLVED,
     UV_PIN,
     mount_submodules,
     newest_stable,
@@ -76,8 +78,28 @@ if TYPE_CHECKING:
     from dev_lab.dev.netverb import Report
 
 __all__ = [
-    'BRANCH', 'DEFAULT_CADENCE', 'FULL', 'IN_HOUSE', 'RENDERED', 'SCOPE', 'TITLE', 'RelockFailed', 'cadence',
-    'carried', 'carry', 'chosen', 'detached_worktree', 'dist_of', 'door_upgrade', 'in_house', 'rerender',
+    'BRANCH',
+    'DEFAULT_CADENCE',
+    'DEFAULT_LINE',
+    'FULL',
+    'IN_HOUSE',
+    'RENDERED',
+    'SCOPE',
+    'TITLE',
+    'Floated',
+    'RelockFailed',
+    'cadence',
+    'carried',
+    'carry',
+    'chosen',
+    'detached_worktree',
+    'dist_of',
+    'door_upgrade',
+    'floated',
+    'floating_stale',
+    'in_house',
+    'rerender',
+    'siblings',
     'third_party_due',
 ]  # fmt: skip
 
@@ -89,6 +111,8 @@ TITLE: Final = 'build(deps): relock to the newest resolution'
 SCOPE: Final = 'Relock-Scope'
 FULL: Final = 'full'
 IN_HOUSE: Final = 'in-house'
+#: The line a floated sibling follows when its git source names no ``branch``.
+DEFAULT_LINE: Final = 'integrate/main'
 #: How often third-party moves land where the repo declares no ``[tool.dev_lab.relock] third_party_every``.
 DEFAULT_CADENCE: Final = timedelta(days=1)
 _TABLE: Final = 'relock'
@@ -136,22 +160,76 @@ def _canon(name: str) -> str:
     return re.sub(r'[-_.]+', '-', name).lower()
 
 
-def in_house(lock: str) -> frozenset[str]:
-    """The packages lock text *lock* sources from git FOLLOWING a line (no ``rev``/``tag``): the floated siblings.
+class Floated(NamedTuple):
+    """One sibling the lock sources from git FOLLOWING a line: its name, repository, line and locked commit."""
 
-    An unreadable lock follows nothing: every move it would make is third-party and waits for the cadence.
+    name: str
+    url: str
+    branch: str
+    sha: str
+
+
+def floated(lock: str) -> tuple[Floated, ...]:
+    """The packages lock text *lock* sources from git FOLLOWING a line (no ``rev``/``tag``), in lock order.
+
+    The line is the source's ``branch`` query, else :data:`DEFAULT_LINE`. An unreadable lock follows nothing.
     """
     try:
         packages = tomllib.loads(lock).get('package', [])
     except tomllib.TOMLDecodeError:
-        return frozenset()
-    found = set()
+        return ()
+    found = []
     for entry in packages:
         source = entry.get('source', {}) if isinstance(entry, dict) else {}
-        url = source.get('git') if isinstance(source, dict) else None
-        if isinstance(url, str) and isinstance(entry.get('name'), str) and not _HELD_GIT.search(url.partition('#')[0]):
-            found.add(_canon(entry['name']))
-    return frozenset(found)
+        locator = source.get('git') if isinstance(source, dict) else None
+        if not isinstance(locator, str) or not isinstance(entry.get('name'), str):
+            continue
+        address, _, sha = locator.partition('#')
+        if _HELD_GIT.search(address):
+            continue
+        url, _, query = address.partition('?')
+        branch = parse_qs(query).get('branch', [DEFAULT_LINE])[0]
+        found.append(Floated(_canon(entry['name']), url, unquote(branch), sha))
+    return tuple(found)
+
+
+def in_house(lock: str) -> frozenset[str]:
+    """The names of :func:`floated`: the siblings an in-house relock moves off-cadence."""
+    return frozenset(one.name for one in floated(lock))
+
+
+def _line_head(url: str, branch: str) -> str:
+    """The commit *url*'s ``refs/heads/<branch>`` holds now; RAISES :class:`RelockFailed` when it cannot be read."""
+    report = run_network_verb([_GIT, 'ls-remote', url, f'refs/heads/{branch}'], timeout=120)
+    sha = (report.attempts[-1].output.split() or [''])[0] if report.ok and report.attempts else ''
+    if not sha:
+        msg = f'{url} {branch} could not be read: {report.remedy or "no such branch"}'
+        raise RelockFailed(msg)
+    return sha
+
+
+def siblings(tree: Path) -> frozenset[str]:
+    """The floated siblings (:func:`in_house`) of *tree*'s lock; none where *tree* commits no lock."""
+    return in_house((tree / LOCK).read_text(encoding='utf-8')) if (tree / LOCK).is_file() else frozenset()
+
+
+def floating_stale(lock: str, *, head: Callable[[str, str], str] = _line_head) -> tuple[str, ...]:
+    """Why lock text *lock* lags a floated sibling's line, one sentence each; empty when every sibling is current.
+
+    THE floating-head freshness reading (user ruling 2026-11-07): each :func:`floated` sibling's locked commit
+    against *head* -- ``git ls-remote <url> refs/heads/<line>`` -- seconds, never a resolution. A line that cannot
+    be read is a sentence too: it refuses, never admits.
+    """
+    found = []
+    for one in floated(lock):
+        try:
+            now = head(one.url, one.branch)
+        except OSError as why:
+            found.append(f'{UNRESOLVED}: {one.name}: {why}')
+            continue
+        if now != one.sha:
+            found.append(f'{LOCK} pins {one.name} at {one.sha[:SHORT]}, its {one.branch} is at {now[:SHORT]}')
+    return tuple(found)
 
 
 def chosen(found: Sequence[str], siblings: frozenset[str], *, due: bool) -> tuple[str, ...]:
@@ -309,8 +387,7 @@ def _due(
     if not all(refreshable(line) for line in found):
         raise RelockFailed('; '.join(found))
     due = third_party_due(root, tip, cadence((tree / 'pyproject.toml').read_text(encoding='utf-8')), now)
-    siblings = in_house((tree / LOCK).read_text(encoding='utf-8')) if (tree / LOCK).is_file() else frozenset()
-    lines = chosen(found, siblings, due=due)
+    lines = chosen(found, siblings(tree), due=due)
     return lines, tuple(line for line in found if line not in lines), due
 
 

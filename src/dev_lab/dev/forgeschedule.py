@@ -78,7 +78,7 @@ from lab_commons.compute.model import (
 )
 from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
 from lab_commons.hpc.retired import RETIRED
-from lab_commons.hpc.shell import FULL
+from lab_commons.hpc.shell import FULL, INCREMENTAL
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import STARVED, Alarm
@@ -87,6 +87,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeorigin import head_login, origin_host_of
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_deadline, parse_paths
+from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
@@ -404,7 +405,7 @@ def candidates(
                 platform,
                 kind,
                 _when(root, sha, now),
-                FULL,
+                scope_of(kind, labels),
                 labels=labels,
                 number=number,
                 origin=by,
@@ -432,12 +433,15 @@ def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bo
     """
     if wanted.kind == REQUEST:
         return True
-    admits = part_refs(root, wanted.platform, wanted.scope)
+    scope = wanted.scope
+    admits = part_refs(root, wanted.platform, scope)
+    if admits is None and scope == INCREMENTAL:  # a subset of the full run: never served where full is not
+        scope, admits = FULL, part_refs(root, wanted.platform, FULL)
     if admits is None or any(fnmatch.fnmatchcase(wanted.ref, one) for one in admits):
         return True
     say(
-        f'[serve] {wanted.ref} is not served tests/{wanted.platform} at {wanted.scope}: '
-        f'[tool.dev_lab.parts.refs.{wanted.platform}] {wanted.scope} admits {list(admits)}'
+        f'[serve] {wanted.ref} is not served tests/{wanted.platform} at {scope}: '
+        f'[tool.dev_lab.parts.refs.{wanted.platform}] {scope} admits {list(admits)}'
     )
     return False
 
