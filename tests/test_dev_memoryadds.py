@@ -457,3 +457,24 @@ def test_planted_a_draft_entry_turning_into_a_task_list_is_still_refused(repo: P
     _write(repo, rel, MANUAL_HEAD + MANUAL_FIRST)
     _git(repo, 'add', '--', rel)
     assert memoryadds.pending(repo)
+
+
+def _fresh_origin(repo: Path, *, uncited: bool) -> str:
+    """A repo whose origin holds NO integration ref yet: the push that founds the repo creates it."""
+    _git(repo, 'update-ref', '-d', 'refs/remotes/origin/integrate/main')
+    rel = '.claude/memory/2026/10/31/m.md'
+    _write(repo, rel, CITED + ('\nUncited.\n' if uncited else ''))
+    head = _commit(repo, 'founding memory', rel)
+    return f'refs/heads/integrate/main {head} refs/heads/integrate/main {"0" * 40}\n'
+
+
+def test_the_push_that_founds_a_repo_is_judged_from_the_empty_tree(repo: Path) -> None:
+    """No published entry exists before the first push, so the whole pushed history is adds -- judged as adds."""
+    assert memoryadds.pushed(repo, _fresh_origin(repo, uncited=False)) == ()
+
+
+def test_planted_a_founding_push_adding_an_uncited_merged_entry_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: with no integration ref the adds are still judged, never waved through."""
+    found = memoryadds.pushed(repo, _fresh_origin(repo, uncited=True))
+    assert len(found) == 1, found
+    assert 'Uncited' in found[0]

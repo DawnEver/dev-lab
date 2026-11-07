@@ -56,6 +56,7 @@ VOLATILE_FIELDS = ('accessed', 'tier', 'count')
 _GIT = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S = 120
 _ZERO = '0' * 40
+_EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
 _MEMORY = '.claude/memory/'
 _TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
@@ -280,14 +281,22 @@ def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str
 
 
 def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
-    """Git's pre-push stdin: each pushed sha judged since its merge-base with ``origin/<integration>``."""
+    """Git's pre-push stdin: each pushed sha judged since its merge-base with ``origin/<integration>``.
+
+    Before the push that founds a repo, origin holds no integration ref and so no published entry: the
+    whole pushed history is judged from the empty tree, where every memory path is an add.
+    """
     integration = f'origin/{policy_at(root, "HEAD").integration}'
+    founded = _run(root, 'rev-parse', '--verify', '-q', f'{integration}^{{commit}}')[0] == 0
     out: list[str] = []
     for line in ref_lines.splitlines():
         parts = line.split()
         if len(parts) != _REF_LINE_FIELDS or parts[1] == _ZERO:
             continue
-        out.extend(problems_between(root, integration, parts[1]))
+        if founded:
+            out.extend(problems_between(root, integration, parts[1]))
+        else:
+            out.extend(_judge(root, _EMPTY_TREE, parts[1], _changes(root, _EMPTY_TREE, parts[1])))
     return tuple(out)
 
 
