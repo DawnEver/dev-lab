@@ -395,7 +395,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'repo declares its files still carrying CJK as a NAMED SET that may only shrink, where a declared file '
             'with no CJK left is an ORPHANED waiver, refused like an undeclared one.'
         ),
-        ('tests/test_dev_cjk.py',),
+        ('tests/test_dev_cjk.py', 'tests/test_famtests_alwayson.py'),
     ),
     (
         'INJECTED-DOC-WIDTH-CEILING',

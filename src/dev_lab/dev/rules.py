@@ -210,6 +210,12 @@ class Rule:
             raise UnenforceableRule(msg)
 
 
+#: The rules dev-lab enforces in EVERY repo through the ``pytest11`` plugin
+#: :mod:`dev_lab.dev.famtests.alwayson` (user ruling 2026-11-07): an :class:`Adoption` may neither
+#: list one nor declare it absent, and :func:`unadopted` counts it as answered.
+ALWAYS_ON: Final[frozenset[str]] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})
+
+
 @dataclass(frozen=True, slots=True)
 class Adoption:
     """ONE repo's mechanisms for the rules it cites -- the half a shared registry cannot hold.
@@ -247,6 +253,14 @@ class Adoption:
         """Refuse an adoption that cannot name the repo it speaks for, at construction."""
         if not self.app_name.strip():
             msg = 'an adoption with no app_name cannot report WHICH repo is missing a mechanism.'
+            raise ValueError(msg)
+        pinned = sorted((set(self.mechanisms) | self.declared_absent) & ALWAYS_ON)
+        if pinned:
+            msg = (
+                f'{self.app_name} lists {pinned}, which are always on: dev-lab enforces them in every repo '
+                f'through its pytest plugin (dev_lab.dev.famtests.alwayson), so a repo row is either a copy '
+                f'or an opt-out, and neither exists. Delete the row.'
+            )
             raise ValueError(msg)
         both = sorted(set(self.mechanisms) & self.declared_absent)
         if both:
@@ -410,7 +424,7 @@ def unadopted(rules: Sequence[Rule], adoption: Adoption) -> tuple[str, ...]:
     to WHICH rule moved, and a repo that dropped one rule while picking up another would compare
     equal, with the honest-looking repair being to edit the digit.
     """
-    silent = set(rules_by_id(rules)) - set(adoption.mechanisms) - set(adoption.declared_absent)
+    silent = set(rules_by_id(rules)) - set(adoption.mechanisms) - set(adoption.declared_absent) - ALWAYS_ON
     return tuple(sorted(silent))
 
 
