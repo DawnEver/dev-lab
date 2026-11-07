@@ -13,14 +13,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dev_lab.dev.family import declared_in
 from dev_lab.dev.partrows import needs_of_row
-from dev_lab.dev.platformparts import UndeclaredPart
+from dev_lab.dev.platformparts import declared_strings, declared_tables
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = ['part_refs']
+
+_EXAMPLE = '["integrate/main", "main"]'
 
 
 def part_refs(root: Path, platform: str, scope: str) -> dict[str, tuple[str, ...]]:
@@ -32,17 +33,10 @@ def part_refs(root: Path, platform: str, scope: str) -> dict[str, tuple[str, ...
         UndeclaredPart: a declaration is present and not a non-empty list of strings.
 
     """
-    text = (root / 'pyproject.toml').read_text(encoding='utf-8')
-    declared = declared_in(text, 'parts').get('refs', {})
+    declared = declared_tables(root, name='parts').get('refs', {})
     filters: dict[str, tuple[str, ...]] = {}
     for resource in sorted(needs_of_row(platform) & declared.keys()):
-        if (patterns := declared[resource].get(scope)) is None:
-            continue
-        if not isinstance(patterns, list) or not patterns or not all(isinstance(p, str) and p for p in patterns):
-            msg = (
-                f'pyproject.toml must declare [tool.dev_lab.parts.refs.{resource}] {scope} as a non-empty array'
-                f' of strings, e.g. {scope} = ["integrate/main", "main"]'
-            )
-            raise UndeclaredPart(msg)
-        filters[resource] = tuple(patterns)
+        if (patterns := declared[resource].get(scope)) is not None:
+            table = f'tool.dev_lab.parts.refs.{resource}'
+            filters[resource] = tuple(declared_strings(patterns, table, scope, _EXAMPLE, required=True))
     return filters
