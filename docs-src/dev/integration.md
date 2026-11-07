@@ -296,6 +296,9 @@ local reads only -- no network call beyond the push itself -- with no escape hat
 The separate base row `landed-pr` (`dev_lab.dev.landedpush`) READS THE FORGE: NO-PUSH-ONTO-A-LANDED-PR refuses a
 push updating a branch whose PR into the integration branch is merged or closed while no open PR has that head,
 naming the remedy (a new PR from the branch, or a new branch name); a forge that cannot be read refuses.
+A branch the repo DECLARES long-lived (a `[tool.dev_lab.branchset] sessions` name) is reopened after each
+landing (user ruling 2026-11-07): a tip not yet in `origin/<integration>` passes and the hook prints the
+`forge pr create` for its next PR; a tip already there is refused as nothing new.
 
 The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) refuses a `pr/*` push whose tip
 lacks `origin/<integration>` (fetched afresh; a failed fetch refuses) or whose lock lags a floated sibling's
