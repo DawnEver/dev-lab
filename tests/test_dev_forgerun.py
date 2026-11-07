@@ -31,6 +31,7 @@ from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.grants import SESSION_ENV, Grant, Machine, Session
 from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NoRoom
+from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.hpc.slurm import FORGE_SESSION, Node, Quota, Snapshot, parse_usage
 from lab_commons.hpc.tree import NotSubmitted
 
@@ -45,7 +46,7 @@ from dev_lab.dev import (
     forgesupersede,
 )
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
-from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
+from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, DONE, OPEN, Claim, Work, assess
 from dev_lab.dev.forgecoalesce import DRAINING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus
@@ -1275,3 +1276,198 @@ def test_every_run_file_here_holds_its_job_names_whatever_its_repo(home: Path) -
     store = _Store()
     _start(home, store)
     assert forgerunstate.held_names() == {f'run-{SHA[:12]}-linux', f'run-{SHA[:12]}'}
+
+
+@pytest.mark.parametrize(
+    ('landed', 'carries', 'superseded'),
+    [
+        (True, False, True),  # its head is already in the integration ref: the integration tip runs it in full
+        (True, True, False),  # PLANTED CONTROL: its result carries to the integration tip (P6) -- it finishes
+        (False, False, False),  # PLANTED CONTROL: a live PR head that is not superseded is never touched
+    ],
+)
+def test_a_pr_run_whose_head_already_landed_in_integration_is_superseded_by_the_integration_tip(
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, landed: bool, carries: bool, superseded: bool
+) -> None:
+    """User ruling 2026-11-07: a commit already contained in the integration ref is superseded like a moved head.
+
+    The integrator settled such claims by hand that day: the PR's own ref had not moved, so nothing withdrew
+    them. Its claim is settled ``error`` "superseded by <integration tip>": DONE, never retaken at lease lapse.
+    """
+    store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+    _submitted_run(home, store, slurm, ref=PR_REF)
+    integration = 'e' * 40
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, ref: integration if ref == INTEGRATION_REF else SHA)
+    monkeypatch.setattr(forgesupersede, 'contained', lambda _root, a, b: landed and (a, b) == (SHA, integration))
+    monkeypatch.setattr(forgesupersede, 'equivalent', lambda _root, _a, _b: carries)
+    after = _tick(store, slurm, alarms=alarms)
+    if not superseded:
+        assert after is not None
+        assert (slurm.withdrawn, slurm.cancelled, alarms) == ([], [], [])
+        return
+    assert after is None
+    assert slurm.withdrawn[-1:] == ['4242'], 'its pending tasks are withdrawn'
+    post = store.posts[-1]
+    assert post['status'] == 'error'
+    assert post['description'].startswith(f'{forgesupersede.SUPERSEDED_BY} {integration}')
+    released = CommitStatus(context=part_context('tests'), state='error', description=post['description'], url='')
+    assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == DONE
+
+
+@pytest.mark.parametrize('settled', ['superseded', 'verdict'])
+def test_a_run_whose_claim_was_settled_superseded_on_the_forge_withdraws_and_drains_without_posting(
+    home: Path, settled: str
+) -> None:
+    """``forge run supersede`` settles a claim on the forge; the OWNER's next tick does the Slurm half.
+
+    Before 2026-11-07 a DONE part only dropped the run file, so the next tick's stray sweep cancelled every
+    started task with it. Now its pending tasks are withdrawn, its started ones drain to their deadline, and
+    nothing is posted: the settlement stands. PLANTED CONTROL: a part settled by a verdict touches no job.
+    """
+    store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+    _submitted_run(home, store, slurm, ref=PR_REF)
+    if settled == 'superseded':
+        store.add('error', f'{forgesupersede.SUPERSEDED_BY} {"d" * 40} -- settled by forge run supersede')
+    else:
+        store.add('success', 'scope=full ran=3 hands=')
+    slurm.started = ['4242']
+    task = forgerunstate.Started('4242_0', started_at=1000.0, limit_s=600.0)
+    slurm.draining = forgerunstate.Draining(1100.0, (task,))
+    posts = len(store.posts)
+    after = _tick(store, slurm, alarms=alarms)
+    if settled == 'verdict':
+        assert after is None
+        assert (slurm.withdrawn, slurm.cut) == ([], [])
+        return
+    assert after is not None, 'its started task drains within its deadline'
+    assert slurm.withdrawn[-1:] == ['4242']
+    assert (slurm.cancelled, slurm.cut, len(store.posts)) == ([], [], posts), 'nothing posted, nothing killed'
+    slurm.draining = forgerunstate.Draining(1800.0, (task,))
+    assert _tick(store, slurm, alarms=alarms) is None
+    assert slurm.cut == ['4242_0'], 'past its deadline the task is cancelled'
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    assert len(store.posts) == posts
+
+
+def test_a_claimed_run_carries_its_candidates_scope(home: Path) -> None:
+    """A PR head's run is INCREMENTAL (user ruling 2026-11-07); the scope the claim pass took is the run's."""
+    store = _Store()
+    store.add('pending', HERE.description())
+    part = ClusterPart('https://f/o/r.git', 'tests', home / 'parts', ())
+    run = forgerun.start(Work(PR_REF, SHA, 'linux', 'mine', HERE, cluster=part, scope=INCREMENTAL), HERE)
+    assert run.scope == INCREMENTAL
+    assert forgerunstate.live('https://f/o/r.git')[0].scope == INCREMENTAL
+
+
+def _settle_fixture(monkeypatch: pytest.MonkeyPatch, history: dict[str, list[CommitStatus]]) -> list[tuple[str, dict]]:
+    posts: list[tuple[str, dict]] = []
+    monkeypatch.setattr(forgesupersede, '_integration', lambda _root: INTEGRATION_REF)
+    monkeypatch.setattr(forgesupersede, 'status_history', lambda _client, sha: tuple(history.get(sha, ())))
+    monkeypatch.setattr(forgesupersede, 'status_post', lambda _client, sha, **kw: posts.append((sha, kw)))
+    return posts
+
+
+def test_forge_run_supersede_settles_every_superseded_heads_claim_and_never_a_live_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The integrator's door verb (user ruling 2026-11-07): no human posts a status by hand again.
+
+    Every live or lapsed claim on the ref's EARLIER heads is settled ``error`` "superseded by <tip>". PLANTED
+    CONTROLS: the live head's own claim, an earlier head already settled, and one ``publishing`` stay untouched.
+    """
+    tip, old, verdict, publishing = 'a' * 40, 'b' * 40, 'c' * 40, 'f' * 40
+    held = dataclasses.replace(HERE, progress='running 3/9 done 1/9').description()
+    last = dataclasses.replace(HERE, progress='publishing').description()
+    history = {
+        tip: [CommitStatus('tests/base', 'pending', held, '')],
+        old: [CommitStatus('tests/base', 'pending', held, ''), CommitStatus('tests/linux', 'pending', held, '')],
+        verdict: [CommitStatus('tests/base', 'success', 'scope=full ran=1 hands=', '')],
+        publishing: [CommitStatus('tests/base', 'pending', last, '')],
+    }
+    posts = _settle_fixture(monkeypatch, history)
+    since: list[str] = []
+
+    def earlier(_root: Path, _sha: str, *, since: str = '', seen: list[str] = since) -> list[str]:
+        seen.append(since)
+        return [old, verdict, publishing]
+
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, ref: tip if ref == PR_REF else 'e' * 40)
+    monkeypatch.setattr(forgesupersede, 'earlier_tips', earlier)
+    monkeypatch.setattr(forgesupersede, 'contained', lambda _root, _a, _b: False)
+    settled = forgesupersede.settle_superseded(Path(), cast('Any', None), PR_REF)
+    assert settled == [(old, 'tests/base', tip), (old, 'tests/linux', tip)]
+    assert since == [f'refs/remotes/origin/{INTEGRATION_REF}'], 'a PR head reads only its own commits'
+    assert {sha for sha, _ in posts} == {old}
+    assert all(kw['state'] == 'error' and kw['description'].startswith(f'superseded by {tip}') for _, kw in posts)
+
+
+def test_forge_run_supersede_settles_a_landed_pr_heads_claim_for_the_integration_tip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A PR head already contained in the integration ref is superseded by the integration tip, its own claim too."""
+    tip, integration = 'a' * 40, 'e' * 40
+    history = {tip: [CommitStatus('tests/base', 'pending', HERE.description(), '')]}
+    posts = _settle_fixture(monkeypatch, history)
+    monkeypatch.setattr(forgesupersede, 'tip_of', lambda _root, ref: tip if ref == PR_REF else integration)
+    monkeypatch.setattr(forgesupersede, 'earlier_tips', lambda *_a, **_k: [])
+    monkeypatch.setattr(forgesupersede, 'contained', lambda _root, a, b: (a, b) == (tip, integration))
+    assert forgesupersede.settle_superseded(Path(), cast('Any', None), PR_REF) == [(tip, 'tests/base', integration)]
+    [(sha, kw)] = posts
+    assert (sha, kw['description'].startswith(f'superseded by {integration}')) == (tip, True)
+
+
+def test_forge_run_supersede_is_a_door_verb(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``forge run supersede --ref <ref>`` routes to the settlement and names each claim it settled."""
+    from dev_lab.dev import forgerunshow  # noqa: PLC0415 -- the door under test, imported where it is read
+
+    asked: list[str] = []
+
+    def settle(_root: Path, _client: object, ref: str) -> list[tuple[str, str, str]]:
+        asked.append(ref)
+        return [('b' * 40, 'tests/base', 'a' * 40)]
+
+    monkeypatch.setattr(forgerunshow, 'client_for', lambda _root, **_k: None)
+    monkeypatch.setattr(forgesupersede, 'settle_superseded', settle)
+    lines: list[str] = []
+    monkeypatch.setattr(forgerunshow, 'emit', lambda line, **_k: lines.append(line))
+    assert forgerunshow.main(['supersede', '--ref', PR_REF], cwd=tmp_path) == 0
+    assert asked == [PR_REF]
+    assert lines == [f'{"b" * 12} tests/base: superseded by {"a" * 12}']
+
+
+@pytest.mark.parametrize(
+    ('scope', 'reach', 'narrowed'),
+    [
+        (INCREMENTAL, frozenset({'tests/test_a.py'}), True),  # a PR head runs only the files its diff reaches
+        (FULL, frozenset({'tests/test_a.py'}), False),  # PLANTED CONTROL: the integration tip runs everything
+        (INCREMENTAL, None, False),  # any doubt about the reach runs everything
+        (INCREMENTAL, frozenset(), False),  # nothing reached is no run of nothing: everything runs
+    ],
+)
+def test_an_incremental_run_submits_only_the_test_files_its_diff_reaches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scope: str, reach: frozenset[str] | None, *, narrowed: bool
+) -> None:
+    """``RunSpec.only`` is the one incremental switch :mod:`lab_commons.hpc.run` reads (user ruling 2026-11-07).
+
+    The selection is by TEST FILE: every collected id of a reached file runs, a collection error of one is kept.
+    """
+    seen: list[Any] = []
+    monkeypatch.setattr(forgeslurm, 'vocabulary_at', lambda _root, _sha: None)
+    monkeypatch.setattr(forgeslurm, 'builds_at', lambda _root, _sha, **_k: None)
+    monkeypatch.setattr(forgeslurm, 'submit_run', lambda spec, *_a, **_k: seen.append(spec) or {'rounds': []})
+    monkeypatch.setattr(
+        forgeslurm, 'reached_tests', lambda _root, ref, sha: reach if (ref, sha) == ('integ', SHA) else None
+    )
+    monkeypatch.setattr(forgeslurm, 'load_policy', lambda _root: SimpleNamespace(integration='integ'))
+    cluster = forgeslurm.SlurmCluster(tmp_path, cast('Any', SimpleNamespace(grants=[])), Config(), lambda _g: None)
+    run = forgerunstate.Run('https://f/o/r.git', SHA, PR_REF, 'tests', str(tmp_path), HERE.description(), scope=scope)
+    assert cluster.submit(run) == []
+    [spec] = seen
+    if not narrowed:
+        assert (spec.only, spec.scope) == (None, FULL)
+        return
+    assert spec.scope == INCREMENTAL
+    assert 'tests/test_a.py::test_x' in spec.only
+    assert 'tests/test_a.py::TestA::test_y[1]' in spec.only
+    assert 'tests/test_c.py::test_c' not in spec.only
+    assert list(spec.only) == ['tests/test_a.py'], 'a file collection error is matched by its path'

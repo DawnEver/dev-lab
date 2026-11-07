@@ -90,7 +90,7 @@ THE RUN STATE -- the file, its schema and the cluster protocol -- lives in :mod:
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import Final
@@ -121,8 +121,15 @@ from dev_lab.dev.forgerunstate import (
     save,
 )
 from dev_lab.dev.forgeschedule import tip_of
-from dev_lab.dev.forgestatus import status_history
-from dev_lab.dev.forgesupersede import supersede, superseding_tip
+from dev_lab.dev.forgestatus import CommitStatus, status_history
+from dev_lab.dev.forgesupersede import (
+    REF_GONE,
+    SUPERSEDED_BY,
+    drain_settled,
+    supersede,
+    superseded_reason,
+    superseding_tip,
+)
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
@@ -134,6 +141,7 @@ __all__ = ['advance', 'start']
 _ADVANCE: Final = 'advance'
 _WAIT: Final = 'wait'
 _GONE: Final = 'gone'
+_SETTLED_SUPERSEDED: Final = 'settled superseded'  # settled on the forge for a newer head: drained, never posted
 
 
 def start(work: Work, owner: Claim) -> Run:
@@ -144,7 +152,7 @@ def start(work: Work, owner: Claim) -> Run:
     part = work.cluster
     run = Run(
         repo_url=part.repo_url, sha=work.sha, ref=work.ref, collect=part.collect, output=str(part.output),
-        owner=owner.description(), platform=work.platform, outputs=part.outputs,
+        owner=owner.description(), platform=work.platform, outputs=part.outputs, scope=work.scope,
     )  # fmt: skip
     save(run)
     return run
@@ -165,7 +173,7 @@ def advance(
     tag = run_tag(run.platform, run.sha)
     held, run = _hold(run, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
     if held != _ADVANCE:
-        return run if held == _WAIT else None
+        return _not_advanced(held, run, cluster=cluster, say=say, tag=tag)
     try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
         if run.phase in {CLAIMED_PHASE, SUBMITTING}:
             if tip := superseding_tip(root, run):  # its ref moved on: no submit, the tip takes the slot
@@ -275,10 +283,10 @@ def _settle(
     """
     if ran:
         reason = f'{release_reason(ProducerExit.INCONCLUSIVE)}: ended without a record'
-    elif tip_of(root, run.ref) == run.sha:
+    elif (tip := tip_of(root, run.ref)) == run.sha:
         reason = f'{RETRYABLE} -- never submitted; claimable again'
     else:
-        reason = f'released: superseded -- never submitted, and {run.ref} moved on'
+        reason = superseded_reason(tip or REF_GONE, f'never submitted, and {run.ref} moved on')
     reason = reason[:DESCRIPTION_MAX]
     alarm(
         Alarm(
@@ -360,11 +368,10 @@ def _hold(
     """
     now = forge_now(client)
     owner = run.claim
-    state, holder = assess(status_history(client, run.sha), part_context(run.platform), me=owner, now=now)
+    history = status_history(client, run.sha)
+    state, holder = assess(history, part_context(run.platform), me=owner, now=now)
     if state == DONE:
-        say(f'{tag}: the part is already settled on the forge -- released')
-        drop(run)
-        return _GONE, run
+        return _done(run, history, say=say, tag=tag), run
     foreign_host = not owner.same_owner(me) and owner.hpc == me.hpc
     if foreign_host and state == MINE:  # another login host of this account holds it live: one host per account
         say(f'{tag}: owned live by {owner.machine} under {owner.hpc} -- this host does nothing')
@@ -397,3 +404,25 @@ def _hold(
         run = dataclasses.replace(run, owner=renewal.description())
         save(run)
     return _ADVANCE, run
+
+
+def _settled_superseded(history: Sequence[CommitStatus], context: str) -> bool:
+    """Whether *context*'s latest post on the commit settled it :data:`SUPERSEDED_BY` a newer head."""
+    posts = [one for one in history if one.context == context]
+    return bool(posts) and posts[-1].state == 'error' and posts[-1].description.startswith(SUPERSEDED_BY)
+
+
+def _done(run: Run, history: Sequence[CommitStatus], *, say: Callable[[str], None], tag: str) -> str:
+    """What becomes of *run* whose part is settled on the forge: drained when settled superseded, else dropped."""
+    if _settled_superseded(history, part_context(run.platform)):
+        return _SETTLED_SUPERSEDED
+    say(f'{tag}: the part is already settled on the forge -- released')
+    drop(run)
+    return _GONE
+
+
+def _not_advanced(held: str, run: Run, *, cluster: Cluster, say: Callable[[str], None], tag: str) -> Run | None:
+    """The run as a tick that does not advance it leaves it: waiting, gone, or drained after a forge settlement."""
+    if held == _SETTLED_SUPERSEDED:  # forge run supersede settled it: the Slurm half, nothing posted
+        return drain_settled(run, cluster=cluster, say=say, tag=tag)
+    return run if held == _WAIT else None
