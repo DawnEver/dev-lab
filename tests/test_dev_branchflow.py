@@ -21,6 +21,7 @@ from dev_lab.dev.forgelanes import OWNER_CLOSED, open_lanes
 from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
 from dev_lab.dev.forgerecords import RECORDS_TAG, attach, listing
 from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.relock import RelockFailed
 from dev_lab.dev.trialmerge import merged_at, trial
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
@@ -132,6 +133,30 @@ def test_sync_relocks_the_floated_siblings_and_commits_the_lock_in_the_same_sync
     assert 'Relocked: dev-lab, lab-commons' in git_out(work, 'log', '-1', '--format=%b')
     assert git_out(work, 'status', '--porcelain') == ''
     assert git_out(work, 'show', 'HEAD:uv.lock') == 'lab-commons @ new'
+
+
+def test_a_failed_relock_restores_every_file_it_touched_then_refuses(tmp_path: Path) -> None:
+    """User ruling 2026-11-07: a sync failing partway leaves the tree clean, so the next sync is not refused.
+
+    PLANTED CONTROL: the successful relock above still commits the lock.
+    """
+    work = _child(tmp_path)
+    commit(work, 'uv.lock', 'lab-commons @ old\n')
+    commit(work, 'pyproject.toml', '[project]\n')
+    before = git_out(work, 'rev-parse', 'HEAD')
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('lab-commons @ half\n', encoding='utf-8')
+        (root / 'pyproject.toml').write_text('[project]\nhalf = 1\n', encoding='utf-8')
+        (root / 'stray.txt').write_text('new\n', encoding='utf-8')
+        msg = 'the dependency door refused: a verify run holds the environment'
+        raise RelockFailed(msg)
+
+    with pytest.raises(RelockFailed, match='door refused'):
+        forgesync.relock(work, door=door)
+    assert git_out(work, 'status', '--porcelain') == ''
+    assert git_out(work, 'rev-parse', 'HEAD') == before
+    assert git_out(work, 'show', 'HEAD:uv.lock') == 'lab-commons @ old'
 
 
 def test_sync_refuses_on_the_trunk_and_on_integration(tmp_path: Path) -> None:

@@ -174,16 +174,37 @@ def relock(root: Path, *, door: Callable[[Path], Sequence[str]] = relock_floatin
     """Relock *root*'s floated siblings (*door*) and commit the lock when it moved; the siblings it moved.
 
     Nothing moved (no sibling, or each already at its head): nothing is committed and ``()`` is answered.
-    RAISES :class:`OSError` (:class:`~dev_lab.dev.relock.RelockFailed` among them) when the door or the commit fails.
+    RAISES :class:`OSError` (:class:`~dev_lab.dev.relock.RelockFailed` among them) when the door or the commit fails,
+    after restoring every file the relock touched to its committed state (user ruling 2026-11-07): a sync failing
+    partway never leaves a dirty tree for the next sync to refuse.
     """
-    names = tuple(door(root))
-    if not names or not _git(root, 'status', '--porcelain', '--', LOCK).stdout.strip():
-        return ()
-    for argv in (('add', '--', LOCK), ('commit', '-q', '-m', RELOCK_TITLE, '-m', f'Relocked: {", ".join(names)}')):
-        if (done := _git(root, *argv)).returncode != 0:
-            msg = f'git {argv[0]} of the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
-            raise RelockFailed(msg)
+    clean = _touched(root)
+    try:
+        names = tuple(door(root))
+        if not names or not _git(root, 'status', '--porcelain', '--', LOCK).stdout.strip():
+            return ()
+        for argv in (('add', '--', LOCK), ('commit', '-q', '-m', RELOCK_TITLE, '-m', f'Relocked: {", ".join(names)}')):
+            if (done := _git(root, *argv)).returncode != 0:
+                msg = f'git {argv[0]} of the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
+                raise RelockFailed(msg)
+    except OSError:
+        _restore(root, _touched(root) - clean)
+        raise
     return names
+
+
+def _touched(root: Path) -> frozenset[tuple[bool, str]]:
+    """Every path ``git status`` reports in *root*, each with whether it is untracked."""
+    listed = _git(root, 'status', '--porcelain', '-z', '--untracked-files=all').stdout
+    return frozenset((row[:2] == '??', row[3:]) for row in listed.split('\0') if row)
+
+
+def _restore(root: Path, touched: frozenset[tuple[bool, str]]) -> None:
+    """Return each *touched* path to its committed state: tracked ones from HEAD, new ones removed."""
+    if tracked := sorted(path for new, path in touched if not new):
+        _git(root, 'checkout', 'HEAD', '--', *tracked)
+    for path in sorted(path for new, path in touched if new):
+        (root / path).unlink(missing_ok=True)
 
 
 def _render(found: Plan) -> list[str]:
