@@ -158,7 +158,7 @@ def load_escapes(root: Path) -> Escapes:
 def _candidates(text: str) -> Iterable[str]:
     for match in _TOKEN.finditer(text):
         whole = match.group()
-        # A machine-local path (`c:\femm-qt\bin`) keeps its backslashes: `\f`, `\b` there are separators.
+        # A machine-local path (`<drive>:\<tool>\bin`) keeps its backslashes: `\f`, `\b` there are separators.
         pieces = [whole] if MACHINE_LOCAL.match(whole.replace('\\', '/')) else _C_ESCAPE.split(whole)
         for piece in pieces:
             token = piece.rstrip(_TRAILING)
