@@ -16,6 +16,7 @@ from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 
 from dev_lab.dev.ciworkflows import workflows
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeheadgate import GATES
 from dev_lab.dev.forgemerge import Decision, ready
 from dev_lab.dev.forgereview_claim import DUE, WAITS
 from dev_lab.dev.forgereview_command import Runner
@@ -47,6 +48,8 @@ def _pr(tmp_path: Path, *, parts: str = 'success') -> tuple[Path, StateForge, in
 def _settle(forge: StateForge, head: str, *, parts: str = 'success') -> None:
     status_post(forge, head, context='tests/base', state=parts, description=_PARTS)
     status_post(forge, head, context='tests/security', state='success', description='nothing found')
+    for gate in GATES:  # the push-row gates, met
+        status_post(forge, head, context=gate, state='success', description='holds')
 
 
 def _review(forge: StateForge, head: str) -> tuple[str, str] | None:

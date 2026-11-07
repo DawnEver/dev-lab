@@ -92,7 +92,8 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-MEASURED 2026-11-05: 403 kit files read (#99 adds four ops modules); the 40 margin is unchanged.
 #: RE-TAKEN 2026-11-05 AT 411 (taskkeys, forgesecrets, plugin_settings, reviewcap, verdictenv): floor 385.
 #: RE-TAKEN 2026-11-07 AT 426 (CI's walk; the 1106 milestones, forgemessages, ops backuprole and placement): floor 400.
-FILE_FLOOR = 400
+#: RE-TAKEN 2026-11-07 AT 442 (CI's walk; the consent ops, forgescope, partrefs, prcurrent, locklag): floor 415.
+FILE_FLOOR = 415
 
 
 def _tree() -> dict[str, str]:

@@ -20,7 +20,7 @@ All read git objects only and never touch the network.
 
 THE PIN IS THE FORGE'S ALONE (user rulings 2026-10-22 and 2026-10-24); FRESHNESS AGAINST THE FLOATED SIBLINGS'
 HEADS is also read when a ``pr/*`` head is published or marked ready (user ruling 2026-11-07,
-:mod:`dev_lab.dev.prcurrent` through :func:`dev_lab.dev.relock.floating_stale`). The forge judges the PIN in
+:mod:`dev_lab.dev.prcurrent` through :func:`dev_lab.dev.locklag.floating_stale`). The forge judges the PIN in
 the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``HEAD``), and a PR head's
 freshness against its base as a status (:mod:`dev_lab.dev.forgeheadgate`;
 a PR never chases the lock). The serve tick keeps integration at the newest

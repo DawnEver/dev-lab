@@ -211,7 +211,7 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.lockpin` -- PIN on the forge: the checked-out commit commits ``uv.lock`` and every
   hold below the newest names its reason (no pre-push row reads the lock, user ruling 2026-10-24).
 * :mod:`dev_lab.dev.famtests.branchset` -- ONE-BRANCH-PER-SESSION, the declaration only: a repo declares the
-  one PR flow. The LIVE branch set is the forge's ``branchset`` status (:mod:`dev_lab.dev.forgeheadgate`),
+  one PR flow. The LIVE branch set is the forge's ``session-branch`` status (:mod:`dev_lab.dev.forgeheadgate`),
   never a test.
 
 * :mod:`dev_lab.dev.famtests.noreflection` -- NO-REFLECTION: no tracked Python outside attic/ and

@@ -203,6 +203,42 @@
         "pull-requests": "read"
       }
     },
+    "head-gates": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event_name == 'pull_request') }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "head gates",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge headgate run --pr ${{ github.event.pull_request.number }}"
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write",
+        "pull-requests": "read"
+      }
+    },
     "review": {
       "needs": [
         "merge-ready"
@@ -274,6 +310,7 @@
       },
       "needs": [
         "security",
+        "head-gates",
         "part",
         "absent-parts"
       ],
