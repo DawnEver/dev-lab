@@ -15,11 +15,22 @@ import pytest
 from _famconfig_delta import DELTAS, REPO
 
 from dev_lab.dev.famconfig import BASES, RENDERED
-from dev_lab.dev.famfiles import MANAGED, OWNED, PROJECT_FILES, main, project_files_on_disk, render_all
+from dev_lab.dev.famfiles import (
+    MANAGED,
+    OWNED,
+    PROJECT_FILES,
+    main,
+    project_files_on_disk,
+    render_agent_files,
+    render_all,
+)
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
     assert_every_project_file_is_accounted_for,
 )
+from dev_lab.dev.principles import PAGE_REL
+from dev_lab.dev.principles import render as render_principles
+from dev_lab.dev.remconfig import REL
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 DELTAS_FILE: Final = ROOT / 'tests' / '_famconfig_delta.py'
@@ -111,3 +122,33 @@ def test_a_rendered_file_is_lf_on_every_os(tmp_path: Path) -> None:
     render_all(tmp_path, rendered, write=True)
     for name in rendered:
         assert b'\r\n' not in (tmp_path / name).read_bytes(), name
+
+
+def test_famfiles_writes_the_principles_page_and_the_rem_config(tmp_path: Path) -> None:
+    """The project files hook_install used to write are famfiles' now: a name matches what the code does.
+
+    PLANTED CONTROL: a drifted page reads stale in check mode and current after one render.
+    """
+    root = tmp_path / 'repo'
+    root.mkdir()
+    _git('init', '-q', cwd=root)
+    assert render_agent_files(root, write=False) == (
+        f'{PAGE_REL}: would render (absent)',
+        f'{REL}: would render (absent)',
+    )
+    assert render_agent_files(root, write=True) == (f'{PAGE_REL}: rendered', f'{REL}: rendered')
+    assert (root / PAGE_REL).read_text(encoding='utf-8') == render_principles()
+    (root / PAGE_REL).write_text('hand edit\n', encoding='utf-8')
+    assert render_agent_files(root, write=False)[0] == f'{PAGE_REL}: would render (drifted)'
+    render_agent_files(root, write=True)
+    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: current', f'{REL}: current')
+
+
+def test_a_repos_own_rem_config_is_reported_and_kept(tmp_path: Path) -> None:
+    """A differing ``.claude/rem.json`` is the repo's deliberate choice: never overwritten, and not current."""
+    (tmp_path / '.claude').mkdir()
+    own = '{"backlog": "files"}\n'
+    (tmp_path / REL).write_text(own, encoding='utf-8')
+    line = render_agent_files(tmp_path, write=True)[1]
+    assert line.startswith(f'{REL}: the repo`s own choice, not written'), line
+    assert (tmp_path / REL).read_text(encoding='utf-8') == own
