@@ -165,6 +165,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'landedpush',
     # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
     'prcurrent',
+    # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
+    'locklag',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit',
     # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).
