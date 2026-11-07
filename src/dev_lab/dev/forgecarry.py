@@ -82,6 +82,7 @@ __all__ = [
     'carry_from',
     'carry_target',
     'changed_paths',
+    'contained',
     'data_only',
     'docs_only',
     'env_carries',
@@ -113,6 +114,11 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         timeout=_GIT_TIMEOUT_S,
         check=False,
     )
+
+
+def contained(root: Path, sha: str, tip: str) -> bool:
+    """Whether *tip* already contains commit *sha* (``merge-base --is-ancestor``); any doubt is no."""
+    return _git(root, 'merge-base', '--is-ancestor', sha, tip).returncode == 0
 
 
 def changed_paths(root: Path, a: str, b: str) -> tuple[str, ...] | None:

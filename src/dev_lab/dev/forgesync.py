@@ -15,7 +15,7 @@ all -- the owner resolves by running the named ``git merge`` themself. The tree 
 by this command.
 
 THEN THE LOCK (user ruling 2026-11-07). A clean sync then relocks every floated sibling (dev-lab, lab-commons, ...)
-to its line's current head through the dependency door (:func:`dev_lab.dev.relock.relock_floating`) and commits
+to its line's current head through the dependency door (:func:`relock_floating`) and commits
 the lock in the same sync (:func:`relock`), so ONE push of the result passes the ``pr-current`` pre-push row
 (:mod:`dev_lab.dev.prcurrent`), which refuses a ``pr/*`` head that lacks integration's tip or lags a sibling.
 
@@ -40,11 +40,12 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.lockcheck import LOCK
-from dev_lab.dev.relock import RelockFailed, relock_floating
+from dev_lab.dev.relock import RelockFailed, door_upgrade, siblings
 from dev_lab.dev.trialmerge import Trial, rev, trial
 
 __all__ = [
-    'CONFIG_KEY', 'RELOCK_TITLE', 'Plan', 'main', 'plan', 'refused', 'relock', 'sync', 'unwatch', 'upstreams', 'watch',
+    'CONFIG_KEY', 'RELOCK_TITLE', 'Plan', 'main', 'plan', 'refused', 'relock', 'relock_floating', 'sync', 'unwatch',
+    'upstreams', 'watch',
 ]  # fmt: skip
 
 #: The per-branch git config key holding the opt-in refs (``branch.<child>.labSyncFrom``).
@@ -168,6 +169,21 @@ def sync(root: Path, policy: Policy, refs: Sequence[str] | None = None) -> tuple
             raise OSError(msg)
         merged.append(ref)
     return found, tuple(merged)
+
+
+def relock_floating(tree: Path, *, upgrade: Callable[[Path, Sequence[str]], int] | None = None) -> tuple[str, ...]:
+    """Relock *tree*'s floated siblings to their lines' current heads through the door; the names it moved.
+
+    Writes the lock only; committing it is the caller's. RAISES :class:`~dev_lab.dev.relock.RelockFailed` when the
+    door fails.
+    """
+    names = tuple(sorted(siblings(tree)))
+    if not names:
+        return ()
+    if (exited := (upgrade or door_upgrade)(tree, names)) != 0:
+        msg = f'the dependency door exited {exited} relocking {", ".join(names)} in {tree}'
+        raise RelockFailed(msg)
+    return names
 
 
 def relock(root: Path, *, door: Callable[[Path], Sequence[str]] = relock_floating) -> tuple[str, ...]:

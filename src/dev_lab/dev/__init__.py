@@ -333,6 +333,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`dev_lab.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`dev_lab.dev.forgesupersede` -- NEWEST-HEAD-ONLY: a superseded or landed run drained, settled ``superseded by``.
+* :mod:`dev_lab.dev.forgescope` -- what a head runs: the full suite on the integration tip, else what its diff reaches.
 * :mod:`dev_lab.dev.forgerunpost` -- a cluster run's forge posts (progress, release), saved steps and alarms.
 * :mod:`dev_lab.dev.forgerunstate` -- a cluster run's state file, its schema upgrades, and the Slurm protocol.
 * :mod:`dev_lab.dev.components` -- the engines a product mounts under ``components/``, declared once.

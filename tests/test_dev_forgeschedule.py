@@ -13,12 +13,11 @@ from lab_commons.hpc.shell import FULL, INCREMENTAL
 from dev_lab.dev.forgehosts import host_id
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeschedule import (
-    FULL_SUITE_LABEL,
     coalesced,
     host_weights,
     load_schedule,
-    scope_of,
 )
+from dev_lab.dev.forgescope import FULL_SUITE_LABEL, scope_of
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 FAMILY = Schedule()
