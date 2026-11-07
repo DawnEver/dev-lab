@@ -11,9 +11,9 @@ roots. An entry is an escape when it changed since the last scan; the scan time 
 state, so each escape is found once and :func:`step` sounds it once (:data:`~dev_lab.dev.forgealarm.ESCAPE`,
 deduplicated per path by the alarm's repeat window).
 
-THE ALLOWED ROOTS ARE A SEAM. Their one source is the machine home's resolver (``lab_commons.home``, on lab-commons
-branch ``pr/every-write-lands-in-a-repo-or-the-machine-home``, not yet merged); the tick passes them in
-(:func:`allowed_roots`), so this module does not restate them and moves with that resolver when it lands.
+WHAT IS ALLOWED is the machine home's resolver's, never restated here: a home entry is no escape when it holds
+or lies in one of ``lab_commons.home``'s write roots or agent repos (:func:`allowed_roots`), or when the resolver
+exempts it -- Claude's configuration and git's credential store (user ruling 2026-11-07).
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Final
 
+from lab_commons import home as machine
 from lab_commons.compute.durable import durable_text
 from lab_commons.config import section
 
@@ -36,18 +37,11 @@ __all__ = ['ESCAPE_ROOTS', 'allowed_roots', 'scan', 'step']
 ESCAPE_ROOTS: Final = ('C:/tmp', 'C:/temp', 'C:/jmtmp', '~/JMAGDesignerTemp', '~/ModellerTemp')
 #: The state file beside the host's alarm state: when the census last looked.
 STATE_NAME: Final = 'escapes.json'
-#: Home entries that are never an escape: the machine home and the Claude configuration (ruled untouchable).
-_HOME_ALLOWED: Final = ('.motronics', '.claude', '.claude-evans')
 
 
-def allowed_roots(home: Path) -> tuple[Path, ...]:
-    """The SEAM: the roots a write may land in, as the machine home's resolver declares them.
-
-    Until ``lab_commons.home`` lands, the machine file's ``[repos]`` values and the home's own entries
-    (:data:`_HOME_ALLOWED`); replaced by the resolver, never kept beside it.
-    """
-    repos = [Path(str(path)).expanduser() for path in section('repos').values()]
-    return (*(home / name for name in _HOME_ALLOWED), *repos)
+def allowed_roots() -> tuple[Path, ...]:
+    """The roots a write may land in, as ``lab_commons.home`` declares them: its write roots and agent repos."""
+    return (*machine.write_roots(), *machine.agent_repos().values())
 
 
 def _under(path: Path, roots: Iterable[Path]) -> bool:
@@ -66,13 +60,17 @@ def _changed(entries: Iterable[Path], since: float) -> list[Path]:
 
 
 def scan(roots: Sequence[Path], *, home: Path, allowed: Sequence[Path], since: float) -> list[Path]:
-    """Every entry of a watched root, and every top-level home entry outside *allowed*, changed after *since*."""
+    """Every entry of a watched root, and every top-level home entry outside *allowed*, changed after *since*.
+
+    A home entry ``lab_commons.home`` exempts (Claude's configuration, git's credential store) is never one.
+    """
     found: list[Path] = []
     for root in roots:
         if root.is_dir():
             found += _changed(sorted(root.iterdir()), since)
     if home.is_dir():
-        found += _changed((one for one in sorted(home.iterdir()) if not _under(one, allowed)), since)
+        outside = (one for one in sorted(home.iterdir()) if not (_under(one, allowed) or machine.exempt(one)))
+        found += _changed(outside, since)
     return found
 
 
@@ -108,7 +106,7 @@ def step(
     found = scan(
         _watched(home) if roots is None else roots,
         home=home,
-        allowed=allowed_roots(home) if allowed is None else allowed,
+        allowed=allowed_roots() if allowed is None else allowed,
         since=since,
     )
     for path in found:
