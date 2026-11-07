@@ -2,8 +2,8 @@
 
 PAM_OATH, NOT libpam-google-authenticator: google-authenticator keeps the secret in ``~/.google_authenticator``,
 a file the logged-in account itself owns -- so the agent the code is meant to gate could read the secret once and
-never need the user again. pam_oath reads a ROOT-ONLY users file (``oath``), the same rule as the break-glass secret
-(:mod:`dev_lab.ops.totp`): the secret lives on the host and in the user's Authenticator, nowhere else.
+never need the user again. pam_oath reads a ROOT-ONLY users file (``oath``), the same rule as the consent issuer's
+secret (:mod:`dev_lab.ops.totp`): the secret lives on the host and in the user's Authenticator, nowhere else.
 
 Rendered by :mod:`dev_lab.ops.install` from ``[ops.access]``: an sshd ``Match User`` block requiring
 ``publickey,keyboard-interactive`` with every forwarding off -- save local forwarding to the declared ``permit_open``
@@ -13,7 +13,7 @@ puts that include above ``@include common-auth`` in the sshd PAM stack, refusing
 
 ONE TOTP SECRET PER HOST (user ruling 2026-11-04): the code the user types comes from ONE Authenticator entry per host,
 so pam_oath's users file is DERIVED from the host's one secret (:func:`secret_file`: ``[ops.access] totp``, else the
-break-glass role's) -- by install, and by :func:`enrol` (first-ever enrolment only) or :func:`adopt` (a secret the
+consent issuer's) -- by install, and by :func:`enrol` (first-ever enrolment only) or :func:`adopt` (a secret the
 user's phone already holds, placed on another host) -- never generated independently.
 """
 
@@ -151,20 +151,20 @@ def files(role: Access) -> dict[str, str]:
 
 
 def secret_file(config: OpsConfig) -> str:
-    """The host's ONE TOTP secret: ``[ops.access] totp``, else ``[ops.breakglass] totp``.
+    """The host's ONE TOTP secret: ``[ops.access] totp``, else ``[ops.consent] totp``.
 
     Raises:
         ValueError: both are declared and name different files (two TOTP secrets on one host), or neither is.
 
     """
     role = config.access
-    glass = config.breakglass.totp if config.breakglass is not None else ''
+    issuer = config.consent.totp if config.consent is not None else ''
     own = role.totp if role is not None else ''
-    if own and glass and Path(own) != Path(glass):
-        msg = f'two TOTP secrets on one host: [ops.access] totp = {own}, [ops.breakglass] totp = {glass}; name one'
+    if own and issuer and Path(own) != Path(issuer):
+        msg = f'two TOTP secrets on one host: [ops.access] totp = {own}, [ops.consent] totp = {issuer}; name one'
         raise ValueError(msg)
-    if not (found := own or glass):
-        msg = "[ops.access] declares no totp and the host no [ops.breakglass] totp: name the host's one TOTP secret"
+    if not (found := own or issuer):
+        msg = "[ops.access] declares no totp and the host no [ops.consent] totp: name the host's one TOTP secret"
         raise ValueError(msg)
     return found
 

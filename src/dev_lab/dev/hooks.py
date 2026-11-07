@@ -69,8 +69,9 @@ PLACEHOLDER: Final = '{remedy}'
 _ID: Final = re.compile(r'[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*')
 
 #: What a pattern NAMES, in the engine's own vocabulary. A closed set, so a typo cannot become a
-#: third matching mode that the engine silently reads as its default.
-MATCH_KINDS: Final = frozenset({'command', 'argument'})
+#: fourth matching mode that the engine silently reads as its default. ``'line'`` searches the WHOLE command
+#: line, for a shape that spans segments (a value piped into a command: CONSENT-CODE-NEVER-TYPED).
+MATCH_KINDS: Final = frozenset({'command', 'argument', 'line'})
 
 #: WHO a row binds, in the engine's own vocabulary. ``'subagent'`` judges the row only when the hook
 #: payload carries a non-empty ``agent_id`` -- present only inside a subagent call, fork included.
@@ -327,7 +328,7 @@ def fires(rule: DenyRule, segment: str) -> bool:
     segment (``echo "git push"`` runs echo), while an ``'argument'`` pattern is searched anywhere in
     it, because the command an option qualifies varies.
     """
-    anchored = rule.pattern if rule.matches == 'argument' else f'^(?:{rule.pattern})'
+    anchored = rule.pattern if rule.matches in {'argument', 'line'} else f'^(?:{rule.pattern})'
     return re.search(anchored, segment) is not None
 
 

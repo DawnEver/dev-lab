@@ -1,9 +1,10 @@
-"""BREAK-GLASS, SERVER SIDE: merge PRs past the forge's protection inside a wave the user opened with a TOTP code.
+"""BREAK-GLASS, SERVER SIDE: merge PRs past the forge's protection inside a wave the user consented to.
 
-User rulings 2026-11-03: a local agent session may run it, only under the user's authorization; no certificates, no
-second device -- the authorization is the user's Authenticator code, whose secret only this host holds
-(:mod:`dev_lab.ops.totp`). A code opens a WAVE (:mod:`dev_lab.ops.wave`); merges inside it need none, and this
-server -- never the client -- sends the wave's summary through the configuration's ``[alerts]`` when it ends.
+User rulings 2026-11-03: a local agent session may run it, only under the user's authorization. Since 2026-11-07 that
+authorization is a ``breakglass.wave`` CONSENT CREDENTIAL (:mod:`dev_lab.ops.consent`) the user granted with their
+Authenticator code at the issuer: it opens a WAVE (:mod:`dev_lab.ops.wave`) bounded by its signed params; merges
+inside it need none, and this server -- never the client -- sends the wave's summary through the configuration's
+``[alerts]`` when it ends.
 The client is ``forge pr breakglass`` / ``forge breakglass open|close|ack|status``
 (:mod:`dev_lab.dev.forgebreakglass`); the transport is the restricted account's ssh ForceCommand,
 whose key authorizes nothing by itself.
@@ -18,11 +19,11 @@ on Gitea an account the protection's merge whitelist admits, or an admin.
 
 One request is one JSON line with an ``action``:
 
-* ``open {code, hours?, max_merges?}`` -- audited, never alerted (the user typed the code); refused while a wave
-  is open (never because an earlier audit is unacknowledged); ``hours`` and ``max_merges`` default to the configured
-  ``wave_hours`` / ``max_merges`` and may ask anything up to ``wave_hours_max`` / ``max_merges_max`` (``0`` = no
-  ceiling) -- a request above a ceiling is REFUSED naming it, never clamped, and before the code is checked, so it
-  spends no TOTP step; the audit records what was asked and what was granted;
+* ``open {credential}`` -- audited, never alerted (the user granted the credential); refused while a wave is open
+  (never because an earlier audit is unacknowledged). The credential's params ``hours`` and ``max_merges`` may be
+  anything up to ``wave_hours_max`` / ``max_merges_max`` (``0`` = no ceiling) -- above a ceiling it is REFUSED naming
+  it, never clamped, and before its use is registered, so it is not spent. Then it verifies offline and its ONE use
+  is registered with the issuer (:func:`dev_lab.ops.consent.client.admit`): an issuer that cannot be reached refuses;
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
@@ -49,6 +50,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
 from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -59,9 +62,9 @@ from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.config import Breakglass, OpsConfig
-from dev_lab.ops.lockout import guarded
+from dev_lab.ops.consent.client import Register, admit
+from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.statelock import exclusive
-from dev_lab.ops.totp import TotpRefused, accept
 
 __all__ = ['BreakglassRefused', 'ClientForge', 'Forge', 'Server', 'merge_message']
 
@@ -127,17 +130,21 @@ def merge_message(pr: int, integration: str, reason: str, wave: str) -> str:
     return f'chore(merge): break-glass #{pr} into {integration} (wave {wave})\n\n{BREAK_GLASS}: {reason}\n'
 
 
-def _granted(asked: requests.Open, role: Breakglass) -> tuple[float, int]:
-    """The window and merge cap *asked* gets: the role's default when none is named, refused above its ceiling."""
-    hours = role.wave_hours if asked.hours is None else asked.hours
-    if hours > role.wave_hours_max:
-        msg = f'{hours:g} h is above the ceiling wave_hours_max = {role.wave_hours_max:g} h'
+def _granted(credential: dict[str, Any], role: Breakglass) -> tuple[float, int]:
+    """The window and merge cap the credential's params carry, refused outside the role's ceilings."""
+    params = credential.get('params')
+    if not isinstance(params, dict) or set(params) != {'hours', 'max_merges'}:
+        msg = 'the credential carries no breakglass.wave params (hours, max_merges)'
         raise BreakglassRefused(msg)
-    cap = role.max_merges if asked.max_merges is None else asked.max_merges
-    if role.max_merges_max and cap > role.max_merges_max:
-        msg = f'{cap} merge(s) is above the ceiling max_merges_max = {role.max_merges_max}'
+    hours, cap = params['hours'], params['max_merges']
+    if isinstance(hours, bool) or not isinstance(hours, int | float) or not 0 < hours <= role.wave_hours_max:
+        msg = f'{hours!r} h is outside the ceiling (0, wave_hours_max = {role.wave_hours_max:g} h]'
         raise BreakglassRefused(msg)
-    return hours, cap
+    ceiling = role.max_merges_max or None
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0 or (ceiling and not 0 < cap <= ceiling):
+        msg = f'{cap!r} merge(s) is outside the ceiling max_merges_max = {role.max_merges_max}'
+        raise BreakglassRefused(msg)
+    return float(hours), cap
 
 
 @dataclass
@@ -145,7 +152,8 @@ class Server:
     """The role over one configuration; *forge_for* builds the forge of a repo URL, *alert* sends ``(title, body)``.
 
     Every request and every tick runs under the role's one exclusive lock (:mod:`dev_lab.ops.statelock`), so the
-    TOTP step, the lockout count and the waves are each read and written by one session at a time.
+    waves are read and written by one session at a time. *consent_key* verifies a ``breakglass.wave`` credential and
+    *register* records its one use with the issuer (:mod:`dev_lab.ops.consent`).
     """
 
     config: OpsConfig
@@ -153,6 +161,8 @@ class Server:
     #: Sends ``(title, body)``; returns whether ANY channel delivered it.
     alert: Callable[[str, str], bool]
     now: Callable[[], float]
+    consent_key: Ed25519PublicKey
+    register: Register
     #: The fingerprint of the ssh key this session authenticated with (:mod:`dev_lab.ops.sshkey`), ``''`` unknown.
     key: str = ''
 
@@ -191,21 +201,6 @@ class Server:
         if not delivered:
             self._audit({'outcome': 'alert failed: no channel delivered', 'title': title})
         return delivered
-
-    def _code(self, code: str) -> None:
-        def check() -> None:
-            try:
-                accept(Path(self.role.totp), self.state / 'totp.step', code, self.now())
-            except TotpRefused as refused:
-                raise BreakglassRefused(str(refused)) from refused
-
-        def locked(until: float) -> None:
-            when = datetime.fromtimestamp(until, UTC).isoformat(timespec='seconds')
-            body = f'{self.role.lockout_after} wrong codes; every code refused until {when}'
-            self._announce({'outcome': 'locked out', 'until': when}, 'break-glass LOCKED OUT', body)
-
-        guarded(self.state, check, now=self.now(), after=self.role.lockout_after, minutes=self.role.lockout_minutes,
-                on_lock=locked, refused=BreakglassRefused)  # fmt: skip
 
     def _current(self) -> waves.Wave | None:
         """The open wave, else ``None``; an expired one is closed first (so it is never merged into)."""
@@ -265,15 +260,19 @@ class Server:
         if (held := self._current()) is not None:
             msg = f'wave {held.id} is open: use it, or close it first'
             raise BreakglassRefused(msg)
-        hours, cap = _granted(asked, self.role)  # before the code: a refused bound spends no TOTP step
-        self._code(asked.code)
+        hours, cap = _granted(asked.credential, self.role)  # before the use is registered: a refusal spends nothing
+        try:
+            granted = admit(asked.credential, action='breakglass.wave', key=self.consent_key, register=self.register,
+                            now=self.now())  # fmt: skip
+        except ConsentRefused as refused:
+            raise BreakglassRefused(str(refused)) from refused
         now = self.now()
         stamp = datetime.fromtimestamp(now, UTC).strftime('%Y%m%dT%H%M%SZ')
         opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key)
         waves.save(self.state, opened)
         said = f'wave {opened.id} open for {hours:g} h' + (f', at most {cap} merge(s)' if cap else '')
         self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap,
-                     'asked': {'hours': asked.hours, 'max_merges': asked.max_merges}})  # fmt: skip
+                     'consent': granted.id})  # fmt: skip
         return said
 
     def _merge(self, asked: requests.Merge) -> str:

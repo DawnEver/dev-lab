@@ -8,7 +8,6 @@ failure deeper down is never mistaken for, or relabelled as, a bad request.
 from __future__ import annotations
 
 import json
-import math
 import re
 from dataclasses import dataclass
 from typing import Any, Final
@@ -26,11 +25,9 @@ class Malformed(ValueError):
 
 @dataclass(frozen=True)
 class Open:
-    """``open``: the code, and the optional bounds the client asks for (``None`` = the configured one)."""
+    """``open``: the ``breakglass.wave`` consent credential (:mod:`dev_lab.ops.consent`); its params are the bounds."""
 
-    code: str
-    hours: float | None = None
-    max_merges: int | None = None
+    credential: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -74,15 +71,6 @@ def _int(value: object, key: str) -> int:
     return value
 
 
-def _hours(value: object) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value) or value <= 0:
-        msg = 'hours must be a positive finite number'
-        raise Malformed(msg)
-    return float(value)
-
-
 def parse(line: str) -> Request:
     """The request on *line*; raises :class:`Malformed` naming the first bad field."""
     try:
@@ -95,9 +83,11 @@ def parse(line: str) -> Request:
         raise Malformed(msg)
     action = data['action']
     if action == 'open':
-        cap = data.get('max_merges')
-        return Request(action, Open(_str(data, 'code'), _hours(data.get('hours')),
-                                    None if cap is None else _int(cap, 'max_merges')))  # fmt: skip
+        credential = data.get('credential')
+        if not isinstance(credential, dict):
+            msg = 'credential must be the breakglass.wave consent credential (a JSON object)'
+            raise Malformed(msg)
+        return Request(action, Open(credential))
     if action == 'merge':
         head = _str(data, 'head')
         if not _SHA.match(head):

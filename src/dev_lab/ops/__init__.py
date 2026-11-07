@@ -5,8 +5,10 @@ Every role is generic; a deployment is the ``[ops]`` table of the host's supervi
 
 * :mod:`dev_lab.ops.promote` -- fast-forward each repo's trunk when ``integrate promote`` admits it;
 * :mod:`dev_lab.ops.breakglass` -- merge PRs past the forge's protection inside a WAVE (:mod:`dev_lab.ops.wave`)
-  the user opened with a TOTP code (:mod:`dev_lab.ops.totp`); its client is ``forge breakglass`` /
+  opened by a ``breakglass.wave`` consent credential; its client is ``forge breakglass`` /
   ``forge pr breakglass`` (:mod:`dev_lab.dev.forgebreakglass`);
+* :mod:`dev_lab.ops.consent` -- the consent ISSUER (TOTP seed, Ed25519 key, ledger) and its verifiers: the user
+  grants a signed per-action credential (``python -m dev_lab.ops.consent grant``);
 * :mod:`dev_lab.ops.probe` -- per declared repo on either forge, protection drift (``forge protect check``) and a
   failed scheduled or integration CI run, each alerted once;
 * :mod:`dev_lab.ops.install` -- render the systemd units, sshd drop-in and sudoers line the config asks for.

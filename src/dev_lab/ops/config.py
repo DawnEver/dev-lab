@@ -37,6 +37,7 @@ from dev_lab.supervise.config import ENV_PREFIX, load_config
 __all__ = [
     'INTEGRATION_REF',
     'Breakglass',
+    'Consent',
     'Judge',
     'OpsConfig',
     'Probe',
@@ -141,36 +142,34 @@ class Breakglass(Placement):
     (:attr:`dev_lab.dev.forge.Forge.identity`), so one name on two forges or two owners is two repos. A repo whose
     forge names no token, a token no repo uses, an empty set and one identity twice are refused at load.
 
-    ``state`` is a directory (the wave, its reports, the last accepted TOTP step). Each wave bound is a DEFAULT and a
-    CEILING (user ruling 2026-11-06): ``wave_hours`` is the window a request naming none gets, ``wave_hours_max`` the
-    longest a request may ask; ``max_merges`` the cap a request naming none gets (``0`` = none), ``max_merges_max``
-    the largest cap a request may ask (``0`` = no ceiling). A non-positive or NaN window, a negative cap, a default
-    above its ceiling and an uncapped default under a capped ceiling are refused at load. ``tick`` is when the timer
-    ends expired waves and resends a wave summary no alert channel delivered (a systemd ``OnCalendar``);
-    ``lockout_after`` consecutive wrong codes refuse every code for ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`).
+    ``state`` is a directory (the waves and their reports). A wave's window and merge cap are the params of the
+    ``breakglass.wave`` consent credential that opens it (:mod:`dev_lab.ops.consent`); the role declares only their
+    CEILINGS (user ruling 2026-11-06): ``wave_hours_max`` the longest window, ``max_merges_max`` the largest cap
+    (``0`` = no ceiling). A non-positive or NaN window ceiling and a negative cap ceiling are refused at load.
+    ``tick`` is when the timer ends expired waves and resends a wave summary no alert channel delivered (a systemd
+    ``OnCalendar``).
     """
 
     account: str
-    totp: str
     state: str
     log: str
     repos: tuple[str, ...] = ()
     tokens: Mapping[str, str] = field(default_factory=dict)
     keys: tuple[str, ...] = ()
     min_reason: int = 10
-    issuer: str = 'forge break-glass'
-    wave_hours: float = 4.0
-    wave_hours_max: float = 4.0
-    max_merges: int = 0
+    wave_hours_max: float = 24.0
     max_merges_max: int = 0
     tick: str = 'hourly'
-    lockout_after: int = 5
-    lockout_minutes: float = 15.0
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
         served(self.repos, self.tokens, '[ops.breakglass]')
-        _bounded(self.wave_hours, self.wave_hours_max, self.max_merges, self.max_merges_max)
+        if not self.wave_hours_max > 0:  # NaN fails too
+            msg = f'[ops.breakglass] wave_hours_max ({self.wave_hours_max}) must be positive'
+            raise ValueError(msg)
+        if self.max_merges_max < 0:
+            msg = f'[ops.breakglass] max_merges_max ({self.max_merges_max}) must not be negative'
+            raise ValueError(msg)
 
     def repo(self, identity: str) -> str | None:
         """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
@@ -181,20 +180,25 @@ class Breakglass(Placement):
         return self.tokens[forge_of_url(url).host]
 
 
-def _bounded(hours: float, hours_max: float, merges: int, merges_max: int) -> None:
-    """Refuse wave bounds that lie: see :class:`Breakglass`."""
-    if not (hours > 0 and hours_max > 0):  # NaN fails too
-        msg = f'[ops.breakglass] wave_hours ({hours}) and wave_hours_max ({hours_max}) must be positive'
-        raise ValueError(msg)
-    if hours > hours_max:
-        msg = f'[ops.breakglass] wave_hours ({hours:g}) is above its ceiling wave_hours_max ({hours_max:g})'
-        raise ValueError(msg)
-    if merges < 0 or merges_max < 0:
-        msg = f'[ops.breakglass] max_merges ({merges}) and max_merges_max ({merges_max}) must not be negative'
-        raise ValueError(msg)
-    if merges_max and not 0 < merges <= merges_max:
-        msg = f'[ops.breakglass] max_merges ({merges}) must be 1..max_merges_max ({merges_max}) under that ceiling'
-        raise ValueError(msg)
+@dataclass(frozen=True)
+class Consent:
+    """The consent ISSUER (:mod:`dev_lab.ops.consent.issuer`): the host's TOTP seed, its signing key, its ledger.
+
+    ``account`` is the restricted ssh account whose ForceCommand is ``consent serve``, ``keys`` its ssh keys; ``totp``
+    the host's ONE TOTP secret (base32, root 600); ``key`` the Ed25519 private key (PEM, root 600); ``state`` the
+    directory of the append-only ledger, the last accepted TOTP step and the lockout. ``issuer`` names it in each
+    credential and labels the Authenticator entry; ``lockout_after`` consecutive wrong codes refuse every code for
+    ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`).
+    """
+
+    account: str
+    totp: str
+    key: str
+    state: str
+    keys: tuple[str, ...] = ()
+    issuer: str = 'forge consent'
+    lockout_after: int = 5
+    lockout_minutes: float = 15.0
 
 
 @dataclass(frozen=True)
@@ -229,7 +233,7 @@ class Access:
     ``keys`` are its ssh keys, ``oath`` the root-only pam_oath users file, ``commands`` what sudo may run (each a full
     command line, ``*`` as sudoers reads it), ``issuer`` the Authenticator's label. ``permit_open`` is the
     ``host:port`` targets the account may forward to (``ssh -J`` through this host); empty, it forwards nothing.
-    ``totp`` is the host's ONE TOTP secret (base32, root 600); empty, the break-glass role's ``totp`` is it. ``oath``
+    ``totp`` is the host's ONE TOTP secret (base32, root 600); empty, the consent issuer's ``totp`` is it. ``oath``
     is DERIVED from it at install, never a second secret.
     """
 
@@ -265,6 +269,7 @@ class OpsConfig:
     promote: Promote | None
     breakglass: Breakglass | None
     merged: dict[str, Any]
+    consent: Consent | None = None
     backup: Backup | None = None
     access: Access | None = None
     supervise: Supervise | None = None
@@ -283,7 +288,7 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe)](
+def _role[T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe)](
     cls: type[T], table: object, where: str
 ) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -381,6 +386,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         promote=_role(Promote, ops.get('promote'), '[ops.promote]'),
         breakglass=_role(Breakglass, ops.get('breakglass'), '[ops.breakglass]'),
         merged=merged,
+        consent=_role(Consent, ops.get('consent'), '[ops.consent]'),
         backup=_backup(ops.get('backup')),
         access=_role(Access, ops.get('access'), '[ops.access]'),
         supervise=_role(Supervise, ops.get('supervise'), '[ops.supervise]'),

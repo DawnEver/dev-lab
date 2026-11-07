@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from dev_lab.ops.config import OpsConfig, load
+from dev_lab.ops.consent.issuer import keygen
 from dev_lab.ops.totp import STEP, code_at
 
 #: A fixed base32 secret (RFC 6238's test key, ``12345678901234567890``).
@@ -50,7 +51,7 @@ ALPHA, MIRROR = 'gitea.example/owner/alpha', 'github.com/owner/alpha'
 
 
 def config(tmp: Path, repos: list[str], *, extra: str = '', glass: tuple[str, ...] = GLASS) -> OpsConfig:
-    """An ``[ops]`` config under *tmp* with both roles enabled and the TOTP secret enrolled.
+    """An ``[ops]`` config under *tmp* with promote, break-glass and the consent issuer, its secret and key made.
 
     Break-glass serves *glass*, with one token file per forge host they name (``<tmp>/token-<host>``).
     """
@@ -58,6 +59,7 @@ def config(tmp: Path, repos: list[str], *, extra: str = '', glass: tuple[str, ..
     tokens = ''.join(f'"{host}" = "{(tmp / f"token-{host}").as_posix()}"\n' for host in hosts)
     served = ', '.join(f'"{url}"' for url in glass)
     (tmp / 'totp').write_text(RFC_KEY + '\n', encoding='utf-8')
+    keygen(tmp / 'consent.key', force=True)
     home = (tmp / 'home').as_posix()
     listed = ', '.join(f'"{url}"' for url in repos)
     text = f"""
@@ -73,12 +75,17 @@ credentials = "{(tmp / 'creds').as_posix()}"
 account = "breakglass"
 keys = ["ssh-ed25519 AAAA agent"]
 repos = [{served}]
-totp = "{(tmp / 'totp').as_posix()}"
 state = "{(tmp / 'state').as_posix()}"
 log = "{(tmp / 'audit.log').as_posix()}"
 {extra}
 [ops.breakglass.tokens]
-{tokens}"""
+{tokens}
+[ops.consent]
+account = "consent"
+totp = "{(tmp / 'totp').as_posix()}"
+key = "{(tmp / 'consent.key').as_posix()}"
+state = "{(tmp / 'consent-state').as_posix()}"
+"""
     path = tmp / 'supervise.toml'
     path.write_text(text, encoding='utf-8')
     return load(path, environ={})

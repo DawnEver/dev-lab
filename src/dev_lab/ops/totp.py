@@ -67,7 +67,7 @@ def _read_secret(path: Path) -> str:
     except FileNotFoundError:
         secret = ''
     if not secret:
-        msg = f'no TOTP secret at {path}: enrol first (python -m dev_lab.ops --config <toml> breakglass enrol)'
+        msg = f'no TOTP secret at {path}: enrol first (python -m dev_lab.ops --config <toml> consent enrol)'
         raise TotpRefused(msg)
     return secret
 

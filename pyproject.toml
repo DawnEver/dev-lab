@@ -50,7 +50,7 @@ test = [
     "pyright",
     "pdoc",
 ]
-# A FORGE HOST'S extra (dev_lab.ops): `access enrol` / `breakglass enrol` draw the otpauth QR on the enrolling
+# A FORGE HOST'S extra (dev_lab.ops): `access enrol` / `consent enrol` draw the otpauth QR on the enrolling
 # terminal with segno (pure Python, no dependencies of its own). The test extra carries it so the QR is tested.
 ops = ["segno"]
 
