@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import pytest
 
+from dev_lab import pytest_family
 from dev_lab.dev import cjk, rules
 from dev_lab.dev.famtests import alwayson
 
@@ -36,7 +38,7 @@ def _git_repo(root: Path, files: dict[str, str]) -> None:
 def _run(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> pytest.RunResult:
     # Autoload off, so the plugin is the module under test rather than whatever dev-lab is installed.
     monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
-    return pytester.runpytest_subprocess('-p', alwayson.__name__, '-q', '-rA', timeout=300)
+    return pytester.runpytest_subprocess('-p', pytest_family.__name__, '-q', '-rA', timeout=300)
 
 
 def test_a_tracked_cjk_file_is_refused(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,7 +80,7 @@ def test_no_item_outside_a_git_checkout(pytester: pytest.Pytester, monkeypatch: 
 def test_the_plugin_is_an_entry_point() -> None:
     """Installed is enforced: the plugin rides pytest's own entry-point autoload, not a consumer file."""
     project = tomllib.loads((_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
-    assert project['project']['entry-points']['pytest11'] == {'dev_lab_family': alwayson.__name__}
+    assert project['project']['entry-points']['pytest11'] == {'dev_lab_family': pytest_family.__name__}
 
 
 def test_an_always_on_rule_cannot_be_waived_or_copied() -> None:
@@ -114,3 +116,19 @@ def test_the_pattern_is_derived_from_the_shared_ranges() -> None:
     assert alwayson.cjk_pattern(narrowed) == r'(*UTF)[\x{4e00}-\x{4e00}]'
     for lo, hi in cjk.CJK_RANGES:
         assert rf'\x{{{lo:04x}}}-\x{{{hi:04x}}}' in alwayson.cjk_pattern()
+
+
+def test_the_always_on_set_is_registry_data_read_off_the_rule_rows() -> None:
+    """Which rules are always on is a field on the registry row; the plugin runs exactly that set."""
+    assert frozenset(rule.id for rule in rules.RULES if rule.always_on) == rules.ALWAYS_ON
+    assert set(alwayson.rows()) == rules.ALWAYS_ON
+
+
+def test_the_plugin_imports_nothing_from_dev_lab_at_load() -> None:
+    """A ``pytest11`` plugin loads before pytest-cov measures; a module it imports goes unmeasured."""
+    code = (
+        'import sys, importlib; importlib.import_module("dev_lab.pytest_family"); '
+        'print(sorted(m for m in sys.modules if m.startswith("dev_lab.") and m != "dev_lab.pytest_family"))'
+    )
+    out = subprocess.run([sys.executable, '-c', code], capture_output=True, check=True, timeout=120, encoding='utf-8')
+    assert out.stdout.strip() == '[]'
