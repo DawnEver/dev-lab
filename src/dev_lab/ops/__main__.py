@@ -1,7 +1,7 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|enrol|tick``,
-``backup export|pull``, ``access enrol|adopt``.
+Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
+``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``.
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -22,7 +22,11 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
 from dev_lab.ops import access, backup, breakglass, install, judge, offsite, probe, promote, sshkey, totp, upgrade
-from dev_lab.ops.config import OpsConfig, load
+from dev_lab.ops.config import Consent, OpsConfig, load
+from dev_lab.ops.consent import serve as consent_serve
+from dev_lab.ops.consent.client import public_key
+from dev_lab.ops.consent.credential import ConsentRefused, public_text
+from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
 
@@ -142,20 +146,57 @@ def _backup(config: OpsConfig, verb: str) -> int:
     return 0
 
 
-def _breakglass(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) -> int:
+def _issuer(config: OpsConfig, role: Consent) -> Issuer:
+    def locked(until: float) -> None:
+        when = datetime.fromtimestamp(until, UTC).isoformat(timespec='seconds')
+        _alert(config, 'consent LOCKED OUT', f'{role.lockout_after} wrong codes; every code refused until {when}')
+
+    return Issuer(Path(role.totp), Path(role.key), Path(role.state), role.issuer, time.time,
+                  role.lockout_after, role.lockout_minutes, locked)  # fmt: skip
+
+
+def _consent(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) -> int:
+    role = config.consent
+    if role is None:
+        emit(f'[ops] {config.path} enables no [ops.consent]', err=True)
+        return 2
+    try:
+        if verb == 'enrol':
+            secret = totp.enrol(Path(role.totp), force=force)
+            _show(totp.uri(secret, issuer=role.issuer, account=role.account), uri_only=uri_only)
+        elif verb == 'keygen':  # the PUBLIC key goes to every verifier: [consent] public_key, or the package
+            emit(public_text(keygen(Path(role.key), force=force).public_key()))
+        else:
+            emit(consent_serve.handle(_issuer(config, role), sys.stdin.readline()))
+    except (ConsentRefused, totp.TotpRefused) as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    return 0
+
+
+def _unreachable(_credential: object, _amount: int) -> object:
+    msg = 'this host enables no [ops.consent] issuer'
+    raise ConnectionError(msg)
+
+
+def _breakglass(config: OpsConfig, verb: str) -> int:
     role = config.breakglass
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
         return 2
-    if verb == 'enrol':
-        secret = totp.enrol(Path(role.totp), force=force)
-        _show(totp.uri(secret, issuer=role.issuer, account=role.account), uri_only=uri_only)
-        return 0
+    issuer = _issuer(config, config.consent) if config.consent is not None else None
+    try:
+        verifier = issuer.public() if issuer is not None else public_key()
+    except ConsentRefused as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
     server = breakglass.Server(
         config,
         forge_for=lambda url: breakglass.ClientForge(url, _secret(role.token_file(url))),
         alert=lambda title, detail: _alert(config, title, detail),
         now=time.time,
+        consent_key=verifier,
+        register=issuer.register if issuer is not None else _unreachable,
         key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
     )
     try:
@@ -192,9 +233,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref; takes no argument')
     verbs.add_parser('probe')
     glass = verbs.add_parser('breakglass')
-    glass.add_argument('action', choices=('serve', 'enrol', 'tick'))
-    glass.add_argument('--force', action='store_true', help='enrol: replace an existing secret')
-    glass.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
+    glass.add_argument('action', choices=('serve', 'tick'))
+    issuing = verbs.add_parser('consent')
+    issuing.add_argument('action', choices=('serve', 'enrol', 'keygen'))
+    issuing.add_argument('--force', action='store_true', help='enrol / keygen: replace an existing secret / key')
+    issuing.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
     verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
     opened = verbs.add_parser('access')
     opened.add_argument('action', choices=('enrol', 'adopt'))
@@ -217,7 +260,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             config, args.action, force=args.force, uri_only=args.uri, secret_from=args.secret_file
         ),
         'probe': lambda: _probe(config),
-        'breakglass': lambda: _breakglass(config, args.action, force=args.force, uri_only=args.uri),
+        'breakglass': lambda: _breakglass(config, args.action),
+        'consent': lambda: _consent(config, args.action, force=args.force, uri_only=args.uri),
         'judge': lambda: _judge(config),
         'upgrade': lambda: _upgrade(config),
     }

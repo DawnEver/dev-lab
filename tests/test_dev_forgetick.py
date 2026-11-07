@@ -685,6 +685,35 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
     )
 
 
+def test_a_ref_filter_names_a_resource_and_binds_every_part_that_needs_it(server, tmp_path: Path) -> None:
+    """User ruling 2026-11-07: heavy runs on integrate/main and main only, whatever else a part needs.
+
+    A ``parts.refs`` key is a RESOURCE: ``heavy`` filters ``heavy``, ``femm+heavy`` and ``heavy+simba+workstation``
+    alike, and a part under two filters is served only where both admit the ref. PLANTED CONTROL: ``femm`` and
+    ``base`` need no filtered resource and keep every ref; ``femm+windows`` under the ``windows`` filter does not.
+    """
+    repo, tips = _origin(tmp_path)
+    both = '["integrate/main", "main"]'
+    refs = f'[tool.dev_lab.parts.refs]\nheavy.full = {both}\nwindows.full = {both}\n'
+    (repo / 'pyproject.toml').write_text(PRODUCE + refs + _RULE, 'utf-8')
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'])]))
+    answer('GET', f'{API}/issues', (200, []))
+    parts = ('heavy', 'femm+heavy', 'heavy+simba+workstation', 'femm+windows', 'femm', 'base')
+    notes: list[str] = []
+    found = candidates(
+        repo, client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
+        parts=lambda _sha: parts, schedule=load_schedule(repo), policy=_DECLARED, now=NOW, say=notes.append,
+    )  # fmt: skip
+    served = {(c.ref, c.platform) for c in found}
+    assert served == {('integrate/main', part) for part in parts} | {
+        (ref, part) for ref in ('topic/a', 'wip/b', 'other') for part in ('femm', 'base')
+    }
+    assert (
+        '[serve] topic/a is not served tests/femm+heavy at full: [tool.dev_lab.parts.refs.heavy] full '
+        "admits ['integrate/main', 'main']"
+    ) in notes
+
+
 def _whole_box(*_args: object) -> Demand:
     """Every part asks the whole 4-core 8 GB box, so one claimed part leaves no room for the next."""
     return Demand(cpu=4, mem_gb=8.0)
