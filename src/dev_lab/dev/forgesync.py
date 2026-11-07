@@ -203,22 +203,42 @@ def relock(
     commit fails, after restoring every file the relock touched to its committed state (user ruling 2026-11-07):
     a sync failing partway never leaves a dirty tree for the next sync to refuse.
     """
+    if held := _staged(root):
+        msg = f'the index already holds {", ".join(held)}, which a relock would sweep in: commit or unstage it first'
+        raise RelockFailed(msg)
     clean = _touched(root)
     try:
         names = tuple(door(root))
         if not names or not _git(root, 'status', '--porcelain', '--', LOCK).stdout.strip():
             return ()
         rendered = tuple(render(root))
-        wrote = sorted({path for _, path in _touched(root) - clean} | {LOCK})
+        # ONLY what the door and the renderers wrote: they never stage, so a path staged meanwhile is someone else's.
+        wrote = sorted(({path for _, path in _touched(root) - clean} - set(_staged(root))) | {LOCK})
         body = '\n'.join([f'Relocked: {", ".join(names)}', *([f'Rendered: {", ".join(rendered)}'] if rendered else [])])
-        for argv in (('add', '--', *wrote), ('commit', '-q', '-m', RELOCK_TITLE, '-m', body)):
-            if (done := _git(root, *argv)).returncode != 0:
-                msg = f'git {argv[0]} of the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
-                raise RelockFailed(msg)
+        if (done := _git(root, 'add', '--', *wrote)).returncode != 0 or (
+            done := _commit(root, wrote, RELOCK_TITLE, body)
+        ).returncode != 0:
+            msg = f'committing the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
+            raise RelockFailed(msg)
     except OSError:
         _restore(root, _touched(root) - clean)
         raise
     return names
+
+
+def _staged(root: Path) -> tuple[str, ...]:
+    """The paths *root*'s index holds against HEAD."""
+    return tuple(_git(root, 'diff', '--cached', '--name-only').stdout.split('\n')[:-1])
+
+
+def _commit(root: Path, paths: Sequence[str], *message: str) -> subprocess.CompletedProcess[str]:
+    """``git commit --only -- <paths>``: exactly *paths*, whatever else the index holds.
+
+    NO TIMEOUT: a local commit runs the repo's own commit hooks, which the hook runner itself runs unbounded
+    (:mod:`dev_lab.dev.githooks.runner`); motronics' exceed 30 s (2026-11-07), so any ceiling here is a guess.
+    """
+    argv = [_GIT, 'commit', '-q', *(arg for line in message for arg in ('-m', line)), '--only', '--', *paths]
+    return _door.run(argv, cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
 
 
 def _touched(root: Path) -> frozenset[tuple[bool, str]]:

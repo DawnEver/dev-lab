@@ -170,6 +170,36 @@ def test_a_relock_that_moved_the_lock_rerenders_and_commits_the_generated_files_
     assert git_out(work, 'status', '--porcelain') == ''
 
 
+def test_a_relock_commits_only_what_it_wrote_and_refuses_a_held_index(tmp_path: Path) -> None:
+    """2026-11-07, dev-lab 93e0ea8c: a staged ``_original_rows.py`` rode along in the relock commit.
+
+    PLANTED CONTROL: a file staged while the relock runs stays staged and out of the commit; one staged before
+    it starts is refused by name, the lock untouched.
+    """
+    work = _child(tmp_path)
+    commit(work, 'uv.lock', 'dev-lab @ old\n')
+    commit(work, 'other.py', 'x = 1\n')
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('dev-lab @ new\n', encoding='utf-8')
+        return ('dev-lab',)
+
+    (work / 'other.py').write_text('x = 2\n', encoding='utf-8')
+    run_git(work, 'add', 'other.py')
+    with pytest.raises(RelockFailed, match=r'other\.py.*commit or unstage it first'):
+        forgesync.relock(work, door=door, render=lambda _root: ())
+    assert git_out(work, 'show', 'HEAD:uv.lock') == 'dev-lab @ old'
+    run_git(work, 'restore', '--staged', '--', 'other.py')
+
+    def racing(root: Path) -> tuple[str, ...]:
+        run_git(root, 'add', 'other.py')
+        return ()
+
+    assert forgesync.relock(work, door=door, render=racing) == ('dev-lab',)
+    assert git_out(work, 'show', '--name-only', '--format=', 'HEAD') == 'uv.lock'
+    assert git_out(work, 'diff', '--cached', '--name-only') == 'other.py', 'still staged, still the owner`s'
+
+
 def test_a_failed_render_restores_the_relock_and_refuses(tmp_path: Path) -> None:
     """PLANTED CONTROL: the render above commits; here the same relock with a failing renderer leaves no trace."""
     work = _child(tmp_path)
