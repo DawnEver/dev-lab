@@ -70,7 +70,7 @@ forge = "dev_lab.dev.forgeaffinity:research_affinity"
 # THE FAMILY ROWS NO REPO CAN DROP (user ruling 2026-11-07): pytest autoloads this wherever dev-lab is
 # installed, so NO-CJK-IN-TRACKED-SOURCE runs in every family repo with no consumer file (famtests.alwayson).
 [project.entry-points.pytest11]
-dev_lab_family = "dev_lab.dev.famtests.alwayson"
+dev_lab_family = "dev_lab.pytest_family"
 
 [project.urls]
 Homepage = "https://github.com/DawnEver/dev-lab"
