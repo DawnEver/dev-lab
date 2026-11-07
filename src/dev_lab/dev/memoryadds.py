@@ -25,7 +25,8 @@ body paragraph names a source file, so each claim keeps its evidence after the s
 WHERE IT RUNS -- two family hook rows, so no route past it is left:
 
 * ``commit`` (commit-msg, EVERY commit, a merge included): the INDEX against HEAD, so a plain commit and
-  a merge's resolution are read alike (:func:`pending`);
+  a merge's resolution are read alike (:func:`pending`); an entry not yet on ``origin/<integration>`` is a
+  draft its author may still edit or delete;
 * ``push`` (pre-push): every pushed ref's range since its merge-base with ``origin/<integration>``
   (:func:`problems_between`), so a commit made with the hook bypassed still reds before it leaves.
 """
@@ -227,7 +228,25 @@ def pending(root: Path) -> tuple[str, ...]:
     if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
         return ()
     tree = _git(root, 'write-tree').strip()
-    return _judge(root, 'HEAD', tree, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
+    rows = _published_only(root, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
+    return _judge(root, 'HEAD', tree, rows)
+
+
+def _published_only(root: Path, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """*rows* without edits, deletions and moves of a memory entry not yet on ``origin/<integration>``.
+
+    Immutability starts when an entry is PUBLISHED: one added in an unpushed range is still a draft, and its
+    author may cite, fix or drop it. An entry the integration ref holds stays judged; without that ref
+    nothing is a draft.
+    """
+    ref = f'origin/{policy_at(root, "HEAD").integration}'
+    if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
+        return rows
+
+    def draft(status: str, old: str) -> bool:
+        return status in 'MDRT' and _is_memory(old) and _run(root, 'cat-file', '-e', f'{ref}:{old}')[0] != 0
+
+    return [(status, old, new) for status, old, new in rows if not draft(status, old)]
 
 
 def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:

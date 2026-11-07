@@ -422,3 +422,27 @@ def test_planted_a_merged_source_absent_from_base_and_range_is_still_refused(rep
     assert memoryadds.problems_between(repo, base, 'HEAD') == (
         f'{rel}: merged_from 2026/11/04/y.md does not exist at the base (.claude/memory/2026/11/04/y.md)',
     )
+
+
+def test_an_unpublished_entry_may_still_be_edited_or_deleted(repo: Path) -> None:
+    """Immutability starts at publication: an entry absent from origin/<integration> is a draft."""
+    _lane(repo)
+    rel = '.claude/memory/2026/11/04/draft.md'
+    _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nUncited claim.\n')
+    _commit(repo, 'draft', rel)
+    _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nCited claim (2026/10/01/a.md).\n')
+    _git(repo, 'add', '--', rel)
+    assert memoryadds.pending(repo) == ()
+    _commit(repo, 'cite', rel)
+    _git(repo, 'rm', '-q', '--', rel)
+    assert memoryadds.pending(repo) == ()
+
+
+def test_planted_an_edit_to_a_published_entry_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: ENTRY is on origin/integrate/main, so editing it stays refused."""
+    _lane(repo)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nRewritten.\n')
+    _git(repo, 'add', '--', ENTRY)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
