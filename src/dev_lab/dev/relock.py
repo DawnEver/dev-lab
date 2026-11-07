@@ -91,7 +91,6 @@ __all__ = [
     'cadence',
     'carried',
     'carry',
-    'changed',
     'chosen',
     'detached_worktree',
     'dist_of',
@@ -307,6 +306,10 @@ def door_upgrade(tree: Path, packages: Sequence[str] = ()) -> int:
     """The one writer of a lock: ``dev_lab.dev.dep --lock-upgrade <tree>``, moving only *packages* when named."""
     argv = [sys.executable, '-m', 'dev_lab.dev.dep', '--lock-upgrade', str(tree)]
     argv += [f'--upgrade-package={package}' for package in packages]
+    return _exit(argv, tree)
+
+
+def _exit(argv: list[str], tree: Path) -> int:
     return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
 
 
@@ -323,20 +326,14 @@ def _tree_python(tree: Path) -> str:
     raise RelockFailed(msg)
 
 
-def _run_render(argv: list[str], tree: Path) -> int:
-    return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
-
-
-def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _run_render) -> tuple[str, ...]:
+def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _exit) -> tuple[str, ...]:
     """Run every renderer due in *tree* (:func:`dev_lab.dev.famfiles.due_renderers`) with its NEW interpreter.
 
     The rendered files depend on the dev-lab the lock now pins, so each runs under the tree's own ``.venv`` the
     door re-synced. Answers the renderers run; a tree holding no generated file runs none. RAISES
     :class:`RelockFailed` naming the renderer when its declared input is missing or it exits non-zero.
     """
-    if not (due := due_renderers(tree)):
-        return ()
-    python = _tree_python(tree)
+    python = _tree_python(tree) if (due := due_renderers(tree)) else ''
     try:
         commands = [(renderer.name, render_argv(renderer, tree, python)) for renderer in due]
     except ValueError as exc:
@@ -346,13 +343,6 @@ def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _run_render)
             msg = f'the renderer {name} exited {exited} in {tree}: {" ".join(argv[1:])}'
             raise RelockFailed(msg)
     return tuple(name for name, _ in commands)
-
-
-def changed(tree: Path) -> tuple[str, ...]:
-    """Every path changed against HEAD or new and unignored in *tree*: what a relock and its renders wrote."""
-    tracked = _must(tree, 'diff', '--name-only', 'HEAD').splitlines()
-    new = _must(tree, 'ls-files', '--others', '--exclude-standard').splitlines()
-    return tuple(sorted({*tracked, *new} - {''}))
 
 
 def _follow_host_uv(version: str) -> str:
@@ -474,7 +464,7 @@ def carry(
             msg = f'the dependency door left {" and ".join(pinned)} unchanged though the resolution moves it ({scope})'
             raise RelockFailed(msg)
         rerender(tree)
-        _must(tree, 'add', '--', *changed(tree))
+        _must(tree, 'add', '--all')  # the relock's own detached tree: all it holds is the lock and the renders
         body = _body(tip, scope, lines, held)
         _must(tree, 'commit', '-q', '-m', TITLE, '-m', body, '-m', f'{SCOPE}: {scope}')
         push(tree, lease)
