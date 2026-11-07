@@ -19,8 +19,8 @@ If its producer changes format, update this boundary and its planted controls to
 broaden narrative-memory admission to make a malformed manual file pass.
 
 A MERGED ENTRY CITES. An added entry with ``merged_from:`` names sources that are memory files of its
-OWN scope existing at the base the change is judged against, and every body paragraph names a source
-file, so each claim keeps its evidence after the sources stop being read.
+OWN scope existing at the base the change is judged against or added by that same change, and every
+body paragraph names a source file, so each claim keeps its evidence after the sources stop being read.
 
 WHERE IT RUNS -- two family hook rows, so no route past it is left:
 
@@ -146,7 +146,10 @@ def _only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
 
 
 def merged_entry_problems(path: str, text: str, exists: Callable[[str], bool] | None = None) -> tuple[str, ...]:
-    """Why the entry at *path* (repo-relative) fails as a merge; *exists* says a source is at the base."""
+    """Why the entry at *path* (repo-relative) fails as a merge.
+
+    *exists* says a source is at the base or added by the same change.
+    """
     text = _lf(text)
     match = _FRONTMATTER.match(text)
     sources = _MERGED_FROM.search(match.group(1)) if match else None
@@ -185,8 +188,11 @@ def _changes(root: Path, *spec: str) -> list[tuple[str, str, str]]:
 
 
 def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
+    added = {new for status, _, new in rows if status in 'AC'}
+
     def exists(path: str) -> bool:
-        return _run(root, 'cat-file', '-e', f'{old_rev}:{path}')[0] == 0
+        """A source is at the base, or ADDED by the same change -- a merge and its sources may land together."""
+        return path in added or _run(root, 'cat-file', '-e', f'{old_rev}:{path}')[0] == 0
 
     out: list[str] = []
     for status, old, new in rows:
