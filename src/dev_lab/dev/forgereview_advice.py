@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     'AGAIN_DOOR',
+    'CARRIED_HOLD',
+    'CARRY_DOOR',
     'LEDGER_VERSION',
     'ONE_SHOT',
     'Record',
@@ -57,6 +59,12 @@ LEDGER_VERSION: Final = 1
 
 #: The door a session asks for the PR to be reviewed again through (a security finding fixed); ``{pr}`` filled.
 AGAIN_DOOR: Final = 'python -m dev_lab.dev.forge review again {pr}'
+
+#: The door a session disposes of a carried finding through (:mod:`dev_lab.dev.branchreview`); ``{pr}`` filled.
+CARRY_DOOR: Final = 'python -m dev_lab.dev.forge review carry {pr} --resolve ID | --defer ID --reason ...'
+
+#: What a ``tests/review`` held by a continuation's open carried findings says first (:func:`verdict`).
+CARRIED_HOLD: Final = 'carried finding(s)'
 
 #: The rule every review comment states: what the review is, and what it never asks for.
 ONE_SHOT: Final = (
@@ -153,12 +161,19 @@ def recorded_usd(bodies: Iterable[str]) -> float:
     return sum(per_head.values())
 
 
-def verdict(record: Record, number: int) -> tuple[str, str]:
-    """The ``(state, description)`` of ``tests/review`` for *record*: ``failure`` only on a security finding."""
+def verdict(record: Record, number: int, carried: Sequence[Finding] = ()) -> tuple[str, str]:
+    """The ``(state, description)`` of ``tests/review`` for *record*: ``failure`` on a security or carried finding.
+
+    *carried* is a continuation's predecessors' findings still OPEN -- neither resolved nor deferred with a reason
+    (:mod:`dev_lab.dev.branchreview`): each holds the merge until ``forge review carry`` disposes of it.
+    """
     held = [one.id for one in record.findings if one.blocking]
     if held:
         door = AGAIN_DOOR.format(pr=number)
         return 'failure', f'security finding(s) {", ".join(held)}: fix them, then {door}'
+    if carried:
+        door = CARRY_DOOR.format(pr=number)
+        return 'failure', f'{CARRIED_HOLD} {", ".join(one.id for one in carried)} open: resolve or defer, {door}'
     counts = ', '.join(f'{sum(one.severity == level for one in record.findings)} {level}' for level in SEVERITIES)
     return 'success', f'reviewed {record.head[:12]}: advice {counts}; none blocks'
 
@@ -175,18 +190,22 @@ def _row(one: Finding) -> str:
 
 def render(
     record: Record, *, number: int, reviewed: str, found: Findings, summary: str = '', outside: int = 0,
-    unread: Sequence[str] = (), repo: str = '', backend: Backend = GITEA,
+    unread: Sequence[str] = (), repo: str = '', backend: Backend = GITEA, carried: str = '',
+    still_open: Sequence[Finding] = (),
 ) -> str:  # fmt: skip
     """The review's one PR comment: what the PR does, the verdict, the context, what was not read, the findings.
 
-    *repo* is the web root the summary's cites link into, in *backend*'s forms.
+    *repo* is the web root the summary's cites link into, in *backend*'s forms. A continuation's *carried* text
+    (:func:`dev_lab.dev.branchreview.context`) follows the context; *still_open* are its open carried findings.
     """
-    state, said = verdict(record, number)
+    state, said = verdict(record, number, still_open)
     does = what_it_does(found.summary, repo, record.head, backend)
     head = f'**Review** of `{record.head[:12]}` over `{reviewed}`'
     parts = [*([does] if does else []), f'{head}\n\n`tests/review` {state}: {said}\n\n{ONE_SHOT}']
     if summary:
         parts.append(summary)
+    if carried:
+        parts.append(carried)
     if outside:
         parts.append(f'{outside} non-code file(s) outside the review scope (prose, data, locks): not read')
     if unread:
@@ -208,13 +227,14 @@ def render(
 def post_review_comment(
     root: Path, client: Client, pull: PullRequest, reviewed: str, *, found: Findings, reviewer: Identity,
     authors: frozenset[str], by: str = 'review', outside: int = 0, unread: Sequence[str] = (), usd: float = 0.0,
-    size: int = 0, advisory: bool = False,
+    size: int = 0, advisory: bool = False, carried: str = '', still_open: Sequence[Finding] = (),
 ) -> str:  # fmt: skip
     """Post *pull*'s review: its comment and ``tests/review``; the line said.
 
     *reviewer* may not be a session in *authors* (the head's). *by* names who reviewed, for the status. *outside*
     counts the changed files that are not code, *unread* the code past the budget, both said in the comment. *usd*
-    and *size* are recorded. Only the forge (:func:`ruling`) posts the status; an
+    and *size* are recorded. A continuation's *carried* text and *still_open* findings are said, and hold the
+    status (:func:`verdict`). Only the forge (:func:`ruling`) posts the status; an
     *advisory* review (the takeover door, D11) posts the comment alone, and says so.
     """
     if not advisory:
@@ -224,11 +244,12 @@ def post_review_comment(
     record = Record(head, found.findings, usd, size)
     text = render(record, number=pull.number, reviewed=reviewed, found=found,
                   summary=context_summary(root, reviewed, pull.body), outside=outside, unread=unread,
-                  repo=repo_url(pull.url), backend=client.backend)  # fmt: skip
+                  repo=repo_url(pull.url), backend=client.backend, carried=carried,
+                  still_open=still_open)  # fmt: skip
     if advisory:
         text += f"\n\n**Takeover** by {reviewer.text()}: a session's review -- it posts no status."
     _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=text)
-    state, said = verdict(record, pull.number)
+    state, said = verdict(record, pull.number, still_open)
     if advisory:
         return f'#{pull.number} {head[:12]}: {by}, advisory (no status): {said}'
     post_review(client, head, state=state, target_url=comment.url if comment else '',

@@ -1,0 +1,64 @@
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
+{
+  "name": "Continue a landed branch",
+  "on": {
+    "push": {
+      "branches-ignore": [
+        "integrate/main",
+        "main"
+      ]
+    }
+  },
+  "concurrency": {
+    "group": "continue-${{ github.ref_name }}",
+    "cancel-in-progress": false
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "env": {
+    "HEAD_SHA": "${{ github.sha }}",
+    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/"
+  },
+  "jobs": {
+    "continue": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Fetch the integration branch",
+          "run": "git fetch --no-tags --depth=1 origin \"+refs/heads/integrate/main:refs/remotes/origin/integrate/main\""
+        },
+        {
+          "name": "Open the continuation PR",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge pr continue --head \"$GITHUB_REF_NAME\" --sha \"$GITHUB_SHA\""
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "pull-requests": "write",
+        "issues": "write"
+      }
+    }
+  }
+}

@@ -450,8 +450,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
-* :mod:`dev_lab.dev.landedpush` -- NO-PUSH-ONTO-A-LANDED-PR: a push onto a branch whose PR the forge merged or
-  closed, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
+* :mod:`dev_lab.dev.closedpush` -- NO-PUSH-ONTO-A-CLOSED-PR: a push onto a branch whose PR the forge closed
+  unmerged, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
+* :mod:`dev_lab.dev.prcontinue` -- LANDED-BRANCH-CONTINUES: a push onto a merged PR's branch gets a continuation PR
+  (``continues #N``) the forge opens: Gitea's serve tick, GitHub's ``continue.yml``, and ``forge pr continue``.
+* :mod:`dev_lab.dev.branchreview` -- the ONE review record per branch: its PRs, oldest first, and every carried
+  finding's disposition; what a continuation's review is scoped by and carries (``forge review carry``).
 * :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: a ``pr/*`` push or ``pr ready`` is refused when the head
   lacks ``origin/<integration>`` or its lock lags a floated sibling; the remedy is ``forge sync``.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin

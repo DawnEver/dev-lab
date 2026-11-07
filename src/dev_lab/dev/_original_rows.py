@@ -161,8 +161,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrator',
     # ORIGINAL: a consumer's primary-checkout hook guarded the other direction only.
     'sessionbranch',
-    # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02).
-    'landedpush',
+    # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02); since
+    # 2026-11-07 a merged PR's branch is continued (prcontinue, branchreview) and only a closed one refused.
+    'closedpush',
+    'prcontinue',
+    'branchreview',
     # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
     'prcurrent',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).

@@ -248,6 +248,7 @@ def _serve(
         lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
     )
     monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
+    monkeypatch.setattr(forgeservesteps, 'serve_continue_landed', lambda *_a, **_k: None)  # its own tests
     monkeypatch.setattr(forgeservesteps, 'serve_close_landed', close_landed)
     monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
     monkeypatch.setattr(forgeservesteps, 'serve_prune', prune)

@@ -8,6 +8,8 @@ never the forge's -- only the forge posts ``tests/review``.
   after fixing a security finding, or to have grown work read. The forge's next review run honours it.
 * ``review takeover <sha>`` (:func:`takeover`) runs the SAME method and scope and posts the findings comment as a
   session's ADVISORY review: no status, no merge. ``review plan <sha>`` prints the slices only.
+* ``review carry <pr> --resolve ID | --defer ID --reason ...`` (:func:`~dev_lab.dev.forgereview.carry`) disposes of
+  a finding a continuation PR carries from its branch's landed PRs, in the branch's review record.
 * ``review cap <pr> --usd <n> [--reserve] --why`` records the integrator's raise of one PR's dollar cap.
 * ``review run --pr N`` is the review job's (:mod:`dev_lab.dev.forgereview_job`).
 """
@@ -30,7 +32,7 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_upsert, pages, pr_list
-from dev_lab.dev.forgereview import ask_again
+from dev_lab.dev.forgereview import ask_again, carry
 from dev_lab.dev.forgereview_advice import post_review_comment
 from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_command import ReviewPending, Runner, can_start, run_command
@@ -204,6 +206,12 @@ def _parser() -> argparse.ArgumentParser:
         door.add_argument('--repo', type=Path, help='the checkout that holds the sha (default: the working directory)')
     again = verbs.add_parser('again', help="ask the forge to review a PR's head again (a security finding fixed)")
     again.add_argument('pr', type=int)
+    carrying = verbs.add_parser('carry', help='resolve, or defer with a reason, a finding a continuation PR carries')
+    carrying.add_argument('pr', type=int)
+    how = carrying.add_mutually_exclusive_group(required=True)
+    how.add_argument('--resolve', metavar='ID', help='the carried finding is fixed in this PR')
+    how.add_argument('--defer', metavar='ID', help='the carried finding is deferred: --reason says why')
+    carrying.add_argument('--reason', default='', help='why (required with --defer)')
     raising = verbs.add_parser('cap', help="raise one PR's review dollar cap, the reason recorded on the PR")
     raising.add_argument('pr', type=int)
     raising.add_argument('--usd', type=float, required=True, help='the dollar cap; the month remainder bounds it')
@@ -254,6 +262,20 @@ def _job(
     return job_exit(origin, args.pr, said, base=base)
 
 
+#: The verbs a session runs on one PR's review record: each says one line (:func:`_on_a_pr`).
+_ON_A_PR: Final = frozenset({'again', 'carry', 'cap'})
+
+
+def _on_a_pr(args: argparse.Namespace, root: Path, origin: Client, base: str, me: Identity) -> str:
+    """``review again|carry|cap <pr>``: the line said."""
+    if args.verb == 'again':
+        return ask_again(origin, args.pr, origin.pr_view(args.pr).head_sha, me.text())
+    if args.verb == 'carry':
+        state, finding = ('resolved', args.resolve) if args.resolve else ('deferred', args.defer)
+        return carry(origin, review_at(root, base), args.pr, finding, state=state, reason=args.reason, who=me.text())
+    return raise_cap(origin, args.pr, Raised(args.usd, args.why, reserve=args.reserve), by=me)
+
+
 def _plan(root: Path, review: Review, head: str, *, base: str, pull: PullRequest | None) -> None:
     scope = scope_of(root, review, head, base=base)
     emit(
@@ -292,11 +314,8 @@ def main(
         if args.verb == 'run':
             return _job(args, root, origin, base, run=run, ready=ready, fetch=pull_in)
         me = identity(origin, this_machine())
-        if args.verb == 'again':
-            emit(f'[review] {ask_again(origin, args.pr, origin.pr_view(args.pr).head_sha, me.text())}')
-            return 0
-        if args.verb == 'cap':
-            emit(f'[review] {raise_cap(origin, args.pr, Raised(args.usd, args.why, reserve=args.reserve), by=me)}')
+        if args.verb in _ON_A_PR:
+            emit(f'[review] {_on_a_pr(args, root, origin, base, me)}')
             return 0
         review, pull = review_at(root, base), pull_for(origin, args.sha)  # the forge first: the PR brings its head
         if pull is not None:

@@ -64,6 +64,7 @@ from dev_lab.dev import (
     forgewatch,
     metrics,
     pradmit,
+    prcontinue,
     prcurrent,
     prlanded,
     prsuperseded,
@@ -115,6 +116,7 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
     'breakglass': forgebreakglass.merge_main,
     'close-landed': prlanded.main,
     'close-superseded': prsuperseded.main,
+    'continue': prcontinue.main,
     'ready': lambda argv: forgedraft.main(['ready', *argv], judge=prcurrent.ready_refusals),
     'draft': lambda argv: forgedraft.main(['draft', *argv], judge=prcurrent.ready_refusals),
 }

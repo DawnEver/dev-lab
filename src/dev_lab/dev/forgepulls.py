@@ -169,11 +169,13 @@ class Marker(StrEnum):
     TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`dev_lab.dev.forgetidy`)
     REVIEW = 'review'  #: a PR's one-shot review, keyed by the reviewed sha (:mod:`dev_lab.dev.forgereview`)
     REVIEW_AGAIN = 'review-again'  #: a request to review a PR again at a head, keyed by the sha (``review again``)
+    REVIEW_CARRY = 'review-carry'  #: a carried finding resolved or deferred, keyed by its id (``review carry``)
     REVIEW_BATCH = 'review-batch'  #: a head's batched model calls, keyed by the sha (forgereview_batch)
     REVIEW_CAP = 'review-cap'  #: the integrator's raise of one PR's review cap (:mod:`dev_lab.dev.reviewbudget`)
     SECURITY_RELEASE = 'security-release'  #: the integrator's release of new exemptions (``forge security``)
     LANDED = 'landed'  #: a landed PR's one closing comment, keyed by the head sha (:mod:`dev_lab.dev.prlanded`)
     POLLER = 'poller'  #: the hosts issue's one poller lease (:mod:`dev_lab.dev.forgepoller`)
+    BRANCH_REVIEW = 'branch-review'  #: a branch's one review record issue, keyed by the branch (branchreview)
 
 
 def marker(kind: Marker, key: str = '') -> str:

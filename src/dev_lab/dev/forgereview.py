@@ -19,7 +19,9 @@ gets the standing review's verdict posted on it, and nothing runs. It is reviewe
 * a session ASKS (:func:`ask_again`, ``forge review again <pr>``): what clears a security finding once it is fixed.
 
 WHAT IT POSTS: the review's one comment and ``tests/review`` (:mod:`dev_lab.dev.forgereview_advice`): ``success``
-once the review ran, naming the advice by severity; ``failure`` ONLY on a security finding. A review that DID NOT RUN
+once the review ran, naming the advice by severity; ``failure`` ONLY on a security finding -- or, in a continuation
+PR, on a finding carried from its branch's landed PRs and not yet resolved or deferred (:mod:`branchreview`).
+A review that DID NOT RUN
 never holds the merge (:mod:`dev_lab.dev.reviewcap`): a failed attempt on the serve tick is retried once
 (:data:`~dev_lab.dev.forgereview_claim.RETRYING`); a second failure, a failure in a review job, every reviewer
 unsupported, exhausted or unauthorised, no review key (a fork PR's job), or a reached dollar cap
@@ -47,9 +49,17 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev import forgereview_scope
+from dev_lab.dev.branchreview import Carried, carried_for, context, dispose
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comment_upsert, marker, pr_list
-from dev_lab.dev.forgereview_advice import post_review_comment, record_of, recorded_usd, trusted_bodies, verdict
+from dev_lab.dev.forgereview_advice import (
+    CARRIED_HOLD,
+    post_review_comment,
+    record_of,
+    recorded_usd,
+    trusted_bodies,
+    verdict,
+)
 from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_claim import (
     DESCRIPTION,
@@ -105,6 +115,7 @@ __all__ = [
     'REVIEW_AGAIN_GROWTH',
     'HostCannot',
     'ask_again',
+    'carry',
     'review_pull',
     'review_tick',
     'step',
@@ -137,6 +148,21 @@ def ask_again(client: Client, number: int, head: str, who: str) -> str:
     comment_upsert(client, number, kind=Marker.REVIEW_AGAIN, key=head,
                    text=f'Review asked again at `{head[:12]}` by {who}.')  # fmt: skip
     return f'#{number} {head[:12]}: review asked again; the next review run reviews this head'
+
+
+def carry(client: Client, review: Review, number: int, finding: str, *, state: str, reason: str, who: str) -> str:
+    """Record *who*'s disposition of *finding*, carried by continuation PR *number*; the line said.
+
+    The branch's review record takes it (:func:`~dev_lab.dev.branchreview.dispose`, which refuses an unknown id and a
+    deferral with no reason), and ONE comment per finding says it on the PR: on GitHub that comment starts the
+    review-again job, on Gitea the serve's next tick reads the record; either re-posts the verdict
+    (:func:`_restands`) without a model call.
+    """
+    pull = client.pr_view(number)
+    said = dispose(client, pull, finding, state=state, reason=reason, reviewers=review.reviewers)
+    text = f'Carried finding `{finding}` {state} by {who}' + (f': {reason.strip()}' if reason.strip() else '.')
+    comment_upsert(client, number, kind=Marker.REVIEW_CARRY, key=finding, text=text)
+    return f'{said}; the next review run re-posts the verdict'
 
 
 def _asked(client: Client, number: int, head: str) -> bool:
@@ -178,12 +204,35 @@ def _young(root: Path, head: str, runner: Runner) -> str | None:
     return f'not reviewed yet: committed {int(age.total_seconds())} s ago, inside quiet {runner.quiet}'
 
 
-def _stands(client: Client, pull: PullRequest, record: Record) -> str:
-    """Post *record*'s verdict on *pull*'s head, naming the head it reviewed: nothing runs. The line said."""
-    state, said = verdict(record, pull.number)
-    why = f'review of {record.head[:12]} stands: {said}'[:DESCRIPTION]
+def _standing(record: Record, pull: PullRequest, carry: Carried | None) -> tuple[str, str]:
+    """``(state, description)`` of *record*'s verdict standing on *pull*'s head, *carry*'s open findings counted."""
+    state, said = verdict(record, pull.number, carry.open if carry else ())
+    return state, f'review of {record.head[:12]} stands: {said}'[:DESCRIPTION]
+
+
+def _stands(client: Client, pull: PullRequest, record: Record, carry: Carried | None = None) -> str:
+    """Post *record*'s verdict on *pull*'s head, naming the head it reviewed: nothing runs. The line said.
+
+    A continuation's *carry* still open holds it (:func:`~dev_lab.dev.forgereview_advice.verdict`).
+    """
+    state, why = _standing(record, pull, carry)
     post_review(client, pull.head_sha, state=state, description=why)
     return f'#{pull.number} {pull.head_sha[:12]}: {why}'
+
+
+def _restands(
+    client: Client, pull: PullRequest, record: Record | None, carry: Carried | None, latest: CommitStatus | None
+) -> str | None:
+    """Re-post a verdict a carried finding's disposition changed (``forge review carry``); ``None`` when unchanged.
+
+    A head held at ``failure`` by :data:`~dev_lab.dev.forgereview_advice.CARRIED_HOLD` is settled, so no review runs
+    on it again; once its carried findings are resolved or deferred its standing verdict moves -- no model call.
+    """
+    if record is None or latest is None or latest.state != 'failure' or CARRIED_HOLD not in latest.description:
+        return None
+    if _standing(record, pull, carry) == (latest.state, latest.description):
+        return None
+    return _stands(client, pull, record, carry)
 
 
 def _grown(record: Record, size: int) -> bool:
@@ -217,34 +266,42 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     if latest is not None and latest.state == 'success' and runner.verifies and not forge_posted(client)(latest):
         latest = None  # a success the gate does not count is no review (dev-lab #38)
     settled = latest is not None and (latest.state != 'pending' or latest.description.startswith(UNREVIEWED_STATUS))
-    if not asked and _not_called(latest):  # the last gate: no model call on a red or conflicting head
-        return None
+    carry = carried_for(client, pull, review.reviewers)
+    moved = _restands(client, pull, record, carry, latest)  # a disposition moved a held verdict: no model call
+    if moved is not None or (not asked and _not_called(latest)):  # the last gate: no call on a red or conflicting head
+        return moved
     if not claimable(latest, runner.clock(), review.stale, run_ended(client)) and not (asked and settled):
         return None
+    since = carry.since if carry else ''
     if (
         record is not None
         and not asked
-        and (record.head == head or not _grown(record, code_bytes(root, target, head, review.budget)))
+        and (record.head == head or not _grown(record, code_bytes(root, target, head, review.budget, since)))
     ):
-        return _stands(client, pull, record)
+        return _stands(client, pull, record, carry)
     if (wait := _young(root, head, runner)) is not None:
         return f'#{pull.number} {head[:12]}: {wait}'
     allowed, note, held = _budget(root, client, review, pull, runner)
     if allowed is None:
         return unreviewed(client, pull, f'review {note}')
-    return f'{_run(root, client, allowed, pull, runner, held=held)} ({note})'
+    return f'{_run(root, client, allowed, pull, runner, held=held, carry=carry)} ({note})'
 
 
-def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner, *, held: Gate) -> str:
+def _run(
+    root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner, *, held: Gate,
+    carry: Carried | None = None,
+) -> str:  # fmt: skip
     """Review *pull*'s head now: nothing to read is ``success``, no review key merges unreviewed; the line said.
 
     The review runs charged in *pull*'s share of ai-lab's ``review`` allotment (on a reserve raise, of its
     provider's reserve), opened at *held*'s cap
     (:func:`~dev_lab.dev.reviewbudget.share_of`), so ai-lab refuses a call past the PR's cap or the review's month,
-    naming the level. A share ai-lab will not open runs nothing; ``inf`` (no spend report) opens none.
+    naming the level. A share ai-lab will not open runs nothing; ``inf`` (no spend report) opens none. A
+    continuation (*carry*) is read from its last landed head and handed what it carries.
     """
     head = pull.head_sha
-    scope = plan(root, f'origin/{pull.base}', head, review.budget, sliceable=PATHS_FIELD in review.command)
+    scope = plan(root, f'origin/{pull.base}', head, review.budget, sliceable=PATHS_FIELD in review.command,
+                 since=carry.since if carry else '')  # fmt: skip
     if not scope.slices:
         post_review(client, head, state='success', description=ONLY_GENERATED[:DESCRIPTION])
         return f'#{pull.number} {head[:12]}: {ONLY_GENERATED}'
@@ -261,12 +318,13 @@ def _run(root: Path, client: Client, review: Review, pull: PullRequest, runner: 
     except ShareRefused as refused:
         return f'#{pull.number} {head[:12]}: not reviewed -- its review budget share did not open: {refused}'
     with charged_to(tag, share):
-        return _command_review(root, client, review, pull, scope=scope, runner=runner)
+        return _command_review(root, client, review, pull, scope=scope, runner=runner, carry=carry)
 
 
 def _command_review(
-    root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner
-) -> str:
+    root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner,
+    carry: Carried | None = None,
+) -> str:  # fmt: skip
     """Claim *pull*'s head, run the command over *scope*'s slices and post the review; the line said.
 
     Every command batches through the head's state on the PR and shares ONE wait (:mod:`forgereview_batch`).
@@ -274,15 +332,21 @@ def _command_review(
     with held_state(client, pull.number, pull.head_sha, trusted_logins(client)) as state:
         run = within(runner.run, runner.clock() + wait_of(review), runner.clock)
         return _review(root, client, review, pull, scope=scope, runner=runner, run=run,
-                       batching=batch_args(review, state))  # fmt: skip
+                       batching=batch_args(review, state), carry=carry)  # fmt: skip
 
 
 def _review(
     root: Path, client: Client, review: Review, pull: PullRequest, *, scope: Scope, runner: Runner,
-    run: Callable[[Sequence[str], Path], str], batching: Sequence[str],
+    run: Callable[[Sequence[str], Path], str], batching: Sequence[str], carry: Carried | None = None,
 ) -> str:  # fmt: skip
-    """:func:`_command_review` once its batch state is held: *run* is the timed runner, *batching* the flags."""
+    """:func:`_command_review` once its batch state is held: *run* is the timed runner, *batching* the flags.
+
+    A continuation's reviewer reads its *carry* as context (after the PR body) and its settled findings as disposed.
+    """
     head, target = pull.head_sha, f'origin/{pull.base}'
+    carried = context(carry) if carry else ''
+    settled, since = (carry.settled, carry.since) if carry else ((), '')
+    disposed = [(one.id, f'{how.state}: {how.reason}' if how.reason else how.state) for one, how in settled]
     try:
         argvs = [command_for(review, scope.range, runner.runtimes, paths=s.paths, lens=s.lens, batching=batching)
                  for s in scope.slices]  # fmt: skip
@@ -300,7 +364,8 @@ def _review(
     before = _tagged(root, pull, runner)
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True, batching=batching)
-        found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=pull.body))
+        body = '\n\n'.join(one for one in (pull.body, carried) if one)
+        found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=body, disposed=disposed))
     except ReviewPending as waiting:
         why = f'{BATCH_PENDING} {waiting}'[:DESCRIPTION]
         post_review(client, head, state='pending', description=why)
@@ -314,8 +379,9 @@ def _review(
         return _failed(client, pull, f'no reviewer returned findings ({kinds})', runner)
     usd = max(0.0, _tagged(root, pull, runner) - before)
     return post_review_comment(root, client, pull, scope.range, found=found, reviewer=me, authors=authors,
-                               outside=scope.outside, unread=scope.unread, usd=usd,
-                               size=code_bytes(root, target, head, review.budget))  # fmt: skip
+                               outside=scope.outside, unread=scope.unread, usd=usd, carried=carried,
+                               still_open=carry.open if carry else (),
+                               size=code_bytes(root, target, head, review.budget, since))  # fmt: skip
 
 
 def _tagged(root: Path, pull: PullRequest, runner: Runner) -> float:

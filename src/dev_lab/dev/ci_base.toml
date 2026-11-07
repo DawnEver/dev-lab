@@ -642,8 +642,46 @@ steps = [
     { name = "Attach the review bundle to this run", uses = "actions/upload-artifact@v4", with = { name = "review-bundle", path = "${{ runner.temp }}/review-bundle/bundle.json", if-no-files-found = "error", overwrite = true } },
 ]
 
+# A LANDED BRANCH CONTINUES (LANDED-BRANCH-CONTINUES, user-approved design 2026-11-07): a merged PR is never reused,
+# so a push onto its branch is carried by a continuation PR (`continues #N`) the forge opens -- on GitHub, this job, on
+# a push to any branch but integration and the trunk (`forge pr continue --head <branch> --sha <sha>`, one forge call
+# when the branch has no merged PR). It reads the integration branch's review declaration, so it fetches that ref. A
+# PR the job token opens starts no workflow: the continuation's CI starts at its next push.
+["continue.yml"]
+name = "Continue a landed branch"
+
+["continue.yml".on.push]
+branches-ignore = ["integrate/main", "main"]
+
+["continue.yml".concurrency]
+group = "continue-${{ github.ref_name }}"
+cancel-in-progress = false
+
+["continue.yml".permissions]
+contents = "read"
+
+["continue.yml".env]
+HEAD_SHA = "${{ github.sha }}"
+FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
+
+["continue.yml".jobs.continue]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { name = "Fetch the integration branch", run = 'git fetch --no-tags --depth=1 origin "+refs/heads/integrate/main:refs/remotes/origin/integrate/main"' },
+    { name = "Open the continuation PR", run = 'uv run --no-sync python -m dev_lab.dev.forge pr continue --head "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"' },
+]
+
+["continue.yml".jobs.continue.permissions]
+contents = "read"
+pull-requests = "write"
+issues = "write"
+
 # A REVIEW ASKED AGAIN IS RUN BY THE FORGE (user ruling 2026-11-06): the review is one-shot, and `forge review again
-# <pr>` -- after a security finding is fixed -- leaves a comment carrying the review-again marker. That comment
+# <pr>` -- after a security finding is fixed -- leaves a comment carrying the review-again marker; `forge review carry
+# <pr>` -- a continuation's carried finding resolved or deferred -- one carrying the review-carry marker, on which the
+# run re-posts the standing verdict with no model call (LANDED-BRANCH-CONTINUES). That comment
 # triggers this job, which runs the PR's review as the job's own identity (forgereview.review_pull honours the
 # request). A separate workflow, so a comment never runs the parts of ci.yml. GitHub runs an issue_comment workflow
 # from the default branch only, so the door is the trusted one.
@@ -667,7 +705,7 @@ FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # th
 GITHUB_TOKEN = "${{ github.token }}"
 
 ["review-again.yml".jobs.again]
-if = "${{ github.event.issue.pull_request && contains(github.event.comment.body, '<!-- lab-commons:review-again:') }}"
+if = "${{ github.event.issue.pull_request && (contains(github.event.comment.body, '<!-- lab-commons:review-again:') || contains(github.event.comment.body, '<!-- lab-commons:review-carry:')) }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },

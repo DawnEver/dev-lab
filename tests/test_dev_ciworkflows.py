@@ -49,7 +49,7 @@ from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 _ROOT = Path(__file__).resolve().parents[1]
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
-_GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-again.yml'}
+_GITHUB_BASE = {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review-again.yml'}
 _GITEA_BASE = {'review.yml', 'merge.yml'}
 
 
@@ -910,7 +910,7 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
     )
     rendered = workflows(tmp_path)
     readers = {name for name, workflow in rendered.items() if '${FAMILY_SOURCE}' in render(workflow)}
-    assert readers == {'ci.yml', 'merge-tick.yml', 'review.yml', 'review-again.yml'}  # merge-tick: GitHub's base
+    assert readers == {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review.yml', 'review-again.yml'}  # GitHub's base
     for name in readers:
         assert rendered[name]['env'].get('FAMILY_SOURCE'), f'{name} reads FAMILY_SOURCE but declares none'
         assert 'FAMILY_SOURCE:-' not in render(rendered[name]), f'{name}: a second source'
