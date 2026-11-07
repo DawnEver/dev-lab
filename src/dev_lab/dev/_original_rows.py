@@ -161,6 +161,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sessionbranch',
     # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02).
     'landedpush',
+    # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
+    'prcurrent',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit',
     # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).

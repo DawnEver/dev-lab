@@ -16,8 +16,9 @@ The invariants refused here by name, with NO network call beyond the push itself
   ref, with ``HEAD`` resolved, IS ``refs/heads/X``. ``HEAD:X`` from another branch, ``Y:X`` and a bare sha
   are refused. Any checkout may publish ``X`` -- none needs it checked out. And EVERY local branch ``Y`` is
   published only as ``Y``: ``Y:Z`` and a bare push whose git upstream names another branch are refused, so a
-  lane cut from ``origin/<integration>`` never lands there by accident. A detached tip names no branch, so a
-  machine push of one (:mod:`dev_lab.dev.relock`) to a branch no session declares is admitted.
+  lane cut from ``origin/<integration>`` never lands there by accident. A detached HEAD and a bare sha name no
+  branch, so they are refused onto EVERY branch (``git checkout --detach`` then ``HEAD:pr/x`` landed a lane on a
+  ``pr/`` name, motronics #5541) -- save the forge's own pushers' branches, :data:`MACHINE_BRANCHES`.
 * ``SESSION-HISTORY-ONLY-GROWS`` (P3) -- the old remote tip git hands the hook is an ancestor of the new
   one; a forced non-fast-forward and a deletion are refused. ONE place: no other hook judges this.
 * ``INTEGRATION-IS-MERGES-ONLY`` (P4) -- every new first-parent commit of the integration branch is a
@@ -61,12 +62,15 @@ from lab_commons.log import emit
 from dev_lab.dev import metrics
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, branchset_at
 from dev_lab.dev.breakglass import BREAK_GLASS, forge_unreviewed, reason
+from dev_lab.dev.componentbump import LANE as COMPONENT_LANE
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
+from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
 from dev_lab.dev.reviewgate import RERUN
 
 __all__ = [
     'HOOK_ID',
+    'MACHINE_BRANCHES',
     'MERGED_BRANCH',
     'P2',
     'P3',
@@ -85,6 +89,9 @@ P5: Final = 'INTEGRATION-TAKES-ONLY-FORGE-MERGES'
 P6: Final = 'ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES'
 #: The id this guard runs under in ``githooks/base.toml``: its refusals are logged under it, so a bypass is too.
 HOOK_ID: Final = 'session-branch'
+#: The branches the forge's own pushers publish from a detached tip or a sha (relock, component bump): the ONLY
+#: targets a source naming no branch may land on.
+MACHINE_BRANCHES: Final = frozenset({RELOCK_BRANCH, COMPONENT_LANE})
 #: The trailer an integration merge names its merged branch under.
 MERGED_BRANCH: Final = 'Merged-Branch'
 
@@ -261,6 +268,25 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
     ]
 
 
+def _misnamed(root: Path, local: str, target: str) -> list[str]:
+    """P2 for a branch no session declares: a local branch lands only as itself, a detached tip only on a machine's."""
+    named = _local(root, local)
+    if named == f'{_HEADS}{target}':
+        return []
+    if named.startswith(_HEADS):
+        branch = named[len(_HEADS) :]
+        exit_text = rename_remedy(branch) if target.startswith('pr/') else f'push `git push origin {branch}`'
+        return [f'{P2}: the local branch {branch} is published only as {branch}, not {target}; {exit_text}']
+    if target in MACHINE_BRANCHES:
+        return []
+    return [
+        (
+            f'{P2}: {target} is published only from a local branch, not {named}; check out the branch whose work it is '
+            f'and push it as itself: `git switch -c {target}` then `push -u origin {target}`'
+        )
+    ]
+
+
 def _deletion_rev(root: Path) -> str:
     """The rev a deletion is judged by: ``origin/<integration>``, else ``origin/<trunk>``, else ``HEAD``.
 
@@ -322,10 +348,8 @@ def refusals(root: Path, lines: str, *, reviewed: Reviewed = forge_unreviewed) -
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
             if (judged := _trusted(root, policy, fields[3])) is not None:
                 found += _judge_ref(root, judged, fields, reviewed)
-        elif (named := _local(root, fields[0])).startswith(_HEADS) and named != fields[2]:
-            branch, target = named[len(_HEADS) :], fields[2][len(_HEADS) :]
-            exit_text = rename_remedy(branch) if target.startswith('pr/') else f'push `git push origin {branch}`'
-            found.append(f'{P2}: the local branch {branch} is published only as {branch}, not {target}; {exit_text}')
+        elif not _zero(fields[1]):
+            found += _misnamed(root, fields[0], fields[2][len(_HEADS) :])
     return found
 
 

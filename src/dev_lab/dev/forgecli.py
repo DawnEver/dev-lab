@@ -64,6 +64,7 @@ from dev_lab.dev import (
     forgewatch,
     metrics,
     pradmit,
+    prcurrent,
     prlanded,
     prsuperseded,
     pushwatch,
@@ -114,8 +115,8 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
     'breakglass': forgebreakglass.merge_main,
     'close-landed': prlanded.main,
     'close-superseded': prsuperseded.main,
-    'ready': lambda argv: forgedraft.main(['ready', *argv]),
-    'draft': lambda argv: forgedraft.main(['draft', *argv]),
+    'ready': lambda argv: forgedraft.main(['ready', *argv], judge=prcurrent.ready_refusals),
+    'draft': lambda argv: forgedraft.main(['draft', *argv], judge=prcurrent.ready_refusals),
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.

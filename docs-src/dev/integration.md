@@ -275,7 +275,7 @@ local reads only -- no network call beyond the push itself -- with no escape hat
 
 | rule | refuses |
 |---|---|
-| PUBLISH-IS-THE-LOCAL-REF | a push to `refs/heads/X` whose local ref, `HEAD` resolved, is not `refs/heads/X`: `HEAD:X` from another branch, `Y:X`, a bare sha, a detached HEAD |
+| PUBLISH-IS-THE-LOCAL-REF | a push to `refs/heads/X` whose local ref, `HEAD` resolved, is not `refs/heads/X`: `HEAD:X` from another branch, `Y:X`, a bare sha, a detached HEAD; onto any branch, a bare sha or detached HEAD except onto the forge pushers' `MACHINE_BRANCHES` |
 | SESSION-HISTORY-ONLY-GROWS | a push whose old remote tip (as git hands it to the hook) is not an ancestor of the new one: a forced non-fast-forward, and a deletion |
 | INTEGRATION-TAKES-ONLY-FORGE-MERGES | a new first-parent commit on the integration branch past `pr_merges_since` that the forge did not merge: replaces INTEGRATION-IS-MERGES-ONLY for that branch |
 | ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES | a push creating or updating `refs/heads/X` where the pushed tip's branch set does not admit `X` (not the trunk, a session, or an `ephemeral` glob): fan-out stays local |
@@ -283,6 +283,10 @@ local reads only -- no network call beyond the push itself -- with no escape hat
 The separate base row `landed-pr` (`dev_lab.dev.landedpush`) READS THE FORGE: NO-PUSH-ONTO-A-LANDED-PR refuses a
 push updating a branch whose PR into the integration branch is merged or closed while no open PR has that head,
 naming the remedy (a new PR from the branch, or a new branch name); a forge that cannot be read refuses.
+
+The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) refuses a `pr/*` push whose tip
+lacks `origin/<integration>` (fetched afresh; a failed fetch refuses) or whose lock lags a floated sibling's
+head, naming `forge sync`; `forge pr ready` refuses on the same judgement and on a dirty tree.
 
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
 integration branch after `merges_only_since` that is not a two-parent merge with a `Merged-Branch:` trailer
@@ -296,7 +300,7 @@ The CPU/box seat stays a RESOURCE lock; it decides no ownership.
 integration.
 
 ```
-python -m dev_lab.dev.forge sync                       # merge integration (and watched refs) if clean
+python -m dev_lab.dev.forge sync                       # merge integration (and watched refs) if clean, then relock
 python -m dev_lab.dev.forge sync --watch origin/<ref>  # opt in to one more upstream; --unwatch, --list
 ```
 

@@ -114,6 +114,26 @@ def test_sync_stops_on_a_conflict_naming_files_and_merges_nothing(tmp_path: Path
     assert git_out(work, 'status', '--porcelain') == ''
 
 
+def test_sync_relocks_the_floated_siblings_and_commits_the_lock_in_the_same_sync(tmp_path: Path) -> None:
+    """User ruling 2026-11-07: merge, then relock. PLANTED CONTROL: a door that moves nothing commits nothing."""
+    work = _child(tmp_path)
+    commit(work, 'uv.lock', 'lab-commons @ old\n')
+    forgesync.sync(work, POLICY)
+    before = git_out(work, 'rev-parse', 'HEAD')
+    assert forgesync.relock(work, door=lambda _root: ('lab-commons',)) == (), 'the lock did not move'
+    assert git_out(work, 'rev-parse', 'HEAD') == before
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('lab-commons @ new\n', encoding='utf-8')
+        return ('dev-lab', 'lab-commons')
+
+    assert forgesync.relock(work, door=door) == ('dev-lab', 'lab-commons')
+    assert git_out(work, 'log', '-1', '--format=%s') == forgesync.RELOCK_TITLE
+    assert 'Relocked: dev-lab, lab-commons' in git_out(work, 'log', '-1', '--format=%b')
+    assert git_out(work, 'status', '--porcelain') == ''
+    assert git_out(work, 'show', 'HEAD:uv.lock') == 'lab-commons @ new'
+
+
 def test_sync_refuses_on_the_trunk_and_on_integration(tmp_path: Path) -> None:
     _, work = clone_pair(tmp_path)
     for branch in ('main', 'integrate/main'):

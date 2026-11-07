@@ -1,7 +1,8 @@
 """The forge's judgement of an open PR head's LOCK FRESHNESS and BRANCH SET, as two commit statuses on that head.
 
-User ruling 2026-10-24 (toolchain plan P3): neither is read at a local push any more, so the forge says each one
-where the author reads it -- a status on the PR head, ``failure`` naming the exact command that fixes it:
+User ruling 2026-10-24 (toolchain plan P3): neither was read locally, so the forge says each one where the
+author reads it (since 2026-11-07 a ``pr/*`` head lagging a floated sibling is also refused locally,
+:mod:`dev_lab.dev.prcurrent`) -- a status on the PR head, ``failure`` naming the exact command that fixes it:
 
 * :data:`LOCK_CONTEXT` -- the head's ``uv.lock`` moves a resolution its BASE does not
   (:func:`dev_lab.dev.lockcheck.stale` on the head, then on its merge-base with ``origin/<integration>``, each in a

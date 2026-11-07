@@ -1,7 +1,7 @@
-"""PIN and FRESHNESS are the forge's alone (user rulings 2026-10-17, 2026-10-22, 2026-10-24).
+"""The PIN is the forge's alone (user rulings 2026-10-17, 2026-10-22, 2026-10-24); sibling freshness is prcurrent's.
 
 The repo's own suite judges the checked-out commit's PIN on the forge (:mod:`dev_lab.dev.famtests.lockpin`): it
-commits ``uv.lock`` and holds nothing below the newest unreasoned. No pre-push row reads the lock.
+commits ``uv.lock`` and holds nothing below the newest unreasoned. No pre-push row reads the PIN.
 The staleness reading :func:`stale` is the forge relock's (dev_lab.dev.relock), driven here on REAL planted
 repositories with the REAL ``uv``, offline: the in-house git dependency is a local repository, and the PyPI-shaped
 one a find-links directory of planted wheels. Each refusal has a planted control that passes.

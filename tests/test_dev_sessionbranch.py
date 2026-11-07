@@ -25,7 +25,7 @@ from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
-from dev_lab.dev.sessionbranch import P2, P3, P5, P6, refusals
+from dev_lab.dev.sessionbranch import MACHINE_BRANCHES, P2, P3, P5, P6, refusals
 
 _GIT = shutil.which('git') or 'git'
 _BASE = 'integrate/main'  # the integration branch whose declaration names the forge
@@ -481,14 +481,38 @@ def test_any_branch_published_under_another_name_is_refused(repo: Path, spec: st
     assert _remote(repo, 'lane/y') == ''
 
 
-def test_a_branch_lands_under_its_own_name_and_a_detached_tip_under_any(repo: Path) -> None:
-    """PLANTED CONTROL: a pr/ branch pushed as itself lands; a detached machine push (relock) is not a branch."""
+@pytest.mark.parametrize('branch', sorted(MACHINE_BRANCHES))
+def test_a_branch_lands_under_its_own_name_and_a_detached_tip_only_on_a_machine_branch(repo: Path, branch: str) -> None:
+    """PLANTED CONTROL: a pr/ branch pushed as itself lands; a detached machine push (relock, bump) lands too."""
     _git(repo, 'checkout', '-b', 'pr/x', 'lane/x')
     _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
     assert _push(repo, 'pr/x').returncode == 0
     _git(repo, 'checkout', '--detach')
-    done = _push(repo, 'HEAD:refs/heads/pr/relock-x')
+    done = _push(repo, f'HEAD:refs/heads/{branch}')
     assert done.returncode == 0, done.stderr
+
+
+def test_a_detached_head_onto_a_pr_branch_is_refused(repo: Path) -> None:
+    """Motronics PR #5541: a refused lane, ``checkout --detach``, then ``HEAD:pr/<x>`` -- refused, never admitted."""
+    _git(repo, 'checkout', 'lane/x')
+    _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
+    _git(repo, 'checkout', '--detach')
+    done = _push(repo, 'HEAD:refs/heads/pr/x')
+    assert done.returncode != 0, done.stderr
+    assert P2 in done.stderr
+    assert 'a detached HEAD' in done.stderr
+    assert _remote(repo, 'pr/x') == ''
+
+
+def test_a_bare_sha_onto_a_pr_branch_is_refused(repo: Path) -> None:
+    _git(repo, 'checkout', 'lane/x')
+    _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
+    sha = _git(repo, 'rev-parse', 'HEAD')
+    done = _push(repo, f'{sha}:refs/heads/pr/x')
+    assert done.returncode != 0, done.stderr
+    assert P2 in done.stderr
+    assert sha in done.stderr
+    assert _remote(repo, 'pr/x') == ''
 
 
 # --- P6 ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES ---------------------------------------------------------

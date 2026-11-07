@@ -116,7 +116,10 @@ VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'create'): (
         'opens a DRAFT PR onto integration and advises a stacked or second-session PR (NO-STACKED-PRS)'
     ),
-    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'ready'): 'marks a draft PR ready for review (DRAFT-UNTIL-READY)',
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'ready'): (
+        'marks a draft PR ready for review (DRAFT-UNTIL-READY); refused unless the tree is clean and the head is '
+        'current (PR-HEAD-IS-CURRENT)'
+    ),
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'draft'): 'returns a PR to draft; nothing reviews or merges it',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
