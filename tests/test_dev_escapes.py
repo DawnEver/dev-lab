@@ -13,6 +13,8 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 from dev_lab.dev import escapes
 from dev_lab.dev.forgealarm import ESCAPE, Alarm
 
@@ -57,3 +59,22 @@ def test_a_tick_alarms_each_escape_once_and_remembers_where_it_stopped(tmp_path:
     (only,) = raised
     assert 'output/' in only.body
     assert 'scratch/' in only.body
+
+
+def _machine(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    """The user home *home*, its machine home ``.motronics``, no repos: ``lab_commons.home`` judges against it."""
+    monkeypatch.setattr(Path, 'home', classmethod(lambda _cls: home))
+    monkeypatch.setenv('MOTRONICS_HOME', str(home / '.motronics'))
+    monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
+
+
+def test_the_home_judges_its_entries_through_the_machine_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / 'home'
+    _machine(monkeypatch, home)
+    _touch(home / '.git-credentials')
+    _touch(home / '.claude' / 'settings.json')
+    _touch(home / '.claude-evans' / 'settings.json')
+    _touch(home / '.motronics' / 'state' / 'x.json')
+    stray = _touch(home / '.foo')
+    found = escapes.scan((), home=home, allowed=escapes.allowed_roots(), since=time.time() - 60)
+    assert found == [stray], "git's credential store, Claude's homes and the machine home are not escapes; .foo is"
