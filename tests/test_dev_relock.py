@@ -23,6 +23,7 @@ from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UV_PIN
+from dev_lab.dev.locklag import _commits_behind, floating_lag, floating_stale
 from dev_lab.dev.relock import (
     BRANCH,
     DEFAULT_CADENCE,
@@ -34,7 +35,6 @@ from dev_lab.dev.relock import (
     carry,
     chosen,
     dist_of,
-    floating_stale,
     in_house,
     rerender,
 )
@@ -560,3 +560,61 @@ def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the
             upgrade=_never,
         )
     assert _git(origin, 'branch', '--list', BRANCH) == ''
+
+
+def test_the_lag_reading_counts_each_floated_sibling_against_the_limit() -> None:
+    """``lock/lag``: past the limit is a sentence. PLANTED CONTROLS: AT the limit is none; uncounted refuses."""
+    asked: list[tuple[str, str, str]] = []
+
+    def behind(n: int) -> Callable[[str, str, str], int]:
+        return lambda url, branch, sha: asked.append((url, branch, sha)) or n
+
+    (why,) = floating_lag(_LOCK, 20, behind=behind(21))
+    assert 'lab-commons' in why
+    assert '21 commits behind' in why
+    assert asked == [('https://github.com/DawnEver/lab-commons.git', 'integrate/main', _SIBLING_SHA)]
+    assert floating_lag(_LOCK, 20, behind=behind(20)) == ()
+
+    def offline(_url: str, _branch: str, _sha: str) -> int:
+        msg = 'no network'
+        raise RelockFailed(msg)
+
+    (why,) = floating_lag(_LOCK, 20, behind=offline)
+    assert 'no network' in why
+
+
+def test_the_lag_count_is_the_lines_commits_past_the_pin(tmp_path: Path) -> None:
+    """A treeless fetch of the sibling's line counts ``<pin>..<tip>``. PLANTED CONTROL: a pin off the line raises."""
+    sibling = tmp_path / 'sibling'
+    sibling.mkdir()
+
+    def git(*argv: str) -> str:
+        return subprocess.run(
+            [shutil.which('git') or 'git', '-C', str(sibling), *argv],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=True,
+        ).stdout.strip()
+
+    git('init', '-q', '-b', 'integrate/main')
+    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '--allow-empty', '-m', 'feat: pin')
+    pin = git('rev-parse', 'HEAD')
+    for n in range(3):
+        git(
+            '-c',
+            'user.name=t',
+            '-c',
+            'user.email=t@t',
+            'commit',
+            '-q',
+            '--no-verify',
+            '--allow-empty',
+            '-m',
+            f'feat: {n}',
+        )
+    url = sibling.as_uri()
+    assert _commits_behind(url, 'integrate/main', pin) == 3
+    assert _commits_behind(url, 'integrate/main', git('rev-parse', 'HEAD')) == 0
+    with pytest.raises(RelockFailed, match='is not on'):
+        _commits_behind(url, 'integrate/main', 'e' * 40)

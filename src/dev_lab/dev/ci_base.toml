@@ -20,6 +20,9 @@
 #                 (tests/<part>, or tests/<part>@<os> off its own runner)
 #   absent-parts  always: `jobparts absent --event` posts pending (absent) on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
+#   head-gates    `forge headgate run --pr N`: session-branch, pr-current, lock/fresh, lock/lag -- the pre-push rows'
+#                 own judges, posted by the forge (user ruling 2026-11-07: a family check never depends on a
+#                 consumer's hook); merge-ready requires session-branch and pr-current. Gitea's serve tick posts them
 #   merge-ready   after the parts, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready and, when it is success, merges that head into integrate/main itself
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
@@ -142,6 +145,20 @@ contents = "read"
 statuses = "write"
 pull-requests = "read"
 
+["ci.yml".jobs.head-gates]
+env = { GITHUB_TOKEN = "${{ github.token }}" }
+if = "${{ github.event_name == 'pull_request' }}"
+runs-on = "ubuntu-latest"
+steps = [
+    { use-steps = "setup" },
+    { name = "head gates", run = "uv run --no-sync python -m dev_lab.dev.forge headgate run --pr ${{ github.event.pull_request.number }}" },
+]
+
+["ci.yml".jobs.head-gates.permissions]
+contents = "read"
+statuses = "write"
+pull-requests = "read"
+
 # A fork PR's job gets no secret: the review then holds the head for a maintainer's takeover.
 # The review METHOD is ai-lab's, and a repo's own environment does not carry it (lab-commons #11 and dev-lab #3,
 # 2026-10-31: "cannot import 'ai_lab.review'", nothing posted): the job installs ai-lab, from this owner's forge,
@@ -177,7 +194,7 @@ issues = "write"
 
 ["ci.yml".jobs.merge-ready]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
-needs = ["security", "part", "absent-parts"]
+needs = ["security", "head-gates", "part", "absent-parts"]
 if = "${{ always() && github.event_name == 'pull_request' }}"
 runs-on = "ubuntu-latest"
 outputs = { due = "${{ steps.ready.outputs.due }}" }

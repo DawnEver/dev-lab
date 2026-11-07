@@ -25,6 +25,7 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgereview_command
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeheadgate import GATES
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import (
@@ -727,6 +728,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
+    gated = tuple(_status(gate, 'success', 'holds') for gate in GATES)  # the push-row gates, met
     for review in ('failure', 'error', 'pending'):
         statuses = (passed, _status(REVIEW_CONTEXT, review, 'reviewed: advice 3 MEDIUM'))
         assert standing(statuses, head='h').result is Conclusion.PASS
@@ -736,7 +738,7 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
 
     def ready(*review: tuple[str, str]) -> bool:
-        statuses = (passed, secured, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
+        statuses = (passed, secured, *gated, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
         return decide(
             work, policy, branch='pr/x', number=1, head=head, statuses=statuses, reviewed=status_gate(github_posted)
         ).ready
@@ -763,16 +765,18 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
+    gated = tuple(_status(gate, 'success', 'holds') for gate in GATES)  # the push-row gates, met
     released = (
         _status(HOLD_CONTEXT, 'success', 'released by box after the integrator review'),
         _status(REVIEW_CONTEXT, 'success', 'review: reviewed: advice 0 HIGH; none blocks'),
         passed,
         secured,
+        *gated,
     )
     assert decide(
         work, policy, branch='pr/x', number=1, head=head, statuses=released, reviewed=status_gate(github_posted)
     ).ready
-    worded = (_status(REVIEW_CONTEXT, 'success', NEEDS_MAINTAINER), passed, secured)
+    worded = (_status(REVIEW_CONTEXT, 'success', NEEDS_MAINTAINER), passed, secured, *gated)
     assert decide(
         work, policy, branch='pr/x', number=1, head=head, statuses=worded, reviewed=status_gate(github_posted)
     ).ready

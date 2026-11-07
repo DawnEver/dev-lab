@@ -103,6 +103,7 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
         'part': {'contents': 'write', 'statuses': 'write'},
         'absent-parts': {'contents': 'read', 'statuses': 'write'},
         'security': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
+        'head-gates': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
         'merge-ready': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write', 'actions': 'write'},
         'promote': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write'},
@@ -124,7 +125,7 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_decides_before_the_r
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
-    assert set(jobs['merge-ready']['needs']) == {'security', 'part', 'absent-parts'}, (
+    assert set(jobs['merge-ready']['needs']) == {'security', 'head-gates', 'part', 'absent-parts'}, (
         'a merge waits on its parts; the review runs after the decision'
     )
     assert jobs['review']['needs'] == ['merge-ready']

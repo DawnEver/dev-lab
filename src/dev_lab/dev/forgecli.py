@@ -13,8 +13,8 @@ to close salvaged ones (neither deletes a branch),
 ``cancel-stuck <sha>`` for the forge's own stuck tasks, ``watch <sha>`` to follow a verdict read-only,
 ``notices`` for a session's PR notices, ``review again <pr>`` to have a PR reviewed again,
 ``review takeover|plan <sha>`` for a session's advisory review, ``security release <pr> --why`` for a head's new
-security exemptions, ``secrets sync --task <task>`` for a task's key bundle on every declared repo; anything
-else is the issue/PR door. The verbs
+security exemptions, ``headgate run --pr <N>`` for a PR head's gate statuses, ``secrets sync --task <task>`` for
+a task's key bundle on every declared repo; anything else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
 entry point.
 """
@@ -38,6 +38,7 @@ from dev_lab.dev import (
     forgeauth,
     forgebreakglass,
     forgedraft,
+    forgeheadgate,
     forgehosts,
     forgeintegration,
     forgeissue,
@@ -102,6 +103,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
         argv
     ),
     'secrets': forgesecrets.main,
+    'headgate': forgeheadgate.main,
     'security': forgesecurity.main,
     'tidy': forgetidy.main,
     'hosts': forgehosts.main,

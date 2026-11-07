@@ -62,7 +62,6 @@ from dev_lab.dev.lockcheck import (
     FRESHENED,
     LOCK,
     TOOLCHAIN,
-    UNRESOLVED,
     UV_PIN,
     mount_submodules,
     newest_stable,
@@ -96,7 +95,6 @@ __all__ = [
     'dist_of',
     'door_upgrade',
     'floated',
-    'floating_stale',
     'in_house',
     'rerender',
     'siblings',
@@ -198,38 +196,9 @@ def in_house(lock: str) -> frozenset[str]:
     return frozenset(one.name for one in floated(lock))
 
 
-def _line_head(url: str, branch: str) -> str:
-    """The commit *url*'s ``refs/heads/<branch>`` holds now; RAISES :class:`RelockFailed` when it cannot be read."""
-    report = run_network_verb([_GIT, 'ls-remote', url, f'refs/heads/{branch}'], timeout=120)
-    sha = (report.attempts[-1].output.split() or [''])[0] if report.ok and report.attempts else ''
-    if not sha:
-        msg = f'{url} {branch} could not be read: {report.remedy or "no such branch"}'
-        raise RelockFailed(msg)
-    return sha
-
-
 def siblings(tree: Path) -> frozenset[str]:
     """The floated siblings (:func:`in_house`) of *tree*'s lock; none where *tree* commits no lock."""
     return in_house((tree / LOCK).read_text(encoding='utf-8')) if (tree / LOCK).is_file() else frozenset()
-
-
-def floating_stale(lock: str, *, head: Callable[[str, str], str] = _line_head) -> tuple[str, ...]:
-    """Why lock text *lock* lags a floated sibling's line, one sentence each; empty when every sibling is current.
-
-    THE floating-head freshness reading (user ruling 2026-11-07): each :func:`floated` sibling's locked commit
-    against *head* -- ``git ls-remote <url> refs/heads/<line>`` -- seconds, never a resolution. A line that cannot
-    be read is a sentence too: it refuses, never admits.
-    """
-    found = []
-    for one in floated(lock):
-        try:
-            now = head(one.url, one.branch)
-        except OSError as why:
-            found.append(f'{UNRESOLVED}: {one.name}: {why}')
-            continue
-        if now != one.sha:
-            found.append(f'{LOCK} pins {one.name} at {one.sha[:SHORT]}, its {one.branch} is at {now[:SHORT]}')
-    return tuple(found)
 
 
 def chosen(found: Sequence[str], siblings: frozenset[str], *, due: bool) -> tuple[str, ...]:
