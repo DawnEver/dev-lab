@@ -30,8 +30,10 @@ the resources it lacks (``not admitted: lacking cpu``). Several parts may theref
 once, several jobs of one sha among them: each local job is judged in its OWN tree, keyed by sha and
 context (:mod:`dev_lab.dev.shatree`).
 
-PRIORITY IS ORDERING (:mod:`lab_commons.compute.priority`): a job this host's ``[priority]`` names is
-considered before every other; it takes no supply and preempts nothing.
+THE INTEGRATION TIP GOES FIRST (user ruling 2026-11-07, :func:`tip_first`): its parts are considered before
+every PR head's, a user-boosted PR and a job this host's ``[priority]`` names among them. After it, PRIORITY IS
+ORDERING (:mod:`lab_commons.compute.priority`): a job this host's ``[priority]`` names is considered before every
+other; it takes no supply and preempts nothing.
 
 A JOB'S DEMAND IS WHAT IT MEASURED. A BOX part is admitted at exactly what it will declare to the box
 (:func:`~lab_commons.compute.learned.box_demand`: the cores it kept busy and its peak with headroom, else
@@ -140,6 +142,15 @@ class TickReport:
     pending: tuple[Work, ...] = ()
 
 
+def tip_first(ranked: Sequence[Ranked], integration: str) -> tuple[Ranked, ...]:
+    """*ranked* with the *integration* ref's parts moved ahead of every other, each side in its own order.
+
+    User ruling 2026-11-07: the integration tip's tests rank ahead of every PR head, user-boosted and
+    host-priority ones included; boost and host priority still order everything after it.
+    """
+    return tuple(sorted(ranked, key=lambda one: one.candidate.ref != integration))
+
+
 def tick(
     root: Path,
     *,
@@ -244,6 +255,7 @@ def tick(
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
         priority=lambda one: favoured(one) or covers(mine, context_of(one)),
     )  # fmt: skip
+    ranked = tip_first(ranked, policy.integration)
     if serve.hpc:  # HPC ACCOUNT AFFINITY (dev_lab.dev.forgeaffinity): a workstation is never gated
         live = any(card.verify and not card.stale(now) for card in cards)
         opted = (live and _opted_in(built, now)) if borrow is None else borrow

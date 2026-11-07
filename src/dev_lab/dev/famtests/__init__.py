@@ -24,6 +24,11 @@ file stays a real test module in its own tree, naming its own facts, which is wh
 declaration where the repo can see it. A plugin would move the decision out of sight and give a
 repo no place to say what its answer is.
 
+THE ONE PLUGIN, AND IT IS A USER RULING (2026-11-07): :mod:`dev_lab.dev.famtests.alwayson` is
+registered under ``pytest11``, so its rows run in every repo that installs dev-lab, with no consumer
+file and no opt-out. Only a rule with no repo answer left to name belongs there --
+NO-CJK-IN-TRACKED-SOURCE today -- and :data:`dev_lab.dev.rules.ALWAYS_ON` refuses an adoption row for it.
+
 A SHARED FILENAME IS NOT SHARED CODE, and the counter-evidence is kept because it is what makes the
 rest mean something. ``test_the_public_surface_is_declared.py`` exists under one name in two repos at
 89% DIFFERENT, and it is NOT here. A census that only ever finds MOVES is measuring its own

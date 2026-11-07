@@ -1,21 +1,14 @@
-"""THE CJK RATCHET, applied to lab-commons itself -- the same shape the suppression ratchet uses.
+"""The controls for :mod:`dev_lab.dev.cjk` -- the scanner, the ranges, the exemptions and the ratchet.
 
-The rule this guards -- no CJK character in tracked source outside `.claude/memory/`, `attic/` and
-`archived/` -- is only worth carrying if the same three shapes as every other ratchet in this family
-hold: a PLANTED CONTROL through the REAL scanner, the OPPOSITE DIRECTION (a clean file, an exempt
-file, a binary file), and the DECLARED GAPS as a named set that may only shrink.
-
-LAB-COMMONS' OWN DECLARATION IS EMPTY. The two CJK sites this repo carried (`src/dev_lab/dev/
-_unit_tokens.py`, `src/dev_lab/dev/units.py` -- both direct quotations of a user ruling) were
-translated to English in the same commit that added this guard, so `_DECLARED` below is the
-strictest form the ratchet can take and this test is the proof it still runs green on a clean tree.
+Planted violations through the REAL scanner, in both directions (a clean file, an exempt file, a
+binary file). The scan of a repo's OWN tracked files is not here: it is the always-on family row
+:mod:`dev_lab.dev.famtests.alwayson`, which every repo installing dev-lab runs, this one included.
 """
 
 from __future__ import annotations
 
 from collections.abc import Collection
 from pathlib import Path
-from typing import Final
 
 import pytest
 
@@ -37,25 +30,6 @@ from dev_lab.dev.cjk import (
     scan_non_ascii,
     translation_source,
 )
-from dev_lab.dev.rules import tracked_files
-
-_ROOT: Final = Path(__file__).resolve().parents[1]
-
-#: Files this repo still carries CJK in, as a NAMED SET that may only shrink. Empty because this
-#: commit is the one that cleaned the last two sites and built the guard in the same edit.
-_DECLARED: Final[frozenset[str]] = frozenset()
-
-#: Measured 2026-09-16: this repo tracks well over 40 `.py`/`.md`/`.toml` files under `src/`/`tests/`.
-_FLOOR: Final = 30
-
-
-def _corpus() -> tuple[Path, ...]:
-    names = tracked_files(_ROOT)
-    return tuple(
-        _ROOT / name
-        for name in sorted(names)
-        if (_ROOT / name).is_file() and not name.startswith(('.claude/memory/', 'attic/', 'archived/'))
-    )
 
 
 def test_is_cjk_matches_each_declared_range_and_nothing_else() -> None:
@@ -192,15 +166,6 @@ def test_assert_floor_refuses_a_scan_that_read_too_little() -> None:
     with pytest.raises(VacuousScan):
         assert_floor(0, 1, 'CJK')
     assert_floor(5, 1, 'CJK')  # does not raise
-
-
-def test_lab_commons_declares_no_cjk_anywhere_it_tracks() -> None:
-    """THE CHECK. Every tracked file outside the exemptions is CJK-free -- the declaration is empty."""
-    corpus = _corpus()
-    assert_floor(len(corpus), _FLOOR, 'CJK (lab-commons)')
-    scan = scan_files(corpus, root=_ROOT)
-    problems = ratchet(scan.occurrences, _DECLARED)
-    assert problems == (), 'the CJK ratchet moved:\n  ' + '\n  '.join(problems)
 
 
 def _walk_every_character(
