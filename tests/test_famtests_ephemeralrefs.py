@@ -79,7 +79,7 @@ def test_the_pre_commit_entry_reds_on_a_staged_citation(tmp_path: Path, monkeypa
         (r'see c:\femm-qt\bin\tools', True),  # a drive path keeps its backslashes, escape letters or not
     ],
 )
-def test_a_c_string_escape_is_not_a_path_separator(tmp_path: Path, text: str, cited: bool) -> None:
+def test_a_c_string_escape_is_not_a_path_separator(tmp_path: Path, *, text: str, cited: bool) -> None:
     problems, _ = ephemeralrefs.scan(_repo(tmp_path, text))
     assert bool(problems) is cited, problems
 
