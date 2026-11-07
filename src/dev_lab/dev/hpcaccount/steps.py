@@ -15,7 +15,7 @@ import lab_commons.launch as _door
 from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
-from dev_lab.dev.hpchost.spec import MARK, Deployment, Repo, checkout_of, merge_crontab
+from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab
 
 __all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'update']
 

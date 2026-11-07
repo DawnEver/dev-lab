@@ -38,9 +38,9 @@ EXEMPT: Final[dict[str, str]] = {
     'src/dev_lab/dev/reviewruntime.py': 'build and kit hand their clone/fetch/pip argv to an injected `net` runner '
     'whose default _net routes through run_network_verb (injected so the tests run offline)',
     'src/dev_lab/ops/upgrade.py': 'command returns the uv pip argv _install routes through run_network_verb',
-    'src/dev_lab/dev/hpchost/steps.py': 'runs on the cluster host through its own run-or-print Step, whose '
+    'src/dev_lab/dev/hpcaccount/steps.py': 'runs on the cluster host through its own run-or-print Step, whose '
     'refusal the deploy reports per repo',
-    'src/dev_lab/dev/hpchost/account.py': 'runs on the cluster host; its ls-remote is a read-access probe whose '
+    'src/dev_lab/dev/hpcaccount/account.py': 'runs on the cluster host; its ls-remote is a read-access probe whose '
     'exit code IS the answer',
 }
 

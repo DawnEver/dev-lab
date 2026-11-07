@@ -38,7 +38,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.hpchost.spec import Deployment, tick_dirs
+from dev_lab.dev.hpcaccount.spec import Deployment, tick_dirs
 from dev_lab.dev.lockcheck import uv_version
 
 __all__ = [

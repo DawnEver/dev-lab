@@ -156,7 +156,7 @@ from dev_lab.dev.forgeservesteps import pressed, repo_wide, retain_storage, revi
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client, client_for
-from dev_lab.dev.hpchost.spec import load
+from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL

@@ -5,7 +5,7 @@ table its deploy, its tick, its host card and the workstation's ``deploy-fleet``
 Forge Verification account: it runs the forge serve cron) or ``"research"`` (checkouts and venvs for research,
 never a serve cron). Undeclared, nothing is ticked and the deploy refuses (:func:`role_refusal`).
 
-Pure: parse, render, derive. :mod:`dev_lab.dev.hpchost.deploy` runs the steps.
+Pure: parse, render, derive. :mod:`dev_lab.dev.hpcaccount.deploy` runs the steps.
 """
 
 from __future__ import annotations
@@ -272,7 +272,7 @@ def tick_command(
     command = (
         f'{tick_environment(home, slurm, setup)}; cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
         f'flock -n {shlex.quote(str(cache / f"lab-forge-{repo.name}.lock"))} '
-        f'{_VENV_PYTHON} -m dev_lab.dev.hpchost tick {shlex.quote(repo.name)}'
+        f'{_VENV_PYTHON} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
     return command + (f' >> {shlex.quote(str(cache / f"lab-forge-{repo.name}.log"))} 2>&1' if log else '')

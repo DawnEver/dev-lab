@@ -61,6 +61,7 @@ from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
+from dev_lab.dev._deny_remote_row import REMOTE_WRITE
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
@@ -374,4 +375,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
     HPC_THROUGH_THE_DOOR,
+    REMOTE_WRITE,
 )

@@ -1,4 +1,4 @@
-"""``hpchost deploy-fleet``: each declared account on ITS declared host, one detached ssh and one log each."""
+"""``hpcaccount deploy-fleet``: each declared account on ITS declared host, one detached ssh and one log each."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 
 from lab_commons.hpc.grants import Grant
 
-from dev_lab.dev.hpchost.fleet import Target, deploy_fleet, remote_argv
-from dev_lab.dev.hpchost.spec import DEFAULT_ROOT
+from dev_lab.dev.hpcaccount.fleet import Target, deploy_fleet, remote_argv
+from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT
 
 _HOSTS = ('login01.example', 'login02.example')
 _FLEET = (
@@ -77,7 +77,7 @@ def test_an_undeclared_account_is_refused_and_nothing_starts(tmp_path: Path) -> 
 def test_the_remote_runs_the_accounts_own_deploy_never_prompting() -> None:
     argv = remote_argv('alice', Target('login02.example', 'src'))
     assert argv[:3] == ['ssh', '-o', 'BatchMode=yes']
-    assert 'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.hpchost deploy' in argv[-1]
+    assert 'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount deploy' in argv[-1]
 
 
 def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp_path: Path) -> None:

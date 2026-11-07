@@ -116,7 +116,7 @@ NONDETERMINISM: Final = 'nondeterminism'
 STORAGE: Final = 'storage'
 #: Jobs on a cluster account carry no session tag: they hold an unthrottled share (:mod:`lab_commons.hpc.allocation`).
 UNTAGGED: Final = 'untagged'
-#: A served repo's declared need no longer runs on its cluster account (:mod:`dev_lab.dev.hpchost.tick`).
+#: A served repo's declared need no longer runs on its cluster account (:mod:`dev_lab.dev.hpcaccount.tick`).
 NEEDS: Final = 'needs'
 #: Every host of a platform is stale, or a tick serves nothing: once per episode (:mod:`dev_lab.dev.forgefleet`).
 FLEET: Final = 'fleet'

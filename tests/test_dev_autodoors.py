@@ -136,7 +136,7 @@ def test_each_bounded_verb_renders_one_row_naming_its_verb_and_no_sibling_verb()
     for _runner, *argv in (door.argv for door in POLICY if door.argv[:1] == ('python',) and door.actor != USER):
         assert any(fnmatchcase(f'.venv/Scripts/python.exe {" ".join(argv)} x', g) for g in globs), argv
     assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge serve', g) for g in globs)
-    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.hpchost deploy --remove', g) for g in globs)
+    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount deploy --remove', g) for g in globs)
     assert promises_raw(' '.join(globs)) == ()
 
 

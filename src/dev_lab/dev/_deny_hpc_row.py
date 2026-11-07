@@ -1,7 +1,7 @@
 """The agent deny registry, HPC-THROUGH-THE-DOOR row -- pure DATA.
 
 User ruling 2026-11-06: an agent never reaches an HPC login host or Slurm directly; heavy work goes through the
-forge (VERDICTS-FROM-THE-FORGE), deploys through ``hpchost``. The night before, agents opened dozens of ssh
+forge (VERDICTS-FROM-THE-FORGE), deploys through ``hpcaccount``. The night before, agents opened dozens of ssh
 connections per diagnosis to the login nodes (six accounts, two hosts, poll loops with ``sleep``) and the cluster
 stopped answering ssh.
 
@@ -15,7 +15,10 @@ command, or anywhere after ``ssh``. A non-HPC host (a workstation, a forge VM by
 
 from __future__ import annotations
 
+from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.venvpath import PYTHON_SLOT
+
+_ID = 'HPC-THROUGH-THE-DOOR'
 
 __all__ = ['HPC_THROUGH_THE_DOOR']
 
@@ -24,14 +27,15 @@ _SLURM = r'(?:sbatch|srun|salloc|scancel)\b'
 _LOGIN_TARGET = r'[\s@][\w-]*[Ll][Oo][Gg][Ii][Nn][\w-]*(?:\.[\w.-]+)?(?=[\s:/"\x27]|$)'
 
 HPC_THROUGH_THE_DOOR: dict[str, object] = {
-    'id': 'HPC-THROUGH-THE-DOOR',
+    'id': _ID,
     'pattern': rf'(?:(?:ssh|scp|sftp|rsync)\b[^\n;&|]*?{_LOGIN_TARGET}|ssh\b[^\n]*?\b{_SLURM}|{_SLURM})',
     'matches': 'command',
     'hazard': 'an agent on an HPC login host or Slurm opens connections nobody budgets; a poll loop took the '
     "cluster's ssh down (2026-11-06).",
-    'remedy': f'Status: the forge host card, {PYTHON_SLOT} -m dev_lab.dev.forge queue, forge run show <sha>; deploy: '
-    f'{PYTHON_SLOT} -m dev_lab.dev.hpchost deploy, run by the user on the account; tests: push and let the forge run '
-    'them.',
+    'remedy': f'Status: the forge host card, {PYTHON_SLOT} -m dev_lab.dev.forge '
+    f'{exits_of(_ID, "dev_lab.dev.forge")}; a cluster account: {PYTHON_SLOT} -m dev_lab.dev.hpcaccount '
+    f'{exits_of(_ID, "dev_lab.dev.hpcaccount")} (deploy is run by the user on the account); tests: push and let the '
+    'forge run them.',
     'needs': None,
     'refuses': (
         'ssh alice@hpclogin01.example.org ls',

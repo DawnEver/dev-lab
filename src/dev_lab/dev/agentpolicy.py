@@ -254,14 +254,21 @@ POLICY: Final[tuple[Door, ...]] = (
     ),
     # ---- remote
     Door(
-        _module('hpchost', 'deploy-fleet'),
+        _module('hpcaccount', 'deploy-fleet'),
         MAIN,
         'Deploying or restarting the forge serve hosts of the trusted fleet: each trusted cluster account on its '
         'own declared login host, over ssh, detached, one log per account.',
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
-        _module('hpchost', 'deploy'),
+        _module('opsserver'),
+        MAIN,
+        "Running one of the ops account's fixed verbs on a declared server the integrator deploys: install, a "
+        "unit's status, restart, reload or logs, or a daemon reload, with the user's one-time code at the login.",
+        deny='REMOTE-WRITE-THROUGH-A-DOOR',
+    ),
+    Door(
+        _module('hpcaccount', 'deploy'),
         USER,
         "Making a cluster account's login host a forge serve host: run by the user on that account.",
         deny='HPC-THROUGH-THE-DOOR',
@@ -277,7 +284,7 @@ def exits_of(rule_id: str, module: str) -> str:
     """
     grouped: dict[str, list[str]] = {}
     for door in POLICY:
-        if door.deny == rule_id and door.argv[:3] == ('python', '-m', module):
+        if door.deny == rule_id and door.argv[:3] == ('python', '-m', module) and door.argv[3:]:
             noun, *verb = door.argv[3:]
             grouped.setdefault(noun, []).extend(verb)
     return ', '.join(f'{noun} {"|".join(verbs)}'.strip() for noun, verbs in grouped.items())
