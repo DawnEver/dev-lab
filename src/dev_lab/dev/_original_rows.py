@@ -44,6 +44,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'serialpass',
     'lanepolicy',
     'platformparts',
+    'partrefs',
     'plugin_settings',
     'cjk',
     'content',

@@ -61,10 +61,12 @@ a CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluste
     resources = ["femm", "jmag"]           # the markers naming a resource (lab_commons.hpc.needsets)
     produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]   # a local part: argv after the interpreter
 
-    [tool.dev_lab.parts.refs.windows]      # optional: the refs (fnmatch) this part is produced for
+    [tool.dev_lab.parts.refs.heavy]        # optional: the refs (fnmatch) a part NEEDING heavy is produced for
     full = ["integrate/main", "main"]          # absent = every ref the serving mode serves
 
-A ref filter is what keeps HEAVY work off development branches (user ruling 2026-10-13): the scheduler
+A ref filter is keyed by a RESOURCE and binds every part whose need-set holds it (``heavy`` binds
+``femm+heavy`` too); a part under several is served only where each admits the ref (user ruling 2026-11-07).
+It is what keeps HEAVY work off development branches (user ruling 2026-10-13): the scheduler
 (:func:`dev_lab.dev.forgeschedule.candidates`) never offers a ref the part's filter excludes, and
 says so. It is read from the SERVING checkout, so a branch cannot widen the filter that judges it.
 
@@ -120,6 +122,8 @@ __all__ = [
     'UndeclaredPart',
     'cluster_part',
     'compose',
+    'declared_strings',
+    'declared_tables',
     'derived',
     'main',
     'origin_url',
@@ -189,7 +193,8 @@ def _text(table: Mapping[str, Any], name: str, key: str, example: str, *, requir
     return value
 
 
-def _strings(value: object, name: str, key: str, example: str, *, required: bool) -> list[str]:
+def declared_strings(value: object, name: str, key: str, example: str, *, required: bool) -> list[str]:
+    """*value* as the non-empty array of strings ``[name] key`` must declare; ``[]`` when absent and optional."""
     if value is None and not required:
         return []
     if not isinstance(value, list) or not value or not all(isinstance(item, str) and item for item in value):
@@ -209,7 +214,7 @@ def record_directory(root: Path, head: str) -> Path:
         UndeclaredPart: the output is not declared; the message names the key.
 
     """
-    return _records(root, head, _declared(root, name='parts'))
+    return _records(root, head, declared_tables(root, name='parts'))
 
 
 def _records(root: Path, head: str, parts: Mapping[str, Any]) -> Path:
@@ -228,28 +233,15 @@ def producer_argv(root: Path, part: str, *, sha: str) -> list[str]:
 
     """
     needs_of_row(part)  # a name that is no need-set is refused by name
-    declared = _declared(root, sha).get('tests', {}).get('produce')
-    produce = _strings(declared, 'tool.lab_commons.tests', 'produce', _PRODUCE_EXAMPLE, required=True)
+    declared = declared_tables(root, sha).get('tests', {}).get('produce')
+    produce = declared_strings(declared, 'tool.lab_commons.tests', 'produce', _PRODUCE_EXAMPLE, required=True)
     if not any(PART_FIELD in item for item in produce):
         msg = f'[tool.lab_commons.tests] produce must carry {PART_FIELD} so the producer is told its part: '
         raise UndeclaredPart(msg + _PRODUCE_EXAMPLE)
     return [item.replace(PART_FIELD, part) for item in produce]
 
 
-def part_refs(root: Path, platform: str, scope: str) -> tuple[str, ...] | None:
-    """The refs (fnmatch patterns) *platform*'s part at *scope* is produced for; ``None`` when undeclared.
-
-    Raises:
-        UndeclaredPart: the declaration is present and not a list of strings.
-
-    """
-    if (declared := _declared(root, name='parts').get('refs', {}).get(platform, {}).get(scope)) is None:
-        return None
-    table = f'tool.dev_lab.parts.refs.{platform}'
-    return tuple(_strings(declared, table, scope, '["integrate/main", "main"]', required=True))
-
-
-def _declared(root: Path, sha: str | None = None, name: str = '') -> dict[str, Any]:
+def declared_tables(root: Path, sha: str | None = None, name: str = '') -> dict[str, Any]:
     """The kit's tables at commit *sha* (else *root*'s working tree); ``[tool.dev_lab.<name>]`` when named."""
     text = pyproject_at(root, sha) if sha else (root / 'pyproject.toml').read_text(encoding='utf-8')
     return declared_in(text, name) if name else kit_tables(text)
@@ -280,14 +272,14 @@ def cluster_part(root: Path, head: str) -> ClusterPart:
         UndeclaredPart: a declaration it needs is absent or malformed; the message names the key.
 
     """
-    hpc, name = _declared(root, head).get('hpc', {}), 'tool.lab_commons.hpc'
+    hpc, name = declared_tables(root, head).get('hpc', {}), 'tool.lab_commons.hpc'
     _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
-    outputs = _strings(hpc.get('outputs'), name, 'outputs', '["output/fields/*.h5"]', required=False)
+    outputs = declared_strings(hpc.get('outputs'), name, 'outputs', '["output/fields/*.h5"]', required=False)
     return ClusterPart(
         repo_url=origin_url(root),
         collect=collect,
-        output=_records(root, head, _declared(root, head, 'parts')),
+        output=_records(root, head, declared_tables(root, head, 'parts')),
         outputs=tuple(outputs),
     )
 
