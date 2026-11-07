@@ -64,8 +64,8 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - A test marked `serial` (`dev_lab.dev.serialpass`, the family's one marker for a bar that cannot shrink) is
   deselected from that step and runs after it in a second boxed step at `-n 0`, alone; the two halves of the log
   are read separately and judged as one pytest report (`reports.read_stages`).
-- A heavy part is offered only for the refs its `[tool.dev_lab.parts.refs.<part>] <scope>` admits
-  (`platformparts.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).
+- A heavy part is offered only for the refs `[tool.dev_lab.parts.refs.<resource>] <scope>` admits, for every
+  resource its need-set holds (`partrefs.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).
 
 ## The verdict itself
 
