@@ -53,6 +53,7 @@ from lab_commons.compute.learned import BOX_WALL_S, LOCAL
 from lab_commons.compute.probe import OS_NAMES
 from lab_commons.hpc.account import ClusterAccount, cluster_account
 from lab_commons.hpc.cluster import local_runner
+from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client
@@ -175,6 +176,7 @@ class Work:
     producer: str = LOCAL  # what its run is LEARNED under: a part's ``local``, a request's declared name
     wall_s: int = BOX_WALL_S  # past it the box kills the run: a part's one day, a request's declared wall
     box: int = 0  # the box ledger row the tick took for it (0: none); its producer adopts it, never re-admitted
+    scope: str = FULL  # its candidate's: a PR head's cluster run is INCREMENTAL (forgeschedule.scope_of)
 
     @property
     def context(self) -> str:

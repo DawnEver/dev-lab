@@ -332,7 +332,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   having a part's need-set is named.
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`dev_lab.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
-* :mod:`dev_lab.dev.forgesupersede` -- NEWEST-HEAD-ONLY: a superseded run's tasks withdrawn or drained, then released.
+* :mod:`dev_lab.dev.forgesupersede` -- NEWEST-HEAD-ONLY: a superseded or landed run drained, settled ``superseded by``.
+* :mod:`dev_lab.dev.forgescope` -- what a head runs: the full suite on the integration tip, else what its diff reaches.
 * :mod:`dev_lab.dev.forgerunpost` -- a cluster run's forge posts (progress, release), saved steps and alarms.
 * :mod:`dev_lab.dev.forgerunstate` -- a cluster run's state file, its schema upgrades, and the Slurm protocol.
 * :mod:`dev_lab.dev.components` -- the engines a product mounts under ``components/``, declared once.
@@ -399,7 +400,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
 * :mod:`dev_lab.dev.reviewturn` -- the review is the last gate: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
-* :mod:`dev_lab.dev.forgerunshow` -- what a cluster run learned, published on the forge for ``forge run show``.
+* :mod:`dev_lab.dev.forgerunshow` -- ``forge run show`` (what a cluster run published), ``forge run supersede``.
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).

@@ -341,3 +341,27 @@ def test_a_relock_carries_across_its_env_every_outcome_its_moves_cannot_reach(tm
     docs = _commit(tmp_path, {'README.md': 'r\n'}, 'docs')
     assert not forgecarry.env_carries(tmp_path, numpy, docs, env_a='old', env_b='new')
     assert forgecarry.env_carries(tmp_path, numpy, docs, env_a='same', env_b='same')
+
+
+def test_a_pr_head_reaches_only_the_test_files_its_diff_from_the_integration_branch_meets(tmp_path: Path) -> None:
+    """INCREMENTAL SCOPE (user ruling 2026-11-07): a PR head runs only the test files its OWN diff can reach.
+
+    The diff is from the merge-base with the integration branch, so what integration did since the PR branched is
+    never the PR's to run. PLANTED CONTROLS: a docs-only head reaches nothing, and with no integration ref to
+    judge against there is doubt -- ``None``, which runs the full suite.
+    """
+    _repo(tmp_path)
+    other = 'from c import y\n\n\ndef test_c():\n    assert y == 1\n'
+    base = _commit(tmp_path, {'src/c.py': 'y = 1\n', 'tests/test_c.py': other}, 'c')
+    assert forgecarry.reached_tests(tmp_path, REF, base) is None, 'no integration ref: doubt runs everything'
+    _push(tmp_path, base)
+    run_git(tmp_path, 'checkout', '-q', '-b', 'pr')
+    head = _commit(tmp_path, {'src/a.py': 'x = 1  # moved\n'}, 'pr')
+    run_git(tmp_path, 'checkout', '-q', '--detach', base)
+    _push(tmp_path, _commit(tmp_path, {'src/c.py': 'y = 1  # integration moved\n'}, 'later'))
+    assert forgecarry.reached_tests(tmp_path, REF, head) == frozenset({'tests/test_a.py'})
+    run_git(tmp_path, 'checkout', '-q', 'pr')
+    docs = _commit(tmp_path, DOCS, 'docs')
+    assert forgecarry.reached_tests(tmp_path, REF, docs) == frozenset({'tests/test_a.py'}), 'the PR diff, whole'
+    run_git(tmp_path, 'checkout', '-q', '-b', 'docs-pr', base)
+    assert forgecarry.reached_tests(tmp_path, REF, _commit(tmp_path, DOCS, 'only docs')) == frozenset()
