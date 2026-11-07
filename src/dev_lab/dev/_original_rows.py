@@ -391,4 +391,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgestamp',
     # ORIGINAL: the poller pass's read memo (2026-11-04); no consumer polled the forge.
     'forgememo',
+    # ORIGINAL: user ruling 2026-11-07, one table of agent doors; it replaces kit-internal copies, no consumer's.
+    'agentpolicy',
+    # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
+    'opsserver',
+    'remote',
 )

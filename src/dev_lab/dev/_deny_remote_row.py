@@ -45,7 +45,7 @@ REMOTE_WRITE: dict[str, object] = {
     'refuses': (
         'ssh ops@forge.example sudo systemctl restart gitea',
         "ssh ops@forge.example 'cd /opt/dev-lab && git pull'",
-        'ssh -p 2222 root@10.0.0.5 rm -rf /srv/old',
+        'ssh -p 2222 root@192.0.2.5 rm -rf /srv/old',
         'ssh -J jump ops@inner "uptime; systemctl restart caddy"',
         'scp supervise.toml ops@forge.example:/etc/dev-lab/',
         'rsync -a out/ ops@forge.example:/srv/out/',

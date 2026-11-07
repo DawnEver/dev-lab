@@ -31,8 +31,12 @@ def _main_doors() -> str:
     """Every ``python -m`` door the policy table gives the MAIN session alone, as one alternation (derived)."""
     alternatives = []
     for module, verbs in module_verbs(MAIN).items():
-        spelled = '|'.join(r'\s+'.join(re.escape(word) for word in verb) for verb in verbs if verb)
-        alternatives.append(rf'{_INTERPRETER}-m\s+{re.escape(module)}\s+(?:{spelled})(?![\w-])')
+        head = rf'{_INTERPRETER}-m\s+{re.escape(module)}'
+        if () in verbs:  # a door that is the whole module: every verb of it is the main session's
+            alternatives.append(rf'{head}(?![\w.-])')
+            continue
+        spelled = '|'.join(r'\s+'.join(re.escape(word) for word in verb) for verb in verbs)
+        alternatives.append(rf'{head}\s+(?:{spelled})(?![\w-])')
     return '|'.join(alternatives)
 
 

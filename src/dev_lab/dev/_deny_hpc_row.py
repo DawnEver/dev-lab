@@ -47,7 +47,7 @@ HPC_THROUGH_THE_DOOR: dict[str, object] = {
     ),
     'permits': (
         'ssh ubuntu@79.72.88.152 uptime',
-        'scp out.csv ubuntu@forge-vm:/srv/',
+        'scp ubuntu@forge-vm:/srv/out.csv output/',
         'echo "ssh alice@hpclogin01 then sbatch job.sh"',
         'git commit -m "sbatch goes through the forge"',
         'python -m dev_lab.dev.forge queue',
