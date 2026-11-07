@@ -17,7 +17,7 @@ from dev_lab.dev.forgereview_claim import DESCRIPTION, DUE, WAITS
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
-from dev_lab.dev.reviewgate import post_review
+from dev_lab.dev.reviewgate import forge_posted, post_review
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -53,6 +53,8 @@ def review_turn(
     if decision.review is None:
         return ''
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if latest is not None and latest.state == 'success' and not forge_posted(client)(latest):
+        latest = None  # a success the gate does not count is no review (dev-lab #38): the decision still asks for one
     if latest is not None and not (latest.state == 'pending' and latest.description.startswith((WAITS, DUE))):
         return ''
     if decision.others:
