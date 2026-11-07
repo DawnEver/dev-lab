@@ -61,6 +61,7 @@ from dev_lab.dev.lockcheck import (
     FRESHENED,
     LOCK,
     TOOLCHAIN,
+    UNRESOLVED,
     UV_PIN,
     mount_submodules,
     newest_stable,
@@ -77,8 +78,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     'BRANCH', 'DEFAULT_CADENCE', 'FULL', 'IN_HOUSE', 'RENDERED', 'SCOPE', 'TITLE', 'RelockFailed', 'cadence',
-    'carried', 'carry', 'chosen', 'detached_worktree', 'dist_of', 'door_upgrade', 'in_house', 'rerender',
-    'third_party_due',
+    'carried', 'carry', 'chosen', 'detached_worktree', 'dist_of', 'door_upgrade', 'floating_stale', 'in_house',
+    'relock_floating', 'rerender', 'siblings', 'third_party_due',
 ]  # fmt: skip
 
 #: THE one relock branch of a repository, inside the declared ephemeral ``pr/*`` namespace; no sha in its name.
@@ -152,6 +153,36 @@ def in_house(lock: str) -> frozenset[str]:
         if isinstance(url, str) and isinstance(entry.get('name'), str) and not _HELD_GIT.search(url.partition('#')[0]):
             found.add(_canon(entry['name']))
     return frozenset(found)
+
+
+def siblings(tree: Path) -> frozenset[str]:
+    """The floated siblings (:func:`in_house`) of *tree*'s lock; none where *tree* commits no lock."""
+    return in_house((tree / LOCK).read_text(encoding='utf-8')) if (tree / LOCK).is_file() else frozenset()
+
+
+def floating_stale(tree: Path, *, resolve: Callable[[Path], Report] | None = None) -> tuple[str, ...]:
+    """Why *tree*'s lock lags a floated sibling's head, one :func:`~dev_lab.dev.lockcheck.stale` sentence each.
+
+    THE floating-head freshness reading: the in-house moves :func:`chosen` carries off-cadence, plus a resolution
+    that could not run (it refuses, never admits). Third-party moves wait for the cadence and are not read here.
+    """
+    found = stale(tree) if resolve is None else stale(tree, resolve=resolve)
+    unresolved = tuple(line for line in found if line.startswith(UNRESOLVED))
+    return unresolved + chosen(found, siblings(tree), due=False)
+
+
+def relock_floating(tree: Path, *, upgrade: Callable[[Path, Sequence[str]], int] | None = None) -> tuple[str, ...]:
+    """Relock *tree*'s floated siblings to their lines' current heads through the door; the names it moved.
+
+    Writes the lock only; committing it is the caller's. RAISES :class:`RelockFailed` when the door fails.
+    """
+    names = tuple(sorted(siblings(tree)))
+    if not names:
+        return ()
+    if (exited := (upgrade or door_upgrade)(tree, names)) != 0:
+        msg = f'the dependency door exited {exited} relocking {", ".join(names)} in {tree}'
+        raise RelockFailed(msg)
+    return names
 
 
 def chosen(found: Sequence[str], siblings: frozenset[str], *, due: bool) -> tuple[str, ...]:
@@ -309,8 +340,7 @@ def _due(
     if not all(refreshable(line) for line in found):
         raise RelockFailed('; '.join(found))
     due = third_party_due(root, tip, cadence((tree / 'pyproject.toml').read_text(encoding='utf-8')), now)
-    siblings = in_house((tree / LOCK).read_text(encoding='utf-8')) if (tree / LOCK).is_file() else frozenset()
-    lines = chosen(found, siblings, due=due)
+    lines = chosen(found, siblings(tree), due=due)
     return lines, tuple(line for line in found if line not in lines), due
 
 

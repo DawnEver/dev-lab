@@ -110,9 +110,21 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A push to `refs/heads/<X>` of a declared session branch or the trunk carries exactly the local branch '
             '`<X>` (its local ref, with `HEAD` resolved, is `refs/heads/<X>`), so `HEAD:<X>` from another branch, '
             '`<Y>:<X>`, a bare sha and a detached HEAD are refused at pre-push, any checkout may publish it '
-            'without having it checked out, and every other local branch `<Y>` is published only as `<Y>`.'
+            'without having it checked out, every other local branch `<Y>` is published only as `<Y>`, and a '
+            'bare sha or a detached HEAD lands on no branch but the forge`s own pushers` (`MACHINE_BRANCHES`).'
         ),
         ('tests/test_dev_sessionbranch.py',),
+    ),
+    (
+        'PR-HEAD-IS-CURRENT',
+        (
+            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip does not contain '
+            '`origin/<integration>` fetched afresh (a fetch that fails refuses with its reason), or when its lock '
+            'lags a floated sibling`s current head (`relock.floating_stale`); `forge pr ready` refuses on the same '
+            'judgement and on uncommitted tracked changes. Each refusal names `forge sync`, which merges '
+            'integration and relocks the floated siblings in one sync (user ruling 2026-11-07; `prcurrent`).'
+        ),
+        ('tests/test_dev_prcurrent.py', 'tests/test_dev_branchflow.py', 'tests/test_dev_forgedraft.py'),
     ),
     (
         'NO-PUSH-ONTO-A-LANDED-PR',

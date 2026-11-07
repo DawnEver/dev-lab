@@ -33,7 +33,9 @@ from dev_lab.dev.relock import (
     carry,
     chosen,
     dist_of,
+    floating_stale,
     in_house,
+    relock_floating,
     rerender,
 )
 
@@ -195,6 +197,36 @@ def test_in_house_is_a_git_source_following_a_line_read_off_the_lock() -> None:
     """PLANTED control: a git source held at a tag and an index package are third-party."""
     assert in_house(_LOCK) == {'lab-commons'}
     assert in_house('not toml [') == frozenset(), 'an unreadable lock follows nothing'
+
+
+def test_the_floating_reading_names_a_sibling_lag_and_never_a_third_party_move(tmp_path: Path) -> None:
+    """User ruling 2026-11-07, the pre-push and ready reading. PLANTED CONTROL: a pint move alone is fresh."""
+    (tmp_path / 'uv.lock').write_text(_LOCK, encoding='utf-8')
+    assert floating_stale(tmp_path, resolve=_resolving(_PINT, _SIBLING)) == (_SIBLING,)
+    assert floating_stale(tmp_path, resolve=_resolving(_PINT)) == ()
+
+
+def test_the_floating_reading_refuses_a_resolution_that_could_not_run(tmp_path: Path) -> None:
+    (tmp_path / 'uv.lock').write_text(_LOCK, encoding='utf-8')
+
+    def offline(_tree: Path) -> _Report:
+        msg = 'no network'
+        raise OSError(msg)
+
+    (why,) = floating_stale(tmp_path, resolve=offline)
+    assert 'no network' in why
+
+
+def test_relock_floating_moves_only_the_siblings_and_raises_on_a_failed_door(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a tree with no lock moves nothing and never calls the door."""
+    asked: list[Sequence[str]] = []
+    assert relock_floating(tmp_path, upgrade=lambda _t, names: asked.append(names) or 0) == ()
+    assert asked == []
+    (tmp_path / 'uv.lock').write_text(_LOCK, encoding='utf-8')
+    assert relock_floating(tmp_path, upgrade=lambda _t, names: asked.append(names) or 0) == ('lab-commons',)
+    assert asked == [('lab-commons',)]
+    with pytest.raises(RelockFailed, match='exited 3'):
+        relock_floating(tmp_path, upgrade=lambda _t, _names: 3)
 
 
 def test_before_the_cadence_only_sibling_moves_are_chosen() -> None:

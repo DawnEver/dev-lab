@@ -447,6 +447,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`dev_lab.dev.landedpush` -- NO-PUSH-ONTO-A-LANDED-PR: a push onto a branch whose PR the forge merged or
   closed, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
+* :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: a ``pr/*`` push or ``pr ready`` is refused when the head
+  lacks ``origin/<integration>`` or its lock lags a floated sibling; the remedy is ``forge sync``.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
   command line of ``delete`` and ``sweep``, and a workstation's ``PostToolUse`` hook detaches ``sweep --local``.
