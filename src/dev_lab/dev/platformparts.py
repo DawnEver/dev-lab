@@ -61,10 +61,12 @@ a CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluste
     resources = ["femm", "jmag"]           # the markers naming a resource (lab_commons.hpc.needsets)
     produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]   # a local part: argv after the interpreter
 
-    [tool.dev_lab.parts.refs.windows]      # optional: the refs (fnmatch) this part is produced for
+    [tool.dev_lab.parts.refs.heavy]        # optional: the refs (fnmatch) a part NEEDING heavy is produced for
     full = ["integrate/main", "main"]          # absent = every ref the serving mode serves
 
-A ref filter is what keeps HEAVY work off development branches (user ruling 2026-10-13): the scheduler
+A ref filter is keyed by a RESOURCE and binds every part whose need-set holds it (``heavy`` binds
+``femm+heavy`` too); a part under several is served only where each admits the ref (user ruling 2026-11-07).
+It is what keeps HEAVY work off development branches (user ruling 2026-10-13): the scheduler
 (:func:`dev_lab.dev.forgeschedule.candidates`) never offers a ref the part's filter excludes, and
 says so. It is read from the SERVING checkout, so a branch cannot widen the filter that judges it.
 
@@ -236,17 +238,22 @@ def producer_argv(root: Path, part: str, *, sha: str) -> list[str]:
     return [item.replace(PART_FIELD, part) for item in produce]
 
 
-def part_refs(root: Path, platform: str, scope: str) -> tuple[str, ...] | None:
-    """The refs (fnmatch patterns) *platform*'s part at *scope* is produced for; ``None`` when undeclared.
+def part_refs(root: Path, platform: str, scope: str) -> dict[str, tuple[str, ...]]:
+    """The ref filters (fnmatch patterns) *platform*'s part at *scope* is produced under, keyed by the resource.
+
+    One per resource the part needs that declares a filter at *scope*; empty when none does.
 
     Raises:
-        UndeclaredPart: the declaration is present and not a list of strings.
+        UndeclaredPart: a declaration is present and not a list of strings.
 
     """
-    if (declared := _declared(root, name='parts').get('refs', {}).get(platform, {}).get(scope)) is None:
-        return None
-    table = f'tool.dev_lab.parts.refs.{platform}'
-    return tuple(_strings(declared, table, scope, '["integrate/main", "main"]', required=True))
+    declared = _declared(root, name='parts').get('refs', {})
+    filters: dict[str, tuple[str, ...]] = {}
+    for resource in sorted(needs_of_row(platform) & declared.keys()):
+        if (patterns := declared[resource].get(scope)) is not None:
+            table = f'tool.dev_lab.parts.refs.{resource}'
+            filters[resource] = tuple(_strings(patterns, table, scope, '["integrate/main", "main"]', required=True))
+    return filters
 
 
 def _declared(root: Path, sha: str | None = None, name: str = '') -> dict[str, Any]:

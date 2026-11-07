@@ -427,23 +427,26 @@ def _scarce(root: Path, sha: str) -> frozenset[str]:
 
 
 def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bool:
-    """Whether *wanted*'s part declares its ref (``[tool.dev_lab.parts.refs]``); an exclusion is SAID.
+    """Whether every ref filter on a resource *wanted*'s part needs admits its ref; an exclusion is SAID.
 
     A request is no part: it is asked for by name at its sha, so no part's ref filter applies to it.
     """
     if wanted.kind == REQUEST:
         return True
-    scope = wanted.scope
-    admits = part_refs(root, wanted.platform, scope)
-    if admits is None and scope == INCREMENTAL:  # a subset of the full run: never served where full is not
-        scope, admits = FULL, part_refs(root, wanted.platform, FULL)
-    if admits is None or any(fnmatch.fnmatchcase(wanted.ref, one) for one in admits):
-        return True
-    say(
-        f'[serve] {wanted.ref} is not served tests/{wanted.platform} at {scope}: '
-        f'[tool.dev_lab.parts.refs.{wanted.platform}] {scope} admits {list(admits)}'
-    )
-    return False
+    filters = {
+        resource: (wanted.scope, admits) for resource, admits in part_refs(root, wanted.platform, wanted.scope).items()
+    }
+    if wanted.scope == INCREMENTAL:  # a subset of the full run: never served where full is not
+        for resource, admits in part_refs(root, wanted.platform, FULL).items():
+            filters.setdefault(resource, (FULL, admits))
+    for resource, (scope, admits) in filters.items():
+        if not any(fnmatch.fnmatchcase(wanted.ref, one) for one in admits):
+            say(
+                f'[serve] {wanted.ref} is not served tests/{wanted.platform} at {scope}: '
+                f'[tool.dev_lab.parts.refs.{resource}] {scope} admits {list(admits)}'
+            )
+            return False
+    return True
 
 
 def repo_name(client: Client) -> str:
