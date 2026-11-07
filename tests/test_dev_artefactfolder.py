@@ -122,7 +122,7 @@ def test_folder_refuses_leaf_and_parent_aliases(tmp_path: Path, role: str) -> No
     try:
         alias.symlink_to(external, target_is_directory=role == 'parent')
     except (OSError, NotImplementedError) as error:
-        pytest.skip(f'symlinks unavailable: {error}')
+        pytest.xfail(f'symlinks unavailable: {error}')
     with pytest.raises(ArtefactRefused, match='alias'):
         store.put(RUN, source)
 

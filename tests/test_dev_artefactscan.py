@@ -13,6 +13,7 @@ import hashlib
 import io
 import os
 import tarfile
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -39,7 +40,7 @@ def test_newpack_stream_verifies_actual_pack(tmp_path: Path, mtime: int | None) 
         try:
             os.utime(tree / 'plain', (mtime, mtime))
         except (OSError, OverflowError, ValueError) as error:
-            pytest.skip(f'this filesystem cannot hold mtime {mtime}: {error}')
+            pytest.xfail(f'this filesystem cannot hold mtime {mtime}: {error}')
     packed = artefactpack.pack(tree, artefactpack.collect(tree, ['*']), tmp_path / 'archive', **PACK_LIMITS)
     decoded = gzip.decompress(packed.path.read_bytes())
     verified = artefactscan.verify_newpack_stream(
@@ -211,14 +212,14 @@ def test_newpack_archive_authenticates_before_decompressing(
     if fault == 'length':
         ref = Ref(ref.backend, ref.key, ref.bytes + 1, ref.sha256)
     opened: list[object] = []
-    real = gzip.GzipFile
+    real: Callable[..., gzip.GzipFile] = gzip.GzipFile
 
     def decompressor(*args: object, **kwargs: object) -> gzip.GzipFile:
         opened.append(True)
         if fault == 'changed':
             with archive.open('ab') as tail:
                 tail.write(b'changed')
-        return real(*args, **kwargs)  # type: ignore[arg-type]
+        return real(*args, **kwargs)
 
     monkeypatch.setattr(artefactscan.gzip, 'GzipFile', decompressor)
     options = dict(
@@ -252,7 +253,7 @@ def test_newpack_archive_refuses_identity_before_reading(tmp_path: Path, fault: 
         try:
             alias.symlink_to(tmp_path if fault == 'parent_alias' else path, target_is_directory=fault == 'parent_alias')
         except (OSError, NotImplementedError) as error:
-            pytest.skip(f'symlinks unavailable: {error}')
+            pytest.xfail(f'symlinks unavailable: {error}')
         path = alias / 'archive' if fault == 'parent_alias' else alias
     with pytest.raises(ArtefactRefused):
         artefactscan.verify_newpack_archive(

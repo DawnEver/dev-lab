@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -26,7 +27,7 @@ PACK_LIMITS = {'max_members': 100, 'max_index_bytes': 65536, 'max_path_bytes': 4
 
 
 def _alias(alias: Path, target: Path, *, directory: bool) -> None:
-    """A directory junction on Windows (no privilege needed), else a symlink; skip where neither exists."""
+    """A directory junction on Windows (no privilege needed), else a symlink; xfail where neither exists."""
     if directory and os.name == 'nt':
         cmd = shutil.which('cmd')
         assert cmd is not None
@@ -35,7 +36,7 @@ def _alias(alias: Path, target: Path, *, directory: bool) -> None:
     try:
         alias.symlink_to(target, target_is_directory=directory)
     except (OSError, NotImplementedError) as error:
-        pytest.skip(f'symlinks unavailable: {error}')
+        pytest.xfail(f'symlinks unavailable: {error}')
 
 
 # --- collect: the selected footprint ------------------------------------------------------------
@@ -82,7 +83,7 @@ def test_collect_empty_and_zero_byte_budgets_are_explicit(tmp_path: Path) -> Non
 @pytest.mark.parametrize('value', [False, True, -1, 1.0])
 def test_collect_refuses_noninteger_or_negative_budgets(tmp_path: Path, name: str, value: object) -> None:
     with pytest.raises(ArtefactRefused, match='nonnegative integer'):
-        artefactpack.collect(tmp_path, [], **{name: value})  # type: ignore[arg-type]
+        artefactpack.collect(tmp_path, [], **cast('dict[str, int]', {name: value}))
 
 
 # --- pack: the member index ---------------------------------------------------------------------
@@ -100,7 +101,8 @@ def test_pack_index_hashes_actual_regular_hardlink_payloads(tmp_path: Path) -> N
     ]
     with tarfile.open(packed.path) as archive:
         assert all(member.isfile() for member in archive.getmembers()), 'a hard link is its own regular member'
-        payloads = [archive.extractfile(member).read() for member in archive.getmembers()]  # type: ignore[union-attr]
+        streams = [archive.extractfile(member) for member in archive.getmembers()]
+        payloads = [stream.read() for stream in streams if stream is not None]
         assert payloads == [b'actual tar payload'] * 2
 
 
@@ -140,7 +142,9 @@ def test_pack_index_exact_serialized_boundary_and_unicode_path(tmp_path: Path) -
 @pytest.mark.parametrize('value', [False, True, 0, -1, 1.0, None])
 def test_pack_index_requires_positive_integer_limits_declared_together(tmp_path: Path, value: object) -> None:
     with pytest.raises(OutputBudgetRefused, match='positive integers'):
-        artefactpack.pack(tmp_path, [], tmp_path / 'archive', **dict(PACK_LIMITS, max_members=value))  # type: ignore[arg-type]
+        artefactpack.pack(
+            tmp_path, [], tmp_path / 'archive', **cast('dict[str, int]', dict(PACK_LIMITS, max_members=value))
+        )
 
 
 @pytest.mark.parametrize('name', ['a:b', 'bad\\name', 'bad\nname', '../up', ''])
@@ -168,7 +172,7 @@ def test_pack_refuses_dangling_final_symlink(tmp_path: Path) -> None:
     try:
         destination.symlink_to(tmp_path / 'absent')
     except (OSError, NotImplementedError) as error:
-        pytest.skip(f'symlinks unavailable: {error}')
+        pytest.xfail(f'symlinks unavailable: {error}')
     with pytest.raises(FileExistsError):
         artefactpack.pack(tmp_path, [], destination, **PACK_LIMITS)
     assert destination.is_symlink()
@@ -210,9 +214,9 @@ def test_pack_late_publish_collision_preserves_other_final(tmp_path: Path, monke
     destination = tmp_path / 'archive'
     member = artefactpack._tar_member
 
-    def and_another_publisher(*args: object) -> MemberFact:
+    def and_another_publisher(tar: tarfile.TarFile, tree: Path, path: Path, name: str) -> MemberFact:
         destination.write_bytes(b'other publisher')
-        return member(*args)  # type: ignore[arg-type]
+        return member(tar, tree, path, name)
 
     monkeypatch.setattr(artefactpack, '_tar_member', and_another_publisher)
     before = set(tmp_path.iterdir())
@@ -228,14 +232,14 @@ def test_pack_source_changed_while_tar_reads_it_is_integrity(tmp_path: Path, mon
     original = artefactpack._HashingReader.read
     changed = []
 
-    def drifting(self: object, size: int = -1) -> bytes:
+    def drifting(self: artefactpack._HashingReader, size: int = -1) -> bytes:
         if not changed:
             changed.append(True)
             stamp = source.stat()
             with source.open('r+b') as stream:
                 stream.write(b'changed-source')
             os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 10**9))
-        return original(self, size)  # type: ignore[arg-type]
+        return original(self, size)
 
     monkeypatch.setattr(artefactpack._HashingReader, 'read', drifting)
     with pytest.raises(OutputIntegrityRefused):
@@ -252,7 +256,7 @@ def test_pack_emits_the_restricted_pax_format(tmp_path: Path, mtime: int) -> Non
     try:
         os.utime(tree / 'plain', (mtime, mtime))
     except (OSError, OverflowError, ValueError) as error:
-        pytest.skip(f'this filesystem cannot hold mtime {mtime}: {error}')
+        pytest.xfail(f'this filesystem cannot hold mtime {mtime}: {error}')
     packed = artefactpack.pack(tree, [tree / 'plain'], tmp_path / 'archive', **PACK_LIMITS)
     with gzip.open(packed.path) as stream:
         decoded = stream.read()

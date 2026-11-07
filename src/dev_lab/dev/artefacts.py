@@ -114,9 +114,6 @@ __all__ = [
 _BACKENDS: Final = (FORGE, RCLONE, FOLDER)
 _SHA_TOKEN: Final = re.compile(r'\b[0-9a-f]{12,40}\b')
 _TABLE: Final = 'tool.lab_commons.artefacts'
-_EXPANDED: Final = ('expanded_output_max_entries', 'expanded_output_max_bytes')
-_INDEX: Final = ('member_index_max_members', 'member_index_max_bytes', 'member_index_max_path_bytes')
-_RECORD: Final = ('record_max_compressed_bytes', 'record_max_decompressed_bytes')
 
 
 # --- config, selection, reading -------------------------------------------------------------------
@@ -182,16 +179,23 @@ def config_from(text: str, where: str) -> Config:
 
 def _budget_problems(config: Config) -> list[str]:
     """The output budgets *config* declares wrongly: a bool is never an integer budget."""
+    expanded = {
+        'expanded_output_max_entries': config.expanded_output_max_entries,
+        'expanded_output_max_bytes': config.expanded_output_max_bytes,
+    }
+    bounded = {
+        'member_index_max_members': config.member_index_max_members,
+        'member_index_max_bytes': config.member_index_max_bytes,
+        'member_index_max_path_bytes': config.member_index_max_path_bytes,
+        'record_max_compressed_bytes': config.record_max_compressed_bytes,
+        'record_max_decompressed_bytes': config.record_max_decompressed_bytes,
+    }
     found = [
         f'{name} must be a nonnegative integer or omitted'
-        for name in _EXPANDED
-        if (value := getattr(config, name)) is not None and (type(value) is not int or value < 0)
+        for name, value in expanded.items()
+        if value is not None and (type(value) is not int or value < 0)
     ]
-    positive = [
-        name
-        for name in (*_INDEX, *_RECORD)
-        if (value := getattr(config, name)) is not None and (type(value) is not int or value < 1)
-    ]
+    positive = [name for name, value in bounded.items() if value is not None and (type(value) is not int or value < 1)]
     return found + ([f'{positive} must be positive integers or omitted'] if positive else [])
 
 

@@ -832,14 +832,14 @@ def test_shipment_source_identity_change_is_terminal_integrity(home: Path, monke
     original = artefactpack._HashingReader.read
     changed: list[bool] = []
 
-    def drifting(self: object, size: int = -1) -> bytes:
+    def drifting(self: artefactpack._HashingReader, size: int = -1) -> bytes:
         if not changed:
             changed.append(True)
             before = source.stat()
             with source.open('r+b') as stream:
                 stream.write(b'changed-source')
             os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns + 10**9))
-        return original(self, size)  # type: ignore[arg-type]
+        return original(self, size)
 
     monkeypatch.setattr(artefactpack._HashingReader, 'read', drifting)
     posted = _posting(monkeypatch)

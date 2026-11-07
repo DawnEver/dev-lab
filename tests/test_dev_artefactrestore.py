@@ -9,8 +9,9 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import IO, Self
+from typing import IO, Self, TypedDict, cast
 
 import pytest
 
@@ -47,8 +48,14 @@ def _fixture(
     if fault == 'changed':
         real = artefactscan._scan
 
-        def and_the_source_moves(*args: object) -> tuple[MemberFact, ...]:
-            verified = real(*args)  # type: ignore[arg-type]
+        def and_the_source_moves(
+            stream: IO[bytes],
+            facts: tuple[MemberFact, ...],
+            max_metadata_bytes: int,
+            max_uncompressed_bytes: int,
+            output: artefactscan.MemberSink | None,
+        ) -> tuple[MemberFact, ...]:
+            verified = real(stream, facts, max_metadata_bytes, max_uncompressed_bytes, output)
             with archive.open('ab') as tail:
                 tail.write(b'changed')
             return verified
@@ -59,17 +66,30 @@ def _fixture(
     return archive, ref, packed.members, parent
 
 
-def _options(ref: Ref, **changes: object) -> dict[str, object]:
-    base: dict[str, object] = dict(
-        PACK_LIMITS,
+class _Options(TypedDict):
+    max_members: int
+    max_index_bytes: int
+    max_path_bytes: int
+    max_compressed_bytes: int
+    max_metadata_bytes: int
+    max_uncompressed_bytes: int
+    max_entries: int
+    max_bytes: int
+    case_sensitive: bool
+
+
+def _options(ref: Ref, *, max_entries: int = 10, max_bytes: int = 200000) -> _Options:
+    return _Options(
+        max_members=PACK_LIMITS['max_members'],
+        max_index_bytes=PACK_LIMITS['max_index_bytes'],
+        max_path_bytes=PACK_LIMITS['max_path_bytes'],
         max_compressed_bytes=ref.bytes,
         max_metadata_bytes=4096,
         max_uncompressed_bytes=200000,
-        max_entries=10,
-        max_bytes=200000,
+        max_entries=max_entries,
+        max_bytes=max_bytes,
         case_sensitive=False,
     )
-    return {**base, **changes}
 
 
 @pytest.mark.parametrize('fault', ['', 'empty', 'unselected', 'crc', 'changed', 'entries', 'bytes'])
@@ -88,10 +108,10 @@ def test_materialize_newpack_receipt_last_and_exact_budget(
     options = _options(ref, max_entries=entries - (fault == 'entries'), max_bytes=size - (fault == 'bytes'))
     if fault in ('unselected', 'crc', 'changed', 'entries', 'bytes'):
         with pytest.raises(ArtefactRefused):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)  # type: ignore[arg-type]
+            artefactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)
         assert list(parent.iterdir()) == []
     else:
-        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)  # type: ignore[arg-type]
+        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)
         assert root.parent == parent
         assert (root / 'materialization-complete.json').read_bytes() == receipt
         assert sorted(path.name for path in root.iterdir()) == sorted([*paths, 'materialization-complete.json'])
@@ -166,28 +186,28 @@ def test_materialization_real_output_boundary_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
 ) -> None:
     archive, ref, facts, parent = _fixture(tmp_path, monkeypatch)
-    original_open = Path.open
+    original_open = cast('Callable[..., IO[bytes]]', Path.open)
 
     def output_open(path: Path, mode: str = 'r', *args: object, **kwargs: object) -> object:
-        stream = original_open(path, mode, *args, **kwargs)  # type: ignore[call-overload]
+        stream = original_open(path, mode, *args, **kwargs)
         held = tmp_path / 'held-original'
         return _OutputBoundary(path, stream, fault, held) if mode == 'xb' and path.is_relative_to(parent) else stream
 
     monkeypatch.setattr(Path, 'open', output_open)
     options = _options(ref)
     if fault == 'short':  # PLANTED CONTROL: short writes are completed, not lost
-        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected', 'zero'], parent, **options)  # type: ignore[arg-type]
+        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected', 'zero'], parent, **options)
         assert (root / 'selected').read_bytes() == b'x' * 100000
         assert (root / 'materialization-complete.json').is_file()
     elif fault == 'foreign':
         with pytest.raises(ArtefactRefused, match='cleanup incomplete'):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)  # type: ignore[arg-type]
+            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)
         (root,) = parent.iterdir()
         assert (root / 'selected').read_bytes() == b'foreign replacement', 'a foreign file is never deleted'
         assert not (root / 'materialization-complete.json').exists()
     else:
         with pytest.raises(OSError, match='boundary failed'):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)  # type: ignore[arg-type]
+            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)
         assert list(parent.iterdir()) == []
 
 
@@ -199,10 +219,10 @@ def test_materialization_nested_parents_exact_entry_boundary(
     options = _options(ref, max_entries=max_entries)
     if max_entries == 5:
         with pytest.raises(OutputBudgetRefused):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)  # type: ignore[arg-type]
+            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)
         assert list(parent.iterdir()) == []
     else:
-        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)  # type: ignore[arg-type]
+        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)
         assert (root / 'a' / 'b' / 'x').read_bytes() == b'x' * 100000
         assert (root / 'a' / 'y').read_bytes() == b''
         assert len(list(root.rglob('*'))) + 1 == 6
