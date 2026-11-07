@@ -134,10 +134,11 @@ def test_a_success_a_user_posted_first_stands_on_gitea_and_is_reviewed_on_github
         work, head = _work(tmp_path / host)
         forge = StateForge(Forge(host, 'o', 'r'))
         number = forge.add_pull('pr/x', 'integrate/main', title='add x', sha=head)
-        called_due(forge, head)  # the merge decision called its review due
         forge.login = 'a'
         status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean')
         forge.login = ACTIONS_BOT if host == 'github.com' else GITEA_ACTIONS_LOGIN
+        if host == 'github.com':  # the decision counts no user's success there, so it calls the review due
+            called_due(forge, head)
         command = FakeCommand()
         assert main(['run', '--pr', str(number)], cwd=work, client=forge, run=command, ready=_can) == 0
         assert len(command.ran) == runs, host

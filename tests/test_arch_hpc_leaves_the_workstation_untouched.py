@@ -20,6 +20,7 @@ from typing import Final
 
 import pytest
 from lab_commons.config import CONFIG_ENV
+from lab_commons.home import HOME_ENV
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc.shell import pack
 from test_dev_hpc_records import MACHINE, FakeRunCluster
@@ -101,6 +102,7 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
     monkeypatch.setattr(subprocess, 'Popen', spy)
     machine_dir = tmp_path_factory.mktemp('machine')
     monkeypatch.setenv(CONFIG_ENV, str(machine_dir / 'config.toml'))
+    monkeypatch.setenv(HOME_ENV, str(machine_dir / 'home'))  # the machine home LEARNS; it is the host's, not here
     before_repo, before_dir = _fingerprint(repo), sorted(tmp_path.rglob('*'))
     common = ['--sha', sha]
     assert cli.main(['run', 'submit', *common, '--scope', 'full', '--repo-url', 'https://g/r.git',

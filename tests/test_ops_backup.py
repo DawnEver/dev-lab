@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.ops.backup import BackupRefused, export, pull
-from dev_lab.ops.config import Backup, Offsite
+from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.offsite import AwsCli, key_for, upload
 
 NOW = datetime(2026, 11, 4, 3, 30, tzinfo=UTC)

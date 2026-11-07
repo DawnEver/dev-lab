@@ -11,6 +11,7 @@ from _forge_state import StateForge
 from test_dev_forgereview import FakeCommand, _forge, _output, _work
 
 from dev_lab.dev.forgepulls import Marker, marker
+from dev_lab.dev.forgereview_claim import DUE
 from dev_lab.dev.forgereview_declared import EMPTY_COMMAND_FIX, PATHS_FIELD, RANGE_FIELD, Review
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import LEDGER_TITLE, TakeoverRefused, ledger_of, main, pull_for, takeover
@@ -40,7 +41,8 @@ def _open(tmp_path: Path) -> tuple[Path, StateForge, int, str]:
 
 
 def _no_review(forge: object, sha: str) -> bool:
-    return all(one.context != REVIEW_CONTEXT for one in status_list(forge, sha))
+    """Nothing on *sha*'s review context past the merge decision's DUE that :func:`_forge` planted."""
+    return all(one.context != REVIEW_CONTEXT or one.description == DUE for one in status_list(forge, sha))
 
 
 def test_the_takeover_posts_an_advisory_review_and_no_status(tmp_path: Path) -> None:

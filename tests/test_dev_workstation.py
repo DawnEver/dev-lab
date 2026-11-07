@@ -30,6 +30,10 @@ from dev_lab.dev.hpchost.spec import host_serve_argv
 from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpath import venv_interpreter
 
+#: Every probed tool its probe marks heavy; a plain probed tool (ngspice, node) is never withheld.
+_HEAVY = sorted(name for name, check in CHECKS.items() if check.heavy)
+
+
 FORGE: Final = 'https://forge.example/team'
 REPOS: Final = 'dev-lab,alpha,beta'
 DEPLOY: Final = ('--repos', REPOS, '--capabilities', 'workstation,jmag:4', '--forge', FORGE)
@@ -696,7 +700,8 @@ def test_the_light_role_declares_its_profile_and_withholds_every_heavy_tool(box:
     assert workstation.deploy(list(LIGHT), programs=box.programs) == 0
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     assert declared['capabilities'] == {'workstation': {}}
-    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'parts': 'every', 'withhold': sorted(CHECKS)}
+    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'parts': 'every', 'withhold': _HEAVY}
+    assert 'node' not in declared['serve']['withhold'], 'PLANTED CONTROL: a plain probed tool is not heavy'
     assert {'femm', 'jmag', 'matlab'} <= set(workstationfile.HEAVY), 'a JMAG the probe finds is still never forge work'
 
 
@@ -774,7 +779,7 @@ def test_the_template_is_the_role_as_deploy_writes_it(capsys: pytest.CaptureFixt
     printed = tomllib.loads(capsys.readouterr().out)
     assert printed == {
         'capabilities': {'workstation': {}},
-        'serve': {'repos': ['dev-lab', 'alpha'], 'parts': 'every', 'withhold': sorted(CHECKS)},
+        'serve': {'repos': ['dev-lab', 'alpha'], 'parts': 'every', 'withhold': _HEAVY},
     }
 
 

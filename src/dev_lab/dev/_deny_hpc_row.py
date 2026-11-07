@@ -15,6 +15,8 @@ command, or anywhere after ``ssh``. A non-HPC host (a workstation, a forge VM by
 
 from __future__ import annotations
 
+from dev_lab.dev.venvpath import PYTHON_SLOT
+
 __all__ = ['HPC_THROUGH_THE_DOOR']
 
 _SLURM = r'(?:sbatch|srun|salloc|scancel)\b'
@@ -27,13 +29,14 @@ HPC_THROUGH_THE_DOOR: dict[str, object] = {
     'matches': 'command',
     'hazard': 'an agent on an HPC login host or Slurm opens connections nobody budgets; a poll loop took the '
     "cluster's ssh down (2026-11-06).",
-    'remedy': 'Status: the forge host card, python -m dev_lab.dev.forge queue, forge run show <sha>; deploy: '
-    'python -m dev_lab.dev.hpchost deploy, run by the user on the account; tests: push and let the forge run them.',
+    'remedy': f'Status: the forge host card, {PYTHON_SLOT} -m dev_lab.dev.forge queue, forge run show <sha>; deploy: '
+    f'{PYTHON_SLOT} -m dev_lab.dev.hpchost deploy, run by the user on the account; tests: push and let the forge run '
+    'them.',
     'needs': None,
     'refuses': (
-        'ssh alice@hpclogin01.cluster.example.ac.uk ls',
-        'scp f alice@hpclogin02.cluster.example.ac.uk:',
-        'rsync -a out/ login2.example.org:/home/alice/',
+        'ssh alice@hpclogin01.example.org ls',
+        'scp f alice@hpclogin02.example.org:',
+        'rsync -a out/ login2.example.org:/scratch/out/',
         'sbatch job.sh',
         'scancel 4242',
         "ssh x@h 'sbatch j'",
