@@ -73,7 +73,7 @@ def test_a_repo_CANNOT_add_a_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     )
     monkeypatch.chdir(tmp_path)
     with pytest.raises(AttributeError):
-        commitmsg.declared_prefixes  # noqa: B018 -- the retired reader is gone
+        _ = commitmsg.declared_prefixes  # the retired reader is gone
     for message in ('wip checkpoint', 'rem(x): y', 'data(x): y'):
         assert commitmsg.main(['--message', message]) == 1, message
 
