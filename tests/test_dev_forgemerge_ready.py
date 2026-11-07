@@ -13,7 +13,8 @@ from test_dev_forgemerge import _MANIFEST, _work
 from dev_lab.dev import forgecli, forgemerge
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
-from dev_lab.dev.forgemerge import EXTERNAL, MESSAGES_NOT_DECLARED, READY, judged, ready
+from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
+from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
@@ -156,7 +157,7 @@ def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_j
                         'POST /graphql': {'errors': [{'message': 'Pull request is in unstable status'}]}})  # fmt: skip
     assert 'NOT enabled -- Pull request is in unstable status' in forgemerge.auto_merge(hub, 7)
     said = ready(work, forge, number)
-    assert _merge_ready(forge, head) == ('success', READY)
+    assert _merge_ready(forge, head) == ('success', f'{READY} ({MESSAGES_NOT_DECLARED})')  # no message row declared
     [(merged, body)] = forge.merges
     assert merged == number
     assert (body['sha'], body['merge_method']) == (head, 'merge')
