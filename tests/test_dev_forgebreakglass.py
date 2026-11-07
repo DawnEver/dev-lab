@@ -1,7 +1,8 @@
-"""``forge breakglass`` / ``forge pr breakglass``: the human types the code; a merge sends a pinned head, no code."""
+"""``forge breakglass`` / ``forge pr breakglass``: open sends the user's credential; a merge sends a pinned head."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -9,6 +10,7 @@ from typing import Any, cast
 from _ops_fixtures import git
 
 from dev_lab.dev._forge_records import PullRequest
+from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forgebreakglass import merge_main, wave_main
 from dev_lab.dev.forgecli import NOUNS, PR_VERBS
 from dev_lab.dev.forgework import Client
@@ -32,18 +34,26 @@ class _Recorder:
         return self.status, 'said'
 
 
-def test_open_sends_the_typed_code_and_the_asked_bounds() -> None:
+def test_open_sends_the_granted_credential(tmp_path: Path) -> None:
+    held = state_dir(tmp_path) / 'c0ffee.json'
+    held.parent.mkdir(parents=True)
+    held.write_text(json.dumps({'id': 'c0ffee', 'sig': 's'}), encoding='utf-8')
     send = _Recorder()
-    assert wave_main(['open', '--hours', '1'], table=_TABLE, ask=lambda _p: ' 123456 ', send=send) == 0
-    assert send.sent == [{'action': 'open', 'hours': 1.0, 'code': '123456'}]
+    assert wave_main(['open', '--credential', 'c0ffee'], table=_TABLE, send=send, home=tmp_path) == 0
+    assert send.sent == [{'action': 'open', 'credential': {'id': 'c0ffee', 'sig': 's'}}]
 
 
-def test_close_and_status_ask_for_no_code() -> None:
+def test_open_without_a_granted_credential_is_refused_and_sends_nothing(tmp_path: Path) -> None:
     send = _Recorder()
-    asked: list[str] = []
+    assert wave_main(['open', '--credential', 'missing'], table=_TABLE, send=send, home=tmp_path) == 2
+    assert wave_main(['open'], table=_TABLE, send=send, home=tmp_path) == 2
+    assert send.sent == []
+
+
+def test_close_and_status_send_no_credential() -> None:
+    send = _Recorder()
     for action in ('close', 'status'):
-        wave_main([action], table=_TABLE, ask=lambda p: asked.append(p) or '', send=send)
-    assert asked == []
+        wave_main([action], table=_TABLE, send=send)
     assert send.sent == [{'action': 'close'}, {'action': 'status'}]
 
 

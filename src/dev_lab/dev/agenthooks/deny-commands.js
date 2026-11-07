@@ -50,6 +50,7 @@
  *
  *   'command'  (default) the pattern names the command being run, so it must match at the START
  *              of a segment. `echo "uv sync"` runs echo; `grep -rn "git push"` runs grep.
+ *   'line'     the shape spans segments (a value piped into a command): searched in the whole line.
  *   'argument' the pattern names an OPTION and must be found anywhere in the segment, because the
  *              command it qualifies varies: `--force` is forbidden on `git push`, on
  *              `sh with-retry.sh push`, and on anything else that ends up pushing.
@@ -495,7 +496,9 @@ function logRefusal(name, where) {
 }
 
 /** Does `rule` fire on any executed text? */
-function fires(rule, texts) {
+function fires(rule, texts, cmd) {
+  // A 'line' rule names a shape that spans segments (a code piped into a command), so it reads the whole line.
+  if (rule.matches === 'line') return new RegExp(rule.pattern).test(cmd);
   const argument = rule.matches === 'argument';
   // A 'command' rule anchors at the start of a segment, and at the start of a LINE inside
   // interpreter code. An 'argument' rule names an option, so it is searched within the text.
@@ -529,7 +532,7 @@ for (const rule of rules) {
   if (rule.scope === 'subagent' && !subagent) continue;
   let hit;
   try {
-    hit = fires(rule, texts) && !(rule.allow && new RegExp(rule.allow).test(cmd));
+    hit = fires(rule, texts, cmd) && !(rule.allow && new RegExp(rule.allow).test(cmd));
   } catch {
     continue; // one malformed rule never blocks the session
   }

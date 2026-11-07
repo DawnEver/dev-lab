@@ -50,7 +50,7 @@ test = [
     "pyright",
     "pdoc",
 ]
-# A FORGE HOST'S extra (dev_lab.ops): `access enrol` / `breakglass enrol` draw the otpauth QR on the enrolling
+# A FORGE HOST'S extra (dev_lab.ops): `access enrol` / `consent enrol` draw the otpauth QR on the enrolling
 # terminal with segno (pure Python, no dependencies of its own). The test extra carries it so the QR is tested.
 ops = ["segno"]
 
@@ -70,7 +70,7 @@ forge = "dev_lab.dev.forgeaffinity:research_affinity"
 # THE FAMILY ROWS NO REPO CAN DROP (user ruling 2026-11-07): pytest autoloads this wherever dev-lab is
 # installed, so NO-CJK-IN-TRACKED-SOURCE runs in every family repo with no consumer file (famtests.alwayson).
 [project.entry-points.pytest11]
-dev_lab_family = "dev_lab.dev.famtests.alwayson"
+dev_lab_family = "dev_lab.pytest_family"
 
 [project.urls]
 Homepage = "https://github.com/DawnEver/dev-lab"

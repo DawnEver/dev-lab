@@ -59,6 +59,7 @@ import lab_commons.launch as _door
 from lab_commons.file_io import read_toml
 
 from dev_lab.dev._rule_rows import ROWS
+from dev_lab.dev._rule_rows_b import ALWAYS_ON as _ALWAYS_ON_IDS
 from dev_lab.dev._rule_rows_b import ROWS as _ROWS_B
 from dev_lab.dev._rule_rows_branches import ROWS as _ROWS_BRANCHES
 from dev_lab.dev._rule_rows_citations import ROWS as _ROWS_CITATIONS
@@ -182,11 +183,15 @@ class Rule:
     exactly the drift this registry removes.
 
     *mechanisms* must be non-empty. See :class:`UnenforceableRule`.
+
+    *always_on* marks a rule dev-lab enforces in every repo through
+    :mod:`dev_lab.dev.famtests.alwayson`; see :data:`ALWAYS_ON`.
     """
 
     id: str
     statement: str
     mechanisms: tuple[Mechanism, ...]
+    always_on: bool = False
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -208,12 +213,6 @@ class Rule:
                 f'that does, or leave the rule OUT until one exists.'
             )
             raise UnenforceableRule(msg)
-
-
-#: The rules dev-lab enforces in EVERY repo through the ``pytest11`` plugin
-#: :mod:`dev_lab.dev.famtests.alwayson` (user ruling 2026-11-07): an :class:`Adoption` may neither
-#: list one nor declare it absent, and :func:`unadopted` counts it as answered.
-ALWAYS_ON: Final[frozenset[str]] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +298,13 @@ def _mechanism(raw: str | tuple[str, str]) -> Mechanism:
 def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -> tuple[Rule, ...]:
     """The data half as :class:`Rule` objects -- where a mechanism-less row refuses, at import."""
     return tuple(
-        Rule(id=name, statement=text, mechanisms=tuple(_mechanism(m) for m in mechs)) for name, text, mechs in rows
+        Rule(
+            id=name,
+            statement=text,
+            mechanisms=tuple(_mechanism(m) for m in mechs),
+            always_on=name in _ALWAYS_ON_IDS,
+        )
+        for name, text, mechs in rows
     )
 
 
@@ -311,6 +316,15 @@ def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -
 RULES: Final[tuple[Rule, ...]] = _build(
     ROWS + _ROWS_MEMORY + _ROWS_B + _ROWS_CITATIONS + _ROWS_PR_FLOW + _ROWS_BRANCHES
 )
+
+#: The rules dev-lab enforces in EVERY repo through the ``pytest11`` plugin
+#: :mod:`dev_lab.dev.famtests.alwayson` (user ruling 2026-11-07), DERIVED from :attr:`Rule.always_on`:
+#: an :class:`Adoption` may neither list one nor declare it absent, and :func:`unadopted` counts it as
+#: answered.
+ALWAYS_ON: Final[frozenset[str]] = frozenset(rule.id for rule in RULES if rule.always_on)
+if _ALWAYS_ON_IDS - ALWAYS_ON:
+    _msg = f'always-on IDs name no registry row: {sorted(_ALWAYS_ON_IDS - ALWAYS_ON)}'
+    raise ValueError(_msg)
 
 
 def tracked_files(root: Path) -> frozenset[str]:

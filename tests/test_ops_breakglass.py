@@ -1,4 +1,4 @@
-"""Break-glass waves: a code opens one, merges inside it are announced by the server, the audit needs a code.
+"""Break-glass waves: a consent credential opens one, merges inside it are announced by the server.
 
 Every planted control refuses before any forge write.
 """
@@ -24,6 +24,7 @@ from dev_lab.dev.breakglass import reason
 from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.ops.breakglass import BreakglassRefused, ClientForge, Server, merge_message
 from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.consent.issuer import Issuer
 from dev_lab.ops.totp import STEP
 
 HEAD = 'a' * 40
@@ -72,15 +73,34 @@ class Host:
     #: Seconds every clock read sleeps: widens each read-modify-write window, as a loaded host would.
     delay: float = 0.0
 
+    #: Replaces the issuer's registration (``None``: the real one).
+    register: Callable[[Any, int], object] | None = None
+
+    @property
+    def issuer(self) -> Issuer:
+        role = self.config.consent
+        assert role is not None
+        return Issuer(Path(role.totp), Path(role.key), Path(role.state), role.issuer, self._now)
+
     @property
     def server(self) -> Server:
-        return Server(
-            self.config,
-            self._forge,
-            self._alert,
-            self._now,
-            key=self.key,
-        )
+        issuer = self.issuer
+        return Server(self.config, self._forge, self._alert, self._now, consent_key=issuer.public(),
+                      register=self.register or issuer.register, key=self.key)  # fmt: skip
+
+    def grant(self, *, hours: float = 4, max_merges: int = 3) -> dict[str, Any]:
+        """A ``breakglass.wave`` credential the user granted now (each grant spends the next TOTP step)."""
+        request = {
+            'action': 'breakglass.wave',
+            'subject': 'test wave',
+            'params': {'hours': hours, 'max_merges': max_merges},
+        }
+        credential = self.issuer.issue(request, self.code())
+        self.later(STEP)
+        return credential
+
+    def open(self, **params: float) -> str:
+        return self.ask('open', credential=self.grant(**params))
 
     def _alert(self, title: str, body: str) -> bool:
         self.alerts.append((title, body))
@@ -109,11 +129,11 @@ class Host:
 
 @pytest.fixture
 def host(tmp_path: Path) -> Host:
-    return Host(config(tmp_path, [], extra='wave_hours = 4.0\nmax_merges = 3'))
+    return Host(config(tmp_path, [], extra='wave_hours_max = 4.0'))
 
 
 def test_a_wave_merges_without_a_code_and_summarizes_on_close(host: Host) -> None:
-    assert 'open for 4 h, at most 3' in host.ask('open', code=host.code())
+    assert 'open for 4 h, at most 3' in host.open()
     assert host.merge().startswith(f'merged {ALPHA}#7')
     assert [call[0] for call in host.forge.calls] == ['comment', 'merge']
     assert reason(host.forge.calls[1][2]) == 'review-bot is down'  # the existing Break-Glass notice reads it
@@ -126,26 +146,38 @@ def test_a_wave_merges_without_a_code_and_summarizes_on_close(host: Host) -> Non
     assert 'audit' in host.ask('status')
 
 
-@pytest.mark.parametrize('bad', ['', '000000', 'abcdef'])
-def test_opening_without_a_right_code_is_refused(host: Host, bad: str) -> None:
-    with pytest.raises(BreakglassRefused):
-        host.ask('open', code=bad)
+def test_a_credential_opens_one_wave_only(host: Host) -> None:
+    credential = host.grant()
+    host.ask('open', credential=credential)
+    host.ask('close')
+    with pytest.raises(BreakglassRefused, match='already used'):
+        host.ask('open', credential=credential)
+
+
+def test_a_tampered_credential_is_refused_and_opens_nothing(host: Host) -> None:
+    credential = host.grant()
+    with pytest.raises(BreakglassRefused, match='signature'):
+        host.ask('open', credential=credential | {'params': {'hours': 4, 'max_merges': 0}})
+    assert 'no wave' in host.ask('status')
+    assert 'open for' in host.ask('open', credential=credential)  # the control: the untouched one opens
+
+
+def test_an_unreachable_issuer_refuses_to_open_a_wave(host: Host) -> None:
+    def down(_credential: object, _amount: int) -> object:
+        unreachable = 'issuer down'
+        raise ConnectionError(unreachable)
+
+    host.register = down
+    with pytest.raises(BreakglassRefused, match='never admitted'):
+        host.open()
     assert 'no wave' in host.ask('status')
 
 
-def test_a_replayed_open_code_is_refused(host: Host) -> None:
-    used = host.code()
-    host.ask('open', code=used)
-    host.ask('close')
-    with pytest.raises(BreakglassRefused, match='already used'):
-        host.ask('open', code=used)
-
-
 def test_a_second_open_wave_is_refused(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.later(STEP)
     with pytest.raises(BreakglassRefused, match='is open'):
-        host.ask('open', code=host.code())
+        host.open()
 
 
 def test_a_merge_outside_a_wave_is_refused(host: Host) -> None:
@@ -155,7 +187,7 @@ def test_a_merge_outside_a_wave_is_refused(host: Host) -> None:
 
 
 def test_a_merge_after_expiry_is_refused_and_the_expiry_closes_the_wave(host: Host) -> None:
-    host.ask('open', code=host.code(), hours=1)
+    host.open(hours=1)
     host.later(HOUR + 1)
     with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):
         host.merge()
@@ -165,38 +197,33 @@ def test_a_merge_after_expiry_is_refused_and_the_expiry_closes_the_wave(host: Ho
 
 @pytest.fixture
 def roomy(tmp_path: Path) -> Host:
-    bounds = 'wave_hours = 4.0\nwave_hours_max = 24.0\nmax_merges = 3\nmax_merges_max = 10'
+    bounds = 'wave_hours_max = 24.0\nmax_merges_max = 10'
     return Host(config(tmp_path, [], extra=bounds))
 
 
-def test_the_default_bounds_apply_when_none_is_asked(roomy: Host) -> None:
-    assert 'open for 4 h, at most 3 merge(s)' in roomy.ask('open', code=roomy.code())
-
-
 def test_a_request_may_ask_up_to_the_ceiling(roomy: Host) -> None:
-    said = roomy.ask('open', code=roomy.code(), hours=24, max_merges=10)  # planted control: exactly the ceilings
+    said = roomy.open(hours=24, max_merges=10)  # planted control: exactly the ceilings
     assert 'open for 24 h, at most 10 merge(s)' in said
     opened = [json.loads(line) for line in Path(roomy.config.breakglass.log).read_text(encoding='utf-8').splitlines()]
-    assert opened[-1]['asked'] == {'hours': 24, 'max_merges': 10}
+    assert set(opened[-1]) >= {'consent'}  # the audit names the credential that opened the wave
     assert (opened[-1]['hours'], opened[-1]['max_merges']) == (24, 10)
 
 
 @pytest.mark.parametrize(
     ('fields', 'ceiling'), [({'hours': 24.5}, 'wave_hours_max = 24 h'), ({'max_merges': 11}, 'max_merges_max = 10')]
 )
-def test_a_request_above_a_ceiling_is_refused_naming_it(roomy: Host, fields: dict[str, object], ceiling: str) -> None:
-    valid = roomy.code()
+def test_a_request_above_a_ceiling_is_refused_naming_it(roomy: Host, fields: dict[str, float], ceiling: str) -> None:
     with pytest.raises(BreakglassRefused, match=ceiling):
-        roomy.ask('open', code=valid, **fields)
-    assert 'open for' in roomy.ask('open', code=valid)  # never clamped, and the code was not spent
+        roomy.open(**fields)
+    assert 'open for' in roomy.open()  # never clamped
 
 
 def test_no_merge_ceiling_admits_any_cap(host: Host) -> None:
-    assert 'at most 50 merge(s)' in host.ask('open', code=host.code(), max_merges=50)
+    assert 'at most 50 merge(s)' in host.open(max_merges=50)
 
 
 def test_a_merge_beyond_the_cap_is_refused(host: Host) -> None:
-    host.ask('open', code=host.code(), max_merges=1)
+    host.open(max_merges=1)
     host.merge()
     with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):  # the cap ended the wave
         host.merge()
@@ -204,15 +231,14 @@ def test_a_merge_beyond_the_cap_is_refused(host: Host) -> None:
 
 
 def test_an_unacknowledged_audit_never_blocks_the_next_wave(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.ask('close')
-    host.later(STEP)
-    assert 'open for' in host.ask('open', code=host.code())
+    assert 'open for' in host.open()
     assert host.merge().startswith('merged')
 
 
 def test_ack_needs_no_code_and_records_who(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.ask('close')
     assert host.ask('ack', by='user@ws').endswith('acknowledged by user@ws')
     assert 'acknowledged' in host.ask('status')
@@ -234,19 +260,12 @@ def test_planted_pr_controls_refuse_before_any_write(
     host: Host, overrides: dict[str, str], forge: FakeForge, why: str
 ) -> None:
     host.forge = forge
-    host.ask('open', code=host.code())
+    host.open()
     with pytest.raises(BreakglassRefused, match=why):
         host.merge(**overrides)
     assert forge.calls == []
     assert host.config.breakglass is not None
     assert 'refused' in Path(host.config.breakglass.log).read_text(encoding='utf-8')
-
-
-def test_a_missing_secret_refuses_naming_enrol(host: Host) -> None:
-    assert host.config.breakglass is not None
-    Path(host.config.breakglass.totp).unlink()
-    with pytest.raises(BreakglassRefused, match='enrol'):
-        host.ask('open', code=host.code())
 
 
 def test_a_malformed_request_is_refused(host: Host) -> None:
@@ -257,7 +276,7 @@ def test_a_malformed_request_is_refused(host: Host) -> None:
 
 
 def test_the_key_is_in_the_wave_record_and_every_audit_line(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     assert host.config.breakglass is not None
     state = Path(host.config.breakglass.state) / 'waves'
@@ -265,50 +284,6 @@ def test_the_key_is_in_the_wave_record_and_every_audit_line(host: Host) -> None:
     assert json.loads(record.read_text(encoding='utf-8'))['merges'][0]['key'] == KEY
     lines = Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()
     assert {json.loads(line)['key'] for line in lines} == {KEY}
-
-
-def _wrong(host: Host, times: int) -> None:
-    for _ in range(times):
-        with pytest.raises(BreakglassRefused):
-            host.ask('open', code='000000')
-
-
-def test_five_wrong_codes_lock_out_even_a_right_code_and_alert_once(host: Host) -> None:
-    _wrong(host, 5)
-    assert [a[0] for a in host.alerts].count('break-glass LOCKED OUT') == 1
-    with pytest.raises(BreakglassRefused, match='too many wrong codes'):
-        host.ask('open', code=host.code())
-    _wrong(host, 3)
-    assert [a[0] for a in host.alerts].count('break-glass LOCKED OUT') == 1
-
-
-def test_the_lockout_survives_a_restart_and_ends_after_its_minutes(host: Host) -> None:
-    _wrong(host, 5)
-    restarted = Host(host.config, clock=host.clock)  # a fresh Server reads the persisted lockout
-    with pytest.raises(BreakglassRefused, match='too many wrong codes'):
-        restarted.ask('open', code=restarted.code())
-    restarted.later(15 * 60)
-    assert 'open for' in restarted.ask('open', code=restarted.code())
-
-
-def test_a_right_code_resets_the_count(host: Host) -> None:
-    _wrong(host, 4)
-    host.ask('open', code=host.code())
-    host.ask('close')
-    host.later(STEP)
-    _wrong(host, 4)
-    host.later(STEP)
-    assert 'open for' in host.ask('open', code=host.code())
-    assert 'break-glass LOCKED OUT' not in [a[0] for a in host.alerts]
-
-
-def test_the_lockout_bounds_are_configured(tmp_path: Path) -> None:
-    host = Host(config(tmp_path, [], extra='lockout_after = 2\nlockout_minutes = 1'))
-    _wrong(host, 2)
-    with pytest.raises(BreakglassRefused, match='too many wrong codes'):
-        host.ask('open', code=host.code())
-    host.later(60)
-    assert 'open for' in host.ask('open', code=host.code())
 
 
 def _race(count: int, run: Callable[[], object]) -> None:
@@ -326,27 +301,19 @@ def _race(count: int, run: Callable[[], object]) -> None:
         thread.join()
 
 
-def test_parallel_sessions_spend_one_code_once(host: Host) -> None:
-    valid = host.code()
+def test_parallel_sessions_spend_one_credential_once(host: Host) -> None:
+    credential = host.grant()
     host.delay = 0.02
-    _race(6, lambda: host.ask('open', code=valid))
-    stamp = datetime.fromtimestamp(NOW, UTC).strftime('%Y%m%dT%H%M%SZ')
+    _race(6, lambda: host.ask('open', credential=credential))
+    stamp = datetime.fromtimestamp(host.clock[0], UTC).strftime('%Y%m%dT%H%M%SZ')
     assert not any('OPENED' in a[0] for a in host.alerts)  # opening is never alerted; the losers are refused
     assert host.config.breakglass is not None
     lines = Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()
     assert [json.loads(line).get('wave') for line in lines if json.loads(line)['outcome'] == 'opened'] == [stamp]
 
 
-def test_parallel_wrong_codes_cannot_outrun_the_lockout(host: Host) -> None:
-    host.delay = 0.02
-    _race(10, lambda: host.ask('open', code='000000'))
-    assert [a[0] for a in host.alerts].count('break-glass LOCKED OUT') == 1
-    with pytest.raises(BreakglassRefused, match='too many wrong codes'):
-        host.ask('open', code=host.code())
-
-
 def test_an_alert_that_fails_never_loses_the_audit_or_the_merge(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
 
     def broken(_title: str, _body: str) -> bool:
         unreachable = 'telegram unreachable'
@@ -365,15 +332,16 @@ def test_an_alert_that_fails_never_loses_the_audit_or_the_merge(host: Host) -> N
     assert any(outcome.startswith('alert failed') for outcome in outcomes)
 
 
-@pytest.mark.parametrize(
-    'fields',
-    [{'hours': 0}, {'hours': -1}, {'hours': float('nan')}, {'hours': 'x'}, {'max_merges': 0}, {'max_merges': 1.5}],
-)
-def test_bad_bounds_are_refused_before_the_code_is_spent(host: Host, fields: dict[str, object]) -> None:
-    valid = host.code()
+@pytest.mark.parametrize('fields', [{'hours': 0}, {'hours': 4.5}])
+def test_bad_bounds_are_refused_before_the_credential_is_spent(host: Host, fields: dict[str, float]) -> None:
+    with pytest.raises(BreakglassRefused, match='outside the ceiling'):
+        host.open(**fields)
+    assert 'open for' in host.open()
+
+
+def test_an_open_without_a_credential_is_malformed(host: Host) -> None:
     with pytest.raises(BreakglassRefused, match='malformed'):
-        host.ask('open', code=valid, **fields)
-    assert 'open for' in host.ask('open', code=valid)
+        host.ask('open', code='123456')
 
 
 @pytest.mark.parametrize(
@@ -381,14 +349,14 @@ def test_bad_bounds_are_refused_before_the_code_is_spent(host: Host, fields: dic
     [{'pr': 'seven'}, {'pr': 0}, {'head': 'not-a-sha'}, {'repo': ''}, {'reason': 5}],
 )
 def test_a_malformed_merge_is_refused_by_the_parser(host: Host, fields: dict[str, object]) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     with pytest.raises(BreakglassRefused, match='malformed'):
         host.merge(**fields)
     assert host.forge.calls == []
 
 
 def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
 
     def boom(_root: Path) -> FakeForge:
         internal = 'internal'
@@ -403,7 +371,7 @@ def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
 
 def test_an_unreadable_declaration_is_a_refusal_audited_and_alerted(host: Host) -> None:
     host.forge = FakeForge(manifest=None)
-    host.ask('open', code=host.code())
+    host.open()
     with pytest.raises(BreakglassRefused, match='cannot be read'):
         host.merge()
     assert host.forge.calls == []
@@ -411,7 +379,7 @@ def test_an_unreadable_declaration_is_a_refusal_audited_and_alerted(host: Host) 
 
 
 def test_each_repo_is_merged_on_its_own_forge(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     assert 'merged github.com/owner/alpha#7' in host.merge(repo=MIRROR)
     host.merge(repo=ALPHA)
     assert host.asked == [GLASS[1], GLASS[0]]  # one name, two forges: each merged on its own
@@ -420,7 +388,7 @@ def test_each_repo_is_merged_on_its_own_forge(host: Host) -> None:
 def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) -> None:
     promoted = 'https://gitea.example/owner/beta.git'
     planted = Host(config(tmp_path, [promoted]))
-    planted.ask('open', code=planted.code())
+    planted.open()
     with pytest.raises(BreakglassRefused, match='beta is not a repository'):
         planted.merge(repo='gitea.example/owner/beta')
     planted.merge(repo=MIRROR)  # control: a repo break-glass declares, promoted here or not
@@ -433,12 +401,9 @@ def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) 
         ({'tokens': {'gitea.example': 't', 'github.com': 'g', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
         ({'repos': (*GLASS, 'https://gitea.example/owner/alpha')}, 'twice'),  # the exact same identity again
         ({'repos': ()}, 'serves no repo'),
-        ({'wave_hours': 5.0}, 'above its ceiling'),  # the default 4 h ceiling; planted control: 4.0 loads
-        ({'wave_hours': 0.0}, 'must be positive'),
+        ({'wave_hours_max': 0.0}, 'must be positive'),
         ({'wave_hours_max': float('nan')}, 'must be positive'),
-        ({'max_merges': 11, 'max_merges_max': 10}, 'under that ceiling'),
-        ({'max_merges': 0, 'max_merges_max': 10}, 'under that ceiling'),  # an uncapped default under a ceiling
-        ({'max_merges': -1}, 'must not be negative'),
+        ({'max_merges_max': -1}, 'must not be negative'),
     ],
 )
 def test_a_break_glass_declaration_that_lies_is_refused_at_load(
@@ -446,7 +411,7 @@ def test_a_break_glass_declaration_that_lies_is_refused_at_load(
 ) -> None:
     built = config(tmp_path, [])
     assert built.breakglass is not None
-    table: dict[str, Any] = {'account': 'b', 'totp': 't', 'state': 's', 'log': 'l', 'repos': GLASS,
+    table: dict[str, Any] = {'account': 'b', 'state': 's', 'log': 'l', 'repos': GLASS,
              'tokens': {'gitea.example': 't', 'github.com': 'g'}, **bad}  # fmt: skip
     with pytest.raises(ValueError, match=why):
         Breakglass(**table)
@@ -531,13 +496,13 @@ def _summary(host: Host) -> str:
 
 
 def test_opening_a_wave_alerts_nothing_and_is_audited(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     assert host.alerts == []
     assert _outcomes(host) == ['opened']
 
 
 def test_a_merge_alerts_nothing_while_the_wave_is_open(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     host.merge(pr=8)
     assert host.alerts == []
@@ -545,7 +510,7 @@ def test_a_merge_alerts_nothing_while_the_wave_is_open(host: Host) -> None:
 
 
 def test_closing_a_wave_that_merged_sends_one_summary_of_every_merge(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     host.merge(pr=8, reason='numerics-lab gate is wedged')
     host.ask('close')
@@ -559,7 +524,7 @@ def test_closing_a_wave_that_merged_sends_one_summary_of_every_merge(host: Host)
 
 
 def test_reaching_the_cap_ends_the_wave_and_sends_its_summary(host: Host) -> None:
-    host.ask('open', code=host.code(), max_merges=2)
+    host.open(max_merges=2)
     host.merge()
     assert host.alerts == []
     host.merge(pr=8)
@@ -572,7 +537,7 @@ def test_reaching_the_cap_ends_the_wave_and_sends_its_summary(host: Host) -> Non
 
 @pytest.mark.parametrize('merged', [True, False])
 def test_an_expired_wave_sends_its_summary_only_if_it_merged(host: Host, *, merged: bool) -> None:
-    host.ask('open', code=host.code(), hours=1)
+    host.open(hours=1)
     if merged:
         host.merge()
     host.later(HOUR + 1)
@@ -582,7 +547,7 @@ def test_an_expired_wave_sends_its_summary_only_if_it_merged(host: Host, *, merg
 
 
 def test_closing_an_empty_wave_alerts_nothing_and_is_audited(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.ask('close')
     host.server.tick()
     assert host.alerts == []
@@ -590,7 +555,7 @@ def test_closing_an_empty_wave_alerts_nothing_and_is_audited(host: Host) -> None
 
 
 def test_the_summary_is_sent_once_however_often_the_tick_runs(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     host.ask('close')
     for _ in range(3):
@@ -600,7 +565,7 @@ def test_the_summary_is_sent_once_however_often_the_tick_runs(host: Host) -> Non
 
 
 def test_a_summary_no_channel_delivered_is_resent_by_the_next_tick_only(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     host.delivers = False
     host.ask('close')
@@ -613,7 +578,7 @@ def test_a_summary_no_channel_delivered_is_resent_by_the_next_tick_only(host: Ho
 
 
 def test_a_raising_channel_is_a_failed_delivery_retried_next_tick(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     server = host.server
 
@@ -629,7 +594,7 @@ def test_a_raising_channel_is_a_failed_delivery_retried_next_tick(host: Host) ->
 
 
 def test_planted_control_a_wave_marked_summarized_is_never_resent(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     host.delivers = False
     host.ask('close')
@@ -645,12 +610,13 @@ def test_planted_control_a_wave_marked_summarized_is_never_resent(host: Host) ->
 
 
 def test_the_summary_carries_no_secret(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     host.ask('close')
     assert host.config.breakglass is not None
     body = host.alerts[0][1]
-    secrets = [host.config.breakglass.totp, *host.config.breakglass.tokens.values()]
+    assert host.config.consent is not None
+    secrets = [host.config.consent.totp, *host.config.breakglass.tokens.values()]
     for path in (Path(name) for name in secrets):
         if path.is_file():
             assert path.read_text(encoding='utf-8').strip() not in body
@@ -658,7 +624,7 @@ def test_the_summary_carries_no_secret(host: Host) -> None:
 
 
 def test_a_wave_written_before_summaries_reads_as_already_summarized(host: Host) -> None:
-    host.ask('open', code=host.code())
+    host.open()
     host.merge()
     host.delivers = False
     host.ask('close')

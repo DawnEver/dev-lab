@@ -61,6 +61,7 @@ from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev import tmpsweep
+from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
@@ -421,7 +422,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     # A report under output/ is lost to the next cleanup, and a write outside every checkout outlives the session
     # (WRITES-STAY-IN-THE-TREE), so both are refused; a misplaced code file is a style
     # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
-    refused, hint = refuse_report(path) or refuse_outside_tree(path), refuse_write(path)
+    refused = refuse_report(path) or refuse_outside_tree(path) or refuse_consent_write(path)
+    hint = refuse_write(path)
     if refused is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}
         emit(json.dumps({'hookSpecificOutput': decision}))

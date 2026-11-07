@@ -1,6 +1,6 @@
 """ONE-BRANCH-PER-SESSION, as the pure check of a repo's DECLARATION.
 
-The live branch set -- what origin carries -- is judged in ONE place: the forge's ``branchset`` status on
+The live branch set -- what origin carries -- is judged in ONE place: the forge's ``session-branch`` status on
 every open PR head (:mod:`dev_lab.dev.forgeheadgate`), plus the serve tick's pruner
 (:mod:`dev_lab.dev.branchprune`). No test reads origin's refs or this box's branches: such a test judges the
 environment, not the code under test, and reds every unrelated PR (ruling 2026-10-24). A consumer calls::

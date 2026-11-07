@@ -44,6 +44,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'serialpass',
     'lanepolicy',
     'platformparts',
+    'partrefs',
     'plugin_settings',
     'cjk',
     'content',
@@ -164,6 +165,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'landedpush',
     # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
     'prcurrent',
+    # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
+    'locklag',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit',
     # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).
@@ -311,6 +314,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'restatedrules',
     # ORIGINAL: SPLIT-BY-CONCEPT was prose until this body; no consumer guard read module names.
     'sizesplits',
+    # ORIGINAL: no consumer held a NO-CJK file before this plugin; it is the one always-on body (2026-11-07).
+    'alwayson',
     # -- `dev_lab.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table',
     'runner',
@@ -366,6 +371,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostalarm',  # a pressed host tells its agents and its humans (D54), new here
     'drift',  # a lock pin left behind its dependency, or a host off its lock, alarms; new here
     'escapes',  # the tick's census of writes that escaped every allowed root, new here
+    'consentguard',  # CONSENT-CODE-NEVER-TYPED: the consent state dir and the code-typing refusal, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here

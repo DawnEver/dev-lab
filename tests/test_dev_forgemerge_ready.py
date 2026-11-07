@@ -27,6 +27,8 @@ _GREEN = (
     ('tests/base', 'scope=full ran=3 hands=-'),
     ('tests/review', 'reviewed abc: advice 1 HIGH, 0 MEDIUM, 0 LOW; none blocks'),
     ('tests/security', 'nothing found'),
+    ('session-branch', 'pr/x is declared'),
+    ('pr-current', 'pr/x holds origin/integrate/main'),
 )
 
 

@@ -180,15 +180,18 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.lockcheck` -- the PIN reading (half of PIN + FRESHNESS): a commit commits ``uv.lock`` and
   every hold below the newest declares its reason; judged on the forge by ``famtests.lockpin``, relocked by ``relock``.
 * :mod:`dev_lab.dev.relock` -- the serve tick relocks a stale integration lock through ONE pull request.
+* :mod:`dev_lab.dev.locklag` -- how far a lock's floated siblings lag their line: moved at all, and by how many commits
 * :mod:`dev_lab.dev.drift` -- the serve tick alarms a lock pin left behind its dependency, or a host off its lock.
-* :mod:`dev_lab.dev.forgeheadgate` -- ``lock/fresh`` and ``branchset`` statuses on every open PR head,
-  each naming its fix.
+* :mod:`dev_lab.dev.forgeheadgate` -- ``session-branch``, ``pr-current``, ``lock/fresh`` and ``lock/lag``
+  statuses on every open PR head, each naming its fix; the merge requires the first two.
 * :mod:`dev_lab.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.dev_lab.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`dev_lab.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
   (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
 * :mod:`dev_lab.dev.partrows` -- the name of an OS-qualified part row (``base@windows``): its part, its
   system, and this machine's platform.
+* :mod:`dev_lab.dev.partrefs` -- the refs a part is produced under, per resource and scope
+  (``[tool.dev_lab.parts.refs.<resource>]``), read by the schedule.
 * :mod:`dev_lab.dev.producer` -- the producer exit contract: what a part producer's exit code
   means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE), one source.
 * :mod:`dev_lab.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
@@ -439,7 +442,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.breakglass` -- the one emergency bypass of INTEGRATION-TAKES-ONLY-FORGE-MERGES: a
   ``Break-Glass: <reason>`` trailer on every new commit, kept visible as an ``integration`` issue.
 * :mod:`dev_lab.dev.forgebreakglass` -- ``breakglass open|close|ack|status`` and ``pr breakglass N``: the client of
-  the forge host's break-glass WAVES (:mod:`dev_lab.ops.breakglass`); a TOTP code the user types opens a wave.
+  the forge host's break-glass WAVES (:mod:`dev_lab.ops.breakglass`); a consent credential the user granted opens one.
+* :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-NEVER-TYPED: where granted consent credentials live, and the
+  refusal of an agent typing a code or writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
 * :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,

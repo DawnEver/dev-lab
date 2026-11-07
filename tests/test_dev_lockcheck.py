@@ -268,7 +268,8 @@ def test_a_stale_lock_head_gets_a_red_forge_status_naming_the_relock(
     """User ruling 2026-10-24: the forge says a stale lock on the PR head, ``failure`` with the one remedy.
 
     PLANTED CONTROL: the head at the newest resolution, and one lagging only what its base lags, are ``success``;
-    a head already judged is not re-resolved.
+    a head already judged is not re-resolved. Only ``lock/fresh`` is read here: the other head rows are their own
+    judges' (``tests/test_dev_forgeheadgate.py``).
     """
     posted: dict[str, list[tuple[str, str, str]]] = {}
 
@@ -276,35 +277,36 @@ def test_a_stale_lock_head_gets_a_red_forge_status_naming_the_relock(
         posted.setdefault(sha, []).append((context, state, description))
 
     def listed(_client: object, sha: str) -> tuple[object, ...]:
-        return tuple(type('S', (), {'context': one[0], 'state': one[1]})() for one in posted.get(sha, []))
+        return tuple(
+            type('S', (), {'context': one[0], 'state': one[1], 'description': one[2]})() for one in posted.get(sha, [])
+        )
+
+    def lock_posts(sha: str) -> list[tuple[str, str]]:
+        return [(state, text) for context, state, text in posted.get(sha, []) if context == forgeheadgate.LOCK_CONTEXT]
+
+    def judged(sha: str, branch: str) -> list[str]:
+        lines = forgeheadgate.judge(root, None, sha, branch, integration='integrate/main')
+        return [line for line in lines if line.startswith(f'{forgeheadgate.LOCK_CONTEXT}:')]
 
     monkeypatch.setattr(forgeheadgate, 'status_post', post)
     monkeypatch.setattr(forgeheadgate, 'status_list', listed)
     root, kit, index = world
     fresh = _locked(root, _manifest(kit, index, '"dep",') + BRANCHSET)
     _git(root, 'update-ref', 'refs/remotes/origin/integrate/main', fresh)
-    forgeheadgate.judge(root, None, fresh, 'pr/x', integration='integrate/main')
-    assert posted[fresh] == [
-        ('branchset', 'success', 'pr/x is declared'),
-        ('lock/fresh', 'success', 'uv.lock is the newest resolution'),
-    ]
+    assert judged(fresh, 'pr/x') == ['lock/fresh: success']
+    assert lock_posts(fresh) == [('success', 'uv.lock is the newest resolution')]
     _commit(kit, {'README': 'moved'})
     _git(root, 'checkout', '-q', '-b', 'lane')
     lagging = _commit(root, {'x.txt': 'x'})
-    assert forgeheadgate.judge(root, None, lagging, 'pr/x', integration='integrate/main') == [
-        'branchset: success',
-        'lock/fresh: success',
-    ]
+    assert judged(lagging, 'pr/x') == ['lock/fresh: success']
     stale_head = _commit(root, {'pyproject.toml': _manifest(kit, index, '') + BRANCHSET})  # dep dropped, no relock
-    lane = forgeheadgate.judge(root, None, stale_head, 'lane/x', integration='integrate/main')
-    assert lane == ['branchset: failure', 'lock/fresh: failure']
-    (_, state, text) = posted[stale_head][1]
+    assert judged(stale_head, 'lane/x') == ['lock/fresh: failure']
+    ((state, text),) = lock_posts(stale_head)
     assert state == 'failure'
     assert text.startswith(f'stale uv.lock: {forgeheadgate.LOCK_REMEDY} (Remove dep'), text
     assert 'kit' not in text, 'the kit move its base lags too is not the head defect'
     assert f'run `{DOOR}`, then commit uv.lock' == forgeheadgate.LOCK_REMEDY
-    assert 'lane/x is undeclared' in posted[stale_head][0][2]
-    assert forgeheadgate.judge(root, None, stale_head, 'lane/x', integration='integrate/main') == [], 'judged once'
+    assert judged(stale_head, 'lane/x') == [], 'judged once'
 
 
 def _tree(root: Path, name: str) -> Path:
