@@ -11,21 +11,31 @@ integration branch and the trunk aside -- the newest PR of that head into the in
 (so no newer OPEN PR of that pair exists) the push is refused, the refusal naming
 the remedy -- a new PR from the branch, or a new branch name. A deletion and a tag are not judged.
 
+A DECLARED long-lived branch is reopened after each landing (user ruling 2026-11-07): a name in the repo's
+``[tool.dev_lab.branchset] sessions`` (:func:`dev_lab.dev.branchset.declared_branchset`) is the ONE branch a
+session keeps, so its next PR comes from the same name -- and a refusal there deadlocks, because the forge
+cannot open a PR from a ref origin lacks. Its landed head therefore takes a push whose tip is NOT already an
+ancestor of ``origin/<integration>`` (new work), and the hook prints a notice naming the ``forge pr create``
+that carries it; a tip the integration branch already holds is refused as nothing new. An undeclared branch
+keeps the refusal.
+
 A forge that cannot be read refuses, as :func:`dev_lab.dev.breakglass.forge_unreviewed` does: a push needs the
 forge, so a forge down for reads is down for the push too, and an unread answer is never a pass.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import shutil
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_by_head
 from dev_lab.dev.forgework import client_for
@@ -35,7 +45,7 @@ from dev_lab.dev.refspec import pushed_refs
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['HOOK_ID', 'RULE', 'landed', 'main', 'refusals']
+__all__ = ['HOOK_ID', 'RULE', 'Verdict', 'judge', 'landed', 'main', 'refusals']
 
 RULE: Final = 'NO-PUSH-ONTO-A-LANDED-PR'
 #: The id this guard runs under in ``githooks/base.toml``.
@@ -62,32 +72,125 @@ def _refusal(pull: PullRequest, branch: str, base: str) -> str:
     )
 
 
-def refusals(
-    root: Path, lines: str, *, integration: str = '', trunk: str = '', client: Callable[[], Client] | None = None
-) -> list[str]:
-    """Every refusal for the push *lines* describe; *integration* and *trunk* default to *root*'s declaration."""
+def _reopen_notice(pull: PullRequest, branch: str, base: str) -> str:
+    return (
+        f'{branch} is a declared long-lived branch whose PR #{pull.number} into {base} landed; this push carries '
+        f'new work, so open its next PR now: `python -m dev_lab.dev.forge pr create --head {branch} --base {base} '
+        '--title ...`'
+    )
+
+
+def _nothing_new(pull: PullRequest, branch: str, base: str) -> str:
+    return (
+        f'{RULE}: {branch} is a declared long-lived branch whose PR #{pull.number} into {base} landed, and the '
+        f'pushed tip is already in origin/{base}: nothing new to carry. Commit the new work, then push'
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class Verdict:
+    """What the push earns: *refusals* stop it; *notices* tell the pusher what to do once it lands on origin."""
+
+    refusals: list[str]
+    notices: list[str]
+
+
+def _integrated_in(root: Path, integration: str) -> Callable[[str], bool]:
+    """Whether a sha is an ancestor of ``origin/<integration>``; git that cannot answer raises OSError."""
+
+    def integrated(sha: str) -> bool:
+        done = _door.run(
+            [_GIT, 'merge-base', '--is-ancestor', sha, f'refs/remotes/origin/{integration}'],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=False,
+            timeout=60,
+        )
+        if done.returncode not in {0, 1}:
+            msg = f'git merge-base --is-ancestor {sha} origin/{integration}: {done.stderr.strip()}'
+            raise OSError(msg)
+        return done.returncode == 0
+
+    return integrated
+
+
+def _sessions_of(root: Path) -> frozenset[str]:
+    try:
+        return declared_branchset(root).sessions
+    except BranchSetNotDeclared:
+        return frozenset()
+
+
+def judge(
+    root: Path,
+    lines: str,
+    *,
+    integration: str = '',
+    trunk: str = '',
+    client: Callable[[], Client] | None = None,
+    sessions: Collection[str] | None = None,
+    integrated: Callable[[str], bool] | None = None,
+) -> Verdict:
+    """The verdict on the push *lines* describe.
+
+    *integration*, *trunk* and *sessions* default to *root*'s declarations; *integrated* (is a sha already in
+    ``origin/<integration>``) to git in *root*.
+    """
     if not integration:
         policy = load_policy(root)
         integration, trunk = policy.integration, policy.trunk
-    branches = [
-        ref.branch
+    tips = {
+        ref.branch: ref.local_sha
         for ref in pushed_refs(lines.splitlines())
         if ref.branch and not ref.deleted and ref.branch not in {integration, trunk}
-    ]
+    }
+    branches = list(tips)
     if not branches:
-        return []
+        return Verdict([], [])
     try:
         forge = client_for(root) if client is None else client()
         newest = {branch: pr_by_head(forge, branch, integration) for branch in branches}
     except _UNREADABLE as failed:
-        return [
-            (
-                f'{RULE}: the forge cannot be read ({type(failed).__name__}: {failed}), so whether '
-                f'{", ".join(branches)} already landed is unknown; a push needs the forge -- push again once it '
-                'answers'
-            )
-        ]
-    return [_refusal(pull, branch, integration) for branch in branches if (pull := landed(newest[branch])) is not None]
+        return Verdict(
+            [
+                (
+                    f'{RULE}: the forge cannot be read ({type(failed).__name__}: {failed}), so whether '
+                    f'{", ".join(branches)} already landed is unknown; a push needs the forge -- push again once it '
+                    'answers'
+                )
+            ],
+            [],
+        )
+    long_lived = _sessions_of(root) if sessions is None else frozenset(sessions)
+    is_integrated = _integrated_in(root, integration) if integrated is None else integrated
+    found: list[str] = []
+    notices: list[str] = []
+    for branch in branches:
+        pull = landed(newest[branch])
+        if pull is None:
+            continue
+        if branch not in long_lived:
+            found.append(_refusal(pull, branch, integration))
+            continue
+        try:
+            already = is_integrated(tips[branch])
+        except OSError as failed:
+            found.append(f'{RULE}: whether {branch} carries new work is unknown ({failed}); fetch, then push again')
+            continue
+        if already:
+            found.append(_nothing_new(pull, branch, integration))
+        else:
+            notices.append(_reopen_notice(pull, branch, integration))
+    return Verdict(found, notices)
+
+
+def refusals(
+    root: Path, lines: str, *, integration: str = '', trunk: str = '', client: Callable[[], Client] | None = None
+) -> list[str]:
+    """Every refusal for the push *lines* describe; *integration* and *trunk* default to *root*'s declaration."""
+    return judge(root, lines, integration=integration, trunk=trunk, client=client).refusals
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -104,9 +207,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = Path(top or Path.cwd())
     stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
     try:
-        found = refusals(root, stdin)
+        verdict = judge(root, stdin)
     except (OSError, ValueError) as failed:
-        found = [f'{RULE}: {root} declares no readable integrator, so the push cannot be judged: {failed}']
+        verdict = Verdict(
+            [f'{RULE}: {root} declares no readable integrator, so the push cannot be judged: {failed}'], []
+        )
+    found = verdict.refusals
+    if verdict.notices and not found:
+        emit('\n'.join(['', *(f'  NEXT: {line}' for line in verdict.notices), '']), err=True)
     if found:
         emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), '']), err=True)
         return 1
