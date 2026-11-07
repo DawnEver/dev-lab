@@ -7,9 +7,10 @@ names its repo's facts; this rule has none left to name -- the corpus is the rep
 the exemptions are :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`, and the declared set is empty in every
 repo -- so a consumer file could only be a copy, or a place to forget it.
 
-HOW IT REACHES A REPO. dev-lab registers this module under pytest's ``pytest11`` entry point, so
-any pytest session in an environment where dev-lab is installed loads it. When the session's rootdir
-is a git toplevel it appends one item per row in :data:`ROWS`; a session rooted anywhere else (a
+HOW IT REACHES A REPO. dev-lab registers :mod:`dev_lab.pytest_family` under pytest's ``pytest11``
+entry point, so any pytest session in an environment where dev-lab is installed loads it, and that
+shim calls :func:`append_rows` at collection. When the session's rootdir
+is a git toplevel it appends one item per row in :func:`rows`; a session rooted anywhere else (a
 pytester tree, an unpacked sdist) has no tracked corpus and gets none. :data:`dev_lab.dev.rules.ALWAYS_ON`
 is the registry's half: an adoption may neither list these rules nor declare them absent.
 
@@ -28,14 +29,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import pytest
+from lab_commons.launch import run
 
 from dev_lab.dev import cjk
-from dev_lab.dev.rules import tracked_files
+from dev_lab.dev.rules import ALWAYS_ON, tracked_files
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-__all__ = ['ROWS', 'candidates', 'check_no_cjk', 'cjk_pattern', 'exclude_pathspecs']
+__all__ = ['append_rows', 'candidates', 'check_no_cjk', 'cjk_pattern', 'exclude_pathspecs', 'rows']
 
 _GIT_TIMEOUT_S: Final = 60
 _GIT: Final = shutil.which('git') or 'git'
@@ -59,7 +61,7 @@ def exclude_pathspecs(prefixes: tuple[str, ...] = cjk.EXEMPT_PREFIXES) -> tuple[
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run([_GIT, *args], cwd=root, capture_output=True, check=False, timeout=_GIT_TIMEOUT_S)
+    return run([_GIT, *args], cwd=root, capture_output=True, check=False, timeout=_GIT_TIMEOUT_S)
 
 
 def candidates(root: Path) -> tuple[str, ...]:
@@ -89,23 +91,29 @@ def check_no_cjk(root: Path) -> None:
         raise AssertionError('\n  '.join(('NO-CJK-IN-TRACKED-SOURCE:', *problems)))
 
 
-#: Rule ID -> the check run over the repo root. The IDs are :data:`dev_lab.dev.rules.ALWAYS_ON`.
-ROWS: Final[dict[str, Callable[[Path], None]]] = {'NO-CJK-IN-TRACKED-SOURCE': check_no_cjk}
+#: Rule ID -> the check this plugin runs for it over the repo root.
+_CHECKS: Final[dict[str, Callable[[Path], None]]] = {'NO-CJK-IN-TRACKED-SOURCE': check_no_cjk}
+
+
+def rows() -> dict[str, Callable[[Path], None]]:
+    """Rule ID -> check, for every ``always_on`` registry row (:data:`dev_lab.dev.rules.ALWAYS_ON`).
+
+    Which rules are always on is the registry's data; this module owns only the checks. A row with no
+    check here raises KeyError rather than being skipped.
+    """
+    return {rule: _CHECKS[rule] for rule in sorted(ALWAYS_ON)}
 
 
 class FamilyItem(pytest.Item):
     """One always-on row, run against the session's repo root."""
 
-    def __init__(self, *, check: Callable[[Path], None], root: Path, **kwargs: object) -> None:
-        super().__init__(**kwargs)  # type: ignore[arg-type]
+    def __init__(self, *, name: str, parent: pytest.Session, check: Callable[[Path], None], root: Path) -> None:
+        super().__init__(name=name, parent=parent)
         self._check = check
         self._root = root
 
     def runtest(self) -> None:
         self._check(self._root)
-
-    def repr_failure(self, excinfo: pytest.ExceptionInfo[BaseException], style: object = None) -> str:  # noqa: ARG002
-        return str(excinfo.value)
 
     def reportinfo(self) -> tuple[Path, None, str]:
         return self._root, None, f'family row {self.name}'
@@ -113,24 +121,21 @@ class FamilyItem(pytest.Item):
 
 def _toplevel(root: Path) -> Path | None:
     try:
-        out = subprocess.run(
-            [_GIT, 'rev-parse', '--show-toplevel'],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_GIT_TIMEOUT_S,
-        )
+        out = _git(root, 'rev-parse', '--show-toplevel')
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return Path(out.stdout.strip()).resolve() if out.returncode == 0 else None
+    return Path(out.stdout.decode('utf-8').strip()).resolve() if out.returncode == 0 else None
 
 
-def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Append one item per row when the session is rooted at a git toplevel."""
+def append_rows(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Append one item per row when the session is rooted at a git toplevel.
+
+    Called at collection by :mod:`dev_lab.pytest_family`, the ``pytest11`` entry point.
+    """
     root = Path(config.rootpath).resolve()
     if _toplevel(root) != root:
         return
     items.extend(
-        FamilyItem.from_parent(session, name=f'family::{rule}', check=check, root=root) for rule, check in ROWS.items()
+        FamilyItem.from_parent(session, name=f'family::{rule}', check=check, root=root)
+        for rule, check in rows().items()
     )

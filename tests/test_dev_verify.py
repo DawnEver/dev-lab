@@ -1653,8 +1653,21 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
     (tmp_path / 'test_m.py').write_text('from m import f\n\n\ndef test_f():\n    assert f(1) == 1\n', encoding='utf-8')
     (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
     log = tmp_path / 'verify-x.log'
+    # `-p no:dev_lab_family`: this checkout installs dev-lab EDITABLE, so the always-on pytest11 plugin's
+    # lines sit outside site-packages and an unscoped `--cov` measures them into this foreign project's
+    # TOTAL (46% or 18% instead of m.py + test_m.py's 86%). A consumer installs dev-lab into site-packages.
+    family_off = ('-p', 'no:dev_lab_family')
     done = subprocess.run(
-        [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *verifysteps.coverage_args(tmp_path, log)],
+        [
+            sys.executable,
+            '-m',
+            'pytest',
+            '-q',
+            '-p',
+            'no:cacheprovider',
+            *family_off,
+            *verifysteps.coverage_args(tmp_path, log),
+        ],
         cwd=tmp_path,
         env={**os.environ, **verifysteps.coverage_env(tmp_path, log)},
         capture_output=True,
