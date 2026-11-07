@@ -137,6 +137,8 @@ id = "memory-adds"
 run = ["python", "-m", "dev_lab.dev.memoryadds", "push"]
 always_run = true
 
+# The session-branch invariants (dev_lab.dev.sessionbranch). EARLY FEEDBACK for a PR head: the forge posts the same
+# judgement as the `session-branch` status on every PR head and the merge requires it (dev_lab.dev.forgeheadgate).
 [[pre-push]]
 id = "session-branch"
 run = ["python", "-m", "dev_lab.dev.sessionbranch"]
@@ -150,7 +152,9 @@ run = ["python", "-m", "dev_lab.dev.landedpush"]
 always_run = true
 
 # PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07): a pr/* head holds origin/<integration>'s
-# current tip and a lock fresh against the floated siblings' heads; the remedy is `forge sync`.
+# current tip and a lock fresh against the floated siblings' heads; the remedy is `forge sync`. EARLY FEEDBACK only:
+# the forge posts the same judgement as the `pr-current` status on every PR head and the merge requires it
+# (dev_lab.dev.forgeheadgate, user ruling 2026-11-07), so a stale or missing shim never disarms it.
 [[pre-push]]
 id = "pr-current"
 run = ["python", "-m", "dev_lab.dev.prcurrent"]
