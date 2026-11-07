@@ -189,6 +189,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
 * :mod:`dev_lab.dev.partrows` -- the name of an OS-qualified part row (``base@windows``): its part, its
   system, and this machine's platform.
+* :mod:`dev_lab.dev.partrefs` -- the refs a part is produced under, per resource and scope
+  (``[tool.dev_lab.parts.refs.<resource>]``), read by the schedule.
 * :mod:`dev_lab.dev.producer` -- the producer exit contract: what a part producer's exit code
   means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE), one source.
 * :mod:`dev_lab.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
