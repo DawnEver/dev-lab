@@ -13,8 +13,11 @@ is a git toplevel it appends one item per row in :data:`ROWS`; a session rooted 
 pytester tree, an unpacked sdist) has no tracked corpus and gets none. :data:`dev_lab.dev.rules.ALWAYS_ON`
 is the registry's half: an adoption may neither list these rules nor declare them absent.
 
-THE FLOOR IS ONE FILE, and that is the vacuity guard and nothing more: :func:`dev_lab.dev.rules.tracked_files`
-raises rather than answering empty, so the remaining failure is a corpus with nothing decodable in it.
+ONE ``git grep`` FINDS THE CANDIDATES (coordinator ruling 2026-11-07): a per-file Python read took
+331 s over motronics' 22k files. The PCRE class is built from :data:`dev_lab.dev.cjk.CJK_RANGES` and
+the exclusions from :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`; ``-I`` skips binaries. The translation
+exemption and orphan check run in Python on the short list, and only hit files are re-read to name
+line and column. The floor: ``git ls-files`` lists at least one file.
 """
 
 from __future__ import annotations
@@ -32,19 +35,55 @@ from dev_lab.dev.rules import tracked_files
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-__all__ = ['ROWS', 'check_no_cjk']
+__all__ = ['ROWS', 'candidates', 'check_no_cjk', 'cjk_pattern', 'exclude_pathspecs']
 
 _GIT_TIMEOUT_S: Final = 60
 _GIT: Final = shutil.which('git') or 'git'
 
 
+def cjk_pattern(ranges: tuple[tuple[int, int], ...] = cjk.CJK_RANGES) -> str:
+    """A PCRE character class over *ranges* -- DERIVED from :data:`dev_lab.dev.cjk.CJK_RANGES`, never copied."""
+    return '(*UTF)[' + ''.join(f'\\x{{{lo:04x}}}-\\x{{{hi:04x}}}' for lo, hi in ranges) + ']'
+
+
+def exclude_pathspecs(prefixes: tuple[str, ...] = cjk.EXEMPT_PREFIXES) -> tuple[str, ...]:
+    """Git pathspecs excluding *prefixes* with :func:`dev_lab.dev.cjk.exempted`'s semantics.
+
+    A leading ``/`` anchors at the root; any other prefix matches as a segment at any depth.
+    """
+    specs: list[str] = []
+    for prefix in prefixes:
+        body = prefix.strip('/')
+        specs.append(f':(exclude,glob){body}/**' if prefix.startswith('/') else f':(exclude,glob)**/{body}/**')
+    return tuple(specs)
+
+
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run([_GIT, *args], cwd=root, capture_output=True, check=False, timeout=_GIT_TIMEOUT_S)
+
+
+def candidates(root: Path) -> tuple[str, ...]:
+    """Tracked, text, non-exempt files under *root* holding a CJK character: ONE ``git grep``.
+
+    ``-I`` skips binaries, which is the scanner's "undecodable is not read". Raises when git fails.
+    """
+    out = _git(
+        root, '-c', 'core.quotepath=off', 'grep', '-I', '-l', '-z', '-P', cjk_pattern(), '--', '.', *exclude_pathspecs()
+    )
+    if out.returncode not in (0, 1):  # 1 means no match
+        msg = f'git grep failed in {root}: {out.stderr.decode("utf-8", "replace").strip()}'
+        raise AssertionError(msg)
+    return tuple(sorted(name for name in out.stdout.decode('utf-8').split('\0') if name))
+
+
 def check_no_cjk(root: Path) -> None:
     """Raise unless no tracked, non-exempt file under *root* carries CJK and no translation is orphaned."""
-    tracked = sorted(tracked_files(root))
+    tracked = tracked_files(root)  # raises rather than answering empty
     problems = list(cjk.orphaned_translations(tracked))
-    scan = cjk.scan_files([root / name for name in tracked], exempt_prefixes=cjk.EXEMPT_PREFIXES, root=root)
-    if scan.files_read < 1:
-        problems.append(f'the scan read no file out of {len(tracked)} tracked, so a clean result would mean nothing')
+    if not tracked:
+        problems.append('git ls-files listed no file, so a clean result would mean nothing')
+    hits = [name for name in candidates(root) if not cjk.translation_exempted(name, tracked)]
+    scan = cjk.scan_files([root / name for name in hits], exempt_prefixes=cjk.EXEMPT_PREFIXES, root=root)
     problems.extend(cjk.ratchet(scan.occurrences, ()))
     if problems:
         raise AssertionError('\n  '.join(('NO-CJK-IN-TRACKED-SOURCE:', *problems)))

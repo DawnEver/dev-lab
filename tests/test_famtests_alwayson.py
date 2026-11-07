@@ -89,3 +89,28 @@ def test_an_always_on_rule_cannot_be_waived_or_copied() -> None:
     with pytest.raises(ValueError, match='always on'):
         rules.Adoption(app_name='x', mechanisms={'NO-CJK-IN-TRACKED-SOURCE': (rules.guard('tests/t.py'),)})
     assert 'NO-CJK-IN-TRACKED-SOURCE' not in rules.unadopted(rules.RULES, rules.Adoption(app_name='x'))
+
+
+def test_the_git_grep_path_finds_a_planted_file_and_skips_exempt_and_binary(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the fast path: one ``git grep`` names the dirty file and nothing else."""
+    _git_repo(
+        tmp_path,
+        {
+            'dirty.py': f'x = 1  # {_CHAR}\n',
+            'clean.md': 'plain\n',
+            'attic/old.md': f'{_CHAR}\n',
+            'deep/.claude/memory/m.md': f'{_CHAR}\n',
+            'archived/a.md': f'{_CHAR}\n',
+            'x/archived/b.md': f'{_CHAR}\n',
+        },
+    )
+    (tmp_path / 'blob.bin').write_bytes(b'\x00' + _CHAR.encode())
+    subprocess.run([_GIT, 'add', 'blob.bin'], cwd=tmp_path, check=True, timeout=60)
+    assert alwayson.candidates(tmp_path) == ('dirty.py', 'x/archived/b.md')
+
+
+def test_the_pattern_is_derived_from_the_shared_ranges() -> None:
+    narrowed = ((0x4E00, 0x4E00),)
+    assert alwayson.cjk_pattern(narrowed) == r'(*UTF)[\x{4e00}-\x{4e00}]'
+    for lo, hi in cjk.CJK_RANGES:
+        assert rf'\x{{{lo:04x}}}-\x{{{hi:04x}}}' in alwayson.cjk_pattern()
