@@ -84,6 +84,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeintegration',
     'forgelanes',
     'forgemerge',
+    'forgemessages',  # the message condition split out of forgemerge (2026-11-07)
     'reviewturn',
     'forgereview',
     'forgereview_declared',
