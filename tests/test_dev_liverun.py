@@ -82,6 +82,37 @@ def test_a_log_tail_in_the_tree_is_not_a_reader_and_a_script_it_names_is(tree: P
     assert liverun.live_runs(tree, census=lambda: [tail, chain], me=1) == (chain,)
 
 
+def test_an_outside_interpreter_running_an_outside_module_in_the_tree_is_not_a_run(tree: Path, tmp_path: Path) -> None:
+    """MEASURED 2026-11-07: a session launcher whose cwd was the checkout refused every ``git worktree add``.
+
+    It is a uv-managed interpreter running ``-m ai_lab.session`` with a ``--settings <file in the tree>`` flag. Its
+    module resolves from its own interpreter, not the cwd, and a flag's value is configuration it reads, not code it
+    executes. PLANTED CONTROL: the tree's venv running pytest there, an outside interpreter whose ``-m`` module
+    lives in the cwd, and a script operand in the tree are all still runs.
+    """
+    (tree / 'app').mkdir()
+    (tree / 'app' / '__init__.py').write_text('', encoding='utf-8')
+    (tree / 'scratch').mkdir()
+    (tree / 'scratch' / 'chain.sh').write_text('', encoding='utf-8')
+    uv = tmp_path / 'uv' / 'python' / _PYTHON
+    launchers = [
+        _proc(
+            57512 + n,
+            uv,
+            cwd=tree,
+            cmd=f'"{uv}"  -m ai_lab.session claude --dangerously-load-development-channels server:session-bridge '
+            f'--settings {settings}',
+        )
+        for n, settings in enumerate([tree / '.claude' / 'automode.json', tree / 'scratch' / 'chain.sh'])
+    ]
+    pytest_run = _proc(71, _venv_python(tree), cwd=tree, cmd=f'"{_venv_python(tree)}" -m pytest')
+    cwd_run = _proc(72, uv, cwd=tree, cmd=f'"{uv}" -m app case sweep')
+    script_run = _proc(73, '/usr/bin/bash', cwd=tmp_path, cmd=f'bash {(tree / "scratch" / "chain.sh").as_posix()}')
+    runs = [pytest_run, cwd_run, script_run]
+    assert liverun.live_runs(tree, census=lambda: launchers, me=1) == ()
+    assert liverun.live_runs(tree, census=lambda: [*launchers, *runs], me=1) == tuple(runs)
+
+
 def test_a_process_of_a_nested_worktree_or_of_no_checkout_is_not_the_mains_run(tree: Path, tmp_path: Path) -> None:
     lane = _proc(11, _venv_python(tree / '.claude' / 'worktrees' / 'lane'))
     elsewhere = _proc(12, tmp_path / 'other' / _PYTHON, cwd=tmp_path / 'other')
