@@ -87,6 +87,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeorigin import head_login, origin_host_of
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_deadline, parse_paths
+from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
@@ -94,14 +95,12 @@ from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import part_refs
 
 __all__ = [
-    'FULL_SUITE_LABEL',
     'NOT_ADMITTED',
     'NO_HOST',
     'NO_ROOM',
     'OVER_BUDGET',
     'candidates',
     'coalesced',
-    'contained',
     'held',
     'host_weights',
     'labelled_issues',
@@ -109,7 +108,6 @@ __all__ = [
     'over_budget',
     'ref_usage',
     'repo_name',
-    'scope_of',
     'starved_alarms',
     'tip_of',
 ]
@@ -120,23 +118,8 @@ OVER_BUDGET: Final = 'over budget'
 NOT_ADMITTED: Final = 'not admitted'
 #: Why a request is refused once its deadline passed unclaimed: an answer, never a wait (``forge try``).
 NO_ROOM: Final = 'no room'
-#: The label that asks a PR head for the FULL suite instead of what its diff reaches (:func:`scope_of`).
-FULL_SUITE_LABEL: Final = 'forge:full'
 
 _TRACKING: Final = 'refs/remotes/origin/'
-
-
-def scope_of(kind: str, labels: Sequence[str]) -> str:
-    """The scope a part of a *kind* head runs at: FULL on the integration tip, else INCREMENTAL.
-
-    User ruling 2026-11-07 (one PR's tests within an hour): the full suite runs only on the integration ref's
-    tip; every other head runs only the test files its diff from the integration branch reaches
-    (:func:`dev_lab.dev.forgecarry.reached_tests`), the rest standing on the integration tip's verdict. A head
-    labelled :data:`FULL_SUITE_LABEL` asks for the full suite; a request is always full.
-    """
-    if kind in {INTEGRATION, REQUEST} or FULL_SUITE_LABEL in labels:
-        return FULL
-    return INCREMENTAL
 
 
 def load_schedule(root: Path) -> Schedule:
@@ -228,19 +211,6 @@ def coalesced(root: Path, ref: str) -> bool:
     schedule, policy = load_schedule(root), load_policy(root)
     kind = INTEGRATION if ref == policy.integration else schedule.class_of(ref) or PR
     return kind in schedule.coalesce
-
-
-def contained(root: Path, sha: str, tip: str) -> bool:
-    """Whether *tip* already contains commit *sha* (``merge-base --is-ancestor``); any doubt is no."""
-    done = _door.run(
-        [_GIT, '-C', str(root), 'merge-base', '--is-ancestor', sha, tip],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
-    return done.returncode == 0
 
 
 def tip_of(root: Path, ref: str) -> str:

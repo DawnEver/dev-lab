@@ -107,6 +107,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pradmit',
     'forgerun',
     'forgesupersede',
+    'forgescope',
     'forgerunpost',
     'forgerunstate',
     'components',

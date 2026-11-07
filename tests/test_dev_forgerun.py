@@ -40,6 +40,7 @@ from dev_lab.dev import (
     forgecarry,
     forgerun,
     forgerunpost,
+    forgerunshow,
     forgerunstate,
     forgeship,
     forgeslurm,
@@ -1418,8 +1419,6 @@ def test_forge_run_supersede_settles_a_landed_pr_heads_claim_for_the_integration
 
 def test_forge_run_supersede_is_a_door_verb(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """``forge run supersede --ref <ref>`` routes to the settlement and names each claim it settled."""
-    from dev_lab.dev import forgerunshow  # noqa: PLC0415 -- the door under test, imported where it is read
-
     asked: list[str] = []
 
     def settle(_root: Path, _client: object, ref: str) -> list[tuple[str, str, str]]:
