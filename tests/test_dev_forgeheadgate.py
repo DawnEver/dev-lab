@@ -185,7 +185,7 @@ def test_the_gates_wait_until_each_stands_success() -> None:
 
 
 def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
-    """``lock/lag`` is :func:`relock.floating_lag` on the head's lock at :data:`LAG_LIMIT`.
+    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`LAG_LIMIT`.
 
     PLANTED CONTROLS: no lock is ``success``; an uncounted sibling is ``error``, never a pass.
     """

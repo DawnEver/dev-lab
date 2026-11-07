@@ -23,6 +23,7 @@ from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UV_PIN
+from dev_lab.dev.locklag import _commits_behind, floating_lag, floating_stale
 from dev_lab.dev.relock import (
     BRANCH,
     DEFAULT_CADENCE,
@@ -34,8 +35,6 @@ from dev_lab.dev.relock import (
     carry,
     chosen,
     dist_of,
-    floating_lag,
-    floating_stale,
     in_house,
     rerender,
 )
@@ -591,7 +590,11 @@ def test_the_lag_count_is_the_lines_commits_past_the_pin(tmp_path: Path) -> None
 
     def git(*argv: str) -> str:
         return subprocess.run(
-            [shutil.which('git') or 'git', '-C', str(sibling), *argv], capture_output=True, text=True, check=True
+            [shutil.which('git') or 'git', '-C', str(sibling), *argv],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=True,
         ).stdout.strip()
 
     git('init', '-q', '-b', 'integrate/main')
@@ -611,7 +614,7 @@ def test_the_lag_count_is_the_lines_commits_past_the_pin(tmp_path: Path) -> None
             f'feat: {n}',
         )
     url = sibling.as_uri()
-    assert relock._commits_behind(url, 'integrate/main', pin) == 3
-    assert relock._commits_behind(url, 'integrate/main', git('rev-parse', 'HEAD')) == 0
+    assert _commits_behind(url, 'integrate/main', pin) == 3
+    assert _commits_behind(url, 'integrate/main', git('rev-parse', 'HEAD')) == 0
     with pytest.raises(RelockFailed, match='is not on'):
-        relock._commits_behind(url, 'integrate/main', 'e' * 40)
+        _commits_behind(url, 'integrate/main', 'e' * 40)

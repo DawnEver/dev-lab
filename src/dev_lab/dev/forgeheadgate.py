@@ -17,7 +17,7 @@ by :func:`dev_lab.dev.forgemerge.decide`); the hook stays as early feedback only
   ``error`` with its diagnosis, never a pass. A PR NEVER CHASES THE LOCK (user ruling 2026-10-28): a move the base
   lags too is integration's, carried by the forge's relock pull request (:mod:`dev_lab.dev.relock`).
 * :data:`LAG_CONTEXT` -- the head's ``uv.lock`` pins a floated sibling more than :data:`LAG_LIMIT` commits behind
-  that sibling's line (:func:`dev_lab.dev.relock.floating_lag`): an ALARM that the relock is not carrying, never a
+  that sibling's line (:func:`dev_lab.dev.locklag.floating_lag`): an ALARM that the relock is not carrying, never a
   gate -- ``pr-current`` already refuses any floating move on a ``pr/`` head.
 
 The other two push rows are not head statuses, by what they judge: ``merge-resolution``
@@ -52,7 +52,8 @@ from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, UNRESOLVED, stale
-from dev_lab.dev.relock import detached_worktree, floating_lag
+from dev_lab.dev.locklag import floating_lag
+from dev_lab.dev.relock import detached_worktree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
