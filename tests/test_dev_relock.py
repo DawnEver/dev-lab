@@ -19,6 +19,7 @@ import pytest
 
 from dev_lab.dev import forgeservesteps, relock
 from dev_lab.dev.forgealarm import Alarm
+from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UV_PIN
@@ -35,7 +36,6 @@ from dev_lab.dev.relock import (
     dist_of,
     floating_stale,
     in_house,
-    relock_floating,
     rerender,
 )
 

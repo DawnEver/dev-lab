@@ -98,7 +98,6 @@ __all__ = [
     'floated',
     'floating_stale',
     'in_house',
-    'relock_floating',
     'rerender',
     'siblings',
     'third_party_due',
@@ -231,20 +230,6 @@ def floating_stale(lock: str, *, head: Callable[[str, str], str] = _line_head) -
         if now != one.sha:
             found.append(f'{LOCK} pins {one.name} at {one.sha[:SHORT]}, its {one.branch} is at {now[:SHORT]}')
     return tuple(found)
-
-
-def relock_floating(tree: Path, *, upgrade: Callable[[Path, Sequence[str]], int] | None = None) -> tuple[str, ...]:
-    """Relock *tree*'s floated siblings to their lines' current heads through the door; the names it moved.
-
-    Writes the lock only; committing it is the caller's. RAISES :class:`RelockFailed` when the door fails.
-    """
-    names = tuple(sorted(siblings(tree)))
-    if not names:
-        return ()
-    if (exited := (upgrade or door_upgrade)(tree, names)) != 0:
-        msg = f'the dependency door exited {exited} relocking {", ".join(names)} in {tree}'
-        raise RelockFailed(msg)
-    return names
 
 
 def chosen(found: Sequence[str], siblings: frozenset[str], *, due: bool) -> tuple[str, ...]:

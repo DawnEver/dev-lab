@@ -111,6 +111,7 @@ def test_the_lock_is_read_at_the_pushed_head_never_the_working_tree(repo: Path) 
 
     assert lock_stale(repo, old, read=read) is None
     assert seen == ['seed lock\n']
+    _git(repo, 'checkout', '--', 'uv.lock')  # git rm refuses a file with uncommitted changes
     _git(repo, 'rm', '-q', 'uv.lock')
     _git(repo, 'commit', '-m', 'build: no lock')
     assert lock_stale(repo, _git(repo, 'rev-parse', 'HEAD'), read=_lagging) is None, 'no lock: nothing floats'
