@@ -8,11 +8,17 @@ from pathlib import Path
 
 import pytest
 from lab_commons.compute.model import Candidate, Ranked, Schedule, boost_of, expected_cost, rank, starved, value
-from lab_commons.hpc.shell import FULL
+from lab_commons.hpc.shell import FULL, INCREMENTAL
 
 from dev_lab.dev.forgehosts import host_id
 from dev_lab.dev.forgeorigin import vouched
-from dev_lab.dev.forgeschedule import coalesced, host_weights, load_schedule
+from dev_lab.dev.forgeschedule import (
+    FULL_SUITE_LABEL,
+    coalesced,
+    host_weights,
+    load_schedule,
+    scope_of,
+)
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 FAMILY = Schedule()
@@ -200,3 +206,20 @@ def test_a_served_ref_no_class_names_is_a_pr_head_so_its_moved_tip_supersedes_it
     assert coalesced(tmp_path, 'pr/post-milestone-followups')
     assert coalesced(tmp_path, 'integrate/main')
     assert not coalesced(tmp_path, 'lane/a-lane')
+
+
+@pytest.mark.parametrize(
+    ('kind', 'labels', 'scope'),
+    [
+        ('integration', (), FULL),  # the full suite runs on the integration tip
+        ('pr', (), INCREMENTAL),  # a PR head runs only what its diff reaches
+        ('branch', (), INCREMENTAL),
+        ('pr', (FULL_SUITE_LABEL,), FULL),  # a full run on request
+        ('request', (), FULL),
+    ],
+)
+def test_only_the_integration_tip_runs_the_full_suite_unless_a_head_asks_for_it(
+    kind: str, labels: tuple[str, ...], scope: str
+) -> None:
+    """User ruling 2026-11-07: one PR's tests finish within an hour -- a PR head runs at incremental scope."""
+    assert scope_of(kind, labels) == scope

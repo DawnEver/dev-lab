@@ -28,6 +28,12 @@ APPLIED AT TWO GRAINS, both from that one rule:
 A tip whose part is already settled (``success``/``failure``) is never overwritten: a real verdict on B
 outranks one carried to it.
 
+THE SAME RULE SELECTS A PR HEAD'S RUN (:func:`reached_tests`, user ruling 2026-11-07: one PR's tests within an
+hour). A head of any ref but the integration branch runs at INCREMENTAL scope: only the test files whose footprint
+meets ``git diff <merge-base> <head>`` -- the merge-base with the integration branch, so what integration did
+since the PR branched is never the PR's to run. Every other file stands on the integration tip's verdict, and the
+full suite runs on the integration tip (:func:`dev_lab.dev.forgeschedule.scope_of`).
+
 DOCS-ONLY-CARRIES (user ruling 2026-10-21) is the PER PART grain read from the HEAD's side (:func:`docs_only`):
 memory is written after the code commit, so a docs-only head is the ordinary case and costs no run. A head
 :func:`equivalent` to the nearest tested or running head of its first-parent history is never claimed -- the
@@ -83,6 +89,7 @@ __all__ = [
     'nearest',
     'part_standing',
     'publish',
+    'reached_tests',
     'read_by',
 ]
 
@@ -93,6 +100,7 @@ SETTLED: Final = frozenset({'success', 'failure'})
 NEAREST: Final = 3
 
 _GIT_TIMEOUT_S: Final = 60
+_TRACKING: Final = 'refs/remotes/origin/'
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -141,6 +149,24 @@ def carried(root: Path, a: str, b: str, nodes: Iterable[str]) -> frozenset[str]:
         if test not in files:
             files[test] = '::' in node and not prints.reaches(test, changed)
     return frozenset(node for node in nodes if files[node.split('::', 1)[0]])
+
+
+def reached_tests(root: Path, integration: str, head: str) -> frozenset[str] | None:
+    """The test files at *head* its diff from the *integration* branch's merge-base reaches (module docstring).
+
+    ``None`` on any doubt -- no tracking ref for *integration*, no merge-base, an unreadable declaration -- which
+    runs the full suite: the selection is an optimisation, refusing it only costs the run it would have saved.
+    """
+    found = _git(root, 'merge-base', f'{_TRACKING}{integration}', head)
+    base = found.stdout.strip() if found.returncode == 0 else ''
+    changed = changed_paths(root, base, head) if base else None
+    if changed is None:
+        return None
+    try:
+        changed, prints = resolve_lock(root, base, head, changed), Footprints.at(root, head)
+    except (ValueError, subprocess.SubprocessError):
+        return None
+    return frozenset(test for test in prints.tests() if prints.reaches(test, changed))
 
 
 def equivalent(root: Path, a: str, b: str) -> bool:

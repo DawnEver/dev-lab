@@ -28,6 +28,7 @@ from typing import Any, Final
 from lab_commons.hpc.pytest_item import badness
 from lab_commons.log import emit
 
+from dev_lab.dev import forgesupersede
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import listing, replace_named
@@ -127,15 +128,25 @@ def main(
     env: Mapping[str, str] | None = None,
     transport: Transport = forge_transport,
 ) -> int:
-    """``run show <sha>``: print what the cluster published for *sha*; exit 1 when the forge cannot be read."""
+    """``run show <sha>`` / ``run supersede --ref <ref>``; exit 1 when the forge cannot be read or written.
+
+    ``supersede`` settles every claim on *ref*'s earlier heads ``superseded by <tip>``
+    (:func:`dev_lab.dev.forgesupersede.settle_superseded`) and names each one it settled.
+    """
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge run', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     shown = verbs.add_parser('show', help="each round's lost ids and the final failing ids, from the forge only")
     shown.add_argument('sha', help='the 40-hex commit')
+    gone = verbs.add_parser('supersede', help="settle every claim on a ref's earlier heads superseded by its tip")
+    gone.add_argument('--ref', required=True, help='the branch whose earlier heads are superseded (origin, as fetched)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     try:
         client = client_for(root, env=env, transport=transport)
+        if args.verb == 'supersede':
+            for sha, context, by in forgesupersede.settle_superseded(root, client, args.ref):
+                emit(f'{sha[:12]} {context}: superseded by {by[:12]}')
+            return 0
         for line in show(client, args.sha.lower()):
             emit(line)
     except ForgeCallFailed as failed:

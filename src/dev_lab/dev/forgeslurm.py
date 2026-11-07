@@ -58,22 +58,31 @@ from lab_commons.hpc.provider import SlurmAccount, unmeasured
 from lab_commons.hpc.records import held_cells, run_shas
 from lab_commons.hpc.run import _STARTED as STARTED  # the one spelling of a started task's squeue states
 from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run, withdraw_pending
-from lab_commons.hpc.shell import RunSpec
+from lab_commons.hpc.shell import INCREMENTAL, RunSpec
 from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
 from lab_commons.resources import Engine
 
 from dev_lab.dev import hpcusage
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
-from dev_lab.dev.forgecarry import carry_from, env_carries, read_by
+from dev_lab.dev.forgecarry import carry_from, env_carries, reached_tests, read_by
 from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_items
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgestuck import parse_duration, remote_path
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.slurmkilled import KILLED_FIELDS, killed_jobs
 
-__all__ = ['STALL_MULTIPLE', 'SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
+__all__ = [
+    'STALL_MULTIPLE',
+    'ReachedFiles',
+    'SlurmCluster',
+    'progress_text',
+    'scoped_files',
+    'slurm_cluster',
+    'standing_of',
+]
 
 #: A forge job's name (:func:`lab_commons.hpc.run.job_name`, and the schema-1 ``run-<sha12>``).
 _FORGE_JOB: Final = re.compile(r'run-[0-9a-f]{12}(-.+)?')
@@ -85,6 +94,33 @@ _FORGE_JOB: Final = re.compile(r'run-[0-9a-f]{12}(-.+)?')
 STALL_MULTIPLE: Final = 2.0
 #: Every RUNNING task of the account: its id, name, elapsed time and work dir (the round's run dir), and the clock.
 _RUNNING: Final = "date +%s; squeue -h --me -t RUNNING -o '%i|%j|%M|%Z'"
+
+
+class ReachedFiles(frozenset[str]):
+    """Test FILE paths read as :attr:`lab_commons.hpc.shell.RunSpec.only`: a node id is in it when its file is.
+
+    :func:`lab_commons.hpc.run.submit_run` keeps a collected id ``in`` *only* and a collection error whose path
+    an element of *only* names; a set of files answers both, so every id of a reached file runs, parametrized
+    and class-held ones too, and a reached file that fails to collect is still reported.
+    """
+
+    __slots__ = ()
+
+    def __contains__(self, node: object) -> bool:
+        """Whether *node* (an id or a path) lies in one of these files."""
+        return isinstance(node, str) and frozenset.__contains__(self, node.split('::', 1)[0])
+
+
+def scoped_files(root: Path, run: Run) -> ReachedFiles | None:
+    """What an INCREMENTAL *run* submits: the test files its diff reaches; ``None`` -- everything -- otherwise.
+
+    A FULL run, a reach in doubt and a reach of nothing all run everything
+    (:func:`dev_lab.dev.forgecarry.reached_tests`).
+    """
+    if run.scope != INCREMENTAL:
+        return None
+    reached = reached_tests(root, load_policy(root).integration, run.sha)
+    return ReachedFiles(reached) if reached else None
 
 
 def stall_of(items: list[dict[str, Any]], *, idle_s: float, elapsed_s: float) -> str:
@@ -176,6 +212,7 @@ class SlurmCluster:
             part=run.platform,
             pack_from=self.root,
             builds=builds_at(self.root, run.sha, python=''),
+            only=scoped_files(self.root, run),
         )
         state = submit_run(
             spec,

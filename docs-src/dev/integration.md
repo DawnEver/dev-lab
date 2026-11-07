@@ -80,6 +80,19 @@ pr_merges_since = "<sha>"   # auto-merge on; auto-sync rides it, no switch of it
 auto_sync_quiet = "10 min"  # the default
 ```
 
+## Test load: what a head runs, and what supersedes it
+
+User ruling 2026-11-07: one PR's tests finish within an hour.
+
+- The full suite runs only on the integration tip. Any other head's cluster part runs at `incremental` scope: only
+  the test files whose footprint meets `git diff <merge-base> <head>` (`forgecarry.reached_tests`); the rest
+  stands on the integration tip's verdict. A PR labelled `forge:full` runs the full suite.
+- A head superseded by a newer head of its ref, or already contained in the integration tip, has its pending
+  tasks withdrawn and its started ones drained to their deadline; its claim settles `error` `superseded by <sha>`,
+  which no host retakes (`forgesupersede`).
+- `python -m dev_lab.dev.forge run supersede --ref <ref>` settles every claim on the ref's earlier heads the same
+  way, from any workstation; the owning host's next tick drains the run. Never post such a status by hand.
+
 ## Roles
 
 | role | does | never |
