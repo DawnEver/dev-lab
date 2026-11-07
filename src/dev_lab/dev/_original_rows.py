@@ -311,6 +311,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'restatedrules',
     # ORIGINAL: SPLIT-BY-CONCEPT was prose until this body; no consumer guard read module names.
     'sizesplits',
+    # ORIGINAL: no consumer held a NO-CJK file before this plugin; it is the one always-on body (2026-11-07).
+    'alwayson',
     # -- `dev_lab.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table',
     'runner',
