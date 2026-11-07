@@ -29,13 +29,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
+from dev_lab.ops import forcecommand
 from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.accounts import account_of, may_enter
 from dev_lab.ops.backuprole import Backup
 from dev_lab.ops.config import OpsConfig, Probe
 from dev_lab.ops.placement import Placement
-from dev_lab.ops.sshkey import ENV
 from dev_lab.ops.totp import write_private
 from dev_lab.supervise.daemon import watchdog_seconds
 
@@ -109,27 +109,9 @@ def _judge(config: OpsConfig) -> dict[str, str]:
     return {f'etc/systemd/system/{_UNIT}-judge.service': service, f'etc/systemd/system/{_UNIT}-judge.timer': timer}
 
 
-def _restricted(config: OpsConfig, account: str, keys: tuple[str, ...], verb: str) -> dict[str, str]:
-    """A restricted ssh *account* whose every session is ``sudo -n <the door> <verb> serve``: sshd, keys, sudoers."""
-    listed = keys_file(account)
-    serve = _door(config, verb, 'serve')
-    sshd = (
-        f'Match User {account}\n    AuthorizedKeysFile {listed}\n'
-        f'    ExposeAuthInfo yes\n    ForceCommand sudo -n {serve}\n'
-        '    AllowTcpForwarding no\n    AllowAgentForwarding no\n    X11Forwarding no\n    PermitTTY no\n'
-    )
-    return {
-        f'etc/ssh/sshd_config.d/60-{_UNIT}-{account}.conf': sshd,
-        listed.lstrip('/'): ''.join(f'{key}\n' for key in keys),
-        f'etc/sudoers.d/{_UNIT}-{account}': (
-            f'Defaults:{account} env_keep += "{ENV}"\n{account} ALL=(root) NOPASSWD: {serve}\n'
-        ),
-    }
-
-
 def _consent(config: OpsConfig) -> dict[str, str]:
     role = config.consent
-    return {} if role is None else _restricted(config, role.account, role.keys, 'consent')
+    return {} if role is None else forcecommand.files(_UNIT, role.account, role.keys, _door(config, 'consent', 'serve'))
 
 
 def _breakglass(config: OpsConfig) -> dict[str, str]:
@@ -147,7 +129,7 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     return {
         f'etc/systemd/system/{_UNIT}-breakglass-tick.service': tick_service,
         f'etc/systemd/system/{_UNIT}-breakglass-tick.timer': tick_timer,
-        **_restricted(config, role.account, role.keys, 'breakglass'),
+        **forcecommand.files(_UNIT, role.account, role.keys, _door(config, 'breakglass', 'serve')),
     }
 
 
@@ -238,8 +220,7 @@ def _consent_steps(config: OpsConfig, root: Path) -> list[str]:
     """The issuer's account, then its signing key and TOTP secret where the host holds none yet."""
     if (issuer := config.consent) is None:
         return []
-    steps = [f'id {issuer.account} || useradd --create-home --shell /bin/sh {issuer.account}',
-             f'visudo -cf /etc/sudoers.d/{_UNIT}-{issuer.account}', 'sshd -t && systemctl reload ssh']  # fmt: skip
+    steps = forcecommand.steps(_UNIT, issuer.account)
     if not _under(root, issuer.key).is_file():
         steps.append(_door(config, 'consent', 'keygen'))
     if not _under(root, issuer.totp).is_file():
@@ -256,9 +237,8 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
         steps += prepared
     steps += _judge_steps(config)
     if (role := config.breakglass) is not None:
-        steps += [f'id {role.account} || useradd --create-home --shell /bin/sh {role.account}',
-                  f'visudo -cf /etc/sudoers.d/{_UNIT}-{role.account}', 'sshd -t && systemctl reload ssh',
-                  'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-breakglass-tick.timer']  # fmt: skip
+        steps += [*forcecommand.steps(_UNIT, role.account), 'systemctl daemon-reload',
+                  f'systemctl enable --now {_UNIT}-breakglass-tick.timer']  # fmt: skip
     steps += _consent_steps(config, root)
     if (backup := config.backup) is not None and backup.dumpers:
         steps += [f'id {backup.account} || useradd --create-home --shell /bin/sh {backup.account}',
