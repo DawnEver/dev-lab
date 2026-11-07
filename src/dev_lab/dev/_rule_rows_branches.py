@@ -120,7 +120,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A push creating or updating a `pr/*` branch is refused at pre-push when its tip does not contain '
             '`origin/<integration>` fetched afresh (a fetch that fails refuses with its reason), or when its lock '
-            'lags a floated sibling`s current head (`relock.floating_stale`); `forge pr ready` refuses on the same '
+            'lags a floated sibling`s current head (`locklag.floating_stale`); `forge pr ready` refuses on the same '
             'judgement and on uncommitted tracked changes. Each refusal names `forge sync`, which merges '
             'integration and relocks the floated siblings in one sync (user ruling 2026-11-07; `prcurrent`).'
         ),

@@ -45,6 +45,8 @@ def _green() -> list[dict[str, object]]:
             'creator': None,
         },  # the review job: a null creator, which Gitea counts as it counts every poster
         {'id': 3, 'context': 'tests/security', 'status': 'success', 'description': 'nothing found'},
+        {'id': 4, 'context': 'session-branch', 'status': 'success', 'description': 'pr/x is declared'},
+        {'id': 5, 'context': 'pr-current', 'status': 'success', 'description': 'pr/x holds origin/integrate/main'},
     ]
 
 
@@ -451,3 +453,20 @@ def test_a_ready_decision_with_no_message_row_SAYS_messages_are_not_declared(tmp
     )
     assert found.ready, found.missing
     assert 'messages: not declared' in found.notes
+
+
+@pytest.mark.parametrize('gate', ['session-branch', 'pr-current'])
+def test_a_failed_head_gate_holds_the_merge(tmp_path: Path, gate: str) -> None:
+    """User ruling 2026-11-07: the push rows' forge statuses gate the merge, so a consumer's stale hook disarms nothing.
+
+    PLANTED CONTROL: the same PR with every gate ``success`` merges (the green tests above).
+    """
+    work, head = _work(tmp_path)
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    red = {'id': 9, 'context': gate, 'status': 'failure', 'description': f'{gate} refused'}
+    forge.statuses[head] = [*(r for r in _green() if r['context'] != gate), red]
+    _tick(work, forge, head, POLICY)
+    assert forge.merges == []
+    (comment,) = forge.comments[number]
+    assert f'its head gates: {gate} is failure: {gate} refused' in comment['body']

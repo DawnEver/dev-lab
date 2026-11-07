@@ -36,6 +36,9 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
   the forge -- ``tests/merge-ready`` stays ``pending`` :data:`EXTERNAL`;
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
+* its head's push-row GATES stand ``success`` (:func:`dev_lab.dev.forgeheadgate.gates_wait`: ``session-branch``,
+  ``pr-current``, user ruling 2026-11-07) -- the same judges the pre-push rows call, posted by the forge, so a
+  consumer's stale hook never disarms them; absent, ``error`` or ``failure`` waits;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
@@ -75,6 +78,7 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING, waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgeheadgate import gates_wait
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgereview_declared import load_review
@@ -215,6 +219,8 @@ def decide(
         message = f'{title}\n\n{waiver}\n\n{trailers}'
     if (unsafe := security_wait(statuses)) is not None:
         missing.append(f'its security check: {unsafe}')
+    if (gated := gates_wait(statuses)) is not None:
+        missing.append(f'its head gates: {gated}')
     if (red := parts_wait(root, head, statuses)) is not None:
         missing.append(f'its test parts: {red}')
     tried = trial(root, base, head)
