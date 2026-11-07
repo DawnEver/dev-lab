@@ -352,6 +352,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   chosen by size, one shared library whose every writer cleans only its own runs.
 * :mod:`dev_lab.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
+* :mod:`dev_lab.dev.artefactfolder` -- the folder backend: archive before manifest, idempotent, no aliases.
+* :mod:`dev_lab.dev.artefactpack` -- declared outputs collected under a footprint budget and packed indexed.
+* :mod:`dev_lab.dev.artefactindex` -- an archive's member facts in the record, its catalogue and selection.
+* :mod:`dev_lab.dev.artefactscan` -- a packed archive verified against its complete index, read-only.
+* :mod:`dev_lab.dev.artefactrestore` -- a selection materialized into a fresh owned root, its receipt last.
 * :mod:`dev_lab.dev.forgeaffinity` -- HPC account affinity: verify accounts claim a verify part first.
 * :mod:`dev_lab.dev.forgeapp` -- a GitHub App as a forge identity: its JWT, installation token and client.
 * :mod:`dev_lab.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.

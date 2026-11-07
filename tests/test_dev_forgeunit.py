@@ -26,7 +26,8 @@ from lab_commons.compute.store import Nondeterministic, Record, ResultStore, res
 from lab_commons.compute.unit import Engine, Unit, environment_here
 
 from dev_lab.dev import forgeunit
-from dev_lab.dev.artefacts import Config, FolderStore
+from dev_lab.dev.artefactfolder import FolderStore
+from dev_lab.dev.artefacts import Config
 from dev_lab.dev.artefactstores import Ref
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm
 from dev_lab.dev.forgerecords import Attachment
