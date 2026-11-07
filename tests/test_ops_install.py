@@ -28,6 +28,9 @@ def test_install_renders_units_sshd_and_sudoers_and_is_idempotent(tmp_path: Path
     assert rendered['etc/dev-lab/ops/breakglass.keys'] == 'ssh-ed25519 AAAA agent\n'
     sudo = rendered['etc/sudoers.d/dev-lab-ops-breakglass']
     assert sudo.startswith('Defaults:breakglass env_keep += "SSH_USER_AUTH"\nbreakglass ALL=(root) NOPASSWD: ')
+    issuer = rendered['etc/ssh/sshd_config.d/60-dev-lab-ops-consent.conf']  # the consent issuer's own account
+    assert 'Match User consent' in issuer
+    assert 'consent serve' in issuer
 
 
 def test_a_disabled_role_renders_nothing(tmp_path: Path) -> None:

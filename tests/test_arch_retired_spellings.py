@@ -87,6 +87,13 @@ RETIRED_SPELLINGS: Final = {
         'user ruling 2026-11-05: a capped review no longer holds the merge; it merges WARNED',
     ),
     'OVER_CAP_TAKEOVER': ('Scope.unread', 'D123 2026-10-31, then 2026-11-06: an oversize head is sliced, never held'),
+    **dict.fromkeys(
+        ('breakglass enrol', 'wave_hours =', 'max_merges =', '--max-merges'),
+        (
+            'consent enrol; a breakglass.wave consent credential whose params are hours and max_merges',
+            'user-approved design 2026-11-07: the wave TOTP check moved onto consent credentials; no code path stays',
+        ),
+    ),
     **{
         f'tool.lab_commons.{table}': (
             f'tool.dev_lab.{table}',
