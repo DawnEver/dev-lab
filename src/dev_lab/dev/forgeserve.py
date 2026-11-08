@@ -131,7 +131,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
-from dev_lab.dev import forgerun, forgerunstate, metrics, retention
+from dev_lab.dev import forgerun, forgerunstate, forgesubmit, metrics, retention
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgeaffinity import declared
 from dev_lab.dev.forgealarm import (
@@ -162,7 +162,7 @@ from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 from dev_lab.supervise.notice import Context
 
-__all__ = ['ServeReport', 'main', 'serve', 'work_root']
+__all__ = ['ServeReport', 'main', 'serve', 'submit_one', 'work_root']
 
 
 @dataclass(frozen=True)
@@ -216,6 +216,7 @@ def serve(
     retain: Callable[..., retention.Freed | None] = retention.serve_pass,
     reserving: Callable[..., int | str] = reserve,
     boxed: Callable[[Sequence[Holding]], Box | None] = box_now,
+    submit: Callable[[forgerunstate.Run], str] | None = None,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 
@@ -224,7 +225,9 @@ def serve(
     (:func:`~dev_lab.dev.forgerounds.supply_now`), *holding* the box ledger's claims now, *retain* the
     retention pass, *reserving* what takes a local part's box claim before the tick claims it
     (:func:`~dev_lab.dev.forgerounds.reserve`; none on a cluster seat), *boxed* this box as a round's pass sees
-    it (:func:`~dev_lab.dev.forgerounds.box_now`; none on a cluster seat) -- each a seam a test fakes.
+    it (:func:`~dev_lab.dev.forgerounds.box_now`; none on a cluster seat) -- each a seam a test fakes. *submit*
+    starts a run still to submit in its own process (:func:`dev_lab.dev.forgesubmit.detach`, the cron tick's);
+    ``None`` submits inline (the detached ``--submit`` process itself).
     """
     repo = origin_url(root)
     table = section('schedule') if table is None else table
@@ -284,7 +287,7 @@ def serve(
     runs_from = clock()  # the runs get a period of their own: rounds that ran long never starve them to one
     left = _advance(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm,
-        beat=lambda: card(claimed), spent=lambda: clock() >= runs_from + timedelta(seconds=beat_s),
+        beat=lambda: card(claimed), spent=lambda: clock() >= runs_from + timedelta(seconds=beat_s), submit=submit,
     )  # fmt: skip
     tidy_runs(root, client, repo, seat=seat, say=say, alarm=alarm)
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
@@ -325,6 +328,7 @@ def _advance(
     alarm: Callable[[Alarm], object],
     beat: Callable[[], None] = lambda: None,
     spent: Callable[[], bool] = lambda: False,
+    submit: Callable[[forgerunstate.Run], str] | None = None,
 ) -> list[str]:
     """Advance every run one tick; the shas still in flight. A run that cannot advance waits and alarms.
 
@@ -339,6 +343,8 @@ def _advance(
     RESULTS BEFORE SUBMITS (Ada 2026-11-07): a submit builds and collects on the login node -- over an hour
     cold -- so every run already submitted (a gather, a post) goes before every run still to submit, each side
     in its least-recently-advanced order. A finished run never waits behind a collection in its own tick.
+    Given *submit*, a run still to submit is not advanced here at all: it is handed to its own process
+    (:mod:`dev_lab.dev.forgesubmit`), or left alone while one holds its lock, so the tick never waits on it.
     """
     if not runs:
         return []
@@ -359,6 +365,12 @@ def _advance(
         say(f'[serve] no cluster to advance {len(runs)} run(s) on: {why}')
         return [run.sha for run in runs]
     left: list[str] = []
+    if submit is not None:
+        for run in [one for one in runs if one.phase in _TO_SUBMIT]:
+            tag = run_tag(run.platform, run.sha)
+            say(f'{tag}: submitting in its own process' if forgesubmit.busy(run) else f'{tag}: {submit(run)}')
+            left.append(run.sha)
+        runs = [one for one in runs if one.phase not in _TO_SUBMIT]
     for at, run in enumerate(runs):
         if at and spent():
             waiting = [one.sha for one in runs[at:]]
@@ -385,6 +397,36 @@ def _advance(
             forgerunstate.touch(after)
             left.append(after.sha)
     return left
+
+
+def submit_one(
+    root: Path,
+    name: str,
+    *,
+    client: Callable[[Path], Client],
+    machine: str,
+    seat: ClusterAccount | None,
+    lease: timedelta,
+    cluster: Callable[[], forgerunstate.Cluster] | None = None,
+    say: Callable[[str], None] = emit,
+    alarm: Callable[[Alarm], object] = sound,
+) -> int:
+    """``serve --submit <run>``: advance the one run file *name* inline under its submit lock; 0 always but a defect.
+
+    Another live submit of it, or no such run left, is a no-op (:mod:`dev_lab.dev.forgesubmit`).
+    """
+    run = next((one for one in forgerunstate.live(origin_url(root)) if forgerunstate.name_of(one) == name), None)
+    if run is None:
+        say(f'[submit] {name}: no such run in flight; nothing to submit')
+        return 0
+    with forgesubmit.held(run) as mine:
+        if not mine:
+            say(f'[submit] {name}: another submit holds it')
+            return 0
+        slurm, _standing, why = standing_of(cluster or (lambda: slurm_cluster(root, seat)))
+        _advance(root, [run], client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say,
+                 alarm=alarm)  # fmt: skip
+    return 0
 
 
 def work_root(root: Path) -> Path:
@@ -417,6 +459,7 @@ def main(
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge serve', description=__doc__.splitlines()[0])
     parser.add_argument('--lease-hours', type=float, default=DEFAULT_LEASE.total_seconds() / 3600)
     parser.add_argument('--json', action='store_true', help='print the whole report as JSON')
+    parser.add_argument('--submit', metavar='RUN', help='submit only this run, under its own lock (forgesubmit)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd().resolve() if cwd is None else cwd
     if cwd is None:
@@ -427,6 +470,10 @@ def main(
 
     seat = seat_of()
     machine = this_machine()
+    if args.submit:
+        return submit_one(
+            root, args.submit, client=build, machine=machine, seat=seat, lease=timedelta(hours=args.lease_hours)
+        )
     try:
         report = serve(
             root,
@@ -436,6 +483,7 @@ def main(
             cluster=lambda: slurm_cluster(root, seat),
             lease=timedelta(hours=args.lease_hours),
             say=lambda line: emit(line, err=args.json, flush=True),
+            submit=functools.partial(forgesubmit.detach, root),
         )
     except NoCredential as missing:
         sound(Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)))

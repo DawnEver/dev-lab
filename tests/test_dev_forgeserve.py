@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -36,6 +37,7 @@ from dev_lab.dev import (
     forgeserve,
     forgeservesteps,
     forgeship,
+    forgesubmit,
     metrics,
     prlanded,
 )
@@ -198,6 +200,7 @@ def _serve(
     clock=lambda: NOW,
     reviewed: list | None = None,
     elected: tuple[bool, str] = (True, 'G'),
+    submit=None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -275,6 +278,7 @@ def _serve(
         holding=lambda: holding,
         retain=retain,
         present=present,
+        submit=submit,
     )
     said.append(f'running={seen.get("running")}')
     return report, said, alarms
@@ -1514,6 +1518,83 @@ def test_a_tick_gathers_and_posts_before_any_run_it_submits(monkeypatch, tmp_pat
     order = [one.sha for one in forgerunstate.live('https://f/o/r.git')]
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, host='base')
     assert advanced == order, 'PLANTED: no submit, least recently advanced first'
+
+
+def _phased(sha: str, phase: str) -> forgerunstate.Run:
+    (run,) = [one for one in forgerunstate.live('https://f/o/r.git') if one.sha == sha]
+    moved = dataclasses.replace(run, phase=phase, job_ids=('1',) if phase == forgerunstate.SUBMITTED else ())
+    forgerunstate.save(moved)
+    return moved
+
+
+def test_a_tick_hands_a_run_to_submit_to_its_own_process_and_never_advances_it(monkeypatch, tmp_path: Path) -> None:
+    """The tick detaches a claimed run's submit and gathers the rest; it never runs a build or a collection itself.
+
+    Ada 2026-11-07: a submit's collection ran over an hour inside the tick's ``flock``. PLANTED CONTROL: with
+    the submit lock held by a live submit, the tick neither advances the run nor starts a second submit.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 2)
+    _phased(shas[1], forgerunstate.SUBMITTED)
+    advanced: list[str] = []
+    handed: list[str] = []
+    monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
+    submit = lambda run: handed.append(run.sha) or 'detached'  # noqa: E731
+    report, said, _a = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, submit=submit)
+    assert handed == [shas[0]], 'the claimed run goes to its own process'
+    assert advanced == [shas[1]], 'only the submitted run is advanced in the tick'
+    assert sorted(report.in_flight) == shas
+    assert any(line.endswith(': detached') for line in said), said
+    handed.clear()
+    advanced.clear()
+    (claimed,) = [one for one in forgerunstate.live('https://f/o/r.git') if one.sha == shas[0]]
+    with forgesubmit.held(claimed) as mine:
+        assert mine
+        _r, said, _a = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, submit=submit)
+    assert handed == [], 'PLANTED: a live submit holds it, none is started'
+    assert advanced == [shas[1]]
+    assert any(line.endswith('submitting in its own process') for line in said), said
+
+
+def test_submit_one_advances_the_named_run_under_its_lock(monkeypatch, tmp_path: Path) -> None:
+    """``serve --submit <run>`` advances exactly that run inline; PLANTED CONTROL: a held lock advances nothing."""
+    shas = _runs_on_disk(monkeypatch, tmp_path, 2)
+    monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(forgeserve, 'forge_now', lambda _built: NOW)
+    (run,) = [one for one in forgerunstate.live('https://f/o/r.git') if one.sha == shas[1]]
+    advanced: list[str] = []
+    locked: list[bool] = []
+
+    def advance(_root: Path, one: forgerunstate.Run, **_k: object) -> None:
+        advanced.append(one.sha)
+        locked.append(forgesubmit.busy(one))
+
+    monkeypatch.setattr(forgerun, 'advance', advance)
+    kw = {'client': _client, 'machine': 'G', 'seat': SEAT, 'lease': timedelta(hours=6), 'cluster': _Slurm,
+          'say': lambda _line: None, 'alarm': lambda _a: None}  # fmt: skip
+    assert forgeserve.submit_one(tmp_path, forgerunstate.name_of(run), **kw) == 0
+    assert advanced == [shas[1]], 'that one run'
+    assert locked == [True], 'while its lock is held'
+    assert not forgesubmit.busy(run), 'the lock is released'
+    advanced.clear()
+    with forgesubmit.held(run):
+        assert forgeserve.submit_one(tmp_path, forgerunstate.name_of(run), **kw) == 0
+    assert advanced == [], 'PLANTED: another submit holds it'
+
+
+def test_a_dead_submits_lock_is_taken_over(monkeypatch, tmp_path: Path) -> None:
+    """A lock older than its staleness bound is a crashed submit's; PLANTED CONTROL: a fresh one excludes."""
+    (sha,) = _runs_on_disk(monkeypatch, tmp_path, 1)
+    (run,) = forgerunstate.live('https://f/o/r.git')
+    with forgesubmit.held(run) as first, forgesubmit.held(run) as second:
+        assert first
+        assert not second, 'PLANTED: one live submit at a time'
+    forgerunstate.submit_lock(run).write_text('1', encoding='ascii')
+    old = time.time() - forgesubmit.STALE_LOCK_S - 60
+    os.utime(forgerunstate.submit_lock(run), (old, old))
+    assert not forgesubmit.busy(run)
+    with forgesubmit.held(run) as taken:
+        assert taken
+    assert sha
 
 
 class _Untagged(_Slurm):
