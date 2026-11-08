@@ -2,7 +2,7 @@
 
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
 ``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
-(:mod:`dev_lab.ops.disk`).
+(:mod:`dev_lab.ops.disk`), ``config apply`` (:mod:`dev_lab.ops.configdoor`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -10,6 +10,7 @@ Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` r
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -22,10 +23,24 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
-from dev_lab.ops import access, backup, breakglass, disk, install, judge, offsite, probe, promote, sshkey, totp, upgrade
+from dev_lab.ops import (
+    access,
+    backup,
+    breakglass,
+    configdoor,
+    disk,
+    install,
+    judge,
+    offsite,
+    probe,
+    promote,
+    sshkey,
+    totp,
+    upgrade,
+)
 from dev_lab.ops.config import Consent, OpsConfig, load
 from dev_lab.ops.consent import serve as consent_serve
-from dev_lab.ops.consent.client import public_key
+from dev_lab.ops.consent.client import public_key, redeem
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.supervise.alert import Notifier
@@ -209,6 +224,45 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
     return 0
 
 
+def _config_apply(config: OpsConfig, candidate: Path, credential: str) -> int:
+    """``config apply --from <file> [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
+    redeem_ = None
+    granted = None
+    if credential:
+        role = config.consent
+        issuer = _issuer(config, role) if role is not None else None
+        try:
+            verifier = issuer.public() if issuer is not None else public_key()
+        except ConsentRefused as refused:
+            emit(f'refused: {refused}', err=True)
+            return 2
+        granted = json.loads(Path(credential).read_text(encoding='utf-8'))
+
+        def redeem_(found: dict) -> str:
+            return redeem(
+                found,
+                action=configdoor.ACTION,
+                key=verifier,
+                register=issuer.register if issuer is not None else _unreachable,
+                now=time.time(),
+            ).subject
+
+    try:
+        done = configdoor.apply(
+            config.path, candidate.read_text(encoding='utf-8'), loads=load, checks=upgrade.checks(config),
+            run=upgrade.run_check, redeem=redeem_, credential=granted,
+        )  # fmt: skip
+    except (configdoor.ConfigRefused, ConsentRefused) as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    if not done.changed:
+        emit('[ops config] unchanged')
+        return 0
+    emit(f'[ops config] applied; changed {list(done.changed)}; boundary {list(done.boundary)}; backup {done.backup}')
+    _alert(config, 'config applied', f'changed {list(done.changed)}; boundary {list(done.boundary)}')
+    return 0
+
+
 def _probe(config: OpsConfig) -> int:
     role = config.probe
     if role is None:
@@ -245,6 +299,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     opened.add_argument('--force', action='store_true', help='replace an existing secret')
     opened.add_argument('--uri', action='store_true', help='print the otpauth URI, not its QR')
     opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")
+    configured = verbs.add_parser('config', help='change this host config through the one door')
+    configured.add_argument('action', choices=('apply',))
+    configured.add_argument('--from', dest='candidate', type=Path, required=True, help='the reviewed candidate file')
+    configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
     for name in ('disk', 'clean'):
         sized = verbs.add_parser(name)
         sized.add_argument('--gitea-data', default=disk.DEFAULT_GITEA_DATA)
@@ -273,6 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         'consent': lambda: _consent(config, args.action, force=args.force, uri_only=args.uri),
         'judge': lambda: _judge(config),
         'upgrade': lambda: _upgrade(config),
+        'config': lambda: _config_apply(config, args.candidate, args.credential),
     }
     return verbs_of[args.verb]()
 

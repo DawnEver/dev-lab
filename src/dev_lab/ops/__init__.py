@@ -12,6 +12,8 @@ Every role is generic; a deployment is the ``[ops]`` table of the host's supervi
 * :mod:`dev_lab.ops.probe` -- per declared repo on either forge, protection drift (``forge protect check``) and a
   failed scheduled or integration CI run, each alerted once;
 * :mod:`dev_lab.ops.install` -- render the systemd units, sshd drop-in and sudoers line the config asks for.
+* :mod:`dev_lab.ops.configdoor` -- ``config apply``: the ONE way the host's config changes; routine keys on the
+  operator's word, the security boundary only with an ``ops.config`` consent credential for exactly that file.
 
 The design and its follow-ups: ``.claude/memory/2026/11/03/PLAN-forge-host-roles-are-one-configured-mechanism.md``.
 """

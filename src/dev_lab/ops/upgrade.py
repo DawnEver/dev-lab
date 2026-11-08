@@ -20,7 +20,7 @@ import lab_commons.launch as _door
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops.config import OpsConfig
 
-__all__ = ['checks', 'command', 'commit', 'run']
+__all__ = ['checks', 'command', 'commit', 'run', 'run_check']
 
 #: Runs a command line; its exit code and stdout.
 type Runner = Callable[[Sequence[str]], tuple[int, str]]
@@ -69,7 +69,8 @@ def checks(config: OpsConfig) -> dict[str, list[str]]:
     }
 
 
-def _probe(argv: Sequence[str]) -> tuple[int, str]:
+def run_check(argv: Sequence[str]) -> tuple[int, str]:
+    """Run one self-check *argv* in a fresh process; its exit code (124 on timeout) and stdout."""
     try:
         done = _door.run(
             list(argv), check=False, capture_output=True, text=True, encoding='utf-8', timeout=CHECK_TIMEOUT
@@ -84,7 +85,7 @@ def _install(argv: Sequence[str]) -> tuple[int, str]:
     return report.returncode, report.attempts[-1].output if report.attempts else ''
 
 
-def commit(config: OpsConfig, probe: Runner = _probe) -> str:
+def commit(config: OpsConfig, probe: Runner = run_check) -> str:
     """The installed dev-lab's vcs commit (its ``direct_url.json``); empty when none is recordable."""
     code, out = probe([config.python, '-c', _COMMIT])
     return out.strip() if code == 0 else ''
@@ -95,7 +96,7 @@ def _failed_check(config: OpsConfig, probe: Runner) -> str:
     return next((name for name, argv in checks(config).items() if probe(argv)[0] != 0), '')
 
 
-def run(config: OpsConfig, *, install: Runner = _install, probe: Runner = _probe) -> tuple[int, str]:
+def run(config: OpsConfig, *, install: Runner = _install, probe: Runner = run_check) -> tuple[int, str]:
     """Install the tip, self-check it, roll back to the recorded commit on failure; the exit code and what happened."""
     line = command(config)
     old = commit(config, probe)
