@@ -68,6 +68,9 @@ THRESHOLDS: Final[Mapping[str, float]] = {
     # so at any cadence the window holds a reading old enough to meet the floor.
     'interval_s': 300.0,
     'slope_span_s': 3600.0,
+    # A SLOPE PROJECTS AT MOST THIS MANY TIMES THE SPAN IT WAS MEASURED OVER: one hour of a 1.4 GB export read
+    # 'full in 2.5 days' on forge-a1 (2026-11-08). History is kept long enough to meet `days_to_full_floor`.
+    'slope_extrapolation_max': 24.0,
     # A CGROUP'S REAL PRESSURE. `high` alone is routine cache reclaim at memory.high: it alarms only past an
     # opt-in rise (default never); anon refaults and the cgroup's own memory PSI (avg10) are the throttle.
     'cgroup_high_rise': float('inf'),  # warning when memory.events `high` rose by MORE than this between readings
@@ -143,9 +146,10 @@ def _disk(
     if not disk.total:  # no size is unanswerable, never 0% full
         return [], {f'disk:{name}:percent': None}, history
     percent, free_gb = disk.used / disk.total * 100, disk.free / 1024**3
-    oldest = now - limits['slope_span_s'] - limits['interval_s']
+    horizon = limits['days_to_full_floor'] * 86400 / limits['slope_extrapolation_max']
+    oldest = now - max(limits['slope_span_s'], horizon) - limits['interval_s']
     kept = [one for one in history if one[0] >= oldest] + [[now, float(disk.used)]]
-    days = _days_to_full(kept, disk.free, limits['slope_span_s'])
+    days = _days_to_full(kept, disk.free, limits['slope_span_s'], limits['slope_extrapolation_max'])
     readings = {f'disk:{name}:percent': round(percent, 1), f'disk:{name}:free_gb': round(free_gb, 2),
                 f'disk:{name}:days_to_full': None if days is None else round(days, 1)}  # fmt: skip
     said = f'{name} {percent:.1f}% used, {free_gb:.1f} GB free' + (f', full in {days:.1f} days' if days else '')
@@ -174,15 +178,20 @@ def _disk(
     return [], readings, kept
 
 
-def _days_to_full(history: Sequence[Sequence[float]], free: int, span: float) -> float | None:
-    """Days until *free* bytes are gone at the first-to-last slope; ``None`` when not filling or under *span*."""
+def _days_to_full(history: Sequence[Sequence[float]], free: int, span: float, reach: float) -> float | None:
+    """Days until *free* bytes are gone at the first-to-last slope.
+
+    ``None`` when not filling, under *span*, or when the projection reaches past *reach* times the measured span.
+    """
     if len(history) < _SLOPE_POINTS:
         return None
     (t0, used0), (t1, used1) = history[0], history[-1]
     if t1 - t0 < span:  # a burst seconds apart is not a trend
         return None
     rate = (used1 - used0) / (t1 - t0)  # bytes per second
-    return free / rate / 86400 if rate > 0 else None
+    if rate <= 0 or free / rate > reach * (t1 - t0):  # an hour of writes is no evidence about next week
+        return None
+    return free / rate / 86400
 
 
 def _psi(

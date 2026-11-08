@@ -218,7 +218,7 @@ def test_a_disk_filling_fast_alarms_on_days_to_full_before_it_is_nearly_full(tmp
     """20 GB free, 10 GB written per day: full in two days, under the three-day floor. Control: a flat disk."""
     declared = Declared(paths=(tmp_path,))
     day = 86400.0
-    past = {'disk': {tmp_path.as_posix(): [[day - 3600.0, 80.0 * GB - 10.0 * GB / 24]]}}
+    past = {'disk': {tmp_path.as_posix(): [[day - 7200.0, 80.0 * GB - 10.0 * GB / 12]]}}  # 2 h: what 2 days needs
     filling = measure(declared, past, now=day, usage=lambda _p: Disk(100 * GB, 80 * GB, 20 * GB), linux=False,
                       psutil=lambda: None, sizes=lambda _r: ())  # fmt: skip
     assert [f.severity for f in filling.findings] == ['warning']
@@ -300,6 +300,28 @@ def test_two_readings_seconds_apart_are_not_a_trend(tmp_path: Path) -> None:
                    linux=False, psutil=lambda: None)  # fmt: skip
     assert half.findings == []
     assert half.readings[f'disk:{tmp_path.as_posix()}:days_to_full'] is None
+
+
+def test_an_hour_of_writes_never_projects_days_ahead(tmp_path: Path) -> None:
+    """forge-a1 2026-11-08 03:30Z: ~1.4 GB written within one hour on 84.6 GB free read 'full in 2.5 days'.
+
+    A slope is extrapolated at most `slope_extrapolation_max` times the span it was measured over.
+    PLANTED CONTROL: the same rate held for the hours a 2.5-day projection needs does warn.
+    """
+    declared = Declared(paths=(tmp_path,))
+    used, free = 12 * GB, int(84.6 * GB)
+    rate = free / (2.5 * 86400)  # bytes per second that read 'full in 2.5 days'
+
+    def at(span: float) -> Measured:
+        past = {'disk': {tmp_path.as_posix(): [[0.0, used - rate * span]]}}
+        return measure(declared, past, now=span, usage=lambda _p: Disk(96 * GB, used, free), linux=False,
+                       psutil=lambda: None, sizes=lambda _r: ())  # fmt: skip
+
+    hour = at(3600.0)
+    assert hour.findings == []
+    assert hour.readings[f'disk:{tmp_path.as_posix()}:days_to_full'] is None
+    held = at(2.5 * 86400 / THRESHOLDS['slope_extrapolation_max'])
+    assert [f.severity for f in held.findings] == ['warning']
 
 
 def test_days_to_full_warns_at_the_real_cadence(tmp_path: Path) -> None:
