@@ -195,7 +195,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         _forge('pr', 'continue'),
         MAIN,
-        'Opening the continuation pull request (`continues #N`) of a branch whose pull request already merged and '
+        'Opening the continuation pull request of a branch whose pull request already merged and '
         'whose tip moved past it (LANDED-BRANCH-CONTINUES).',
         _FORGE_WRITE,
     ),
