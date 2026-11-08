@@ -149,10 +149,10 @@ from dev_lab.dev.forgeintent import reattach
 from dev_lab.dev.forgememo import remembering
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgepoller import POLL_LEASE_TICKS, polls
-from dev_lab.dev.forgeproduce import Produced, demote_unreachable, produce
+from dev_lab.dev.forgeproduce import Produced, produce
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
-from dev_lab.dev.forgeservesteps import pressed, repo_wide, retain_storage, review, tidy_runs
+from dev_lab.dev.forgeservesteps import demote_unreachable, pressed, repo_wide, retain_storage, review, tidy_runs
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client, client_for

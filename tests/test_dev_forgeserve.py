@@ -51,7 +51,7 @@ from dev_lab.dev.forgetick import TickReport
 from dev_lab.dev.forgetidy import Hygiene
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart
-from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, outage_env, release_reason
 from dev_lab.dev.shatree import Tree, TreeFailed
 
 _DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
@@ -88,8 +88,10 @@ class _Proc:
         beats: int = 0,
         pid: int | None = None,
         box: ProcessEnd | Refused | object | None = _OWN,
+        *,
+        said: str = '',
     ) -> None:
-        self.code, self.beats, self.pid = code, beats, pid
+        self.code, self.beats, self.pid, self.said = code, beats, pid, said
         self.box = ended(code) if box is _Proc._OWN else box
         self.stdout = iter(f'{line}\n' for line in lines)
 
@@ -239,6 +241,9 @@ def _serve(
         (spawned if spawned is not None else []).append({'argv': argv, **kwargs})
         proc = (procs or {})[argv[argv.index('--') + 2]]  # boxed: after '--', the tree's own interpreter
         record(argv, proc.box)
+        if proc.said:  # the producer declares its outage where serve named
+            target = next(iter(outage_env(Path(argv[argv.index('--outcome') + 1])).values()))
+            Path(target).write_text(proc.said, encoding='utf-8')
         return proc
 
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
@@ -580,8 +585,9 @@ def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Pa
 def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypatch, tmp_path: Path) -> None:
     """PLANTED (live 2026-10-11): a runner over its wall said INCONCLUSIVE; serve said "refused its argv"."""
     for proc, reason in (
-        (_Proc(ProducerExit.INCONCLUSIVE), release_reason(ProducerExit.INCONCLUSIVE)),
-        (_Proc(ProducerExit.UNREACHABLE), RETRYABLE),
+        (_Proc(ProducerExit.INCONCLUSIVE), release_reason(ProducerExit.INCONCLUSIVE, outage=False)),
+        (_Proc(ProducerExit.UNREACHABLE, said='unreachable: npm is missing'), RETRYABLE),
+        (_Proc(ProducerExit.UNREACHABLE), 'released: producer exited 4 without declaring an outage'),
         (_Proc(1, box=Refused('cpu: wants 4 of 3')), RETRYABLE),  # the box had no room in time: open, never red
         (_Proc(1, box=ended(-9, 'memory')), 'released: the box killed it past its declared memory'),
         (_Proc(1, box=None), 'released: the box crashed'),
@@ -609,7 +615,7 @@ def test_an_inconclusive_part_without_its_record_names_the_missing_record(
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(ProducerExit.INCONCLUSIVE)}, forge)
     assert forge.posts[-1][1] == 'error'
-    assert forge.posts[-1][2].startswith(release_reason(ProducerExit.INCONCLUSIVE))
+    assert forge.posts[-1][2].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False))
     assert ('the run wrote no record' in forge.posts[-1][2]) is not kept[0]
 
 
@@ -625,7 +631,7 @@ def test_a_producer_exiting_a_former_box_sentinel_on_its_own_is_judged_by_its_co
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(code)}, forge)
-    assert forge.posts[-1][1:] == ('error', release_reason(code))
+    assert forge.posts[-1][1:] == ('error', release_reason(code, outage=False))
     assert not forge.posts[-1][2].startswith(RETRYABLE)
 
 
@@ -814,14 +820,16 @@ def test_the_card_carries_the_probed_tools_never_the_declarations(monkeypatch, t
 
 
 def test_a_part_whose_infrastructure_did_not_answer_demotes_its_tools(monkeypatch) -> None:
-    """D21 (4): exit 4 on a femm part demotes femm here; a red part (exit 1) is the code's, never the tool's."""
+    """D21 (4): a declared outage on a femm part demotes femm; a red part (exit 1) is the code's, never the tool's."""
     demoted: list = []
-    monkeypatch.setattr(forgeproduce, 'demote', lambda tools, why: demoted.append((tools, why)))
-    monkeypatch.setattr(forgeproduce, 'needs_of_row', lambda _platform: frozenset({'femm', 'windows'}))
+    monkeypatch.setattr(forgeservesteps, 'demote', lambda tools, why: demoted.append((tools, why)))
+    monkeypatch.setattr(forgeservesteps, 'needs_of_row', lambda _platform: frozenset({'femm', 'windows'}))
     red = Produced('r', 'a' * 40, 'femm', (), 1)
-    forgeproduce.demote_unreachable([red])
+    forgeservesteps.demote_unreachable([red])
     assert demoted == [], 'PLANTED CONTROL: a failed test is not a failed tool'
-    forgeproduce.demote_unreachable([dataclasses.replace(red, returncode=ProducerExit.UNREACHABLE)])
+    forgeservesteps.demote_unreachable([dataclasses.replace(red, returncode=ProducerExit.UNREACHABLE)])
+    assert demoted == [], 'PLANTED CONTROL: exit 4 the producer never declared an outage is not a failed tool'
+    forgeservesteps.demote_unreachable([dataclasses.replace(red, returncode=ProducerExit.UNREACHABLE, outage=True)])
     assert [tools for tools, _ in demoted] == [['femm']]
 
 
@@ -1708,6 +1716,8 @@ def test_an_os_row_reaching_the_producer_is_read_as_its_part(monkeypatch, tmp_pa
     )
     assert row == bare
     demoted: list = []
-    monkeypatch.setattr(forgeproduce, 'demote', lambda tools, _why: demoted.append(tools))
-    forgeproduce.demote_unreachable([Produced('r', 'a' * 40, 'femm@windows', (), ProducerExit.UNREACHABLE)])
-    assert demoted == [sorted({'femm'} & forgeproduce.CHECKS.keys())]
+    monkeypatch.setattr(forgeservesteps, 'demote', lambda tools, _why: demoted.append(tools))
+    forgeservesteps.demote_unreachable(
+        [Produced('r', 'a' * 40, 'femm@windows', (), ProducerExit.UNREACHABLE, outage=True)]
+    )
+    assert demoted == [sorted({'femm'} & forgeservesteps.CHECKS.keys())]

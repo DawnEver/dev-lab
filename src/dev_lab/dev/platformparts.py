@@ -100,7 +100,7 @@ from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, R
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
-from dev_lab.dev.producer import ProducerExit
+from dev_lab.dev.producer import unreachable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -526,7 +526,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(post(args.root, args.record))
     except PostFailed as why:
         emit(f'[platformparts] unreachable: {why}', err=True)
-        return ProducerExit.UNREACHABLE
+        return unreachable(str(why))
     except PartRefusal as why:
         emit(f'[platformparts] refused: {why}', err=True)
         return 1
