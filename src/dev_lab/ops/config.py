@@ -39,6 +39,7 @@ from dev_lab.supervise.config import ENV_PREFIX, load_config
 __all__ = [
     'INTEGRATION_REF',
     'Breakglass',
+    'ConfigSource',
     'Consent',
     'Judge',
     'OpsConfig',
@@ -114,6 +115,20 @@ class Judge(Placement):
 #: The ref every host installs and releases from (user ruling 2026-11-06: every repo tracks integrate/main; nothing
 #: waits for a promotion to ``main`` to take effect).
 INTEGRATION_REF: Final = 'integrate/main'
+
+
+@dataclass(frozen=True)
+class ConfigSource:
+    """Where ``config apply`` reads this host's reviewed file: ``path`` at the tip of ``ref`` of ``source``.
+
+    ``token_file`` holds a read-only forge token (root 600); it is sent as an HTTP header in the git process's
+    environment, never on argv. The whole table is security boundary: a change to it needs consent.
+    """
+
+    source: str
+    path: str
+    token_file: str
+    ref: str = 'main'
 
 
 @dataclass(frozen=True)
@@ -278,6 +293,7 @@ class OpsConfig:
     judge: Judge | None = None
     upgrade: Upgrade | None = None
     probe: Probe | None = None
+    config_source: ConfigSource | None = None
     environment_file: str = ''
 
     def checkout(self, url: str) -> Path:
@@ -290,7 +306,7 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe)](
+def _role[T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe, ConfigSource)](
     cls: type[T], table: object, where: str
 ) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -426,6 +442,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         judge=_role(Judge, ops.get('judge'), '[ops.judge]'),
         upgrade=_role(Upgrade, ops.get('upgrade'), '[ops.upgrade]'),
         probe=_role(Probe, ops.get('probe'), '[ops.probe]'),
+        config_source=_role(ConfigSource, ops.get('config'), '[ops.config]'),
         environment_file=environment_file,
     )
 

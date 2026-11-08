@@ -27,9 +27,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
-__all__ = ['ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest']
+if TYPE_CHECKING:
+    from dev_lab.ops.config import ConfigSource
+
+__all__ = ['ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest', 'fetch']
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
 ACTION: Final = 'ops.config'
@@ -62,6 +65,8 @@ type Checks = Mapping[str, list[str]]
 type Runner = Callable[[list[str]], tuple[int, str]]
 #: Redeems a credential for ACTION, raising when it does not consent; returns the credential's subject.
 type Redeem = Callable[[Mapping[str, Any]], str]
+#: Runs one argv with extra environment; its exit code and output (the git clone of :func:`fetch`).
+type EnvRunner = Callable[[list[str], Mapping[str, str]], tuple[int, str]]
 
 
 class ConfigRefused(ValueError):
@@ -102,6 +107,37 @@ def changes(old: Mapping[str, Any], new: Mapping[str, Any]) -> tuple[str, ...]:
 def boundary(changed: tuple[str, ...]) -> tuple[str, ...]:
     """The keys of *changed* no :data:`ROUTINE` pattern admits."""
     return tuple(key for key in changed if not any(fnmatch.fnmatchcase(key, pattern) for pattern in ROUTINE))
+
+
+def fetch(source: ConfigSource, *, run: EnvRunner) -> str:
+    """The text of ``source.path`` at the tip of ``source.ref``, cloned over HTTPS with the host's read token.
+
+    The token goes into the git process's environment as an ``http.extraHeader`` (``GIT_CONFIG_*``), never on
+    argv, and no refusal repeats git's output (it could echo the header).
+
+    Raises:
+        ConfigRefused: the clone failed or the declared file is not in it.
+
+    """
+    token = Path(source.token_file).read_text(encoding='utf-8').strip()
+    env = {
+        'GIT_CONFIG_COUNT': '1',
+        'GIT_CONFIG_KEY_0': 'http.extraHeader',
+        'GIT_CONFIG_VALUE_0': f'Authorization: token {token}',
+        'GIT_TERMINAL_PROMPT': '0',
+    }
+    with tempfile.TemporaryDirectory() as scratch:
+        target = Path(scratch) / 'forge-hosts'
+        argv = ['git', 'clone', '--quiet', '--depth', '1', '--branch', source.ref, source.source, str(target)]
+        status, _said = run(argv, env)
+        if status != 0:
+            msg = f'fetching {source.source}@{source.ref} failed (git exit {status})'
+            raise ConfigRefused(msg)
+        found = target / source.path
+        if not found.is_file():
+            msg = f'{source.source}@{source.ref} has no {source.path}'
+            raise ConfigRefused(msg)
+        return found.read_text(encoding='utf-8')
 
 
 def _write(path: Path, text: str) -> None:

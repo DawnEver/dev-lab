@@ -15,7 +15,7 @@ import os
 import shutil
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +23,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops import (
     access,
     backup,
@@ -224,8 +225,23 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
     return 0
 
 
-def _config_apply(config: OpsConfig, candidate: Path, credential: str) -> int:
-    """``config apply --from <file> [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
+def _git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
+    report = run_network_verb(argv, env=os.environ | dict(env), timeout=300)  # the one retry door
+    return report.returncode, ''  # git's output may echo the header: never returned
+
+
+def _candidate_text(config: OpsConfig, candidate: Path | None) -> str:
+    """``--from <file>`` when given, else ``[ops.config]``'s reviewed file (:func:`configdoor.fetch`)."""
+    if candidate is not None:
+        return candidate.read_text(encoding='utf-8')
+    if config.config_source is None:
+        msg = f'{config.path} declares no [ops.config] source and no --from <file> was given'
+        raise configdoor.ConfigRefused(msg)
+    return configdoor.fetch(config.config_source, run=_git_with_env)
+
+
+def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) -> int:
+    """``config apply [--from <file>] [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
     redeem_ = None
     granted = None
     if credential:
@@ -249,7 +265,7 @@ def _config_apply(config: OpsConfig, candidate: Path, credential: str) -> int:
 
     try:
         done = configdoor.apply(
-            config.path, candidate.read_text(encoding='utf-8'), loads=load, checks=upgrade.checks(config),
+            config.path, _candidate_text(config, candidate), loads=load, checks=upgrade.checks(config),
             run=upgrade.run_check, redeem=redeem_, credential=granted,
         )  # fmt: skip
     except (configdoor.ConfigRefused, ConsentRefused) as refused:
@@ -301,7 +317,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")
     configured = verbs.add_parser('config', help='change this host config through the one door')
     configured.add_argument('action', choices=('apply',))
-    configured.add_argument('--from', dest='candidate', type=Path, required=True, help='the reviewed candidate file')
+    configured.add_argument(
+        '--from', dest='candidate', type=Path, default=None, help='a local candidate file'
+    )  # default: the [ops.config] source
     configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
     for name in ('disk', 'clean'):
         sized = verbs.add_parser(name)
