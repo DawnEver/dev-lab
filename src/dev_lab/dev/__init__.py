@@ -409,6 +409,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
+* :mod:`dev_lab.dev.forgereview_stands` -- a review that stands, or is asked again: a later head reuses the verdict.
 * :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
 * :mod:`dev_lab.dev.reviewruntime` -- the host's ai-lab review runtime, built from the commit dev-lab's lock pins.

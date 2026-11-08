@@ -166,6 +166,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'closedpush',
     'prcontinue',
     'branchreview',
+    # ORIGINAL: a standing verdict and 'review again' were read inline in forgereview; split out 2026-11-07.
+    'forgereview_stands',
     # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
     'prcurrent',
     # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
