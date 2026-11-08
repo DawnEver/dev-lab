@@ -242,5 +242,5 @@ def test_a_capacity_release_is_claimable_and_a_posted_inconclusive_stays_settled
     genuine inconclusive would re-run it every tick. A head stuck that way (67d955f) is superseded by its
     ref's next push, or re-run by a human; from now on a capacity refusal never posts it.
     """
-    posts = [CommitStatus('tests/base', 'error', release_reason(code), '')]
+    posts = [CommitStatus('tests/base', 'error', release_reason(code, outage=code == ProducerExit.UNREACHABLE), '')]
     assert assess(posts, 'tests/base', me=Claim('G', 'alice', NOW + LEASE), now=NOW)[0] == state

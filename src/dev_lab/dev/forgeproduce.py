@@ -64,11 +64,10 @@ from lab_commons.box import GB, Capacity, ProcessEnd, Refused, command, not_admi
 from lab_commons.box import Claim as BoxClaim
 from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.model import Demand
-from lab_commons.compute.presence import demote
-from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
+from dev_lab.dev import producer
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
 from dev_lab.dev.forgeclaim import Work, forge_now
@@ -85,7 +84,7 @@ from dev_lab.dev.producer import RETRYABLE, ProducerExit, box_release_reason, pr
 from dev_lab.dev.servelock import was_stopped
 from dev_lab.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
 
-__all__ = ['BOX_QUEUE_S', 'Produced', 'box_claim', 'boxed', 'demote_unreachable', 'produce']
+__all__ = ['BOX_QUEUE_S', 'Produced', 'box_claim', 'boxed', 'produce']
 
 #: How long a producer waits for its box claim, in seconds: the tick admitted it against the box ledger, so
 #: only a run admitted in between can be in its way -- then the claim is released and retried next tick.
@@ -102,14 +101,7 @@ class Produced:
     argv: tuple[str, ...]
     returncode: int
     stopped: bool = False  # by :mod:`dev_lab.dev.stoprun`, on purpose
-
-
-def demote_unreachable(produced: Sequence[Produced]) -> None:
-    """A part whose infrastructure did not answer (exit 4) demotes every checked tool it needs on this host."""
-    for one in produced:
-        if one.returncode == ProducerExit.UNREACHABLE:
-            tools = sorted(needs_of_row(one.platform) & CHECKS.keys())
-            demote(tools, f'{one.platform} at {one.sha[:12]} exited {int(ProducerExit.UNREACHABLE)} (unreachable)')
+    outage: bool = False  # the producer DECLARED its infrastructure unreachable (:func:`producer.unreachable`)
 
 
 #: Bytes in one gibibyte.
@@ -208,7 +200,7 @@ def produce(
             say(f'{run_tag(item.platform, item.sha)} {close_tree(root, item.sha, item.context)}')
             forget(root, item.sha, item.context)
             code = ProducerExit.UNREACHABLE if waits else ProducerExit.INCONCLUSIVE
-            return Produced(item.ref, item.sha, item.platform, item.argv, code)
+            return Produced(item.ref, item.sha, item.platform, item.argv, code, outage=waits)
         heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
         try:
             argv = (str(tree.python), *item.argv)
@@ -260,7 +252,9 @@ def _run(
         spawn,
         held,
         cwd=tree,
-        env=os.environ | producing(context, item.sha),
+        env=os.environ
+        | producing(context, item.sha)
+        | producer.outage_env(record),  # an outage is DECLARED, never an exit
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -290,6 +284,7 @@ def _run(
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
     ended = read_ended(record)
     record.unlink(missing_ok=True)
+    said = producer.declared_outage(record)
     boxed_out = box_release_reason(ended)  # the box's decision, from its record: never from the exit code
     measured = _measured(ended, usage, declared_gb, max(1.0, (clock() - started).total_seconds()))
     if measured is not None and not stopped:
@@ -300,18 +295,19 @@ def _run(
         _settle(
             client(root),
             item,
-            (returncode, boxed_out),
+            (returncode, boxed_out, said),
             (''.join(heard), record_manifest(root, item.sha, item.context)),
             say,
         )  # a request: its producer posts nothing
     elif posts and posts[-1].state == 'pending':
         manifest = record_manifest(root, item.sha, item.context)
-        reason = 'stopped' if stopped else boxed_out or _named(release_reason(returncode), returncode, manifest)
+        released = release_reason(returncode, outage=said)
+        reason = 'stopped' if stopped else boxed_out or _named(released, returncode, manifest)
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
         fetch(root)
         _carry(root, client(root), item, posts[-1], say)
-    return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped)
+    return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped, outage=said)
 
 
 def _measured(ended: ProcessEnd | object, usage: _Usage, declared_gb: float, wall_s: float) -> Run | None:
@@ -387,15 +383,15 @@ def _named(description: str, returncode: int, record: tuple[str, tuple[tuple[str
 def _settle(
     client: Client,
     item: Work,
-    ended: tuple[int, str | None],
+    ended: tuple[int, str | None, bool],
     made: tuple[str, tuple[str, tuple[tuple[str, str], ...]]],
     say: Callable[[str], None],
 ) -> None:
     """A request's result -- the box's release when it ended the run, else the exit code's -- commented, then posted."""
-    returncode, boxed_out = ended
+    returncode, boxed_out, said = ended
     log, record = made  # the run's log, and its record (shatree.record_manifest)
     host = (item.holder.machine or item.holder.login) if item.holder else '-'
-    state, description = ('error', boxed_out) if boxed_out else result(returncode, host)
+    state, description = ('error', boxed_out) if boxed_out else result(returncode, host, outage=said)
     description = _named(description, returncode, record)
     try:
         number = int(item.context.removeprefix(CONTEXT_PREFIX))

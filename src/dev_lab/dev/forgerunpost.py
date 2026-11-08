@@ -90,11 +90,11 @@ def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None])
                 RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', str(why), context=Context(sha=run.sha)
             )
         )
-        return f'{release_reason(ProducerExit.INCONCLUSIVE)}: {why}'[:DESCRIPTION_MAX]
+        return f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)}: {why}'[:DESCRIPTION_MAX]
     if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
         return f'{RETRYABLE} -- this host had no room: {why}'[:DESCRIPTION_MAX]
     log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named
-    return f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}'.strip()
+    return f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}'.strip()
 
 
 def step(run: Run, **changes: object) -> Run:

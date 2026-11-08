@@ -133,8 +133,8 @@ def test_a_stale_local_claim_is_retaken_by_anyone_serving_the_platform() -> None
 
 def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None:
     """PLANTED CONTROL: the same ``error`` state released for any other reason stays done."""
-    outage = CommitStatus('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
-    inconclusive = CommitStatus('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
+    outage = CommitStatus('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE, outage=True), '', 2)
+    inconclusive = CommitStatus('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE, outage=False), '', 2)
     assert _assess([_pending(ME, 1), outage]) == (OPEN, None)
     assert _assess([_pending(ME, 1), inconclusive]) == (DONE, None)
 
