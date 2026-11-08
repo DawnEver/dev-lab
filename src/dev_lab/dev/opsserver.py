@@ -5,12 +5,16 @@ the integrator deploys (the forge host, its mirrors, the other services) is this
 was a hand-written ``ssh ... sudo ...`` line, which no rule could tell from any other write to any other host.
 
 THE SERVERS ARE THE MACHINE FILE'S ``[[server]]`` TABLES -- ``name``, ``target`` (``ops@<host>``), and optionally
-``root`` (the server's kit checkout, :data:`DEFAULT_ROOT`) and ``config`` (its supervise file,
-:data:`DEFAULT_CONFIG`). Nothing here lists a host, and a name not declared is refused before any ssh.
+``root`` (the server's kit checkout, :data:`DEFAULT_ROOT`), ``config`` (its supervise file,
+:data:`DEFAULT_CONFIG`), ``gitea_data`` (:data:`dev_lab.ops.disk.DEFAULT_GITEA_DATA`) and ``journal_max_mb`` (the
+journal's retention for ``clean``, :data:`dev_lab.ops.disk.DEFAULT_JOURNAL_MAX_MB`). Nothing here lists a host, and a
+name not declared is refused before any ssh.
 
 THE VERBS ARE THE OPS ACCOUNT'S FIXED SUDO LIST (user ruling 2026-11-04), nothing wider: ``install`` (the ops door's
-own install), ``status|restart|reload|logs <unit>`` and ``daemon-reload``. The ops login asks the key AND the user's
-one-time code, so the ssh runs attached to this terminal (:func:`dev_lab.dev.remote.ssh_argv` ``batch=False``);
+own install), ``status|restart|reload|logs <unit>``, ``daemon-reload``, and ``disk`` (read-only) / ``clean`` (only
+the regenerable; :mod:`dev_lab.ops.disk`) -- the forge host's disk alarm names these two as its remedy. The ops
+login asks the key AND the user's one-time code, so the ssh runs attached to this terminal
+(:func:`dev_lab.dev.remote.ssh_argv` ``batch=False``);
 ``--dry-run`` prints the line and runs nothing.
 """
 
@@ -29,8 +33,19 @@ from lab_commons.log import emit
 
 from dev_lab.dev.remote import run, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.ops.disk import DEFAULT_GITEA_DATA, DEFAULT_JOURNAL_MAX_MB
 
-__all__ = ['DEFAULT_CONFIG', 'DEFAULT_ROOT', 'UNIT_VERBS', 'VERBS', 'Server', 'declared_servers', 'main', 'remote_line']
+__all__ = [
+    'DEFAULT_CONFIG',
+    'DEFAULT_ROOT',
+    'DISK_VERBS',
+    'UNIT_VERBS',
+    'VERBS',
+    'Server',
+    'declared_servers',
+    'main',
+    'remote_line',
+]
 
 DEFAULT_ROOT: Final = '/opt/dev-lab'
 DEFAULT_CONFIG: Final = '/etc/dev-lab/supervise.toml'
@@ -41,7 +56,10 @@ UNIT_VERBS: Final = {
     'reload': 'systemctl reload',
     'logs': 'journalctl --no-pager -n 200 -u',
 }
-VERBS: Final = (*UNIT_VERBS, 'daemon-reload', 'install')
+DISK_VERBS: Final = ('disk', 'clean')
+VERBS: Final = (*UNIT_VERBS, 'daemon-reload', 'install', *DISK_VERBS)
+_DATA: Final = re.compile(r'/[A-Za-z0-9/_.-]+')
+_JOURNAL_FLOOR_MB: Final = 50
 _UNIT: Final = re.compile(r'[A-Za-z0-9@_.-]+')
 _TIMEOUT_S: Final = 1800
 
@@ -54,6 +72,8 @@ class Server:
     target: str
     root: str = DEFAULT_ROOT
     config: str = DEFAULT_CONFIG
+    gitea_data: str = DEFAULT_GITEA_DATA
+    journal_max_mb: int = DEFAULT_JOURNAL_MAX_MB
 
 
 def declared_servers(file: Mapping[str, Any]) -> dict[str, Server]:
@@ -64,7 +84,12 @@ def declared_servers(file: Mapping[str, Any]) -> dict[str, Server]:
             msg = f'a [[server]] table needs name and target: {row}'
             raise ValueError(msg)
         out[row['name']] = Server(
-            row['name'], row['target'], row.get('root', DEFAULT_ROOT), row.get('config', DEFAULT_CONFIG)
+            row['name'],
+            row['target'],
+            row.get('root', DEFAULT_ROOT),
+            row.get('config', DEFAULT_CONFIG),
+            row.get('gitea_data', DEFAULT_GITEA_DATA),
+            row.get('journal_max_mb', DEFAULT_JOURNAL_MAX_MB),
         )
     return out
 
@@ -82,7 +107,17 @@ def remote_line(server: Server, verb: str, unit: str | None) -> str:
     if verb == 'daemon-reload':
         return 'sudo systemctl daemon-reload'
     python = PurePosixPath(server.root) / venv_interpreter(os_name='posix')
-    return f'sudo {python} -m dev_lab.ops --config {shlex.quote(server.config)} install'
+    door = f'sudo {python} -m dev_lab.ops --config {shlex.quote(server.config)}'
+    if verb not in DISK_VERBS:
+        return f'{door} install'
+    if not _DATA.fullmatch(server.gitea_data) or '..' in server.gitea_data:
+        msg = f'gitea_data must be an absolute plain path, got {server.gitea_data!r}'
+        raise ValueError(msg)
+    mb = server.journal_max_mb
+    if isinstance(mb, bool) or not isinstance(mb, int) or mb < _JOURNAL_FLOOR_MB:
+        msg = f'journal_max_mb must be an integer >= {_JOURNAL_FLOOR_MB}, got {mb!r}'
+        raise ValueError(msg)
+    return f'{door} {verb} --gitea-data {server.gitea_data} --journal-max-mb {mb}'
 
 
 def main(

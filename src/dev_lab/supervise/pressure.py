@@ -39,6 +39,7 @@ from dev_lab.supervise.reading import Finding, parse_psi
 __all__ = [
     'DOORS',
     'RAM_CRITICAL',
+    'SERVER_DOORS',
     'THRESHOLDS',
     'Declared',
     'Measured',
@@ -86,6 +87,11 @@ DOORS: Final = (
     'python -m dev_lab.dev.branchset --apply  (landed branches and their worktrees)',
     'python -m dev_lab.dev.retention --apply  (the forge runs this host left behind)',
     "the repo's clean runner (output/logs retention)",
+)
+#: A server the integrator owns (``[pressure] owner = "integrator"``) is cleaned from outside, through the ops door.
+SERVER_DOORS: Final = (
+    'python -m dev_lab.dev.opsserver <server> disk  (read-only: df, the largest directories, journal, docker)',
+    'python -m dev_lab.dev.opsserver <server> clean  (journal to its retention, apt, gitea caches, docker prune)',
 )
 
 

@@ -33,7 +33,7 @@ from lab_commons.config import config_path
 
 from dev_lab.dev.servelock import held
 from dev_lab.supervise.notice import Context, Notice, markdown
-from dev_lab.supervise.pressure import DOORS, Measured
+from dev_lab.supervise.pressure import DOORS, SERVER_DOORS, Measured
 from dev_lab.supervise.verdict import Severity
 
 __all__ = [
@@ -194,7 +194,7 @@ def notice(alarm: Mapping[str, Any], *, host: str, owner: str) -> Notice:
         findings=tuple(_consumer(row) for row in alarm.get('consumers') or ()),
         findings_title=_FENCE,
         action=f'{act} (the integrator owns this host).' if owner == INTEGRATOR else f'{act}.',
-        commands=tuple(alarm.get('doors', DOORS)),
+        commands=tuple(SERVER_DOORS if disk and owner == INTEGRATOR else alarm.get('doors', DOORS)),
     )
 
 
