@@ -53,7 +53,7 @@ SUBAGENT: Final = 'subagent'
 USER: Final = 'user'
 ACTORS: Final = (MAIN, SUBAGENT, USER)
 
-_RUNNERS: Final = ('python', 'git', 'sh')
+_RUNNERS: Final = ('python', 'git', 'sh', 'gh')
 
 #: The checkout's own interpreter, one LITERAL per platform layout -- the only interpreter spelling a door row
 #: carries. NOT :data:`dev_lab.dev.venvpath.VENV_INTERPRETER_GLOB` (``.venv/*/python*``): in a permission glob
@@ -270,6 +270,18 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         'Deleting a remote branch only when every commit on it is already on the integration branch or on '
         'another live branch or open pull request; never a force push and never a lossy delete.',
+    ),
+    Door(
+        ('gh', 'workflow', 'enable'),
+        MAIN,
+        'Re-enabling a GitHub Actions workflow of a family repository that the integrator paused '
+        '(user ruling 2026-11-07).',
+    ),
+    Door(
+        ('gh', 'workflow', 'disable'),
+        MAIN,
+        'Pausing a GitHub Actions workflow of a family repository, so it starts no new runs until re-enabled '
+        '(user ruling 2026-11-07).',
     ),
     # ---- remote
     Door(

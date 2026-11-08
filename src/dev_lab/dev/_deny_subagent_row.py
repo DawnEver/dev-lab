@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 
 from dev_lab.dev._deny_forge_rows import VENV_PYTHONS
-from dev_lab.dev.agentpolicy import MAIN, module_verbs
+from dev_lab.dev.agentpolicy import MAIN, POLICY, module_verbs
 
 _INTERPRETER = r'\S*python[\w.]*(?:\.exe)?\s+'
 
@@ -40,6 +40,17 @@ def _main_doors() -> str:
     return '|'.join(alternatives)
 
 
+def _main_client_doors() -> str:
+    """Every forge-CLIENT (``gh``) door the policy table gives the MAIN session alone, as one alternation (derived).
+
+    A ``git`` main door (``merge --ff-only``) stays a subagent's: on its own lane it publishes nothing.
+    """
+    doors = [door.argv for door in POLICY if door.actor == MAIN and door.argv[:1] == ('gh',)]
+    return '|'.join(
+        r'gh(?:\.exe)?\s+' + r'\s+'.join(re.escape(word) for word in argv[1:]) + r'(?![\w-])' for argv in doors
+    )
+
+
 SUBAGENT_NO_PUSH: dict[str, object] = {
     'id': 'SUBAGENT-NO-PUSH',
     'pattern': (
@@ -49,6 +60,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         rf'|{_INTERPRETER}-m\s+dev_lab.dev\.netverb\b[^\n]*\spush\b'
         # Every door the policy table gives the main session alone (agentpolicy.MAIN): PRs, sync, promote, ...
         rf'|{_main_doors()}'
+        rf'|{_main_client_doors()}'
         r'|git(?:\.exe)?\b[^\n]*\s--no-verify\b'
         # PowerShell spells the same skip as an environment assignment.
         r"""|SKIP=|\$env:SKIP\s*=)"""
@@ -69,6 +81,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.integrate promote abc123',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr breakglass 9 --reason x',
+        'gh workflow disable ci.yml -R o/r',
         'SKIP=ruff git commit -m "x"',
         'git commit --no-verify -m "x"',
         "$env:SKIP='ruff'; git commit -m 'x'",
@@ -83,5 +96,6 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge queue',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr close-landedness 3',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x',
+        'gh workflow list -R o/r',
     ),
 }

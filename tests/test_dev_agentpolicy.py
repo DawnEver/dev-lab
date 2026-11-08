@@ -94,3 +94,26 @@ def test_an_unknown_actor_or_runner_or_an_empty_intent_is_refused() -> None:
         Door(('bash', 'x'), MAIN, 'x')
     with pytest.raises(ValueError, match='intent'):
         Door(('python', '-m', 'x'), MAIN, ' ')
+
+
+def test_the_ruled_permissions_of_2026_11_07_are_main_doors() -> None:
+    """User ruling 2026-11-07 (permissions, item 2): ssh through the named doors; toggling a workflow."""
+    main = {door.argv for door in POLICY if door.actor == MAIN}
+    assert ('gh', 'workflow', 'enable') in main
+    assert ('gh', 'workflow', 'disable') in main
+    assert ('python', '-m', 'dev_lab.dev.hpcaccount', 'deploy-fleet') in main
+    assert ('python', '-m', 'dev_lab.dev.opsserver') in main
+    rows = claude_rows()
+    assert 'Bash(gh workflow enable *)' in rows
+    assert 'Bash(gh workflow disable *)' in rows
+
+
+@pytest.mark.parametrize('door', [door for door in POLICY if door.actor == MAIN and door.argv[:1] == ('gh',)])
+def test_a_main_gh_door_is_refused_to_a_subagent(door: Door) -> None:
+    """A forge-client door the main session alone holds is refused to a subagent, derived from the same rows."""
+    assert re.match(f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})', f'{" ".join(door.argv)} ci.yml -R o/r'), door.argv
+
+
+def test_a_gh_read_is_not_refused_to_a_subagent() -> None:
+    """PLANTED CONTROL: only the main session's gh doors are refused, not the client."""
+    assert not re.match(f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})', 'gh workflow list -R o/r')
