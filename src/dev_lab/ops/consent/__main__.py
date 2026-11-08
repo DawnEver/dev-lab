@@ -2,7 +2,7 @@
 
 The code is the USER's: they give it, the agent runs this with it (user ruling 2026-11-08) -- as ``--code``, on stdin,
 or typed at the no-echo prompt of a terminal. Never invented, logged or reused. Writes the credential under
-``~/.motronics/state/consent/``. Exit 0 granted, 2 refused.
+``state/consent/`` of the machine home (``dev_lab.dev.consentguard.state_dir``). Exit 0 granted, 2 refused.
 """
 
 from __future__ import annotations
