@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import agent_guard, agenthooks
+from dev_lab.dev import agent_guard, agenthooks, hook_adoption
 from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
@@ -472,3 +472,23 @@ def test_a_settings_file_enabling_or_omitting_a_disabled_plugin_is_stale(repo: P
     assert 'sharp-review@cc-market' in wiring.detail
     agent_guard.install_guard(repo)
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+
+
+def test_the_rules_file_is_written_from_the_repos_declared_adoption(repo: Path) -> None:
+    """``python -m dev_lab.dev.hook_adoption --adoption <module>``: the renderer a relock re-runs (forge sync).
+
+    PLANTED CONTROL: before the render the file is absent, so a pass is the write and not a reader of nothing.
+    """
+    module = repo / 'scripts' / 'deny_rules.py'
+    module.parent.mkdir(parents=True)
+    module.write_text(
+        'from dev_lab.dev.hook_adoption import HookAdoption\n'
+        'from dev_lab.dev.hooks import Remedy\n'
+        "ADOPTION = HookAdoption(app_name='planted', "
+        "remedies={'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', 'python -m dev_lab.dev.verify')}, "
+        "declared_absent=frozenset({'NETWORK-VERB', 'PUSH-NO-VERIFY', 'RAW-PROCESS-KILL'}))\n",
+        encoding='utf-8',
+    )
+    assert not (repo / agent_guard.RULES_REL).exists()
+    assert hook_adoption.main(['--repo', str(repo), '--adoption', 'scripts/deny_rules.py']) == 0
+    assert (repo / agent_guard.RULES_REL).read_text(encoding='utf-8') == render(ADOPTION)

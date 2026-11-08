@@ -135,6 +135,91 @@ def test_sync_relocks_the_floated_siblings_and_commits_the_lock_in_the_same_sync
     assert git_out(work, 'show', 'HEAD:uv.lock') == 'lab-commons @ new'
 
 
+def test_a_relock_that_moved_the_lock_rerenders_and_commits_the_generated_files_with_it(tmp_path: Path) -> None:
+    """2026-11-07: a relock onto a dev-lab carrying a new deny row left deny-rules.json stale and the consumer red.
+
+    PLANTED CONTROL: a relock that moves nothing renders nothing and commits nothing.
+    """
+    work = _child(tmp_path)
+    commit(work, 'uv.lock', 'dev-lab @ old\n')
+    (work / '.claude' / 'hooks').mkdir(parents=True)
+    commit(work, '.claude/hooks/deny-rules.json', '{"old": 1}\n')
+    forgesync.sync(work, POLICY)
+    before = git_out(work, 'rev-parse', 'HEAD')
+    rendered: list[Path] = []
+
+    def render(root: Path) -> tuple[str, ...]:
+        rendered.append(root)
+        (root / '.claude' / 'hooks' / 'deny-rules.json').write_text('{"new": 1}\n', encoding='utf-8')
+        return ('hook_adoption',)
+
+    assert forgesync.relock(work, door=lambda _root: ('dev-lab',), render=render) == ()
+    assert (rendered, git_out(work, 'rev-parse', 'HEAD')) == ([], before), 'nothing moved, nothing rendered'
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('dev-lab @ new\n', encoding='utf-8')
+        return ('dev-lab',)
+
+    assert forgesync.relock(work, door=door, render=render) == ('dev-lab',)
+    assert rendered == [work]
+    assert git_out(work, 'rev-parse', 'HEAD^') == before, 'ONE commit carries the lock and the renders'
+    assert git_out(work, 'show', '--name-only', '--format=', 'HEAD').splitlines() == [
+        '.claude/hooks/deny-rules.json', 'uv.lock',
+    ]  # fmt: skip
+    assert 'Rendered: hook_adoption' in git_out(work, 'log', '-1', '--format=%b')
+    assert git_out(work, 'status', '--porcelain') == ''
+
+
+def test_a_relock_commits_only_what_it_wrote_and_refuses_a_held_index(tmp_path: Path) -> None:
+    """2026-11-07, dev-lab 93e0ea8c: a staged ``_original_rows.py`` rode along in the relock commit.
+
+    PLANTED CONTROL: a file staged while the relock runs stays staged and out of the commit; one staged before
+    it starts is refused by name, the lock untouched.
+    """
+    work = _child(tmp_path)
+    commit(work, 'uv.lock', 'dev-lab @ old\n')
+    commit(work, 'other.py', 'x = 1\n')
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('dev-lab @ new\n', encoding='utf-8')
+        return ('dev-lab',)
+
+    (work / 'other.py').write_text('x = 2\n', encoding='utf-8')
+    run_git(work, 'add', 'other.py')
+    with pytest.raises(RelockFailed, match=r'other\.py.*commit or unstage it first'):
+        forgesync.relock(work, door=door, render=lambda _root: ())
+    assert git_out(work, 'show', 'HEAD:uv.lock') == 'dev-lab @ old'
+    run_git(work, 'restore', '--staged', '--', 'other.py')
+
+    def racing(root: Path) -> tuple[str, ...]:
+        run_git(root, 'add', 'other.py')
+        return ()
+
+    assert forgesync.relock(work, door=door, render=racing) == ('dev-lab',)
+    assert git_out(work, 'show', '--name-only', '--format=', 'HEAD') == 'uv.lock'
+    assert git_out(work, 'diff', '--cached', '--name-only') == 'other.py', 'still staged, still the owner`s'
+
+
+def test_a_failed_render_restores_the_relock_and_refuses(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the render above commits; here the same relock with a failing renderer leaves no trace."""
+    work = _child(tmp_path)
+    commit(work, 'uv.lock', 'dev-lab @ old\n')
+    before = git_out(work, 'rev-parse', 'HEAD')
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('dev-lab @ new\n', encoding='utf-8')
+        return ('dev-lab',)
+
+    def render(root: Path) -> tuple[str, ...]:
+        (root / '.gitignore').write_text('half\n', encoding='utf-8')
+        msg = 'the renderer famfiles exited 1'
+        raise RelockFailed(msg)
+
+    with pytest.raises(RelockFailed, match='famfiles exited 1'):
+        forgesync.relock(work, door=door, render=render)
+    assert (git_out(work, 'status', '--porcelain'), git_out(work, 'rev-parse', 'HEAD')) == ('', before)
+
+
 def test_a_failed_relock_restores_every_file_it_touched_then_refuses(tmp_path: Path) -> None:
     """User ruling 2026-11-07: a sync failing partway leaves the tree clean, so the next sync is not refused.
 
