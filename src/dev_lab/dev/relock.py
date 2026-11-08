@@ -17,10 +17,11 @@ Now the relock lives on ONE branch, :data:`BRANCH`, with no sha in its name:
 * nothing due: an open relock pull request is closed (integration already holds what it carried), else nothing;
 * the open relock already carries exactly these moves on exactly this integration tip (:func:`carried`): nothing;
 * else the door rewrites the lock ON THE CURRENT TIP -- a tip that moved while the pull request was open is
-  rebuilt on, never merged into -- and the files the new pin renders are rendered again in the same tree
-  (:func:`rerender`); both are ONE commit on integration, force-pushed to :data:`BRANCH` with a lease on the
-  head it replaces (a racing writer loses the push and the next tick reads afresh), and the open pull request's
-  body is rewritten, or one is opened. It merges like every other once its parts pass.
+  rebuilt on, never merged into -- and every renderer due in the tree is run again with the new pin
+  (:func:`rerender`, read off :data:`dev_lab.dev.famfiles.RENDERERS`); both are ONE commit on integration,
+  force-pushed to :data:`BRANCH` with a lease on the head it replaces (a racing writer loses the push and the
+  next tick reads afresh), and the open pull request's body is rewritten, or one is opened. It merges like every
+  other once its parts pass.
 
 THIRD-PARTY MOVES ON A CADENCE, IN-HOUSE MOVES AT ONCE (user ruling 2026-11-05). A moved package is IN-HOUSE when
 the lock sources it from git FOLLOWING a line -- no ``rev``/``tag`` pin (:func:`in_house`): exactly a floated
@@ -53,7 +54,7 @@ from urllib.parse import parse_qs, unquote
 import lab_commons.launch as _door
 
 from dev_lab.dev._dep_project import follow_pin, uv_remedy
-from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
+from dev_lab.dev.famfiles import due_renderers, render_argv
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgenotice import duration
@@ -82,7 +83,6 @@ __all__ = [
     'DEFAULT_LINE',
     'FULL',
     'IN_HOUSE',
-    'RENDERED',
     'SCOPE',
     'TITLE',
     'Floated',
@@ -116,8 +116,6 @@ DEFAULT_CADENCE: Final = timedelta(days=1)
 _TABLE: Final = 'relock'
 _KEYS: Final = frozenset({'third_party_every'})
 
-#: The directories a render writes (:data:`dev_lab.dev.ciworkflows.WORKFLOW_DIRS`), staged with the lock.
-RENDERED: Final = tuple(sorted({path.as_posix() for path in WORKFLOW_DIRS.values()}))
 
 #: How much of a sha names a commit in what the relock says -- enough to be unique on one host, short to read.
 SHORT: Final = 12
@@ -277,6 +275,10 @@ def door_upgrade(tree: Path, packages: Sequence[str] = ()) -> int:
     """The one writer of a lock: ``dev_lab.dev.dep --lock-upgrade <tree>``, moving only *packages* when named."""
     argv = [sys.executable, '-m', 'dev_lab.dev.dep', '--lock-upgrade', str(tree)]
     argv += [f'--upgrade-package={package}' for package in packages]
+    return _exit(argv, tree)
+
+
+def _exit(argv: list[str], tree: Path) -> int:
     return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
 
 
@@ -293,16 +295,23 @@ def _tree_python(tree: Path) -> str:
     raise RelockFailed(msg)
 
 
-def rerender(tree: Path) -> int:
-    """Render *tree*'s generated workflows with the dev-lab its lock now pins (``dev_lab.dev.ciworkflows render``).
+def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _exit) -> tuple[str, ...]:
+    """Run every renderer due in *tree* (:func:`dev_lab.dev.famfiles.due_renderers`) with its NEW interpreter.
 
-    A tree that declares no workflow table renders nothing and answers 0.
+    The rendered files depend on the dev-lab the lock now pins, so each runs under the tree's own ``.venv`` the
+    door re-synced. Answers the renderers run; a tree holding no generated file runs none. RAISES
+    :class:`RelockFailed` naming the renderer when its declared input is missing or it exits non-zero.
     """
-    manifest = tree / 'pyproject.toml'
-    if not manifest.is_file() or '[tool.dev_lab.ci' not in manifest.read_text(encoding='utf-8'):
-        return 0
-    argv = [_tree_python(tree), '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tree)]
-    return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
+    python = _tree_python(tree) if (due := due_renderers(tree)) else ''
+    try:
+        commands = [(renderer.name, render_argv(renderer, tree, python)) for renderer in due]
+    except ValueError as exc:
+        raise RelockFailed(str(exc)) from exc
+    for name, argv in commands:
+        if (exited := run(argv, tree)) != 0:
+            msg = f'the renderer {name} exited {exited} in {tree}: {" ".join(argv[1:])}'
+            raise RelockFailed(msg)
+    return tuple(name for name, _ in commands)
 
 
 def _follow_host_uv(version: str) -> str:
@@ -374,7 +383,7 @@ def carry(
     uv: Callable[[], str] = newest_uv,
     follow_uv: Callable[[str], str] = _follow_host_uv,
     upgrade: Callable[[Path, Sequence[str]], int] = door_upgrade,
-    rerender: Callable[[Path], int] = rerender,
+    rerender: Callable[[Path], Sequence[str]] = rerender,
     remote_head: Callable[[Path], str] = _remote_head,
     push: Callable[[Path, str], None] = _push,
 ) -> str:
@@ -423,11 +432,8 @@ def carry(
         if not _must(tree, 'status', '--porcelain', '--', *pinned):
             msg = f'the dependency door left {" and ".join(pinned)} unchanged though the resolution moves it ({scope})'
             raise RelockFailed(msg)
-        if (exited := rerender(tree)) != 0:
-            msg = f'the render of the generated files exited {exited} after relocking {tip[:SHORT]} ({scope})'
-            raise RelockFailed(msg)
-        rendered = [path for path in RENDERED if (tree / path).is_dir()]
-        _must(tree, 'add', '--', *pinned, *rendered)
+        rerender(tree)
+        _must(tree, 'add', '--all')  # the relock's own detached tree: all it holds is the lock and the renders
         body = _body(tip, scope, lines, held)
         _must(tree, 'commit', '-q', '-m', TITLE, '-m', body, '-m', f'{SCOPE}: {scope}')
         push(tree, lease)

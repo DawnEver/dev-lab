@@ -500,7 +500,8 @@ SPELLING_HEADROOM = 3
 # Re-taken 2026-10-17 at 497: the launch door (one more spelling per module, 2026-10-16) and dev.forgedemand (D4).
 # Re-taken 2026-10-20 at 531 by both famtests.onboarding (#181) and the declared review command (#177);
 # the tighter of the two floors stands.
-CASE_FLOOR = 474
+# Re-taken 2026-11-08 at 951 on the #313 merge of integrate/main (the kit grew past the 474 floor's headroom).
+CASE_FLOOR = 900
 CASE_HEADROOM = 90
 
 #: The sub-packages of the kit under measurement, read from the same walk `kit_modules` does.

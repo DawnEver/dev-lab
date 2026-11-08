@@ -28,7 +28,9 @@ from dev_lab.dev import forgereview_pointer as fp
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB, Backend
 from dev_lab.dev.actionsartifact import zipped
-from dev_lab.dev.artefacts import Config, FolderStore, Ref, pack
+from dev_lab.dev.artefactfolder import FolderStore
+from dev_lab.dev.artefactpack import pack
+from dev_lab.dev.artefacts import Config, Ref
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeapp import App
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
@@ -342,7 +344,7 @@ def _forge_a_bundle(prepared: Prepared, tmp_path: Path) -> tuple[Ref, str]:
     tree = tmp_path / 'forged'
     tree.mkdir()
     (tree / fp.BUNDLE_FILE).write_text('{"version": 1}', encoding='utf-8')
-    archive = pack(tree, [tree / fp.BUNDLE_FILE], tmp_path / 'forged.tar.gz')
+    archive = pack(tree, [tree / fp.BUNDLE_FILE], tmp_path / 'forged.tar.gz').path
     head = prepared.forge.pull.head_sha
     ident = f'{head[:12]}-review-{"f" * 16}-20261104T000000Z'
     return prepared.store.put(ident, archive), 'sha256:' + 'f' * 64

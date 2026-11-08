@@ -54,6 +54,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev.actionsartifact import ArtifactRefused, run_member, upload
+from dev_lab.dev.artefactpack import pack
 from dev_lab.dev.artefacts import (
     ARCHIVE,
     ATTACHMENT_LIMIT_MB,
@@ -63,7 +64,6 @@ from dev_lab.dev.artefacts import (
     check_key,
     config_from,
     object_key,
-    pack,
     resolve,
     run_id,
     store_for,
@@ -205,7 +205,7 @@ def prepare(
         tree = Path(scratch) / 'tree'
         tree.mkdir()
         (tree / BUNDLE_FILE).write_bytes(data)
-        archive = pack(tree, [tree / BUNDLE_FILE], Path(scratch) / f'bundle{ARCHIVE}')
+        archive = pack(tree, [tree / BUNDLE_FILE], Path(scratch) / f'bundle{ARCHIVE}').path
         store = store_for(config_from(*manifest), client, client.forge.repo, size=archive.stat().st_size)
         ident = run_id(pull.head_sha, _PLATFORM, digest.removeprefix('sha256:')[:_DIGEST_ID], now())
         ref = store.put(ident, archive)
