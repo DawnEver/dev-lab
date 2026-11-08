@@ -1,7 +1,8 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
-``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``.
+``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
+(:mod:`dev_lab.ops.disk`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -21,7 +22,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
-from dev_lab.ops import access, backup, breakglass, install, judge, offsite, probe, promote, sshkey, totp, upgrade
+from dev_lab.ops import access, backup, breakglass, disk, install, judge, offsite, probe, promote, sshkey, totp, upgrade
 from dev_lab.ops.config import Consent, OpsConfig, load
 from dev_lab.ops.consent import serve as consent_serve
 from dev_lab.ops.consent.client import public_key
@@ -244,7 +245,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     opened.add_argument('--force', action='store_true', help='replace an existing secret')
     opened.add_argument('--uri', action='store_true', help='print the otpauth URI, not its QR')
     opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")
+    for name in ('disk', 'clean'):
+        sized = verbs.add_parser(name)
+        sized.add_argument('--gitea-data', default=disk.DEFAULT_GITEA_DATA)
+        sized.add_argument('--journal-max-mb', type=int, default=disk.DEFAULT_JOURNAL_MAX_MB)
     args = parser.parse_args(argv)
+    if args.verb in {'disk', 'clean'}:  # read only the disk: no role config is needed to measure or free it
+        return (
+            disk.measure(args.gitea_data) if args.verb == 'disk' else disk.clean(args.gitea_data, args.journal_max_mb)
+        )
     try:
         config = load(args.config)
     except (ValueError, TypeError) as bad:

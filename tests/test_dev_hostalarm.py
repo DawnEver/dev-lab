@@ -20,7 +20,7 @@ from dev_lab.supervise.components import pressure as component
 from dev_lab.supervise.components.pressure import HostPressure
 from dev_lab.supervise.consumers import Consumer
 from dev_lab.supervise.notice import Notice, headline, markdown
-from dev_lab.supervise.pressure import DOORS, Measured
+from dev_lab.supervise.pressure import DOORS, SERVER_DOORS, Measured
 from dev_lab.supervise.reading import Finding
 from dev_lab.supervise.verdict import Severity
 
@@ -59,7 +59,7 @@ def test_the_hook_reminds_once_is_silent_within_the_window_and_reminds_again_aft
     first = _hook('s1', NOW, capsys)
     assert first.startswith('**CRITICAL** · gitea')
     assert json.dumps(LANE) in first
-    assert DOORS[0] in first
+    assert SERVER_DOORS[0] in first, "the gitea host is the integrator's: its remedy is the ops door"
     assert 'the integrator' in first
     assert _hook('s1', NOW + timedelta(minutes=29), capsys) == ''
     assert _hook('s2', NOW + timedelta(minutes=29), capsys) != ''
@@ -312,3 +312,20 @@ def test_a_host_supervision_measures_is_not_measured_again_by_the_forge_tick(tmp
     hostalarm.step(tmp_path, 'r', who='gitea', alarm=raised.append, table={}, measuring=measuring)
     assert calls == [1]
     assert [a.about for a in raised] == ['disk:/']
+
+
+def test_a_disk_alarm_on_a_host_the_integrator_owns_names_the_ops_door_verbs() -> None:
+    """The forge host is cleaned from outside: a workstation's doors (branchset, retention) do nothing there."""
+    alarm = {
+        'kind': 'disk:/var/lib/gitea',
+        'severity': 'warning',
+        'measurement': 'disk /var/lib/gitea full in 2.5 days',
+        'first_seen': '2026-11-08T03:30:00Z',
+        'last_seen': '2026-11-08T03:30:00Z',
+    }
+    server = hostalarms.notice(alarm, host='forge-a1', owner=hostalarms.INTEGRATOR).commands
+    assert any('opsserver <server> disk' in door for door in server)
+    assert any('opsserver <server> clean' in door for door in server)
+    assert not set(server) & set(DOORS)
+    workstation = hostalarms.notice(alarm, host='G', owner=hostalarms.AGENTS).commands
+    assert tuple(workstation) == DOORS, 'CONTROL: a workstation keeps its own doors'
