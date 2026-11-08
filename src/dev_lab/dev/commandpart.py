@@ -36,7 +36,7 @@ from lab_commons.log import emit
 from dev_lab.dev.localpart import local_record, post_local
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import part_context, record_directory
-from dev_lab.dev.producer import ProducerExit, full_suite_refusal
+from dev_lab.dev.producer import ProducerExit, full_suite_refusal, unreachable
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -64,7 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         code = _door.run(command, cwd=args.root, check=False).returncode
     except (OSError, subprocess.CalledProcessError) as cannot:
         emit(f'commandpart: unreachable -- cannot run {command[0]!r} here: {cannot}', err=True)
-        return ProducerExit.UNREACHABLE
+        return unreachable(f'cannot run {command[0]!r}: {cannot}')
     sha = head.stdout.strip()
     node = ' '.join(command)
     cell = upgraded('passed') if code == 0 else upgraded('failed', f'{node} exited {code}')

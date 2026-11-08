@@ -1,9 +1,9 @@
-"""The ACCOUNT steps of ``dev_lab.dev.hpchost deploy`` -- what is checked or written before anything is installed.
+"""The ACCOUNT steps of ``dev_lab.dev.hpcaccount deploy`` -- what is checked or written before anything is installed.
 
 :func:`credentials` checks git's credential helper and its store, every repo's ``git ls-remote`` and the
 forge API calls a tick makes (:func:`auth_check`); :func:`grant` writes this account's own
 ``[[hpc.grant]]`` when the machine file has none. Each reports and is safe to repeat; the pure checks
-they apply are :mod:`dev_lab.dev.hpchost.checks`, and :mod:`dev_lab.dev.hpchost.deploy` runs them in order.
+they apply are :mod:`dev_lab.dev.hpcaccount.checks`, and :mod:`dev_lab.dev.hpcaccount.deploy` runs them in order.
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.hpchost.checks import grant_of, store_problem
-from dev_lab.dev.hpchost.spec import Deployment, has_grant, render_grant
-from dev_lab.dev.hpchost.steps import Step
+from dev_lab.dev.hpcaccount.checks import grant_of, store_problem
+from dev_lab.dev.hpcaccount.spec import Deployment, has_grant, render_grant
+from dev_lab.dev.hpcaccount.steps import Step
 
 __all__ = ['ApiCheck', 'auth_check', 'credentials', 'grant']
 

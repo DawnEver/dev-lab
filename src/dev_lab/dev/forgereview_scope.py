@@ -11,9 +11,12 @@ last), and what the total leaves out is LISTED (:attr:`Scope.unread`) in the rev
 whole-range "structure" review: its path-less slice was rendered by ai-lab as an ``agent`` call the headless run
 mode refuses, so every reviewer reported ``unsupported`` and the head was never reviewed.
 
-* THE RANGE is ``<base>..<head>`` where *base* is the merge base with the integration branch -- a merge of
-  ``integrate/main`` moves the merge base with it, so the branch's own change is what is read, and a review (the
-  first, or one after the PR grew or was asked for) reads the PR's whole own change, never an increment.
+* THE RANGE is ``<base>..<head>``, *base* from ONE rule (:func:`review_base`): the merge base with the
+  integration branch -- a merge of ``integrate/main`` moves the merge base with it, so the branch's own change is
+  what is read -- unless the PR CONTINUES a landed one (LANDED-BRANCH-CONTINUES, :mod:`dev_lab.dev.branchreview`):
+  then the LAST LANDED HEAD, when it is newer, so the continuation's review reads only the increment pushed after
+  its predecessor merged, whatever the merge method (a squash leaves the landed head off integration). A change
+  that touches previously reviewed code is in scope: scope is what the diff touches.
 * GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev.famfiles.GENERATED`) and
   the globs the repo declares (``derived``). Their generator is reviewed, not its output.
 * CODE ONLY (user ruling 2026-10-29): a review reads what executes -- source, tests, scripts, and the build and
@@ -62,6 +65,7 @@ __all__ = [
     'lens_of',
     'plan',
     'prefetch',
+    'review_base',
     'reviewable',
 ]  # fmt: skip
 
@@ -78,7 +82,7 @@ PRINCIPLES_FIELD: Final = '{principles}'
 SUMMARY_FIELD: Final = '{summary}'
 
 #: Replaced by the path of a JSON file ``{"disposed": [{"id", "reason"}]}``: findings the engine drops and lists
-#: as disposed earlier. Nothing is disposed of in a one-shot review, so the forge hands it an empty list.
+#: as disposed earlier: a continuation's carried findings already resolved or deferred, else an empty list.
 DISPOSED_FIELD: Final = '{disposed}'
 
 #: The lenses, strictest first: a slice is reviewed under exactly one.
@@ -212,6 +216,22 @@ def _pack(lens: str, sizes: dict[str, int], budget: int, moves: Mapping[str, str
     return out
 
 
+def _ancestor(root: Path, older: str, newer: str) -> bool:
+    return not git(root, 'merge-base', '--is-ancestor', older, newer, ok=(0, 1))[0]
+
+
+def review_base(root: Path, target: str, head: str, since: str = '') -> str:
+    """What *head*'s review reads from: its merge base with *target*, else *since* (the module docstring).
+
+    *since* -- a continuation's last landed head -- is taken when it is an ancestor of *head* and newer than the
+    merge base; a landed head the branch no longer descends from (a rewritten branch) is not.
+    """
+    base = git(root, 'merge-base', target, head)[1].strip()
+    if since and since != base and _ancestor(root, since, head) and _ancestor(root, base, since):
+        return since
+    return base
+
+
 @dataclass(frozen=True)
 class Budget:
     """The declared bounds and globs a scope is cut by (``[tool.dev_lab.review]``)."""
@@ -232,12 +252,14 @@ def plan(
     budget: Budget,
     *,
     sliceable: bool = True,
+    since: str = '',
 ) -> Scope:
     """The :class:`Scope` of *head*'s review against *target*, cut by *budget* (the module docstring).
 
     A command that cannot be told a slice's paths (not *sliceable*) is run once, its slice naming every path.
+    *since* is a continuation's last landed head (:func:`review_base`).
     """
-    reviewed_range = f'{git(root, "merge-base", target, head)[1].strip()}..{head}'
+    reviewed_range = f'{review_base(root, target, head, since)}..{head}'
     every, moves, pure = _diff(root, reviewed_range)
     sizes = _code(every, budget)
     outside = sum(reviewable(path, budget.derived) for path in every) - len(sizes)
@@ -269,20 +291,21 @@ def _code(every: Mapping[str, int], budget: Budget) -> dict[str, int]:
     }
 
 
-def code_bytes(root: Path, target: str, head: str, budget: Budget) -> int:
-    """The reviewable code bytes of *head*'s whole own change against *target*: what a PR's growth is measured in."""
-    since = git(root, 'merge-base', target, head)[1].strip()
-    return sum(_code(_diff(root, f'{since}..{head}')[0], budget).values())
+def code_bytes(root: Path, target: str, head: str, budget: Budget, since: str = '') -> int:
+    """The reviewable code bytes of *head*'s own change from :func:`review_base`: what a PR's growth is measured in."""
+    base = review_base(root, target, head, since)
+    return sum(_code(_diff(root, f'{base}..{head}')[0], budget).values())
 
 
 def gather(
     reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path, *,
-    pr_body: str,
+    pr_body: str, disposed: Sequence[tuple[str, str]] = (),
 ) -> str:  # fmt: skip
     """The slices' outputs merged over *reviewed*; with several, the *synthesis* command's reading of them merged in.
 
     *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
-    the principles file as :data:`PRINCIPLES_FIELD` and an empty disposed file as :data:`DISPOSED_FIELD`; the first
+    the principles file as :data:`PRINCIPLES_FIELD` and the *disposed* ``(id, reason)`` pairs -- a continuation's
+    carried findings already resolved or deferred, none otherwise -- as :data:`DISPOSED_FIELD`; the first
     slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``. A slice whose
     batch is still running (:class:`~dev_lab.dev.forgereview_command.ReviewPending`) does not stop the slices after
     it: each submits its own, and the first pending is raised once all have run.
@@ -293,7 +316,8 @@ def gather(
         body = Path(scratch) / 'pr-body.md'
         body.write_text(pr_body, encoding='utf-8')
         gone = Path(scratch) / 'disposed.json'
-        gone.write_text(json.dumps({'disposed': []}), encoding='utf-8')
+        rows = [{'id': key, 'reason': why} for key, why in disposed]
+        gone.write_text(json.dumps({'disposed': rows}), encoding='utf-8')
 
         def filled(argv: Sequence[str], *, summarizes: bool = False) -> list[str]:
             flags = ['--pr-body', str(body)] if summarizes else ['--no-summary']

@@ -141,7 +141,7 @@ class HostCard:
     withholds: tuple[str, ...] = ()  # machine-file [serve] withhold: resources it keeps for its own work
     verify: tuple[str, ...] = ()  # [deploy] repos verify: the contexts it produces first (dev_lab.dev.forgeaffinity)
     size: Mapping[str, float] = field(default_factory=dict)  # a box's cpu and mem_gb after its reserve; {}: unstated
-    role: str = ''  # a cluster account's [deploy] role (dev_lab.dev.hpchost.spec); '' on a box
+    role: str = ''  # a cluster account's [deploy] role (dev_lab.dev.hpcaccount.spec); '' on a box
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -377,7 +377,7 @@ def publish_card(
     standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
     ``[serve] parts`` rule, *size* a box's size (what a part larger than any live host is refused against),
     *verify* the contexts this account produces first (:mod:`dev_lab.dev.forgeaffinity`), *role* a cluster
-    account's ``[deploy] role`` (:mod:`dev_lab.dev.hpchost.spec`).
+    account's ``[deploy] role`` (:mod:`dev_lab.dev.hpcaccount.spec`).
     """
     progress = progress or {}
     built = client(root)

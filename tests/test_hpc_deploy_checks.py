@@ -8,8 +8,8 @@ from typing import Final
 
 import pytest
 
-from dev_lab.dev.hpchost import checks as deploy_checks
-from dev_lab.dev.hpchost.spec import Deployment, Repo
+from dev_lab.dev.hpcaccount import checks as deploy_checks
+from dev_lab.dev.hpcaccount.spec import Deployment, Repo
 
 URL: Final = 'https://forge.example.org/o/r.git'
 

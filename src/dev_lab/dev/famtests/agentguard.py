@@ -56,7 +56,7 @@ import shutil
 import tomllib
 from typing import TYPE_CHECKING
 
-from dev_lab.dev._deny_rows import RETIRED_IDS
+from dev_lab.dev._deny_rows import retired_row
 from dev_lab.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_installation
 from dev_lab.dev.agenthooks import run_engine
 from dev_lab.dev.family import declared_table
@@ -220,7 +220,7 @@ def assert_doors_name_live_rules(*, root: Path, rules: Sequence[DenyRule] = DENY
     stale = sorted(set(doors) - known)
     if stale:
         named = '; '.join(
-            f'{key} is retired, rename it {RETIRED_IDS[key]}' if key in RETIRED_IDS else f'{key} is no rule'
+            f'{key} is retired, rename it {retired_row(key)}' if retired_row(key) else f'{key} is no rule'
             for key in stale
         )
         _refuse(f'[tool.dev_lab.doors] in {manifest}: {named}. A door under a key no rule reads is never offered.')

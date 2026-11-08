@@ -31,7 +31,6 @@ from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview import (
     NEEDS_MAINTAINER,
     REVIEW_AGAIN_GROWTH,
-    ask_again,
     review_pull,
     review_tick,
     step,
@@ -59,6 +58,7 @@ from dev_lab.dev.forgereview_declared import (
 )
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_runtimes import HOST_FIELD, retired_table
+from dev_lab.dev.forgereview_stands import ask_again
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.lanepolicy import Policy

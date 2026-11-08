@@ -39,6 +39,12 @@ re-render; never hand-edit a rendered file.
   `[tool.dev_lab.ci."<file>.yml"]` (deep-merged over the base) or declares its own.
   `python -m dev_lab.dev.ciworkflows render` writes `.github/workflows/*.yml` as stamped JSON (JSON is YAML);
   `check` refuses a hand edit or an undeclared workflow, naming the render command.
+- **A relock re-renders.** Every generated row of `famfiles.PROJECT_FILES` names its renderer, and
+  `famfiles.RENDERERS` is read off those rows. After a relock moves the lock, `forge sync` and the forge relock
+  run each renderer whose file the tree holds, with the tree's re-synced `.venv`, and commit the output with the
+  lock (`relock.rerender`); a failing renderer restores the tree and refuses. What a renderer reads from the repo
+  is declared under `[tool.dev_lab.render]`: `deltas` (the famfiles delta module), `adoption` (the module
+  declaring the deny-rules `ADOPTION`) and `shell_doors` (the autodoors shell doors).
 
 ## The files
 
@@ -66,7 +72,8 @@ re-render; never hand-edit a rendered file.
 
 ## The interpreter spelling
 
-One owner: `dev_lab.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`, `INTERPRETER_ALLOW_ENTRY`).
-Rendered from it: the allow row `Bash(.venv/*/python* *)`, and the deny row `BARE-INTERPRETER`, which refuses
+One owner: `dev_lab.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`). Rendered from it: one allow row
+per door and layout (`dev_lab.dev.agentpolicy.INTERPRETERS`; no blanket interpreter row, user ruling
+2026-11-07), and the deny row `BARE-INTERPRETER`, which refuses
 `uv run`, `uvx` and a bare `python`/`python3`/`py` and names the venv interpreter instead. A repo whose
 user-facing CLI runs through `uv run` opens exactly that with its own `Remedy.allow`.

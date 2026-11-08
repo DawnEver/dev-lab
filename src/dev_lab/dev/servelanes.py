@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev.hpchost.spec import KIT, host_serve_argv
+from dev_lab.dev.hpcaccount.spec import KIT, host_serve_argv
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

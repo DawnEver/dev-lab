@@ -1,4 +1,4 @@
-"""``python -m dev_lab.dev.hpchost deploy`` -- make this account's login host a ``forge serve`` host, in one run.
+"""``python -m dev_lab.dev.hpcaccount deploy`` -- make this account's login host a ``forge serve`` host, in one run.
 
 WHAT IS DEPLOYED IS DATA in this account's machine file (:mod:`lab_commons.config`, ``[deploy]``) -- never in
 a tracked file, since the forge, its repos and the login host are private to the deployment::
@@ -22,7 +22,7 @@ once; a later run with flags that disagree is refused, naming the file); every l
 its checkout; whether this account also serves dev-lab's queue is that entry's ``serve``.
 
 STEPS, each one reporting, each one safe to repeat: refuse an undeclared ``role``; refuse off the declared host;
-check the account BEFORE anything changes (:mod:`dev_lab.dev.hpchost.account`: git's credential helper and
+check the account BEFORE anything changes (:mod:`dev_lab.dev.hpcaccount.account`: git's credential helper and
 its store, every repo's ``git ls-remote``, and the forge API calls a tick makes); write this account's own
 ``[[hpc.grant]]`` when it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy
 repository -- IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
@@ -37,7 +37,7 @@ are then not claimed here); replace this tool's marked crontab lines (one per se
 ``[schedule] tick_minutes`` at a minute offset derived per account, under ``flock -n``)
 and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes nothing;
 ``--remove`` deletes the marked lines only. A ``research`` account gets every step but the serve: its marked
-lines are removed (each printed) and none is written (:func:`dev_lab.dev.hpchost.spec.ticked`). No credential is
+lines are removed (each printed) and none is written (:func:`dev_lab.dev.hpcaccount.spec.ticked`). No credential is
 ever printed.
 
 A REFUSAL BELONGS TO THE REPO THAT EARNED IT (incident 2026-10-13: one repo still declaring a retired
@@ -71,8 +71,8 @@ from lab_commons.hpc.declared import REFUSALS
 from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 
-from dev_lab.dev.hpchost.account import ApiCheck, auth_check, credentials, grant
-from dev_lab.dev.hpchost.checks import (
+from dev_lab.dev.hpcaccount.account import ApiCheck, auth_check, credentials, grant
+from dev_lab.dev.hpcaccount.checks import (
     LOGIN_MARK,
     MERGE_TREE_GIT,
     login_files,
@@ -81,7 +81,7 @@ from dev_lab.dev.hpchost.checks import (
     runs,
     tool_plan,
 )
-from dev_lab.dev.hpchost.spec import (
+from dev_lab.dev.hpcaccount.spec import (
     DEFAULT_PYTHON,
     DEFAULT_ROOT,
     KIT,
@@ -100,7 +100,7 @@ from dev_lab.dev.hpchost.spec import (
     tick_environment,
     ticked,
 )
-from dev_lab.dev.hpchost.steps import Step, Tools, build, crontab, declared, update
+from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, update
 
 __all__ = ['deploy', 'main']
 
@@ -122,7 +122,7 @@ Refused = dict[str, str]
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpchost deploy', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount deploy', description=__doc__.splitlines()[0])
     parser.add_argument('--config', type=Path, help='the machine file holding [deploy] (default: lab_commons.config)')
     parser.add_argument('--host', help='declare: the one login host serving this account')
     parser.add_argument(

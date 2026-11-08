@@ -4,7 +4,7 @@ Family policy (user ruling 2026-10-27): every coding agent in every family repo 
 every reviewer judges a change against them. ONE source, two derivations:
 
 * :func:`render` -> ``.claude/rules/principles.md`` (:data:`PAGE_REL`), written into each repo by
-  ``hook_install --install`` (:func:`write_page`) and pinned committed-equals-rendered by
+  :mod:`dev_lab.dev.famfiles` and pinned committed-equals-rendered by
   :mod:`dev_lab.dev.famtests.principlespage`;
 * ``python -m dev_lab.dev.principles --json`` -> the payload the review command hands ai-lab
   (``--principles``, :data:`dev_lab.dev.forgereview_scope.PRINCIPLES_FIELD`).
@@ -17,14 +17,13 @@ from __future__ import annotations
 import argparse
 import json
 import textwrap
-from pathlib import Path
 from typing import Any, Final, NamedTuple
 
 from lab_commons.log import emit
 
 from dev_lab.dev.docwidth import WIDTH_CEILING
 
-__all__ = ['PAGE_REL', 'PRINCIPLES', 'Principle', 'main', 'payload', 'render', 'write_page']
+__all__ = ['PAGE_REL', 'PRINCIPLES', 'Principle', 'main', 'payload', 'render']
 
 
 class Principle(NamedTuple):
@@ -101,17 +100,6 @@ def render() -> str:
             break_on_hyphens=False,
         )
     return '\n'.join(lines) + '\n'
-
-
-def write_page(repo: Path) -> bool:
-    """Write :data:`PAGE_REL` under *repo* when it differs from :func:`render`; whether it wrote."""
-    page = repo / PAGE_REL
-    text = render()
-    if page.is_file() and page.read_text(encoding='utf-8') == text:
-        return False
-    page.parent.mkdir(parents=True, exist_ok=True)
-    page.write_text(text, encoding='utf-8', newline='\n')
-    return True
 
 
 def main(argv: list[str] | None = None) -> int:

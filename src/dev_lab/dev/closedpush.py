@@ -1,15 +1,15 @@
-"""NO-PUSH-ONTO-A-LANDED-PR: a push onto a branch whose PR the forge already merged or closed is refused.
+"""NO-PUSH-ONTO-A-CLOSED-PR: a push onto a branch whose PR the forge closed UNMERGED is refused.
 
-The forge merges a REVIEWED head. A push that arrives after it lands on a branch whose PR into the integration
-branch is merged or closed, so no PR will ever carry it: the PR reads "merged" while the branch's newest commit
-is on no integration branch. Seen twice on 2026-11-02 (dev-lab #44's round-3 fix, re-landed as #52; a relock
-push after motronics #5397 merged); only a manual ``merge-base --is-ancestor`` noticed.
+A PR closed without merging was refused work: nothing reopens it, so a push onto its branch reaches no
+integration branch while the branch reads as handled. A branch whose PR MERGED is different: the forge opens a
+continuation PR from it (LANDED-BRANCH-CONTINUES, :mod:`dev_lab.dev.prcontinue`, user ruling 2026-11-07), so that
+push is carried and passes here.
 
-So the ``landed-pr`` pre-push row asks the forge ONE question per branch the push creates or updates, the
+So the ``closed-pr`` pre-push row asks the forge ONE question per branch the push creates or updates, the
 integration branch and the trunk aside -- the newest PR of that head into the integration branch
-(:func:`dev_lab.dev.forgepulls.pr_by_head`), never a listing of every closed PR: when it is merged or closed
-(so no newer OPEN PR of that pair exists) the push is refused, the refusal naming
-the remedy -- a new PR from the branch, or a new branch name. A deletion and a tag are not judged.
+(:func:`dev_lab.dev.forgepulls.pr_by_head`), never a listing of every closed PR: when it is closed and not merged
+(so no newer OPEN PR of that pair exists) the push is refused, the refusal naming the remedy -- a new PR from the
+branch, or a new branch name. A deletion and a tag are not judged.
 
 A forge that cannot be read refuses, as :func:`dev_lab.dev.breakglass.forge_unreviewed` does: a push needs the
 forge, so a forge down for reads is down for the push too, and an unread answer is never a pass.
@@ -35,29 +35,28 @@ from dev_lab.dev.refspec import pushed_refs
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['HOOK_ID', 'RULE', 'landed', 'main', 'refusals']
+__all__ = ['HOOK_ID', 'RULE', 'closed_unmerged', 'main', 'refusals']
 
-RULE: Final = 'NO-PUSH-ONTO-A-LANDED-PR'
+RULE: Final = 'NO-PUSH-ONTO-A-CLOSED-PR'
 #: The id this guard runs under in ``githooks/base.toml``.
-HOOK_ID: Final = 'landed-pr'
+HOOK_ID: Final = 'closed-pr'
 
 _GIT: Final = shutil.which('git') or 'git'
 _UNREADABLE: Final = (ForgeCallFailed, ListingIncomplete, OSError, ValueError)
 
 
-def landed(newest: PullRequest | None) -> PullRequest | None:
-    """*newest* -- the newest PR of a branch into the integration branch -- when the forge merged or closed it.
+def closed_unmerged(newest: PullRequest | None) -> PullRequest | None:
+    """*newest* -- the newest PR of a branch into the integration branch -- when the forge closed it unmerged.
 
-    An open newest PR carries the push; a newer open PR after a landed one is the newest, so it passes too.
+    An open newest PR carries the push; a merged one is continued by the forge; neither is returned.
     """
-    return newest if newest is not None and newest.state != 'open' else None
+    return newest if newest is not None and newest.state != 'open' and not newest.merged else None
 
 
 def _refusal(pull: PullRequest, branch: str, base: str) -> str:
-    how = 'merged' if pull.merged else 'closed'
     return (
-        f'{RULE}: {branch} is the head of PR #{pull.number} into {base}, which the forge {how}, and no open PR has '
-        f'it; this push would reach no integration branch. Open a new PR from it (`python -m dev_lab.dev.forge '
+        f'{RULE}: {branch} is the head of PR #{pull.number} into {base}, which the forge closed unmerged, and no open '
+        f'PR has it; this push would reach no integration branch. Open a new PR from it (`python -m dev_lab.dev.forge '
         f'pr create --head {branch} --base {base} --title ...`), or push the commits to a new branch name'
     )
 
@@ -83,11 +82,15 @@ def refusals(
         return [
             (
                 f'{RULE}: the forge cannot be read ({type(failed).__name__}: {failed}), so whether '
-                f'{", ".join(branches)} already landed is unknown; a push needs the forge -- push again once it '
+                f'{", ".join(branches)} was closed unmerged is unknown; a push needs the forge -- push again once it '
                 'answers'
             )
         ]
-    return [_refusal(pull, branch, integration) for branch in branches if (pull := landed(newest[branch])) is not None]
+    return [
+        _refusal(pull, branch, integration)
+        for branch in branches
+        if (pull := closed_unmerged(newest[branch])) is not None
+    ]
 
 
 def main(argv: Sequence[str] | None = None) -> int:

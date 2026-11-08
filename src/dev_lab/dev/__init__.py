@@ -73,7 +73,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
   named-set declaration as :mod:`dev_lab.dev.cjk`.
 * :mod:`dev_lab.dev.principles` — the family's engineering PRINCIPLES, one tuple (user ruling 2026-10-27):
-  rendered to ``.claude/rules/principles.md`` by ``hook_install --install`` in every repo (pinned by
+  rendered to ``.claude/rules/principles.md`` by :mod:`dev_lab.dev.famfiles` in every repo (pinned by
   :mod:`dev_lab.dev.famtests.principlespage`), and handed to the review method as ``--principles <json>``.
 * :mod:`dev_lab.dev.reviewpolicy` — the family REVIEW POLICY resolved for one repo (``--json [--repo]``),
   read from the values the forge review runs on and exported for both triggers (user ruling D83).
@@ -344,6 +344,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
 * :mod:`dev_lab.dev.forgeoom` -- an OOM-killed task floors every file it ran at its ask, in the folded record.
 * :mod:`dev_lab.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
+* :mod:`dev_lab.dev.forgesubmit` -- a cluster submit (build, collection) in its own process and lock, off the tick.
 * :mod:`dev_lab.dev.slurmkilled` -- the jobs ``sacct`` says Slurm killed for memory or time, and what each used.
 * :mod:`dev_lab.dev.hpcusage` -- an account's last day from its one ``sacct`` read: run budget and card table.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
@@ -355,6 +356,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   chosen by size, one shared library whose every writer cleans only its own runs.
 * :mod:`dev_lab.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
+* :mod:`dev_lab.dev.artefactfolder` -- the folder backend: archive before manifest, idempotent, no aliases.
+* :mod:`dev_lab.dev.artefactpack` -- declared outputs collected under a footprint budget and packed indexed.
+* :mod:`dev_lab.dev.artefactindex` -- an archive's member facts in the record, its catalogue and selection.
+* :mod:`dev_lab.dev.artefactscan` -- a packed archive verified against its complete index, read-only.
+* :mod:`dev_lab.dev.artefactrestore` -- a selection materialized into a fresh owned root, its receipt last.
 * :mod:`dev_lab.dev.forgeaffinity` -- HPC account affinity: verify accounts claim a verify part first.
 * :mod:`dev_lab.dev.forgeapp` -- a GitHub App as a forge identity: its JWT, installation token and client.
 * :mod:`dev_lab.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
@@ -409,6 +415,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
+* :mod:`dev_lab.dev.forgereview_stands` -- a review that stands, or is asked again: a later head reuses the verdict.
 * :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
 * :mod:`dev_lab.dev.reviewruntime` -- the host's ai-lab review runtime, built from the commit dev-lab's lock pins.
@@ -451,8 +458,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
-* :mod:`dev_lab.dev.landedpush` -- NO-PUSH-ONTO-A-LANDED-PR: a push onto a branch whose PR the forge merged or
-  closed, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
+* :mod:`dev_lab.dev.closedpush` -- NO-PUSH-ONTO-A-CLOSED-PR: a push onto a branch whose PR the forge closed
+  unmerged, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
+* :mod:`dev_lab.dev.prcontinue` -- LANDED-BRANCH-CONTINUES: a push onto a merged PR's branch gets a continuation PR
+  (``continues #N``) the forge opens: Gitea's serve tick, GitHub's ``continue.yml``, and ``forge pr continue``.
+* :mod:`dev_lab.dev.branchreview` -- the ONE review record per branch: its PRs, oldest first, and every carried
+  finding's disposition; what a continuation's review is scoped by and carries (``forge review carry``).
 * :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: a ``pr/*`` push or ``pr ready`` is refused when the head
   lacks ``origin/<integration>`` or its lock lags a floated sibling; the remedy is ``forge sync``.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
@@ -488,9 +499,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.workstationfile` -- the machine-file tables a workstation deploy writes, and its roles.
 * :mod:`dev_lab.dev.workstationprobe` -- the tools, COM classes and stored credentials a workstation deploy needs.
 * :mod:`dev_lab.dev.workstationregistry` -- which workstation serves the forge: the synced registry's roles.
-* :mod:`dev_lab.dev.hpchost` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
+* :mod:`dev_lab.dev.hpcaccount` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
+* :mod:`dev_lab.dev.opsserver` -- the ops door: its fixed verbs on a declared server the integrator deploys.
+* :mod:`dev_lab.dev.remote` -- the one ssh transport both remote doors share: how a command reaches a host.
 * :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
+* :mod:`dev_lab.dev.agentpolicy` -- AGENT-POLICY: the one table of agent doors; allow rows, intents, remedies derive.
 * :mod:`dev_lab.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`dev_lab.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.
 * :mod:`dev_lab.dev.durations` -- what every test COST, as a ledger the runner merges rather than

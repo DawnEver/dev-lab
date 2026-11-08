@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from dev_lab.dev import _dep_project, dep
-from dev_lab.dev.hpchost.checks import INSTALLERS
+from dev_lab.dev.hpcaccount.checks import INSTALLERS
 from dev_lab.dev.lockcheck import UV_PIN, uv_version
 
 _OTHER = '0.0.1'

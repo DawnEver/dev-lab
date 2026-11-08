@@ -10,10 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.agentpolicy import INTERPRETERS, POLICY, USER
 from dev_lab.dev.autodoors import (
     CODEX_RULES_REL,
-    DOOR_MODULES,
-    VERB_DOORS,
     claude_rows,
     codex_rules,
     doors,
@@ -22,79 +21,40 @@ from dev_lab.dev.autodoors import (
     script_doors,
 )
 from dev_lab.dev.famtests.visibility import plant_checkout
+from dev_lab.dev.venvpath import VENV_INTERPRETER_GLOB
 
 _GIT = shutil.which('git') or 'git'
 _SCRIPTS = ('scripts/gate/runner.py', 'scripts/hooks/with-retry.sh')
 
 
-@pytest.mark.parametrize(
-    'interpreter',
-    [
-        '.venv/Scripts/python.exe',
-        './.venv/bin/python',
-        '.claude/worktrees/lane/.venv/Scripts/python.exe',
-        '.claude/worktrees/lane/.venv/bin/python',
-    ],
-)
-def test_dependency_doors_admit_each_checkout_interpreter_without_an_installer_wildcard(interpreter: str) -> None:
-    """THE LAUNCHER MAY BE ANOTHER CHECKOUT'S INTERPRETER, and the row says which directory may vary.
+@pytest.mark.parametrize('interpreter', ['.venv/Scripts/python.exe', '.venv/bin/python'])
+def test_a_script_door_is_one_row_under_the_one_anchored_interpreter_glob(interpreter: str) -> None:
+    """User ruling 2026-11-07: never six interpreter spellings -- one literal per layout, never the glob.
 
-    The spelling that varies is a WORKTREE's, so it is anchored on the one directory that rule
-    WORKTREES-STAY-INSIDE pins (``.claude/worktrees/``) and wildcards only the worktree's name --
-    never the whole invocation prefix, which is the shape every consumer's allow guard refuses.
+    PLANTED CONTROLS: an installer through the same interpreter, another verb of the dependency door, and a door
+    reached through another checkout's interpreter (worktree or absolute) are not admitted -- that is prompted once.
     """
     rows = claude_rows(('scripts/gate/dep_sync.py',))
+    assert [row for row in rows if 'dep_sync' in row] == [
+        f'Bash({head} scripts/gate/dep_sync.py *)' for head in INTERPRETERS
+    ]
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
     assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
     assert any(fnmatchcase(f'{interpreter} -m dev_lab.dev.dep --bootstrap lane', pattern) for pattern in globs)
-    assert not any(fnmatchcase(f'{interpreter} -m pip install arbitrary', pattern) for pattern in globs)
-    assert not any(fnmatchcase(f'{interpreter} -m dev_lab.dev.dep --sync', pattern) for pattern in globs)
-    assert not any(
-        fnmatchcase(f'{interpreter} -c arbitrary scripts/gate/dep_sync.py --sync', pattern) for pattern in globs
-    )
-    assert not any(
-        fnmatchcase(f'{interpreter} -c arbitrary -m dev_lab.dev.dep --bootstrap lane', pattern) for pattern in globs
-    )
-
-
-def test_an_interpreter_spelled_by_an_absolute_path_is_not_admitted_and_that_is_the_decision() -> None:
-    """WHAT THE ANCHOR COSTS, pinned here rather than found by an agent in auto mode.
-
-    A row that does not lead with ``*`` cannot admit ``C:/repo/.claude/worktrees/lane/.venv/...``:
-    the command's first character is a drive letter or a root, and this file is TRACKED IN GIT, so
-    no rendering of it can name the one on the box reading it. The previous spelling bought that
-    coverage with a leading wildcard -- which permits ANY invocation prefix, i.e. exactly the
-    widening the consumers' allow guard refuses -- and the price is paid here instead: an agent
-    reaching for another checkout's interpreter that way is prompted once, and the road it can take
-    without a prompt is the REPO-RELATIVE one ``docs-src/dev/fanout.md`` spells anyway. Both
-    directions are asserted, because a narrowing whose replacement is also refused would be a
-    deletion wearing a docstring.
-    """
-    rows = claude_rows(('scripts/gate/dep_sync.py',))
-    globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
-    absolute = 'C:/repo/.claude/worktrees/lane/.venv/Scripts/python.exe'
-    assert not any(fnmatchcase(f'{absolute} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
-    assert any(
-        fnmatchcase(
-            '.claude/worktrees/lane/.venv/Scripts/python.exe scripts/gate/dep_sync.py --sync',
-            pattern,
-        )
-        for pattern in globs
-    )
+    for refused in (
+        f'{interpreter} -m pip install arbitrary',
+        f'{interpreter} -m dev_lab.dev.dep --sync',
+        f'{interpreter} -c arbitrary scripts/gate/dep_sync.py --sync',
+        f'.claude/worktrees/lane/{interpreter} scripts/gate/dep_sync.py --sync',
+        f'C:/repo/{interpreter} scripts/gate/dep_sync.py --sync',
+    ):
+        assert not any(fnmatchcase(refused, pattern) for pattern in globs), refused
+    assert not any(row.startswith('Bash(*') for row in rows), 'a door row leads with a wildcard'
+    assert f'Bash({VENV_INTERPRETER_GLOB} *)' not in rows, 'the blanket interpreter row is deleted'
 
 
 def test_bootstrap_is_a_specific_shared_door_in_both_client_renderings() -> None:
     assert '"-m", "dev_lab.dev.dep", "--bootstrap"' in codex_rules()
-
-
-def test_cross_checkout_script_permissions_are_derived_from_the_supplied_doors() -> None:
-    """A WORKTREE's interpreter is spelled from the worktrees directory, never from a bare ``*/``."""
-    rows = claude_rows(('tools/check_lane.py',))
-    assert 'Bash(.claude/worktrees/*/.venv/Scripts/python.exe tools/check_lane.py *)' in rows
-    assert 'Bash(.claude/worktrees/*/.venv/bin/python tools/check_lane.py *)' in rows
-    assert not any(row.startswith('Bash(*') for row in rows), 'a door row leads with a wildcard'
-    assert not any('scripts/gate/dep_sync.py' in row for row in rows)
-    assert not any('untracked_installer.py' in row for row in rows)
 
 
 def test_every_row_is_narrow_and_one_per_door() -> None:
@@ -103,7 +63,7 @@ def test_every_row_is_narrow_and_one_per_door() -> None:
     assert sibling_push in rows
     rows = {row: why for row, why in rows.items() if row != sibling_push}
     assert set(rows.values()) == set(doors(_SCRIPTS).values())
-    assert 'Bash(.venv/*/python* -m dev_lab.dev.branchset *)' in rows
+    assert 'Bash(.venv/bin/python -m dev_lab.dev.branchset *)' in rows
     assert 'Bash(sh scripts/hooks/with-retry.sh *)' in rows
     assert all(any(row.endswith(f' {" ".join(argv)} *)') for (_runner, *argv) in doors(_SCRIPTS)) for row in rows)
 
@@ -111,8 +71,9 @@ def test_every_row_is_narrow_and_one_per_door() -> None:
 def test_codex_and_claude_render_the_same_doors() -> None:
     text = codex_rules(_SCRIPTS)
     assert text.count('prefix_rule(') == len(doors(_SCRIPTS))
-    for module in DOOR_MODULES:
-        assert f'"-m", "{module}"' in text
+    for door in POLICY:
+        if door.argv[:2] == ('python', '-m') and door.actor != USER:
+            assert f'"-m", "{door.argv[2]}"' in text
     assert '"sh", "scripts/hooks/with-retry.sh"' in text
 
 
@@ -170,12 +131,12 @@ def test_a_repo_without_a_wrapper_pushes_through_netverb_never_raw() -> None:
 
 
 def test_each_bounded_verb_renders_one_row_naming_its_verb_and_no_sibling_verb() -> None:
-    """VERB_DOORS: the row admits the bounded verb and NOT the same module's other verbs (planted control)."""
+    """A POLICY door admits its bounded verb and NOT the same module's other verbs (planted control)."""
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
-    for _runner, *argv in VERB_DOORS:
+    for _runner, *argv in (door.argv for door in POLICY if door.argv[:1] == ('python',) and door.actor != USER):
         assert any(fnmatchcase(f'.venv/Scripts/python.exe {" ".join(argv)} x', g) for g in globs), argv
     assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge serve', g) for g in globs)
-    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.hpchost deploy --remove', g) for g in globs)
+    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount deploy --remove', g) for g in globs)
     assert promises_raw(' '.join(globs)) == ()
 
 
@@ -185,7 +146,7 @@ _FORGE_PR_VERB = re.compile(r'forge pr ([a-z][a-z-]*)')
 
 
 def test_every_forge_pr_verb_an_agent_is_told_to_run_is_a_door() -> None:
-    """FORGE-DOORS-ARE-CONSENT: every `forge pr <verb>` the docs tell an agent to run is a VERB_DOORS row.
+    """FORGE-DOORS-ARE-CONSENT: every `forge pr <verb>` the docs tell an agent to run is a POLICY door.
 
     So no classifier stands between the agent and it and the user is never handed it (incident 2026-11-04, `pr ready`).
     """
@@ -195,7 +156,7 @@ def test_every_forge_pr_verb_an_agent_is_told_to_run_is_a_door() -> None:
         for path in root.glob(f'{pattern}/**/*.md' if pattern == 'docs-src' else pattern):
             told.update(_FORGE_PR_VERB.findall(path.read_text('utf-8')))
     assert {'create', 'ready', 'close-landed'} <= told, told  # floor: the scan reads the docs
-    doors_ = {argv[3] for _r, *argv in VERB_DOORS if argv[1:3] == ['dev_lab.dev.forge', 'pr']}
+    doors_ = {door.argv[4] for door in POLICY if door.argv[2:4] == ('dev_lab.dev.forge', 'pr')}
     assert told - doors_ == set()
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
     assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge pr view 3', g) for g in globs)

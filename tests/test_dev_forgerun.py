@@ -36,6 +36,9 @@ from lab_commons.hpc.slurm import FORGE_SESSION, Node, Quota, Snapshot, parse_us
 from lab_commons.hpc.tree import NotSubmitted
 
 from dev_lab.dev import (
+    artefactindex,
+    artefactpack,
+    artefactrestore,
     artefacts,
     forgecarry,
     forgerun,
@@ -46,6 +49,8 @@ from dev_lab.dev import (
     forgeslurm,
     forgesupersede,
 )
+from dev_lab.dev.artefactfolder import FolderStore
+from dev_lab.dev.artefactindex import MemberFact
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, DONE, OPEN, Claim, Work, assess
 from dev_lab.dev.forgecoalesce import DRAINING
@@ -369,7 +374,7 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        release_reason(ProducerExit.INCONCLUSIVE),
+        release_reason(ProducerExit.INCONCLUSIVE, outage=False),
     )
     assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
@@ -391,7 +396,7 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
     assert _tick(store, _Unbuilt(home / 'r')) is None, 'released and dropped'
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}',
+        f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}',
     )
     assert forgerunstate.live('https://f/o/r.git') == ()
     _start(home, store)
@@ -530,6 +535,7 @@ def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, 
     big, root = home / 'big', home / 'repo'
     root.mkdir()
     table = f'[tool.lab_commons.artefacts]\nbackend = "folder"\nremote = "{big.as_posix()}"\nthreshold_mb = 1\n'
+    table += 'member_index_max_members = 100\nmember_index_max_bytes = 65536\nmember_index_max_path_bytes = 4096\n'
     (root / 'pyproject.toml').write_text(table, encoding='utf-8')
     record = records.write_record({'sha': SHA, 'platform': 'linux', 'req': 'r1', 'cells': {}}, home / 'gathered')
     tree = record.parent / 'tree'
@@ -549,13 +555,350 @@ def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted
     _start(home, store, outputs=('fields/*.h5',))
     assert _tick(store, slurm, root=root) is None
     (entry,) = records.read_record(posted[0])['artefacts']
-    (ref,) = artefacts.FolderStore(big, 'r').list(None)
+    (ref,) = FolderStore(big, 'r').list(None)
     assert entry == ref.manifest()
     assert ref.backend == 'folder'
+    index = records.read_record(posted[0])['artefact_indexes']
+    assert index == {ref.sha256: {'schema': 'lab-commons-members-v1', 'members': [_b_member(slurm)]}}
     assert artefacts.parsed_run_id(ref.run_id)['account'] == 'alice', "the claim owner's cluster account writes it"
-    fetched = artefacts.FolderStore(big, 'r').get(ref, home / 'fetched')
+    fetched = FolderStore(big, 'r').get(ref, home / 'fetched')
     with tarfile.open(fileobj=io.BytesIO(fetched.read_bytes())) as tar:
         assert tar.getnames() == ['fields/b.h5'], 'only the declared output; undeclared.log stays on the cluster'
+
+
+def _b_member(slurm: _Slurm) -> dict[str, object]:
+    data = (slurm.record.parent / 'tree' / 'fields' / 'b.h5').read_bytes()
+    return {
+        'path': 'fields/b.h5',
+        'type': 'file',
+        'logical_bytes': len(data),
+        'sha256': hashlib.sha256(data).hexdigest(),
+    }
+
+
+def _posting(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    posted: list[Path] = []
+    monkeypatch.setattr(forgecarry, 'post', lambda _root, path: posted.append(path) or 'posted')
+    return posted
+
+
+def _policy(root: Path, text: str) -> None:
+    with (root / 'pyproject.toml').open('a', encoding='utf-8') as stream:
+        stream.write(text)
+
+
+@pytest.mark.parametrize(('entries', 'payload'), [(2, 2 << 20), (3, (2 << 20) - 1)])
+def test_shipping_budget_refuses_before_archive_store_or_post(
+    home: Path, monkeypatch: pytest.MonkeyPatch, entries: int, payload: int
+) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    _policy(root, f'expanded_output_max_entries = {entries}\nexpanded_output_max_bytes = {payload}\n')
+    posted = _posting(monkeypatch)
+    store = _Store()
+    run = _start(home, store, outputs=('fields/*.h5',))
+    alarms: list[Alarm] = []
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    assert forgerunstate.live('https://f/o/r.git') == (), 'terminal: an unchanged oversized output is never retried'
+    assert store.posts[-1]['status'] == 'error'
+    assert 'output budget refused' in store.posts[-1]['description']
+    assert [a.kind for a in alarms] == [forgerun.RUN]
+    assert posted == []
+    assert not big.exists()
+    assert list(Path(run.output).glob(f'*{artefacts.ARCHIVE}')) == []
+
+
+def test_shipping_exact_expanded_budget_keeps_reference_contract(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL for the budget refusal above: the exact footprint ships, its Ref unchanged."""
+    root, big, slurm = _shipping(home, monkeypatch)
+    _policy(root, f'expanded_output_max_entries = 3\nexpanded_output_max_bytes = {2 << 20}\n')
+    posted = _posting(monkeypatch)
+    store = _Store()
+    _start(home, store, outputs=('fields/*.h5',))
+    assert _tick(store, slurm, root=root) is None
+    (entry,) = records.read_record(posted[0])['artefacts']
+    (ref,) = FolderStore(big, 'r').list(None)
+    assert entry == ref.manifest()
+    assert set(entry) == {'backend', 'ref', 'bytes', 'sha256'}
+
+
+def test_store_filesystem_failure_remains_live_and_unpublished(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    big.write_bytes(b'not a store directory')
+    posted = _posting(monkeypatch)
+    store = _Store()
+    run = _start(home, store, outputs=('fields/*.h5',))
+    alarms: list[Alarm] = []
+    with pytest.raises(OSError, match='big'):
+        _tick(store, slurm, root=root, alarms=alarms)
+    assert len(forgerunstate.live('https://f/o/r.git')) == 1, 'a store failure is not a budget failure: it retries'
+    assert posted == []
+    assert alarms == []
+    big.unlink()  # remove only this test's deliberate obstruction, then actually retry
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    (entry,) = records.read_record(posted[0])['artefacts']
+    (ref,) = FolderStore(big, 'r').list(None)
+    assert entry == ref.manifest()
+    assert list(Path(run.output).glob(f'*{artefacts.ARCHIVE}')) == [], 'the packed archive is never left behind'
+    assert alarms == []
+
+
+@pytest.mark.parametrize('delta', [0, -1])
+def test_member_index_budget_matches_actual_record_value_bytes(
+    home: Path, monkeypatch: pytest.MonkeyPatch, delta: int
+) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    expected = {'0' * 64: {'schema': 'lab-commons-members-v1', 'members': [_b_member(slurm)]}}
+    exact = len(json.dumps(expected, sort_keys=True, ensure_ascii=True).encode())
+    policy = root / 'pyproject.toml'
+    policy.write_text(
+        '\n'.join(
+            f'member_index_max_bytes = {exact + delta}' if line.startswith('member_index_max_bytes') else line
+            for line in policy.read_text(encoding='utf-8').splitlines()
+        ),
+        encoding='utf-8',
+    )
+    posted = _posting(monkeypatch)
+    store = _Store()
+    _start(home, store, outputs=('fields/*.h5',))
+    alarms: list[Alarm] = []
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    if delta:
+        assert posted == []
+        assert not big.exists()
+        assert len(alarms) == 1
+        assert 'output budget refused' in store.posts[-1]['description']
+    else:
+        actual = records.read_record(posted[0])['artefact_indexes']
+        assert len(json.dumps(actual, sort_keys=True, ensure_ascii=True).encode()) == exact
+        assert alarms == []
+
+
+def test_real_shipment_record_catalogue_and_selection_need_no_archive(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    posted = _posting(monkeypatch)
+    store = _Store()
+    _start(home, store, outputs=('fields/*.h5',))
+    assert _tick(store, slurm, root=root) is None
+    digest = hashlib.sha256(posted[0].read_bytes()).hexdigest()
+    record = records.read_record(
+        posted[0], max_compressed_bytes=65536, max_decompressed_bytes=262144, expected_sha256=digest
+    )
+    ref = artefacts.Ref.of(record['artefacts'][0])
+    (big / ref.key).unlink()  # a catalogue is an index declaration, never an archive verification
+    _policy(
+        root,
+        'record_max_compressed_bytes = 65536\nrecord_max_decompressed_bytes = 262144\n'
+        f'expanded_output_max_entries = 3\nexpanded_output_max_bytes = {2 << 20}\n',
+    )
+    b = _b_member(slurm)
+    fact = MemberFact('fields/b.h5', cast('int', b['logical_bytes']), cast('str', b['sha256']))
+    selected = artefacts.query_members(
+        root, posted[0], ref, ['fields/b.h5'], case_sensitive=False, expected_sha256=digest
+    )
+    assert selected == (fact,)
+    members = artefactindex.catalogue(record, ref, max_members=100, max_index_bytes=65536, max_path_bytes=4096)
+    assert members == (fact,)
+    assert (
+        artefactindex.select_members(
+            members, ['fields/b.h5'], max_entries=3, max_bytes=2 << 20, max_path_bytes=4096, case_sensitive=False
+        )
+        == members
+    )
+
+
+def _ship_for_recovery(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, Path, Path]:
+    root, big, slurm = _shipping(home, monkeypatch)
+    tree = slurm.record.parent / 'tree'
+    (tree / 'fields' / 'zero.h5').write_bytes(b'')
+    _policy(
+        root,
+        'record_max_compressed_bytes = 65536\nrecord_max_decompressed_bytes = 262144\n'
+        'expanded_output_max_entries = 6\nexpanded_output_max_bytes = 3145728\n',
+    )
+    posted = _posting(monkeypatch)
+    status = _Store()  # forge status transport only; archive I/O is the real FolderStore
+    _start(home, status, outputs=('fields/*.h5',))
+    assert _tick(status, slurm, root=root) is None
+    (record_path,) = posted
+    return root, big, tree, record_path
+
+
+@pytest.mark.parametrize('corrupt', ['', 'stored', 'retrieved'])
+def test_real_shipment_record_query_fetch_and_selective_materialization(
+    home: Path, monkeypatch: pytest.MonkeyPatch, corrupt: str
+) -> None:
+    root, big, tree, record_path = _ship_for_recovery(home, monkeypatch)
+    record_bytes = record_path.read_bytes()
+    record_sha = hashlib.sha256(record_bytes).hexdigest()
+    config = artefacts.load_config(root)
+    record = records.read_record(
+        record_path,
+        max_compressed_bytes=config.record_max_compressed_bytes,
+        max_decompressed_bytes=config.record_max_decompressed_bytes,
+        expected_sha256=record_sha,
+    )
+    (declaration,) = record['artefacts']
+    ref = artefacts.Ref.of(declaration)
+    limits = {
+        'max_members': cast('int', config.member_index_max_members),
+        'max_index_bytes': cast('int', config.member_index_max_bytes),
+        'max_path_bytes': cast('int', config.member_index_max_path_bytes),
+    }
+    complete = artefactindex.catalogue(record, ref, **limits)
+    selected = artefacts.query_members(
+        root, record_path, ref, ['fields/b.h5'], case_sensitive=False, expected_sha256=record_sha
+    )
+    assert len(complete) == 2
+    assert selected == tuple(member for member in complete if member.path == 'fields/b.h5')
+    destination = home / 'materialization'
+    destination.mkdir()
+    stored = big / ref.key
+    store = FolderStore(big, 'r')
+    if corrupt == 'stored':
+        with stored.open('r+b') as stream:
+            stream.write(b'corrupt')
+        with pytest.raises(artefacts.ArtefactRefused, match='sha256'):
+            store.get(ref, home / 'download')
+    else:
+        fetched = store.get(ref, home / 'download')
+        assert fetched.stat().st_size == ref.bytes
+        assert hashlib.sha256(fetched.read_bytes()).hexdigest() == ref.sha256
+        if corrupt == 'retrieved':
+            with fetched.open('r+b') as stream:
+                stream.write(b'corrupt')
+        options = dict(
+            limits,
+            max_compressed_bytes=ref.bytes,
+            max_metadata_bytes=4096,
+            max_uncompressed_bytes=4 << 20,
+            max_entries=cast('int', config.expanded_output_max_entries),
+            max_bytes=cast('int', config.expanded_output_max_bytes),
+        )
+        if corrupt:
+            with pytest.raises(artefacts.ArtefactRefused, match='authentication'):
+                artefactrestore.materialize_newpack_archive(
+                    fetched, ref, complete, ['fields/b.h5'], destination, case_sensitive=False, **options
+                )
+        else:
+            recovered = artefactrestore.materialize_newpack_archive(
+                fetched, ref, complete, ['fields/b.h5'], destination, case_sensitive=False, **options
+            )
+            assert (recovered / selected[0].path).read_bytes() == (tree / 'fields' / 'b.h5').read_bytes()
+            assert not (recovered / 'fields' / 'zero.h5').exists()
+            receipt = json.loads((recovered / 'materialization-complete.json').read_bytes())
+            assert receipt == {
+                'schema': 'lab-commons-materialized-v1',
+                'archive': ref.manifest(),
+                'selected_paths': ['fields/b.h5'],
+            }
+            assert hashlib.sha256(stored.read_bytes()).hexdigest() == ref.sha256
+    if corrupt:
+        assert list(destination.iterdir()) == []
+    assert record_path.read_bytes() == record_bytes
+    assert stored.is_file()
+    assert (tree / 'fields' / 'b.h5').stat().st_size == 2 << 20
+    assert (tree / 'fields' / 'zero.h5').is_file()
+
+
+def test_shipment_refuses_archive_changed_at_external_store_boundary(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    posted = _posting(monkeypatch)
+
+    def metadata_after_archive_mutation(_root: Path) -> SimpleNamespace:
+        (archive,) = (home / 'parts').rglob(f'*{artefacts.ARCHIVE}')
+        archive.write_bytes(b'y' * (2 << 20))
+        return SimpleNamespace(repo='r')
+
+    monkeypatch.setattr(forgeship, 'forge_from_remote', metadata_after_archive_mutation)
+    store = _Store()
+    _start(home, store, outputs=('fields/*.h5',))
+    alarms: list[Alarm] = []
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    assert posted == []
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    assert len(alarms) == 1
+    assert 'output integrity refused' in store.posts[-1]['description']
+    assert len(FolderStore(big, 'r').list(None)) == 1
+
+
+def test_shipment_source_identity_change_is_terminal_integrity(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    source = slurm.record.parent / 'tree' / 'fields' / 'b.h5'
+    original = artefactpack._HashingReader.read
+    changed: list[bool] = []
+
+    def drifting(self: artefactpack._HashingReader, size: int = -1) -> bytes:
+        if not changed:
+            changed.append(True)
+            before = source.stat()
+            with source.open('r+b') as stream:
+                stream.write(b'changed-source')
+            os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns + 10**9))
+        return original(self, size)
+
+    monkeypatch.setattr(artefactpack._HashingReader, 'read', drifting)
+    posted = _posting(monkeypatch)
+    store = _Store()
+    _start(home, store, outputs=('fields/*.h5',))
+    alarms: list[Alarm] = []
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    assert posted == []
+    assert len(alarms) == 1
+    assert 'output integrity refused' in store.posts[-1]['description']
+    assert not big.exists()
+
+
+@pytest.mark.parametrize(
+    'missing', ['all', 'member_index_max_members', 'member_index_max_bytes', 'member_index_max_path_bytes']
+)
+def test_shipping_requires_explicit_member_index_policy(
+    home: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    policy = root / 'pyproject.toml'
+    prefix = 'member_index_' if missing == 'all' else missing
+    kept = [line for line in policy.read_text(encoding='utf-8').splitlines() if not line.startswith(prefix)]
+    policy.write_text('\n'.join(kept), encoding='utf-8')
+    posted = _posting(monkeypatch)
+    store = _Store()
+    _start(home, store, outputs=('fields/*.h5',))
+    alarms: list[Alarm] = []
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    assert posted == []
+    assert not big.exists()
+    assert len(alarms) == 1
+    assert 'budget refused' in store.posts[-1]['description']
+
+
+@pytest.mark.parametrize(
+    ('name', 'value'),
+    [('member_index_max_members', 'true'), ('member_index_max_members', '0'), ('expanded_output_max_entries', 'true')],
+)
+def test_invalid_output_budget_policy_is_terminal(
+    home: Path, monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    policy = root / 'pyproject.toml'
+    lines = [line for line in policy.read_text(encoding='utf-8').splitlines() if not line.startswith(name)]
+    policy.write_text('\n'.join([*lines, f'{name} = {value}']), encoding='utf-8')
+    posted = _posting(monkeypatch)
+    store = _Store()
+    run = _start(home, store, outputs=('fields/*.h5',))
+    alarms: list[Alarm] = []
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    assert posted == []
+    assert not big.exists()
+    assert list(Path(run.output).glob(f'*{artefacts.ARCHIVE}')) == []
+    assert len(alarms) == 1
+    assert 'output budget refused' in store.posts[-1]['description']
 
 
 def test_planted_control_nothing_declared_stores_nothing(home: Path, monkeypatch) -> None:
@@ -692,7 +1035,7 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
+    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
 
 
 def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_failure_is_retried(
@@ -730,7 +1073,7 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
+    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
     assert cause in post['description']
 
 

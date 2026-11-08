@@ -15,7 +15,7 @@ from lab_commons.hpc.shell import FULL
 from dev_lab.dev import forgeaffinity, forgehosts
 from dev_lab.dev.forgeaffinity import DEFERRED, covers, declared, deferral, defers
 from dev_lab.dev.forgehosts import HostCard
-from dev_lab.dev.hpchost import spec
+from dev_lab.dev.hpcaccount import spec
 
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 

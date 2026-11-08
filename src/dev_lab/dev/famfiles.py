@@ -24,6 +24,7 @@ import argparse
 import importlib.util
 import shutil
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -31,6 +32,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import principles, remconfig
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 
 if TYPE_CHECKING:
@@ -43,18 +45,61 @@ __all__ = [
     'MANAGED',
     'OWNED',
     'PROJECT_FILES',
+    'RENDERERS',
+    'RENDER_COMMAND',
+    'RENDER_TABLE',
     'ProjectFile',
+    'Renderer',
+    'due_renderers',
     'load_deltas',
     'main',
     'project_files_on_disk',
+    'render_agent_files',
     'render_all',
+    'render_argv',
     'unaccounted',
 ]
+
+#: The one command a repo re-renders every family file with (its own deltas module named).
+RENDER_COMMAND: Final = 'python -m dev_lab.dev.famfiles --deltas <the repo`s deltas module>'
 
 #: A file whose content comes from a family mechanism named in the row.
 MANAGED: Final = 'managed'
 #: A file whose content is the repo's own; the row carries the reason.
 OWNED: Final = 'repo-owned'
+
+
+#: The repo's ``pyproject.toml`` table holding what a renderer reads from the repo (its deltas module, ...).
+RENDER_TABLE: Final = 'tool.dev_lab.render'
+
+
+@dataclass(frozen=True, slots=True)
+class Renderer:
+    """A family command writing generated files: ``<tree python> -m <command> <repo_flag> <tree> <inputs>``.
+
+    *inputs* maps a key of the repo's :data:`RENDER_TABLE` to the flag it is passed as -- a list value repeats
+    the flag -- and *required* names the keys without which the command cannot run.
+    """
+
+    name: str
+    command: tuple[str, ...]
+    repo_flag: str = '--repo'
+    inputs: tuple[tuple[str, str], ...] = ()
+    required: frozenset[str] = frozenset()
+
+
+FAMFILES: Final = Renderer(
+    'famfiles', ('dev_lab.dev.famfiles',), inputs=(('deltas', '--deltas'),), required=frozenset({'deltas'})
+)
+AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--install'))
+HOOK_ADOPTION: Final = Renderer(
+    'hook_adoption', ('dev_lab.dev.hook_adoption',), inputs=(('adoption', '--adoption'),),
+    required=frozenset({'adoption'}),
+)  # fmt: skip
+CIWORKFLOWS: Final = Renderer('ciworkflows', ('dev_lab.dev.ciworkflows', 'render'), repo_flag='--root')
+AUTODOORS: Final = Renderer(
+    'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,14 +110,15 @@ class ProjectFile:
     kind: str
     how: str
     generated: bool = False  # the mechanism writes the WHOLE file: a reviewer reads the generator, not this
+    renderer: Renderer | None = None  # the command writing it, re-run after every relock (forge sync)
 
 
 def _m(path: str, how: str) -> ProjectFile:
     return ProjectFile(path, MANAGED, how)
 
 
-def _g(path: str, how: str) -> ProjectFile:
-    return ProjectFile(path, MANAGED, how, generated=True)
+def _g(path: str, how: str, renderer: Renderer | None) -> ProjectFile:
+    return ProjectFile(path, MANAGED, how, generated=True, renderer=renderer)
 
 
 def _o(path: str, why: str) -> ProjectFile:
@@ -85,21 +131,23 @@ def _o(path: str, why: str) -> ProjectFile:
 PROJECT_FILES: Final[dict[str, ProjectFile]] = {
     row.path: row
     for row in (
-        _g('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta'),
-        _g('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta'),
-        _g('.rgignore', 'famconfig RENDERED: what ripgrep and the agent Grep tool skip (attic/), plus the repo Delta'),
+        _g('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta', FAMFILES),
+        _g('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta', FAMFILES),
+        _g('.rgignore', 'famconfig RENDERED: what ripgrep and Grep skip (attic/), plus the repo Delta', FAMFILES),
         _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
         _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
-        _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
-        _g('.claude/rules/principles.md', 'principles.render via hook_install --install: the family principles'),
-        _g('.claude/rem.json', 'remconfig.write via hook_install --install: the backlog is the issue tracker'),
-        _g('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
-        _g('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.dev_lab.ci]'),
-        _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml plus [tool.dev_lab.ci]'),
-        _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml plus [tool.dev_lab.ci]'),
-        _g('uv.lock', 'famtests.lockpin pins it on the forge; the forge relock keeps it newest (PIN + FRESHNESS)'),
+        _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
+        _g('.claude/rules/principles.md', 'principles.render via famfiles: the family principles', FAMFILES),
+        _g('.claude/rem.json', 'remconfig.render via famfiles: the backlog is the issue tracker', FAMFILES),
+        _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
+        _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
+        _g('.github/workflows/ci.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
+        _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
+        _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
+        _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
+        _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o(
@@ -113,6 +161,41 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
 
 #: Every family file a mechanism writes whole: what a PR review never reads (:mod:`dev_lab.dev.forgereview_scope`).
 GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated)
+
+#: Every renderer, read off :data:`PROJECT_FILES` in row order: the one list a relock re-runs (user ruling
+#: 2026-11-07: a relock that moved dev-lab left every generated file stale and the consumer red). NOT here:
+#: ``automode write``, whose file is machine-local and never committed, and the lock, which is the door's.
+RENDERERS: Final = tuple(dict.fromkeys(row.renderer for row in PROJECT_FILES.values() if row.renderer))
+
+
+def due_renderers(root: Path) -> tuple[Renderer, ...]:
+    """The renderers of :data:`RENDERERS` writing a file present in *root*: what a re-render there runs."""
+    present = {row.renderer for row in PROJECT_FILES.values() if row.renderer and (root / row.path).is_file()}
+    return tuple(renderer for renderer in RENDERERS if renderer in present)
+
+
+def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
+    """*renderer*'s command for *root* under *python*, its inputs read from *root*'s :data:`RENDER_TABLE`.
+
+    RAISES :class:`ValueError` naming the key when a required input is not declared.
+    """
+    manifest = root / 'pyproject.toml'
+    table: object = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
+    for part in RENDER_TABLE.split('.'):
+        table = table.get(part, {}) if isinstance(table, dict) else {}
+    declared: dict[str, object] = table if isinstance(table, dict) else {}
+    if missing := sorted(renderer.required - set(declared)):
+        msg = (
+            f'{renderer.name} renders files {root} holds, but [{RENDER_TABLE}] {", ".join(missing)} is not '
+            'declared in its pyproject.toml: declare the path it reads'
+        )
+        raise ValueError(msg)
+    argv = [python, '-m', *renderer.command, renderer.repo_flag, str(root)]
+    for key, flag in renderer.inputs:
+        value = declared.get(key, ())
+        for item in [value] if isinstance(value, str) else value if isinstance(value, list) else ():
+            argv += [flag, str(item)]
+    return argv
 
 
 def _git_lines(root: Path, *args: str) -> tuple[str, ...]:
@@ -187,6 +270,33 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     return tuple(out)
 
 
+#: The family files every repo carries whole, with no delta: (repo-relative path, its text).
+def _whole_files() -> tuple[tuple[str, str], ...]:
+    return ((principles.PAGE_REL, principles.render()), (remconfig.REL, remconfig.render()))
+
+
+def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
+    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode.
+
+    ``.claude/rem.json`` that differs is the repo's own choice and is reported, never overwritten.
+    """
+    out: list[str] = []
+    for rel, text in _whole_files():
+        path = root / rel
+        held = path.read_text(encoding='utf-8') if path.is_file() else None
+        if held == text:
+            out.append(f'{rel}: current')
+        elif rel == remconfig.REL and held is not None:
+            out.append(f'{rel}: the repo`s own choice, not written -- reconcile it with {text.strip()} by hand')
+        elif write:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding='utf-8', newline='\n')
+            out.append(f'{rel}: rendered')
+        else:
+            out.append(f'{rel}: would render ({"absent" if held is None else "drifted"})')
+    return tuple(out)
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI. Exit 0 when every declared artefact is current (after writing, unless --check), else 1."""
     parser = argparse.ArgumentParser(description='Render every family-managed project file from base + delta.')
@@ -195,7 +305,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--check', action='store_true', help='write nothing; report what would change')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
-    lines = render_all(root, load_deltas(args.deltas.resolve()), write=not args.check)
+    lines = (
+        *render_all(root, load_deltas(args.deltas.resolve()), write=not args.check),
+        *render_agent_files(root, write=not args.check),
+    )
     for line in lines:
         emit(f'[famfiles] {line}')
     settled = ('current', 'rendered')

@@ -22,7 +22,7 @@ import pytest
 from lab_commons.census import Process, processes
 from lab_commons.proc import kill_process_tree
 
-from dev_lab.dev import agenthooks, dep, forgeserve, liverun
+from dev_lab.dev import agenthooks, dep, liverun, worktreeplace
 from dev_lab.dev.disclosure import problems
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
@@ -80,6 +80,37 @@ def test_a_log_tail_in_the_tree_is_not_a_reader_and_a_script_it_names_is(tree: P
     tail = _proc(61, '/usr/bin/tail', cwd=tree, cmd=f'tail -n 0 -F {(tree / "output" / "x.log").as_posix()}')
     chain = _proc(62, '/usr/bin/bash', cwd=tree, cmd='bash scratch/v3_long_run.copy.sh')
     assert liverun.live_runs(tree, census=lambda: [tail, chain], me=1) == (chain,)
+
+
+def test_an_outside_interpreter_running_an_outside_module_in_the_tree_is_not_a_run(tree: Path, tmp_path: Path) -> None:
+    """MEASURED 2026-11-07: a session launcher whose cwd was the checkout refused every ``git worktree add``.
+
+    It is a uv-managed interpreter running ``-m ai_lab.session`` with a ``--settings <file in the tree>`` flag. Its
+    module resolves from its own interpreter, not the cwd, and a flag's value is configuration it reads, not code it
+    executes. PLANTED CONTROL: the tree's venv running pytest there, an outside interpreter whose ``-m`` module
+    lives in the cwd, and a script operand in the tree are all still runs.
+    """
+    (tree / 'app').mkdir()
+    (tree / 'app' / '__init__.py').write_text('', encoding='utf-8')
+    (tree / 'scratch').mkdir()
+    (tree / 'scratch' / 'chain.sh').write_text('', encoding='utf-8')
+    uv = tmp_path / 'uv' / 'python' / _PYTHON
+    launchers = [
+        _proc(
+            57512 + n,
+            uv,
+            cwd=tree,
+            cmd=f'"{uv}"  -m ai_lab.session claude --dangerously-load-development-channels server:session-bridge '
+            f'--settings {settings}',
+        )
+        for n, settings in enumerate([tree / '.claude' / 'automode.json', tree / 'scratch' / 'chain.sh'])
+    ]
+    pytest_run = _proc(71, _venv_python(tree), cwd=tree, cmd=f'"{_venv_python(tree)}" -m pytest')
+    cwd_run = _proc(72, uv, cwd=tree, cmd=f'"{uv}" -m app case sweep')
+    script_run = _proc(73, '/usr/bin/bash', cwd=tmp_path, cmd=f'bash {(tree / "scratch" / "chain.sh").as_posix()}')
+    runs = [pytest_run, cwd_run, script_run]
+    assert liverun.live_runs(tree, census=lambda: launchers, me=1) == ()
+    assert liverun.live_runs(tree, census=lambda: [*launchers, *runs], me=1) == tuple(runs)
 
 
 def test_a_process_of_a_nested_worktree_or_of_no_checkout_is_not_the_mains_run(tree: Path, tmp_path: Path) -> None:
@@ -406,7 +437,7 @@ def test_a_command_the_row_does_not_match_never_asks_the_probe(tmp_path: Path) -
 
 def test_a_serve_works_in_a_root_that_is_not_the_tree(tree: Path) -> None:
     """By construction: `forge serve` chdirs to its work root, where its cwd reads no tree."""
-    work = forgeserve.work_root(tree)
+    work = worktreeplace.work_root(tree)
     assert work.is_dir()
     assert not liverun.in_tree(work, tree)
     serve = _proc(7, _venv_python(tree), cwd=work, cmd='python -m dev_lab.dev.forge serve')
@@ -459,3 +490,37 @@ def test_several_holders_are_counted_not_listed(tree: Path) -> None:
     text = liverun.refusal(tree, runs)
     assert 'pid 11 (app) and 2 more' in text
     assert len(text.splitlines()) == 3
+
+
+def test_a_tree_not_yet_created_holds_no_run_even_inside_a_live_checkout(tree: Path) -> None:
+    """``git worktree add X && cd X && git switch -c lane``: X does not exist when the hook judges, so no run is in it.
+
+    PLANTED CONTROL: the live checkout X sits inside is refused; the not-yet-created X under it is not.
+    """
+    run = _proc(4242, _venv_python(tree))
+    assert liverun.main(['--tree', str(tree)], census=lambda: [run]) == 1
+    assert liverun.main(['--tree', str(tree / '.claude' / 'worktrees' / 'new')], census=lambda: [run]) == 0
+
+
+def test_the_real_engine_judges_the_target_worktree_not_the_checkout_holding_it(
+    live_tree: tuple[Path, int], tmp_path: Path
+) -> None:
+    """INCIDENT 2026-11-07: TREE-HAS-A-LIVE-RUN fired twenty times on lane commands inside ``.claude/worktrees/``.
+
+    The engine resolved a target that did not exist yet to the nearest ``.git`` above it -- the live main
+    checkout -- and judged THAT run. PLANTED CONTROL: the same verb aimed at the live checkout itself is refused.
+    """
+    root, _pid = live_tree
+    session = _checkout(tmp_path / 'session')
+    _junction(session / '.venv', Path(sys.prefix))
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    rules = hooks / 'deny-rules.json'
+    rules.write_text(render(HookAdoption(app_name='s', declared_absent=frozenset(_NEEDING))), encoding='utf-8')
+    lane = (root / '.claude' / 'worktrees' / 'fresh').as_posix()
+    created = f'git -C {root.as_posix()} worktree add -b lane/fresh {lane} HEAD && cd {lane} && git switch -c lane/x'
+    assert agenthooks.decide(created, rules, cwd=session) is None
+    assert agenthooks.decide(f'git -C {lane} switch -c lane/y', rules, cwd=session) is None
+    refused = agenthooks.decide(f'git -C {root.as_posix()} switch -c lane/z', rules, cwd=session)
+    assert refused is not None
+    assert refused.startswith('TREE-HAS-A-LIVE-RUN:'), refused

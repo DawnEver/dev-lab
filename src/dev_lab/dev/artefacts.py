@@ -1,20 +1,23 @@
 """THE ARTEFACT STORE -- a run's DECLARED outputs, packed once and kept behind the record's manifest.
 
 NOTHING TRAVELS BY DEFAULT (user rulings 2026-10-11). A request declares ``outputs = [...]`` -- globs or
-named files relative to the run's work tree; only those are packed (:func:`collect`, :func:`pack`), a
+named files relative to the run's work tree; only those are packed (:mod:`dev_lab.dev.artefactpack`), a
 declared output that matched nothing fails the run loudly (:class:`MissingOutput`), and an undeclared
-file is never uploaded. The verdict itself still travels as the run record.
+file is never uploaded. The verdict itself still travels as the run record, with each archive's member
+index beside its Ref (:mod:`dev_lab.dev.artefactindex`).
 
 ONE INTERFACE, THREE BACKENDS (:class:`ArtefactStore`): ``put(run_id, path) -> Ref``, ``get(ref, dest)``,
 ``list(older_than)``, ``delete(ref)``. ``forge`` keeps an archive as a records-home attachment
 (<= :data:`ATTACHMENT_LIMIT_MB`); ``rclone`` any rclone remote, by shelling out with argv lists;
-``folder`` a local path. A :class:`Ref` IS the manifest entry the record carries --
+``folder`` a local path (:mod:`dev_lab.dev.artefactfolder`). A :class:`Ref` IS the manifest entry the record carries --
 ``{backend, ref, bytes, sha256}`` -- and :meth:`get` refuses bytes whose sha256 differs.
 
 CONFIG IS DATA. The writer side is the repo's ``[tool.lab_commons.artefacts]`` (:class:`Config`): an
-archive at or under ``threshold_mb`` goes to the forge, a larger one to ``backend``/``remote``. The
-reader side maps the same store to a local path in the MACHINE config (``[artefacts] folder``,
-:func:`reader`) -- a synced mirror of the remote, read, never written.
+archive at or under ``threshold_mb`` goes to the forge, a larger one to ``backend``/``remote``; the
+output and member-index budgets are declared there too, never defaulted. :func:`query_members` reads a
+record's index under that policy without touching an archive. The reader side maps the same store to
+a local path in the MACHINE config (``[artefacts] folder``, :func:`reader`) -- a synced mirror of the
+remote, read, never written.
 
 CLOUD-DRIVE-SHAPED LAYOUT. ``<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.gz`` plus ``<run-id>.manifest.json``,
 ``run-id = <sha12>-<platform>-<account>-<utcstamp>``: one archive per run (a synced drive pays per FILE),
@@ -37,21 +40,20 @@ CREDENTIALS. The rclone config is never in a repo, never logged, and must be mod
 from __future__ import annotations
 
 import dataclasses
-import json
-import os
 import re
-import shutil
-import tarfile
 import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.config import config_path, section
 from lab_commons.hpc.rclone import probe
+from lab_commons.hpc.records import read_record
 
+from dev_lab.dev.artefactfolder import FolderStore
+from dev_lab.dev.artefactindex import MemberFact, catalogue, select_members
 from dev_lab.dev.artefactstores import (
     ARCHIVE,
     ATTACHMENT_LIMIT_MB,
@@ -64,19 +66,15 @@ from dev_lab.dev.artefactstores import (
     ArtefactStore,
     ForgeStore,
     MissingOutput,
+    OutputBudgetRefused,
     RcloneStore,
     Ref,
     check_key,
     check_rclone_config,
-    landed_already,
     object_key,
     parsed_run_id,
-    ref_of,
     run_id,
     run_time,
-    scratch_dir,
-    sorted_refs,
-    verified_copy,
 )
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pulls_off
@@ -92,133 +90,30 @@ __all__ = [
     'ArtefactRefused',
     'ArtefactStore',
     'Config',
-    'FolderStore',
     'ForgeStore',
     'MissingOutput',
+    'OutputBudgetRefused',
     'RcloneStore',
     'Ref',
     'check_key',
     'check_rclone_config',
     'clean',
-    'collect',
     'config_from',
     'large_store',
     'load_config',
     'object_key',
-    'pack',
     'pinned',
+    'query_members',
     'reader',
     'remote_problem',
     'resolve',
     'run_id',
     'store_for',
-    'unpack',
 ]
 
 _BACKENDS: Final = (FORGE, RCLONE, FOLDER)
 _SHA_TOKEN: Final = re.compile(r'\b[0-9a-f]{12,40}\b')
 _TABLE: Final = 'tool.lab_commons.artefacts'
-
-
-def collect(tree: Path, outputs: Sequence[str]) -> list[Path]:
-    """The files *outputs* name under *tree*, sorted; every declaration must match at least one file."""
-    found: set[Path] = set()
-    missing = []
-    for pattern in outputs:
-        pure = PurePosixPath(pattern)
-        if pure.is_absolute() or '..' in pure.parts or ':' in pattern or '\\' in pattern:
-            msg = f'declared output {pattern!r} must be a relative path or glob inside the work tree'
-            raise ArtefactRefused(msg)
-        matched = [path for path in tree.glob(pattern) if path.is_file()]
-        if not matched:
-            missing.append(pattern)
-        found.update(matched)
-    if missing:
-        msg = f'{", ".join(missing)} matched nothing in {tree}'  # names first: a status description is short
-        raise MissingOutput(msg)
-    return sorted(found)
-
-
-def pack(tree: Path, files: Sequence[Path], dest: Path) -> Path:
-    """One gzip tar of *files* (named relative to *tree*) at *dest* -- stdlib only, so no host needs a tool."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(dest, mode='w:gz') as tar:
-        for path in files:
-            tar.add(path, arcname=path.relative_to(tree).as_posix(), recursive=False)
-    return dest
-
-
-def unpack(archive: Path, dest: Path) -> Path:
-    """The inverse of :func:`pack`: every member of *archive* under *dest* (a member leaving it is refused)."""
-    dest.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive, mode='r:gz') as tar:
-        tar.extractall(dest, filter='data')
-    return dest
-
-
-@dataclass(frozen=True)
-class FolderStore:
-    """A local directory; *root* holds ``<repo>/...`` exactly as the remote does (a reader's synced mirror)."""
-
-    root: Path
-    repo: str
-    backend: str = FOLDER
-
-    def _stored(self, key: str) -> Ref | None:
-        manifest = self.root / key.removesuffix(ARCHIVE)
-        path = manifest.with_name(manifest.name + MANIFEST)
-        return Ref.of(json.loads(path.read_text(encoding='utf-8'))) if path.is_file() else None
-
-    def put(self, ident: str, path: Path) -> Ref:
-        """Write-once: an existing key with other content is refused (module docstring)."""
-        base = object_key(self.repo, ident)
-        new = ref_of(self.backend, base + ARCHIVE, path)
-        check_key(base + MANIFEST)
-        landed = landed_already(self._stored(new.key), new)
-        if landed is not None:
-            return landed
-        target = self.root / new.key
-        target.parent.mkdir(parents=True, exist_ok=True)
-        for name, write in ((target, lambda dst: shutil.copyfile(path, dst)),
-                            (target.with_name(ident + MANIFEST),
-                             lambda dst: dst.write_text(json.dumps(new.manifest()), encoding='utf-8'))):  # fmt: skip
-            partial = name.with_name(name.name + '.partial')
-            write(partial)
-            try:
-                os.link(partial, name)  # fails rather than overwrite
-            finally:
-                partial.unlink()
-        return new
-
-    def get(self, ref: Ref, dest: Path) -> Path:
-        """Copy out and verify."""
-        scratch = scratch_dir()
-        try:
-            fetched = scratch / 'fetched'
-            shutil.copyfile(self.root / ref.key, fetched)
-            return verified_copy(ref, fetched, dest)
-        finally:
-            shutil.rmtree(scratch, ignore_errors=True)
-
-    def list(self, older_than: datetime | None) -> tuple[Ref, ...]:
-        """Every manifest under ``<root>/<repo>``."""
-        base = self.root / self.repo
-        found = [Ref.of(json.loads(p.read_text(encoding='utf-8'))) for p in base.rglob(f'*{MANIFEST}')]
-        return sorted_refs(found if base.is_dir() else [], older_than)
-
-    def delete(self, ref: Ref) -> None:
-        """Delete both objects, then each emptied parent up to the repo folder."""
-        archive = self.root / ref.key
-        archive.with_name(ref.run_id + MANIFEST).unlink(missing_ok=True)
-        archive.unlink(missing_ok=True)
-        top = self.root / self.repo
-        parent = archive.parent
-        while parent != top and top in parent.parents and not any(parent.iterdir()):
-            parent.rmdir()
-            parent = parent.parent
-
-
-# --- rclone ---------------------------------------------------------------------------------------
 
 
 # --- config, selection, reading -------------------------------------------------------------------
@@ -233,6 +128,13 @@ class Config:
     threshold_mb: int = ATTACHMENT_LIMIT_MB
     retain_days: int = 3
     cap_gb: float = 0.0  # 0: no cap
+    expanded_output_max_entries: int | None = None
+    expanded_output_max_bytes: int | None = None
+    member_index_max_members: int | None = None
+    member_index_max_bytes: int | None = None
+    member_index_max_path_bytes: int | None = None
+    record_max_compressed_bytes: int | None = None
+    record_max_decompressed_bytes: int | None = None
 
     @property
     def cap_bytes(self) -> int:
@@ -268,7 +170,82 @@ def config_from(text: str, where: str) -> Config:
     if problems:
         msg = f'{where} [{_TABLE}]: {"; ".join(problems)}'
         raise ArtefactRefused(msg)
+    budgets = _budget_problems(config)
+    if budgets:
+        msg = f'{where} [{_TABLE}]: {"; ".join(budgets)}'
+        raise OutputBudgetRefused(msg)
     return config
+
+
+def _budget_problems(config: Config) -> list[str]:
+    """The output budgets *config* declares wrongly: a bool is never an integer budget."""
+    expanded = {
+        'expanded_output_max_entries': config.expanded_output_max_entries,
+        'expanded_output_max_bytes': config.expanded_output_max_bytes,
+    }
+    bounded = {
+        'member_index_max_members': config.member_index_max_members,
+        'member_index_max_bytes': config.member_index_max_bytes,
+        'member_index_max_path_bytes': config.member_index_max_path_bytes,
+        'record_max_compressed_bytes': config.record_max_compressed_bytes,
+        'record_max_decompressed_bytes': config.record_max_decompressed_bytes,
+    }
+    found = [
+        f'{name} must be a nonnegative integer or omitted'
+        for name, value in expanded.items()
+        if value is not None and (type(value) is not int or value < 0)
+    ]
+    positive = [name for name, value in bounded.items() if value is not None and (type(value) is not int or value < 1)]
+    return found + ([f'{positive} must be positive integers or omitted'] if positive else [])
+
+
+def query_members(
+    root: Path,
+    record_path: Path,
+    ref: Ref,
+    paths: Sequence[str],
+    *,
+    case_sensitive: bool,
+    expected_sha256: str | None = None,
+) -> tuple[MemberFact, ...]:
+    """The members *paths* select from *ref*'s index in the record at *record_path*, under *root*'s policy.
+
+    The policy is read once from the trusted repo root BEFORE the record is opened, and every one of its
+    seven budgets must be declared -- an omission is refused, never filled with a default. Only the
+    bounded record is read (:func:`lab_commons.hpc.records.read_record`, which keeps its own
+    ``RecordRefused``); no store or archive is touched, so the answer is a declaration, not verified
+    archive contents.
+    """
+    config = load_config(root)
+    record_budget = (config.record_max_compressed_bytes, config.record_max_decompressed_bytes)
+    index = (config.member_index_max_members, config.member_index_max_bytes, config.member_index_max_path_bytes)
+    selection = (config.expanded_output_max_entries, config.expanded_output_max_bytes)
+    compressed, expanded = record_budget
+    members, index_bytes, path_bytes = index
+    entries, selected_bytes = selection
+    if (
+        compressed is None
+        or expanded is None
+        or members is None
+        or index_bytes is None
+        or path_bytes is None
+        or entries is None
+        or selected_bytes is None
+    ):
+        msg = f'a catalogue query requires explicit record, index and selection budget policy in [{_TABLE}]'
+        raise OutputBudgetRefused(msg)
+    record = read_record(
+        record_path, max_compressed_bytes=compressed, max_decompressed_bytes=expanded, expected_sha256=expected_sha256
+    )
+    facts = catalogue(record, ref, max_members=members, max_index_bytes=index_bytes, max_path_bytes=path_bytes)
+    return select_members(
+        facts,
+        paths,
+        max_entries=entries,
+        max_bytes=selected_bytes,
+        max_path_bytes=path_bytes,
+        case_sensitive=case_sensitive,
+    )
 
 
 def large_store(config: Config, repo: str) -> ArtefactStore | None:

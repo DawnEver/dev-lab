@@ -59,7 +59,7 @@ Each tick it:
 ### One poller per repo
 
 Measured 2026-10-24 on the gitea host (2 cores): 9425 API requests in ten minutes, 97% from two Ada login
-nodes, gitea at 135% CPU -- five accounts each ran `hpchost tick` for seven repos every five minutes, and every
+nodes, gitea at 135% CPU -- five accounts each ran `hpcaccount tick` for seven repos every five minutes, and every
 tick re-derived the same repo-wide answers. So the repo-wide poll (step 6) runs on ONE host per repo:
 
 - **The lease is a comment on the hosts issue** (`forgepoller`, marker `poller`): `holder: <card host>` and
@@ -173,9 +173,9 @@ What every host still reads, kept small:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards dev-lab and then each `[serve]` repo to its upstream and
   syncs its venv when `pyproject.toml` or `uv.lock` changed (`dev_lab.dev.workstation.refresh`); a cluster
-  account's cron line runs `python -m dev_lab.dev.hpchost tick <repo>` from the dev-lab checkout, which checks
+  account's cron line runs `python -m dev_lab.dev.hpcaccount tick <repo>` from the dev-lab checkout, which checks
   out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
-  (`dev_lab.dev.hpchost.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
+  (`dev_lab.dev.hpcaccount.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
   -- is released for that tick with its reason in the serve log, and the other repos are still served. The
   ref is the integration branch, not the trunk: a kit following the trunk would refuse the integration commit
   that adds a table, and that commit could then never reach the trunk.
@@ -189,7 +189,7 @@ What every host still reads, kept small:
 
 ### Deploy a Windows workstation
 
-The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, and the complete runbook for a JMAG
+The counterpart of the cluster's `python -m dev_lab.dev.hpcaccount deploy`, and the complete runbook for a JMAG
 workstation: run once per box, in PowerShell, as the user who serves. A workstation that serves parts but never
 heavy compute deploys the `light` role instead: [adding a forge workstation](adding-a-workstation.md). A JMAG workstation does a
 person's heavy JMAG work FIRST: the person declares it (step 8), and the forge takes only what lies outside it.

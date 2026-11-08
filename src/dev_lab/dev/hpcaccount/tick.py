@@ -1,22 +1,22 @@
-"""ONE CRON TICK of a served repo on a cluster account: ``python -m dev_lab.dev.hpchost tick <repo>``.
+"""ONE CRON TICK of a served repo on a cluster account: ``python -m dev_lab.dev.hpcaccount tick <repo>``.
 
 THE HOST REFRESHES AND SERVES (incident 2026-10-13): a repo served from its OWN venv cannot update
 itself when the kit in that venv is too old to run -- the code that would update it is the code that
 fails. So the cron line runs THIS, from the host's dev-lab checkout
-(:func:`dev_lab.dev.hpchost.spec.tick_command`), and then THE HOST KIT's ``forge serve`` in the repo's
-checkout (:func:`~dev_lab.dev.hpchost.spec.host_serve_argv`); the repo's venv only runs its producers. Every
-step is the deploy's own and keyed (:func:`dev_lab.dev.hpchost.steps.update` and ``build``), so an
+(:func:`dev_lab.dev.hpcaccount.spec.tick_command`), and then THE HOST KIT's ``forge serve`` in the repo's
+checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`); the repo's venv only runs its producers. Every
+step is the deploy's own and keyed (:func:`dev_lab.dev.hpcaccount.steps.update` and ``build``), so an
 unchanged tick only fetches.
 
 A NEED IS RE-ASSERTED EVERY TICK (Ada 2026-10-25: a tool the deploy proved was gone later, and every tick
 claimed parts its build could not make). Each repo's declared ``needs`` is probed by the deploy's own
-:func:`~dev_lab.dev.hpchost.checks.runs`, once per tool per tick, in the tick's own environment (the cron
+:func:`~dev_lab.dev.hpcaccount.checks.runs`, once per tool per tick, in the tick's own environment (the cron
 line already set it up); a repo lacking one is released unserved -- nothing claimed -- and a ``needs``
 alarm names the account and the tool.
 
 ONLY A VERIFICATION ACCOUNT SERVES (user ruling 2026-11-06): a tick on an account whose ``[deploy] role`` is not
 ``"verification"`` -- a research account a stale cron line survived on -- refreshes, then refuses to serve, exit 2
-naming the role; its own ``hpchost deploy`` removes the line (:func:`dev_lab.dev.hpchost.spec.ticked`).
+naming the role; its own ``hpcaccount deploy`` removes the line (:func:`dev_lab.dev.hpcaccount.spec.ticked`).
 """
 
 from __future__ import annotations
@@ -33,9 +33,9 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
 from dev_lab.dev.forgefleet import serve_off
-from dev_lab.dev.hpchost.checks import runs
-from dev_lab.dev.hpchost.spec import VERIFICATION, Deployment, Repo, checkout_of, host_serve_argv, load
-from dev_lab.dev.hpchost.steps import Step, Tools, build, declared, update
+from dev_lab.dev.hpcaccount.checks import runs
+from dev_lab.dev.hpcaccount.spec import VERIFICATION, Deployment, Repo, checkout_of, host_serve_argv, load
+from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, update
 
 __all__ = ['account', 'tick']
 
@@ -83,7 +83,7 @@ def tick(
     Runs from the host's dev-lab checkout, never the repo's venv (incident 2026-10-13: a repo venv
     whose old ``forge serve`` exited 2 every tick could never run the code that would update it). *name*
     follows its declared ref and its venv is rebuilt where its inputs (its committed lock among them) moved
-    (:func:`dev_lab.dev.hpchost.steps.build`); a repo that cannot is RELEASED this tick with its reason,
+    (:func:`dev_lab.dev.hpcaccount.steps.build`); a repo that cannot is RELEASED this tick with its reason,
     exit 2, and is not served. A repo declared ``serve = false`` is refreshed and not served.
     One lacking a declared need also sounds a ``needs`` *alarm*; *probed* is the
     tick's probe cache, shared by every repo one tick serves.
@@ -92,7 +92,7 @@ def tick(
     ``flock``) is the only one that moves the host checkout; every other tick reads it. Measured 2026-10-19
     (Ada): every repo's tick also updated it, each under only its own repo's flock, and concurrent ticks
     collided on ``.git/index.lock``. Serving is the host kit's ``forge serve`` in the repo's
-    checkout (:func:`~dev_lab.dev.hpchost.spec.host_serve_argv`), never the repo venv's.
+    checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`), never the repo venv's.
     """
     spec = load(config or config_path())
     repo = next((one for one in spec.repos if one.name == name), None) if spec else None

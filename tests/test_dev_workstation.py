@@ -26,7 +26,7 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev import hostrefresh, servetask, venvfollow, workstation, workstationfile, workstationregistry
 from dev_lab.dev.forgealarm import Alarm
-from dev_lab.dev.hpchost.spec import host_serve_argv
+from dev_lab.dev.hpcaccount.spec import host_serve_argv
 from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpath import venv_interpreter
 
