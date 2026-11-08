@@ -53,7 +53,7 @@ sharper pattern with the near-miss added to ``permits`` -- never a narrower clai
 
 from __future__ import annotations
 
-from dev_lab.dev._deny_consent_row import CONSENT_CODE_NEVER_TYPED
+from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
@@ -76,6 +76,7 @@ RETIRED_IDS: dict[str, str] = {
     'GIT-NETWORK-VERB': 'NETWORK-VERB',
     'REVIEW-HOLD-VIA-TAKEOVER': 'STATUS-VIA-DOORS',  # 2026-10-26: it refuses tests/review too
     'REVIEW-STATUS-VIA-DOORS': 'STATUS-VIA-DOORS',  # 2026-10-27: it refuses tests/security too
+    'CONSENT-CODE-NEVER-TYPED': 'CONSENT-CODE-FROM-THE-USER',  # 2026-11-08: the user gives the code, the agent runs it
 }
 
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
@@ -89,7 +90,7 @@ NETWORK_VERB_PATTERN = (
 DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     SUBAGENT_NO_PUSH,
-    CONSENT_CODE_NEVER_TYPED,
+    CONSENT_CODE_FROM_THE_USER,
     {
         'id': 'BARE-TEST-INVOCATION',
         # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the
