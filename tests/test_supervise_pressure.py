@@ -218,7 +218,7 @@ def test_a_disk_filling_fast_alarms_on_days_to_full_before_it_is_nearly_full(tmp
     """20 GB free, 10 GB written per day: full in two days, under the three-day floor. Control: a flat disk."""
     declared = Declared(paths=(tmp_path,))
     day = 86400.0
-    past = {'disk': {tmp_path.as_posix(): [[day - 7200.0, 80.0 * GB - 10.0 * GB / 12]]}}  # 2 h: what 2 days needs
+    past = {'disk': {tmp_path.as_posix(): [[day - 10800.0, 80.0 * GB - 10.0 * GB / 8]]}}  # 3 h: past what 2 days needs
     filling = measure(declared, past, now=day, usage=lambda _p: Disk(100 * GB, 80 * GB, 20 * GB), linux=False,
                       psutil=lambda: None, sizes=lambda _r: ())  # fmt: skip
     assert [f.severity for f in filling.findings] == ['warning']
