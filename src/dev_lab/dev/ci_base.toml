@@ -30,8 +30,8 @@
 #                 runs after the parts, which gate it: every part PASS (user ruling 2026-11-04)
 #   review        LAST (user ruling 2026-11-05; integrator ruling M8 2026-11-06: the one-shot review runs at the
 #                 first MERGE-READY head): only when merge-ready's decision called the head's review due -- every
-#                 other condition stands -- does `forge review run --pr N` post tests/review (pull_request ONLY --
-#                 never pull_request_target, which would run a fork's code with this repository's secrets; Gitea's
+#                 other condition stands -- does `forge review run --pr N` post tests/review (a PR's run ONLY:
+#                 pull_request, or its dispatch by continue.yml with `pr` -- never pull_request_target, which would run a fork's code with this repository's secrets; Gitea's
 #                 review.yml below is the one pull_request_target workflow: it acts on nothing the head declares,
 #                 below). A push reviews nothing by itself; the merge tick merges the reviewed head
 #   promote       NIGHTLY (D48-1A, user ruling 2026-11-01), never per merge: on the full run of a pending
@@ -63,12 +63,22 @@ description = "a merge's smoke run: the PR's part set, no promote"
 type = "boolean"
 default = false
 
+# A PR'S RUN, DISPATCHED (continue.yml): a PR the job token opens starts no workflow, so the job that opened it
+# dispatches this one on the PR's branch with its number. That run IS the PR's run -- the PR's part set, security,
+# head gates, merge-ready and review, every status on the head sha the PR shows -- and the review reads the PR's own
+# scope by its number (a continuation's: from its landed head, forgereview_scope.review_base). It runs the branch's
+# own file, as a same-repository pull_request run does, so it holds no secret that run would not.
+["ci.yml".on.workflow_dispatch.inputs.pr]
+description = "the pull request this run is, for a PR the job token opened (continue.yml)"
+type = "string"
+default = ""
+
 # A NEW PUSH CANCELS ITS PR'S SUPERSEDED RUN, and nothing else: a PR's runs share ci-pr-<number>; a push to
 # integrate/main, the nightly run and a merge's smoke each take their own run_id, so none is ever cancelled -- not
 # even while PENDING, which Actions cancels in a shared group whatever cancel-in-progress says.
 ["ci.yml".concurrency]
-group = "ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}"
-cancel-in-progress = "${{ github.event_name == 'pull_request' }}"
+group = "ci-${{ (github.event_name == 'pull_request' || inputs.pr != '') && format('pr-{0}', github.event.pull_request.number || inputs.pr) || github.run_id }}"
+cancel-in-progress = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
 
 ["ci.yml".permissions]
 contents = "read"
@@ -80,7 +90,9 @@ contents = "read"
 HEAD_SHA = "${{ github.event.pull_request.head.sha || github.sha }}"
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # the family repos sit beside this one
 # The event whose part set this run takes (`jobparts matrix --event`): a merge's smoke takes the PR's.
-PARTS_EVENT = "${{ (github.event_name == 'push' || inputs.smoke) && 'pull_request' || github.event_name }}"
+PARTS_EVENT = "${{ (github.event_name == 'push' || inputs.smoke || inputs.pr != '') && 'pull_request' || github.event_name }}"
+# The PR this run is: the event's, else the dispatched one's (continue.yml); empty outside a PR.
+PR_NUMBER = "${{ github.event.pull_request.number || inputs.pr }}"
 
 ["ci.yml".jobs.parts]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
@@ -133,11 +145,11 @@ statuses = "write"
 
 ["ci.yml".jobs.security]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
-if = "${{ github.event_name == 'pull_request' }}"
+if = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "tests/security", run = "uv run --no-sync python -m dev_lab.dev.forge security run --pr ${{ github.event.pull_request.number }}" },
+    { name = "tests/security", run = "uv run --no-sync python -m dev_lab.dev.forge security run --pr \"$PR_NUMBER\"" },
 ]
 
 ["ci.yml".jobs.security.permissions]
@@ -147,11 +159,11 @@ pull-requests = "read"
 
 ["ci.yml".jobs.head-gates]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
-if = "${{ github.event_name == 'pull_request' }}"
+if = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "head gates", run = "uv run --no-sync python -m dev_lab.dev.forge headgate run --pr ${{ github.event.pull_request.number }}" },
+    { name = "head gates", run = "uv run --no-sync python -m dev_lab.dev.forge headgate run --pr \"$PR_NUMBER\"" },
 ]
 
 ["ci.yml".jobs.head-gates.permissions]
@@ -173,12 +185,14 @@ pull-requests = "read"
 # The dev_lab door is the shared `door` steps': the dev-lab DOOR_SHA's uv.lock pins.
 ["ci.yml".jobs.review]
 needs = ["merge-ready"]
-if = "${{ always() && github.event_name == 'pull_request' && needs.merge-ready.outputs.due == 'true' }}"
+if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') && needs.merge-ready.outputs.due == 'true' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
     # The door and method install with uv; no cache, so nothing a PR run saved is restored into this job.
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = false } },
+    # A dispatched PR run has no pull_request base: its door is the integration tip's, as continue.yml's is.
+    { name = "Name the integration tip", if = "${{ !github.event.pull_request }}", run = 'echo "INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/integrate/main)" >> "$GITHUB_ENV"' },
     { use-steps = "door" },
     { use-steps = "method" },
     { use-steps = "forge-tokens" },
@@ -195,12 +209,12 @@ issues = "write"
 ["ci.yml".jobs.merge-ready]
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["security", "head-gates", "part", "absent-parts"]
-if = "${{ always() && github.event_name == 'pull_request' }}"
+if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
 outputs = { due = "${{ steps.ready.outputs.due }}" }
 steps = [
     { use-steps = "setup" },
-    { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
+    { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr "$PR_NUMBER")"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
     { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
 ]
 
@@ -375,7 +389,7 @@ printf '%s' "$GITHUB_TOKEN" > "$RUNNER_TEMP/forge-secrets/api"
 ]
 review = [
     { name = "tests/review", run = '''trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf "$RUNNER_TEMP/forge-secrets"' EXIT
-"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number || inputs.pr }} --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file "$RUNNER_TEMP/forge-secrets/read" --api-token-file "$RUNNER_TEMP/forge-secrets/api" --runtime "ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python"
 ''', env = { AI_LAB_KEYS_PR_REVIEW = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.AI_LAB_KEYS_PR_REVIEW || '' }}" } },
 ]
 
@@ -663,7 +677,9 @@ steps = [
 # so a push onto its branch is carried by a continuation PR (`continues #N`) the forge opens -- on GitHub, this job, on
 # a push to any branch but integration and the trunk (`forge pr continue --head <branch> --sha <sha>`, one forge call
 # when the branch has no merged PR). It reads the integration branch's review declaration, so it fetches that ref. A
-# PR the job token opens starts no workflow: the continuation's CI starts at its next push. The pushed head is DATA:
+# PR the job token opens starts no workflow, so the job then dispatches ci.yml on the branch with the PR's number
+# (actions: write; workflow_dispatch is an event the job token may start): that run tests the head sha and posts
+# its statuses there, which the PR shows. No PR opened, nothing dispatched. The pushed head is DATA:
 # the verb runs from the `door` the integration tip's lock pins (INTEGRATION_SHA), never the head's own environment.
 ["continue.yml"]
 name = "Continue a landed branch"
@@ -689,13 +705,18 @@ steps = [
     { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
     { name = "Fetch the integration branch", run = 'git fetch --no-tags --depth=1 origin "+refs/heads/integrate/main:refs/remotes/origin/integrate/main" && echo "INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/integrate/main)" >> "$GITHUB_ENV"' },
     { use-steps = "door" },
-    { name = "Open the continuation PR", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.forge pr continue --head "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"' },
+    { id = "continue", name = "Open the continuation PR", run = '''said="$("$REVIEW_PYTHON" -I -m dev_lab.dev.forge pr continue --head "$GITHUB_REF_NAME" --sha "$GITHUB_SHA")" || exit $?
+echo "$said"
+echo "pr=$(echo "$said" | sed -n 's/.*: #\([0-9][0-9]*\) continues #[0-9].*/\1/p')" >> "$GITHUB_OUTPUT"
+''' },
+    { name = "Run CI on the continuation PR", if = "${{ steps.continue.outputs.pr != '' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f pr="$PR"', env = { GH_TOKEN = "${{ github.token }}", PR = "${{ steps.continue.outputs.pr }}" } },
 ]
 
 ["continue.yml".jobs.continue.permissions]
 contents = "read"
 pull-requests = "write"
 issues = "write"
+actions = "write"
 
 # A REVIEW ASKED AGAIN IS RUN BY THE FORGE (user ruling 2026-11-06): the review is one-shot, and `forge review again
 # <pr>` -- after a security finding is fixed -- leaves a comment carrying the review-again marker; `forge review carry

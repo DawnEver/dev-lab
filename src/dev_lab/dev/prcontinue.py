@@ -18,8 +18,8 @@ WHO OPENS IT, the same function on both forges:
   contain -- read from the tick's fetched refs, so a branch costs a forge call only while it holds unlanded work
   and no PR.
 * GitHub: the ``continue.yml`` workflow on a push to any other branch runs ``forge pr continue --head <branch>
-  --sha <sha>`` (:func:`main`). A PR the job token opens starts no workflow, so the continuation's CI starts at its
-  next push.
+  --sha <sha>`` (:func:`main`). A PR the job token opens starts no workflow, so the job then dispatches ci.yml on
+  the branch with the PR's number (``workflow_dispatch``, ``-f pr=<N>``): that run is the PR's, at its head sha.
 
 A person or agent runs ``python -m dev_lab.dev.forge pr continue [--head <branch> --sha <sha>]``.
 """

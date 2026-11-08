@@ -48,14 +48,25 @@
           }
         },
         {
+          "id": "continue",
           "name": "Open the continuation PR",
-          "run": "\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge pr continue --head \"$GITHUB_REF_NAME\" --sha \"$GITHUB_SHA\""
+          "run": "said=\"$(\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge pr continue --head \"$GITHUB_REF_NAME\" --sha \"$GITHUB_SHA\")\" || exit $?\necho \"$said\"\necho \"pr=$(echo \"$said\" | sed -n 's/.*: #\\([0-9][0-9]*\\) continues #[0-9].*/\\1/p')\" >> \"$GITHUB_OUTPUT\"\n"
+        },
+        {
+          "name": "Run CI on the continuation PR",
+          "if": "${{ steps.continue.outputs.pr != '' }}",
+          "run": "gh workflow run ci.yml --repo \"$GITHUB_REPOSITORY\" --ref \"$GITHUB_REF_NAME\" -f pr=\"$PR\"",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}",
+            "PR": "${{ steps.continue.outputs.pr }}"
+          }
         }
       ],
       "permissions": {
         "contents": "read",
         "pull-requests": "write",
-        "issues": "write"
+        "issues": "write",
+        "actions": "write"
       }
     }
   }
