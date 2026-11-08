@@ -128,6 +128,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'partrows',
     'forgeoom',
     'forgeslurm',
+    # ORIGINAL: a submit detached from the tick under its own lock was never done; split from forgeserve (2026-11-08).
+    'forgesubmit',
     'slurmkilled',
     'forgeship',
     'artefacts',

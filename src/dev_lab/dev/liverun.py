@@ -18,7 +18,7 @@ cooperation, and it answers TWO questions, one lock each:
   Measured 2026-10-19: the v3 sweep's interpreter works in its worktree; its bash chains name main's
   ``scratch/`` scripts; two dozen day-old ``tail -F output/...`` processes and Claude Code's own node processes
   sit in the checkout and read none of it. A serve works in its own root
-  (:func:`dev_lab.dev.forgeserve.work_root`), so it locks the venv and never the tree.
+  (:func:`dev_lab.dev.worktreeplace.work_root`), so it locks the venv and never the tree.
 
 WHAT IS NOT A RUN, each decided by evidence:
 
