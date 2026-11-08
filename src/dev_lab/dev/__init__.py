@@ -344,6 +344,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
 * :mod:`dev_lab.dev.forgeoom` -- an OOM-killed task floors every file it ran at its ask, in the folded record.
 * :mod:`dev_lab.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
+* :mod:`dev_lab.dev.forgesubmit` -- a cluster submit (build, collection) in its own process and lock, off the tick.
 * :mod:`dev_lab.dev.slurmkilled` -- the jobs ``sacct`` says Slurm killed for memory or time, and what each used.
 * :mod:`dev_lab.dev.hpcusage` -- an account's last day from its one ``sacct`` read: run budget and card table.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
@@ -414,6 +415,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
+* :mod:`dev_lab.dev.forgereview_stands` -- a review that stands, or is asked again: a later head reuses the verdict.
 * :mod:`dev_lab.dev.reviewcode` -- what a review reads as code; the review job's first step settles a PR with none.
 * :mod:`dev_lab.dev.forgereview_runtimes` -- where this host keeps a review command's interpreters (``[runtimes]``).
 * :mod:`dev_lab.dev.reviewruntime` -- the host's ai-lab review runtime, built from the commit dev-lab's lock pins.
@@ -456,8 +458,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
-* :mod:`dev_lab.dev.landedpush` -- NO-PUSH-ONTO-A-LANDED-PR: a push onto a branch whose PR the forge merged or
-  closed, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
+* :mod:`dev_lab.dev.closedpush` -- NO-PUSH-ONTO-A-CLOSED-PR: a push onto a branch whose PR the forge closed
+  unmerged, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
+* :mod:`dev_lab.dev.prcontinue` -- LANDED-BRANCH-CONTINUES: a push onto a merged PR's branch gets a continuation PR
+  (``continues #N``) the forge opens: Gitea's serve tick, GitHub's ``continue.yml``, and ``forge pr continue``.
+* :mod:`dev_lab.dev.branchreview` -- the ONE review record per branch: its PRs, oldest first, and every carried
+  finding's disposition; what a continuation's review is scoped by and carries (``forge review carry``).
 * :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: a ``pr/*`` push or ``pr ready`` is refused when the head
   lacks ``origin/<integration>`` or its lock lags a floated sibling; the remedy is ``forge sync``.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin

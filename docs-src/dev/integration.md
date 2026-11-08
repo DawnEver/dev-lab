@@ -178,6 +178,20 @@ reviewed again only when the PR's own reviewable code has grown to `forgereview.
 the review measured, or when a session asks: `python -m dev_lab.dev.forge review again <pr>` (on GitHub the
 comment it leaves starts the `review-again.yml` workflow; on Gitea the serve's next tick honours it).
 
+**A landed branch continues; the merged PR is never reused** (LANDED-BRANCH-CONTINUES, user-approved design
+2026-11-07). A merged PR stays the record of what was reviewed and tested at its head. A push onto its branch is
+carried by a NEW PR the forge opens from the same branch (`dev_lab.dev.prcontinue`): Gitea's serve tick, before any
+prune, over unlanded origin branches with no open PR; GitHub's `continue.yml` on the push; by hand
+`python -m dev_lab.dev.forge pr continue [--head <branch> --sha <sha>]`. It is titled `<title> (continues #N)` and its
+body opens `Continues #N`. Its review reads only the increment from the last landed head
+(`forgereview_scope.review_base`): a change touching previously reviewed code is in scope, because scope is what the
+diff touches. The branch keeps ONE review record across its PRs (`dev_lab.dev.branchreview`: a closed issue
+`review record: <branch>`) chaining its PRs and every carried finding's disposition; the findings stay in each PR's
+review ledger. A predecessor's finding with no disposition is carried OPEN: the reviewer reads it as context, and it
+holds `tests/review` at `failure` (`carried finding(s) ...`) until a session resolves it or defers it with a reason:
+`python -m dev_lab.dev.forge review carry <pr> --resolve <id>` or `--defer <id> --reason "..."`. The verdict then
+moves with no model call (GitHub: the comment starts `review-again.yml`; Gitea: the next tick).
+
 **Tagged findings, all advice but security.** Every finding carries `severity` (`HIGH`/`MEDIUM`/`LOW`), `security`
 (bool) and `rule` -- the one principle id (ai-lab's `principles.json`) or registry rule id (`dev_lab.dev.rules`) it
 violates. `tests/review` is `success` once the review ran, its description counting the advice by severity; it is
@@ -293,9 +307,10 @@ local reads only -- no network call beyond the push itself -- with no escape hat
 | INTEGRATION-TAKES-ONLY-FORGE-MERGES | a new first-parent commit on the integration branch past `pr_merges_since` that the forge did not merge: replaces INTEGRATION-IS-MERGES-ONLY for that branch |
 | ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES | a push creating or updating `refs/heads/X` where the pushed tip's branch set does not admit `X` (not the trunk, a session, or an `ephemeral` glob): fan-out stays local |
 
-The separate base row `landed-pr` (`dev_lab.dev.landedpush`) READS THE FORGE: NO-PUSH-ONTO-A-LANDED-PR refuses a
-push updating a branch whose PR into the integration branch is merged or closed while no open PR has that head,
-naming the remedy (a new PR from the branch, or a new branch name); a forge that cannot be read refuses.
+The separate base row `closed-pr` (`dev_lab.dev.closedpush`) READS THE FORGE: NO-PUSH-ONTO-A-CLOSED-PR refuses a
+push updating a branch whose newest PR into the integration branch was closed UNMERGED, naming the remedy (a new PR
+from the branch, or a new branch name); a forge that cannot be read refuses. A merged PR's branch passes: the forge
+continues it (LANDED-BRANCH-CONTINUES, above).
 
 The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) refuses a `pr/*` push whose tip
 lacks `origin/<integration>` (fetched afresh; a failed fetch refuses) or whose lock lags a floated sibling's

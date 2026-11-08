@@ -205,7 +205,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             '(`[tool.dev_lab.review] command`), run by the forge -- which holds no model client, prompt or key -- '
             'once on a ready PR and again only when its own change has grown or a session asks, its stdout read as '
             'the versioned findings JSON (an unknown `schema_version` refused by name); its `tests/review` is '
-            '`success` once it ran and `failure` only on a security finding, a review that could not run merges '
+            '`success` once it ran and `failure` only on a security finding (or a continuation`s open carried '
+            'finding, LANDED-BRANCH-CONTINUES), a review that could not run merges '
             'with an `Unreviewed:` line, and one session keeps one task in one PR -- a PR is never split for its '
             'review.'
         ),

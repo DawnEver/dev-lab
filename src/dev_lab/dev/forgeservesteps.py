@@ -10,7 +10,10 @@ import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from lab_commons.compute.presence import demote
+from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import escapes, forgeship, hostalarm, retention
@@ -42,10 +45,17 @@ from dev_lab.dev.forgetidy import tidy as issue_tidy
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.integrator import observe
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.partrows import needs_of_row
+from dev_lab.dev.prcontinue import serve_continue_landed
 from dev_lab.dev.prlanded import serve_close_landed
+from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.relock import carry
 
+if TYPE_CHECKING:
+    from dev_lab.dev.forgeproduce import Produced
+
 __all__ = [
+    'demote_unreachable',
     'hygiene',
     'pressed',
     'prompt',
@@ -241,10 +251,12 @@ def repo_wide(
 ) -> None:
     """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgepoller.polls`).
 
-    In order: close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock, and the drift
-    census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. A repo that
+    In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
+    branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
+    and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. A repo that
     declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
     """
+    serve_continue_landed(root, client(root), say=say, alarm=alarm)
     if ci_merges(root):
         say(f'[serve] the {CI_MERGER} job closes landed PRs and sweeps landed branches')
     else:
@@ -260,3 +272,11 @@ def repo_wide(
         drift_step(root, repo, say=say, alarm=alarm, now=clock())
     except (OSError, ValueError) as why:
         say(f'[serve] the drift census did not run: {why}')
+
+
+def demote_unreachable(produced: Sequence[Produced]) -> None:
+    """A part whose infrastructure did not answer (a declared outage) demotes every checked tool it needs here."""
+    for one in produced:
+        if one.outage:
+            tools = sorted(needs_of_row(one.platform) & CHECKS.keys())
+            demote(tools, f'{one.platform} at {one.sha[:12]} exited {int(ProducerExit.UNREACHABLE)} (unreachable)')

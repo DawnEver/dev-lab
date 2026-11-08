@@ -86,7 +86,7 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 # Re-taken 2026-10-13 at 161 after the compute system, requests, retention and forge-audit modules: floor 145.
 # Re-taken 2026-10-19 at 171 with famtests.boxneeds: floor 155.
 # Re-taken 2026-10-22 at 185: labsession, pradmit, ephemeralrefs, famtests.{ephemeralrefs,restatedrules,sizesplits}.
-KIT_FLOOR = 165
+KIT_FLOOR = 300
 KIT_HEADROOM = 25
 
 #: Both halves of the validation need a population or the separation is vacuous. MEASURED over the
@@ -485,7 +485,7 @@ def test_a_roster_that_imports_no_kit_module_is_not_a_mismatch(tmp_path: Path) -
 # RE-MEASURED 2026-09-19 at 22 sub-package modules, 2 past the old ceiling of 8 + 12.
 # RE-MEASURED 2026-10-04 at 31 after the three-lane merge and `famtests.branchset`; re-taken the same way.
 # RE-MEASURED 2026-10-28 at 53 when `famtests.hostnode` tipped the 26 floor past binding; 53 - 12 headroom.
-NESTED_FLOOR = 41
+NESTED_FLOOR = 50
 NESTED_HEADROOM = 12
 
 #: The declared spellings. A floor rather than a pin, because the remedy for a spelling nobody
@@ -500,7 +500,6 @@ SPELLING_HEADROOM = 3
 # Re-taken 2026-10-17 at 497: the launch door (one more spelling per module, 2026-10-16) and dev.forgedemand (D4).
 # Re-taken 2026-10-20 at 531 by both famtests.onboarding (#181) and the declared review command (#177);
 # the tighter of the two floors stands.
-# Re-taken 2026-11-08 at 951 on the #313 merge of integrate/main (the kit grew past the 474 floor's headroom).
 CASE_FLOOR = 900
 CASE_HEADROOM = 90
 

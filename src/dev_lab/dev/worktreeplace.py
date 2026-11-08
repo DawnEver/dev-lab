@@ -37,6 +37,7 @@ __all__ = [
     'main_checkout',
     'misplaced_worktrees',
     'remedy',
+    'work_root',
 ]
 
 #: Where every linked worktree of a repository lives, relative to that repository's MAIN toplevel.
@@ -139,3 +140,14 @@ def misplaced_worktrees(root: Path) -> tuple[Misplaced, ...]:
 def remedy(found: Misplaced) -> str:
     """The exact command that puts *found* where the rule says, REFUSAL-NAMES-THE-REMEDY."""
     return f'git -C "{found.main.as_posix()}" worktree move "{found.path.as_posix()}" "{found.move_to.as_posix()}"'
+
+
+def work_root(root: Path) -> Path:
+    """Where a serve WORKS: its checkout's worktree root, beside the trees it produces in -- never the tree itself.
+
+    A ``python -m`` process puts its cwd on ``sys.path``, so a serve whose cwd were the checkout would READ that
+    tree for its whole life and lock it against every edit (TREE-HAS-A-LIVE-RUN, :mod:`dev_lab.dev.liverun`).
+    """
+    work = root / WORKTREES_REL
+    work.mkdir(parents=True, exist_ok=True)
+    return work
