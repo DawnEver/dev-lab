@@ -64,7 +64,7 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
     ),
     'needs': None,
     # A family repo's checkout lives BESIDE its siblings, so cloning one there is the one placement outside
-    # `.claude/worktrees` that is right -- and only the filesystem can tell it apart (the target is new, named
+    # the worktrees directory that is right -- and only the filesystem can tell it apart (the target is new, named
     # for its repo, beside a checkout from the same forge). 2026-11-08: adopting learn-lab was refused here.
     'admits': 'family-sibling-clone',
     'refuses': (
