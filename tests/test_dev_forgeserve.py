@@ -1491,6 +1491,31 @@ def test_consecutive_slow_ticks_reach_every_run_least_recently_advanced_first(mo
     assert advanced[2] == shas[2], 'the second tick starts at the run the first did not reach'
 
 
+def test_a_tick_gathers_and_posts_before_any_run_it_submits(monkeypatch, tmp_path: Path) -> None:
+    """A submit builds and COLLECTS on the login node (an hour cold); a finished run never waits behind it.
+
+    Ada 2026-11-07: a tick spent over an hour in ``pytest --collect-only`` for a fresh claim while the
+    runs behind it held finished results, and ``flock -n`` skipped every tick until it ended. So a tick
+    advances its submitted runs (gather, post) before its claimed ones (submit), each side least recently
+    advanced first. PLANTED CONTROL: with no run to submit, the order is the least-recently-advanced one.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 3)
+    for sha in shas[1:]:
+        (run,) = [one for one in forgerunstate.live('https://f/o/r.git') if one.sha == sha]
+        forgerunstate.save(dataclasses.replace(run, phase=forgerunstate.SUBMITTED, job_ids=('1',)))
+    advanced: list[str] = []
+    monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, host='base')
+    assert advanced[-1] == shas[0], 'the claimed run submits only after every submitted run was gathered'
+    assert sorted(advanced[:2]) == shas[1:], advanced
+    advanced.clear()
+    (first,) = [one for one in forgerunstate.live('https://f/o/r.git') if one.sha == shas[0]]
+    forgerunstate.save(dataclasses.replace(first, phase=forgerunstate.SUBMITTED, job_ids=('1',)))
+    order = [one.sha for one in forgerunstate.live('https://f/o/r.git')]
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, host='base')
+    assert advanced == order, 'PLANTED: no submit, least recently advanced first'
+
+
 class _Untagged(_Slurm):
     """Slurm holding jobs that carry no session tag."""
 

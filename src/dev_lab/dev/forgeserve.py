@@ -115,7 +115,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.box import Holding, holdings
@@ -307,6 +307,10 @@ def serve(
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
 
 
+#: The phases whose next step is a submit -- a build and a collection on the login node.
+_TO_SUBMIT: Final = frozenset({forgerunstate.CLAIMED_PHASE, forgerunstate.SUBMITTING})
+
+
 def _advance(
     root: Path,
     runs: Sequence[forgerunstate.Run],
@@ -331,9 +335,14 @@ def _advance(
     (:func:`forgerunstate.live`), so the runs one tick leaves are the first the next reaches: every run is
     reached within as many ticks as there are runs. The runs are bounded by one period plus one step, and
     ``forge queue``'s STALE keeps meaning down.
+
+    RESULTS BEFORE SUBMITS (Ada 2026-11-07): a submit builds and collects on the login node -- over an hour
+    cold -- so every run already submitted (a gather, a post) goes before every run still to submit, each side
+    in its least-recently-advanced order. A finished run never waits behind a collection in its own tick.
     """
     if not runs:
         return []
+    runs = sorted(runs, key=lambda run: run.phase in _TO_SUBMIT)  # stable: each side keeps its order
     built = client(root)
     me = Claim(machine, built.whoami(), forge_now(built) + lease, str(seat) if seat else '')
     if slurm is None:  # not on a cluster, or no grant for this account
