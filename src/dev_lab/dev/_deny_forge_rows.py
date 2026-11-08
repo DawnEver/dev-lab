@@ -5,6 +5,7 @@ Also the venv-interpreter example subjects every row file shares, derived from t
 
 from __future__ import annotations
 
+from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.venvpath import PYTHON_SLOT, VENV_LAYOUTS
 
 __all__ = ['FORGE_WRITE_ROWS', 'VENV_PYTHONS']
@@ -19,9 +20,11 @@ VENV_PYTHONS: tuple[str, ...] = tuple('/'.join(parts) for parts in VENV_LAYOUTS.
 
 #: The hazard and the exit every FORGE-WRITE row shares, spelled once: three rows, one reason.
 _FORGE_HAZARD = 'a forge write through any client but the family door does not record which machine or agent wrote it.'
+#: The exits are DERIVED from the policy table's doors linked to FORGE-WRITE-VIA-CLI: a hand-copied list named
+#: ``pr create|close`` while the doors also held ``ready`` and ``draft`` (user ruling 2026-11-07).
 _FORGE_REMEDY = (
-    f'Write through the family door: {PYTHON_SLOT} -m dev_lab.dev.forge issue create|comment|close, '
-    'pr create|close; a verb it lacks is the integrator`s.'
+    f'Write through the family door: {PYTHON_SLOT} -m dev_lab.dev.forge '
+    f'{exits_of("FORGE-WRITE-VIA-CLI", "dev_lab.dev.forge")}; a verb it lacks is the integrator`s.'
 )
 
 #: The HTTP verbs that WRITE, in every case spelling a shell accepts (curl and PowerShell both do).

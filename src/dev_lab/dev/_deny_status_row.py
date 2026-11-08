@@ -13,7 +13,7 @@ own new exemptions cover its findings -- by the release door, which RECORDS its 
 (:mod:`dev_lab.dev.forgesecurity`). A raw post would release with none, so the pattern refuses it as well.
 
 It guards a security context as well as the review ones, so its name says STATUS alone; its earlier ids are
-registered in ``RETIRED_IDS`` (:mod:`dev_lab.dev._deny_rows`).
+registered in the retired registry (:func:`dev_lab.dev._deny_rows.retired_row`).
 """
 
 from __future__ import annotations

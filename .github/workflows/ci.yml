@@ -21,6 +21,11 @@
           "description": "a merge's smoke run: the PR's part set, no promote",
           "type": "boolean",
           "default": false
+        },
+        "pr": {
+          "description": "the pull request this run is, for a PR the job token opened (continue.yml)",
+          "type": "string",
+          "default": ""
         }
       }
     },
@@ -31,8 +36,8 @@
     ]
   },
   "concurrency": {
-    "group": "ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}",
-    "cancel-in-progress": "${{ github.event_name == 'pull_request' }}"
+    "group": "ci-${{ (github.event_name == 'pull_request' || inputs.pr != '') && format('pr-{0}', github.event.pull_request.number || inputs.pr) || github.run_id }}",
+    "cancel-in-progress": "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
   },
   "permissions": {
     "contents": "read"
@@ -40,7 +45,8 @@
   "env": {
     "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
     "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
-    "PARTS_EVENT": "${{ (github.event_name == 'push' || inputs.smoke) && 'pull_request' || github.event_name }}"
+    "PARTS_EVENT": "${{ (github.event_name == 'push' || inputs.smoke || inputs.pr != '') && 'pull_request' || github.event_name }}",
+    "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}"
   },
   "jobs": {
     "parts": {
@@ -171,7 +177,7 @@
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
       },
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event_name == 'pull_request') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((github.event_name == 'pull_request' || inputs.pr != '')) }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -194,7 +200,7 @@
         },
         {
           "name": "tests/security",
-          "run": "uv run --no-sync python -m dev_lab.dev.forge security run --pr ${{ github.event.pull_request.number }}"
+          "run": "uv run --no-sync python -m dev_lab.dev.forge security run --pr \"$PR_NUMBER\""
         }
       ],
       "permissions": {
@@ -207,7 +213,7 @@
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
       },
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event_name == 'pull_request') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((github.event_name == 'pull_request' || inputs.pr != '')) }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -230,7 +236,7 @@
         },
         {
           "name": "head gates",
-          "run": "uv run --no-sync python -m dev_lab.dev.forge headgate run --pr ${{ github.event.pull_request.number }}"
+          "run": "uv run --no-sync python -m dev_lab.dev.forge headgate run --pr \"$PR_NUMBER\""
         }
       ],
       "permissions": {
@@ -243,7 +249,7 @@
       "needs": [
         "merge-ready"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && github.event_name == 'pull_request' && needs.merge-ready.outputs.due == 'true') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && (github.event_name == 'pull_request' || inputs.pr != '') && needs.merge-ready.outputs.due == 'true') }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -259,6 +265,11 @@
           "with": {
             "enable-cache": false
           }
+        },
+        {
+          "name": "Name the integration tip",
+          "if": "${{ !github.event.pull_request }}",
+          "run": "echo \"INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/integrate/main)\" >> \"$GITHUB_ENV\""
         },
         {
           "name": "Install the review door",
@@ -291,7 +302,7 @@
         },
         {
           "name": "tests/review",
-          "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
+          "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number || inputs.pr }} --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
           "env": {
             "AI_LAB_KEYS_PR_REVIEW": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.AI_LAB_KEYS_PR_REVIEW || '' }}"
           }
@@ -314,7 +325,7 @@
         "part",
         "absent-parts"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && github.event_name == 'pull_request') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && (github.event_name == 'pull_request' || inputs.pr != '')) }}",
       "runs-on": "ubuntu-latest",
       "outputs": {
         "due": "${{ steps.ready.outputs.due }}"
@@ -341,7 +352,7 @@
         {
           "id": "ready",
           "name": "tests/merge-ready",
-          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr ${{ github.event.pull_request.number }})\"; echo \"$said\"; case \"$said\" in *\"; merged\") echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
+          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr \"$PR_NUMBER\")\"; echo \"$said\"; case \"$said\" in *\"; merged\") echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
         },
         {
           "name": "Run CI on the merged integration",

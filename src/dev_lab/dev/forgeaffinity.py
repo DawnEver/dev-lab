@@ -2,7 +2,7 @@
 
 WHO IS AFFINED IS DECLARED ONCE PER ACCOUNT, on its own deploy table: a verify account's ``[deploy] repos`` row
 carries ``verify = ["tests/*"]``, the status contexts of that repo it is the producer of
-(:class:`dev_lab.dev.hpchost.spec.Repo`). Its tick reads that row (:func:`declared`) and publishes it on its host
+(:class:`dev_lab.dev.hpcaccount.spec.Repo`). Its tick reads that row (:func:`declared`) and publishes it on its host
 card (``HostCard.verify``), so every other seat learns the affined accounts from the cards it already reads each
 tick. No account name is written anywhere else.
 
@@ -16,7 +16,7 @@ workstation and a request are never gated):
   (:func:`defers`). With NO live affined card nothing is deferred, so a dark verify fleet never deadlocks the forge.
 
 The one way past it is the user's opt-in: ``verify->research`` in the expiring allocation record
-(:data:`lab_commons.hpc.allocation.VERIFY_BORROWS_RESEARCH`, written by ``python -m dev_lab.dev.hpchost allocate
+(:data:`lab_commons.hpc.allocation.VERIFY_BORROWS_RESEARCH`, written by ``python -m dev_lab.dev.hpcaccount allocate
 --until <iso> --borrow verify->research``). While it is unexpired a research seat claims a covered part as any.
 
 An affined seat's own uncovered work -- another repo, research -- is never deferred. Nothing is reserved or
@@ -41,7 +41,7 @@ from lab_commons.hpc.grants import Affinity
 
 from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.hpchost.spec import load
+from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import part_context
 
 __all__ = [

@@ -12,11 +12,13 @@ cooperation, and it answers TWO questions, one lock each:
 * VENV LOCK (:func:`executing_from`): a process whose executable lies in an environment uses THAT environment,
   so ``dep`` refuses to mutate it. A ``forge serve`` from main's venv locks the venv.
 * TREE LOCK (:func:`live_runs`): a process READS a checkout when it is a Python interpreter whose cwd is in it
-  (``python -m`` puts the cwd first on ``sys.path``) or when an argument names an existing path in it (a
-  ``scratch/*.sh`` chain, ``cases/...``). Measured 2026-10-19: the v3 sweep's interpreter works in its worktree;
-  its bash chains name main's ``scratch/`` scripts; two dozen day-old ``tail -F output/...`` processes and
-  Claude Code's own node processes sit in the checkout and read none of it. A serve works in its own root
-  (:func:`dev_lab.dev.forgeserve.work_root`), so it locks the venv and never the tree.
+  (``python -m`` puts the cwd first on ``sys.path``) -- unless the interpreter is from elsewhere and its ``-m``
+  module is not in the cwd, so nothing of the tree is imported -- or when an operand (never a ``--flag``'s value)
+  names an existing path in it (a ``scratch/*.sh`` chain, ``cases/...``).
+  Measured 2026-10-19: the v3 sweep's interpreter works in its worktree; its bash chains name main's
+  ``scratch/`` scripts; two dozen day-old ``tail -F output/...`` processes and Claude Code's own node processes
+  sit in the checkout and read none of it. A serve works in its own root
+  (:func:`dev_lab.dev.worktreeplace.work_root`), so it locks the venv and never the tree.
 
 WHAT IS NOT A RUN, each decided by evidence:
 
@@ -157,13 +159,24 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
     )
 
 
-def _named_paths(one: Process) -> Iterable[Path]:
-    """Every existing path *one*'s arguments name (its own executable excluded), relative ones against its cwd."""
+def _arguments(one: Process) -> list[str]:
+    """*one*'s command line split into words, its own executable excluded."""
     try:
-        words = shlex.split(one.command_line, posix=False)[1:]
+        return shlex.split(one.command_line, posix=False)[1:]
     except ValueError:
-        words = one.command_line.split()[1:]
-    for word in words:
+        return one.command_line.split()[1:]
+
+
+def _named_paths(one: Process) -> Iterable[Path]:
+    """Every existing path *one*'s operands name, relative ones against its cwd.
+
+    An option and the value a ``--long`` option takes are configuration the process reads, not code it executes
+    (measured 2026-11-07: ``--settings <checkout>/...`` made a session launcher a run of that checkout).
+    """
+    words = _arguments(one)
+    for previous, word in zip(['', *words], words, strict=False):
+        if previous.startswith('--') and '=' not in previous:
+            continue
         bare = word.strip('"\'')
         text = _DRIVE.sub(lambda drive: f'{drive[1]}:/', bare, count=1) if os.name == 'nt' else bare
         if text.startswith('-') or ('/' not in text and '\\' not in text):
@@ -189,10 +202,30 @@ def _is_dir(path: Path) -> bool:
         return False
 
 
+def _module_outside_cwd(one: Process) -> bool:
+    """Whether *one* runs ``-m <module>`` whose top-level package is not in its cwd, so it resolves elsewhere."""
+    words = [word.strip('"\'') for word in _arguments(one)]
+    if '-m' not in words[:-1]:
+        return False
+    top = words[words.index('-m') + 1].split('.')[0]
+    return not (_exists(Path(one.cwd, f'{top}.py')) or _is_dir(Path(one.cwd, top)))
+
+
 def reads_tree(one: Process, root: Path | str) -> bool:
-    """Whether *one* READS checkout *root*: an interpreter working in it, or an argument naming a path in it."""
+    """Whether *one* READS checkout *root*: an interpreter executing from it, or an argument naming a path in it.
+
+    An interpreter working in the tree executes it when ``python -m`` resolves its module from the cwd, or when
+    the interpreter is the tree's own (its site-packages install the tree). An interpreter from elsewhere whose
+    ``-m`` module is not in the cwd imports nothing of the tree (measured 2026-11-07: a session launcher whose
+    cwd was the checkout refused every ``git worktree add`` there).
+    """
     name = Path(one.executable.replace('\\', '/')).name
-    if _INTERPRETER.match(name) and one.cwd and in_tree(one.cwd, root):
+    if (
+        _INTERPRETER.match(name)
+        and one.cwd
+        and in_tree(one.cwd, root)
+        and (_under(one.executable, str(root)) or not _module_outside_cwd(one))
+    ):
         return True
     return any(in_tree(path, root) for path in _named_paths(one))
 
@@ -330,7 +363,8 @@ def main(argv: Sequence[str] | None = None, *, stdin: TextIO | None = None, cens
     if args.tree is None:
         parser.error('give `hook` or --tree DIR')
     root = checkout_of(args.tree)
-    runs = live_runs(root, census=census) if root is not None else ()
+    # A dir no run of its checkout reads -- above all a worktree not yet created under .claude/ -- is judged by nobody.
+    runs = live_runs(root, census=census) if root is not None and in_tree(args.tree, root) else ()
     if runs:
         emit(refusal(root, runs))
         return 1

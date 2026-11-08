@@ -7,11 +7,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 from _ops_fixtures import git
 
+from dev_lab.dev import remote
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.dev.forgebreakglass import merge_main, wave_main
+from dev_lab.dev.forgebreakglass import merge_main, ssh_send, wave_main
 from dev_lab.dev.forgecli import NOUNS, PR_VERBS
 from dev_lab.dev.forgework import Client
 
@@ -85,3 +87,17 @@ def test_no_endpoint_refuses_and_a_server_refusal_is_exit_2() -> None:
 def test_they_are_forge_verbs() -> None:
     assert PR_VERBS['breakglass'] is merge_main
     assert NOUNS['breakglass'] is wave_main
+
+
+def test_ssh_send_goes_through_the_one_remote_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One transport: the consent/breakglass JSON line rides :func:`dev_lab.dev.remote.piped`, never its own ssh."""
+    seen: list[tuple[str, str, str | None]] = []
+
+    def piped(target: str, line: str, *, identity: str | None, timeout_s: float) -> tuple[int, str]:
+        seen.append((target, line, identity))
+        assert timeout_s > 0
+        return 0, 'ok'
+
+    monkeypatch.setattr(remote, 'piped', piped)
+    assert ssh_send({'endpoint': 'c@h', 'identity': 'k'}, {'a': 1}) == (0, 'ok')
+    assert seen == [('c@h', '{"a": 1}\n', 'k')]

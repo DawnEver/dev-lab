@@ -127,14 +127,27 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_prcurrent.py', 'tests/test_dev_branchflow.py', 'tests/test_dev_forgedraft.py'),
     ),
     (
-        'NO-PUSH-ONTO-A-LANDED-PR',
+        'NO-PUSH-ONTO-A-CLOSED-PR',
         (
             'A push that creates or updates `refs/heads/<X>` (the integration branch and the trunk aside) is refused '
-            'at pre-push when the forge`s PR with head `<X>` into the integration branch is merged or closed and no '
-            'OPEN PR has head `<X>`: no PR would ever carry the push. The refusal names the remedy (a new PR from '
-            '`<X>`, or a new branch name), and a forge that cannot be read refuses, never passes unchecked.'
+            'at pre-push when the forge`s newest PR with head `<X>` into the integration branch was closed UNMERGED: '
+            'no PR would ever carry the push. The refusal names the remedy (a new PR from `<X>`, or a new branch '
+            'name), and a forge that cannot be read refuses, never passes unchecked. A merged PR`s branch passes: '
+            'the forge continues it (LANDED-BRANCH-CONTINUES).'
         ),
-        ('tests/test_dev_landedpush.py',),
+        ('tests/test_dev_closedpush.py',),
+    ),
+    (
+        'LANDED-BRANCH-CONTINUES',
+        (
+            'A merged PR is an immutable record of what was reviewed and tested at its head, never reused: a push '
+            'onto its branch is carried by a CONTINUATION PR the forge opens from the same branch (Gitea: the serve '
+            'tick; GitHub: the `continue.yml` push job), titled and bodied `continues #<N>`. Its review reads only '
+            'the increment since the last landed head, its predecessors` findings are carried in ONE per-branch '
+            'review record, and a carried finding neither resolved nor deferred with a reason holds `tests/review` '
+            'at failure.'
+        ),
+        ('tests/test_dev_prcontinue.py', 'tests/test_dev_branchreview.py'),
     ),
     (
         'SESSION-HISTORY-ONLY-GROWS',

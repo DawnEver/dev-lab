@@ -19,7 +19,6 @@ from dev_lab.dev.allow_adoption import AllowAdoption, derived_entries, self_refu
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy, rules_by_id
 from dev_lab.dev.venvpath import (
-    INTERPRETER_ALLOW_ENTRY,
     INTERPRETER_RULE,
     VENV_INTERPRETER_GLOB,
     current_os_name,
@@ -67,7 +66,7 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
     reason = agenthooks.decide(command, _rules(tmp_path, {}), cwd=tmp_path)
     assert reason is not None, f'allowed: {command!r}'
     assert _absolute_interpreter(tmp_path) in reason, reason
-    assert INTERPRETER_ALLOW_ENTRY in reason
+    assert '.venv/*/python*' not in reason
 
 
 @pytest.mark.parametrize('command', ['python x.py', 'python3 -c "print(1)"', 'py -3 x.py', 'cd sub && python x.py'])
@@ -111,10 +110,12 @@ def test_a_repo_cli_is_opened_only_by_that_repos_delta(tmp_path: Path) -> None:
     assert agenthooks.decide('uv run mycli run cases/x', _rules(base, {})) is not None
 
 
-def test_the_settings_allow_row_is_the_owner_spelling_in_every_block() -> None:
-    """The settings row is DERIVED from the owner for every adopter, and it does not refuse itself."""
-    assert f'Bash({VENV_INTERPRETER_GLOB} *)' == INTERPRETER_ALLOW_ENTRY
+def test_no_block_carries_a_blanket_interpreter_row() -> None:
+    """User ruling 2026-11-07: the blanket ``Bash(.venv/*/python* *)`` row is deleted from every block.
+
+    The exit from BARE-INTERPRETER is the venv interpreter running a CHECKED door, and each door is its own row.
+    """
     adoption = HookAdoption(app_name='suite', remedies={})
-    assert derived_entries(adoption)[INTERPRETER_ALLOW_ENTRY] == (INTERPRETER_RULE,)
+    assert f'Bash({VENV_INTERPRETER_GLOB} *)' not in derived_entries(adoption)
     assert self_refused(AllowAdoption(app_name='suite', adoption=adoption)) == ()
     assert INTERPRETER_RULE in rules_by_id(DENY_RULES)

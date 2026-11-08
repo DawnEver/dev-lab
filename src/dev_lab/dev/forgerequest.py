@@ -423,13 +423,13 @@ def remind(client: Client, queue: Sequence[Ranked], *, hours: float, host: str) 
     return said
 
 
-def result(code: int, host: str) -> tuple[str, str]:
+def result(code: int, host: str, *, outage: bool) -> tuple[str, str]:
     """The ``(state, description)`` a request's producer exiting *code* on *host* settles it with."""
     if code == ProducerExit.PASS:
         return 'success', f'request done: exit 0 on {host}'
     if code == ProducerExit.FAIL:
         return 'failure', f'request failed: exit 1 on {host}'
-    return 'error', release_reason(code)
+    return 'error', release_reason(code, outage=outage)
 
 
 #: The label a request whose producer exited 0 gets: done, awaiting its requester's sign-off.

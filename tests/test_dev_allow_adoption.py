@@ -15,6 +15,7 @@ from typing import Final
 
 import pytest
 
+from dev_lab.dev.agentpolicy import literal_rows
 from dev_lab.dev.allow_adoption import (
     AllowAdoption,
     DeclaredAllow,
@@ -34,7 +35,7 @@ from dev_lab.dev.autodoors import claude_rows
 from dev_lab.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
 from dev_lab.dev.hook_adoption import HookAdoption
 from dev_lab.dev.hooks import Remedy
-from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_LAYOUTS, venv_interpreter
+from dev_lab.dev.venvpath import VENV_LAYOUTS, venv_interpreter
 
 #: The verdict entry point BOTH labs hand-wrote, character for character, in their own settings
 #: files AND in their own `scripts/deny_rules.py`. The agreement is the evidence for `glob_for`.
@@ -68,16 +69,16 @@ CONSUMER_A = HookAdoption(
 )
 
 
-def test_the_permission_block_carries_the_owned_worktree_dependency_doors() -> None:
+def test_the_permission_block_carries_the_dependency_doors_for_this_checkouts_interpreter_only() -> None:
+    """User ruling 2026-11-07: one row per layout, no worktree spelling -- another checkout's interpreter prompts."""
     adoption = AllowAdoption(app_name='consumer_a', adoption=CONSUMER_A, scripts=('scripts/gate/dep_sync.py',))
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in allow_entries(adoption)]
-    for interpreter in (
-        '.claude/worktrees/lane/.venv/Scripts/python.exe',
-        '.claude/worktrees/lane/.venv/bin/python',
-    ):
+    for interpreter in ('.venv/Scripts/python.exe', '.venv/bin/python'):
         assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
         assert any(fnmatchcase(f'{interpreter} -m dev_lab.dev.dep --bootstrap lane', pattern) for pattern in globs)
         assert not any(fnmatchcase(f'{interpreter} -m pip install arbitrary', pattern) for pattern in globs)
+        lane = f'.claude/worktrees/lane/{interpreter} scripts/gate/dep_sync.py --sync'
+        assert not any(fnmatchcase(lane, pattern) for pattern in globs)
 
 
 def test_no_row_the_block_can_carry_begins_with_a_wildcard() -> None:
@@ -189,24 +190,24 @@ def test_a_remedy_that_is_all_metavariable_derives_nothing() -> None:
 
 def test_one_row_per_remedy_naming_every_rule_it_answers() -> None:
     """A repo with one verdict command gets ONE row, and it says both rules it is the exit from."""
-    assert derived_entries(CONSUMER_C) == {
-        'Bash(./.venv/*/python* -m dev_lab.dev.verify *)': ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY'),
-        INTERPRETER_ALLOW_ENTRY: (INTERPRETER_RULE,),
-    }
+    assert derived_entries(CONSUMER_C) == dict.fromkeys(
+        literal_rows('Bash(./.venv/*/python* -m dev_lab.dev.verify *)'), ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY')
+    )
 
 
 def test_a_rule_declared_absent_derives_no_row() -> None:
     """THE `needs` RULE ON THIS SIDE: consumer-c has no process-tree killer, so it promises none."""
     assert not any('stop_sweep' in entry for entry in derived_entries(CONSUMER_C))
-    assert 'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)' in derived_entries(CONSUMER_A)
+    assert set(literal_rows('Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)')) <= set(
+        derived_entries(CONSUMER_A)
+    )
 
 
 def test_a_needs_none_rule_is_never_derived_from() -> None:
     """GIT-STASH, PUSH-FORCE and WORKTREE-BASE-IS-EXPLICIT have PROSE exits, so nothing is guessed."""
     assert set(derived_entries(CONSUMER_B)) == {
-        'Bash(./.venv/*/python* -m dev_lab.dev.verify *)',
-        'Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)',
-        INTERPRETER_ALLOW_ENTRY,  # the ONE needs-none exit that is a row: the owner's interpreter spelling
+        *literal_rows('Bash(./.venv/*/python* -m dev_lab.dev.verify *)'),
+        *literal_rows('Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)'),
     }
 
 
@@ -237,7 +238,9 @@ def test_provenance_says_which_population_each_row_came_from() -> None:
     allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
     seen = provenance(allow)
     assert seen['Bash(*yarn preview*)'] == 'declared: the docs preview server'
-    assert seen['Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)'] == 'derived from NETWORK-VERB'
+    assert {seen[row] for row in literal_rows('Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)')} == {
+        'derived from NETWORK-VERB'
+    }
 
 
 #: A remedy spelling the very shape its own rule matches, with NO opening. `RAW-PROCESS-KILL` is
@@ -297,8 +300,7 @@ def test_the_section_merge_keeps_every_block_it_is_not_about() -> None:
     assert after['permissions']['deny'] == ['Bash(rm -rf *)']
     assert after['permissions']['allow'] == [
         'Read(**)',
-        'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)',
-        INTERPRETER_ALLOW_ENTRY,
+        *literal_rows('Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)'),
         *claude_rows(),
     ]
     assert live_bash_rows(before) == ('Bash(*scripts/gate/stop_sweep.py *)',)
@@ -319,8 +321,8 @@ def test_the_block_is_bound_on_both_sides_and_neither_number_has_a_default() -> 
     """A block that silently emptied reads as agreement; a floor it outgrew is a waiver nothing uses."""
     allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
     doors = len(claude_rows())
-    assert len(allow_entries(allow)) == 4 + doors
-    assert_allow_is_adoptable(allow, [], floor=2 + doors, headroom=2)
+    assert len(allow_entries(allow)) == 5 + doors  # verify and netverb per layout, and the declared row
+    assert_allow_is_adoptable(allow, [], floor=3 + doors, headroom=2)
     with pytest.raises(FloorUnmet):
         assert_allow_is_adoptable(allow, [], floor=9 + doors, headroom=2)
     with pytest.raises(SlackFloor):
@@ -366,7 +368,37 @@ def test_the_family_doors_ride_every_block_and_a_declared_copy_is_refused() -> N
     entries = allow_entries(allow)
     assert set(claude_rows(('scripts/gate/runner.py',))) <= set(entries)
     assert 'Bash(.venv/Scripts/python.exe scripts/gate/runner.py *)' in entries
-    assert provenance(allow)['Bash(.venv/*/python* -m dev_lab.dev.stoprun *)'].startswith('family door')
+    assert provenance(allow)['Bash(.venv/bin/python -m dev_lab.dev.stoprun *)'].startswith('family door')
     door = DeclaredAllow('Bash(.venv/*/python* -m dev_lab.dev.stoprun *)', 'a restated door')
     with pytest.raises(UnarguedAllow):
         AllowAdoption('consumer_c', CONSUMER_C, (door,))
+
+
+def test_no_rendered_row_is_the_blanket_interpreter_or_its_widening_glob() -> None:
+    """User ruling 2026-11-07: the blanket interpreter row is deleted, and no row carries ``.venv/*/python*``.
+
+    The glob's trailing ``*`` admits ``python.exe -c <code>`` ahead of any door, so every interpreter is literal.
+    PLANTED CONTROL: the glob row itself does admit such a line.
+    """
+    entries = allow_entries(AllowAdoption('consumer_a', CONSUMER_A, scripts=('scripts/gate/runner.py',)))
+    assert not [entry for entry in entries if '.venv/*/python*' in entry]
+    sneak = '.venv/Scripts/python.exe -c "import os" -m dev_lab.dev.verify tests/x.py'
+    assert fnmatchcase(sneak, '.venv/*/python* -m dev_lab.dev.verify *')
+    assert not any(fnmatchcase(sneak, entry.removeprefix('Bash(').removesuffix(')')) for entry in entries)
+
+
+def test_a_derived_row_a_door_already_covers_is_not_listed_twice() -> None:
+    """The stoprun remedy's ``--pid`` row sat under the stoprun door: one road, two lines (2026-11-07 audit)."""
+    stop = HookAdoption(
+        'consumer_d',
+        remedies={
+            'RAW-PROCESS-KILL': Remedy(
+                'process-tree-killer', '.venv/Scripts/python.exe -m dev_lab.dev.stoprun --pid <pid>'
+            )
+        },
+        declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'NETWORK-VERB'}),
+    )
+    entries = allow_entries(AllowAdoption('consumer_d', stop))
+    assert [entry for entry in entries if 'stoprun' in entry] == [
+        f'Bash({head} -m dev_lab.dev.stoprun *)' for head in ('.venv/Scripts/python.exe', '.venv/bin/python')
+    ]

@@ -47,9 +47,11 @@ from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
 _ROOT = Path(__file__).resolve().parents[1]
+#: A PR's run: the pull_request event, or ci.yml dispatched with the PR's number (continue.yml).
+_PR_RUN = "(github.event_name == 'pull_request' || inputs.pr != '')"
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
-_GITHUB_BASE = {'ci.yml', 'merge-tick.yml', 'review-again.yml'}
+_GITHUB_BASE = {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review-again.yml'}
 _GITEA_BASE = {'review.yml', 'merge.yml'}
 
 
@@ -90,7 +92,7 @@ def test_the_lifecycle_runs_on_pull_request_and_never_on_pull_request_target(tmp
     assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch', 'schedule'}
     assert 'pull_request_target' not in render(ci), "a fork's code would run with this repository's secrets"
     assert ci['jobs']['review']['if'] == _guarded(
-        "${{ always() && github.event_name == 'pull_request' && needs.merge-ready.outputs.due == 'true' }}"
+        f"${{{{ always() && {_PR_RUN} && needs.merge-ready.outputs.due == 'true' }}}}"
     ), 'review is the last gate: it runs only once merge-ready called the head due'
 
 
@@ -184,16 +186,23 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     assert _PROVIDERS.findall('env: { ANTHROPIC_' + 'API_KEY: x }'), 'PLANTED CONTROL'
 
 
-def _parts_event(ci: dict[str, Any], event: str, *, smoke: bool | None = None) -> str:
-    """The RENDERED PARTS_EVENT expression, evaluated for one trigger (``inputs.smoke`` is null off a dispatch).
+def _parts_event(ci: dict[str, Any], event: str, *, smoke: bool | None = None, pr: str | None = None) -> str:
+    """The RENDERED PARTS_EVENT expression, evaluated for one trigger (``inputs.*`` are null off a dispatch)."""
+    return str(_evaluated(ci['env']['PARTS_EVENT'], event, smoke=smoke, pr=pr))
+
+
+def _evaluated(rendered: str, event: str, *, smoke: bool | None = None, pr: str | None = None) -> str | bool | None:
+    """A RENDERED ``${{ }}`` expression, evaluated for one trigger (``inputs.*`` are null off a dispatch).
 
     Actions' ``&&``/``||`` return an operand, as Python's ``and``/``or`` do, so the expression is parsed as one and
-    walked: only names, literals, ``==``/``!=`` and ``and``/``or`` are understood, anything else refuses.
+    walked: only names, literals, ``==``/``!=`` and ``and``/``or`` are understood, anything else refuses. ``==``
+    is Actions' loose one: null and ``''`` both coerce to 0, so they are equal.
     """
-    expression = ci['env']['PARTS_EVENT'].removeprefix('${{').removesuffix('}}')
+    expression = rendered.removeprefix('${{').removesuffix('}}')
     python = expression.replace('&&', ' and ').replace('||', ' or ')
-    python = python.replace('github.event_name', 'event_name').replace('inputs.smoke', 'smoke')
-    names: dict[str, str | bool | None] = {'event_name': event, 'smoke': smoke}
+    for name, short in (('github.event_name', 'event_name'), ('inputs.smoke', 'smoke'), ('inputs.pr', 'pr')):
+        python = python.replace(name, short)
+    names: dict[str, str | bool | None] = {'event_name': event, 'smoke': smoke, 'pr': pr}
 
     def walk(node: ast.expr) -> str | bool | None:
         if isinstance(node, ast.Constant):
@@ -208,7 +217,8 @@ def _parts_event(ci: dict[str, Any], event: str, *, smoke: bool | None = None) -
                 value = walk(operand)
             return value
         if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq | ast.NotEq):
-            equal = walk(node.left) == walk(node.comparators[0])
+            left, right = (walk(side) for side in (node.left, node.comparators[0]))
+            equal = left == right or {left, right} == {None, ''}
             return equal if isinstance(node.ops[0], ast.Eq) else not equal
         raise ValueError(ast.dump(node))  # a PARTS_EVENT node this reader does not understand
 
@@ -247,15 +257,56 @@ def test_a_new_push_cancels_only_its_own_prs_superseded_run(tmp_path: Path) -> N
     ci = _base_ci(tmp_path)
     group, cancel = ci['concurrency']['group'], ci['concurrency']['cancel-in-progress']
     assert group == (
-        "ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) "
-        '|| github.run_id }}'
-    )
-    assert cancel == "${{ github.event_name == 'pull_request' }}"
-    name, _, value = cancel.removeprefix('${{ ').removesuffix(' }}').partition(' == ')
-    cancels = {event: name == 'github.event_name' and value == f"'{event}'" for event in set(ci['on'])}
+        f"ci-${{{{ {_PR_RUN} && format('pr-{{0}}', github.event.pull_request.number || inputs.pr) || github.run_id }}}}"
+    ), "a PR's dispatched run (continue.yml) shares its PR's group"
+    assert cancel == f'${{{{ {_PR_RUN} }}}}'
+    cancels = {event: _evaluated(cancel, event) for event in set(ci['on'])}
     assert cancels == {'pull_request': True, 'push': False, 'schedule': False, 'workflow_dispatch': False}, (
         'PLANTED CONTROL: an integrate/main push, the nightly run and a merge smoke are never cancelled'
     )
+    assert _evaluated(cancel, 'workflow_dispatch', smoke=True, pr='') is False
+    assert _evaluated(cancel, 'workflow_dispatch', pr='321') is True, "a PR's dispatched run is that PR's run"
+
+
+def test_a_dispatch_naming_a_pr_is_that_pr_s_run(tmp_path: Path) -> None:
+    """A PR the job token opens (continue.yml) starts no workflow, so its opener dispatches ci.yml with ``pr``.
+
+    That run is the PR's run: the PR's part set, security, head gates, merge-ready and review, each told the PR's
+    number -- the review then reads the PR's own scope (a continuation's, from its landed head).
+    PLANTED CONTROL: a dispatch naming no PR (the nightly one on demand, a merge's smoke) is no PR's run.
+    """
+    ci = _base_ci(tmp_path)
+    assert ci['on']['workflow_dispatch']['inputs']['pr']['default'] == ''
+    assert _parts_event(ci, 'workflow_dispatch', smoke=False, pr='321') == 'pull_request'
+    assert _parts_event(ci, 'workflow_dispatch', smoke=False, pr='') == 'workflow_dispatch', 'PLANTED CONTROL'
+    assert ci['env']['PR_NUMBER'] == '${{ github.event.pull_request.number || inputs.pr }}'
+    jobs = ci['jobs']
+    for name in ('security', 'head-gates', 'merge-ready', 'review'):
+        guard = jobs[name]['if']
+        assert guard.startswith(_guarded('${{ x }}').removesuffix('x) }}')), name
+        own = guard.removeprefix(_guarded('${{ x }}').removesuffix('x) }}')).removesuffix(') }}')
+        own = own.replace('always() && ', '').replace(" && needs.merge-ready.outputs.due == 'true'", '')
+        assert own == _PR_RUN, name
+        assert _evaluated(own, 'pull_request') is True, name
+        assert _evaluated(own, 'workflow_dispatch', pr='321') is True, name
+        assert _evaluated(own, 'workflow_dispatch', smoke=True, pr='') is False, f'PLANTED CONTROL: {name}'
+        assert _evaluated(own, 'push') is False, f'PLANTED CONTROL: {name}'
+    told = {
+        name: [step['run'] for step in jobs[name]['steps'] if '--pr' in step.get('run', '')]
+        for name in ('security', 'head-gates', 'merge-ready')
+    }
+    assert {name: ['--pr "$PR_NUMBER"' in run for run in runs] for name, runs in told.items()} == {
+        'security': [True],
+        'head-gates': [True],
+        'merge-ready': [True],
+    }
+    steps = jobs['review']['steps']
+    assert '--pr ${{ github.event.pull_request.number || inputs.pr }}' in steps[-1]['run']
+    names = [step.get('name') for step in steps]
+    tip = steps[names.index('Name the integration tip')]
+    assert tip['if'] == '${{ !github.event.pull_request }}', 'a pull_request run keeps its base as the door'
+    assert 'INTEGRATION_SHA=' in tip['run']
+    assert names.index('Name the integration tip') < names.index('Install the review door'), 'the door reads it'
 
 
 def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_decision(tmp_path: Path) -> None:
@@ -911,7 +962,7 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
     )
     rendered = workflows(tmp_path)
     readers = {name for name, workflow in rendered.items() if '${FAMILY_SOURCE}' in render(workflow)}
-    assert readers == {'ci.yml', 'merge-tick.yml', 'review.yml', 'review-again.yml'}  # merge-tick: GitHub's base
+    assert readers == {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review.yml', 'review-again.yml'}  # GitHub's base
     for name in readers:
         assert rendered[name]['env'].get('FAMILY_SOURCE'), f'{name} reads FAMILY_SOURCE but declares none'
         assert 'FAMILY_SOURCE:-' not in render(rendered[name]), f'{name}: a second source'

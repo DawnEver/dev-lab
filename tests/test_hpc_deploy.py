@@ -1,4 +1,4 @@
-"""``python -m dev_lab.dev.hpchost deploy`` against a fake home, a fake ``crontab``, ``git``, ``uv`` and shell.
+"""``python -m dev_lab.dev.hpcaccount deploy`` against a fake home, a fake ``crontab``, ``git``, ``uv`` and shell.
 
 Each fake is a tiny Python program run through :data:`sys.executable`, so the test is the same on every
 box: it logs its argv to ``calls.log`` and keeps its state in files under the test's temporary directory.
@@ -18,10 +18,10 @@ import pytest
 from lab_commons.hpc.grants import load_grants
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev.hpchost import deploy, tick
-from dev_lab.dev.hpchost import spec as deploy_spec
-from dev_lab.dev.hpchost import steps as deploy_steps
-from dev_lab.dev.hpchost.steps import Tools
+from dev_lab.dev.hpcaccount import deploy, tick
+from dev_lab.dev.hpcaccount import spec as deploy_spec
+from dev_lab.dev.hpcaccount import steps as deploy_steps
+from dev_lab.dev.hpcaccount.steps import Tools
 
 URL: Final = 'https://forge.example/team'
 LAB: Final = ('--repo', f'dev-lab={URL}/dev-lab.git@trunk')
@@ -146,7 +146,7 @@ def test_twice_gives_one_marked_line_per_repo_and_keeps_the_users_own(box: Box) 
     alpha = next(line for line in marked if line.endswith('alpha'))
     assert alpha.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
     assert 'flock -n' in alpha
-    assert alpha.split(' >> ')[0].endswith('dev_lab.dev.hpchost tick alpha'), 'the host ticks the repo'
+    assert alpha.split(' >> ')[0].endswith('dev_lab.dev.hpcaccount tick alpha'), 'the host ticks the repo'
     assert f'cd {shlex.quote(str(box.home / deploy_spec.DEFAULT_ROOT / "dev-lab"))} &&' in alpha, (
         "from the host's kit, never the repo's venv"
     )
@@ -440,7 +440,7 @@ def test_the_tick_runs_inside_the_grant_setup_and_its_git_is_proven_there(
         assert argv[:2] == ['bash', '-lc'], line
         assert argv[2].startswith(f'PATH={box.home / ".local/bin"}:'), line
         assert f'; {setup}; cd ' in argv[2], line
-        assert argv[2].index(setup) < argv[2].index('dev_lab.dev.hpchost tick'), line
+        assert argv[2].index(setup) < argv[2].index('dev_lab.dev.hpcaccount tick'), line
 
 
 def test_a_setup_with_spaces_semicolons_and_quotes_reaches_bash_verbatim(tmp_path: Path) -> None:
@@ -674,8 +674,8 @@ def test_the_deploy_ticks_now_only_the_repos_its_cron_ticks(box: Box) -> None:
     )
     box.calls.unlink(missing_ok=True)
     assert box.run() == 0
-    assert 'hpchost tick alpha' in box.logged()
-    assert 'hpchost tick beta' not in box.logged()
+    assert 'hpcaccount tick alpha' in box.logged()
+    assert 'hpcaccount tick beta' not in box.logged()
 
 
 def _as_role(box: Box, role: str | None) -> None:
@@ -705,7 +705,7 @@ def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_mar
     assert box.crontab.read_text(encoding='utf-8') == '0 1 * * * echo mine\n', 'every other line kept'
     assert capsys.readouterr().out.count('crontab: remove ') == 3, 'each removed line is printed'
     calls = box.logged()
-    assert 'hpchost tick' not in calls, 'a research account is never ticked'
+    assert 'hpcaccount tick' not in calls, 'a research account is never ticked'
     assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'
 
 

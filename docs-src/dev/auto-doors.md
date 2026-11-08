@@ -21,20 +21,37 @@ pushes.
 | `python -m dev_lab.dev.branchprune delete <branch>...` | LOSSLESS-DELETE: a remote branch only when every commit on it is on integration or another live branch or open PR head, or, by content, when every file its own commits wrote, generated ones aside, is identical (mode and blob) on integration; it fails closed. Refusals name the files carrying unlanded content. |
 | `python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]` | Scancels only `run-<sha12>-<part>` tasks of the full 40-hex `<sha>` that run at 90 % CPU or more with no new test line in their stream for longer than N (default 3) x the longest MEASURED duration of the shard's tests (the forge's learned `durations`); a shard with an unmeasured test is floored at M (default 60), and the line says so. Every other task of the sha is listed as healthy; other jobs are never touched. |
 | `python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M]` | Read-only: prints each `tests/<part>` status change until the first listed sha is final (exit 0 green, 1 red) or the deadline (exit 3). |
-| `python -m dev_lab.dev.hpchost deploy-fleet [--account U]... [--dry-run]` | For each `[[hpc.grant]]` account, reads that account's own `[deploy]` host and root through any of its login hosts, then starts, detached over `ssh -o BatchMode=yes`, its own `hpchost deploy` on THAT host, one log per account under `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/`. An account outside the grants refuses the whole run; one with no `[deploy]` host, or a host outside its grant, is refused by name while the rest deploy. |
+| `python -m dev_lab.dev.hpcaccount deploy-fleet [--account U]... [--dry-run]` | For each `[[hpc.grant]]` account, reads that account's own `[deploy]` host and root through any of its login hosts, then starts, detached over `ssh -o BatchMode=yes`, its own `hpcaccount deploy` on THAT host, one log per account under `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/`. An account outside the grants refuses the whole run; one with no `[deploy]` host, or a host outside its grant, is refused by name while the rest deploy. |
 
 The raw verbs (`git branch -D`, `git worktree remove --force`, `rm -rf`, `taskkill`, a raw `scancel`) stay unallowed.
-A bounded verb's row names the verb (`VERB_DOORS`), so the module's other verbs stay prompted.
+A bounded verb's row names the verb, so the module's other verbs stay prompted.
 
-## One table, two clients
+## One table: `dev_lab.dev.agentpolicy.POLICY`
 
-`dev_lab.dev.autodoors` holds `DOOR_MODULES`; `script_doors(root)` adds the repo's tracked `scripts/**.py`
+Every door is ONE row (user ruling 2026-11-07): its argv prefix, its actor, ONE string that is both the allow
+row's provenance and the classifier's intent, and the deny row it is the exit from. Actors:
+
+- `subagent`: any agent (the verdict, stoprun, netverb, the censuses, the forge's read side, issue writes).
+- `main`: the main session alone -- a PR's lifecycle, `forge sync`, `integrate promote`, `forge pr breakglass`
+  (inside a wave the user opened), `forge review takeover|again`, `forge security release`, `cancel-stuck`,
+  `git merge --ff-only`, `branchprune delete`. `SUBAGENT-NO-PUSH`'s pattern is derived from these rows.
+- `user`: no agent -- opening a Break-Glass wave. It renders no allow row and no intent.
+
+A deny row's remedy that lists doors is derived from the rows linked to it (`exits_of`):
+`FORGE-WRITE-VIA-CLI` names every `forge issue|pr` write door the table holds. A repo-specific row lives in
+that repo's `[tool.dev_lab.policy]`, never in a hand-written module.
+
+## Two clients
+
+`dev_lab.dev.autodoors` renders `POLICY`; `script_doors(root)` adds the repo's tracked `scripts/**.py`
 with a `__main__` guard and the shell doors it names (`shell_doors=`, `--shell-door`). Both clients are
 rendered from these:
 
-- **Claude Code**: one NARROW `Bash(...)` row per door, e.g. `Bash(.venv/*/python* -m dev_lab.dev.worktrees *)`.
-  Auto mode suspends broad rows but keeps a narrow one live. A launcher in another checkout is admitted only
-  repo-relative, `.claude/worktrees/*/.venv/...`; run the door from the repository root.
+- **Claude Code**: one NARROW `Bash(...)` row per door and interpreter layout, e.g.
+  `Bash(.venv/Scripts/python.exe -m dev_lab.dev.worktrees *)` and its `.venv/bin/python` twin. Never the
+  `.venv/*/python*` glob: its trailing `*` admits `python.exe -c <code>` ahead of the door, and the blanket
+  `Bash(.venv/*/python* *)` row is gone. A door run through another checkout's interpreter is prompted once;
+  run it from the repository root.
 - **Codex**: one `prefix_rule(pattern = [...], decision = "allow")` per door in `.codex/rules/family-doors.rules`;
   `codex execpolicy check --rules <file> <cmd>` probes it.
 
@@ -49,10 +66,9 @@ workstation names, internal addresses) are shared only through their two sources
 them in git history (user ruling 2026-10-23). `dev_lab.dev.automode` renders
 `{"autoMode": {"environment": ["$defaults", ...], "allow": ["$defaults", ...]}}` from:
 
-1. **The repo's declaration** (committed, host-free): `INTENTS`, one prose category per kit door or rule
-   (Break-Glass, close-landed, close-superseded, lossless prune, hook install, fleet deploy, cancel-stuck,
-   read-only monitoring), each `OPTIONAL_INTENTS` entry named in `[tool.dev_lab.automode] declares`
-   (e.g. `"jmag-material-card"`), and the repo's `origin` and branch set.
+1. **The repo's declaration** (committed, host-free): `INTENTS`, every agent door's one string of
+   `POLICY`, the repo's own standing intents as prose in `[tool.dev_lab.policy] intents` (the retired
+   `[tool.dev_lab.automode] declares` is refused by name), and the repo's `origin` and branch set.
 2. **The machine's fleet sources**: the synced workstation registry `hosts.json` (its path in the machine file's
    `[workstation] registry`), each workstation with its computer, address and roles; and the machine file's
    `[[hpc.grant]]` accounts with their login hosts.

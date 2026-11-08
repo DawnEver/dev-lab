@@ -41,5 +41,5 @@ A research job never lands on an account that produces the forge's verify parts,
 - **`run build` fails:** the commit is not pushed, or its install does not build on the login node. The error
   names which.
 - **Jobs stay pending:** read `status`. A session past its share waits by design
-  ([sessions](./hpc.md#grants-the-machine-file)); `python -m dev_lab.dev.hpchost allocate --show` prints any
+  ([sessions](./hpc.md#grants-the-machine-file)); `python -m dev_lab.dev.hpcaccount allocate --show` prints any
   override in force.

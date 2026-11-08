@@ -1,27 +1,25 @@
-"""``python -m dev_lab.dev.hpchost deploy-fleet [--account <user>]... [--dry-run]`` -- deploy every declared account.
+"""``python -m dev_lab.dev.hpcaccount deploy-fleet [--account <user>]... [--dry-run]`` -- deploy every declared account.
 
 THE FLEET IS THE MACHINE FILE'S ``[[hpc.grant]]`` TABLES (:func:`lab_commons.hpc.grants.load_grants`), the one
 source the forge's submits read too; nothing here lists an account. Each ``--account`` named must be in the
 fleet -- anything else is refused before any ssh.
 
 WHERE AN ACCOUNT SERVES IS ITS OWN DECLARATION, never this machine's guess: its machine file's ``[deploy]``
-``host`` and ``root`` (:mod:`dev_lab.dev.hpchost.spec`, the table its cron line was written from). Login hosts
+``host`` and ``root`` (:mod:`dev_lab.dev.hpcaccount.spec`, the table its cron line was written from). Login hosts
 share the home, so one read through any of the grant's hosts (:func:`lab_commons.hpc.cluster.runner_for`)
-answers (:func:`declared_target`), with its ``role`` (:mod:`dev_lab.dev.hpchost.spec`: only a verification account
+answers (:func:`declared_target`), with its ``role`` (:mod:`dev_lab.dev.hpcaccount.spec`: only a verification account
 serves), printed per account. An account with no ``[deploy]``, or whose host is not one of its grant's
 login hosts, is refused by name and the others still deploy (exit 2).
 
 Then it starts ONE detached ``ssh -o BatchMode=yes <user>@<declared host>`` that runs that account's own
-``python -m dev_lab.dev.hpchost deploy`` in ``~/<root>/dev-lab`` and writes everything it prints to one log
+``python -m dev_lab.dev.hpcaccount deploy`` in ``~/<root>/dev-lab`` and writes everything it prints to one log
 per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import shlex
-import subprocess
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
@@ -29,13 +27,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final
 
-import lab_commons.launch as _door
 from lab_commons.hpc.cluster import Runner, runner_for
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
 from dev_lab.dev.datedlog import dated_log
-from dev_lab.dev.hpchost.spec import DEFAULT_ROOT, KIT
+from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
+from dev_lab.dev.remote import detached, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
 
 __all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'main', 'remote_argv']
@@ -81,31 +79,10 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
 
 
 def remote_argv(user: str, target: Target) -> list[str]:
-    """The ssh argv that runs *user*'s own deploy on its DECLARED host, never prompting."""
+    """The ssh argv that runs *user*'s own deploy on its DECLARED host, never prompting (:mod:`dev_lab.dev.remote`)."""
     python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
-    command = f'cd {PurePosixPath("~", target.root, KIT)} && {python} -m dev_lab.dev.hpchost deploy'
-    return [
-        'ssh',
-        '-o',
-        'BatchMode=yes',
-        '-o',
-        'ConnectTimeout=20',
-        f'{user}@{target.host}',
-        f'bash -lc {shlex.quote(command)}',
-    ]
-
-
-def _detached(argv: Sequence[str], log: IO[Any]) -> object:
-    # The door adds CREATE_NO_WINDOW; DETACHED_PROCESS would leave the windowless console the serve child inherits.
-    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-    return _door.popen(
-        list(argv),
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        creationflags=flags,
-        start_new_session=os.name != 'nt',
-    )
+    command = f'cd {PurePosixPath("~", target.root, KIT)} && {python} -m dev_lab.dev.hpcaccount deploy'
+    return ssh_argv(f'{user}@{target.host}', command, batch=True)
 
 
 def deploy_fleet(
@@ -116,7 +93,7 @@ def deploy_fleet(
     dry_run: bool,
     say: Callable[[str], None],
     connect: Callable[[Grant], Runner] = runner_for,
-    launch: Launch = _detached,
+    launch: Launch = detached,
 ) -> int:
     """Start each account's deploy on its declared host; 2 when any account was refused."""
     users = [grant.user for grant in grants]
@@ -153,7 +130,7 @@ def deploy_fleet(
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``deploy-fleet`` and start it."""
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpchost deploy-fleet', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount deploy-fleet', description=__doc__.splitlines()[0])
     parser.add_argument('--account', action='append', default=[], help='one account of the fleet (repeatable)')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))

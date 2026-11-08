@@ -32,7 +32,7 @@ from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, RUNTIMES_TABLE
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from dev_lab.dev.hpchost.steps import Step
+    from dev_lab.dev.hpcaccount.steps import Step
 
 __all__ = [
     'HEAVY',
