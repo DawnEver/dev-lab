@@ -94,3 +94,15 @@ def test_an_unknown_actor_or_runner_or_an_empty_intent_is_refused() -> None:
         Door(('bash', 'x'), MAIN, 'x')
     with pytest.raises(ValueError, match='intent'):
         Door(('python', '-m', 'x'), MAIN, ' ')
+
+
+def test_the_ruled_permissions_of_2026_11_07_are_main_doors() -> None:
+    """User ruling 2026-11-07 (permissions, item 2): ssh through the named doors; toggling a workflow."""
+    main = {door.argv for door in POLICY if door.actor == MAIN}
+    assert ('gh', 'workflow', 'enable') in main
+    assert ('gh', 'workflow', 'disable') in main
+    assert ('python', '-m', 'dev_lab.dev.hpcaccount', 'deploy-fleet') in main
+    assert ('python', '-m', 'dev_lab.dev.opsserver') in main
+    rows = claude_rows()
+    assert 'Bash(gh workflow enable *)' in rows
+    assert 'Bash(gh workflow disable *)' in rows
