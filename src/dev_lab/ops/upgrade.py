@@ -76,7 +76,9 @@ def fetch_lock(source: str, ref: str) -> tuple[str, str]:
         report = run_network_verb([*git, 'fetch', '-q', '--depth', '1', source, ref])
         if not report.ok:
             raise ValueError(report.remedy)
-        sha = _door.run([*git, 'rev-parse', 'FETCH_HEAD'], check=True, capture_output=True, text=True).stdout.strip()
+        sha = _door.run(
+            [*git, 'rev-parse', 'FETCH_HEAD'], check=True, capture_output=True, text=True, encoding='utf-8'
+        ).stdout.strip()
         lock = _door.run(
             [*git, 'show', 'FETCH_HEAD:uv.lock'], check=True, capture_output=True, text=True, encoding='utf-8'
         ).stdout
