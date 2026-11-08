@@ -16,7 +16,9 @@ by this command.
 
 THEN THE LOCK (user ruling 2026-11-07). A clean sync then relocks every floated sibling (dev-lab, lab-commons, ...)
 to its line's current head through the dependency door (:func:`relock_floating`) and commits
-the lock in the same sync (:func:`relock`), so ONE push of the result passes the ``pr-current`` pre-push row
+the lock in the same sync (:func:`relock`) together with every generated file the new pin renders -- each
+renderer the repo's files call for (:data:`dev_lab.dev.famfiles.RENDERERS`), run with the tree's re-synced
+environment (:func:`dev_lab.dev.relock.rerender`) -- so ONE push of the result passes the ``pr-current`` pre-push row
 (:mod:`dev_lab.dev.prcurrent`), which refuses a ``pr/*`` head that lacks integration's tip or lags a sibling.
 
 THE OWNER'S CHECKOUT, THE OWNER'S PUSH. Run by the owner's agent in develop mode on a clean tree.
@@ -40,7 +42,7 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.lockcheck import LOCK
-from dev_lab.dev.relock import RelockFailed, door_upgrade, siblings
+from dev_lab.dev.relock import RelockFailed, door_upgrade, rerender, siblings
 from dev_lab.dev.trialmerge import Trial, rev, trial
 
 __all__ = [
@@ -186,27 +188,57 @@ def relock_floating(tree: Path, *, upgrade: Callable[[Path, Sequence[str]], int]
     return names
 
 
-def relock(root: Path, *, door: Callable[[Path], Sequence[str]] = relock_floating) -> tuple[str, ...]:
-    """Relock *root*'s floated siblings (*door*) and commit the lock when it moved; the siblings it moved.
+def relock(
+    root: Path,
+    *,
+    door: Callable[[Path], Sequence[str]] = relock_floating,
+    render: Callable[[Path], Sequence[str]] = rerender,
+) -> tuple[str, ...]:
+    """Relock *root*'s floated siblings (*door*); when the lock moved, re-*render* and commit both; the moved names.
 
-    Nothing moved (no sibling, or each already at its head): nothing is committed and ``()`` is answered.
-    RAISES :class:`OSError` (:class:`~dev_lab.dev.relock.RelockFailed` among them) when the door or the commit fails,
-    after restoring every file the relock touched to its committed state (user ruling 2026-11-07): a sync failing
-    partway never leaves a dirty tree for the next sync to refuse.
+    The rendered files depend on the dev-lab the lock now pins, so a relock that left them stale reds the repo's
+    own suite (2026-11-07: numerics-lab's ``deny-rules.json`` after a new deny row). The lock and the renders are
+    ONE commit. Nothing moved (no sibling, or each already at its head): nothing is rendered or committed, ``()``.
+    RAISES :class:`OSError` (:class:`~dev_lab.dev.relock.RelockFailed` among them) when the door, a renderer or the
+    commit fails, after restoring every file the relock touched to its committed state (user ruling 2026-11-07):
+    a sync failing partway never leaves a dirty tree for the next sync to refuse.
     """
+    if held := _staged(root):
+        msg = f'the index already holds {", ".join(held)}, which a relock would sweep in: commit or unstage it first'
+        raise RelockFailed(msg)
     clean = _touched(root)
     try:
         names = tuple(door(root))
         if not names or not _git(root, 'status', '--porcelain', '--', LOCK).stdout.strip():
             return ()
-        for argv in (('add', '--', LOCK), ('commit', '-q', '-m', RELOCK_TITLE, '-m', f'Relocked: {", ".join(names)}')):
-            if (done := _git(root, *argv)).returncode != 0:
-                msg = f'git {argv[0]} of the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
-                raise RelockFailed(msg)
+        rendered = tuple(render(root))
+        # ONLY what the door and the renderers wrote: they never stage, so a path staged meanwhile is someone else's.
+        wrote = sorted(({path for _, path in _touched(root) - clean} - set(_staged(root))) | {LOCK})
+        body = '\n'.join([f'Relocked: {", ".join(names)}', *([f'Rendered: {", ".join(rendered)}'] if rendered else [])])
+        if (done := _git(root, 'add', '--', *wrote)).returncode != 0 or (
+            done := _commit(root, wrote, RELOCK_TITLE, body)
+        ).returncode != 0:
+            msg = f'committing the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
+            raise RelockFailed(msg)
     except OSError:
         _restore(root, _touched(root) - clean)
         raise
     return names
+
+
+def _staged(root: Path) -> tuple[str, ...]:
+    """The paths *root*'s index holds against HEAD."""
+    return tuple(_git(root, 'diff', '--cached', '--name-only').stdout.split('\n')[:-1])
+
+
+def _commit(root: Path, paths: Sequence[str], *message: str) -> subprocess.CompletedProcess[str]:
+    """``git commit --only -- <paths>``: exactly *paths*, whatever else the index holds.
+
+    NO TIMEOUT: a local commit runs the repo's own commit hooks, which the hook runner itself runs unbounded
+    (:mod:`dev_lab.dev.githooks.runner`); motronics' exceed 30 s (2026-11-07), so any ceiling here is a guess.
+    """
+    argv = [_GIT, 'commit', '-q', *(arg for line in message for arg in ('-m', line)), '--only', '--', *paths]
+    return _door.run(argv, cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
 
 
 def _touched(root: Path) -> frozenset[tuple[bool, str]]:
@@ -268,7 +300,7 @@ def main(
             emit(f'[sync] Remedy: git merge {ref}, resolve those files, commit, run your tests, push.', err=True)
         return 2
     if relocked:
-        emit(f'[sync] relocked {", ".join(relocked)} to their current heads and committed {LOCK}')
+        emit(f'[sync] relocked {", ".join(relocked)} to their current heads; committed {LOCK} with what it renders')
     if not merged and not relocked:
         emit('[sync] up to date; nothing to merge or relock')
         return 0
