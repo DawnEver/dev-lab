@@ -19,10 +19,13 @@ from dev_lab.dev.famfiles import (
     MANAGED,
     OWNED,
     PROJECT_FILES,
+    RENDERERS,
+    due_renderers,
     main,
     project_files_on_disk,
     render_agent_files,
     render_all,
+    render_argv,
 )
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
@@ -152,3 +155,49 @@ def test_a_repos_own_rem_config_is_reported_and_kept(tmp_path: Path) -> None:
     line = render_agent_files(tmp_path, write=True)[1]
     assert line.startswith(f'{REL}: the repo`s own choice, not written'), line
     assert (tmp_path / REL).read_text(encoding='utf-8') == own
+
+
+# ------------------------------------------------------------------- the renderers, derived from the one list
+
+
+def test_the_renderers_are_derived_from_the_generated_rows() -> None:
+    """2026-11-07: a relock left every generated file stale because no list said what renders them.
+
+    Every generated row but the lock names the command that writes it; the set of renderers is read off
+    those rows and from nowhere else.
+    """
+    assert {renderer.name for renderer in RENDERERS} == {
+        'agent_guard', 'autodoors', 'ciworkflows', 'famfiles', 'hook_adoption',
+    }  # fmt: skip
+    unrendered = {row.path for row in PROJECT_FILES.values() if row.generated and row.renderer is None}
+    assert unrendered == {'uv.lock'}, 'the lock is the door`s, every other generated file names its renderer'
+
+
+def test_a_renderer_is_due_where_a_file_it_writes_is_present(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a tree holding none of the generated files has no renderer due."""
+    assert due_renderers(tmp_path) == ()
+    (tmp_path / '.github' / 'workflows').mkdir(parents=True)
+    (tmp_path / '.github' / 'workflows' / 'ci.yml').write_text('{}\n', encoding='utf-8')
+    (tmp_path / '.gitignore').write_text('x\n', encoding='utf-8')
+    assert {renderer.name for renderer in due_renderers(tmp_path)} == {'ciworkflows', 'famfiles'}
+
+
+def test_a_renderers_command_reads_the_repos_render_table(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.render]\ndeltas = "tests/_d.py"\nshell_doors = ["a.sh", "b.sh"]\n', encoding='utf-8'
+    )
+    named = {renderer.name: renderer for renderer in RENDERERS}
+    assert render_argv(named['famfiles'], tmp_path, 'py') == [
+        'py', '-m', 'dev_lab.dev.famfiles', '--repo', str(tmp_path), '--deltas', 'tests/_d.py',
+    ]  # fmt: skip
+    assert render_argv(named['autodoors'], tmp_path, 'py')[-4:] == ['--shell-door', 'a.sh', '--shell-door', 'b.sh']
+    assert render_argv(named['ciworkflows'], tmp_path, 'py') == [
+        'py', '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tmp_path),
+    ]  # fmt: skip
+
+
+def test_a_due_renderer_missing_its_declared_input_is_refused_by_name(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same renderer with the key declared builds its command (above)."""
+    named = {renderer.name: renderer for renderer in RENDERERS}
+    with pytest.raises(ValueError, match=r'\[tool\.dev_lab\.render\] adoption'):
+        render_argv(named['hook_adoption'], tmp_path, 'py')

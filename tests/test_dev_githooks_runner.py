@@ -63,7 +63,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     assert {hook.id for hook in table['pre-push']} == {
         'memory-adds',
         'session-branch',
-        'landed-pr',
+        'closed-pr',
         'pr-current',
         'pr-notices',
     }
@@ -132,7 +132,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         encoding='utf-8',
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
-    assert pre_push == ['memory-adds', 'session-branch', 'landed-pr', 'pr-current', 'pr-notices', 'pushgate']
+    assert pre_push == ['memory-adds', 'session-branch', 'closed-pr', 'pr-current', 'pr-notices', 'pushgate']
 
 
 def test_a_repo_that_does_not_opt_in_runs_no_hook(tmp_path: Path) -> None:

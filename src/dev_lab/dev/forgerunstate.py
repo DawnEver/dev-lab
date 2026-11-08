@@ -52,7 +52,9 @@ __all__ = [
     'drop',
     'held_names',
     'live',
+    'name_of',
     'save',
+    'submit_lock',
 ]
 
 #: The state file's schema. Bump it whenever a field changes meaning; a live run of another is refused.
@@ -233,6 +235,16 @@ def directory() -> Path:
 def _path(run: Run) -> Path:
     repo = hashlib.sha256(run.repo_url.encode('utf-8')).hexdigest()[:12]
     return directory() / f'{repo}-{run.sha}-{run.platform}-{run.scope}.json'
+
+
+def name_of(run: Run) -> str:
+    """*run*'s file name without its suffix: how a detached submit names the run it takes (:mod:`forgesubmit`)."""
+    return _path(run).stem
+
+
+def submit_lock(run: Run) -> Path:
+    """The lock a detached submit of *run* holds, beside its file; not a ``*.json``, so no reader takes it for a run."""
+    return _path(run).with_suffix('.submit')
 
 
 def save(run: Run) -> Path:

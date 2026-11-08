@@ -128,10 +128,18 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'partrows',
     'forgeoom',
     'forgeslurm',
+    # ORIGINAL: a submit detached from the tick under its own lock was never done; split from forgeserve (2026-11-08).
+    'forgesubmit',
     'slurmkilled',
     'forgeship',
     'artefacts',
     'artefactstores',
+    # ORIGINAL: the artefact member index, split out of `artefacts` inside the kit; no consumer held them.
+    'artefactpack',  # writes the member-indexed archive
+    'artefactindex',  # the member-index facts and their manifest record
+    'artefactscan',  # verifies an archive stream against its index
+    'artefactrestore',  # materializes selected members with a receipt
+    'artefactfolder',  # the folder store's verified publication
     'selection',
     'forgealarm',
     'forgefleet',
@@ -161,8 +169,13 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrator',
     # ORIGINAL: a consumer's primary-checkout hook guarded the other direction only.
     'sessionbranch',
-    # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02).
-    'landedpush',
+    # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02); since
+    # 2026-11-07 a merged PR's branch is continued (prcontinue, branchreview) and only a closed one refused.
+    'closedpush',
+    'prcontinue',
+    'branchreview',
+    # ORIGINAL: a standing verdict and 'review again' were read inline in forgereview; split out 2026-11-07.
+    'forgereview_stands',
     # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
     'prcurrent',
     # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).

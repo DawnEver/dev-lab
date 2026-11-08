@@ -14,9 +14,12 @@ from dev_lab.dev.producer import (
     RETRYABLE,
     ProducerExit,
     box_release_reason,
+    declared_outage,
     full_suite_refusal,
+    outage_env,
     producing,
     release_reason,
+    unreachable,
 )
 
 
@@ -43,12 +46,15 @@ def test_verify_exits_by_the_contract() -> None:
     }
 
 
-def test_only_unreachable_is_released_as_retryable() -> None:
-    reasons = {code: release_reason(code) for code in (*ProducerExit, -9, 137)}
+def test_only_a_declared_unreachable_is_released_as_retryable() -> None:
+    reasons = {code: release_reason(code, outage=True) for code in (*ProducerExit, -9, 137)}
     retryable = {code for code, reason in reasons.items() if reason.startswith(RETRYABLE)}
     assert retryable == {ProducerExit.UNREACHABLE}
+    assert not release_reason(ProducerExit.UNREACHABLE, outage=False).startswith(RETRYABLE), (
+        'a command exiting 4 on its own is not an outage: it would be re-claimed every tick'
+    )
     assert len(set(reasons.values())) == len(reasons), 'every exit is released with a reason naming it'
-    assert release_reason(-9) == 'released: producer crashed (exit -9)'
+    assert release_reason(-9, outage=False) == 'released: producer crashed (exit -9)'
 
 
 def test_the_box_record_decides_the_release_never_the_exit_code() -> None:
@@ -75,3 +81,15 @@ def test_the_door_is_open_only_to_the_producer_forge_serve_spawned() -> None:
 def test_a_claim_for_another_platform_does_not_open_this_one() -> None:
     """PLANTED: a linux claim leaked into a windows shell is not this box's part."""
     assert full_suite_refusal('verify', producing('tests/linux', 'a' * 40), 'tests/windows') is not None
+
+
+def test_an_outage_is_declared_in_the_outcome_record_never_read_from_the_exit_code(tmp_path, monkeypatch) -> None:
+    """The producer SAYS unreachable where serve named; exit 4 alone says nothing (sharp-review 10-15 #2)."""
+    record = tmp_path / 'run.outcome.json'
+    assert not declared_outage(record), 'PLANTED CONTROL: nothing declared, no outage'
+    monkeypatch.setenv(*next(iter(outage_env(record).items())))
+    assert unreachable('npm missing') == ProducerExit.UNREACHABLE
+    assert declared_outage(record)
+    assert not declared_outage(record), 'the declaration is consumed: a later run of the tree starts clean'
+    monkeypatch.delenv(next(iter(outage_env(record))))
+    assert unreachable('outside serve') == ProducerExit.UNREACHABLE, 'outside serve it only exits 4'

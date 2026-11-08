@@ -49,17 +49,24 @@ the committed file against :func:`render` so the two cannot drift.
 
 from __future__ import annotations
 
+import argparse
 import json
+import runpy
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from lab_commons.log import emit
 
 from dev_lab.dev._deny_rows import retired_row
+from dev_lab.dev.agent_guard import RULES_REL
 from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, rules_by_id
 
 __all__ = [
     'HookAdoption',
     'assert_shippable',
     'deny_rules',
+    'main',
     'needing',
     'remedy_gaps',
     'render',
@@ -222,3 +229,25 @@ def assert_shippable(adoption: HookAdoption, tracked: Iterable[str], rules: Sequ
             'sealed road wearing a signpost.'
         )
         raise UnremediedRule(msg)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``--adoption <module> [--repo R]``: write R's rules file from the ``ADOPTION`` its module declares.
+
+    The renderer of ``.claude/hooks/deny-rules.json`` (:data:`dev_lab.dev.famfiles.RENDERERS`), re-run by a relock.
+    """
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.hook_adoption', description=main.__doc__)
+    parser.add_argument('--repo', type=Path, default=Path.cwd())
+    parser.add_argument('--adoption', type=Path, required=True, help='the module declaring ADOPTION, from --repo')
+    args = parser.parse_args(argv)
+    root = args.repo.resolve()
+    adoption = runpy.run_path(str(root / args.adoption))['ADOPTION']
+    target = root / RULES_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(render(adoption), encoding='utf-8')
+    emit(f'[hook-adoption] wrote {RULES_REL} from {args.adoption.as_posix()}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

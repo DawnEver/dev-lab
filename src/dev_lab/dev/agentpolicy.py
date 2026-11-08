@@ -192,6 +192,20 @@ POLICY: Final[tuple[Door, ...]] = (
         'Closing a pull request with its reason posted first; its branch is never deleted.',
         _FORGE_WRITE,
     ),
+    Door(
+        _forge('pr', 'continue'),
+        MAIN,
+        'Opening the continuation pull request of a branch whose pull request already merged and '
+        'whose tip moved past it (LANDED-BRANCH-CONTINUES).',
+        _FORGE_WRITE,
+    ),
+    Door(
+        _forge('review', 'carry'),
+        MAIN,
+        'Recording the disposition of a finding a continuation pull request carries: resolved, or deferred with '
+        'a required reason.',
+        _FORGE_WRITE,
+    ),
     Door(_forge('pr', 'close-landed'), MAIN, 'Closing pull requests whose head is already merged into their base.'),
     Door(
         _forge('pr', 'close-superseded'),

@@ -489,32 +489,55 @@ def test_a_relock_rerenders_the_generated_workflows_in_the_same_commit(world: tu
     clone, origin, sha = world
     rendered: list[Path] = []
 
-    def render(tree: Path) -> int:
+    def render(tree: Path) -> tuple[str, ...]:
         rendered.append(tree)
         workflow = tree / '.github' / 'workflows' / 'ci.yml'
         workflow.parent.mkdir(parents=True)
         workflow.write_text('{"jobs": {"review": {"steps": ["install the review method"]}}}\n', encoding='utf-8')
-        return 0
+        (tree / '.gitignore').write_text('rendered\n', encoding='utf-8')
+        return ('ciworkflows', 'famfiles')
 
     _carry(clone, _Forge(), resolve=_stale, rerender=render)
     assert len(rendered) == 1, 'the render runs once, after the door moved the lock'
-    assert _git(origin, 'diff', '--name-only', sha, BRANCH).splitlines() == ['.github/workflows/ci.yml', 'uv.lock']
+    assert _git(origin, 'diff', '--name-only', sha, BRANCH).splitlines() == [
+        '.github/workflows/ci.yml', '.gitignore', 'uv.lock',
+    ], 'every renderer`s output rides, not the workflows alone'  # fmt: skip
     assert _git(origin, 'rev-parse', f'{BRANCH}^') == sha, 'still ONE commit on integration'
 
 
 def test_a_render_that_fails_is_a_named_refusal_and_pushes_nothing(world: tuple[Path, Path, str]) -> None:
     clone, origin, _ = world
     forge = _Forge()
-    with pytest.raises(RelockFailed, match='the render of the generated files exited 3'):
-        _carry(clone, forge, resolve=_stale, rerender=lambda _t: 3)
+
+    def failing(_tree: Path) -> tuple[str, ...]:
+        msg = 'the renderer famfiles exited 3'
+        raise RelockFailed(msg)
+
+    with pytest.raises(RelockFailed, match='the renderer famfiles exited 3'):
+        _carry(clone, forge, resolve=_stale, rerender=failing)
     assert (forge.created, _git(origin, 'branch', '--list', BRANCH)) == ([], '')
 
 
 def test_a_tree_without_its_venv_is_refused_not_rendered_with_this_interpreter(tmp_path: Path) -> None:
     """The running interpreter holds the OLD pin: rendering with it would carry the stale workflow (#71 review)."""
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    (tmp_path / '.gitignore').write_text('x\n', encoding='utf-8')
     with pytest.raises(RelockFailed, match=r'no \.venv'):
         rerender(tmp_path)
+
+
+def test_rerender_runs_every_due_renderer_with_the_trees_interpreter_and_names_a_failure(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a tree with no generated file runs nothing, so it needs no interpreter at all."""
+    assert rerender(tmp_path, run=lambda _argv, _tree: 1) == ()
+    (tmp_path / '.claude' / 'hooks').mkdir(parents=True)
+    (tmp_path / '.claude' / 'hooks' / 'deny-commands.js').write_text('x\n', encoding='utf-8')
+    python = tmp_path / '.venv' / 'bin' / 'python'
+    python.parent.mkdir(parents=True)
+    python.write_text('', encoding='utf-8')
+    ran: list[list[str]] = []
+    assert rerender(tmp_path, run=lambda argv, _tree: ran.append(argv) or 0) == ('agent_guard',)
+    assert ran == [[str(python), '-m', 'dev_lab.dev.agent_guard', '--install', '--repo', str(tmp_path)]]
+    with pytest.raises(RelockFailed, match='the renderer agent_guard exited 4'):
+        rerender(tmp_path, run=lambda _argv, _tree: 4)
 
 
 def test_planted_control_a_tree_with_its_venv_renders_with_that_interpreter(tmp_path: Path) -> None:

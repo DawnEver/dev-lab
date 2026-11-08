@@ -300,7 +300,9 @@ def run_verify(
     producer's checkout (*hooks* false) commits nothing and judges a sha that already passed whatever hooks it met.
 
     The pytest step RUNS IN THE BOX (:mod:`dev_lab.dev.verifybox`) at its declared claim: admitted
-    on the machine's one ledger within *wait_s*, held to its cores, memory and wall. The interpreter's
+    on the machine's one ledger within *wait_s*, held to its cores, memory and wall. ONLY pytest: the hooks
+    and ruff steps run unboxed, a stated exemption -- each is one short single-process lint whose cost is
+    bounded by the tree, not by a claim, and boxing them would book the ledger for seconds of work. The interpreter's
     ENVIRONMENT seat (:class:`~dev_lab.dev.envseat.EnvironmentSeat`) is held across all three steps, so
     no dependency door mutates the environment the run is judged in.
 

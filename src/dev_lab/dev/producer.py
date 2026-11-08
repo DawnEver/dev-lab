@@ -33,7 +33,9 @@ flag, because a flag is a second door a developer can walk through by habit.
 
 from __future__ import annotations
 
+import os
 from enum import IntEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.box import ProcessEnd, Refused
@@ -42,13 +44,17 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 __all__ = [
+    'OUTCOME_VAR',
     'PRODUCING_VAR',
     'RETRYABLE',
     'ProducerExit',
     'box_release_reason',
+    'declared_outage',
     'full_suite_refusal',
+    'outage_env',
     'producing',
     'release_reason',
+    'unreachable',
 ]
 
 #: Set by ``forge serve`` on the producer it spawns: the claimed part, ``tests/<part>@<sha>``.
@@ -90,8 +96,44 @@ class ProducerExit(IntEnum):
 RETRYABLE: Final = 'released: unreachable'
 
 
-def release_reason(code: int) -> str:
-    """The ``error`` description releasing a claim its producer left pending after exiting *code*."""
+#: The path ``forge serve`` hands its producer: a producer whose infrastructure did not answer WRITES its outage there.
+OUTCOME_VAR: Final = 'DEV_LAB_PRODUCER_OUTCOME'
+
+
+def unreachable(why: str) -> int:
+    """Declare an outage in the record ``forge serve`` named (:data:`OUTCOME_VAR`) and return the code to exit with.
+
+    The exit code alone is not the evidence: a command a repo declares may exit 4 itself, and read as an outage it
+    would be released RETRYABLE and re-claimed every tick (sharp-review 2026-10-15). Outside serve nothing is written.
+    """
+    if target := os.environ.get(OUTCOME_VAR):
+        Path(target).write_text(f'unreachable: {why}\n', encoding='utf-8')
+    return ProducerExit.UNREACHABLE
+
+
+def outage_env(record: Path) -> dict[str, str]:
+    """The env naming where the producer of the run boxed at *record* declares an outage (:func:`unreachable`)."""
+    return {OUTCOME_VAR: str(record.with_name(f'{record.name}.producer'))}
+
+
+def declared_outage(record: Path) -> bool:
+    """Whether the producer of the run boxed at *record* declared an outage; the declaration is consumed."""
+    said = Path(outage_env(record)[OUTCOME_VAR])
+    try:
+        return said.read_text(encoding='utf-8').startswith('unreachable:')
+    except OSError:
+        return False
+    finally:
+        said.unlink(missing_ok=True)
+
+
+def release_reason(code: int, *, outage: bool) -> str:
+    """The ``error`` description releasing a claim its producer left pending after exiting *code*.
+
+    Exit 4 is RETRYABLE only when the producer declared the *outage* in its record; undeclared it is a crash's code.
+    """
+    if code == ProducerExit.UNREACHABLE and not outage:
+        return f'released: producer exited {code} without declaring an outage -- settled, not retried'
     reasons: dict[int, str] = {
         ProducerExit.PASS: 'released: producer exited 0 (PASS) but posted no part',
         ProducerExit.FAIL: 'released: producer exited 1 (FAIL) but posted no part',
