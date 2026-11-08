@@ -132,7 +132,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A push that creates or updates `refs/heads/<X>` (the integration branch and the trunk aside) is refused '
             'at pre-push when the forge`s PR with head `<X>` into the integration branch is merged or closed and no '
             'OPEN PR has head `<X>`: no PR would ever carry the push. The refusal names the remedy (a new PR from '
-            '`<X>`, or a new branch name), and a forge that cannot be read refuses, never passes unchecked.'
+            '`<X>`, or a new branch name), and a forge that cannot be read refuses, never passes unchecked. A DECLARED '
+            'long-lived branch (`[tool.dev_lab.branchset] sessions`) is reopened after each landing (user ruling '
+            '2026-11-07): its push passes when the tip is not already in `origin/<integration>`, printing the '
+            '`forge pr create` for its next PR, and is refused as nothing new when it is.'
         ),
         ('tests/test_dev_landedpush.py',),
     ),
