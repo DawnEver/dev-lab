@@ -40,6 +40,13 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    write `Break-Glass: <named reason>` in the merge message beside any `Merge-Audit:` lines, and push. The
    notice records WHO (the commit author) and WHY (the reason).
 
+   A WAVE (`forge pr breakglass N --reason ...`) merges server-side, at the forge's head of the PR, inside a
+   window the user opened with their code. A wave is capped by merges as well as hours (the server's
+   `max_merges_max`), an exhausted wave must be closed before a new one opens, and the user acknowledges its
+   audit. Merge only after the push is verified and the head's `tests/base`, `tests/base@windows` and
+   `tests/security` are green: a refused push followed by a merge lands the OLD head. Operating details
+   (endpoint, the pre-#311 open line, ops logins) are in `.claude/memory/2026/11/08/servers-waves-and-ops-are-written-down.md`.
+
 4. `main` moves only by `integrate promote <sha>` on a full PASS, as below.
 
 All maintenance happens on gitea (user ruling 2026-10-19): PRs are opened, judged and merged there, and

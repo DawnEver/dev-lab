@@ -27,6 +27,8 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
@@ -310,6 +312,36 @@ def _role[T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, 
         raise ValueError(msg) from missing
 
 
+#: The keys #311 moved out of ``[ops.breakglass]`` (FORMATS-UPGRADE-ON-READ): the TOTP seed and the code lockout went
+#: to the consent issuer; a wave's window and cap became the params of its ``breakglass.wave`` credential.
+_BREAKGLASS_MOVED: Final = ('totp', 'wave_hours', 'max_merges', 'lockout_after', 'lockout_minutes')
+#: Where a derived issuer keeps its key and ledger when a pre-#311 host declared none.
+_CONSENT_DEFAULTS: Final = {
+    'account': 'consent',
+    'key': '/etc/dev-lab/consent/issuer.key',
+    'state': '/var/lib/dev-lab-ops/consent',
+}
+
+
+def _upgraded(ops: dict[str, Any]) -> dict[str, Any]:
+    """*ops* with a pre-#311 ``[ops.breakglass]`` upgraded on read: the ONE place the old shape is read.
+
+    The moved keys leave the break-glass table. Its ``totp`` and lockout seed the consent issuer when the file
+    declares none (keys = break-glass's); a declared ``[ops.consent]`` wins. ``wave_hours``/``max_merges`` are dropped:
+    a wave's window and cap are its credential's params now, and the ceilings stay where they were.
+    """
+    glass = ops.get('breakglass')
+    if not isinstance(glass, dict) or not (moved := {key: glass[key] for key in _BREAKGLASS_MOVED if key in glass}):
+        return ops
+    upgraded = dict(ops, breakglass={key: value for key, value in glass.items() if key not in moved})
+    if 'consent' not in ops and 'totp' in moved:
+        lockout = {key: moved[key] for key in ('lockout_after', 'lockout_minutes') if key in moved}
+        keys = list(glass.get('keys', ()))
+        upgraded['consent'] = {**_CONSENT_DEFAULTS, 'totp': moved['totp'], 'keys': keys, **lockout}
+    emit(f'[ops] upgraded a pre-consent [ops.breakglass] on read: moved {sorted(moved)}', err=True)
+    return upgraded
+
+
 def _root_secret(path: Path, label: str, why: str) -> str:
     """The text of a declared root-only host secret: the ONE read every such file takes; refuse one unreadable."""
     try:
@@ -353,6 +385,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
     if not isinstance(ops, dict):
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
+    ops = _upgraded(ops)
     root = _is_root() if as_root is None else as_root
     judge_table = ops.get('judge')
     if root and isinstance(judge_table, dict) and (keys_file := str(judge_table.get('keys_file', ''))):
