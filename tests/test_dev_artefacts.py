@@ -7,6 +7,7 @@ test touches a real remote, a real rclone config, or any synced folder.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import io
 import json
@@ -18,14 +19,17 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from lab_commons.hpc import records
 
-from dev_lab.dev import artefacts
+from dev_lab.dev import artefactpack, artefacts
+from dev_lab.dev.artefactfolder import FolderStore
+from dev_lab.dev.artefactindex import MemberFact, StoredOutputs
 from dev_lab.dev.artefacts import (
     ArtefactRefused,
     Config,
-    FolderStore,
     ForgeStore,
     MissingOutput,
+    OutputBudgetRefused,
     RcloneStore,
     Ref,
 )
@@ -132,21 +136,21 @@ def test_only_declared_outputs_are_collected_and_a_missing_one_fails_loudly(tmp_
     (tmp_path / 'out' / 'field.h5').write_bytes(b'f')
     (tmp_path / 'out' / 'undeclared.log').write_bytes(b'u')
     (tmp_path / 'summary.json').write_bytes(b's')
-    found = artefacts.collect(tmp_path, ['out/*.h5', 'summary.json'])
+    found = artefactpack.collect(tmp_path, ['out/*.h5', 'summary.json'])
     assert [p.relative_to(tmp_path).as_posix() for p in found] == ['out/field.h5', 'summary.json']
     with pytest.raises(MissingOutput, match=r'out/\*\.vtu.*nope\.txt'):
-        artefacts.collect(tmp_path, ['out/*.h5', 'out/*.vtu', 'nope.txt'])
+        artefactpack.collect(tmp_path, ['out/*.h5', 'out/*.vtu', 'nope.txt'])
 
 
 @pytest.mark.parametrize('escape', ['../secret', '/etc/passwd', 'C:/x'])
 def test_an_output_outside_the_work_tree_is_refused(tmp_path: Path, escape: str) -> None:
     with pytest.raises(ArtefactRefused):
-        artefacts.collect(tmp_path, [escape])
+        artefactpack.collect(tmp_path, [escape])
 
 
 def test_nothing_declared_packs_nothing(tmp_path: Path) -> None:
     (tmp_path / 'big.bin').write_bytes(b'x')
-    assert artefacts.collect(tmp_path, []) == []
+    assert artefactpack.collect(tmp_path, []) == []
 
 
 def test_pack_writes_one_gzip_tar_of_exactly_the_declared_files_with_no_binary_on_path(
@@ -158,7 +162,7 @@ def test_pack_writes_one_gzip_tar_of_exactly_the_declared_files_with_no_binary_o
     (tree / 'out').mkdir(parents=True)
     (tree / 'out' / 'a.txt').write_bytes(b'A')
     (tree / 'skip.txt').write_bytes(b'S')
-    dest = artefacts.pack(tree, artefacts.collect(tree, ['out/a.txt']), tmp_path / f'x{artefacts.ARCHIVE}')
+    dest = artefactpack.pack(tree, artefactpack.collect(tree, ['out/a.txt']), tmp_path / f'x{artefacts.ARCHIVE}').path
     assert dest.read_bytes()[:2] == bytes((0x1F, 0x8B)), 'gzip magic'
     with tarfile.open(fileobj=io.BytesIO(dest.read_bytes())) as tar:
         assert tar.getnames() == ['out/a.txt']
@@ -168,8 +172,8 @@ def test_unpack_is_the_inverse_of_pack(tmp_path: Path) -> None:
     tree = tmp_path / 'tree'
     (tree / 'out').mkdir(parents=True)
     (tree / 'out' / 'a.txt').write_bytes(b'A')
-    archive = artefacts.pack(tree, [tree / 'out' / 'a.txt'], tmp_path / f'x{artefacts.ARCHIVE}')
-    back = artefacts.unpack(archive, tmp_path / 'back')
+    archive = artefactpack.pack(tree, [tree / 'out' / 'a.txt'], tmp_path / f'x{artefacts.ARCHIVE}').path
+    back = artefactpack.unpack(archive, tmp_path / 'back')
     assert (back / 'out' / 'a.txt').read_bytes() == b'A'
     assert sorted(p.name for p in back.rglob('*')) == ['a.txt', 'out']
 
@@ -217,6 +221,103 @@ def test_the_reader_folder_comes_from_machine_config(tmp_path: Path, monkeypatch
     store = artefacts.reader('lab')
     assert isinstance(store, FolderStore)
     assert store.root == tmp_path / 'mirror'
+
+
+@pytest.mark.parametrize('name', ['expanded_output_max_entries', 'expanded_output_max_bytes'])
+@pytest.mark.parametrize('value', ['true', 'false', '-1', '1.0'])
+def test_expanded_output_config_budget_refuses_invalid_values(tmp_path: Path, name: str, value: str) -> None:
+    root = _pyproject(tmp_path / 'r', f'[tool.lab_commons.artefacts]\n{name} = {value}\n')
+    with pytest.raises(OutputBudgetRefused, match=name):
+        artefacts.load_config(root)
+
+
+def test_expanded_output_config_budget_accepts_zero_and_positive(tmp_path: Path) -> None:
+    root = _pyproject(
+        tmp_path / 'r',
+        '[tool.lab_commons.artefacts]\nexpanded_output_max_entries = 0\nexpanded_output_max_bytes = 42\n',
+    )
+    config = artefacts.load_config(root)
+    assert config.expanded_output_max_entries == 0
+    assert config.expanded_output_max_bytes == 42
+
+
+@pytest.mark.parametrize(
+    'name',
+    [
+        'member_index_max_members',
+        'member_index_max_bytes',
+        'member_index_max_path_bytes',
+        'record_max_compressed_bytes',
+        'record_max_decompressed_bytes',
+    ],
+)
+@pytest.mark.parametrize('value', ['true', 'false', '0', '-1', '1.0'])
+def test_index_and_record_config_requires_explicit_positive_integers(tmp_path: Path, name: str, value: str) -> None:
+    root = _pyproject(tmp_path / 'r', f'[tool.lab_commons.artefacts]\n{name} = {value}\n')
+    with pytest.raises(OutputBudgetRefused, match=name):
+        artefacts.load_config(root)
+
+
+# --- a record's member index, queried under the repo's one policy ---------------------------------
+
+
+_QUERY_POLICY = {
+    'record_max_compressed_bytes': 65536,
+    'record_max_decompressed_bytes': 262144,
+    'member_index_max_members': 100,
+    'member_index_max_bytes': 65536,
+    'member_index_max_path_bytes': 4096,
+    'expanded_output_max_entries': 3,
+    'expanded_output_max_bytes': 0,
+}
+
+
+def _policy_repo(root: Path, policy: dict[str, int]) -> Path:
+    return _pyproject(root, '[tool.lab_commons.artefacts]\n' + '\n'.join(f'{k} = {v}' for k, v in policy.items()))
+
+
+def _catalogue_record() -> tuple[dict[str, Any], Ref]:
+    ref = Ref('folder', 'lab/archive.tar.gz', 42, 'a' * 64)
+    member = MemberFact('dir/é.bin', 0, hashlib.sha256(b'').hexdigest())
+    return {'artefacts': [ref.manifest()], 'artefact_indexes': StoredOutputs(ref, (member,)).index()}, ref
+
+
+@pytest.mark.parametrize('missing', list(_QUERY_POLICY))
+def test_query_requires_all_policy_before_record_open(tmp_path: Path, missing: str) -> None:
+    root = _policy_repo(tmp_path / 'repo', {k: v for k, v in _QUERY_POLICY.items() if k != missing})
+    _, ref = _catalogue_record()
+    with pytest.raises(OutputBudgetRefused, match='policy'):
+        artefacts.query_members(root, tmp_path / 'absent.gz', ref, [], case_sensitive=True)
+
+
+@pytest.mark.parametrize('fault', ['none', 'hash', 'bomb', 'json', 'case', 'selection'])
+def test_query_real_record_uses_one_explicit_policy(tmp_path: Path, fault: str) -> None:
+    policy = dict(_QUERY_POLICY)
+    if fault == 'selection':
+        policy['expanded_output_max_entries'] = 2
+    root = _policy_repo(tmp_path / 'repo', policy)
+    record, ref = _catalogue_record()
+    record.update(sha=SHA, platform='base', req='query', cells={})
+    if fault == 'bomb':
+        record['metadata'] = 'x' * 300000
+    path = records.write_record(record, tmp_path / 'records')
+    if fault == 'json':
+        path.write_bytes(gzip.compress(b'{"x":1,"x":2}'))
+    digest = '0' * 64 if fault == 'hash' else hashlib.sha256(path.read_bytes()).hexdigest()
+    name = record['artefact_indexes'][ref.sha256]['members'][0]['path']
+    if fault == 'case':
+        name = name.upper()
+    if fault in ('hash', 'bomb', 'json'):
+        with pytest.raises(records.RecordRefused):
+            artefacts.query_members(root, path, ref, [name], case_sensitive=True, expected_sha256=digest)
+    elif fault in ('case', 'selection'):
+        with pytest.raises(ArtefactRefused):
+            artefacts.query_members(root, path, ref, [name], case_sensitive=True)
+    else:
+        assert artefacts.query_members(root, path, ref, [name], case_sensitive=False, expected_sha256=digest) == (
+            MemberFact(name, 0, hashlib.sha256(b'').hexdigest()),
+        )
+        assert artefacts.query_members(root, path, ref, [], case_sensitive=True) == ()
 
 
 # --- the backends: write-once, sha-verified, listed, deleted -------------------------------------

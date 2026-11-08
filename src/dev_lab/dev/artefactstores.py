@@ -38,6 +38,8 @@ __all__ = [
     'ArtefactStore',
     'ForgeStore',
     'MissingOutput',
+    'OutputBudgetRefused',
+    'OutputIntegrityRefused',
     'RcloneStore',
     'Ref',
     'check_key',
@@ -83,6 +85,14 @@ class ArtefactRefused(ValueError):
 
 class MissingOutput(ArtefactRefused):
     """A declared output matched nothing: the run fails loudly, naming every missing declaration."""
+
+
+class OutputBudgetRefused(ArtefactRefused):
+    """A required output budget is missing or invalid, or the selected outputs or their index exceed it."""
+
+
+class OutputIntegrityRefused(ArtefactRefused):
+    """Packed or stored archive bytes no longer match the member identities sealed when they were packed."""
 
 
 # --- names and layout -------------------------------------------------------------------------
