@@ -4,12 +4,12 @@ The review is a one-shot independent acceptance with advice (:mod:`dev_lab.dev.f
 F-4eee841cf16c): every identity a local session asserts is forgeable by a same-user agent, so a session's review is
 never the forge's -- only the forge posts ``tests/review``.
 
-* ``review again <pr>`` (:func:`~dev_lab.dev.forgereview.ask_again`) asks the forge to review the PR's head again:
-  after fixing a security finding, or to have grown work read. The forge's next review run honours it.
+* ``review again <pr>`` (:func:`~dev_lab.dev.forgereview_stands.ask_again`) asks the forge to review the PR's head
+  again: after fixing a security finding, or to have grown work read. The forge's next review run honours it.
 * ``review takeover <sha>`` (:func:`takeover`) runs the SAME method and scope and posts the findings comment as a
   session's ADVISORY review: no status, no merge. ``review plan <sha>`` prints the slices only.
-* ``review carry <pr> --resolve ID | --defer ID --reason ...`` (:func:`~dev_lab.dev.forgereview.carry`) disposes of
-  a finding a continuation PR carries from its branch's landed PRs, in the branch's review record.
+* ``review carry <pr> --resolve ID | --defer ID --reason ...`` (:func:`~dev_lab.dev.forgereview_stands.carry`)
+  disposes of a finding a continuation PR carries from its branch's landed PRs, in the branch's review record.
 * ``review cap <pr> --usd <n> [--reserve] --why`` records the integrator's raise of one PR's dollar cap.
 * ``review run --pr N`` is the review job's (:mod:`dev_lab.dev.forgereview_job`).
 """
@@ -32,7 +32,6 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_upsert, pages, pr_list
-from dev_lab.dev.forgereview import ask_again, carry
 from dev_lab.dev.forgereview_advice import post_review_comment
 from dev_lab.dev.forgereview_batch import BATCH_PENDING, batch_args, held_state, trusted_logins, wait_of, within
 from dev_lab.dev.forgereview_command import ReviewPending, Runner, can_start, run_command
@@ -48,6 +47,7 @@ from dev_lab.dev.forgereview_findings import parse_findings
 from dev_lab.dev.forgereview_identity import Identity, ReviewerRefused, identity
 from dev_lab.dev.forgereview_job import job_exit, review_due, review_run
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan
+from dev_lab.dev.forgereview_stands import ask_again, carry
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest, client_for
 from dev_lab.dev.labsession import sessions

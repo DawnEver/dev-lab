@@ -99,6 +99,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.dev_lab.ci]'),
         _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml plus [tool.dev_lab.ci]'),
         _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml plus [tool.dev_lab.ci]'),
+        _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml plus [tool.dev_lab.ci]'),
         _g('uv.lock', 'famtests.lockpin pins it on the forge; the forge relock keeps it newest (PIN + FRESHNESS)'),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),

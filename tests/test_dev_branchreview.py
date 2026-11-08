@@ -28,11 +28,12 @@ from dev_lab.dev.branchreview import (
 )
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, marker
-from dev_lab.dev.forgereview import carry, review_tick
+from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_advice import CARRIED_HOLD, Record, verdict
 from dev_lab.dev.forgereview_declared import LENS_FIELD, PATHS_FIELD, RANGE_FIELD, Review
 from dev_lab.dev.forgereview_findings import Finding
 from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, Budget, plan, review_base
+from dev_lab.dev.forgereview_stands import carry
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.prcontinue import open_continuation

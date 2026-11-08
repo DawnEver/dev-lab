@@ -91,7 +91,9 @@ INTENTS: Final[dict[str, str]] = {
     ),
     'pr-lifecycle': (
         'Opening a draft pull request onto the integration branch, and marking it ready for review or back to '
-        'draft, through the forge door; the agent does this itself and never hands it to the user.'
+        'draft, opening the continuation pull request of a branch whose pull request already merged, and recording '
+        'the disposition of a finding a continuation carries, through the forge door; the agent does this itself '
+        'and never hands it to the user.'
     ),
     'close-landed': 'Closing pull requests whose head is already merged into their base branch.',
     'close-superseded': (

@@ -663,7 +663,8 @@ steps = [
 # so a push onto its branch is carried by a continuation PR (`continues #N`) the forge opens -- on GitHub, this job, on
 # a push to any branch but integration and the trunk (`forge pr continue --head <branch> --sha <sha>`, one forge call
 # when the branch has no merged PR). It reads the integration branch's review declaration, so it fetches that ref. A
-# PR the job token opens starts no workflow: the continuation's CI starts at its next push.
+# PR the job token opens starts no workflow: the continuation's CI starts at its next push. The pushed head is DATA:
+# the verb runs from the `door` the integration tip's lock pins (INTEGRATION_SHA), never the head's own environment.
 ["continue.yml"]
 name = "Continue a landed branch"
 
@@ -685,9 +686,10 @@ FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
-    { use-steps = "setup" },
-    { name = "Fetch the integration branch", run = 'git fetch --no-tags --depth=1 origin "+refs/heads/integrate/main:refs/remotes/origin/integrate/main"' },
-    { name = "Open the continuation PR", run = 'uv run --no-sync python -m dev_lab.dev.forge pr continue --head "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"' },
+    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
+    { name = "Fetch the integration branch", run = 'git fetch --no-tags --depth=1 origin "+refs/heads/integrate/main:refs/remotes/origin/integrate/main" && echo "INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/integrate/main)" >> "$GITHUB_ENV"' },
+    { use-steps = "door" },
+    { name = "Open the continuation PR", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.forge pr continue --head "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"' },
 ]
 
 ["continue.yml".jobs.continue.permissions]

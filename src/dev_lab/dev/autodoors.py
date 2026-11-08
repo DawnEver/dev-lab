@@ -121,6 +121,13 @@ VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
         'current (PR-HEAD-IS-CURRENT)'
     ),
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'draft'): 'returns a PR to draft; nothing reviews or merges it',
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'continue'): (
+        'opens a continuation PR (`continues #N`) for a branch whose newest PR merged and whose tip moved past it; '
+        'nothing else (LANDED-BRANCH-CONTINUES)'
+    ),
+    ('python', '-m', 'dev_lab.dev.forge', 'review', 'carry'): (
+        "records a carried finding's disposition on a continuation PR: --resolve, or --defer with a required reason"
+    ),
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
     ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
         'closes open PRs salvaged into another OPEN, unmerged PR or a commit; never deletes a branch'
