@@ -14,8 +14,8 @@ login hosts, workstation names, internal addresses -- are shared through the syn
 machine file's ``[[hpc.grant]]``; a committed copy would be a second source and internal data in git history.
 So the family ``.gitignore`` ignores it in every consumer, and it is rendered on each machine from:
 
-* what the REPO declares, committed and host-free: :data:`INTENTS` (one per kit door or rule),
-  :data:`OPTIONAL_INTENTS` named in ``[tool.dev_lab.automode] declares``, and its ``origin`` and branch set;
+* what the REPO declares, committed and host-free: :data:`INTENTS` (one per agent door of the policy table),
+  its own ``[tool.dev_lab.policy] intents`` (prose, never a kit-held text), and its ``origin`` and branch set;
 * what the MACHINE holds (:func:`read_fleet`): every workstation of the synced workstation registry
   (``hosts.json``, named by the machine file's ``[workstation] registry``) and every ``[[hpc.grant]]`` account
   with its login hosts, by NAME so the classifier recognises them.
@@ -42,6 +42,7 @@ from lab_commons.config import config_path, section
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
+from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
@@ -51,7 +52,7 @@ __all__ = [
     'AUTOMODE_REL',
     'DEFAULTS',
     'INTENTS',
-    'OPTIONAL_INTENTS',
+    'POLICY_TABLE',
     'Fleet',
     'SourcesUnavailable',
     'automode',
@@ -84,56 +85,12 @@ _ENVIRONMENT: Final = (
 )
 
 #: THE ACTION CATEGORIES an agent may take unattended, keyed by the door or rule that bounds each one.
-INTENTS: Final[dict[str, str]] = {
-    'break-glass': (
-        'A Break-Glass merge into the integration branch when the forge cannot merge a pull request, carried '
-        'by a commit trailer that states the reason, so every use stays in the history it bypassed.'
-    ),
-    'pr-lifecycle': (
-        'Opening a draft pull request onto the integration branch, and marking it ready for review or back to '
-        'draft, opening the continuation pull request of a branch whose pull request already merged, and recording '
-        'the disposition of a finding a continuation carries, through the forge door; the agent does this itself '
-        'and never hands it to the user.'
-    ),
-    'close-landed': 'Closing pull requests whose head is already merged into their base branch.',
-    'close-superseded': (
-        'Closing an open pull request whose content was salvaged into another open pull request or a '
-        'commit, with a comment naming the replacement; its branch is never deleted.'
-    ),
-    'lossless-prune': (
-        'Deleting a remote branch only when every commit on it is already on the integration branch or on '
-        'another live branch or open pull request; never a force push and never a lossy delete.'
-    ),
-    'install-hooks': 'Installing or refreshing the kit git hooks in a checkout of this repository.',
-    'deploy-fleet': (
-        'Deploying or restarting the forge serve hosts of the trusted fleet: the workstation scheduled task '
-        'and each trusted cluster account on its own declared login host, over ssh, detached, one log per account.'
-    ),
-    'cancel-stuck': (
-        "Cancelling the forge's own test jobs of one commit that are confirmed stuck: busy at full CPU with no "
-        'new test result for longer than a multiple of their measured duration. Never any other job.'
-    ),
-    'monitor': 'Read-only monitoring of the forge: commit statuses, the queue, host cards and run progress.',
-    'open-pr': 'Opening pull requests through the family forge door, as drafts unless the author marks them ready.',
-    'review-again': (
-        'Asking the forge to review a PR again once a security finding in it is fixed '
-        '(user ruling 2026-11-06: the review is one-shot advice; always allowed).'
-    ),
-    'correct-request': (
-        "Editing a forge request issue's body to correct a malformed field, such as a short commit id to the "
-        'full one, so the forge can serve it.'
-    ),
-}
+#: The classifier's intents: every agent door's ONE string in :data:`dev_lab.dev.agentpolicy.POLICY`, in table order.
+INTENTS: Final = tuple(dict.fromkeys(door.intent for door in POLICY if door.actor != USER))
 
-#: Categories a repo must DECLARE before they render (``[tool.dev_lab.automode] declares``).
-OPTIONAL_INTENTS: Final[dict[str, str]] = {
-    'jmag-material-card': (
-        'Installing a missing JMAG material card into the local JMAG material library, the one write outside '
-        'the checkout this repository authorizes standing.'
-    ),
-}
+#: Where a repo states its OWN standing intents, as prose: ``[tool.dev_lab.policy] intents``.
+POLICY_TABLE: Final = 'policy'
 
-#: What a command or module spelling looks like; prose carries none.
 _SPELLED: Final = re.compile(r'`|\bpython\b|\s-m\s|\s--?[a-z]|\bdev_lab\b|\blab_commons\b|\.py\b|\bssh\s+\S+@')
 
 
@@ -173,13 +130,20 @@ def spelled_commands(entries: Sequence[str]) -> tuple[str, ...]:
 
 
 def _declared(root: Path) -> tuple[str, ...]:
+    """The repo's own intents, ``[tool.dev_lab.policy] intents``; a retired ``[tool.dev_lab.automode]`` is refused."""
     manifest = root / 'pyproject.toml'
     data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
-    names = tuple(declared_table(data, 'automode', {}).get('declares', ()))
-    if unknown := sorted(set(names) - set(OPTIONAL_INTENTS)):
-        msg = f'{manifest}: [tool.dev_lab.automode] declares {unknown}; known: {sorted(OPTIONAL_INTENTS)}'
+    if declared_table(data, 'automode', {}):
+        msg = (
+            f'{manifest}: [tool.dev_lab.automode] is retired -- state each standing intent as prose under '
+            f'[tool.dev_lab.{POLICY_TABLE}] intents (user ruling 2026-11-07: a repo row lives in its own pyproject)'
+        )
         raise ValueError(msg)
-    return names
+    intents = tuple(declared_table(data, POLICY_TABLE, {}).get('intents', ()))
+    if spelled := spelled_commands(intents):
+        msg = f'{manifest}: [tool.dev_lab.{POLICY_TABLE}] intents spell a command, not an intent: {list(spelled)}'
+        raise ValueError(msg)
+    return intents
 
 
 def _source_control(root: Path) -> str:
@@ -225,7 +189,7 @@ def _fleet_lines(fleet: Fleet) -> list[str]:
 
 def automode(root: Path, fleet: Fleet | None = None) -> dict[str, Any]:
     """The ``autoMode`` settings object for the checkout at *root* (*fleet*: :func:`read_fleet` when omitted)."""
-    allow = [*INTENTS.values(), *(OPTIONAL_INTENTS[name] for name in _declared(root))]
+    allow = [*INTENTS, *_declared(root)]
     hosts = _fleet_lines(read_fleet() if fleet is None else fleet)
     environment = [_source_control(root), *hosts, *_ENVIRONMENT]
     return {'autoMode': {'environment': [DEFAULTS, *environment], 'allow': [DEFAULTS, *allow]}}

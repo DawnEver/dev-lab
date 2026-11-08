@@ -1,6 +1,6 @@
 """THE ONE Scheduled Task that makes a Windows workstation a ``forge serve`` host: its name, definition and state.
 
-The workstation counterpart of a cluster account's crontab lines (:mod:`dev_lab.dev.hpchost.deploy`). ONE
+The workstation counterpart of a cluster account's crontab lines (:mod:`dev_lab.dev.hpcaccount.deploy`). ONE
 Task, ``lab-forge-serve``, serves every repo the machine file declares (``[serve] repos``): its action
 runs :mod:`dev_lab.dev.workstation` ``serve`` from the dev-lab SERVE checkout (:func:`kit`), which takes the
 per-user serve lock once (:mod:`dev_lab.dev.servelock`) and serves each repo in a lane of its own from its
@@ -45,7 +45,7 @@ from typing import IO, Final
 
 from lab_commons.config import config_path
 
-from dev_lab.dev.hpchost.spec import KIT
+from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.servelock import forge_home
 from dev_lab.dev.venvpath import venv_interpreter
 

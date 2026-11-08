@@ -94,11 +94,12 @@ from typing import Any, Final
 
 from dev_lab.dev._allow_settings import BASH, ROW, block_problems, live_bash_rows, merged_permissions
 from dev_lab.dev._allow_settings import promised_command as _promised
+from dev_lab.dev.agentpolicy import literal_rows
 from dev_lab.dev.autodoors import claude_rows
 from dev_lab.dev.floors import assert_floor, assert_floor_still_binds
 from dev_lab.dev.hook_adoption import HookAdoption
 from dev_lab.dev.hooks import DENY_RULES, DenyRule, denies
-from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, portable, unportable_row
+from dev_lab.dev.venvpath import portable, unportable_row
 
 __all__ = [
     'BASH',
@@ -232,16 +233,11 @@ def derived_entries(
     """
     out: dict[str, list[str]] = {}
     for rule in rules:
-        # THE ONE UNIVERSAL EXIT THAT IS A ROW: BARE-INTERPRETER's way out is the venv interpreter,
-        # spelled by its owner (`venvpath`), so every adopting repo's allow block carries it -- the
-        # settings row and the refusal text cannot drift apart (user ruling 2026-10-03).
-        if rule.id == INTERPRETER_RULE:
-            out.setdefault(INTERPRETER_ALLOW_ENTRY, []).append(rule.id)
-            continue
         remedy = adoption.remedies.get(rule.id)
         if rule.needs is None or remedy is None:
             continue
-        out.setdefault(glob_for(remedy.command), []).append(rule.id)
+        for row in literal_rows(glob_for(remedy.command)):
+            out.setdefault(row, []).append(rule.id)
     return {entry: tuple(ids) for entry, ids in out.items()}
 
 
@@ -276,7 +272,8 @@ class AllowAdoption:
         if repeated:
             msg = f'{self.app_name} declares {repeated} more than once; a deletion could not say which one went.'
             raise UnarguedAllow(msg)
-        restated = sorted(set(entries) & (set(derived_entries(self.adoption)) | set(claude_rows(self.scripts))))
+        literal = {line for entry in entries for line in literal_rows(entry)}
+        restated = sorted(literal & (set(derived_entries(self.adoption)) | set(claude_rows(self.scripts))))
         if restated:
             msg = (
                 f'{self.app_name} declares {restated}, which its own remedies already derive. A declared copy '
@@ -288,12 +285,20 @@ class AllowAdoption:
 def allow_entries(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> tuple[str, ...]:
     """The whole block: derived rows, then the family doors (AUTO-MODE-RUNS-THE-DOORS), then declared rows.
 
-    The doors come from :data:`dev_lab.dev.autodoors.FAMILY_DOORS`, the one table the Codex rules
-    are rendered from too. A door row the derivation already produced is not repeated.
+    The doors come from :data:`dev_lab.dev.agentpolicy.POLICY`, the one table the Codex rules are rendered from
+    too. A derived row a door row already COVERS (the door's prefix admits it) is not repeated: the stoprun
+    remedy's ``--pid`` row under the stoprun door was the same road listed twice. Every interpreter glob is
+    rendered as one literal row per layout (:func:`dev_lab.dev.agentpolicy.literal_rows`).
     """
-    derived = derived_entries(allow.adoption, rules)
-    doors = [row for row in claude_rows(allow.scripts) if row not in derived]
-    return (*derived, *doors, *(row.entry.strip() for row in allow.declared))
+    doors = list(claude_rows(allow.scripts))
+    derived = [row for row in derived_entries(allow.adoption, rules) if not _covered(row, doors)]
+    declared = [line for row in allow.declared for line in literal_rows(row.entry.strip())]
+    return (*derived, *doors, *declared)
+
+
+def _covered(row: str, doors: Sequence[str]) -> bool:
+    """Whether a door row's prefix (``Bash(<door> *)``) already admits every command *row* admits."""
+    return any(door.endswith(' *)') and row.startswith(door[: -len('*)')]) for door in doors)
 
 
 def provenance(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> dict[str, str]:
@@ -307,7 +312,7 @@ def provenance(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> 
     out.update(
         {entry: f'derived from {", ".join(ids)}' for entry, ids in derived_entries(allow.adoption, rules).items()}
     )
-    out.update({row.entry.strip(): f'declared: {row.because}' for row in allow.declared})
+    out.update({line: f'declared: {row.because}' for row in allow.declared for line in literal_rows(row.entry.strip())})
     return out
 
 

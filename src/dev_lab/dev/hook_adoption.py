@@ -58,7 +58,7 @@ from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.dev._deny_rows import RETIRED_IDS
+from dev_lab.dev._deny_rows import retired_row
 from dev_lab.dev.agent_guard import RULES_REL
 from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, rules_by_id
 
@@ -147,7 +147,7 @@ def deny_rules(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES) -
     known = rules_by_id(rules)
     strangers = sorted((set(adoption.remedies) | set(adoption.declared_absent)) - set(known))
     if strangers:
-        retired = '; '.join(f'{one} is retired, name {RETIRED_IDS[one]}' for one in strangers if one in RETIRED_IDS)
+        retired = '; '.join(f'{one} is retired, name {retired_row(one)}' for one in strangers if retired_row(one))
         msg = (
             f'{adoption.app_name} names {strangers}, which the deny registry does not define. A typo in an ID '
             f'ships nothing and reports nothing, which is how a rule quietly stops being enforced.'

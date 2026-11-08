@@ -151,7 +151,12 @@ HINT: the hazard is minutes, not harm.
 ## HPC-THROUGH-THE-DOOR
 
 - **Why it is refused.** User ruling 2026-11-06: an agent never reaches an HPC login host or Slurm directly. The night before, agents opened dozens of ssh connections per diagnosis to the login nodes (six accounts, two hosts, poll loops with `sleep`) and the cluster stopped answering ssh. Refused: `ssh`, `scp`, `sftp` or `rsync` to a login host, and `sbatch`, `srun`, `salloc` or `scancel` as a command or after `ssh`. A login host is recognised by SHAPE -- a first DNS label carrying `login`, which every declared `[[hpc.grant]] hosts` entry has -- because the committed `deny-rules.json` cannot read the machine file and fleet names stay out of git (user ruling 2026-10-23). A human in a terminal is unaffected.
-- **The exit.** Read-only status: the forge host card, `python -m dev_lab.dev.forge queue`, `forge run show <sha>`. Deploy or maintenance: `python -m dev_lab.dev.hpchost deploy`, run by the user on the account. Tests: push, and the forge's HPC parts run them.
+- **The exit.** Read-only status: the forge host card, `python -m dev_lab.dev.forge queue`, `forge run show <sha>`. Deploy or maintenance: `python -m dev_lab.dev.hpcaccount deploy`, run by the user on the account. Tests: push, and the forge's HPC parts run them.
+
+## REMOTE-WRITE-THROUGH-A-DOOR
+
+- **Why it is refused.** User ruling 2026-11-07: ssh has two kinds of target, and a write to either goes through the door named for its kind, over the one transport `dev_lab.dev.remote`. A hand-written `ssh <host> sudo ...`, `git pull`, `systemctl restart ...` (any verb that changes a host) or an upload by `scp`/`rsync` (its last argument `host:path`) leaves no record of which door, host or reason changed it. Read-only ssh (`uptime`, `systemctl --no-pager status`, `journalctl`, `cat`, `ls`) and a download stay open. HPC login hosts are refused whole by HPC-THROUGH-THE-DOOR, which fires first.
+- **The exit.** A server the integrator deploys: `python -m dev_lab.dev.opsserver <server> install|status|restart|reload|logs|daemon-reload [<unit>]` (the ops account's fixed sudo verbs; the server is a `[[server]]` table of the machine file). A cluster account: `python -m dev_lab.dev.hpcaccount deploy-fleet`.
 
 ## STATUS-VIA-DOORS
 
@@ -161,7 +166,7 @@ HINT: the hazard is minutes, not harm.
 ## SUBAGENT-NO-PUSH
 
 - **Why it is refused.** Scoped to subagents: the engine judges this row only when the hook payload carries a non-empty `agent_id`, which Claude Code sends only inside a subagent call (forks included; a main session launched with `--agent` carries `agent_type` but no `agent_id`). MEASURED 2026-10-08 in one consumer repo: 95 of 98 runner logs that day were the same `(tree, env, selector)`, re-launched by agents polling a held box. A push is the main session's outward action, and a skipped hook publishes what nobody checked. Refused: `git push` (also `git -C X push`), `with-retry.sh push`, and hook skipping (`SKIP=`, `--no-verify`). A full tier is refused to everyone at the runner instead (VERDICTS-FROM-THE-FORGE).
-- **The exit.** Commit on your lane and hand the commit SHA back to the main session. It merges every ready lane and pushes; the forge produces the verdict. A targeted `measure` of the tests you wrote or touched stays yours.
+- **The exit.** Commit on your lane and hand the commit SHA back to the main session. Every door the policy table gives the main session alone (`actor = main` in `dev_lab.dev.agentpolicy.POLICY`) is refused here too. It merges every ready lane and pushes; the forge produces the verdict. A targeted `measure` of the tests you wrote or touched stays yours.
 
 ## CONSENT-CODE-NEVER-TYPED
 

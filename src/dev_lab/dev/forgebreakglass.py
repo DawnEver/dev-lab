@@ -8,7 +8,7 @@ no code -- the server sends ONE summary of what actually merged when the wave en
 
 The endpoint is the machine file's ``[breakglass]`` table (``endpoint = "<account>@<host>"``, optional
 ``identity = "<ssh key path>"``); every request is one JSON line over ``ssh -T`` (:func:`ssh_send`, which the
-consent client shares). The client holds no secret and
+consent client shares, through :func:`dev_lab.dev.remote.piped`). The client holds no secret and
 cannot authorize itself. A PR's head is pinned: one that moved after it was shown is refused server side.
 """
 
@@ -17,16 +17,15 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
-import shutil
 import socket
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
-import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
+from dev_lab.dev import remote
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgework import Client, client_for
@@ -35,19 +34,14 @@ __all__ = ['TABLE', 'Send', 'merge_main', 'ssh_send', 'wave_main']
 
 #: The machine-file table naming the endpoint.
 TABLE: Final = 'breakglass'
-_SSH: Final = shutil.which('ssh') or 'ssh'
 
 Send = Callable[[Mapping[str, Any], dict[str, Any]], tuple[int, str]]
 
 
 def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
     """Send *request* as one JSON line to *table*'s ``endpoint`` over ``ssh -T``; ``(exit status, its output)``."""
-    identity = ['-i', str(table['identity'])] if table.get('identity') else []
-    done = _door.run(
-        [_SSH, '-T', '-o', 'BatchMode=yes', *identity, str(table['endpoint'])],
-        input=json.dumps(request) + '\n', capture_output=True, text=True, encoding='utf-8', check=False, timeout=180,
-    )  # fmt: skip
-    return done.returncode, (done.stdout + done.stderr).strip()
+    identity = str(table['identity']) if table.get('identity') else None
+    return remote.piped(str(table['endpoint']), json.dumps(request) + '\n', identity=identity, timeout_s=180)
 
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any] | None:

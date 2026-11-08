@@ -17,12 +17,12 @@ import pytest
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
+from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import claude_rows, codex_rules, doors
 from dev_lab.dev.automode import (
     _ENVIRONMENT,
     AUTOMODE_REL,
     INTENTS,
-    OPTIONAL_INTENTS,
     Fleet,
     SourcesUnavailable,
     automode,
@@ -105,24 +105,31 @@ def test_the_render_equals_its_sources(tmp_path: Path) -> None:
     )
     assert 'account bob7 at login hosts login2.example.ac.uk' in environment
     assert environment.count('account alice9') == 1, 'one line per account, its first grant'
-    assert rendered['allow'][1:] == list(INTENTS.values())
+    assert rendered['allow'][1:] == list(INTENTS)
 
 
-def test_an_optional_intent_renders_only_where_declared_and_an_unknown_one_is_refused(tmp_path: Path) -> None:
+_JMAG = 'Installing a missing JMAG material card into the local JMAG material library.'
+
+
+def test_a_repo_intent_renders_only_where_its_pyproject_states_it(tmp_path: Path) -> None:
+    """User ruling 2026-11-07: a repo-specific row lives in that repo's pyproject, never in the kit.
+
+    PLANTED CONTROLS: the retired ``[tool.dev_lab.automode]`` table and a spelled command are refused by name.
+    """
     plain = automode(_repo(tmp_path / 'a'), _FLEET)['autoMode']['allow']
-    jmag = '\n[tool.dev_lab.automode]\ndeclares = ["jmag-material-card"]\n'
-    declared = automode(_repo(tmp_path / 'b', jmag), _FLEET)['autoMode']['allow']
-    assert OPTIONAL_INTENTS['jmag-material-card'] not in plain
-    assert OPTIONAL_INTENTS['jmag-material-card'] in declared
-    with pytest.raises(ValueError, match='anything-goes'):
-        automode(_repo(tmp_path / 'c', '\n[tool.dev_lab.automode]\ndeclares = ["anything-goes"]\n'), _FLEET)
+    declared = automode(_repo(tmp_path / 'b', f'\n[tool.dev_lab.policy]\nintents = ["{_JMAG}"]\n'), _FLEET)
+    assert _JMAG not in plain
+    assert declared['autoMode']['allow'][-1] == _JMAG
+    with pytest.raises(ValueError, match=r'automode\] is retired'):
+        automode(_repo(tmp_path / 'c', '\n[tool.dev_lab.automode]\ndeclares = ["jmag-material-card"]\n'), _FLEET)
+    with pytest.raises(ValueError, match='spell a command'):
+        automode(_repo(tmp_path / 'd', '\n[tool.dev_lab.policy]\nintents = ["run `git push`"]\n'), _FLEET)
 
 
 def _committed() -> list[str]:
     """Every committed text the kit renders into a repo or ships: categories, toolchain facts, the door table."""
     return [
-        *INTENTS.values(),
-        *OPTIONAL_INTENTS.values(),
+        *INTENTS,
         *_ENVIRONMENT,
         *doors().values(),
         *claude_rows(),
@@ -248,6 +255,8 @@ def test_a_host_name_is_a_leak_whatever_its_case() -> None:
     assert leaks(['ssh HOST1.Example.AC.UK']) == ('HOST1.Example.AC.UK',)
 
 
-def test_the_forge_pr_dispose_and_request_intents_render_in_every_repo() -> None:
-    """The three rows once hand-kept in the synced user settings are the kit's, so they render per repo."""
-    assert {'open-pr', 'review-again', 'correct-request'} <= INTENTS.keys()
+def test_every_agent_door_of_the_policy_is_an_intent_and_a_user_door_is_not() -> None:
+    """The intents ARE the policy table's strings: no parallel table (user ruling 2026-11-07)."""
+    assert set(INTENTS) == {door.intent for door in POLICY if door.actor != USER}
+    assert not {door.intent for door in POLICY if door.actor == USER} & set(INTENTS)
+    assert spelled_commands(INTENTS) == ()

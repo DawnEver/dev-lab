@@ -1,7 +1,7 @@
 """A WINDOWS WORKSTATION AS A ``forge serve`` HOST, in one run: ``python -m dev_lab.dev.workstation deploy``.
 
-The counterpart of a cluster account's ``python -m dev_lab.dev.hpchost deploy``, and it reuses that
-deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
+The counterpart of a cluster account's ``python -m dev_lab.dev.hpcaccount deploy``, and it reuses that
+deploy's run-or-print :class:`~dev_lab.dev.hpcaccount.steps.Step`.
 
 ``deploy --repos <repo>,... (--capabilities workstation,jmag:4 | --role light) [--forge <https base>]
 [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. A ``--role`` is a declared profile
@@ -43,7 +43,7 @@ the dev-lab refresh that runs first whenever its ``pyproject.toml``/``uv.lock`` 
 Under the per-user serve lock (:mod:`dev_lab.dev.servelock`),
 dev-lab and then each ``[serve] repos`` entry is REFRESHED BY THE HOST -- fast-forwarded to its
 upstream and its venv synced when step 4 says so -- and only then THE HOST KIT runs ``forge serve`` in its
-checkout (:func:`~dev_lab.dev.hpchost.spec.host_serve_argv`); the repo's venv only runs its producers.
+checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`); the repo's venv only runs its producers.
 The host owns the refresh because a repo's own kit cannot (incident 2026-10-13: a venv whose
 old ``forge serve`` exited 2 every tick could never run the code that would update it). A repo whose
 refresh fails is released with its reason in the serve log. Its exit is the worst child's; one repo's
@@ -76,8 +76,8 @@ from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv
-from dev_lab.dev.hpchost.spec import KIT
-from dev_lab.dev.hpchost.steps import Step, Tools
+from dev_lab.dev.hpcaccount.spec import KIT
+from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
 from dev_lab.dev.venvfollow import ENV_STAMP, venv_python

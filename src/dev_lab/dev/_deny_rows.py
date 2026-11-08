@@ -53,6 +53,8 @@ sharper pattern with the near-miss added to ``permits`` -- never a narrower clai
 
 from __future__ import annotations
 
+from lab_commons.hpc.retired import RETIRED
+
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_NEVER_TYPED
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
@@ -60,6 +62,7 @@ from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
+from dev_lab.dev._deny_remote_row import REMOTE_WRITE
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
@@ -68,15 +71,18 @@ from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
 from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
-#: RETIRED ROW IDs -> the ID that replaced each (RETIRED-NAMES-REGISTERED). A consumer's adoption or
-#: ``[tool.dev_lab.doors]`` still keyed by a retired ID is refused BY NAME with its replacement, never
-#: silently dropped. GIT-NETWORK-VERB became NETWORK-VERB on 2026-10-23, when the row took uv's
-#: network verbs (lock, add, remove) beside git's.
-RETIRED_IDS: dict[str, str] = {
-    'GIT-NETWORK-VERB': 'NETWORK-VERB',
-    'REVIEW-HOLD-VIA-TAKEOVER': 'STATUS-VIA-DOORS',  # 2026-10-26: it refuses tests/review too
-    'REVIEW-STATUS-VIA-DOORS': 'STATUS-VIA-DOORS',  # 2026-10-27: it refuses tests/security too
-}
+
+def retired_row(rule_id: str) -> str | None:
+    """The replacement of a RETIRED deny-row ID, from the family's one retired registry; ``None`` when live or unknown.
+
+    RETIRED-NAMES-REGISTERED: a retired ID lives only in :data:`lab_commons.hpc.retired.RETIRED`, keyed
+    ``deny row <ID>``, so a consumer's adoption or ``[tool.dev_lab.doors]`` still keyed by one is refused BY NAME.
+    """
+    return RETIRED.get(f'{RETIRED_ROW_KEY} {rule_id}')
+
+
+#: The retired registry's key prefix for a deny-row ID.
+RETIRED_ROW_KEY = 'deny row'
 
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
 _UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb != 'pip')
@@ -371,4 +377,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
     HPC_THROUGH_THE_DOOR,
+    REMOTE_WRITE,
 )

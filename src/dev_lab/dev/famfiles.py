@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import principles, remconfig
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 
 if TYPE_CHECKING:
@@ -45,6 +46,7 @@ __all__ = [
     'OWNED',
     'PROJECT_FILES',
     'RENDERERS',
+    'RENDER_COMMAND',
     'RENDER_TABLE',
     'ProjectFile',
     'Renderer',
@@ -52,10 +54,14 @@ __all__ = [
     'load_deltas',
     'main',
     'project_files_on_disk',
+    'render_agent_files',
     'render_all',
     'render_argv',
     'unaccounted',
 ]
+
+#: The one command a repo re-renders every family file with (its own deltas module named).
+RENDER_COMMAND: Final = 'python -m dev_lab.dev.famfiles --deltas <the repo`s deltas module>'
 
 #: A file whose content comes from a family mechanism named in the row.
 MANAGED: Final = 'managed'
@@ -90,7 +96,6 @@ HOOK_ADOPTION: Final = Renderer(
     'hook_adoption', ('dev_lab.dev.hook_adoption',), inputs=(('adoption', '--adoption'),),
     required=frozenset({'adoption'}),
 )  # fmt: skip
-HOOK_INSTALL: Final = Renderer('hook_install', ('dev_lab.dev.hook_install', '--install'))
 CIWORKFLOWS: Final = Renderer('ciworkflows', ('dev_lab.dev.ciworkflows', 'render'), repo_flag='--root')
 AUTODOORS: Final = Renderer(
     'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
@@ -134,8 +139,8 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
-        _g('.claude/rules/principles.md', 'principles.render via hook_install --install', HOOK_INSTALL),
-        _g('.claude/rem.json', 'remconfig.write via hook_install --install: the backlog is the tracker', HOOK_INSTALL),
+        _g('.claude/rules/principles.md', 'principles.render via famfiles: the family principles', FAMFILES),
+        _g('.claude/rem.json', 'remconfig.render via famfiles: the backlog is the issue tracker', FAMFILES),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
         _g('.github/workflows/ci.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
@@ -265,6 +270,33 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     return tuple(out)
 
 
+#: The family files every repo carries whole, with no delta: (repo-relative path, its text).
+def _whole_files() -> tuple[tuple[str, str], ...]:
+    return ((principles.PAGE_REL, principles.render()), (remconfig.REL, remconfig.render()))
+
+
+def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
+    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode.
+
+    ``.claude/rem.json`` that differs is the repo's own choice and is reported, never overwritten.
+    """
+    out: list[str] = []
+    for rel, text in _whole_files():
+        path = root / rel
+        held = path.read_text(encoding='utf-8') if path.is_file() else None
+        if held == text:
+            out.append(f'{rel}: current')
+        elif rel == remconfig.REL and held is not None:
+            out.append(f'{rel}: the repo`s own choice, not written -- reconcile it with {text.strip()} by hand')
+        elif write:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding='utf-8', newline='\n')
+            out.append(f'{rel}: rendered')
+        else:
+            out.append(f'{rel}: would render ({"absent" if held is None else "drifted"})')
+    return tuple(out)
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI. Exit 0 when every declared artefact is current (after writing, unless --check), else 1."""
     parser = argparse.ArgumentParser(description='Render every family-managed project file from base + delta.')
@@ -273,7 +305,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--check', action='store_true', help='write nothing; report what would change')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
-    lines = render_all(root, load_deltas(args.deltas.resolve()), write=not args.check)
+    lines = (
+        *render_all(root, load_deltas(args.deltas.resolve()), write=not args.check),
+        *render_agent_files(root, write=not args.check),
+    )
     for line in lines:
         emit(f'[famfiles] {line}')
     settled = ('current', 'rendered')

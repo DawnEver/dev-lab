@@ -1,4 +1,4 @@
-"""``python -m dev_lab.dev.hpchost allocate`` -- write, show or clear the ONE expiring allocation record.
+"""``python -m dev_lab.dev.hpcaccount allocate`` -- write, show or clear the ONE expiring allocation record.
 
 The record, its reader and the share it sets are :mod:`lab_commons.hpc.allocation` -- a runtime fact every
 submitter reads (:func:`lab_commons.hpc.allocation.resolve`, through :func:`dev_lab.dev.forgerecords.read_allocation`).
@@ -66,7 +66,9 @@ def allocation_store() -> Store:
 
 def allocate(argv: list[str]) -> int:
     """``allocate --until <iso> [name=cpus/mem_gb ...] [--borrow <direction>] | --show | --clear``."""
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpchost allocate', description='the one expiring HPC allocation')
+    parser = argparse.ArgumentParser(
+        prog='dev_lab.dev.hpcaccount allocate', description='the one expiring HPC allocation'
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--until', help='UTC expiry, ISO 8601 with a zone (2026-10-18T09:00Z)')
     mode.add_argument('--show', action='store_true', help='print the record, or say the share is derived')

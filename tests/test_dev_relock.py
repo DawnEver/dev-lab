@@ -528,15 +528,15 @@ def test_a_tree_without_its_venv_is_refused_not_rendered_with_this_interpreter(t
 def test_rerender_runs_every_due_renderer_with_the_trees_interpreter_and_names_a_failure(tmp_path: Path) -> None:
     """PLANTED CONTROL: a tree with no generated file runs nothing, so it needs no interpreter at all."""
     assert rerender(tmp_path, run=lambda _argv, _tree: 1) == ()
-    (tmp_path / '.claude' / 'rules').mkdir(parents=True)
-    (tmp_path / '.claude' / 'rules' / 'principles.md').write_text('x\n', encoding='utf-8')
+    (tmp_path / '.claude' / 'hooks').mkdir(parents=True)
+    (tmp_path / '.claude' / 'hooks' / 'deny-commands.js').write_text('x\n', encoding='utf-8')
     python = tmp_path / '.venv' / 'bin' / 'python'
     python.parent.mkdir(parents=True)
     python.write_text('', encoding='utf-8')
     ran: list[list[str]] = []
-    assert rerender(tmp_path, run=lambda argv, _tree: ran.append(argv) or 0) == ('hook_install',)
-    assert ran == [[str(python), '-m', 'dev_lab.dev.hook_install', '--install', '--repo', str(tmp_path)]]
-    with pytest.raises(RelockFailed, match='the renderer hook_install exited 4'):
+    assert rerender(tmp_path, run=lambda argv, _tree: ran.append(argv) or 0) == ('agent_guard',)
+    assert ran == [[str(python), '-m', 'dev_lab.dev.agent_guard', '--install', '--repo', str(tmp_path)]]
+    with pytest.raises(RelockFailed, match='the renderer agent_guard exited 4'):
         rerender(tmp_path, run=lambda _argv, _tree: 4)
 
 

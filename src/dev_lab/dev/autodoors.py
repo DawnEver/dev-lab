@@ -1,35 +1,19 @@
-"""AUTO-MODE-RUNS-THE-DOORS: the family's checked doors, ONE table rendered for Claude Code AND Codex.
+"""AUTO-MODE-RUNS-THE-DOORS: the family's checked doors, rendered for Claude Code AND Codex from ONE table.
 
-USER DIRECTIVE 2026-10-04: in both clients' auto mode the family's sanctioned script doors must run
-without an approval prompt or a classifier refusal. MEASURED THE SAME DAY: every refusal that cost a
-session time came from Claude Code's auto-mode CLASSIFIER, none from a deny hook. Claude Code SUSPENDS
-broad rows in auto mode -- ``Bash(*)`` and wildcarded interpreters such as ``Bash(.venv/*/python* *)``
--- while a NARROW row naming one door stays live and skips the classifier. So every row here names
-ONE door: one per door module, one per tracked ``scripts/`` entry point. No ``dev_lab.dev.*``.
-The dependency bootstrap prefix is explicit; its interpreter and every tracked Python script
-door's interpreter may live in a WORKTREE of this repository, while the invoked door remains exact.
+USER DIRECTIVE 2026-10-04: in both clients' auto mode the family's sanctioned doors must run without an
+approval prompt or a classifier refusal. Claude Code SUSPENDS broad rows in auto mode -- ``Bash(*)`` and a
+blanket interpreter row -- while a NARROW row naming one door stays live and skips the classifier. So every
+row here names ONE door. THE DOORS ARE :data:`dev_lab.dev.agentpolicy.POLICY` (user ruling 2026-11-07: one
+source for agent permissions); this module renders them, plus the repo's tracked ``scripts/`` entry points.
 
-THE INTERPRETER'S DIRECTORY IS THE ONE THING THAT VARIES, AND IT IS ANCHORED RATHER THAN WILDCARDED.
-The first spelling of this was ``*/.venv/Scripts/python.exe`` -- a leading ``*``, which permits any
-invocation prefix and is the row shape every consumer's allow guard refuses by name. MEASURED
-2026-10-06 in a consuming repo: 86 of its 271 rendered rows led with ``*``, all of them from this
-function. The prefix is not free-form after all: a linked worktree lives under
-:data:`dev_lab.dev.worktreeplace.WORKTREES_REL` (rule WORKTREES-STAY-INSIDE -- a deny row
-refuses a misplaced ``git worktree add|move|clone``, and ``famtests.worktreeplace`` detects one that
-got past it), so the spelling anchors on that directory and wildcards only the worktree's NAME.
-
-WHAT THE ANCHOR DOES NOT ADMIT, stated rather than discovered later: an interpreter spelled by an
-ABSOLUTE path (``D:/repo/.claude/worktrees/lane/.venv/Scripts/python.exe``) or by a ``..`` route.
-No row that does not lead with ``*`` can admit one -- the first character of the command is a drive
-letter or a root this file, TRACKED IN GIT, cannot know -- so an agent reaching for another
-checkout's interpreter that way is prompted once. The road it can take instead is the one
-``docs-src/dev/fanout.md`` already spells: run the door from the repository root, where the
-interpreter is this checkout's ``.venv/...`` (the plain heads below) or a worktree's
-``.claude/worktrees/<lane>/.venv/...`` (this anchor).
+THE INTERPRETER IS :data:`dev_lab.dev.agentpolicy.INTERPRETERS`, one literal per platform layout -- never a
+``./`` or worktree variant (six rows per script before 2026-11-07), and never the ``.venv/*/python*`` glob, whose
+trailing ``*`` admits ``python.exe -c <code>`` ahead of the door. A door run through another checkout's
+interpreter is prompted once; from the repository root it is this checkout's.
 
 USER RULING 2026-10-08 (MAIN-SESSION-PUBLISHES), superseding the push half of 2026-10-04: a MAIN
 session pushes and fast-forwards its trunks without waiting for a user decision. So the publishing
-verbs are doors too (:data:`PUBLISH_DOORS`): ``git merge --ff-only`` (also as ``git -C <repo>``), and
+verbs are doors too (main-session rows of the policy table): ``git merge --ff-only`` (also as ``git -C <repo>``), and
 the push, ALWAYS RETRY-WRAPPED and never raw (NETWORK-VERB refuses a raw one): the repo's own
 wrapper (``sh <rel> *``), a sibling checkout's wrapper (``sh */<rel> push *``), or the family verb
 :mod:`dev_lab.dev.netverb` in a repo without one. A subagent is still refused every push by the
@@ -61,15 +45,11 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS
-from dev_lab.dev.worktreeplace import WORKTREES_REL
+from dev_lab.dev.agentpolicy import INTERPRETERS, POLICY, USER, allow_rows
 
 __all__ = [
     'CODEX_RULES_REL',
-    'DOOR_MODULES',
     'NEVER_ALLOWED',
-    'PUBLISH_DOORS',
-    'VERB_DOORS',
     'claude_rows',
     'codex_rules',
     'doors',
@@ -78,67 +58,9 @@ __all__ = [
     'script_doors',
 ]
 
-#: Where Codex reads a trusted project's execpolicy rules.
 CODEX_RULES_REL: Final = '.codex/rules/family-doors.rules'
 
-#: THE TABLE: every ``dev_lab.dev`` door an agent runs unattended, with why.
-DOOR_MODULES: Final[dict[str, str]] = {
-    'dev_lab.dev.verify': 'the family verdict',
-    'dev_lab.dev.branchset': 'branch census; --apply deletes merged LOCAL branches only',
-    'dev_lab.dev.worktrees': (
-        'worktree census; --prune removes a worktree only if it is clean and pushed, anything blocking is'
-        ' listed and refused; --archive NAME moves its outputs home and saves its work, removing nothing'
-    ),
-    'dev_lab.dev.stoprun': 'stops ONE identifiable gate/verify run and its subtree',
-    'dev_lab.dev.netverb': 'the bounded-retry network verb',
-    'dev_lab.dev.famfiles': 'renders the family project files',
-    'dev_lab.dev.autodoors': 'renders these door rules',
-}
-
-#: MAIN-SESSION-PUBLISHES: the local trunk verbs a main session runs unattended. The push is not here:
-#: it is retry-wrapped (the repo's wrapper door, or ``netverb``), because NETWORK-VERB refuses a raw one.
-PUBLISH_DOORS: Final[dict[tuple[str, ...], str]] = {
-    ('git', 'merge', '--ff-only'): 'a fast-forward of a trunk; never creates a merge commit (MAIN-SESSION-PUBLISHES)',
-}
 _RETRY_WRAPPER: Final = 'with-retry.sh'
-
-#: THE BOUNDED VERBS: one door module's single verb, each re-checking its own safety bound when it acts.
-#: Its row names the verb, so the module's other verbs stay prompted.
-VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
-    ('python', '-m', 'dev_lab.dev.hpchost', 'deploy-fleet'): (
-        "starts each DECLARED fleet account's own deploy over ssh, detached; an undeclared account is refused"
-    ),
-    ('python', '-m', 'dev_lab.dev.forge', 'cancel-stuck'): (
-        "scancels only this sha's run-<sha12>-<part> tasks busy at full CPU with no result past their bound"
-    ),
-    ('python', '-m', 'dev_lab.dev.forge', 'watch'): 'read-only: prints a commit verdict until settled or a deadline',
-    # FORGE-DOORS-ARE-CONSENT: the PR lifecycle is the agent's; the forge refuses a bad case, not the classifier.
-    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'create'): (
-        'opens a DRAFT PR onto integration and advises a stacked or second-session PR (NO-STACKED-PRS)'
-    ),
-    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'ready'): (
-        'marks a draft PR ready for review (DRAFT-UNTIL-READY); refused unless the tree is clean and the head is '
-        'current (PR-HEAD-IS-CURRENT)'
-    ),
-    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'draft'): 'returns a PR to draft; nothing reviews or merges it',
-    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'continue'): (
-        'opens a continuation PR (`continues #N`) for a branch whose newest PR merged and whose tip moved past it; '
-        'nothing else (LANDED-BRANCH-CONTINUES)'
-    ),
-    ('python', '-m', 'dev_lab.dev.forge', 'review', 'carry'): (
-        "records a carried finding's disposition on a continuation PR: --resolve, or --defer with a required reason"
-    ),
-    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
-    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
-        'closes open PRs salvaged into another OPEN, unmerged PR or a commit; never deletes a branch'
-    ),
-    ('python', '-m', 'dev_lab.dev.branchprune', 'delete'): (
-        'LOSSLESS-DELETE: a remote branch only when every commit is held elsewhere or its content is on integration'
-    ),
-}
-
-#: Bootstrap is a checked dependency door, not permission to invoke arbitrary installers.
-_DEPENDENCY_BOOTSTRAP: Final = ('python', '-m', 'dev_lab.dev.dep', '--bootstrap')
 
 #: The raw verbs the doors replace. Never rendered as an allow on either client.
 NEVER_ALLOWED: Final = (
@@ -186,13 +108,9 @@ def script_doors(root: Path, *, shell_doors: tuple[str, ...]) -> tuple[str, ...]
 
 
 def doors(scripts: tuple[str, ...] = ()) -> dict[tuple[str, ...], str]:
-    """``{(runner, *argv prefix): why}`` -- the one table both renderings read."""
-    out: dict[tuple[str, ...], str] = {('python', '-m', m): why for m, why in DOOR_MODULES.items()}
-    out[_DEPENDENCY_BOOTSTRAP] = "creates the named checkout's own environment through the checked dependency door"
-    for rel in scripts:
-        out[('sh', rel) if rel.endswith('.sh') else ('python', rel)] = f'repo door {rel}'
-    out.update(VERB_DOORS)
-    out.update(PUBLISH_DOORS)
+    """``{(runner, *argv prefix): intent}`` -- every door an agent may run, the one table both renderings read."""
+    out = {('sh', rel) if rel.endswith('.sh') else ('python', rel): f'repo door {rel}' for rel in scripts}
+    out.update({door.argv: door.intent for door in POLICY if door.argv and door.actor != USER})
     return out
 
 
@@ -201,47 +119,11 @@ def _wrappers(scripts: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def claude_rows(scripts: tuple[str, ...] = ()) -> dict[str, str]:
-    """Each narrow door row, with the interpreter's directory anchored rather than wildcarded."""
-    out: dict[str, str] = {}
-    for (runner, *argv), why in doors(scripts).items():
-        heads = [VENV_INTERPRETER_GLOB if runner == 'python' else runner]
-        if runner == 'python' and ((runner, *argv) == _DEPENDENCY_BOOTSTRAP or (len(argv) == 1 and argv[0] in scripts)):
-            # Only the directory prefix varies, never the executable or its argument boundary.
-            # A python* suffix could swallow -c before the named door and permit unrelated code.
-            heads = [*_interpreters(), *_worktree_interpreters()]
-        for head in heads:
-            out[f'Bash({head} {" ".join(argv)} *)'] = why
-        if runner == 'git':
-            # Another checkout's trunk, spelled the one way a main session reaches a sibling repo.
-            out[f'Bash(git -C * {" ".join(argv)} *)'] = why
+    """Each narrow door row (:func:`dev_lab.dev.agentpolicy.allow_rows`), mapped to what the door is for."""
+    out = {row: why for argv, why in doors(scripts).items() for row in allow_rows(argv)}
     for rel in _wrappers(scripts):
-        # A sibling checkout's wrapper: only its PUSH verb, the publishing road MAIN-SESSION-PUBLISHES opens.
         out[f'Bash(sh */{rel} push *)'] = 'a push through a checkout`s retry wrapper (MAIN-SESSION-PUBLISHES)'
     return out
-
-
-def _interpreters() -> list[str]:
-    """The checkout's own interpreter: the concrete layout per platform, and the ``./`` spelling of each."""
-    plain = ['/'.join(VENV_LAYOUTS[name]) for name in sorted(VENV_LAYOUTS)]
-    return [*plain, *(f'./{p}' for p in plain)]
-
-
-def _worktree_interpreters() -> list[str]:
-    """A LINKED WORKTREE's interpreter, spelled from the repository root, one per platform layout.
-
-    THE ``*`` HERE IS THE WORKTREE'S NAME AND NOTHING ELSE. :data:`~dev_lab.dev.worktreeplace.WORKTREES_REL`
-    is the one spelling of where a worktree lives, enforcement included, so the directory that varies
-    is that one and the row can open with a literal instead of the ``*/`` this replaced -- the shape
-    every consumer's allow guard refuses. What it does NOT admit is the same interpreter reached by
-    an absolute path or a ``..`` route: no row that does not lead with a wildcard can, because the
-    command's first character is a drive or a root a TRACKED file cannot know.
-
-    One wildcard segment rather than several: a worktree NAME carrying a separator (``a/b``) or a
-    ``..`` is admitted by this glob and refused by ``WORKTREES-STAY-INSIDE`` where the tree is
-    CREATED, which is the half that reads the filesystem and can tell.
-    """
-    base = f'{WORKTREES_REL}/*'
-    return [f'{base}/{"/".join(parts)}' for parts in VENV_LAYOUTS.values()]
 
 
 def codex_rules(scripts: tuple[str, ...] = ()) -> str:
@@ -252,7 +134,7 @@ def codex_rules(scripts: tuple[str, ...] = ()) -> str:
         '# (MAIN-SESSION-PUBLISHES); force pushes and remote deletions are never allowed here.',
     ]
     for (runner, *argv), why in doors(scripts).items():
-        head = json.dumps(_interpreters()) if runner == 'python' else json.dumps(runner)
+        head = json.dumps(list(INTERPRETERS)) if runner == 'python' else json.dumps(runner)
         pattern = ', '.join([head, *(json.dumps(token) for token in argv)])
         blocks.append(
             f'prefix_rule(\n    pattern = [{pattern}],\n    decision = "allow",\n'

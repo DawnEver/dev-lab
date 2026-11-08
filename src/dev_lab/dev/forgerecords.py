@@ -201,7 +201,7 @@ def read_allocation(root: Path | None = None) -> bytes | None:
 
     THE READER lab-commons loads (entry point :data:`lab_commons.hpc.allocation.READER`), so every submitter --
     a person's ``python -m lab_commons.hpc submit`` and the forge's own -- reads one record; the forge writes it
-    (``python -m dev_lab.dev.hpchost allocate``).
+    (``python -m dev_lab.dev.hpcaccount allocate``).
     """
     return read_named(client_for(Path.cwd() if root is None else root), ALLOCATION)
 

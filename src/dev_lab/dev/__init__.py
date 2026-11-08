@@ -73,7 +73,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
   named-set declaration as :mod:`dev_lab.dev.cjk`.
 * :mod:`dev_lab.dev.principles` — the family's engineering PRINCIPLES, one tuple (user ruling 2026-10-27):
-  rendered to ``.claude/rules/principles.md`` by ``hook_install --install`` in every repo (pinned by
+  rendered to ``.claude/rules/principles.md`` by :mod:`dev_lab.dev.famfiles` in every repo (pinned by
   :mod:`dev_lab.dev.famtests.principlespage`), and handed to the review method as ``--principles <json>``.
 * :mod:`dev_lab.dev.reviewpolicy` — the family REVIEW POLICY resolved for one repo (``--json [--repo]``),
   read from the values the forge review runs on and exported for both triggers (user ruling D83).
@@ -499,9 +499,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.workstationfile` -- the machine-file tables a workstation deploy writes, and its roles.
 * :mod:`dev_lab.dev.workstationprobe` -- the tools, COM classes and stored credentials a workstation deploy needs.
 * :mod:`dev_lab.dev.workstationregistry` -- which workstation serves the forge: the synced registry's roles.
-* :mod:`dev_lab.dev.hpchost` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
+* :mod:`dev_lab.dev.hpcaccount` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
+* :mod:`dev_lab.dev.opsserver` -- the ops door: its fixed verbs on a declared server the integrator deploys.
+* :mod:`dev_lab.dev.remote` -- the one ssh transport both remote doors share: how a command reaches a host.
 * :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
+* :mod:`dev_lab.dev.agentpolicy` -- AGENT-POLICY: the one table of agent doors; allow rows, intents, remedies derive.
 * :mod:`dev_lab.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`dev_lab.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.
 * :mod:`dev_lab.dev.durations` -- what every test COST, as a ledger the runner merges rather than

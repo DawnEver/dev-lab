@@ -9,7 +9,7 @@ its inputs moved (:func:`sync_venv`) -- so a failed sync is retried by the next 
 costs one hash.
 
 Shared by ``workstation deploy`` (its checkout and venv steps) and ``workstation serve`` (every tick).
-A cluster account's tick is the same rule through its own keyed build (:func:`dev_lab.dev.hpchost.tick.tick`).
+A cluster account's tick is the same rule through its own keyed build (:func:`dev_lab.dev.hpcaccount.tick.tick`).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.hpchost.steps import Step
+from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.venvfollow import stale, stamp
 

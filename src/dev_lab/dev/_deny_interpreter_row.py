@@ -19,7 +19,7 @@ interpreter somebody else chose, so BARE-PYTHON says the same exit and lets the 
 
 from __future__ import annotations
 
-from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, PYTHON_SLOT, VENV_LAYOUTS
+from dev_lab.dev.venvpath import INTERPRETER_RULE, PYTHON_SLOT, VENV_LAYOUTS
 
 __all__ = ['BARE_INTERPRETER', 'BARE_PYTHON', 'INTERPRETER_REMEDY']
 
@@ -31,7 +31,7 @@ _POSIX = '/'.join(VENV_LAYOUTS['posix'])
 INTERPRETER_REMEDY = (
     f"Use {PYTHON_SLOT}, this worktree's own interpreter (main's is main-only); bootstrap a missing one "
     f'with {PYTHON_SLOT} -m dev_lab.dev.dep --bootstrap <worktree> (checked doors are '
-    f'agent-allowed, not arbitrary installers; allowed: {INTERPRETER_ALLOW_ENTRY}).'
+    f'agent-allowed, not arbitrary installers or code).'
 )
 
 BARE_INTERPRETER: dict[str, object] = {
