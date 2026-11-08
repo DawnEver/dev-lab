@@ -134,6 +134,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeship',
     'artefacts',
     'artefactstores',
+    # ORIGINAL: the artefact member index, split out of `artefacts` inside the kit; no consumer held them.
+    'artefactpack',  # writes the member-indexed archive
+    'artefactindex',  # the member-index facts and their manifest record
+    'artefactscan',  # verifies an archive stream against its index
+    'artefactrestore',  # materializes selected members with a receipt
+    'artefactfolder',  # the folder store's verified publication
     'selection',
     'forgealarm',
     'forgefleet',

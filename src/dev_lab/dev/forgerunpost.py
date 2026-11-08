@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.run import NoRoom
 
-from dev_lab.dev.artefacts import MissingOutput
+from dev_lab.dev.artefacts import MissingOutput, OutputBudgetRefused
+from dev_lab.dev.artefactstores import OutputIntegrityRefused
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import Claim, forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -49,7 +50,7 @@ def report(client: Client, run: Run, progress: str, lease: timedelta, say: Calla
 
 
 def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:
-    """Why a run that ran no judged test is released: a missing declared output alarms and fails the run."""
+    """Why a run that ran no judged test is released: a missing, over-budget or corrupt declared output alarms."""
     if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
         alarm(
             Alarm(
@@ -61,6 +62,28 @@ def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None])
             )
         )
         return f'declared outputs missing: {why}'[:DESCRIPTION_MAX]
+    if isinstance(why, OutputBudgetRefused):  # terminal: an unchanged oversized output is never retried
+        alarm(
+            Alarm(
+                RUN,
+                run.repo_url,
+                f'output budget refused for the run of {run.sha[:12]}',
+                str(why),
+                context=Context(sha=run.sha),
+            )
+        )
+        return f'output budget refused: {why}'[:DESCRIPTION_MAX]
+    if isinstance(why, OutputIntegrityRefused):  # terminal: sealed bytes and their index disagree
+        alarm(
+            Alarm(
+                RUN,
+                run.repo_url,
+                f'the run of {run.sha[:12]} failed output integrity',
+                str(why),
+                context=Context(sha=run.sha),
+            )
+        )
+        return f'output integrity refused: {why}'[:DESCRIPTION_MAX]
     if isinstance(why, RetiredTable):  # fixed AT THE SHA: no retry publishes it, so it settles once
         alarm(
             Alarm(

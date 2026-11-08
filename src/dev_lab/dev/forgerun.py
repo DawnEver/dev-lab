@@ -100,7 +100,8 @@ from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.tree import NotSubmitted
 
 from dev_lab.dev import forgerunpost, forgerunshow, forgeship
-from dev_lab.dev.artefacts import MissingOutput, run_id
+from dev_lab.dev.artefacts import MissingOutput, OutputBudgetRefused, run_id
+from dev_lab.dev.artefactstores import OutputIntegrityRefused
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgecarry import publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
@@ -195,7 +196,7 @@ def advance(
             run = _ship(root, run, client=client, cluster=cluster, say=say, tag=tag)
             say(publish(root, Path(run.record), client=client, ref=run.ref, sha=run.sha, platform=run.platform))
             run = forgerunpost.step(run, phase=PUBLISHED)
-    except (MissingOutput, NotSubmitted, PartRefusal, RetiredTable) as why:
+    except (MissingOutput, OutputBudgetRefused, OutputIntegrityRefused, NotSubmitted, PartRefusal, RetiredTable) as why:
         say(f'{tag}: {why}')
         forgerunpost.release(client, run, forgerunpost.release_reason_for(run, why, alarm), say)
         drop(run)
@@ -334,19 +335,19 @@ def _submit(
 
 
 def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callable[[str], None], tag: str) -> Run:
-    """Store the declared outputs and name them in the record's ``artefacts``; idempotent per run."""
+    """Store the declared outputs and name them, with their member index, in the record; idempotent per run."""
     record = read_record(Path(run.record))
     if not run.outputs or 'artefacts' in record:
         return run
     if not run.artefact:
         account = run.claim.hpc.rpartition('/')[2]  # the claim owner's cluster account names the writer
         run = forgerunpost.step(run, artefact=run_id(run.sha, run.platform, account, forge_now(client)))
-    ref = forgeship.store_outputs(
+    stored = forgeship.store_outputs(
         root, client, cluster.tree(run), run.outputs, ident=run.artefact, workdir=Path(run.output)
     )
-    run = forgerunpost.step(
-        run, record=str(write_record({**record, 'artefacts': [ref.manifest()]}, Path(run.record).parent))
-    )
+    ref = stored.ref
+    shipped = {**record, 'artefacts': [ref.manifest()], 'artefact_indexes': stored.index()}
+    run = forgerunpost.step(run, record=str(write_record(shipped, Path(run.record).parent)))
     say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.key} ({ref.bytes} bytes)')
     return run
 

@@ -44,7 +44,8 @@ from lab_commons.compute.unit import Engine, Environment, Unit, environment_here
 from lab_commons.config import config_path
 from lab_commons.log import emit
 
-from dev_lab.dev.artefacts import load_config, pack, resolve, store_for, unpack
+from dev_lab.dev.artefactpack import pack, unpack
+from dev_lab.dev.artefacts import load_config, resolve, store_for
 from dev_lab.dev.artefactstores import ARCHIVE, Ref, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from dev_lab.dev.forgepublish import publish
@@ -114,7 +115,7 @@ class ForgeResults:
                     result.path,
                     files,
                     Path(scratch) / result_name(record.unit_hash, record.result_hash),
-                ),
+                ).path,
             )
 
 
@@ -232,7 +233,7 @@ def offering(
             (tree / MANIFEST).write_text(json.dumps(_manifest(unit), sort_keys=True), encoding='utf-8')
             for name, path in files.items():
                 (shutil.copytree if path.is_dir() else shutil.copyfile)(path, tree / 'files' / name)
-            bundle = pack(tree, sorted(p for p in tree.rglob('*') if p.is_file()), Path(scratch) / f'b{ARCHIVE}')
+            bundle = pack(tree, sorted(p for p in tree.rglob('*') if p.is_file()), Path(scratch) / f'b{ARCHIVE}').path
             store = store_for(load_config(root), client, client.forge.repo, size=bundle.stat().st_size)
             ref = store.put(run_id(sha, UNIT, unit_hash[:16], now()), bundle)
         vendor = () if env is not None else (unit.engine.name,)
