@@ -1,10 +1,12 @@
-"""CONSENT-CODE-NEVER-TYPED: the user's consent is typed by the user, and its credentials are written by the grant.
+"""CONSENT-CODE-FROM-THE-USER: a consent code is the user's, and its credentials are written by the grant alone.
 
-User-approved design 2026-11-07 (:mod:`dev_lab.ops.consent`). An agent that types a TOTP code into a consent,
-break-glass or TOTP command -- as an argument, through a pipe, a here-string or a heredoc -- or writes under the
-consent state directory forges the consent it asks for. Two callers read this module:
+User ruling 2026-11-08 (it replaces the 2026-11-07 reading that only the user may type a code): the USER gives the
+TOTP code, the AGENT runs ``dev_lab.ops.consent grant --code`` with it. A code the user did not give in this
+conversation is never passed, and none is stored, logged or reused. What stays refused is the forgery no code
+excuses: an agent writing under the consent state directory plants a credential no issuer signed. Two callers read
+this module:
 
-* the shell deny row :mod:`dev_lab.dev._deny_consent_row` spells those shapes as a pattern;
+* the shell deny row :mod:`dev_lab.dev._deny_consent_row` spells a shell write there as a pattern;
 * the ``codeplace`` write hook (Write/Edit/MultiEdit/NotebookEdit) calls :func:`refuse_write`.
 
 :func:`state_dir` is the ONE declaration of where a granted credential lives; the grant writes there.
@@ -20,13 +22,16 @@ from dev_lab.dev.disclosure import details_for
 
 __all__ = ['HAZARD', 'REMEDY', 'RULE_ID', 'STATE_PARTS', 'refuse_write', 'state_dir']
 
-RULE_ID: Final = 'CONSENT-CODE-NEVER-TYPED'
+RULE_ID: Final = 'CONSENT-CODE-FROM-THE-USER'
 #: The consent state directory, below the home.
 STATE_PARTS: Final = ('.motronics', 'state', 'consent')
-HAZARD: Final = "a consent code is the USER's word: an agent typing, piping or planting one forges the consent."
+HAZARD: Final = (
+    'a consent credential is written by the grant from a code the USER gave; a planted one forges the consent.'
+)
 REMEDY: Final = (
-    'Write the request JSON, hand the user `{python} -m dev_lab.ops.consent grant <request.json>` to run in their own '
-    'terminal, then read the credential it wrote.'
+    'Write the request JSON, ask the user for their Authenticator code, run '
+    '`{python} -m dev_lab.ops.consent grant <request.json> --code <the code they gave>`, '
+    'then read the credential it wrote.'
 )
 
 

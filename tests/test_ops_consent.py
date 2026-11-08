@@ -6,6 +6,7 @@ Every refusal has its planted control: the same call with the one fault removed 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -180,7 +181,8 @@ def test_the_ledger_records_id_action_and_subject_only(host: Host) -> None:
     assert RFC_KEY not in text
 
 
-def test_a_non_tty_grant_is_refused(host: Host, tmp_path: Path) -> None:
+def test_the_code_the_user_gave_is_passed_by_the_agent(host: Host, tmp_path: Path) -> None:
+    """The USER supplies the code; the agent runs the grant with it (user ruling 2026-11-08): an argument, or stdin."""
     request = tmp_path / 'request.json'
     request.write_text(json.dumps(WAVE), encoding='utf-8')
     table = {'endpoint': 'consent@forge', 'public_key': public_text(host.issuer.public())}
@@ -193,12 +195,38 @@ def test_a_non_tty_grant_is_refused(host: Host, tmp_path: Path) -> None:
     def send(_table: object, line: dict[str, Any]) -> tuple[int, str]:
         return 0, serve.handle(host.issuer, json.dumps({k: line[k] for k in line}))
 
-    with pytest.raises(ConsentRefused, match='interactive terminal only'):
-        grant(request, table=table, tty=False, ask=ask, send=send, home=tmp_path, now=lambda: host.clock[0])
-    assert not asked  # refused before a code was read
-    written = grant(request, table=table, tty=True, ask=ask, send=send, home=tmp_path, now=lambda: host.clock[0])
-    assert written.parent == state_dir(tmp_path)  # the control: a terminal grants
+    def run(*, tty: bool, code: str | None = None, read: Callable[[], str] = str) -> Path:
+        return grant(
+            request, table=table, code=code, tty=tty, ask=ask, read=read, send=send, home=tmp_path,
+            now=lambda: host.clock[0],
+        )  # fmt: skip
+
+    written = run(code=host.code(), tty=False)
+    assert written.parent == state_dir(tmp_path)
     assert json.loads(written.read_text(encoding='utf-8'))['action'] == 'breakglass.wave'
+    host.clock[0] += STEP  # a fresh TOTP step: a code is single-use
+    assert run(tty=False, read=lambda: host.code() + '\n').parent == state_dir(tmp_path)  # stdin, not a terminal
+    assert not asked  # neither path prompted
+    host.clock[0] += STEP
+    assert run(tty=True).parent == state_dir(tmp_path)  # the control: a terminal prompts
+    assert asked
+
+
+def test_a_code_that_is_not_six_digits_is_refused_before_it_is_sent(host: Host, tmp_path: Path) -> None:
+    request = tmp_path / 'request.json'
+    request.write_text(json.dumps(WAVE), encoding='utf-8')
+    sent: list[object] = []
+
+    def send(_table: object, line: dict[str, Any]) -> tuple[int, str]:
+        sent.append(line)
+        return 1, 'unreached'
+
+    table = {'endpoint': 'consent@forge', 'public_key': public_text(host.issuer.public())}
+    with pytest.raises(ConsentRefused, match='six digits'):
+        grant(request, table=table, code='12345', tty=False, send=send, home=tmp_path)
+    with pytest.raises(ConsentRefused, match='six digits'):
+        grant(request, table=table, tty=False, read=lambda: '', send=send, home=tmp_path)
+    assert not sent
 
 
 def test_the_public_key_comes_from_the_machine_file_else_refuses(host: Host) -> None:

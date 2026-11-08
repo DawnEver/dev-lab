@@ -5,10 +5,10 @@ A client holds no secret. The machine file's ``[consent]`` table names the issue
 ``public_key`` (:func:`dev_lab.ops.consent.credential.public_text`); a key shipped in the package
 (``issuer.pub`` beside this module) is the fallback.
 
-:func:`grant` is run by the USER in an interactive terminal: it refuses a non-tty stdin, reads the TOTP code with
-:func:`getpass.getpass` (never an argument, never a pipe), and writes the credential to
-:func:`dev_lab.dev.consentguard.state_dir` ``/<id>.json`` -- the directory no agent may write
-(CONSENT-CODE-NEVER-TYPED).
+:func:`grant` takes the TOTP code the USER gave -- the agent passes it as ``code`` or on stdin, a terminal is
+prompted without echo (user ruling 2026-11-08) -- and writes the credential to
+:func:`dev_lab.dev.consentguard.state_dir` ``/<id>.json``, which only the grant writes (CONSENT-CODE-FROM-THE-USER).
+The code is sent once and never echoed, logged or kept.
 
 :func:`redeem` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
 offline, then the use is registered online with the issuer; an issuer that cannot be reached REFUSES, never admits.
@@ -38,7 +38,8 @@ __all__ = ['TABLE', 'Register', 'grant', 'public_key', 'redeem', 'remote_registe
 
 #: The machine-file table.
 TABLE: Final = 'consent'
-_PROMPT: Final = 'Authenticator code (the USER types it; not echoed): '
+_DIGITS: Final = 6
+_PROMPT: Final = 'Authenticator code (not echoed): '
 _PACKAGED: Final = 'issuer.pub'
 #: The serve verb's exit status for a refusal (as every ops door's).
 _REFUSED: Final = 2
@@ -108,8 +109,10 @@ def grant(
     request_file: Path,
     *,
     table: Mapping[str, Any] | None = None,
+    code: str | None = None,
     tty: bool | None = None,
     ask: Callable[[str], str] = getpass.getpass,
+    read: Callable[[], str] = sys.stdin.readline,
     send: Send = ssh_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
@@ -117,12 +120,9 @@ def grant(
     """Ask the issuer for the credential *request_file* describes; the file it was written to.
 
     Raises:
-        ConsentRefused: stdin is not a terminal, the request is malformed, or the issuer refused.
+        ConsentRefused: the code is not six digits, the request is malformed, or the issuer refused.
 
     """
-    if not (sys.stdin.isatty() if tty is None else tty):
-        msg = 'consent grant reads the code from an interactive terminal only: the USER runs it, nothing pipes to it'
-        raise ConsentRefused(msg)
     found = section(TABLE) if table is None else table
     if not found.get('endpoint'):
         msg = f'the machine file has no [{TABLE}] endpoint = "<account>@<host>"'
@@ -130,7 +130,12 @@ def grant(
     key = public_key(found)
     request = json.loads(request_file.read_text(encoding='utf-8'))
     requested(request)  # refused here, before the user spends a code
-    status, said = send(found, {'verb': 'issue', 'request': request, 'code': ask(_PROMPT).strip()})
+    given = code if code is not None else ask(_PROMPT) if (sys.stdin.isatty() if tty is None else tty) else read()
+    given = given.strip()
+    if not (len(given) == _DIGITS and given.isdigit()):
+        msg = f'the Authenticator code must be six digits (got {len(given)} characters)'
+        raise ConsentRefused(msg)
+    status, said = send(found, {'verb': 'issue', 'request': request, 'code': given})
     if status != 0:
         raise ConsentRefused(said)
     credential = json.loads(said)
