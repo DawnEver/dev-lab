@@ -527,6 +527,18 @@ def test_a_user_code_passes_and_a_planted_credential_is_refused_through_the_real
     """CONSENT-CODE-FROM-THE-USER: a code the USER gave passes (ruling 2026-11-08); a planted credential is refused."""
     assert agenthooks.decide('python -m dev_lab.ops.consent grant output/req.json --code 123456', rules) is None
     assert agenthooks.decide('echo 123456 | python -m dev_lab.ops.consent grant output/req.json', rules) is None
-    planted = agenthooks.decide('echo {} > ~/.motronics/state/consent/x.json', rules)
-    assert planted is not None
-    assert planted.startswith('CONSENT-CODE-FROM-THE-USER:')
+    for planted in (
+        agenthooks.decide('echo {} > ~/.toolhome/state/consent/x.json', rules),
+        agenthooks.decide('cp x.json D:/relocated-home/state/consent/', rules),  # a relocated machine home
+    ):
+        assert planted is not None
+        assert planted.startswith('CONSENT-CODE-FROM-THE-USER:')
+
+
+def test_a_render_for_a_repo_other_than_a_consumer_names_no_consumer(rules: Path) -> None:
+    """The shared registry ships into every adopting repo: it never names one consumer's paths.
+
+    The planted control is the 2026-11-08 render, whose consent row spelled the consumer's home directory.
+    """
+    assert 'motronics' not in ADOPTION.app_name.lower()
+    assert 'motronics' not in rules.read_text(encoding='utf-8').lower()

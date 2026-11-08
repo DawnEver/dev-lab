@@ -238,4 +238,4 @@ def test_the_public_key_comes_from_the_machine_file_else_refuses(host: Host) -> 
 
 def test_an_agent_write_under_the_consent_state_is_refused(tmp_path: Path) -> None:
     assert refuse_write(state_dir(tmp_path) / 'x.json', home=tmp_path) is not None
-    assert refuse_write(tmp_path / '.motronics' / 'state' / 'other.json', home=tmp_path) is None  # the control
+    assert refuse_write(tmp_path / 'state' / 'other.json', home=tmp_path) is None  # the control

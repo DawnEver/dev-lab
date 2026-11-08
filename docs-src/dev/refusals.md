@@ -170,7 +170,7 @@ HINT: the hazard is minutes, not harm.
 
 ## CONSENT-CODE-FROM-THE-USER
 
-- **Why it is refused.** A consent credential (`dev_lab.ops.consent`) stands for the USER's word, given with the code of their Authenticator. The user gives the code and the agent runs the grant with it (user ruling 2026-11-08; the retired name is registered in `_deny_rows.RETIRED_IDS`). A code the user did not give is never passed, and none is stored, logged or reused. What stays refused is a shell write under `~/.motronics/state/consent/`: a credential no issuer signed. The row matches the whole command line (`matches: 'line'`); the Write/Edit half is `dev_lab.dev.consentguard.refuse_write`.
+- **Why it is refused.** A consent credential (`dev_lab.ops.consent`) stands for the USER's word, given with the code of their Authenticator. The user gives the code and the agent runs the grant with it (user ruling 2026-11-08; the retired name is registered in `_deny_rows.RETIRED_IDS`). A code the user did not give is never passed, and none is stored, logged or reused. What stays refused is a shell write under `state/consent/` of the machine home (`lab_commons.home.home()`): a credential no issuer signed. The row matches the whole command line (`matches: 'line'`); the Write/Edit half is `dev_lab.dev.consentguard.refuse_write`.
 - **The exit.** Write the request JSON (`action`, `subject`, `params`, and `cap`/`ttl` where the action allows), ask the user for their Authenticator code, run `python -m dev_lab.ops.consent grant <request.json> --code <the code they gave>`, then use the credential it wrote (`forge breakglass open --credential <id>`).
 
 ## Cross-repo refusals
