@@ -523,9 +523,10 @@ def test_a_refusal_is_one_metrics_line_written_without_delaying_the_refusal(tmp_
     ], 'the two probes logged nothing into the session checkout; the tool call did'
 
 
-def test_a_code_piped_into_consent_is_refused_through_the_real_engine(rules: Path) -> None:
-    """CONSENT-CODE-NEVER-TYPED spans segments (``matches: 'line'``): the pipe's two halves are each harmless."""
-    piped = agenthooks.decide('echo 123456 | python -m dev_lab.ops.consent grant output/req.json', rules)
-    assert piped is not None
-    assert piped.startswith('CONSENT-CODE-NEVER-TYPED:')
-    assert agenthooks.decide('python -m dev_lab.ops.consent grant output/req.json', rules) is None  # the control
+def test_a_user_code_passes_and_a_planted_credential_is_refused_through_the_real_engine(rules: Path) -> None:
+    """CONSENT-CODE-FROM-THE-USER: a code the USER gave passes (ruling 2026-11-08); a planted credential is refused."""
+    assert agenthooks.decide('python -m dev_lab.ops.consent grant output/req.json --code 123456', rules) is None
+    assert agenthooks.decide('echo 123456 | python -m dev_lab.ops.consent grant output/req.json', rules) is None
+    planted = agenthooks.decide('echo {} > ~/.motronics/state/consent/x.json', rules)
+    assert planted is not None
+    assert planted.startswith('CONSENT-CODE-FROM-THE-USER:')
