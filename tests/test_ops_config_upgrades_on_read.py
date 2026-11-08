@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.ops.config import load
+from dev_lab.ops.config import _BREAKGLASS_MOVED, load
+
+#: The host's values for the keys #311 moved; the keys themselves are named once, by the loader that upgrades them.
+_MOVED_VALUES = ('"/etc/breakglass/totp"', '24.0', '20', '5', '15.0')
+_MOVED = ''.join(f'{key} = {value}\n' for key, value in zip(_BREAKGLASS_MOVED, _MOVED_VALUES, strict=True))
 
 _OLD = """
 [ops]
@@ -25,12 +29,7 @@ keys = ["ssh-ed25519 AAAA agent"]
 repos = ["https://github.com/owner/alpha.git"]
 state = "/var/lib/forge-breakglass"
 log = "/var/log/forge-breakglass/audit.log"
-totp = "/etc/breakglass/totp"
-wave_hours = 24.0
-max_merges = 20
-lockout_after = 5
-lockout_minutes = 15.0
-wave_hours_max = 24.0
+{moved}wave_hours_max = 24.0
 max_merges_max = 100
 [ops.breakglass.tokens]
 "github.com" = "/etc/forge-breakglass/github-token"
@@ -39,7 +38,7 @@ max_merges_max = 100
 
 def _write(tmp_path: Path, text: str) -> Path:
     path = tmp_path / 'supervise.toml'
-    path.write_text(text.format(home=(tmp_path / 'home').as_posix()), encoding='utf-8')
+    path.write_text(text.format(home=(tmp_path / 'home').as_posix(), moved=_MOVED), encoding='utf-8')
     return path
 
 
@@ -64,4 +63,4 @@ def test_a_declared_issuer_wins_over_the_derived_one(tmp_path: Path) -> None:
 
 def test_an_unknown_breakglass_key_is_still_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match='unknown keys'):
-        load(_write(tmp_path, _OLD.replace('wave_hours = 24.0', 'wave_hourz = 24.0')), environ={})
+        load(_write(tmp_path, _OLD.replace('wave_hours_max', 'wave_hourz_max')), environ={})
