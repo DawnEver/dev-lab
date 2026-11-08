@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from lab_commons.box import hold, holdings
 
+from dev_lab.dev import inflight
 from dev_lab.dev.inflight import RunKey, leader_run, run_once, seat
 
 KEY = RunKey(tree='t1', env='e1', selector='verify tests/a.py')
@@ -26,8 +27,14 @@ def test_a_lone_request_runs_and_says_it_led(tmp_path: Path) -> None:
     assert not list(tmp_path.glob('*.claim')), 'no lock file is left behind'
 
 
-def test_a_duplicate_attaches_to_the_run_in_flight_and_never_runs(tmp_path: Path) -> None:
-    """THE POINT: the follower's own run is never called, and it receives the leader's answer."""
+def test_a_duplicate_attaches_to_the_run_in_flight_and_never_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE POINT: the follower's own run is never called, and it receives the leader's answer.
+
+    The leader is released only once the follower has ATTACHED (entered the wait on the leader's run),
+    an event rather than a wall-clock timer: a loaded host never races it.
+    """
     started, release = threading.Event(), threading.Event()
     led: list[tuple[str, bool]] = []
 
@@ -40,8 +47,13 @@ def test_a_duplicate_attaches_to_the_run_in_flight_and_never_runs(tmp_path: Path
     thread.start()
     assert started.wait(10)
     follower_ran: list[bool] = []
-    timer = threading.Timer(3.0, release.set)  # past the follower's admission, which samples the box first
-    timer.start()
+    wait_for = inflight._wait_for
+
+    def attached(*args: object, **kwargs: object) -> str | None:
+        release.set()
+        return wait_for(*args, **kwargs)
+
+    monkeypatch.setattr(inflight, '_wait_for', attached)
     got = run_once(KEY, lambda: follower_ran.append(True) or 'MINE', directory=tmp_path, poll_s=0.01)
     thread.join(10)
     assert got == ('FAIL (1 failed)', True)
