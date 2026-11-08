@@ -106,3 +106,14 @@ def test_the_ruled_permissions_of_2026_11_07_are_main_doors() -> None:
     rows = claude_rows()
     assert 'Bash(gh workflow enable *)' in rows
     assert 'Bash(gh workflow disable *)' in rows
+
+
+@pytest.mark.parametrize('door', [door for door in POLICY if door.actor == MAIN and door.argv[:1] == ('gh',)])
+def test_a_main_gh_door_is_refused_to_a_subagent(door: Door) -> None:
+    """A forge-client door the main session alone holds is refused to a subagent, derived from the same rows."""
+    assert re.match(f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})', f'{" ".join(door.argv)} ci.yml -R o/r'), door.argv
+
+
+def test_a_gh_read_is_not_refused_to_a_subagent() -> None:
+    """PLANTED CONTROL: only the main session's gh doors are refused, not the client."""
+    assert not re.match(f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})', 'gh workflow list -R o/r')
