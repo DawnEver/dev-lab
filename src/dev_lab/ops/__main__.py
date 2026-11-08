@@ -19,11 +19,11 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops import (
     access,
     backup,
@@ -226,11 +226,8 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
 
 
 def _git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
-    done = launch.run(
-        argv, env=os.environ | dict(env), capture_output=True, text=True, encoding='utf-8', errors='replace',
-        check=False, timeout=300,
-    )  # fmt: skip
-    return done.returncode, done.stdout + done.stderr
+    report = run_network_verb(argv, env=os.environ | dict(env), timeout=300)  # the one retry door
+    return report.returncode, ''  # git's output may echo the header: never returned
 
 
 def _candidate_text(config: OpsConfig, candidate: Path | None) -> str:
