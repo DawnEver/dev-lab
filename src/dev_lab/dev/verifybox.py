@@ -8,7 +8,8 @@ worst selected file's peak from the forge-derived learned table, an unmeasured f
 and :data:`SELECTION_WALL_S`, and
 :func:`boxed` spells its pytest argv through :func:`lab_commons.box.command`, so the box admits it
 within the caller's queue ceiling and kills it past its claim. A tree the box already holds (its
-``INSIDE_ENV``, e.g. a producer serve spawned) is NOT boxed again: it is already held to its claim, and runs
+``INSIDE_ENV`` naming a LIVE claim, :func:`lab_commons.box.inside_a_claim`; e.g. a producer serve spawned) is
+NOT boxed again: it is already held to its claim, and runs
 the workers that claim declared (:func:`claimed_width` of the box's ``CPU_ENV``).
 
 :func:`ended_in_the_box` reads the box's RECORD back (``--outcome``, never the exit code, which is pytest's own):
@@ -26,7 +27,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, ProcessEnd, Refused, command, read_ended
+from lab_commons.box import CPU_ENV, GB, Capacity, ProcessEnd, Refused, command, inside_a_claim, read_ended
 from lab_commons.box.ledger import holdings
 from lab_commons.box.supply import Reading, room
 from lab_commons.compute import learned
@@ -224,7 +225,7 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     if sys.platform in UNENFORCED_PLATFORMS:
         emit(f'verify: box unenforced on {sys.platform}; the step runs unboxed', err=True)
         return argv, None
-    if INSIDE_ENV in os.environ:
+    if inside_a_claim():
         return [*argv, *claimed_width(argv, os.environ.get(CPU_ENV), xdist=xdist_installed())], None
     size = Capacity.read()
     refresh_checkout(root)

@@ -1292,8 +1292,11 @@ def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(
     assert record == Path('o.json')
     assert argv[argv.index('--outcome') + 1] == 'o.json'
     monkeypatch.setenv(INSIDE_ENV, 'forge:tests/base')
+    exported = verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json'))
+    assert exported[1] == Path('o.json'), 'an exported key naming no live claim is boxed: the variable is not evidence'
+    monkeypatch.setattr(verifybox, 'inside_a_claim', lambda: True)
     reboxed = verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json'))
-    assert reboxed == (['py'], None), 'PLANTED CONTROL: a boxed tree is not reboxed'
+    assert reboxed == (['py'], None), 'PLANTED CONTROL: a tree inside a live claim is not reboxed'
 
 
 def test_a_platform_with_no_box_enforcer_runs_its_step_unboxed_and_says_so(monkeypatch, capsys) -> None:
@@ -1349,6 +1352,7 @@ def test_a_producer_inside_the_box_runs_the_width_it_was_admitted_at(monkeypatch
     _boxed_on(monkeypatch, 16.0, xdist=xdist)
     monkeypatch.setenv(INSIDE_ENV, 'forge:tests/base')
     monkeypatch.setenv(CPU_ENV, '3')
+    monkeypatch.setattr(verifybox, 'inside_a_claim', lambda: True)
     argv, record = verifybox.boxed(Path('r'), ['py', *given], queue_s=5, outcome=Path('o.json'))
     assert (argv, record) == (['py', *runs], None), 'not reboxed, and sized to the claim'
 
