@@ -22,7 +22,7 @@ import pytest
 from lab_commons.census import Process, processes
 from lab_commons.proc import kill_process_tree
 
-from dev_lab.dev import agenthooks, dep, forgeserve, liverun
+from dev_lab.dev import agenthooks, dep, liverun, worktreeplace
 from dev_lab.dev.disclosure import problems
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
@@ -437,7 +437,7 @@ def test_a_command_the_row_does_not_match_never_asks_the_probe(tmp_path: Path) -
 
 def test_a_serve_works_in_a_root_that_is_not_the_tree(tree: Path) -> None:
     """By construction: `forge serve` chdirs to its work root, where its cwd reads no tree."""
-    work = forgeserve.work_root(tree)
+    work = worktreeplace.work_root(tree)
     assert work.is_dir()
     assert not liverun.in_tree(work, tree)
     serve = _proc(7, _venv_python(tree), cwd=work, cmd='python -m dev_lab.dev.forge serve')
