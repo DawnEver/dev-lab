@@ -46,6 +46,7 @@ def test_install_renders_the_judge_unit_and_timer(tmp_path: Path) -> None:
     assert 'MemoryMax=3G\n' in service
     assert 'OnCalendar=*:0/5\n' in timer
     assert any('useradd' in step and 'judge' in step for step in done.next_steps)
+    assert 'apt-get install -y python3-venv' in done.next_steps  # the review runtime builds a venv (AMD-1, 11-08)
     assert any(step.startswith('chown judge ') and 'judge-github' in step for step in done.next_steps)
     assert any(step.startswith('chown root:root') and 'judge.env' in step for step in done.next_steps)
 
@@ -110,13 +111,22 @@ UPGRADE = (
 def test_upgrade_builds_exactly_the_configured_command(tmp_path: Path) -> None:
     assert upgrade.command(_config(tmp_path, UPGRADE)) == [
         '/usr/local/bin/uv', 'pip', 'install', '--python', '/opt/ops/bin/python', '--reinstall-package', 'dev-lab',
-        '--override', '/etc/dev-lab/overrides.txt',
         'dev-lab[ops] @ git+https://forge.example/owner/dev-lab.git@main',
         'ai-lab @ git+https://forge.example/owner/ai-lab.git',
     ]  # fmt: skip
 
 
 OLD, NEW = 'a' * 40, 'b' * 40
+
+
+def _fetch(_source: str, ref: str) -> tuple[str, str]:
+    """The configured ref names NEW; a sha names itself. An empty lock: no family override lines."""
+    return (NEW if ref == 'main' else ref), ''
+
+
+def _dev_lab_at(line: list[str]) -> str:
+    """The dev-lab requirement an install line names."""
+    return next(part for part in line if part.startswith('dev-lab['))
 
 
 def _upgrade_fakes(
@@ -145,19 +155,20 @@ def test_a_passing_self_check_keeps_the_tip(tmp_path: Path) -> None:
     """PLANTED CONTROL for the rollback: a passing check installs once and restores nothing."""
     host = _config(tmp_path, UPGRADE)
     installed, checked, install, probe = _upgrade_fakes([NEW], passes=True)
-    assert upgrade.run(host, install=install, probe=probe) == (0, f'dev-lab {OLD} -> {NEW}')
-    assert installed == [upgrade.command(host)]
+    assert upgrade.run(host, install=install, probe=probe, fetch=_fetch) == (0, f'dev-lab {OLD} -> {NEW}')
+    assert [_dev_lab_at(line) for line in installed] == [
+        f'dev-lab[ops] @ git+https://forge.example/owner/dev-lab.git@{NEW}'
+    ]
     assert checked == list(upgrade.checks(host).values())
 
 
 def test_a_failing_self_check_restores_the_recorded_commit(tmp_path: Path) -> None:
     host = _config(tmp_path, UPGRADE)
     installed, _checked, install, probe = _upgrade_fakes([NEW, OLD], passes=False)
-    code, said = upgrade.run(host, install=install, probe=probe)
+    code, said = upgrade.run(host, install=install, probe=probe, fetch=_fetch)
     assert code != 0
     assert said == f'self-check loads FAILED on tip {NEW}; restored {OLD}'
-    assert installed == [upgrade.command(host), upgrade.command(host, OLD)]
-    assert installed[1][-2].endswith(f'dev-lab.git@{OLD}')
+    assert [_dev_lab_at(line).rsplit('@', 1)[1] for line in installed] == [NEW, OLD]
 
 
 def test_no_recordable_commit_refuses_before_installing(tmp_path: Path) -> None:

@@ -122,14 +122,14 @@ class Upgrade:
 
     ``extras`` are dev-lab's own extras; ``packages`` further requirements installed beside it (the judge host's
     reviewer, ``ai-lab``, which dev-lab declares only as its ``review`` dependency GROUP, which a git requirement
-    cannot carry); ``overrides`` a uv override file; ``uv`` the binary (empty: from ``PATH``).
+    cannot carry); ``uv`` the binary (empty: from ``PATH``). The family's revisions (lab-commons, ai-lab) come from
+    dev-lab's own lock at the installed commit (:func:`dev_lab.ops.upgrade.locked_family`), never from this table.
     """
 
     source: str
     ref: str = INTEGRATION_REF
     extras: tuple[str, ...] = ()
     packages: tuple[str, ...] = ()
-    overrides: str = ''
     uv: str = ''
 
 
@@ -324,12 +324,18 @@ _CONSENT_DEFAULTS: Final = {
 
 
 def _upgraded(ops: dict[str, Any]) -> dict[str, Any]:
-    """*ops* with a pre-#311 ``[ops.breakglass]`` upgraded on read: the ONE place the old shape is read.
+    """*ops* with every retired shape upgraded on read: the ONE place an old shape is read.
 
-    The moved keys leave the break-glass table. Its ``totp`` and lockout seed the consent issuer when the file
-    declares none (keys = break-glass's); a declared ``[ops.consent]`` wins. ``wave_hours``/``max_merges`` are dropped:
-    a wave's window and cap are its credential's params now, and the ceilings stay where they were.
+    ``[ops.upgrade] overrides`` (a hand-written uv override file, 2026-11-08) is dropped: the family's revisions come
+    from dev-lab's own lock at the installed commit. A pre-#311 ``[ops.breakglass]``: the moved keys leave the
+    break-glass table. Its ``totp`` and lockout seed the consent issuer when the file declares none (keys =
+    break-glass's); a declared ``[ops.consent]`` wins. ``wave_hours``/``max_merges`` are dropped: a wave's window and
+    cap are its credential's params now, and the ceilings stay where they were.
     """
+    lifted = ops.get('upgrade')
+    if isinstance(lifted, dict) and 'overrides' in lifted:
+        ops = dict(ops, upgrade={key: value for key, value in lifted.items() if key != 'overrides'})
+        emit('[ops] upgraded [ops.upgrade] on read: dropped overrides (the lock pins the family)', err=True)
     glass = ops.get('breakglass')
     if not isinstance(glass, dict) or not (moved := {key: glass[key] for key in _BREAKGLASS_MOVED if key in glass}):
         return ops

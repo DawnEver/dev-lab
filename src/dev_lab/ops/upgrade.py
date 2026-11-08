@@ -7,26 +7,43 @@ The ref may be red or carry break-glassed untested code, and this host runs brea
 tip -- from this very install (user ruling 2026-11-06). So an upgrade PROVES ITSELF OR ROLLS BACK: it records the
 installed commit first (refusing to install when none is recordable), installs the tip, then self-checks in a fresh
 ``[ops] python`` (:func:`checks`); a failed check reinstalls the recorded commit from the same source.
+
+THE LOCK IS THE ONE SOURCE OF THE FAMILY'S REVISIONS (2026-11-08). dev-lab is installed at the exact commit the ref
+names, together with every git package dev-lab's own ``uv.lock`` pins AT THAT COMMIT (lab-commons, ai-lab), passed as
+uv overrides derived from the lock (:func:`locked_family`). A hand-written override file was a second source: the
+hosts pinned an old lab-commons the upgraded dev-lab could not import, and the judge died. A rollback reinstalls the
+old commit with the old commit's lock.
 """
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
+import tempfile
+import tomllib
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import lab_commons.launch as _door
 
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops.config import OpsConfig
 
-__all__ = ['checks', 'command', 'commit', 'run', 'run_check']
+__all__ = ['checks', 'command', 'commit', 'fetch_lock', 'locked_family', 'run', 'run_check']
 
 #: Runs a command line; its exit code and stdout.
 type Runner = Callable[[Sequence[str]], tuple[int, str]]
 
+#: ``(source, ref)`` -> the commit the ref names and dev-lab's ``uv.lock`` text at that commit.
+type Fetcher = Callable[[str, str], tuple[str, str]]
+
 #: Seconds one self-check may take before it counts as failed.
 CHECK_TIMEOUT = 120
+
+#: The package this upgrade installs itself; every OTHER git package of its lock is pinned by override.
+_SELF = 'dev-lab'
+_GIT = re.compile(r'^(?P<url>[^?#]+)(?:\?[^#]*)?#(?P<sha>[0-9a-f]{40})$')
 
 _COMMIT = (
     'import importlib.metadata as m, json\n'
@@ -40,10 +57,37 @@ _LOADS = (
 )
 
 
-def command(config: OpsConfig, ref: str | None = None) -> list[str]:
+def locked_family(lock: str) -> list[str]:
+    """The ``name @ git+url@sha`` override lines for every git-sourced package of *lock* but dev-lab itself."""
+    lines = []
+    for package in tomllib.loads(lock).get('package', []):
+        git = package.get('source', {}).get('git', '')
+        if package.get('name') == _SELF or not (found := _GIT.match(git)):
+            continue
+        lines.append(f'{package["name"]} @ git+{found["url"]}@{found["sha"]}')
+    return sorted(lines)
+
+
+def fetch_lock(source: str, ref: str) -> tuple[str, str]:
+    """The commit *ref* names in *source* and dev-lab's ``uv.lock`` there: a shallow fetch into a scratch repo."""
+    with tempfile.TemporaryDirectory(prefix='dev-lab-upgrade-') as scratch:
+        git = ['git', '-C', scratch]
+        _door.run([*git, 'init', '-q'], check=True, capture_output=True)
+        report = run_network_verb([*git, 'fetch', '-q', '--depth', '1', source, ref])
+        if not report.ok:
+            raise ValueError(report.remedy)
+        sha = _door.run([*git, 'rev-parse', 'FETCH_HEAD'], check=True, capture_output=True, text=True).stdout.strip()
+        lock = _door.run(
+            [*git, 'show', 'FETCH_HEAD:uv.lock'], check=True, capture_output=True, text=True, encoding='utf-8'
+        ).stdout
+    return sha, lock
+
+
+def command(config: OpsConfig, ref: str | None = None, override: Path | None = None) -> list[str]:
     """The exact ``uv pip install`` line ``[ops.upgrade]`` declares, at ``ref`` (default: the configured ref).
 
-    Refuses a config with no such table.
+    *override* is the uv override file holding the lock's family pins (:func:`locked_family`). Refuses a config
+    with no such table.
     """
     role = config.upgrade
     if role is None:
@@ -52,7 +96,7 @@ def command(config: OpsConfig, ref: str | None = None) -> list[str]:
     uv = role.uv or shutil.which('uv') or 'uv'
     extras = f'[{",".join(role.extras)}]' if role.extras else ''
     line = [uv, 'pip', 'install', '--python', config.python, '--reinstall-package', 'dev-lab']
-    line += ['--override', role.overrides] if role.overrides else []
+    line += ['--override', str(override)] if override is not None else []
     return [*line, f'dev-lab{extras} @ git+{role.source}@{ref or role.ref}', *role.packages]
 
 
@@ -96,20 +140,36 @@ def _failed_check(config: OpsConfig, probe: Runner) -> str:
     return next((name for name, argv in checks(config).items() if probe(argv)[0] != 0), '')
 
 
-def run(config: OpsConfig, *, install: Runner = _install, probe: Runner = run_check) -> tuple[int, str]:
+def _install_locked(config: OpsConfig, ref: str, install: Runner, fetch: Fetcher) -> tuple[int, str]:
+    """Install dev-lab at the commit *ref* names, with that commit's locked family as overrides."""
+    if config.upgrade is None:
+        msg = f'{config.path} enables no [ops.upgrade]'
+        raise ValueError(msg)
+    sha, lock = fetch(config.upgrade.source, ref)
+    with tempfile.TemporaryDirectory(prefix='dev-lab-overrides-') as scratch:
+        override = Path(scratch) / 'family.txt'
+        override.write_text(''.join(f'{line}\n' for line in locked_family(lock)), encoding='utf-8')
+        return install(command(config, sha, override))
+
+
+def run(
+    config: OpsConfig, *, install: Runner = _install, probe: Runner = run_check, fetch: Fetcher = fetch_lock
+) -> tuple[int, str]:
     """Install the tip, self-check it, roll back to the recorded commit on failure; the exit code and what happened."""
-    line = command(config)
+    if config.upgrade is None:
+        msg = f'{config.path} enables no [ops.upgrade]'
+        raise ValueError(msg)
     old = commit(config, probe)
     if not old:
         return 2, 'refused: no installed dev-lab commit is recordable (direct_url.json), so no rollback is possible'
-    code, out = install(line)
+    code, out = _install_locked(config, config.upgrade.ref, install, fetch)
     if code != 0:
         return code, out.strip()
     new = commit(config, probe) or 'unknown'
     failed = _failed_check(config, probe)
     if not failed:
         return 0, f'dev-lab {old} -> {new}'
-    code, out = install(command(config, old))
+    code, out = _install_locked(config, old, install, fetch)
     again = _failed_check(config, probe) if code == 0 else 'reinstall'
     if again:
         return 1, f'self-check {failed} FAILED on tip {new}; rollback to {old} ALSO FAILED ({again}): {out.strip()}'
