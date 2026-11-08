@@ -217,17 +217,22 @@ POLICY: Final[tuple[Door, ...]] = (
         _forge('pr', 'breakglass'),
         MAIN,
         'A Break-Glass merge into the integration branch inside a wave the user opened with a one-time code, '
-        'carried by a commit trailer that states the reason, so every use stays in the history it bypassed.',
+        "only after the pull request's current head is pushed and its base, base on windows and security test "
+        'statuses are all posted green, carried by a commit trailer that states the reason, so every use stays in '
+        'the history it bypassed (integrator ruling 2026-11-08: a merge follows a verified push).',
     ),
     Door(
         _forge('breakglass', 'open'),
         MAIN,
-        'Opening a Break-Glass wave on a consent credential the user granted for it.',
+        'Opening a Break-Glass wave on a consent credential the user granted for it, or with the one-time code the '
+        'user supplied in this conversation for that wave; never a code the agent did not receive from the user.',
     ),
     Door(
         ('python', '-m', 'dev_lab.ops.consent', 'grant'),
-        USER,
-        'Granting one consent credential: the user alone, in their own terminal, with their authenticator code.',
+        MAIN,
+        'Granting one consent credential with the authenticator code the user supplied in this conversation for '
+        'it (user ruling 2026-11-08: only the user provides the code, the agent runs the grant); never an '
+        'invented, stored, logged or reused code.',
     ),
     Door(
         _forge('review', 'takeover'),
@@ -253,7 +258,17 @@ POLICY: Final[tuple[Door, ...]] = (
     ),
     # ---- publishing
     Door(
-        _forge('sync'), MAIN, "Merging the integration branch into this session's own branches through the forge door."
+        _forge('sync'),
+        MAIN,
+        "Merging the integration branch into this session's own branches through the forge door, with the relock "
+        'of the floated siblings and the re-render of every generated family file it brings.',
+    ),
+    Door(
+        (),
+        MAIN,
+        "Publishing this session's pull request branch of a family toolchain repository to that repository's own "
+        'origin through the bounded-retry push door; the repository pre-push rows, its public root among them, stay '
+        'the guard and are never bypassed.',
     ),
     Door(
         _module('integrate', 'promote'),
@@ -297,6 +312,19 @@ POLICY: Final[tuple[Door, ...]] = (
         "Running one of the ops account's fixed verbs on a declared server the integrator deploys: install, a "
         "unit's status, restart, reload or logs, or a daemon reload, with the user's one-time code at the login.",
         deny='REMOTE-WRITE-THROUGH-A-DOOR',
+    ),
+    Door(
+        (),
+        MAIN,
+        'The first hand deploy of a trusted fleet account the fleet deploy refuses for want of a declared host: on '
+        "that account's own login host, through the family deploy verb, detached, its log kept on the account.",
+    ),
+    Door(
+        (),
+        MAIN,
+        'Maintenance of a declared server or cluster account the integrator owns: read-only disk and process '
+        'census, and cleanup of regenerable caches only (journal, package and archive caches, finished run '
+        'scratch); never repository data, attachments, backups or anything the census marks not owned.',
     ),
     Door(
         _module('hpcaccount', 'deploy'),

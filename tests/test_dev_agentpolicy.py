@@ -53,8 +53,8 @@ def test_a_subagent_door_is_not_refused_to_a_subagent(door: Door) -> None:
 
 def test_a_user_door_renders_no_allow_row_and_no_intent() -> None:
     users = [door for door in POLICY if door.actor == USER]
-    assert users, 'a floor: granting a consent credential is the user`s'
-    assert ('dev_lab.ops.consent', 'grant') in {door.argv[2:] for door in users}
+    assert users, 'a floor: making a login host a serve host is the user`s'
+    assert ('dev_lab.dev.hpcaccount', 'deploy') in {door.argv[2:] for door in users}
     rows = claude_rows()
     for door in users:
         assert door.allow_lines == ()
@@ -117,3 +117,36 @@ def test_a_main_gh_door_is_refused_to_a_subagent(door: Door) -> None:
 def test_a_gh_read_is_not_refused_to_a_subagent() -> None:
     """PLANTED CONTROL: only the main session's gh doors are refused, not the client."""
     assert not re.match(f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})', 'gh workflow list -R o/r')
+
+
+def _door(argv: tuple[str, ...]) -> Door:
+    return next(door for door in POLICY if door.argv == argv)
+
+
+def test_the_user_gives_the_code_and_the_main_session_runs_the_grant() -> None:
+    """User ruling 2026-11-08: only the user provides the code; the main session runs the grant with it."""
+    grant = _door(('python', '-m', 'dev_lab.ops.consent', 'grant'))
+    assert grant.actor == MAIN
+    assert 'the user supplied' in grant.intent
+    assert grant.intent in INTENTS
+
+
+def test_a_break_glass_merge_waits_for_the_heads_three_test_statuses() -> None:
+    """Integrator ruling 2026-11-08: a wave merge follows a green head, never an unverified push."""
+    merge = _door(('python', '-m', 'dev_lab.dev.forge', 'pr', 'breakglass'))
+    assert 'only after' in merge.intent
+    assert all(word in merge.intent for word in ('base', 'windows', 'security'))
+
+
+@pytest.mark.parametrize(
+    'phrase',
+    [
+        'regenerable caches',  # a declared server's disk maintenance
+        'first hand deploy',  # a fleet account the fleet deploy refuses
+        'Publishing this session',  # a pr branch of a family repository to its origin
+        'relock',  # sync and re-render of family files after the siblings move
+    ],
+)
+def test_the_integrator_s_standing_work_is_an_intent(phrase: str) -> None:
+    """The integrator's sanctioned work is declared, so the classifier judges it against a stated purpose."""
+    assert any(phrase in intent for intent in INTENTS), phrase
