@@ -117,3 +117,22 @@ def test_a_hand_written_overrides_file_is_retired_on_read(tmp_path: Path, capsys
     assert host.upgrade is not None
     assert 'overrides' not in {field.name for field in dataclasses.fields(host.upgrade)}
     assert 'overrides' in capsys.readouterr().err
+
+
+def test_a_judge_host_installs_its_reviewer_at_the_locked_revision(tmp_path: Path) -> None:
+    """A judge host installs ai-lab even when its ``[ops.upgrade]`` names no ``packages``.
+
+    AMD-1, 2026-11-08: no package named ai-lab, so the lock's ai-lab override pinned nothing and the judge kept a
+    stale reviewer. The judge role implies its reviewer.
+    """
+    judge = (
+        f'[ops.judge]\nuser = "judge"\nschedule = "*:0/5"\nrepos = ["https://github.com/o/r"]\n'
+        f'[ops.judge.tokens]\n"github.com" = "{(tmp_path / "tok").as_posix()}"\n'
+    )
+    line = upgrade.command(_config(tmp_path, judge), TIP, tmp_path / 'family.txt')
+    assert 'ai-lab' in line, line
+
+
+def test_a_host_without_a_judge_installs_no_reviewer(tmp_path: Path) -> None:
+    line = upgrade.command(_config(tmp_path), TIP, tmp_path / 'family.txt')
+    assert not any(part.startswith('ai-lab') for part in line), line
