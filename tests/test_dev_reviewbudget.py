@@ -17,11 +17,12 @@ from test_dev_forgereview import FakeCommand, _forge, _work
 
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgepulls import Marker, comment_upsert
-from dev_lab.dev.forgereview import ask_again, review_tick
+from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_advice import Record, record_of, recorded_usd, trusted_bodies
 from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgereview_declared import RANGE_FIELD, Review
 from dev_lab.dev.forgereview_identity import Identity
+from dev_lab.dev.forgereview_stands import ask_again
 from dev_lab.dev.forgetakeover import raise_cap
 from dev_lab.dev.reviewbudget import (
     CAP_QUANTILE,

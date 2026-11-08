@@ -82,6 +82,13 @@ RETIRED_SPELLINGS: Final = {
             'user-approved design 2026-11-05: a task carries ONE key bundle; dev-lab names no provider',
         ),
     ),
+    **dict.fromkeys(
+        ('NO-PUSH-ONTO-A-LANDED-PR', 'landedpush'),
+        (
+            'NO-PUSH-ONTO-A-CLOSED-PR (closedpush) and LANDED-BRANCH-CONTINUES (prcontinue)',
+            "user-approved design 2026-11-07: a merged PR's branch is continued in a new PR; only a closed one refuses",
+        ),
+    ),
     'review capped, merge waits': (
         'forgereview_claim.UNREVIEWED_STATUS (not reviewed, merges unreviewed)',
         'user ruling 2026-11-05: a capped review no longer holds the merge; it merges WARNED',
