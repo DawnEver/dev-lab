@@ -20,15 +20,19 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.forgerunstate import name_of, submit_lock
+from dev_lab.dev.forgerunstate import CLAIMED_PHASE, SUBMITTING, live, name_of, submit_lock
+from dev_lab.dev.platformparts import run_tag
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Sequence
     from pathlib import Path
 
     from dev_lab.dev.forgerunstate import Run
 
-__all__ = ['STALE_LOCK_S', 'busy', 'detach', 'detach_argv', 'held']
+__all__ = ['STALE_LOCK_S', 'TO_SUBMIT', 'busy', 'detach', 'detach_argv', 'hand_off', 'held', 'submit_one']
+
+#: The phases whose next step is a submit -- a build and a collection on the login node.
+TO_SUBMIT: Final = frozenset({CLAIMED_PHASE, SUBMITTING})
 
 #: A submit lock this old belongs to a submit that died: a cold build plus collection is hours, never six.
 STALE_LOCK_S: Final = 6 * 3600.0
@@ -83,4 +87,40 @@ def detach(root: Path, run: Run, *, spawn: Callable[..., Any] = _door.popen) -> 
     """
     options: dict[str, Any] = {'creationflags': _DETACHED} if os.name == 'nt' else {'start_new_session': True}
     child = spawn(detach_argv(run), cwd=root, stdin=subprocess.DEVNULL, close_fds=True, **options)
-    return f'submit detached (pid {getattr(child, "pid", "?")}): {name_of(run)}'
+    return f'submit detached (pid {child.pid}): {name_of(run)}'
+
+
+def hand_off(
+    runs: Sequence[Run], submit: Callable[[Run], str] | None, say: Callable[[str], None]
+) -> tuple[list[Run], list[str]]:
+    """RESULTS BEFORE SUBMITS: (the runs the tick advances itself, the shas handed away) for one tick.
+
+    Every run already submitted goes before every run still to submit, each side in its given order. Given
+    *submit*, a run still to submit is not the tick's at all: it goes to its own process, or is left alone
+    while a live submit holds its lock. ``None`` keeps every run inline (the ``--submit`` process itself).
+    """
+    ordered = sorted(runs, key=lambda run: run.phase in TO_SUBMIT)  # stable: each side keeps its order
+    if submit is None:
+        return ordered, []
+    handed = [run for run in ordered if run.phase in TO_SUBMIT]
+    for run in handed:
+        tag = run_tag(run.platform, run.sha)
+        say(f'{tag}: submitting in its own process' if busy(run) else f'{tag}: {submit(run)}')
+    return [run for run in ordered if run.phase not in TO_SUBMIT], [run.sha for run in handed]
+
+
+def submit_one(repo: str, name: str, advance: Callable[[Run], object], say: Callable[[str], None]) -> int:
+    """``serve --submit <run>``: *advance* the one run file *name* of *repo* under its submit lock; 0.
+
+    Another live submit of it, or no such run left, is a no-op.
+    """
+    run = next((one for one in live(repo) if name_of(one) == name), None)
+    if run is None:
+        say(f'[submit] {name}: no such run in flight; nothing to submit')
+        return 0
+    with held(run) as mine:
+        if not mine:
+            say(f'[submit] {name}: another submit holds it')
+            return 0
+        advance(run)
+    return 0

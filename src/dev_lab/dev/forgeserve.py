@@ -115,7 +115,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import lab_commons.launch as _door
 from lab_commons.box import Holding, holdings
@@ -159,10 +159,10 @@ from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.hpchost.spec import load
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
-from dev_lab.dev.worktreeplace import WORKTREES_REL
+from dev_lab.dev.worktreeplace import work_root
 from dev_lab.supervise.notice import Context
 
-__all__ = ['ServeReport', 'main', 'serve', 'submit_one', 'work_root']
+__all__ = ['ServeReport', 'main', 'serve']
 
 
 @dataclass(frozen=True)
@@ -310,10 +310,6 @@ def serve(
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
 
 
-#: The phases whose next step is a submit -- a build and a collection on the login node.
-_TO_SUBMIT: Final = frozenset({forgerunstate.CLAIMED_PHASE, forgerunstate.SUBMITTING})
-
-
 def _advance(
     root: Path,
     runs: Sequence[forgerunstate.Run],
@@ -341,14 +337,10 @@ def _advance(
     ``forge queue``'s STALE keeps meaning down.
 
     RESULTS BEFORE SUBMITS (Ada 2026-11-07): a submit builds and collects on the login node -- over an hour
-    cold -- so every run already submitted (a gather, a post) goes before every run still to submit, each side
-    in its least-recently-advanced order. A finished run never waits behind a collection in its own tick.
-    Given *submit*, a run still to submit is not advanced here at all: it is handed to its own process
-    (:mod:`dev_lab.dev.forgesubmit`), or left alone while one holds its lock, so the tick never waits on it.
+    cold -- so a finished run never waits behind a collection in its own tick (:func:`forgesubmit.hand_off`).
     """
     if not runs:
         return []
-    runs = sorted(runs, key=lambda run: run.phase in _TO_SUBMIT)  # stable: each side keeps its order
     built = client(root)
     me = Claim(machine, built.whoami(), forge_now(built) + lease, str(seat) if seat else '')
     if slurm is None:  # not on a cluster, or no grant for this account
@@ -364,13 +356,7 @@ def _advance(
             )
         say(f'[serve] no cluster to advance {len(runs)} run(s) on: {why}')
         return [run.sha for run in runs]
-    left: list[str] = []
-    if submit is not None:
-        for run in [one for one in runs if one.phase in _TO_SUBMIT]:
-            tag = run_tag(run.platform, run.sha)
-            say(f'{tag}: submitting in its own process' if forgesubmit.busy(run) else f'{tag}: {submit(run)}')
-            left.append(run.sha)
-        runs = [one for one in runs if one.phase not in _TO_SUBMIT]
+    runs, left = forgesubmit.hand_off(runs, submit, say)
     for at, run in enumerate(runs):
         if at and spent():
             waiting = [one.sha for one in runs[at:]]
@@ -397,47 +383,6 @@ def _advance(
             forgerunstate.touch(after)
             left.append(after.sha)
     return left
-
-
-def submit_one(
-    root: Path,
-    name: str,
-    *,
-    client: Callable[[Path], Client],
-    machine: str,
-    seat: ClusterAccount | None,
-    lease: timedelta,
-    cluster: Callable[[], forgerunstate.Cluster] | None = None,
-    say: Callable[[str], None] = emit,
-    alarm: Callable[[Alarm], object] = sound,
-) -> int:
-    """``serve --submit <run>``: advance the one run file *name* inline under its submit lock; 0 always but a defect.
-
-    Another live submit of it, or no such run left, is a no-op (:mod:`dev_lab.dev.forgesubmit`).
-    """
-    run = next((one for one in forgerunstate.live(origin_url(root)) if forgerunstate.name_of(one) == name), None)
-    if run is None:
-        say(f'[submit] {name}: no such run in flight; nothing to submit')
-        return 0
-    with forgesubmit.held(run) as mine:
-        if not mine:
-            say(f'[submit] {name}: another submit holds it')
-            return 0
-        slurm, _standing, why = standing_of(cluster or (lambda: slurm_cluster(root, seat)))
-        _advance(root, [run], client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say,
-                 alarm=alarm)  # fmt: skip
-    return 0
-
-
-def work_root(root: Path) -> Path:
-    """Where a serve WORKS: its checkout's worktree root, beside the trees it produces in -- never the tree itself.
-
-    A ``python -m`` process puts its cwd on ``sys.path``, so a serve whose cwd were the checkout would READ that
-    tree for its whole life and lock it against every edit (TREE-HAS-A-LIVE-RUN, :mod:`dev_lab.dev.liverun`).
-    """
-    work = root / WORKTREES_REL
-    work.mkdir(parents=True, exist_ok=True)
-    return work
 
 
 def _host_failure(root: Path, failure: BaseException) -> None:
@@ -471,9 +416,10 @@ def main(
     seat = seat_of()
     machine = this_machine()
     if args.submit:
-        return submit_one(
-            root, args.submit, client=build, machine=machine, seat=seat, lease=timedelta(hours=args.lease_hours)
-        )
+        slurm, _standing, why = standing_of(lambda: slurm_cluster(root, seat))
+        tick = functools.partial(_advance, root, client=build, machine=machine, seat=seat, slurm=slurm, why=why,
+                                 lease=timedelta(hours=args.lease_hours), say=emit, alarm=sound)  # fmt: skip
+        return forgesubmit.submit_one(origin_url(root), args.submit, lambda run: tick([run]), emit)
     try:
         report = serve(
             root,

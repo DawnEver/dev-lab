@@ -1538,7 +1538,11 @@ def test_a_tick_hands_a_run_to_submit_to_its_own_process_and_never_advances_it(m
     advanced: list[str] = []
     handed: list[str] = []
     monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
-    submit = lambda run: handed.append(run.sha) or 'detached'  # noqa: E731
+
+    def submit(run: forgerunstate.Run) -> str:
+        handed.append(run.sha)
+        return 'detached'
+
     report, said, _a = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, submit=submit)
     assert handed == [shas[0]], 'the claimed run goes to its own process'
     assert advanced == [shas[1]], 'only the submitted run is advanced in the tick'
@@ -1558,26 +1562,24 @@ def test_a_tick_hands_a_run_to_submit_to_its_own_process_and_never_advances_it(m
 def test_submit_one_advances_the_named_run_under_its_lock(monkeypatch, tmp_path: Path) -> None:
     """``serve --submit <run>`` advances exactly that run inline; PLANTED CONTROL: a held lock advances nothing."""
     shas = _runs_on_disk(monkeypatch, tmp_path, 2)
-    monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
-    monkeypatch.setattr(forgeserve, 'forge_now', lambda _built: NOW)
     (run,) = [one for one in forgerunstate.live('https://f/o/r.git') if one.sha == shas[1]]
     advanced: list[str] = []
     locked: list[bool] = []
 
-    def advance(_root: Path, one: forgerunstate.Run, **_k: object) -> None:
+    def advance(one: forgerunstate.Run) -> None:
         advanced.append(one.sha)
         locked.append(forgesubmit.busy(one))
 
-    monkeypatch.setattr(forgerun, 'advance', advance)
-    kw = {'client': _client, 'machine': 'G', 'seat': SEAT, 'lease': timedelta(hours=6), 'cluster': _Slurm,
-          'say': lambda _line: None, 'alarm': lambda _a: None}  # fmt: skip
-    assert forgeserve.submit_one(tmp_path, forgerunstate.name_of(run), **kw) == 0
+    def submit_it() -> int:
+        return forgesubmit.submit_one('https://f/o/r.git', forgerunstate.name_of(run), advance, lambda _line: None)
+
+    assert submit_it() == 0
     assert advanced == [shas[1]], 'that one run'
     assert locked == [True], 'while its lock is held'
     assert not forgesubmit.busy(run), 'the lock is released'
     advanced.clear()
     with forgesubmit.held(run):
-        assert forgeserve.submit_one(tmp_path, forgerunstate.name_of(run), **kw) == 0
+        assert submit_it() == 0
     assert advanced == [], 'PLANTED: another submit holds it'
 
 
