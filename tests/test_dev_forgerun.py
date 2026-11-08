@@ -369,7 +369,7 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        release_reason(ProducerExit.INCONCLUSIVE),
+        release_reason(ProducerExit.INCONCLUSIVE, outage=False),
     )
     assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
@@ -391,7 +391,7 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
     assert _tick(store, _Unbuilt(home / 'r')) is None, 'released and dropped'
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}',
+        f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}',
     )
     assert forgerunstate.live('https://f/o/r.git') == ()
     _start(home, store)
@@ -692,7 +692,7 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
+    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
 
 
 def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_failure_is_retried(
@@ -730,7 +730,7 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
+    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
     assert cause in post['description']
 
 
