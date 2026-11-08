@@ -17,11 +17,11 @@ refused before anything is removed.
 from __future__ import annotations
 
 import shutil
-import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
 
+from lab_commons import launch
 from lab_commons.log import emit
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     'DEFAULT_GITEA_DATA',
     'DEFAULT_JOURNAL_MAX_MB',
     'PROTECTED',
+    'Runner',
     'clean',
     'measure',
     'refuse_protected',
@@ -55,7 +56,9 @@ Runner = Callable[[Sequence[str]], tuple[int, str]]
 
 
 def _run(argv: Sequence[str]) -> tuple[int, str]:
-    done = subprocess.run(list(argv), capture_output=True, text=True, check=False, timeout=900)
+    done = launch.run(
+        list(argv), capture_output=True, text=True, encoding='utf-8', errors='replace', check=False, timeout=900
+    )
     return done.returncode, (done.stdout + done.stderr).strip()
 
 

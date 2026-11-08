@@ -93,7 +93,8 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-05 AT 411 (taskkeys, forgesecrets, plugin_settings, reviewcap, verdictenv): floor 385.
 #: RE-TAKEN 2026-11-07 AT 426 (CI's walk; the 1106 milestones, forgemessages, ops backuprole and placement): floor 400.
 #: RE-TAKEN 2026-11-07 AT 442 (CI's walk; the consent ops, forgescope, partrefs, prcurrent, locklag): floor 415.
-FILE_FLOOR = 415
+#: RE-TAKEN 2026-11-08 AT 456 (the 11-08 wave: forgesubmit, prcontinue, agentpolicy, ops disk): floor 430.
+FILE_FLOOR = 430
 
 
 def _tree() -> dict[str, str]:

@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.ops.disk import CACHES, PROTECTED, clean, measure, refuse_protected
+from dev_lab.ops.disk import CACHES, PROTECTED, Runner, clean, measure, refuse_protected
 
 
-def _fake(ran: list[list[str]]):  # noqa: ANN202
+def _fake(ran: list[list[str]]) -> Runner:
     def runner(argv: Sequence[str]) -> tuple[int, str]:
         ran.append(list(argv))
         if argv[:2] == ['df', '--output=target']:
