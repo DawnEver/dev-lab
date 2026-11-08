@@ -663,3 +663,14 @@ Configuration applied through the forge's API or web UI; enabling it is the huma
   nothing publishes blocks `main` for everyone. `integrate promote` already requires every derived part.
 - The client side of the same rule is `integrate promote`, which moves `main` only by fast-forward to a fully green
   integration tip ([the integration branch](integration.md#promoting-the-trunk)).
+
+## Changing a forge host's configuration
+
+A host's `/etc/dev-lab/supervise.toml` changes only through `python -m dev_lab.ops --config <file> config apply
+--from <candidate> [--credential <file>]`, which the `ops` account runs through its fixed sudo line
+(:mod:`dev_lab.ops.configdoor`). Keys named in `configdoor.ROUTINE` (repo lists, schedules, thresholds, retention)
+apply on the operator's word; every other key is the security boundary (the sudo list, accounts, keys, interpreters,
+probe commands) and needs an `ops.config` consent credential whose subject is the candidate's SHA-256 -- the user's
+code, about once a year. The candidate is loaded by the current code first, the live file is backed up beside itself,
+replaced atomically, self-checked, and restored on a failed check. Grant the line in `[ops.access] commands`:
+`<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml config apply *`.
