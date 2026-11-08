@@ -482,6 +482,84 @@ function liveRunRefusal(target, sessionRoot) {
     `${remedyPython(sessionRoot)} -m dev_lab.dev.liverun --tree ${target} answers.`;
 }
 
+/* ================================ A ROW THAT STILL ADMITS A FAMILY SIBLING CLONE ================================
+ *
+ * `admits: 'family-sibling-clone'` (WORKTREES-STAY-INSIDE): every family checkout lives BESIDE its siblings, so
+ * cloning a family repo there is the one placement outside `.claude/worktrees` that is right -- and no regex can
+ * tell it from a misplaced tree. Admitted only when the WHOLE line is `cd`s then ONE clone `<url> <dir>`, and
+ * <dir> does not exist yet, is named for the repo, sits beside the main checkout of the tree the line runs in,
+ * and the url comes from a forge (scheme+host+owner) some sibling checkout's `origin` already comes from. No
+ * repo or owner is named here: the family is whatever already sits beside the checkout.
+ */
+/** `root`'s git dir, following a worktree's `.git` file and its `commondir` to the repository's own. */
+function commonGitDir(root) {
+  let dir = path.join(root, '.git');
+  if (fs.statSync(dir).isFile()) {
+    const said = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dir, 'utf8'));
+    if (!said) return null;
+    dir = path.resolve(root, said[1]);
+    const common = path.join(dir, 'commondir');
+    if (fs.existsSync(common)) dir = path.resolve(dir, fs.readFileSync(common, 'utf8').trim());
+  }
+  return dir;
+}
+
+/** `{forge, name}` of a clone url: everything before the last path word, and that word without `.git`. */
+function forgeOf(url) {
+  const at = /^(.*[/:])([^/:]+?)(?:\.git)?\/?$/.exec(url || '');
+  return at ? { forge: at[1].toLowerCase(), name: at[2] } : null;
+}
+
+/** The `origin` url in the repository whose git dir is `gitDir`, or null. */
+function originOf(gitDir) {
+  let inside = false;
+  for (const line of fs.readFileSync(path.join(gitDir, 'config'), 'utf8').split(/\r?\n/)) {
+    const header = /^\s*\[(.+)\]\s*$/.exec(line);
+    if (header) inside = /^remote\s+"origin"$/.test(header[1].trim());
+    const url = inside && /^\s*url\s*=\s*(.+?)\s*$/.exec(line);
+    if (url) return url[1];
+  }
+  return null;
+}
+
+function familySiblingClone(cmd, cwd) {
+  if (!cwd) return false;
+  const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
+  const cdAt = new RegExp(String.raw`^(?:cd|pushd)\s+${word}\s*$`);
+  const cloneAt = new RegExp(String.raw`^(?:git(?:\.exe)?|(?:sh|bash)\s+\S*retry\S*)\s+clone\s+${word}\s+${word}\s*$`);
+  let dir = path.resolve(cwd);
+  let clone = null;
+  for (const segment of segments(splitHeredocs(cmd).rest)) {
+    const text = segment.replace(ENV_PREFIX, '').trim();
+    if (!text) continue;
+    const cd = clone === null && cdAt.exec(text);
+    if (cd) {
+      dir = path.resolve(dir, hostPath(cd[1]));
+      continue;
+    }
+    const at = clone === null && cloneAt.exec(text);
+    if (!at) return false; // a second verb, of any kind, after or instead of the one clone
+    clone = { url: hostPath(at[1]), target: path.resolve(dir, hostPath(at[2])) };
+  }
+  if (clone === null || fs.existsSync(clone.target)) return false;
+  const repo = forgeOf(clone.url);
+  if (!repo || path.basename(clone.target).toLowerCase() !== repo.name.toLowerCase()) return false;
+  try {
+    const own = repoRoot(cwd);
+    const gitDir = own && commonGitDir(own);
+    if (!gitDir || !samePath(path.dirname(clone.target), path.dirname(path.dirname(gitDir)))) return false;
+    const family = path.dirname(clone.target);
+    return fs.readdirSync(family).some((name) => {
+      const sibling = path.join(family, name);
+      if (!fs.existsSync(path.join(sibling, '.git'))) return false;
+      const theirs = forgeOf(originOf(commonGitDir(sibling)));
+      return theirs !== null && theirs.forge === repo.forge;
+    });
+  } catch {
+    return false; // a tree the engine cannot read admits nothing
+  }
+}
+
 /* A refusal is a line of the toolchain's metrics (P0, dev_lab.dev.metrics): appended by the ONE writer, in a
  * DETACHED interpreter, so the refusal the agent sees waits for nothing. No interpreter, no line. */
 function logRefusal(name, where) {
@@ -536,6 +614,7 @@ for (const rule of rules) {
   } catch {
     continue; // one malformed rule never blocks the session
   }
+  if (hit && rule.admits === 'family-sibling-clone' && familySiblingClone(cmd, input.cwd)) continue;
   let liveReason = '';
   if (hit && rule.when === 'live-run') {
     // A PROBE judging which rule owns a shape sets this (run_engine(live_run=False)): its own suite is a

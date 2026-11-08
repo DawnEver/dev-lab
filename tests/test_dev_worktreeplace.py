@@ -71,6 +71,64 @@ def _git(*args: str, cwd: Path) -> None:
     subprocess.run([shutil.which('git') or 'git', *args], cwd=cwd, check=True, capture_output=True, timeout=60)
 
 
+_CLONE = 'sh scripts/hooks/with-retry.sh clone'
+
+
+@pytest.fixture
+def family(tmp_path: Path) -> Path:
+    """Two sibling checkouts on two forges, `alpha` with a worktree inside; the family root is returned.
+
+    A family repo is cloned BESIDE its siblings -- that is where every family checkout lives -- so the
+    row must admit exactly that shape and nothing that merely resembles it (2026-11-08: adopting learn-lab
+    was refused because the row read every clone outside `.claude/worktrees` as a misplaced tree).
+    """
+    root = tmp_path / 'family'
+    for name, url in (('alpha', 'https://forge.example/fam/alpha.git'), ('beta', 'git@other.example:team/beta.git')):
+        checkout = root / name
+        checkout.mkdir(parents=True)
+        _git('init', '-q', cwd=checkout)
+        _git('remote', 'add', 'origin', url, cwd=checkout)
+    _git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init', cwd=root / 'alpha')
+    _git('worktree', 'add', '-q', '--detach', f'{WORKTREES_REL}/wt', 'HEAD', cwd=root / 'alpha')
+    (root / 'taken').mkdir()
+    return root
+
+
+@pytest.mark.parametrize(
+    ('where', 'command'),
+    [
+        ('alpha', f'{_CLONE} https://forge.example/fam/gamma.git ../gamma'),
+        ('alpha', f'cd .. && {_CLONE} https://forge.example/fam/gamma.git gamma'),
+        ('alpha', 'git clone https://forge.example/fam/gamma.git ../gamma'),
+        ('alpha', f'{_CLONE} git@other.example:team/delta.git ../delta'),  # beta's forge is the family's too
+        (f'alpha/{WORKTREES_REL}/wt', f'{_CLONE} https://forge.example/fam/gamma.git {{family}}/gamma'),
+    ],
+)
+def test_a_family_repo_clones_beside_its_siblings(family: Path, rules: Path, where: str, command: str) -> None:
+    """A NEW sibling named for its repo, from a forge a sibling already comes from, is admitted."""
+    command = command.replace('{family}', family.as_posix())
+    assert agenthooks.decide(command, rules, cwd=family / where) is None, command
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        f'{_CLONE} https://forge.example/fam/taken.git ../taken',  # the directory exists
+        f'{_CLONE} https://evil.example/x/gamma.git ../gamma',  # no sibling comes from that forge
+        f'{_CLONE} https://forge.example/fam/gamma.git ../other',  # not named for its repo
+        f'{_CLONE} https://forge.example/fam/gamma.git ../../gamma',  # not beside the siblings
+        f'{_CLONE} https://forge.example/fam/gamma.git ../gamma && git clone https://forge.example/fam/zeta.git ../x',
+        f'{_CLONE} https://forge.example/fam/gamma.git ../gamma && git worktree add ../w HEAD',
+        'git clone https://forge.example/fam/gamma.git',  # lands inside the checkout, unnamed
+    ],
+)
+def test_anything_else_a_clone_could_be_is_still_refused(family: Path, rules: Path, command: str) -> None:
+    """The other side: the admission is the one shape, so every near-miss still names the remedy."""
+    reason = agenthooks.decide(command, rules, cwd=family / 'alpha')
+    assert reason is not None, f'allowed: {command!r}'
+    assert 'WORKTREES-STAY-INSIDE' in reason, reason
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A one-commit repository with one worktree INSIDE and nothing else."""

@@ -45,6 +45,7 @@ from dev_lab.dev._deny_rows import DENY_ROWS
 from dev_lab.dev.disclosure import details_for
 
 __all__ = [
+    'ADMITS',
     'DENY_RULES',
     'MATCH_KINDS',
     'PLACEHOLDER',
@@ -87,6 +88,11 @@ SEVERITIES: Final = frozenset({'deny', 'hint'})
 #: live run (:mod:`dev_lab.dev.liverun`), which the engine asks after the pattern matched. A closed set,
 #: because the engine reads an unknown condition as none, which widens the rule.
 WHENS: Final = frozenset({'live-run'})
+#: WHAT A FIRING ROW STILL ADMITS, which only the filesystem can judge. ``'family-sibling-clone'``: a line
+#: that is one clone (after any ``cd``) of a repo into a NEW directory named for it, beside the family's
+#: checkouts, from a forge a sibling checkout already comes from. A closed set, because the engine reads an
+#: unknown admission as none, which narrows the rule rather than widening it.
+ADMITS: Final = frozenset({'family-sibling-clone'})
 
 
 class UnremediedRule(RuntimeError):
@@ -168,6 +174,7 @@ class DenyRule:
     scope: str | None = None
     severity: str = 'deny'
     when: str | None = None
+    admits: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -188,6 +195,9 @@ class DenyRule:
             raise ValueError(msg)
         if self.when is not None and self.when not in WHENS:
             msg = f'{self.id}: when={self.when!r} is not one of {sorted(WHENS)}; the engine would read it as none.'
+            raise ValueError(msg)
+        if self.admits is not None and self.admits not in ADMITS:
+            msg = f'{self.id}: admits={self.admits!r} is not one of {sorted(ADMITS)}; the engine would admit nothing.'
             raise ValueError(msg)
         _compiled(self.pattern, f'{self.id} pattern')
         _compiled(self.allow, f'{self.id} allow')
@@ -260,6 +270,8 @@ class DenyRule:
             row['severity'] = self.severity
         if self.when is not None:
             row['when'] = self.when
+        if self.admits is not None:
+            row['admits'] = self.admits
         return row
 
 
