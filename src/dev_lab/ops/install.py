@@ -266,7 +266,9 @@ def _judge_steps(config: OpsConfig) -> list[str]:
     as_judge = f'sudo -u {judged.user}'  # ai-lab reads the model keys from this HOME's git credential store
     # the task's bundle on stdin: root reads the host's root-only file, else the operator pipes it
     bundle = f' < {shlex.quote(judged.keys_file)}' if judged.keys_file else f'  (the {REVIEW_TASK} key bundle on stdin)'
-    return [f'id {judged.user} || useradd --system --create-home --home-dir {judged.home_dir} {judged.user}',
+    # the review runtime builds ai-lab's venv (``python -m venv``): Debian/Ubuntu ship venv apart (2026-11-08, AMD-1)
+    return ['apt-get install -y python3-venv',
+            f'id {judged.user} || useradd --system --create-home --home-dir {judged.home_dir} {judged.user}',
             f'chmod 700 {judged.home_dir}', f'{as_judge} git config --global credential.helper store',
             f'{as_judge} {shlex.join(loader(config.python, REVIEW_TASK))}{bundle}',
             'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
