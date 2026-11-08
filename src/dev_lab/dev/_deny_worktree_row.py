@@ -63,6 +63,10 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
         f'relocate with git worktree move <tree> <repo>/{WORKTREES_REL}/<name>.'
     ),
     'needs': None,
+    # A family repo's checkout lives BESIDE its siblings, so cloning one there is the one placement outside
+    # the worktrees directory that is right -- and only the filesystem can tell it apart (the target is new, named
+    # for its repo, beside a checkout from the same forge). 2026-11-08: adopting learn-lab was refused here.
+    'admits': 'family-sibling-clone',
     'refuses': (
         'git worktree add --detach ../lab-commons-wt-cf 4ad12b6',
         'git worktree add -b feat/x ../ms-placement origin/main',
