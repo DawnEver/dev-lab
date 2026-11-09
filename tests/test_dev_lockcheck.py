@@ -465,3 +465,19 @@ def test_a_uv_pin_below_the_newest_release_is_stale_refreshable_and_pinning_move
 def test_the_uv_pin_is_raised_to_the_newest_release_of_2026_11_05() -> None:
     """The first freshening, by hand: 0.13.5 -> 0.13.7 (the newest release on 2026-11-05)."""
     assert uv_version() == '0.13.7'
+
+
+@pytest.mark.parametrize('locked', [False, True])
+def test_a_relock_tree_a_killed_run_left_registered_is_rebuilt(tmp_path: Path, *, locked: bool) -> None:
+    """A run killed inside the tree leaves its registration (2026-11-09, ezxmw9): the next add must not fail on it."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    _git(repo, 'init', '-q', '-b', 'main')
+    sha = _commit(repo, {'a.txt': 'a'})
+    _commit(repo, {'b.txt': 'b'})
+    with detached_worktree(repo, sha) as tree:
+        if locked:
+            _git(repo, 'worktree', 'lock', str(tree))
+        shutil.rmtree(tree)  # the killed run's tree is gone; its registration is not
+        with detached_worktree(repo, sha) as again:
+            assert (again / 'a.txt').is_file()
