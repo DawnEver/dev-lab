@@ -60,6 +60,11 @@ _MAX_PORT: Final = 65535
 _SUDOERS_UNSAFE: Final = frozenset(',:=\\\n')
 
 
+def _sudo_rows(command: str) -> tuple[str, ...]:
+    """*command*'s sudoers rows: a trailing `` *`` needs one argument, so its ``""`` (no-argument) twin rides first."""
+    return (f'{command.removesuffix(" *")} ""', command) if command.endswith(' *') else (command,)
+
+
 def _is_host_port(target: str) -> bool:
     found = _HOST_PORT.fullmatch(target)
     return found is not None and 1 <= int(found.group(2)) <= _MAX_PORT
@@ -141,7 +146,8 @@ def files(role: Access) -> dict[str, str]:
         f'auth [success=ignore default=1] pam_succeed_if.so quiet user = {role.account}\n'
         f'auth [success=done default=die] pam_oath.so usersfile={role.oath} window=1 digits={DIGITS}\n'
     )
-    sudoers = f'{role.account} ALL=(root) NOPASSWD: {", ".join(role.commands)}\n' if role.commands else ''
+    allowed = [row for command in role.commands for row in _sudo_rows(command)]
+    sudoers = f'{role.account} ALL=(root) NOPASSWD: {", ".join(allowed)}\n' if allowed else ''
     rendered = {
         f'etc/ssh/sshd_config.d/61-dev-lab-ops-{role.account}.conf': sshd,
         keys_file(role.account).lstrip('/'): ''.join(f'{key}\n' for key in role.keys),
