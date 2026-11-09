@@ -218,3 +218,21 @@ def test_the_listing_reads_every_page_so_prune_sees_every_record(server) -> None
     answer('GET', '/repos/o/r/releases/9/assets', (200, first), (200, [_asset(51, f'run-{DEAD}-linux-r1.json.gz')]))
     built = client(Forge('github.com', 'o', 'r'), Loopback(server))
     assert [a.id for a in prune(built, {LIVE}, unit_results=1, dry_run=True)] == [51]
+
+
+def test_a_full_records_home_refuses_the_upload_by_name_and_sends_nothing(server, tmp_path: Path) -> None:
+    """A full records home refuses the upload by name and sends nothing.
+
+    GitHub caps a release at 1000 assets; past it the upload's 422 was read as a FINAL refusal and the outbox
+    dropped the verdict. Now the refusal comes first and is a ValueError, which the outbox keeps queued.
+    """
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    full = [_asset(i, f'run-{LIVE}-linux-r{i}.json.gz') for i in range(1, forgerecords.GITHUB_ASSET_CAP + 1)]
+    pages_of = [(200, full[i : i + 50]) for i in range(0, len(full), 50)] + [(200, [])]
+    answer('GET', '/repos/o/r/releases/9/assets', *pages_of)
+    record = tmp_path / f'run-{DEAD}-linux-r1.json.gz'
+    record.write_bytes(b'x')
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    with pytest.raises(forgerecords.RecordsHomeFull, match='records prune'):
+        attach(built, record)
+    assert not [r for r in Recorder.received if r['method'] == 'POST'], 'nothing is uploaded to a full home'
