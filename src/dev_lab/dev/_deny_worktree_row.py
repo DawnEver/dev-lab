@@ -61,6 +61,8 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
         f'Put it inside: git worktree add --detach {WORKTREES_REL}/<name> '
         f'<sha> (with -C, <repo>/{WORKTREES_REL}/<name>); '
         f'relocate with git worktree move <tree> <repo>/{WORKTREES_REL}/<name>.'
+        " A family repo's FIRST checkout clones beside its siblings: git clone <forge>/<owner>/<repo>.git "
+        "<dir beside the main checkout>/<repo>, <owner> matching a sibling's origin."
     ),
     'needs': None,
     # A family repo's checkout lives BESIDE its siblings, so cloning one there is the one placement outside
