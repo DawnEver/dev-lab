@@ -150,8 +150,8 @@ RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.
 VENVFOLLOW_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.venvfollow --session-start'
 
 #: THE CLASSIFIER PROSE FOLLOWS THE CHECKOUT (:mod:`dev_lab.dev.automode`, 2026-11-09): every session start renders
-#: ``.claude/automode.json`` from the policy table and the repo's own intents, so a door added to the table reaches
-#: the classifier on the next session, not on the next dependency sync (a ten-day-old render withheld one).
+#: the classifier's intents file from the policy table and the repo's own intents, so a door added to the table
+#: reaches the classifier on the next session, not on the next dependency sync (a ten-day-old render withheld one).
 AUTOMODE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.automode session-start'
 
 #: A PRESSED HOST TELLS ITS AGENTS (:mod:`dev_lab.dev.hostalarm`, ruling D54): the host's disk/memory/CPU alarms as
@@ -508,9 +508,7 @@ def report_guard(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Is this repository's agent guard actually live?")
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--install', action='store_true', help='install and wire the engine (an EXPLICIT request)')
-    parser.add_argument(
-        '--force', action='store_true', help='with --install: replace an engine lab-commons did not ship'
-    )
+    parser.add_argument('--force', action='store_true', help='with --install: replace an engine not shipped here')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
 

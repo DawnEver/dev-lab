@@ -17,6 +17,7 @@ import pytest
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
+from dev_lab.dev.agent_guard import AUTOMODE_COMMAND, WIRING
 from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import claude_rows, codex_rules, doors
 from dev_lab.dev.automode import (
@@ -287,7 +288,5 @@ def test_a_refused_declaration_keeps_no_stale_prose_and_says_why(tmp_path: Path)
 
 def test_every_session_start_renders_the_prose() -> None:
     """The prose follows the checkout at each session start, not only when the dependency door last ran."""
-    from dev_lab.dev.agent_guard import AUTOMODE_COMMAND, WIRING  # noqa: PLC0415
-
     assert 'dev_lab.dev.automode session-start' in AUTOMODE_COMMAND
     assert any(w.event == 'SessionStart' and w.command == AUTOMODE_COMMAND for w in WIRING)
