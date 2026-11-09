@@ -215,7 +215,7 @@ def open_session(dest: str, hours: float, code: str, *, ssh: tuple[str, ...] = (
         msg = f'{dest} did not authenticate: {word["error"]}'
         raise HoldRefused(msg)
     audit('open', dest, command=f'--hours {hours:g}', status=0, duration_s=time.monotonic() - started)
-    return f'{dest}: session open for {hours:g} h (holder pid {child.pid})'
+    return f'{dest}: session open for {hours:g} h (holder pid {word["pid"]})'
 
 
 def run_command(dest: str, command: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> tuple[str, int]:

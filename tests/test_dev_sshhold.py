@@ -67,8 +67,11 @@ def test_the_audit_carries_the_command_and_status_never_the_code_or_token() -> N
 def test_a_held_session_runs_commands_on_one_connection_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('FAKESSH_CODE', CODE)
     dest = 'ops@fake'
-    assert 'open' in sshhold.open_session(dest, 1.0, CODE, ssh=FAKE)
+    said = sshhold.open_session(dest, 1.0, CODE, ssh=FAKE)
     try:
+        held = sshhold.read_session(dest)
+        assert held is not None
+        assert f'holder pid {held.pid}' in said  # the holder's own pid, never a venv launcher's
         assert sshhold.run_command(dest, 'echo hello', timeout_s=60) == ('hello\n', 0)
         output, status = sshhold.run_command(dest, f'echo again&& "{sys.executable}" -c "raise SystemExit(3)"', 60)
         assert (output, status) == ('again\n', 3)

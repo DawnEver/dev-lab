@@ -143,7 +143,7 @@ def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> N
     session = sshhold.Session(dest, os.getpid(), listener.getsockname()[1], token, opened, opened + hours * 3600)
     sshhold.write_session(session)
     idle, last = sshhold.idle_s(), time.monotonic()
-    _say({'ok': True})
+    _say({'ok': True, 'pid': session.pid})
     listener.settimeout(_TICK_S)
     try:
         while time.time() < session.expires and time.monotonic() - last < idle:
