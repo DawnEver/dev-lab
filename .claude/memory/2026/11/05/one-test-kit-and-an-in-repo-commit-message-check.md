@@ -7,6 +7,8 @@ created: 2026-11-05
 accessed: 2026-11-05
 ---
 
+> Redacted 2026-11-09: site markers removed (public repo).
+
 # One test kit, an in-repo commit-message check, a coverage report (user rulings 2026-11-05)
 
 - THE KIT: base install pytest, pytest-xdist, pytest-cov, ruff (the verify door runs all four); `test` extra adds
@@ -15,7 +17,7 @@ accessed: 2026-11-05
 - COMMITIZEN DROPPED: `dev_lab.dev.commitmsg` owns `type(scope)!: subject` (commitizen's cz_conventional_commits
   schema, types build bump chore ci docs feat fix perf refactor revert style test), the default prefixes
   (Merge, Revert, Pull request, fixup!, squash!, amend!) and the empty-message abort. A repo EXTENDS the prefixes
-  with `[tool.dev_lab.commit_msg] allowed_prefixes` -- motronics-studio's `[tool.commitizen] allowed_prefixes`
+  with `[tool.dev_lab.commit_msg] allowed_prefixes` -- the private consumer repo's `[tool.commitizen] allowed_prefixes`
   (merge, wip, rem(, record(, data() is no longer read and must move there. The base commit-msg row is now
   `conventional-commit`; `cz-push-range` and its `LAB_CZ_*` env keep their names (consumer rows name them).
 - The push-range and forge-merge tests used to plant a fake commitizen that refused only `data(`; they now run

@@ -7,11 +7,13 @@ created: 2026-11-05
 accessed: 2026-11-05
 ---
 
+> Redacted 2026-11-09: site markers removed (public repo).
+
 # Push message validation never puts the message on argv
 
 ## Cause and decision
 
-Consumer `motronics-studio` uses exact historical SHA exemptions. Its first migration push reached two valid, very large historical bodies after approximately 1800 checks and Windows refused Python's argument list. This is not a commit-format failure or an exemption failure. Fix the owner hook, not the consumer, shared environment, exemptions or history.
+Consumer `the private consumer repo` uses exact historical SHA exemptions. Its first migration push reached two valid, very large historical bodies after approximately 1800 checks and Windows refused Python's argument list. This is not a commit-format failure or an exemption failure. Fix the owner hook, not the consumer, shared environment, exemptions or history.
 
 The canonical source is `https://github.com/DawnEver/dev-lab.git`; remote HEAD was `integrate/main` at `0fde02a30609fd854e3719d0bae06aa020278f12` when cloned. Work is isolated on the local branch `pr/cz-large-messages`, matching the intended remote ref.
 

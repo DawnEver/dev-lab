@@ -192,6 +192,46 @@ def test_the_migration_strip_of_volatile_frontmatter_is_not_an_edit(repo: Path) 
     assert memoryadds.problems_between(repo, base, 'HEAD') == ()
 
 
+_SITE = '---\nname: an-entry\ndescription: d\n---\n\nThe forge is at 192.0.2.7 on host box-7.\nBody.\n'
+
+
+def test_a_privacy_redaction_of_a_published_entry_is_not_an_edit(repo: Path) -> None:
+    """A published repo must be able to remove a site marker: each changed line only swaps spans for placeholders."""
+    _write(repo, ENTRY, _SITE)
+    _commit(repo, 'site', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    base = _lane(repo)
+    _write(
+        repo,
+        ENTRY,
+        '---\nname: an-entry\ndescription: d\n---\n\n> '
+        + memoryadds.REDACTION_NOTE.format(day='2026-11-09')
+        + '\n\nThe forge is at <ip> on host <host>.\nBody.\n',
+    )
+    _commit(repo, 'redact', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        'The forge is at <ip> on host <host>.\nBody, and a new claim.\n',  # a narrative change rides along
+        'Rewritten entirely.\n',  # no placeholder: a rewrite
+    ],
+)
+def test_planted_a_redaction_note_never_admits_a_narrative_edit(repo: Path, body: str) -> None:
+    """PLANTED CONTROL: the note alone admits nothing; every other changed line must be a placeholder swap."""
+    _write(repo, ENTRY, _SITE)
+    _commit(repo, 'site', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    base = _lane(repo)
+    note = '> ' + memoryadds.REDACTION_NOTE.format(day='2026-11-09')
+    _write(repo, ENTRY, f'---\nname: an-entry\ndescription: d\n---\n\n{note}\n\n{body}')
+    _commit(repo, 'redact and rewrite', ENTRY)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert len(found) == 1, found
+
+
 def test_planted_a_merge_that_edits_an_existing_entry_is_refused(repo: Path) -> None:
     """PLANTED CONTROL: the lane adds only; the RESOLUTION rewrites an entry -- the merge reds."""
     _lane(repo)

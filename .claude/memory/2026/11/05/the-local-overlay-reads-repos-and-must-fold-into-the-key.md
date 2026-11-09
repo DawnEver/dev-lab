@@ -8,6 +8,8 @@ created: 2026-11-05
 accessed: 2026-11-05
 ---
 
+> Redacted 2026-11-09: site markers removed (public repo).
+
 # The local overlay reads `[repos]` and must fold into the key
 
 Corrects the 2026-11-05 PLAN in three places, found while implementing it.
@@ -24,4 +26,4 @@ Corrects the 2026-11-05 PLAN in three places, found while implementing it.
 ## State
 - Steps 1-2 done: `_dep_local.py`, `dep --local`, the overlay leg inside the seat (`_change(then=...)`), the key fold,
   and the fan-out doc. `tests/test_dev_dep_local.py` and the dep suites, 70 pass.
-- Open: the `env_manifest` fold (lab-commons), and the motronics guide switching `uv pip install -e` to `dep --local`.
+- Open: the `env_manifest` fold (lab-commons), and the the private consumer guide switching `uv pip install -e` to `dep --local`.
