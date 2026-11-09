@@ -264,6 +264,18 @@ class Access:
 
 
 @dataclass(frozen=True)
+class Caddy:
+    """The forge's Caddy allowlist (:mod:`dev_lab.ops.caddy`).
+
+    Every ``remote_ip`` matcher of ``sites`` (all, when empty) in ``file`` admits exactly ``allow`` (IPs or CIDRs).
+    """
+
+    allow: tuple[str, ...]
+    file: str = '/etc/caddy/Caddyfile'
+    sites: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Supervise(Placement):
     """The host's supervisor daemon (:mod:`dev_lab.supervise`), serving ``project`` with this same file as config.
 
@@ -295,6 +307,7 @@ class OpsConfig:
     probe: Probe | None = None
     config_source: ConfigSource | None = None
     environment_file: str = ''
+    caddy: Caddy | None = None
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -306,9 +319,9 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe, ConfigSource)](
-    cls: type[T], table: object, where: str
-) -> T | None:
+def _role[
+    T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe, ConfigSource, Caddy)
+](cls: type[T], table: object, where: str) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
         return None
     if not isinstance(table, dict):
@@ -444,6 +457,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         consent=_role(Consent, ops.get('consent'), '[ops.consent]'),
         backup=_backup(ops.get('backup')),
         access=_role(Access, ops.get('access'), '[ops.access]'),
+        caddy=_role(Caddy, ops.get('caddy'), '[ops.caddy]'),
         supervise=_role(Supervise, ops.get('supervise'), '[ops.supervise]'),
         judge=_role(Judge, ops.get('judge'), '[ops.judge]'),
         upgrade=_role(Upgrade, ops.get('upgrade'), '[ops.upgrade]'),
