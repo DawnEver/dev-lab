@@ -79,11 +79,16 @@ class Unrecorded(RuntimeError):
 
 @dataclass(frozen=True)
 class Standing:
-    """What this account can take on, read locally on the login node: its supply, the last day's use, facts."""
+    """What this account can take on, read locally on the login node: its supply, the last day's use, facts.
+
+    *ceiling_gb* is the most memory one task may ask of any grant (:func:`lab_commons.hpc.plan.grantable_gb`;
+    ``None``: no ceiling), the bound a cluster part's demand is held to.
+    """
 
     supply: Supply
     usage: dict[str, float] = dataclasses.field(default_factory=dict)
     facts: dict[str, object] = dataclasses.field(default_factory=dict)
+    ceiling_gb: float | None = None
 
 
 @dataclass(frozen=True)

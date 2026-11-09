@@ -389,10 +389,11 @@ class SlurmCluster:
 
     def standing(self) -> Standing:
         """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""
-        read = []
+        read, probed = [], []
         for grant in self.machine.grants:
             snapshot = probe(self.connect(grant), grant.slurm_account)
             read.append((snapshot, snapshot.quota.default_qos))
+            probed.append((grant, snapshot))
         usage = self.quota()
         left = usage.files_left if usage is not None else None
         account = SlurmAccount(read, files=math.inf if left is None else left)
@@ -407,7 +408,7 @@ class SlurmCluster:
             'untagged': sum(s.usage[''].tasks for s, _ in read if '' in s.usage),  # hpc.slurm.stream_of
         }
         day = hpcusage.parse(shell(hpcusage.COMMAND, None))  # the ONE sacct read: the budget's and the card's
-        return Standing(supply, day.per_run(), {**facts, 'usage': day.summary()})
+        return Standing(supply, day.per_run(), {**facts, 'usage': day.summary()}, grantable_gb(probed))
 
     @property
     def scope(self) -> str:
