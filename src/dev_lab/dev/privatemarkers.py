@@ -33,6 +33,7 @@ __all__ = [
     'load_markers',
     'scan_text',
     'scan_tree',
+    'staged_added_lines',
     'tracked_files',
 ]
 
@@ -140,23 +141,49 @@ def scan_tree(root: Path, markers: tuple[re.Pattern[str], ...] = (), *, public: 
     return found
 
 
+_HUNK = re.compile(r'^@@ -\S+ \+(\d+)(?:,\d+)? @@')
+
+
+def staged_added_lines(root: Path, paths: list[str]) -> list[tuple[str, int, str]]:
+    """``(path, line, text)`` for every line the index ADDS to *paths* -- what this commit introduces, nothing older."""
+    if not paths:
+        return []
+    argv = ['git', '-c', 'core.quotePath=false', 'diff', '--cached', '-U0', '--no-color', '--no-ext-diff', '--', *paths]
+    out = _door.run(argv, cwd=root, capture_output=True, check=True).stdout.decode('utf-8', errors='replace')
+    added: list[tuple[str, int, str]] = []
+    rel, number, in_hunk = '', 0, False
+    for line in out.splitlines():
+        if line.startswith('diff --git '):
+            in_hunk = False
+        elif not in_hunk and line.startswith('+++ '):
+            rel = line[6:] if line.startswith('+++ b/') else ''
+        elif hunk := _HUNK.match(line):
+            in_hunk, number = True, int(hunk.group(1))
+        elif in_hunk and line.startswith('+') and rel:
+            added.append((rel, number, line[1:]))
+            number += 1
+    return added
+
+
 def main(argv: list[str] | None = None) -> int:
-    """The local pre-commit row: refuse STAGED files carrying a marker. Only this machine holds the denylist."""
+    """The local pre-commit row: refuse a marker on a line the index ADDS. Only this machine holds the denylist.
+
+    Judging added lines, not whole files, is the point: a legacy hit on an untouched line is not this commit's,
+    and refusing it would block every edit to that file. The tracked-tree test owns the legacy hits.
+    """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.privatemarkers')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--markers', type=Path, default=MARKERS_FILE)
     parser.add_argument('paths', nargs='*')
     args = parser.parse_args(argv)
     markers = load_markers(args.markers)
-    found: list[str] = []
-    for rel in args.paths:
-        path = args.root / rel
-        if not path.is_file() or b'\0' in (data := path.read_bytes()):
-            continue
-        text = data.decode('utf-8', errors='replace')
-        found.extend(f'{rel}:{n}: {kind}: {m}' for n, kind, m in scan_text(text, markers, path=rel))
+    found = [
+        f'{rel}:{number}: {kind}'
+        for rel, number, text in staged_added_lines(args.root, args.paths)
+        for _, kind, _ in scan_text(text, markers, path=rel)
+    ]
     if found:
-        sys.stderr.write('PRIVATE-MARKERS: a staged file names a private value; neutralise it before committing:\n')
+        sys.stderr.write('PRIVATE-MARKERS: a staged line names a private value; neutralise it before committing:\n')
         sys.stderr.write('\n'.join(found) + '\n')
     return 1 if found else 0
 
