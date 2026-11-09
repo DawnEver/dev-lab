@@ -1298,6 +1298,22 @@ def test_untagged_counts_only_jobs_that_are_not_the_forges_own(tmp_path: Path, m
     assert cluster.standing().facts['untagged'] == 2
 
 
+def test_the_standing_carries_the_most_any_grant_gives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ada 2026-11-09: a cluster part demanded 324 GB of a 240 GB grantable ceiling and was never admitted.
+
+    The standing reads the ceiling the demand is held to (:func:`~lab_commons.hpc.plan.grantable_gb`).
+    PLANTED CONTROL: a grant reporting no memory ceiling leaves it ``None``.
+    """
+    capped = _snapshot_untagged()
+    capped = dataclasses.replace(capped, quota=dataclasses.replace(capped.quota, mem_mb=240 * 1024))
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: None)
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: capped)
+    assert cluster.standing().ceiling_gb == 240.0
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
+    assert cluster.standing().ceiling_gb is None
+
+
 def _snapshot_untagged() -> Snapshot:
     quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
     return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)

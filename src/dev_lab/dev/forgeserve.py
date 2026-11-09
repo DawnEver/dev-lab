@@ -259,8 +259,9 @@ def serve(
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
     for line in reattach(root, client(root), lease=lease, say=say):  # runs a dead serve left journaled
         say(line)
+    ceiling = standing.ceiling_gb if standing is not None else None  # a demand above it is never admitted
     host_rounds = Rounds(
-        root, repo, alarm, runs, slurm=slurm, say=say, sized=cluster_demand(repo),
+        root, repo, alarm, runs, slurm=slurm, say=say, sized=cluster_demand(repo, ceiling_gb=ceiling),
         supplied=functools.partial(supplied, name=name, standing=standing),
         holding=(lambda: ()) if seat is not None else holding,
         ticking={
