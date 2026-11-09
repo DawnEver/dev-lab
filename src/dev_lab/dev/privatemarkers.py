@@ -19,11 +19,11 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
 from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
 
 __all__ = [
     'AUTHORSHIP',
@@ -183,8 +183,8 @@ def main(argv: list[str] | None = None) -> int:
         for _, kind, _ in scan_text(text, markers, path=rel)
     ]
     if found:
-        sys.stderr.write('PRIVATE-MARKERS: a staged line names a private value; neutralise it before committing:\n')
-        sys.stderr.write('\n'.join(found) + '\n')
+        emit('PRIVATE-MARKERS: a staged line names a private value; neutralise it before committing:', err=True)
+        emit('\n'.join(found), err=True)
     return 1 if found else 0
 
 
