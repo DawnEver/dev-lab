@@ -6,7 +6,11 @@ import gzip
 import json
 from pathlib import Path
 
-from dev_lab.dev.forgeoom import floor_record, oom_floors, raised
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Reason, Status
+
+from dev_lab.dev.forgealarm import RUN
+from dev_lab.dev.forgeoom import OOM_BUDGET, budget_alarm, budget_spent, floor_record, oom_floors, raised
 from dev_lab.dev.forgerunstate import Killed
 
 _A, _B, _C = 'tests/a.py', 'tests/b.py', 'tests/c.py'
@@ -68,12 +72,6 @@ def test_an_id_past_its_growth_budget_raises_one_named_run_alarm(tmp_path: Path)
     Nothing more is asked for it; a human is told once, by a ``run`` alarm about ``oom-budget`` naming each
     id and why. PLANTED CONTROL: a record with no such cell raises nothing.
     """
-    from lab_commons.hpc.testcells import TestCell  # noqa: PLC0415 -- the record's cell shape
-    from lab_commons.outcomes import Cell, Reason, Status  # noqa: PLC0415
-
-    from dev_lab.dev.forgealarm import RUN  # noqa: PLC0415
-    from dev_lab.dev.forgeoom import OOM_BUDGET, budget_alarm, budget_spent  # noqa: PLC0415
-
     why = Reason('out_of_memory', 'killed for memory alone in 3 rounds')
     cells = {
         f'{_A}::t': TestCell(Cell(Status.OUT_OF_MEMORY, reason=why)).to_plain(),
