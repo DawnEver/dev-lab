@@ -2,8 +2,9 @@
 
 Planted refusals: a modified tracked file, a staged file, a HEAD on no remote branch, and an untracked
 not-ignored file (it exists nowhere else). Planted removals: a tree with ignored artefacts (a cache, ``.venv``,
-a build-written ``__version__.py``), one with an ignored ``output/logs`` (moved home first), an unregistered
-directory holding files, and an EMPTY one.
+a build-written ``__version__.py``), an unregistered directory holding files, and an EMPTY one. A tree with
+run outputs in its ``output/logs`` is a writer defect, kept and named (user ruling 2026-11-09) unless named by
+``--home-outputs``, which moves them home and then reclaims it.
 """
 
 from __future__ import annotations
@@ -18,8 +19,8 @@ from dev_lab.dev.famtests.visibility import commit, plant_checkout
 from dev_lab.dev.worktrees import main, prune
 
 _GIT = shutil.which('git') or 'git'
-_BLOCKED = ('modified', 'staged', 'wip', 'untracked')
-_GONE = ('done', 'ignored', 'leftover', 'empty')
+_BLOCKED = ('modified', 'staged', 'wip', 'untracked', 'ignored')
+_GONE = ('done', 'leftover', 'empty')
 
 
 def _run(cwd: Path, *args: str) -> None:
@@ -81,6 +82,15 @@ def test_a_landed_tree_goes_with_what_git_ignores_and_an_untracked_file_keeps_it
     for name in _BLOCKED:
         assert (home / name).is_dir(), f'{name} must be refused'
         assert any(line.startswith('kept') and name in line for line in lines)
-    assert (work / 'output' / 'logs' / 'result.txt').read_text(encoding='utf-8') == 'keep me', 'moved home first'
+    assert (home / 'ignored' / 'output' / 'logs' / 'result.txt').is_file(), 'a writer defect is not copied'
+    assert not (work / 'output').exists(), 'nothing went home unasked'
+    assert any('ignored' in line and 'fix the writer' in line for line in lines), lines
     assert (home / 'staged' / 'new.txt').is_file()
     assert main(['--root', str(work), '--prune']) == 0
+
+
+def test_home_outputs_moves_a_named_trees_outputs_home_then_reclaims_it(tmp_path: Path) -> None:
+    work = _planted(tmp_path)
+    assert main(['--root', str(work), '--prune', '--home-outputs', 'ignored']) == 0
+    assert not (work / '.claude' / 'worktrees' / 'ignored').exists()
+    assert (work / 'output' / 'logs' / 'result.txt').read_text(encoding='utf-8') == 'keep me', 'moved home first'

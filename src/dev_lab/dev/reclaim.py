@@ -4,8 +4,11 @@ Worktrees created for a task (by an agent, a human, codex) were never reclaimed:
 DETECTED them and ``branchset --apply`` deleted merged local branches but skipped every branch checked out in a
 worktree, so a finished tree pinned its branch forever. First principles: a lease ends when its branch's CONTENT
 is landed (or its PR closed and its origin ref deleted after a squash merge) AND no TRACKED file is changed:
-what git does not track is not the work and goes with the tree, its run outputs moved home first (user ruling
-2026-10-25). :func:`reclaimable` is that one decision, built on :mod:`dev_lab.dev.checkout`'s readings (content
+what git does not track is not the work and goes with the tree (user ruling 2026-10-25). Run outputs are not
+moved home (user ruling 2026-11-09, replacing 10-25's move-home): since 2026-10-27 every run writes to the MAIN
+checkout's output tree, so a tree holding any is a WRITER DEFECT -- it is kept and named so the writer is fixed,
+and only a tree named for ``move_home`` (``--home-outputs NAME``) has them moved home, verified, then goes.
+:func:`reclaimable` is that one decision, built on :mod:`dev_lab.dev.checkout`'s readings (content
 by ``git cherry``, never ancestry; ``None`` when git cannot answer); :func:`reclaim` acts on it. The doors are
 ``python -m dev_lab.dev.worktrees --prune`` (which the session debris hook runs) and ``python -m
 dev_lab.dev.branchset --apply``, which reclaims first so the freed branch is deleted in the same run.
@@ -39,7 +42,7 @@ from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
-from dev_lab.dev.worktree_archive import home_outputs
+from dev_lab.dev.worktree_archive import home_outputs, outputs_held
 
 __all__ = [
     'QUIET_S',
@@ -82,7 +85,7 @@ def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | N
     """Every TRACKED path really changed in *tree* against HEAD, staged or not; untracked and ignored are not work.
 
     User ruling 2026-10-25: the work is committed; what git does not track (scratch, untracked, ignored:
-    ``.venv``, caches, builds) goes with the tree, except run outputs, which :func:`reclaim` moves home first.
+    ``.venv``, caches, builds) goes with the tree, except run outputs, which keep it (:func:`reclaim`).
     Ruling 2026-10-27: a change that is only CR/LF at line ends (``--ignore-cr-at-eol``: line-ending churn of a
     checkout) or only to a path matching a *generated* glob is not work either.
     """
@@ -97,7 +100,7 @@ def untracked(tree: Path) -> tuple[str, ...]:
     """The untracked, NOT ignored files in *tree*: a file never added is work only this tree holds.
 
     User ruling 2026-10-27 (superseding 10-25 for the automatic path): an automatic delete keeps such a tree;
-    ignored content (``.venv``, caches, builds) is still disposable, and run outputs are moved home first.
+    ignored content (``.venv``, caches, builds) is still disposable; run outputs keep the tree (:func:`reclaim`).
     """
     out = git_out(tree, 'ls-files', '--others', '--exclude-standard', '-z')
     return tuple(p for p in (out or '').split('\0') if p)
@@ -365,6 +368,20 @@ def _restored(aside: Path, tree: Path, gitfile: bytes | None) -> str:
     return 'restored from HEAD' if restore is not None else f'left half-deleted at {tree}: git restore failed'
 
 
+def _outputs_refusal(root: Path, tree: Path, move_home: frozenset[str]) -> str:
+    """``''`` when *tree* may go: no run outputs, or named in *move_home* and moved home verified; else why not."""
+    if tree.name in move_home:
+        return home_outputs(root, tree)
+    try:
+        held = outputs_held(root, tree)
+    except (OSError, ValueError) as error:
+        return f'outputs unreadable: {error}'
+    if not held:
+        return ''
+    shown = ', '.join(held[:_SHOWN]) + (f' (+{len(held) - _SHOWN} more)' if len(held) > _SHOWN else '')
+    return f'{tree} wrote run outputs inside the worktree: {shown}; fix the writer'
+
+
 def reclaim(
     root: Path,
     holders: tuple[str, ...],
@@ -375,13 +392,16 @@ def reclaim(
     limit: int | None = None,
     quiet_s: float = QUIET_S,
     runtimes: Mapping[str, Mapping[str, Any]] | None = None,
+    move_home: frozenset[str] = frozenset(),
 ) -> tuple[str, ...] | None:
     """Remove every reclaimable lease; one line per lease, a kept one with its reason. ``None``: unreadable.
 
-    Every lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_archive.home_outputs`) and
-    the copy verified; only then is the tree deleted by :func:`remove_tree` (its untracked and ignored content
-    is declared disposable) and git's registration pruned. An unverified archive keeps the lease, with the
-    reason. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``, which deletes it pinned
+    A lease whose declared outputs are empty or absent is deleted directly by :func:`remove_tree` (its untracked
+    and ignored content is declared disposable) and git's registration pruned. One holding run outputs is KEPT
+    and named as a writer defect (user ruling 2026-11-09), nothing copied -- unless its directory name is in
+    *move_home*: then its outputs are moved HOME (:func:`dev_lab.dev.worktree_archive.home_outputs`), verified,
+    and only then is it deleted; an unverified archive keeps it, with the reason. A removed tree's branch
+    stays for ``dev_lab.dev.branchset.apply_local``, which deletes it pinned
     to its sha. *runtimes* is :func:`reclaimable`'s. Without *apply* nothing is touched; past *limit*
     removals the rest are ``deferred`` to a later run.
     """
@@ -398,7 +418,7 @@ def reclaim(
             out.append(f'prunable {label}')
         elif limit is not None and removed >= limit:
             out.append(f'deferred {label}  (batch of {limit} reached)')
-        elif unarchived := repository_at(root, lease.path) or home_outputs(root, lease.path):
+        elif unarchived := repository_at(root, lease.path) or _outputs_refusal(root, lease.path, move_home):
             out.append(f'kept     {label}  ({unarchived}; nothing was deleted)')
         elif refused := _removed(lease.path):
             out.append(refused.replace('{label}', label))

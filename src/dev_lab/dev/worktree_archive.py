@@ -29,7 +29,9 @@ WHAT IS NOT SAFE TO REMOVE, checked rather than assumed: a DETACHED HEAD whose c
 outside the declared outputs is NOT work (user ruling 2026-10-25: what git does not track goes with the tree).
 
 :func:`home_outputs` is the outputs move alone, VERIFIED, for :func:`dev_lab.dev.reclaim.reclaim` to chain the
-removal on: it returns ``''`` only when every output file has a byte-identical copy home.
+removal on when a tree is NAMED for it: it returns ``''`` only when every output file has a byte-identical copy
+home. User ruling 2026-11-09: run outputs route to the main checkout, so a tree holding any is a writer defect --
+:func:`outputs_held` names them and reclaim keeps that tree rather than copying them around.
 """
 
 from __future__ import annotations
@@ -52,7 +54,7 @@ from dev_lab.dev.liverun import describe, occupants
 if TYPE_CHECKING:
     from dev_lab.dev.liverun import Census
 
-__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'Archived', 'archive', 'home_outputs', 'volume']
+__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'Archived', 'archive', 'home_outputs', 'outputs_held', 'volume']
 
 #: The family default of what a worktree's runs produce and the main checkout keeps (``docs-src/dev/output-tree``).
 OUTPUTS: Final = ('output/logs',)
@@ -212,6 +214,17 @@ def archive(main: Path, name: str, *, census: Census = processes, today: date | 
         tuple(conflicts),
         unreachable=_unreachable(tree),
     )
+
+
+def outputs_held(main: Path, tree: Path) -> tuple[str, ...]:
+    """The top paths (each declared output's direct child, POSIX) under which *tree* holds a file; ``()``: none."""
+    outputs, _ = _declared(main.resolve())
+    held: dict[str, None] = {}
+    for rel_top in outputs:
+        top = tree / rel_top
+        for source in _files(top):
+            held[(top / source.relative_to(top).parts[0]).relative_to(tree).as_posix()] = None
+    return tuple(held)
 
 
 def home_outputs(main: Path, tree: Path) -> str:

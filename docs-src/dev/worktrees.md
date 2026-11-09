@@ -40,10 +40,12 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 A worktree is a lease on a branch for one task. It ends when the branch's content is landed (on the trunk or a
 declared session) and no TRACKED file is changed. What git does not track -- scratch one-offs, untracked files,
 ignored `.venv`, caches, builds -- is not the work (the work is committed; a finding belongs in memory) and goes
-with the tree (user ruling 2026-10-25). The one exception is run output: every `archive-outputs` directory is
-moved home and the copy verified first, and only on a verified archive does `git worktree remove --force` run;
-an archive that cannot be verified keeps the tree and prints why. An orphan directory under the worktree home
-goes the same way. What blocks reclaim: a tracked change (staged or not), commits not landed (`git cherry`), a
+with the tree (user ruling 2026-10-25). The one exception is run output (user ruling 2026-11-09): runs write to
+the MAIN checkout's `output/`, so a tree whose `archive-outputs` hold a file is a writer defect -- it is kept and
+the line names it ("wrote run outputs inside the worktree: <top paths>; fix the writer"), nothing copied. A
+deliberate keep is `--prune --home-outputs NAME`: that tree's outputs are moved home and verified, and only then
+does it go; an archive that cannot be verified keeps it and prints why. An orphan directory under the worktree
+home is judged the same way. What blocks reclaim: a tracked change (staged or not), commits not landed (`git cherry`), a
 live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
 and the session debris hook runs the former, so a finished tree no longer pins its branch forever. The exact
