@@ -13,7 +13,8 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   ``tests/base`` and ``tests/security``, never ``tests/review`` (user ruling 2026-11-05: the merge decision enforces
   the review itself, and a review that did not run merges WARNED, :mod:`dev_lab.dev.reviewcap`). The trunk requires the
   base part's rows the promotion event runs (``tests/base`` and, where workflows fan
-  parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on;
+  parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and ``tests/<resource>`` for each
+  resource the repo ITSELF declares (``[tool.lab_commons.tests] resources``): its own part, never another repo's;
 * the APPROVER is ``[tool.dev_lab.review] judge_login``: only a judge posts an approving PR review, so approvals
   are required only where one is declared -- a count with nobody to approve would hold every merge forever;
 * a GitHub repo judged by an App (``judge_app``) requires the App's
@@ -46,7 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
 
-from lab_commons.hpc.needsets import BASE
+from lab_commons.hpc.needsets import BASE, read_vocabulary
 from lab_commons.log import emit
 
 from dev_lab.dev import _protect_gitea, _protect_github
@@ -189,7 +190,8 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
         trunk = tuple(sorted(f'{CONTEXT_PREFIX}{row["part"]}' for row in rows(BASE, _PROMOTION_EVENT, {})))
     else:
         trunk = (f'{CONTEXT_PREFIX}{BASE}',)
-    return {INTEGRATION: integration, TRUNK: trunk}
+    owned = tuple(f'{CONTEXT_PREFIX}{name}' for name in read_vocabulary(text).resources)  # the repo's own parts
+    return {INTEGRATION: integration, TRUNK: tuple(sorted({*trunk, *owned}))}
 
 
 def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:

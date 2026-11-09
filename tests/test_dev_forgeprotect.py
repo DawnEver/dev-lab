@@ -81,6 +81,16 @@ def test_a_forge_whose_workflows_post_the_decision_requires_it_and_every_base_ro
     }
 
 
+def test_the_trunk_requires_each_declared_resource_part_and_no_other() -> None:
+    """A repo declaring ``resources = ["windows"]`` produces ``tests/windows``: its trunk requires it.
+
+    PLANTED CONTROL: the same repo declaring no resource requires no ``tests/windows``.
+    """
+    declared = GITHUB_TEXT + '[tool.lab_commons.tests]\nresources = ["windows"]\n'
+    assert 'tests/windows' in required_contexts(declared, 'p', GITHUB)[TRUNK]
+    assert 'tests/windows' not in required_contexts(GITHUB_TEXT, 'p', GITHUB)[TRUNK]
+
+
 def test_a_served_forge_requires_its_tests_and_never_the_review_status() -> None:
     """User ruling 2026-11-05: the merge decision enforces the review itself; a capped review merges WARNED."""
     assert required_contexts(GITEA_TEXT, 'p', GITEA) == {

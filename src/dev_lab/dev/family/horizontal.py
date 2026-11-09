@@ -27,8 +27,11 @@ from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Final
 
+from lab_commons.hpc.needsets import read_vocabulary
+
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
 from dev_lab.dev.family.members import Facts, Finding
+from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.lanepolicy import load_policy
 
 __all__ = ['FILES', 'compare', 'features']
@@ -49,7 +52,9 @@ def features(root: Path, facts: Facts) -> frozenset[str]:
     text = (root / 'pyproject.toml').read_text(encoding='utf-8') if (root / 'pyproject.toml').is_file() else ''
     found |= {'manifest:ephemeral'} if 'ephemeral' in text else set()
     found |= {f'secret:{name}' for name in facts.secrets}
-    found |= {f'protect:{role}:{context}' for role, contexts in facts.contexts.items() for context in contexts}
+    own = {f'{CONTEXT_PREFIX}{name}' for name in read_vocabulary(text).resources}  # its own parts, by design
+    found |= {f'protect:{role}:{context}' for role, contexts in facts.contexts.items() for context in contexts
+              if context not in own}  # fmt: skip
     return frozenset(found)
 
 

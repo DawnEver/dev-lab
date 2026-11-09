@@ -26,7 +26,7 @@ CORE = frozenset({'workflow:ci.yml', 'manifest:pr_merges_since', BASE}) | FILES
 def _profiles() -> dict[str, tuple[str, frozenset[str]]]:
     full = CORE | LEGACY | {REVIEW, MERGE}
     return {
-        'repo-a': (HOST, full | {'workflow:continue.yml', 'manifest:ephemeral', 'protect:trunk:tests/windows'}),
+        'repo-a': (HOST, full | {'workflow:continue.yml', 'manifest:ephemeral'}),  # its tests/windows is its own
         'kit': (HOST, (full | {'workflow:continue.yml'}) - FILES),
         'repo-c': (HOST, full),
         'repo-d': (HOST, full | {'workflow:continue.yml'}),
@@ -45,7 +45,6 @@ def test_every_lacked_feature_is_named_with_who_holds_it() -> None:
     assert ('repo-c', 'lacks: manifest:ephemeral') in found
     assert ('repo-g', 'lacks: manifest:pr_merges_since') in found
     assert ('kit', 'lacks: file:AGENTS.md') in found
-    assert ('repo-c', 'lacks: protect:trunk:tests/windows') in found
 
 
 def test_an_unrequired_secret_is_baggage_on_its_holders_and_never_a_lack() -> None:
@@ -77,3 +76,16 @@ def test_a_profile_reads_the_tree_and_the_forge(tmp_path: Path) -> None:
     facts = Facts(pulls=True, missing_branches=(), protection_drift=(), secrets=frozenset({'AI_LAB_KEYS_PR_REVIEW'}),
                   oldest_open=None, contexts={'trunk': ('tests/base',)})  # fmt: skip
     assert features(tmp_path, facts) == {'workflow:ci.yml', 'file:AGENTS.md', 'manifest:ephemeral', REVIEW, BASE}
+
+
+def test_a_context_the_member_s_own_resources_produce_is_no_family_feature(tmp_path: Path) -> None:
+    """A repo declaring ``resources = ["windows"]`` requires ``tests/windows`` BY DESIGN; no peer lacks it.
+
+    PLANTED CONTROL: the same context on a repo that declares no such resource is compared like any other.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nresources = ["windows"]\n', encoding='utf-8')
+    facts = Facts(pulls=True, missing_branches=(), protection_drift=(), secrets=frozenset(), oldest_open=None,
+                  contexts={'trunk': ('tests/base', 'tests/windows')})  # fmt: skip
+    assert features(tmp_path, facts) == {BASE}
+    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    assert features(tmp_path, facts) == {BASE, 'protect:trunk:tests/windows'}
