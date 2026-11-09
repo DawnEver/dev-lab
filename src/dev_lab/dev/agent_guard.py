@@ -149,6 +149,11 @@ RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.
 #: lock moved since its venv was stamped detaches a re-bootstrap, and returns at once.
 VENVFOLLOW_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.venvfollow --session-start'
 
+#: THE CLASSIFIER PROSE FOLLOWS THE CHECKOUT (:mod:`dev_lab.dev.automode`, 2026-11-09): every session start renders
+#: the classifier's intents file from the policy table and the repo's own intents, so a door added to the table
+#: reaches the classifier on the next session, not on the next dependency sync (a ten-day-old render withheld one).
+AUTOMODE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.automode session-start'
+
 #: A PRESSED HOST TELLS ITS AGENTS (:mod:`dev_lab.dev.hostalarm`, ruling D54): the host's disk/memory/CPU alarms as
 #: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
 PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
@@ -185,6 +190,7 @@ WIRING: Final = (
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
     Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
+    Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False),
 )
 
 #: Wires the family once installed and no longer does, as ``(event, marker)``: a re-install removes them, so an old
@@ -502,9 +508,7 @@ def report_guard(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Is this repository's agent guard actually live?")
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--install', action='store_true', help='install and wire the engine (an EXPLICIT request)')
-    parser.add_argument(
-        '--force', action='store_true', help='with --install: replace an engine lab-commons did not ship'
-    )
+    parser.add_argument('--force', action='store_true', help='with --install: replace an engine not shipped here')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
 
