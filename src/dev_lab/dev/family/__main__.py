@@ -13,8 +13,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from lab_commons.config import config_path
-from lab_commons.home import repos
+from lab_commons.home import config_path, repos
 from lab_commons.log import emit
 
 from dev_lab.dev import forgeprotect
