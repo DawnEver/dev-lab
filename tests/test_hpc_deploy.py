@@ -745,3 +745,20 @@ def test_a_serve_tick_on_a_research_account_refuses_naming_the_role(
     assert _tick(box, 'alpha', served) == 2
     assert len(served) == 1, 'nothing served'
     assert 'role is research' in capsys.readouterr().err
+
+
+#: Each case: the declared ``[deploy] root``, and where a repo named ``alpha`` is checked out for home ``/h/u``.
+_CHECKOUTS: Final = {
+    'a-relative-root-lives-under-home': ('.local/share/lab-forge/repos', '/h/u/.local/share/lab-forge/repos/alpha'),
+    'an-absolute-root-is-taken-as-is': ('/work/project/user/repos', '/work/project/user/repos/alpha'),
+}
+
+
+@pytest.mark.parametrize('case', sorted(_CHECKOUTS))
+def test_a_checkout_lives_under_the_declared_root(case: str, tmp_path: Path) -> None:
+    """A compute node may not see home, so a root may be absolute (``/work/...``). PLANTED CONTROL: relative."""
+    root, expected = _CHECKOUTS[case]
+    alpha = deploy_spec.Repo('alpha', f'{URL}/alpha.git', 'trunk')
+    spec = deploy_spec.Deployment('h', root, '3.13', (alpha,), role=deploy_spec.RESEARCH)
+    assert deploy_spec.load(_write(tmp_path / 'config.toml', deploy_spec.render(spec))) == spec
+    assert deploy_spec.checkout_of(spec, Path('/h/u'), alpha).as_posix() == expected
