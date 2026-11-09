@@ -150,6 +150,22 @@ POLICY: Final[tuple[Door, ...]] = (
         'Read-only monitoring of the forge queue: what each serve host is running and what waits.',
         deny='HPC-THROUGH-THE-DOOR',
     ),
+    Door(
+        _module('sshhold', 'open'),
+        MAIN,
+        'Opening one held login session to a key and authenticator-code host, answered with the one-time code the '
+        'user supplied in this conversation for it, within the machine ceiling on its hours; never an invented, '
+        'stored, logged or reused code.',
+    ),
+    Door(_module('sshhold', 'run'), MAIN, 'Running one command on a login session the user authenticated, audited.'),
+    Door(
+        _module('sshhold', 'credential'),
+        MAIN,
+        "Storing a forge token on a held account's git credential helper, the token read on standard input from "
+        'where the user placed it; never a token typed into a command line, a log or a file the agent writes.',
+    ),
+    Door(_module('sshhold', 'close'), MAIN, 'Ending a held login session.'),
+    Door(_module('sshhold', 'status'), MAIN, 'Read-only: the held login sessions and time left.'),
     Door(_forge('status', 'list'), SUBAGENT, 'Read-only: the commit statuses the forge holds for one commit.'),
     Door(
         _forge('run', 'show'),

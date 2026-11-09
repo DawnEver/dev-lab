@@ -225,6 +225,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'servelanes',
     'servelock',
     'servetask',
+    # ORIGINAL: one TOTP-authenticated ssh connection held for a work session (user ruling 2026-11-09).
+    'sshhold',
     'workstation',
     'workstationfile',
     'workstationprobe',
