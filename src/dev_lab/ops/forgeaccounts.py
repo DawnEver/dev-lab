@@ -35,8 +35,28 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 from lab_commons import launch
 from lab_commons.log import emit
 
-from dev_lab.ops.config import Forge
 from dev_lab.ops.consent.credential import ConsentRefused
+
+
+@dataclass(frozen=True)
+class Forge:
+    """The forge's machine accounts, made only through ``forge account|token`` (:mod:`dev_lab.ops.forgeaccounts`).
+
+    ``api`` is the local Gitea's base URL; ``admin`` the Gitea admin whose SHORT-LIVED token (minted by the CLI per
+    use, deleted after it) grants a repository collaborator, which the Gitea CLI cannot. ``binary``, ``config`` and
+    ``user`` run the Gitea CLI as the Gitea user. ``read_only`` names the logins that may hold ``read:*`` scopes only;
+    ``email_domain`` the address a made account gets; ``log`` the audit (who, what -- never a token).
+    """
+
+    api: str
+    admin: str
+    binary: str = 'gitea'
+    config: str = '/etc/gitea/app.ini'
+    user: str = 'gitea'
+    read_only: tuple[str, ...] = ()
+    email_domain: str = 'noreply.invalid'
+    log: str = '/var/log/dev-lab-ops/forge.jsonl'
+
 
 if TYPE_CHECKING:
     import argparse

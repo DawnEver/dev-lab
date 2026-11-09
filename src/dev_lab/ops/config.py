@@ -32,6 +32,8 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
+from dev_lab.ops.caddy import Caddy
+from dev_lab.ops.forgeaccounts import Forge
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.served import served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
@@ -262,38 +264,6 @@ class Access:
     totp: str = ''
     oath: str = '/etc/dev-lab/ops/users.oath'
     issuer: str = 'forge ops'
-
-
-@dataclass(frozen=True)
-class Forge:
-    """The forge's machine accounts, made only through ``forge account|token`` (:mod:`dev_lab.ops.forgeaccounts`).
-
-    ``api`` is the local Gitea's base URL; ``admin`` the Gitea admin whose SHORT-LIVED token (minted by the CLI per
-    use, deleted after it) grants a repository collaborator, which the Gitea CLI cannot. ``binary``, ``config`` and
-    ``user`` run the Gitea CLI as the Gitea user. ``read_only`` names the logins that may hold ``read:*`` scopes only;
-    ``email_domain`` the address a made account gets; ``log`` the audit (who, what -- never a token).
-    """
-
-    api: str
-    admin: str
-    binary: str = 'gitea'
-    config: str = '/etc/gitea/app.ini'
-    user: str = 'gitea'
-    read_only: tuple[str, ...] = ()
-    email_domain: str = 'noreply.invalid'
-    log: str = '/var/log/dev-lab-ops/forge.jsonl'
-
-
-@dataclass(frozen=True)
-class Caddy:
-    """The forge's Caddy allowlist (:mod:`dev_lab.ops.caddy`).
-
-    Every ``remote_ip`` matcher of ``sites`` (all, when empty) in ``file`` admits exactly ``allow`` (IPs or CIDRs).
-    """
-
-    allow: tuple[str, ...]
-    file: str = '/etc/caddy/Caddyfile'
-    sites: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
