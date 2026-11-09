@@ -4,8 +4,10 @@ Planted on a real repository, every criterion on both sides: a landed tree, a sq
 ref is gone, go (their branch with them through ``branchset --apply``); a tree with a modified TRACKED file, one
 holding an untracked not-ignored file (user ruling 2026-10-27: a file never added exists nowhere else), an
 unlanded one, a pushed-but-unmerged one, a locked one, an occupied one and the main checkout stay, each with its
-reason, and a kept tree is not touched. An orphan directory goes, its outputs moved HOME first. A planted archive
-failure keeps every tree whole.
+reason, and a kept tree is not touched. An orphan directory with no run outputs goes; user ruling 2026-11-09: a
+tree holding run outputs is a WRITER DEFECT (outputs route to the main checkout), so it is kept and named, never
+copied -- unless named for ``move_home``, which moves its outputs home, verified, then deletes it. A planted
+archive failure keeps that tree whole.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 from lab_commons.census import Process
 
 from dev_lab.dev.branchset import BranchSet, apply_local
@@ -30,7 +33,7 @@ _GIT = shutil.which('git') or 'git'
 _HOLDERS = ('origin/main',)
 _LOG = Path('output/logs/26/10/25/run')
 _GONE = {'landed', 'squashed', 'cache', 'notes'}
-_KEPT = ('dirty', 'locked', 'occupied', 'open', 'pushed', 'untracked')
+_KEPT = ('dirty', 'locked', 'occupied', 'open', 'pushed', 'untracked', 'wrote')
 
 
 def _run(cwd: Path, *args: str) -> str:
@@ -85,7 +88,8 @@ def _planted(tmp_path: Path) -> Path:
     (home / 'cache' / '__pycache__').mkdir(parents=True)
     (home / 'cache' / '__pycache__' / 'm.pyc').write_text('', encoding='utf-8')
     _plant(home / 'notes' / 'note.txt', 'agent output')
-    _plant(home / 'notes' / _LOG / 'n.txt', 'orphan result')
+    _plant(home / 'wrote' / _LOG / 'n.txt', 'orphan result')
+    (home / 'notes' / 'output' / 'logs').mkdir(parents=True)  # an EMPTY output tree is no defect
     _settled(work)
     return work
 
@@ -109,7 +113,7 @@ def _occupied(path: Path) -> bool:
 def test_every_tree_is_judged_with_its_reason(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     leases = {lease.path.name: lease for lease in reclaimable(work, _HOLDERS, occupied=_occupied) or ()}
-    assert {n for n, lease in leases.items() if lease.reclaimable} == _GONE
+    assert {n for n, lease in leases.items() if lease.reclaimable} == _GONE | {'wrote'}
     assert 'tracked changes' in leases['dirty'].reason
     assert 'locked' in leases['locked'].reason
     assert 'live' in leases['occupied'].reason
@@ -131,8 +135,36 @@ def test_reclaim_removes_only_the_reclaimable_and_lists_the_rest(tmp_path: Path)
     assert (home / 'untracked' / 'loose.txt').is_file(), 'an untracked file keeps its tree whole'
     assert (home / 'untracked' / _LOG / 'r.txt').is_file(), 'a kept tree keeps its outputs in place'
     assert any('untracked files' in line and 'untracked' in line for line in lines), lines
-    assert (work / _LOG / 'n.txt').read_text(encoding='utf-8') == 'orphan result', 'an orphan output went home'
     assert (home / 'dirty' / '.gitignore').read_text(encoding='utf-8') == 'changed\n'
+
+
+def test_a_tree_holding_run_outputs_is_kept_as_a_writer_defect_and_nothing_is_copied(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """User ruling 2026-11-09: run outputs route to the main checkout, so outputs in a tree name a writer to fix."""
+    work = _planted(tmp_path)
+    home = work / '.claude' / 'worktrees'
+    monkeypatch.setattr('dev_lab.dev.reclaim.home_outputs', _never)
+    lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
+    assert (home / 'wrote' / _LOG / 'n.txt').is_file(), 'the outputs stay where the writer put them'
+    assert not (work / _LOG / 'n.txt').exists(), 'nothing is copied home'
+    defect = [line for line in lines if line.startswith('kept') and 'wrote' in line]
+    assert defect, lines
+    assert 'wrote run outputs inside the worktree: output/logs/26; fix the writer' in defect[0], defect
+    assert not (home / 'notes').exists(), 'CONTROL: an empty output tree is deleted directly'
+
+
+def test_a_tree_named_to_move_home_has_its_outputs_moved_then_is_deleted(tmp_path: Path) -> None:
+    work = _planted(tmp_path)
+    home = work / '.claude' / 'worktrees'
+    lines = reclaim(work, _HOLDERS, occupied=_occupied, move_home=frozenset({'wrote'})) or ()
+    assert not (home / 'wrote').exists(), lines
+    assert any(line.startswith('removed') and 'wrote' in line for line in lines), lines
+    assert (work / _LOG / 'n.txt').read_text(encoding='utf-8') == 'orphan result', 'the output went home'
+
+
+def _never(_main: Path, tree: Path) -> str:
+    pytest.fail(f'outputs of {tree} were moved without move_home')
 
 
 def test_an_archive_that_cannot_be_verified_keeps_the_tree_and_deletes_nothing(tmp_path: Path) -> None:
@@ -140,9 +172,9 @@ def test_an_archive_that_cannot_be_verified_keeps_the_tree_and_deletes_nothing(t
     work = _planted(tmp_path)
     home = work / '.claude' / 'worktrees'
     (work / 'output').write_text('in the way', encoding='utf-8')
-    lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
-    assert (home / 'notes' / _LOG / 'n.txt').is_file(), 'notes lost its output'
-    assert any(line.startswith('kept') and 'notes' in line and 'not archived' in line for line in lines), lines
+    lines = reclaim(work, _HOLDERS, occupied=_occupied, move_home=frozenset({'wrote'})) or ()
+    assert (home / 'wrote' / _LOG / 'n.txt').is_file(), 'wrote lost its output'
+    assert any(line.startswith('kept') and 'wrote' in line and 'not archived' in line for line in lines), lines
     assert (home / 'untracked' / 'scratch' / 'probe.py').is_file(), 'nothing of a kept tree is deleted'
     assert not (home / 'landed').exists(), 'a tree with no outputs still goes: the failure is per tree'
 
