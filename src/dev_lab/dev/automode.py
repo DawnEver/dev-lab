@@ -209,11 +209,19 @@ def write(root: Path, fleet: Fleet | None = None) -> None:
 
 
 def refresh(root: Path, *, say: Callable[[str], None], fleet: Fleet | None = None) -> bool:
-    """Render *root*'s local file, or print why not; never raises for an unreadable source. Whether it wrote."""
+    """Render *root*'s local file, or print why not; never raises for an unreadable source. Whether it wrote.
+
+    A declaration the render REFUSES (a retired table, a spelled command) also removes the file it would have
+    replaced: a stale render keeps granting what the checkout no longer declares, and withholds what it does.
+    """
     try:
         write(root, fleet)
     except SourcesUnavailable as unread:
         say(f'[automode] {AUTOMODE_REL} not written -- {unread}')
+        return False
+    except ValueError as refused:
+        (root / AUTOMODE_REL).unlink(missing_ok=True)
+        say(f'[automode] {AUTOMODE_REL} not written, and its stale copy removed -- {refused}')
         return False
     say(f'[automode] wrote {AUTOMODE_REL} (machine-local, gitignored)')
     return True

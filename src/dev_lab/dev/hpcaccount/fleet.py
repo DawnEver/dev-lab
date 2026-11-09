@@ -11,6 +11,10 @@ answers (:func:`declared_target`), with its ``role`` (:mod:`dev_lab.dev.hpcaccou
 serves), printed per account. An account with no ``[deploy]``, or whose host is not one of its grant's
 login hosts, is refused by name and the others still deploy (exit 2).
 
+THE ROLE IS THE WORKSTATION'S (user rulings 2026-11-09): each grant's ``role`` and the ``[hpc.roles]`` table
+(:mod:`dev_lab.dev.hpcaccount.division`) are passed to the account's deploy, which refuses when its own ``[deploy]
+role`` differs, naming both. A grant role the table does not name is refused here, before any ssh.
+
 Then it starts ONE detached ``ssh -o BatchMode=yes <user>@<declared host>`` that runs that account's own
 ``python -m dev_lab.dev.hpcaccount deploy`` in ``~/<root>/dev-lab`` and writes everything it prints to one log
 per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
@@ -19,6 +23,7 @@ per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The d
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import sys
 import tomllib
@@ -27,11 +32,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final
 
+from lab_commons.config import section
 from lab_commons.hpc.cluster import Runner, runner_for
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
 from dev_lab.dev.datedlog import dated_log
+from dev_lab.dev.hpcaccount.division import Division, split_hpc
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
 from dev_lab.dev.remote import detached, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
@@ -78,10 +85,16 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
     return Target(named[0], deploy.get('root', DEFAULT_ROOT), deploy.get('role', ''))
 
 
-def remote_argv(user: str, target: Target) -> list[str]:
-    """The ssh argv that runs *user*'s own deploy on its DECLARED host, never prompting (:mod:`dev_lab.dev.remote`)."""
+def remote_argv(user: str, target: Target, division: Division | None = None) -> list[str]:
+    """The ssh argv that runs *user*'s own deploy on its DECLARED host, never prompting (:mod:`dev_lab.dev.remote`).
+
+    With *division*, the deploy is passed the workstation's role for *user* and that role's table.
+    """
     python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
     command = f'cd {PurePosixPath("~", target.root, KIT)} && {python} -m dev_lab.dev.hpcaccount deploy'
+    if division is not None and (role := division.role_of(user)):
+        table = json.dumps(dict(division.roles[role]), sort_keys=True)
+        command += f' --fleet-role {shlex.quote(role)} --role-table {shlex.quote(table)}'
     return ssh_argv(f'{user}@{target.host}', command, batch=True)
 
 
@@ -94,6 +107,7 @@ def deploy_fleet(
     say: Callable[[str], None],
     connect: Callable[[Grant], Runner] = runner_for,
     launch: Launch = detached,
+    division: Division | None = None,
 ) -> int:
     """Start each account's deploy on its declared host; 2 when any account was refused."""
     users = [grant.user for grant in grants]
@@ -110,6 +124,10 @@ def deploy_fleet(
     refused = 0
     for user in accounts or sorted(fleet):
         grant = fleet[user]
+        if division is not None and (why := division.refusal(user)):
+            say(f'{why}; refused')
+            refused += 1
+            continue
         try:
             target = declared_target(grant, connect(grant))
         except (RuntimeError, OSError, tomllib.TOMLDecodeError) as failed:
@@ -118,9 +136,9 @@ def deploy_fleet(
             say(target)
             refused += 1
             continue
-        argv = remote_argv(user, target)
+        argv = remote_argv(user, target, division)
         path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
-        role = target.role or 'role undeclared'
+        role = (division.role_of(user) if division else '') or target.role or 'role undeclared'
         say(f'{user} ({role}): {"would start" if dry_run else "started"} {shlex.join(argv)}  log {path}')
         if not dry_run:
             with path.open('a', encoding='utf-8') as log:
@@ -134,4 +152,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--account', action='append', default=[], help='one account of the fleet (repeatable)')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    return deploy_fleet(load_grants().grants, args.account, home=Path.home(), dry_run=args.dry_run, say=emit)
+    table, division = split_hpc(section('hpc'))
+    grants = load_grants(table).grants
+    return deploy_fleet(grants, args.account, home=Path.home(), dry_run=args.dry_run, say=emit, division=division)

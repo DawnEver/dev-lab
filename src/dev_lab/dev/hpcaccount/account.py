@@ -8,21 +8,24 @@ they apply are :mod:`dev_lab.dev.hpcaccount.checks`, and :mod:`dev_lab.dev.hpcac
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
+from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.hpcaccount.checks import grant_of, store_problem
 from dev_lab.dev.hpcaccount.spec import Deployment, has_grant, render_grant
 from dev_lab.dev.hpcaccount.steps import Step
 
-__all__ = ['ApiCheck', 'auth_check', 'credentials', 'grant']
+__all__ = ['ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']
 
 _CREDENTIAL_REMEDY: Final = (
     'store your OWN forge token for it once: `git config --global credential.helper store`, then '
@@ -30,8 +33,15 @@ _CREDENTIAL_REMEDY: Final = (
     '~/.git-credentials, chmod 600) and re-run'
 )
 
+_READER_REMEDY: Final = (
+    "the USER replaces this account's forge line in ~/.git-credentials with a read-only forge account's token "
+    "(the role's reader when [hpc.roles.<role>] reader names one); an agent never handles the token. Then re-run"
+)
+
 #: Reads the forge API a tick needs for one repo url; ``''`` when nothing is refused.
 ApiCheck = Callable[[str, Path], str]
+#: Who the stored credential is on one repo url: ``{login, push, admin}``, or ``{error}``.
+RoleCheck = Callable[[str, Path], dict[str, object]]
 
 
 def _store_mode(store: Path) -> int | None:
@@ -81,6 +91,60 @@ def auth_check(url: str, home: Path) -> str:
     argv = [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', 'check', '--url', url]
     done = _door.run(argv, cwd=home, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
     return '' if done.returncode == 0 else done.stderr.strip() or f'auth check exited {done.returncode}'
+
+
+def role_of(url: str, home: Path) -> dict[str, object]:
+    """The forge's own ``auth role`` of *url*, as a subprocess: ``{login, push, admin}``, or ``{error}``.
+
+    It reads the stored credential as git does (``git credential fill``) and prints only the login and the
+    permissions -- the token never reaches this process.
+    """
+    argv = [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', url]
+    done = _door.run(argv, cwd=home, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
+    if done.returncode:
+        return {'error': done.stderr.strip() or f'auth role exited {done.returncode}'}
+    return json.loads(done.stdout)
+
+
+def _seen(name: str, seen: dict[str, object]) -> tuple[str, list[str]]:
+    login = str(seen.get('login') or '')
+    writes = [right for right in ('push', 'admin') if seen.get(right)]
+    emit(f'  {name}: {login or "no stored credential (anonymous)"}' + (f' with {"+".join(writes)}' if writes else ''))
+    return login, writes
+
+
+def reader(spec: Deployment, home: Path, role: RoleCheck, *, semantics: Mapping[str, Any]) -> int:
+    """Report the stored forge credential per forge-hosted repo; refuse (2) a writer when the role is read-only.
+
+    Also refused: a credential other than the role's declared ``reader``, when it names one.
+
+    User rulings 2026-11-09 (:mod:`dev_lab.dev.hpcaccount.division`): no stored credential (anonymous) cannot write
+    and passes; a role that is not ``read_only`` is only reported.
+    """
+    expected = str(semantics.get('reader', ''))
+    strict = bool(semantics.get('read_only', False))
+    emit(f'[reader] the stored forge credential per forge-hosted repo ({spec.role}: '
+         f'{"refused" if strict else "reported"} unless read-only{" as " + expected if expected else ""})')  # fmt: skip
+    refused = []
+    for repo in (repo for repo in spec.repos if urlsplit(repo.url).hostname != GITHUB_HOST):
+        seen = role(repo.url, home)
+        if 'error' in seen:
+            emit(f'  {repo.name}: {seen["error"]}', err=True)
+            refused.append(f'{repo.name}: the forge did not say who the credential is')
+            continue
+        login, writes = _seen(repo.name, seen)
+        if writes:
+            refused.append(f'{repo.name}: {login} holds {"+".join(writes)}')
+        elif expected and login and login != expected:
+            refused.append(f'{repo.name}: the credential is {login}, not the role reader {expected}')
+    if not refused:
+        return 0
+    why = '; '.join(refused)
+    if not strict:
+        emit(f'  [report only: {spec.role} is not read_only] {why}')
+        return 0
+    emit(f'deploy refused: this {spec.role} account must pull read-only -- {why}. {_READER_REMEDY}', err=True)
+    return 2
 
 
 def grant(step: Step, spec: Deployment, path: Path, hostname: str) -> int:

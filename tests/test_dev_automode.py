@@ -17,6 +17,7 @@ import pytest
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
+from dev_lab.dev.agent_guard import AUTOMODE_COMMAND, WIRING
 from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import claude_rows, codex_rules, doors
 from dev_lab.dev.automode import (
@@ -260,3 +261,32 @@ def test_every_agent_door_of_the_policy_is_an_intent_and_a_user_door_is_not() ->
     assert set(INTENTS) == {door.intent for door in POLICY if door.actor != USER}
     assert not {door.intent for door in POLICY if door.actor == USER} & set(INTENTS)
     assert spelled_commands(INTENTS) == ()
+
+
+def test_a_refused_declaration_keeps_no_stale_prose_and_says_why(tmp_path: Path) -> None:
+    """A refused render leaves no stale prose behind, and says why.
+
+    2026-11-09: a checkout still holding the retired table raised inside the dependency door's child process, so
+    the classifier read prose ten days old -- no consent-grant intent -- and refused a code the user supplied.
+
+    A refused render REMOVES the old file (the classifier then falls back to its defaults, never to a stale grant
+    set) and says why by name; a session still starts.
+    """
+    work = _repo(tmp_path, '\n[tool.dev_lab.automode]\ndeclares = ["jmag-material-card"]\n')
+    stale = work / AUTOMODE_REL
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text('{"autoMode": {}}', encoding='utf-8')
+    said: list[str] = []
+    assert refresh(work, say=said.append, fleet=_FLEET) is False
+    assert not stale.exists()
+    assert len(said) == 1
+    assert 'not written' in said[0]
+    assert 'is retired' in said[0]
+    payload = io.StringIO(json.dumps({'cwd': str(work)}))
+    assert main(['session-start'], stdin=payload) == 0, 'a session never fails to start over it'
+
+
+def test_every_session_start_renders_the_prose() -> None:
+    """The prose follows the checkout at each session start, not only when the dependency door last ran."""
+    assert 'dev_lab.dev.automode session-start' in AUTOMODE_COMMAND
+    assert any(w.event == 'SessionStart' and w.command == AUTOMODE_COMMAND for w in WIRING)

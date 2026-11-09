@@ -1532,7 +1532,7 @@ def test_a_job_slurm_killed_for_memory_or_time_is_read_with_its_ask_and_use_and_
     state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/r0'}, {'job_ids': ['8'], 'run_dir': '/r1'}]}
     monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
     monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
-    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 6.0)
+    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 360.0)
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
     cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
     run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
@@ -1543,11 +1543,47 @@ def test_a_job_slurm_killed_for_memory_or_time_is_read_with_its_ask_and_use_and_
     assert (oom.job, oom.state, oom.asked_mb, oom.used_mb) == ('7_0', 'OUT_OF_MEMORY', 4096, 4199)
     assert (timeout.job, timeout.state, timeout.asked_s, timeout.used_s) == ('8_0', 'TIMEOUT', 3600, 3602)
     assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
-        6.0 * learned.ASK_CEILING_SHARE, rel=1e-12, abs=0.0
-    ), 'held strictly below the grant ceiling'
+        measured.killed_need_mb(4199, 4096) / 1024, rel=1e-12, abs=0.0
+    ), 'grown from the measured peak; the ceiling hold is record_ask (lab-commons test_compute_learned)'
     # the OOM task's file is floored at its ask, locally and in the record every host folds; the TIMEOUT's is not
     assert learned.learned('https://f/o/r.git')['peaks_mb'] == {'tests/a.py': 4096.0}
     assert json.loads(gzip.decompress(record.read_bytes()))['peaks_mb'] == {'tests/a.py': 4096.0}
+
+
+#: Two OOM tasks of one round: 7_0 ran the run's heavy file, 7_1 a light one.
+_SACCT_HEAVY_AND_LIGHT = """7_0|OUT_OF_MEMORY|200G||00:03:10|01:00:00
+7_0.batch|OUT_OF_MEMORY||220200960K|00:03:10|
+7_1|OUT_OF_MEMORY|4G||00:03:10|01:00:00
+7_1.batch|OUT_OF_MEMORY||4300000K|00:03:10|
+"""
+
+
+def test_a_heavy_oom_kill_floors_its_file_and_only_a_light_kill_sizes_the_part(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-11-09: one heavy sdm file's kill raised ``slurm|`` to 324-412 GB, asked by ~7200 light files.
+
+    The run's ``heavy`` file's kill floors that file only (``forgeoom``); the part's row is raised by the light
+    kill alone, grown from its measured peak. PLANTED CONTROL: the light kill does raise it.
+    """
+    manifest = {'shards': [[0, 1], [1, 2]], 'items': [{'ids': ['tests/heavy.py::t']}, {'ids': ['tests/a.py::t']}]}
+
+    def runner(command: str, _stdin: object) -> str:
+        return json.dumps(manifest) if command.startswith('cat ') else _SACCT_HEAVY_AND_LIGHT
+
+    state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/r0'}], 'heavy': ['tests/heavy.py']}
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
+    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 360.0)
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
+    cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
+    run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
+    cluster.killed(run)
+    light_gb = measured.killed_need_mb(4199, 4096) / 1024
+    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
+        light_gb, rel=1e-12, abs=0.0
+    )
+    assert learned.learned('https://f/o/r.git')['peaks_mb'] == {'tests/heavy.py': 204800.0, 'tests/a.py': 4096.0}
 
 
 class _Killed(_Slurm):
