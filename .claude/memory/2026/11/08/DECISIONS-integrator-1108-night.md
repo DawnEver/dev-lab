@@ -24,3 +24,13 @@ Follows `forge-hosts-upgraded-and-the-consent-issuer-is-live.md`. No secrets her
 - lab-commons #136 merged at its OLD head: its push was refused and the merge ran unchecked (repaired by #140). Rule since: a merge follows only a VERIFIED push.
 - I said ezxmw9 is "verification, so it takes no PR parts"; both Ada accounts are `role = "verification"` and the role only decides serve-or-not.
 - I advised "servers track main" against the recorded 11-06 ruling (item a).
+
+## Lockdown done (2026-11-09 early)
+- ops verified by the integrator on forge-a1, forge-amd2, forge-amd1 (key + user-supplied code; one code served both
+  AMD-1 hops: the shared TOTP is replay-checked per host). sudo list holds config apply, disk *, clean *, install, upgrade.
+- The classifier refused the agent running /root/tighten-20261108.sh; the USER ran it on all three (AMD-1 first) and
+  confirmed ops logins. Probe after: `ubuntu@` key login is refused (publickey) on forge-a1 and AMD-2.
+- From now on: ops + a user code for maintenance; config changes via forge-hosts + `ops config apply`; the serial
+  console with the ubuntu password is the recovery path. The two `/permissions` ssh rules are the user's to remove.
+- Small follow-up: `disk *` / `clean *` sudo rules do not match the bare verb (no arguments); opsserver always
+  passes arguments, so maintenance is unaffected.
