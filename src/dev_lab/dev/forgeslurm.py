@@ -13,8 +13,8 @@ and the partitions, quota and storage a host card publishes. An unreadable quota
 
 A JOB SLURM KILLED IS READ, NAMED AND LEARNED (:meth:`SlurmCluster.killed`; Ada 2026-10-25, 24 h: 71
 ``OUT_OF_MEMORY`` jobs and 14 % ``TIMEOUT``, none visible on a PR). ``sacct`` gives each its ask and its use
-(``ReqMem``/``MaxRSS``, ``Timelimit``/``Elapsed``); an OOM's ask is recorded grown by
-:data:`~lab_commons.compute.learned.OOM_GROWTH` and held to the most any grant gives
+(``ReqMem``/``MaxRSS``, ``Timelimit``/``Elapsed``); an OOM is recorded at what it needs, grown from its
+measured peak (:func:`~lab_commons.compute.measured.killed_need_mb`), and held to the most any grant gives
 (:func:`~lab_commons.hpc.plan.grantable_gb`), so the part's next run asks for more. A TIMEOUT needs nothing
 here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.measured.Measured.killed`).
 
@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.box.providers import account_seats
-from lab_commons.compute import learned
+from lab_commons.compute import learned, measured
 from lab_commons.compute.measured import Measured
 from lab_commons.compute.presence import cached
 from lab_commons.config import config_path
@@ -257,23 +257,23 @@ class SlurmCluster:
         return records[-1]
 
     def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
-        """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's ask is learned grown.
+        """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's need is learned.
 
-        Grown by :data:`~lab_commons.compute.learned.OOM_GROWTH`, held to the most any grant gives, never
-        lowering a known ask (:func:`~lab_commons.compute.learned.record_ask`): one learned store, read by the next
-        run's admission and plan. Each file an OOM task ran is floored at its ask (:mod:`dev_lab.dev.forgeoom`),
-        in the learned table and in *record*, the run record every host folds.
+        Grown from its measured peak (:func:`~lab_commons.compute.measured.killed_need_mb`), held to the most any
+        grant gives, never lowering a known ask (:func:`~lab_commons.compute.learned.record_ask`): one learned
+        store, read by the next run's admission and plan. Each file an OOM task ran is floored at its ask
+        (:mod:`dev_lab.dev.forgeoom`), in the learned table and in *record*, the run record every host folds.
         """
         state, shell = load_state(run.sha, run.platform, self.machine, self._runners())
         ids = [str(job) for one in state['rounds'] for job in one['job_ids']]
         if not ids:
             return ()
         found = killed_jobs(shell(f'sacct -n -P -j {",".join(ids)} -o {KILLED_FIELDS}', None))
-        oom = [one.asked_mb for one in found if one.state == 'OUT_OF_MEMORY']
+        oom = [measured.killed_need_mb(one.used_mb, one.asked_mb) for one in found if one.state == 'OUT_OF_MEMORY']
         if oom:
             grants = self.machine.grants
             ceiling = grantable_gb([(g, probe(self.connect(g), g.slurm_account)) for g in grants])
-            ask_gb = max(oom) / 1024 * learned.OOM_GROWTH
+            ask_gb = max(oom) / 1024
             learned.record_ask(
                 run.repo_url,
                 learned.SLURM,
