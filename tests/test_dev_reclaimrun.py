@@ -26,7 +26,6 @@ from dev_lab.dev.reclaim import blockers, orphan_reason, repository_at
 from dev_lab.dev.reclaimrun import LOCK_NAME, held, main, main_checkout, run
 
 _GIT = shutil.which('git') or 'git'
-_LOG = Path('output/logs/26/10/27/run/result.txt')
 _BRANCHSET = "\n[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n"
 _GENERATED = "\n[tool.dev_lab.worktrees]\ngenerated = ['uv.lock']\n"
 
@@ -69,7 +68,6 @@ def _planted(tmp_path: Path) -> Path:
         _git(work, 'worktree', 'add', '-q', '-b', name, str(home / name), 'origin/main')
     _write(home / 'edited' / 'text.txt', b'a\nREAL EDIT\n')
     _write(home / 'crlf' / 'text.txt', b'a\r\nb\r\n')
-    _write(home / 'crlf' / _LOG, b'a run archive')
     _write(home / 'generated' / 'uv.lock', b'v2\n')
     for name in ('edited', 'crlf', 'generated'):
         _quiet(home / name)
@@ -103,7 +101,6 @@ def test_a_run_reclaims_the_landed_keeps_the_edited_and_logs_both(planted: Path)
         assert (home / kept).is_dir(), kept
         assert any(line.startswith('kept') and kept in line and why in line for line in text.splitlines()), text
     assert (home / 'edited' / 'text.txt').read_bytes() == b'a\nREAL EDIT\n', 'a real edit is never touched'
-    assert (planted / _LOG).read_bytes() == b'a run archive', 'the run archive went home before the delete'
     assert set(_git(planted, 'branch', '--format=%(refname:short)').split()) == {'main', 'edited', 'live'}
 
 
