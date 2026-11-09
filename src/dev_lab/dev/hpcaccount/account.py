@@ -8,21 +8,24 @@ they apply are :mod:`dev_lab.dev.hpcaccount.checks`, and :mod:`dev_lab.dev.hpcac
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Final
+from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.hpcaccount.checks import grant_of, store_problem
-from dev_lab.dev.hpcaccount.spec import Deployment, has_grant, render_grant
+from dev_lab.dev.hpcaccount.spec import RESEARCH, Deployment, has_grant, render_grant
 from dev_lab.dev.hpcaccount.steps import Step
 
-__all__ = ['ApiCheck', 'auth_check', 'credentials', 'grant']
+__all__ = ['ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']
 
 _CREDENTIAL_REMEDY: Final = (
     'store your OWN forge token for it once: `git config --global credential.helper store`, then '
@@ -30,8 +33,15 @@ _CREDENTIAL_REMEDY: Final = (
     '~/.git-credentials, chmod 600) and re-run'
 )
 
+_READER_REMEDY: Final = (
+    "the USER replaces this account's forge line in ~/.git-credentials with a read-only reader account's token "
+    '(e.g. deploy-reader); an agent never handles the token. Then re-run'
+)
+
 #: Reads the forge API a tick needs for one repo url; ``''`` when nothing is refused.
 ApiCheck = Callable[[str, Path], str]
+#: Who the stored credential is on one repo url: ``{login, push, admin}``, or ``{error}``.
+RoleCheck = Callable[[str, Path], dict[str, object]]
 
 
 def _store_mode(store: Path) -> int | None:
@@ -81,6 +91,52 @@ def auth_check(url: str, home: Path) -> str:
     argv = [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', 'check', '--url', url]
     done = _door.run(argv, cwd=home, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
     return '' if done.returncode == 0 else done.stderr.strip() or f'auth check exited {done.returncode}'
+
+
+def role_of(url: str, home: Path) -> dict[str, object]:
+    """The forge's own ``auth role`` of *url*, as a subprocess: ``{login, push, admin}``, or ``{error}``.
+
+    It reads the stored credential as git does (``git credential fill``) and prints only the login and the
+    permissions -- the token never reaches this process.
+    """
+    argv = [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', url]
+    done = _door.run(argv, cwd=home, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
+    if done.returncode:
+        return {'error': done.stderr.strip() or f'auth role exited {done.returncode}'}
+    return json.loads(done.stdout)
+
+
+def _seen(name: str, seen: dict[str, object]) -> tuple[str, list[str]]:
+    login = str(seen.get('login') or '')
+    writes = [right for right in ('push', 'admin') if seen.get(right)]
+    emit(f'  {name}: {login or "no stored credential (anonymous)"}' + (f' with {"+".join(writes)}' if writes else ''))
+    return login, writes
+
+
+def reader(spec: Deployment, home: Path, role: RoleCheck) -> int:
+    """Refuse (2) a RESEARCH account whose stored forge credential may write, or is not its declared reader.
+
+    User ruling 2026-11-09: a research account pulls with a read-only account, never the agents' writer. A
+    verification account's credential is only reported (its tick posts statuses, so it writes).
+    """
+    emit(f'[reader] who the stored forge credential is on each forge-hosted repo ({spec.role} account)')
+    refused = []
+    for repo in (repo for repo in spec.repos if urlsplit(repo.url).hostname != GITHUB_HOST):
+        seen = role(repo.url, home)
+        if 'error' in seen:
+            emit(f'  {repo.name}: {seen["error"]}', err=True)
+            refused.append(f'{repo.name}: the forge did not say who the credential is')
+            continue
+        login, writes = _seen(repo.name, seen)
+        if writes:
+            refused.append(f'{repo.name}: {login} holds {"+".join(writes)}')
+        elif spec.reader and login != spec.reader:
+            refused.append(f'{repo.name}: the credential is {login or "anonymous"}, [deploy] reader is {spec.reader}')
+    if not refused or spec.role != RESEARCH:
+        return 0
+    why = '; '.join(refused)
+    emit(f'deploy refused: this research account must pull read-only -- {why}. {_READER_REMEDY}', err=True)
+    return 2
 
 
 def grant(step: Step, spec: Deployment, path: Path, hostname: str) -> int:

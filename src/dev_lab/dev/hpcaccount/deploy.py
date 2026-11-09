@@ -10,6 +10,7 @@ a tracked file, since the forge, its repos and the login host are private to the
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
     role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)
+    reader = "<forge login>"       # optional, research: the read-only login its stored credential must be
     repos = [{ name = "dev-lab", url = "<https url>", ref = "<branch>" }, { name = "<repo>", ... }, ...]
     # an entry may add serve = false: checked out and installed, its forge queue not served by this account
 
@@ -23,7 +24,10 @@ its checkout; whether this account also serves dev-lab's queue is that entry's `
 
 STEPS, each one reporting, each one safe to repeat: refuse an undeclared ``role``; refuse off the declared host;
 check the account BEFORE anything changes (:mod:`dev_lab.dev.hpcaccount.account`: git's credential helper and
-its store, every repo's ``git ls-remote``, and the forge API calls a tick makes); write this account's own
+its store, every repo's ``git ls-remote``, and the forge API calls a tick makes); on a ``research`` account refuse
+a stored forge credential that may push or administer any forge-hosted repo, or that is not the declared
+``reader`` -- a research account pulls read-only (user ruling 2026-11-06 + 2026-11-09; a verification account's
+is only reported); write this account's own
 ``[[hpc.grant]]`` when it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy
 repository -- IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
 before its tick) -- or refuse naming that environment; clone or update each checkout; install ``uv`` and
@@ -71,7 +75,7 @@ from lab_commons.hpc.declared import REFUSALS
 from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 
-from dev_lab.dev.hpcaccount.account import ApiCheck, auth_check, credentials, grant
+from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import (
     LOGIN_MARK,
     MERGE_TREE_GIT,
@@ -135,6 +139,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--slurm-account', default='', help="declare: the grant's account, when Slurm names several")
     parser.add_argument('--partition', action='append', default=[], help='declare: a partition the grant may use')
     parser.add_argument('--role', choices=ROLES, default='', help='declare: verification serves; research never')
+    parser.add_argument('--reader', default='', help='declare: the read-only forge login a research account pulls as')
     parser.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     parser.add_argument('--remove', action='store_true', help='delete the marked crontab lines only')
     return parser
@@ -149,9 +154,8 @@ def _declared(args: argparse.Namespace, path: Path) -> Deployment | str:
         )
     if not (args.host and args.repo):
         return 'a declaration needs both --host and at least one --repo'
-    given = Deployment(
-        args.host, args.root, args.python, tuple(args.repo), args.slurm_account, tuple(args.partition), args.role
-    )
+    fields = (args.host, args.root, args.python, tuple(args.repo), args.slurm_account, tuple(args.partition))
+    given = Deployment(*fields, args.role, reader=args.reader)
     if stored is not None and stored != given:
         return f'{path} already declares a different [deploy]; edit it there, or run without --host/--repo'
     return given
@@ -355,6 +359,7 @@ def deploy(
     hostname: str,
     tools: Tools | None = None,
     api: ApiCheck | None = None,
+    role: RoleCheck | None = None,
     alarm: AlarmSink = _sound,
 ) -> int:
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
@@ -388,6 +393,7 @@ def deploy(
     artefacts = '[artefacts] the rclone remote, where a repo declares one'
     phases = (
         lambda: credentials(step, spec, home, check),
+        lambda: reader(spec, home, role or role_of),
         lambda: grant(step, spec, path, hostname),
         lambda: _declare(step, spec, path),
         lambda: _serve_git(step, home, path, slurm, setup),

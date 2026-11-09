@@ -10,7 +10,7 @@ import shlex
 import sys
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
 
@@ -88,6 +88,10 @@ class Box:
     tools: Tools
     refused_api: dict[str, str]
     alarms: list[tuple[str, ...]]
+    #: What the forge says the stored credential is on every repo (``auth role``): a reader by default.
+    identity: dict[str, object] = field(
+        default_factory=lambda: {'login': 'deploy-reader', 'push': False, 'admin': False}
+    )
 
     def run(self, *argv: str, host: str = 'login02.int.cluster') -> int:
         return deploy.deploy(
@@ -97,6 +101,7 @@ class Box:
             tools=self.tools,
             api=lambda url, _home: next((why for name, why in self.refused_api.items() if f'/{name}.git' in url), ''),
             alarm=lambda *raised: self.alarms.append(raised),
+            role=lambda _url, _home: dict(self.identity),
         )
 
     def logged(self) -> str:
@@ -762,3 +767,55 @@ def test_a_checkout_lives_under_the_declared_root(case: str, tmp_path: Path) -> 
     spec = deploy_spec.Deployment('h', root, '3.13', (alpha,), role=deploy_spec.RESEARCH)
     assert deploy_spec.load(_write(tmp_path / 'config.toml', deploy_spec.render(spec))) == spec
     assert deploy_spec.checkout_of(spec, Path('/h/u'), alpha).as_posix() == expected
+
+
+def _with_reader(box: Box, reader: str) -> None:
+    text = box.machine.read_text(encoding='utf-8')
+    box.machine.write_text(text.replace('[deploy]\n', f'[deploy]\nreader = "{reader}"\n', 1), encoding='utf-8')
+
+
+@pytest.mark.parametrize('write', ['push', 'admin'])
+def test_a_research_account_pulling_with_a_writer_is_refused_naming_the_account(
+    box: Box, write: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """User ruling 2026-11-09. PLANTED CONTROL: the same account with a read-only credential deploys."""
+    assert box.run(*DECLARE) == 0
+    _as_role(box, deploy_spec.RESEARCH)
+    capsys.readouterr()
+    assert box.run() == 0, 'the planted control: a reader passes'
+    box.identity.update({'login': 'agents-writer', write: True})
+    capsys.readouterr()
+    assert box.run() == 2
+    err = capsys.readouterr().err
+    assert 'agents-writer' in err
+    assert 'read-only' in err
+
+
+def test_a_verification_account_reports_its_writer_and_is_not_refused(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    box.identity.update({'login': 'agents-writer', 'push': True})
+    assert box.run(*DECLARE) == 0
+    assert 'agents-writer' in capsys.readouterr().out
+
+
+def test_a_declared_reader_must_be_the_identity_on_a_research_account(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL: the declared reader itself passes; another read-only login is refused by name."""
+    assert box.run(*DECLARE) == 0
+    _as_role(box, deploy_spec.RESEARCH)
+    _with_reader(box, 'deploy-reader')
+    assert box.run() == 0
+    box.identity['login'] = 'forge-hosts-reader'
+    capsys.readouterr()
+    assert box.run() == 2
+    err = capsys.readouterr().err
+    assert 'forge-hosts-reader' in err
+    assert 'deploy-reader' in err
+
+
+def test_the_reader_key_round_trips(tmp_path: Path) -> None:
+    lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
+    spec = deploy_spec.Deployment('h', 'src', '3.13', (lab,), role='research', reader='deploy-reader')
+    assert deploy_spec.load(_write(tmp_path / 'config.toml', deploy_spec.render(spec))) == spec

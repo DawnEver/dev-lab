@@ -95,7 +95,8 @@ class Deployment:
     """The ``[deploy]`` table of the machine file, plus the ``[schedule] tick_minutes`` its cron lines run at.
 
     ``slurm_account`` and ``partitions`` declare this account's grant; ``role`` is one of :data:`ROLES`, ``''``
-    when undeclared (nothing is ticked, the deploy refuses).
+    when undeclared (nothing is ticked, the deploy refuses). ``reader``, optional, is the read-only forge login a
+    research account's stored credential must be (user ruling 2026-11-09); ``''`` checks only that it cannot write.
     """
 
     host: str
@@ -106,6 +107,7 @@ class Deployment:
     partitions: tuple[str, ...] = ()
     role: str = ''
     tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
+    reader: str = ''
 
 
 def load(path: Path) -> Deployment | None:
@@ -132,6 +134,7 @@ def load(path: Path) -> Deployment | None:
             partitions=tuple(raw.get('partitions', ())),
             role=_role(path, raw.get('role', '')),
             tick_minutes=_tick_minutes(path, table.get('schedule', {})),
+            reader=str(raw.get('reader', '')),
         )
     except KeyError as missing:
         msg = f'[deploy] in {path} lacks {missing}'
@@ -181,6 +184,7 @@ def render(spec: Deployment) -> str:
     )
     account = f'slurm_account = {_toml(spec.slurm_account)}\n' if spec.slurm_account else ''
     account += f'role = {_toml(spec.role)}\n' if spec.role else ''
+    account += f'reader = {_toml(spec.reader)}\n' if spec.reader else ''
     return (
         f'\n[deploy]\nhost = {_toml(spec.host)}\nroot = {_toml(spec.root)}\npython = {_toml(spec.python)}\n'
         f'{account}partitions = {_list(spec.partitions)}\nrepos = [\n{repos}]\n'
