@@ -3,7 +3,9 @@
 AN ACCOUNT HAS A ROLE (user ruling 2026-11-06), declared ONCE as ``[deploy] role`` in its own machine file -- the
 table its deploy, its tick, its host card and the workstation's ``deploy-fleet`` all read: ``"verification"`` (a
 Forge Verification account: it runs the forge serve cron) or ``"research"`` (checkouts and venvs for research,
-never a serve cron). Undeclared, nothing is ticked and the deploy refuses (:func:`role_refusal`).
+never a serve cron). Undeclared, nothing is ticked and the deploy refuses (:func:`role_refusal`). What a role
+DOES is the workstation's data (:mod:`dev_lab.dev.hpcaccount.division`, user ruling 2026-11-09), passed by
+``deploy-fleet``; a hand-run deploy falls back to its shipped defaults.
 
 Pure: parse, render, derive. :mod:`dev_lab.dev.hpcaccount.deploy` runs the steps.
 """
@@ -11,6 +13,7 @@ Pure: parse, render, derive. :mod:`dev_lab.dev.hpcaccount.deploy` runs the steps
 from __future__ import annotations
 
 import argparse
+import re
 import shlex
 import sys
 import tomllib
@@ -22,6 +25,8 @@ from typing import Any, Final
 
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
+
 __all__ = [
     'DEFAULT_PYTHON',
     'DEFAULT_ROOT',
@@ -29,7 +34,6 @@ __all__ = [
     'KIT',
     'MARK',
     'RESEARCH',
-    'ROLES',
     'VERIFICATION',
     'Deployment',
     'Repo',
@@ -64,10 +68,10 @@ DEFAULT_TICK_MINUTES: Final = 5
 #: The served repo every tick RUNS -- the kit, whose ``forge serve`` serves every other served repo.
 KIT: Final = 'dev-lab'
 
-#: The two ``[deploy] role`` values: only a verification account serves the forge (user ruling 2026-11-06).
+#: The two shipped role names (their semantics: :data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`).
 VERIFICATION: Final = 'verification'
 RESEARCH: Final = 'research'
-ROLES: Final = (VERIFICATION, RESEARCH)
+_ROLE_NAME: Final = re.compile(r'[a-z][a-z0-9-]*')
 
 #: The interpreter a cron line runs: the line is a Linux login node's, so the POSIX venv layout is the only one.
 _VENV_PYTHON: Final = str(PurePosixPath('.venv', 'bin', 'python'))
@@ -94,9 +98,8 @@ class Repo:
 class Deployment:
     """The ``[deploy]`` table of the machine file, plus the ``[schedule] tick_minutes`` its cron lines run at.
 
-    ``slurm_account`` and ``partitions`` declare this account's grant; ``role`` is one of :data:`ROLES`, ``''``
-    when undeclared (nothing is ticked, the deploy refuses). ``reader``, optional, is the read-only forge login a
-    research account's stored credential must be (user ruling 2026-11-09); ``''`` checks only that it cannot write.
+    ``slurm_account`` and ``partitions`` declare this account's grant; ``role`` names its role, ``''`` when
+    undeclared (nothing is ticked, the deploy refuses).
     """
 
     host: str
@@ -107,7 +110,6 @@ class Deployment:
     partitions: tuple[str, ...] = ()
     role: str = ''
     tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
-    reader: str = ''
 
 
 def load(path: Path) -> Deployment | None:
@@ -134,7 +136,6 @@ def load(path: Path) -> Deployment | None:
             partitions=tuple(raw.get('partitions', ())),
             role=_role(path, raw.get('role', '')),
             tick_minutes=_tick_minutes(path, table.get('schedule', {})),
-            reader=str(raw.get('reader', '')),
         )
     except KeyError as missing:
         msg = f'[deploy] in {path} lacks {missing}'
@@ -142,9 +143,9 @@ def load(path: Path) -> Deployment | None:
 
 
 def _role(path: Path, role: object) -> str:
-    """``[deploy] role``: one of :data:`ROLES`, or ``''`` when undeclared; anything else refused naming the key."""
-    if role != '' and role not in ROLES:
-        msg = f'[deploy] role in {path} is {role!r}: declare one of {list(ROLES)}'
+    """``[deploy] role``: a role name, or ``''`` when undeclared; anything else refused naming the key."""
+    if role != '' and not (isinstance(role, str) and _ROLE_NAME.fullmatch(role)):
+        msg = f'[deploy] role in {path} is {role!r}: declare a role name such as {VERIFICATION!r} or {RESEARCH!r}'
         raise ValueError(msg)
     return str(role)
 
@@ -184,7 +185,6 @@ def render(spec: Deployment) -> str:
     )
     account = f'slurm_account = {_toml(spec.slurm_account)}\n' if spec.slurm_account else ''
     account += f'role = {_toml(spec.role)}\n' if spec.role else ''
-    account += f'reader = {_toml(spec.reader)}\n' if spec.reader else ''
     return (
         f'\n[deploy]\nhost = {_toml(spec.host)}\nroot = {_toml(spec.root)}\npython = {_toml(spec.python)}\n'
         f'{account}partitions = {_list(spec.partitions)}\nrepos = [\n{repos}]\n'
@@ -229,7 +229,14 @@ def parse_repo(text: str) -> Repo:
     return Repo(name, url, ref)
 
 
-def cron_lines(spec: Deployment, home: Path, *, slurm: Sequence[str] = (), setup: Sequence[str] = ()) -> list[str]:
+def cron_lines(
+    spec: Deployment,
+    home: Path,
+    *,
+    serves: bool | None = None,
+    slurm: Sequence[str] = (),
+    setup: Sequence[str] = (),
+) -> list[str]:
     """One marked line per served repo and the kit, every ``tick_minutes``, under ``flock -n``.
 
     The minute offset is derived from *home* (one per account), so accounts sharing a forge tick staggered
@@ -239,16 +246,17 @@ def cron_lines(spec: Deployment, home: Path, *, slurm: Sequence[str] = (), setup
     minute = f'{zlib.crc32(str(home).encode()) % step}-59/{step}'
     return [
         f'{minute} * * * * {tick_command(spec, home, repo, log=True, slurm=slurm, setup=setup)} {MARK}{repo.name}'
-        for repo in ticked(spec)
+        for repo in ticked(spec, serves=serves)
     ]
 
 
-def ticked(spec: Deployment) -> tuple[Repo, ...]:
+def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
     """The repos this account TICKS: every served one, and the kit (whose own tick refreshes its checkout).
 
-    Only a :data:`VERIFICATION` account ticks: a research or undeclared one ticks nothing, so no serve line.
+    Only an account whose role SERVES ticks -- *serves* as the workstation's role table says, else the shipped
+    default for its role (:data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`); undeclared ticks nothing.
     """
-    if spec.role != VERIFICATION:
+    if not (DEFAULT_ROLES.get(spec.role, {}).get('serves', False) if serves is None else serves):
         return ()
     return tuple(repo for repo in spec.repos if repo.serve or repo.name == KIT)
 

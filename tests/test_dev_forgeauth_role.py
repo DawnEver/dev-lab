@@ -29,7 +29,7 @@ def server() -> Iterator[ThreadingHTTPServer]:
 
 
 def _forge(*, push: bool, admin: bool = False) -> None:
-    answer('GET', '/api/v1/user', (200, {'login': 'deploy-reader'}))
+    answer('GET', '/api/v1/user', (200, {'login': 'ro-login'}))
     answer('GET', API, (200, {'permissions': {'admin': admin, 'push': push, 'pull': True}}))
 
 
@@ -40,7 +40,7 @@ def test_the_role_is_the_forge_login_and_its_write_permissions(
     _forge(push=push, admin=admin)
     env = credential_env(tmp_path, TOKEN)
     role = repo_role(forge_of_url(URL), cwd=tmp_path, env=env, transport=Loopback(server))
-    assert role == RepoRole('deploy-reader', push=push, admin=admin)
+    assert role == RepoRole('ro-login', push=push, admin=admin)
 
 
 def test_the_cli_prints_the_role_as_json_and_never_the_token(server, tmp_path: Path, capsys) -> None:
@@ -48,7 +48,7 @@ def test_the_cli_prints_the_role_as_json_and_never_the_token(server, tmp_path: P
     env = credential_env(tmp_path, TOKEN)
     assert main(['role', '--url', URL], cwd=tmp_path, env=env, transport=Loopback(server)) == 0
     said = capsys.readouterr()
-    assert json.loads(said.out) == {'login': 'deploy-reader', 'push': True, 'admin': False}
+    assert json.loads(said.out) == {'login': 'ro-login', 'push': True, 'admin': False}
     assert TOKEN not in said.out + said.err  # planted control: the token was live in this run
 
 

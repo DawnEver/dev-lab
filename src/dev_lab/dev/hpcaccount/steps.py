@@ -6,6 +6,7 @@ Every changing action goes through :class:`Step`, which under ``--dry-run`` only
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -15,9 +16,10 @@ import lab_commons.launch as _door
 from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
+from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab
 
-__all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'update']
+__all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'login', 'update']
 
 
 @dataclass(frozen=True)
@@ -184,3 +186,19 @@ def crontab(step: Step, lines: Sequence[str]) -> int:
     return step.change(
         f'crontab: write {len(lines)} marked line(s), every other line kept', [*step.tools.crontab, '-'], stdin=wanted
     )
+
+
+def login(step: Step, home: Path) -> int:
+    """One marked :func:`login_line` in each of :func:`login_files`, written once, each file backed up first."""
+    emit("[login] the login shell's PATH names the tick's user installs")
+    line = login_line(home)
+    for path in login_files(home):
+        if path.is_file() and LOGIN_MARK in path.read_text(encoding='utf-8', errors='replace'):
+            emit(f'  {path}: current')
+            continue
+        file, backup = shlex.quote(str(path)), shlex.quote(f'{path}.lab-deploy.bak')
+        keep = f'[ ! -e {file} ] || [ -e {backup} ] || cp -p {file} {backup}'
+        script = f'{{ {keep}; }} && echo {shlex.quote(line)} >> {file}'
+        if rc := step.change(f'{path}: back up, then append {line}', [*step.tools.sh, script]):
+            return rc
+    return 0

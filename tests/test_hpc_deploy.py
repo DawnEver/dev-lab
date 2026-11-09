@@ -6,6 +6,7 @@ box: it logs its argv to ``calls.log`` and keeps its state in files under the te
 
 from __future__ import annotations
 
+import json
 import shlex
 import sys
 import tomllib
@@ -89,9 +90,7 @@ class Box:
     refused_api: dict[str, str]
     alarms: list[tuple[str, ...]]
     #: What the forge says the stored credential is on every repo (``auth role``): a reader by default.
-    identity: dict[str, object] = field(
-        default_factory=lambda: {'login': 'deploy-reader', 'push': False, 'admin': False}
-    )
+    identity: dict[str, object] = field(default_factory=lambda: {'login': 'ro-login', 'push': False, 'admin': False})
 
     def run(self, *argv: str, host: str = 'login02.int.cluster') -> int:
         return deploy.deploy(
@@ -344,15 +343,15 @@ def test_the_login_shell_gets_the_tick_user_installs_once_with_a_backup(box: Box
     """Measured on Ada 2026-10-25: cargo ran for cron only. The login files get one marked line, written once."""
     (box.home / '.bashrc').write_text('alias ll=ls\n', encoding='utf-8')
     assert box.run(*DECLARE) == 0
-    edits = [line for line in box.logged().splitlines() if deploy.LOGIN_MARK in line]
+    edits = [line for line in box.logged().splitlines() if deploy_steps.LOGIN_MARK in line]
     assert len(edits) == 2, edits
     bashrc = next(line for line in edits if '.bashrc' in line)
     assert '.lab-deploy.bak' in bashrc
     assert str(box.home / '.cargo/bin') in bashrc
     for name in ('.bash_profile', '.bashrc'):
-        (box.home / name).write_text(deploy.login_line(box.home) + '\n', encoding='utf-8')
+        (box.home / name).write_text(deploy_steps.login_line(box.home) + '\n', encoding='utf-8')
     assert box.run() == 0
-    assert len([line for line in box.logged().splitlines() if deploy.LOGIN_MARK in line]) == 2, 'already marked'
+    assert len([line for line in box.logged().splitlines() if deploy_steps.LOGIN_MARK in line]) == 2, 'already marked'
 
 
 def test_the_deploy_writes_this_accounts_own_grant_once(box: Box) -> None:
@@ -730,11 +729,22 @@ def test_an_undeclared_role_is_refused_naming_the_key_and_nothing_changes(
     assert 'crontab -' not in box.logged()
 
 
-def test_a_role_outside_the_two_is_refused_naming_the_key(tmp_path: Path) -> None:
+def test_a_malformed_role_is_refused_naming_the_key(tmp_path: Path) -> None:
     lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
-    text = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', (lab,), role='serving'))
-    with pytest.raises(ValueError, match=r"\[deploy\] role .* is 'serving'"):
+    text = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', (lab,), role='Not A Name'))
+    with pytest.raises(ValueError, match=r"\[deploy\] role .* is 'Not A Name'"):
         deploy_spec.load(_write(tmp_path / 'config.toml', text))
+
+
+def test_a_role_beyond_the_defaults_needs_the_workstations_table(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    """A hand-run deploy knows only the shipped defaults. PLANTED CONTROL: deploy-fleet passes the table."""
+    assert box.run(*DECLARE) == 0
+    _as_role(box, 'batch')
+    capsys.readouterr()
+    assert box.run() == 2
+    assert 'deploy-fleet' in capsys.readouterr().err
+    assert box.run(*_fleet('batch', serves=False, read_only=True)) == 0
+    assert _marked(box) == set(), 'its table says it does not serve'
 
 
 def test_a_serve_tick_on_a_research_account_refuses_naming_the_role(
@@ -769,53 +779,57 @@ def test_a_checkout_lives_under_the_declared_root(case: str, tmp_path: Path) -> 
     assert deploy_spec.checkout_of(spec, Path('/h/u'), alpha).as_posix() == expected
 
 
-def _with_reader(box: Box, reader: str) -> None:
-    text = box.machine.read_text(encoding='utf-8')
-    box.machine.write_text(text.replace('[deploy]\n', f'[deploy]\nreader = "{reader}"\n', 1), encoding='utf-8')
+def _fleet(role: str, **table: object) -> tuple[str, ...]:
+    return ('--fleet-role', role, '--role-table', json.dumps(table))
 
 
 @pytest.mark.parametrize('write', ['push', 'admin'])
-def test_a_research_account_pulling_with_a_writer_is_refused_naming_the_account(
+def test_a_read_only_role_pulling_with_a_writer_is_refused_naming_the_login(
     box: Box, write: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """User ruling 2026-11-09. PLANTED CONTROL: the same account with a read-only credential deploys."""
+    """User rulings 2026-11-09: research (shipped read_only) refuses. PLANTED CONTROL: a reader passes."""
     assert box.run(*DECLARE) == 0
     _as_role(box, deploy_spec.RESEARCH)
     capsys.readouterr()
     assert box.run() == 0, 'the planted control: a reader passes'
-    box.identity.update({'login': 'agents-writer', write: True})
+    box.identity.update({'login': 'rw-login', write: True})
     capsys.readouterr()
     assert box.run() == 2
     err = capsys.readouterr().err
-    assert 'agents-writer' in err
+    assert 'rw-login' in err
     assert 'read-only' in err
 
 
-def test_a_verification_account_reports_its_writer_and_is_not_refused(
-    box: Box, capsys: pytest.CaptureFixture[str]
-) -> None:
-    box.identity.update({'login': 'agents-writer', 'push': True})
+def test_a_role_that_is_not_read_only_reports_its_writer(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    box.identity.update({'login': 'rw-login', 'push': True})
     assert box.run(*DECLARE) == 0
-    assert 'agents-writer' in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert 'rw-login' in out
+    assert 'report only' in out
 
 
-def test_a_declared_reader_must_be_the_identity_on_a_research_account(
-    box: Box, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """PLANTED CONTROL: the declared reader itself passes; another read-only login is refused by name."""
+def test_the_roles_declared_reader_must_be_the_identity(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    """PLANTED CONTROL: the role's reader itself passes; another read-only login is refused by name."""
     assert box.run(*DECLARE) == 0
     _as_role(box, deploy_spec.RESEARCH)
-    _with_reader(box, 'deploy-reader')
-    assert box.run() == 0
-    box.identity['login'] = 'forge-hosts-reader'
+    table = {'serves': False, 'read_only': True, 'reader': 'ro-login'}
+    assert box.run(*_fleet('research', **table)) == 0
+    box.identity['login'] = 'other-ro-login'
     capsys.readouterr()
-    assert box.run() == 2
+    assert box.run(*_fleet('research', **table)) == 2
     err = capsys.readouterr().err
-    assert 'forge-hosts-reader' in err
-    assert 'deploy-reader' in err
+    assert 'other-ro-login' in err
+    assert 'ro-login' in err
 
 
-def test_the_reader_key_round_trips(tmp_path: Path) -> None:
-    lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
-    spec = deploy_spec.Deployment('h', 'src', '3.13', (lab,), role='research', reader='deploy-reader')
-    assert deploy_spec.load(_write(tmp_path / 'config.toml', deploy_spec.render(spec))) == spec
+def test_an_account_role_other_than_the_workstations_is_refused_naming_both(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The workstation is the source. PLANTED CONTROL: the equal role deploys."""
+    assert box.run(*DECLARE) == 0
+    assert box.run(*_fleet('verification', serves=True, read_only=False)) == 0
+    capsys.readouterr()
+    assert box.run(*_fleet('research', serves=False, read_only=True)) == 2
+    err = capsys.readouterr().err
+    assert "'verification'" in err
+    assert "'research'" in err
