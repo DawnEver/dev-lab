@@ -32,12 +32,14 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.hpcaccount.spec import Deployment, tick_dirs
 from dev_lab.dev.lockcheck import uv_version
 
@@ -45,6 +47,7 @@ __all__ = [
     'INSTALLERS',
     'LOGIN_MARK',
     'MERGE_TREE_GIT',
+    'follow_uv',
     'grant_of',
     'login_files',
     'login_line',
@@ -195,3 +198,12 @@ def grant_of(user: str, sacct: str, *, spec: Deployment, host: str) -> dict[str,
         'slurm_account': account,
         'partitions': list(spec.partitions),
     }
+
+
+def follow_uv() -> str:
+    """Move this account's uv to the pin (:func:`~dev_lab.dev._dep_project.follow_pin`); ``''`` once it is.
+
+    No uv yet is not a follow: the tools step installs one at the pin (:data:`~.checks.INSTALLERS`).
+    """
+    uv = shutil.which('uv')
+    return follow_pin(uv, uv_version()) if uv else ''

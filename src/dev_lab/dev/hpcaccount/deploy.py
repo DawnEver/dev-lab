@@ -74,12 +74,7 @@ from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
-from dev_lab.dev.hpcaccount.checks import (
-    MERGE_TREE_GIT,
-    merge_tree_refusal,
-    runs,
-    tool_plan,
-)
+from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
 from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.spec import (
     DEFAULT_PYTHON,
@@ -259,6 +254,8 @@ def _tools(
             _refuse(refused, repo, str(why))
     environment = tick_environment(home, slurm, setup)
     wanted = [need for each in needs.values() for need in each]
+    if not step.dry and (lagging := follow_uv()):
+        emit(f'[tools] {lagging}', err=True)
     installs, failed = tool_plan(wanted, found=lambda tool: _runs(step.tools.sh, environment, tool))
     for tool, script in installs:
         if step.change(f'install {tool}: {script}', [*step.tools.sh, script]):

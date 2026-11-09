@@ -22,6 +22,7 @@ naming the role; its own ``hpcaccount deploy`` removes the line (:func:`dev_lab.
 from __future__ import annotations
 
 import getpass
+import shutil
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -31,13 +32,15 @@ from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.log import emit
 
+from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
 from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.hpcaccount.checks import runs
-from dev_lab.dev.hpcaccount.spec import VERIFICATION, Deployment, Repo, checkout_of, host_serve_argv, load
+from dev_lab.dev.hpcaccount.spec import KIT, VERIFICATION, Deployment, Repo, checkout_of, host_serve_argv, load
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, update
+from dev_lab.dev.lockcheck import uv_version
 
-__all__ = ['account', 'tick']
+__all__ = ['account', 'follow_uv', 'tick']
 
 _runs = runs
 
@@ -45,6 +48,14 @@ _runs = runs
 def account() -> str:
     """The cluster account this tick runs as."""
     return getpass.getuser()
+
+
+def follow_uv(name: str) -> str:
+    """On the kit's tick (the host checkout's one writer), move this account's uv to the pin; ``''`` once it is."""
+    if name != KIT:
+        return ''
+    uv = shutil.which('uv')
+    return follow_pin(uv, uv_version()) if uv else 'this account has no uv on PATH'
 
 
 def _lacking(step: Step, needs: Iterable[str], probed: dict[str, bool]) -> list[str]:
@@ -100,6 +111,8 @@ def tick(
         emit(f'[tick] refused: {name} is not a served repo of [deploy] in {config or config_path()}', err=True)
         return 2
     step = Step(tools or Tools(), dry=False)
+    if lagging := follow_uv(name):
+        alarm(Alarm(NEEDS, repo.url, f'{account()} runs a uv that is not the pin', lagging, about='uv'))
     why, lacking = _refresh(step, spec, home, repo, {} if probed is None else probed)
     if lacking:
         alarm(Alarm(NEEDS, repo.url, f'{account()} lacks {", ".join(lacking)}: {name} is not served', why))

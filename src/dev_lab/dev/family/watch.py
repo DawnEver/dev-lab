@@ -22,9 +22,11 @@ from dev_lab.dev.family.members import Facts, Finding, check
 from dev_lab.dev.forgealarm import FAMILY, Alarm
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hpcaccount.spec import KIT
+from dev_lab.dev.lockcheck import newest_uv, uv_version
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
+from dev_lab.dev.uvfollow import lag
 
-__all__ = ['findings', 'step']
+__all__ = ['findings', 'step', 'uv_pin']
 
 
 def findings() -> list[Finding]:
@@ -39,9 +41,19 @@ def findings() -> list[Finding]:
             {secret_name(REVIEW_TASK)},
         )
 
-    return check(repos(), forge=lambda _name, root: ClientFacts(client_for(root)),
-                 served=serve.get('repos') if serve else None, now=datetime.now(UTC),
-                 bundle_name=secret_name(REVIEW_TASK), compare=horizontally)  # fmt: skip
+    found = check(repos(), forge=lambda _name, root: ClientFacts(client_for(root)),
+                  served=serve.get('repos') if serve else None, now=datetime.now(UTC),
+                  bundle_name=secret_name(REVIEW_TASK), compare=horizontally)  # fmt: skip
+    return found + uv_pin(uv_version(repos().get(KIT)), newest_uv)
+
+
+def uv_pin(pinned: str, newest: Callable[[], str]) -> list[Finding]:
+    """The kit's uv pin lagging the newest release (:func:`~dev_lab.dev.uvfollow.lag`), or the release unread."""
+    try:
+        lagging = lag(pinned, newest())
+    except OSError as why:
+        return [Finding(KIT, f'unread: the newest uv release ({why})'.splitlines()[0])]
+    return [Finding(KIT, f'uv pin: {lagging} -- the serve relock raises it; run it')] if lagging else []
 
 
 def step(
