@@ -74,8 +74,8 @@ def _audit(tmp_path: Path) -> list[dict[str, Any]]:
 
 
 def test_the_two_actions_are_single_use_registry_rows() -> None:
-    assert {forgeaccounts.ACCOUNT_ACTION, forgeaccounts.TOKEN_ACTION} <= set(ACTIONS)
-    assert {ACTIONS[forgeaccounts.ACCOUNT_ACTION].scope, ACTIONS[forgeaccounts.TOKEN_ACTION].scope} == {SINGLE}
+    assert {forgeaccounts.ACCOUNT_ACTION, forgeaccounts.MINT_ACTION} <= set(ACTIONS)
+    assert {ACTIONS[forgeaccounts.ACCOUNT_ACTION].scope, ACTIONS[forgeaccounts.MINT_ACTION].scope} == {SINGLE}
 
 
 def test_ensure_creates_a_restricted_reader_grants_exactly_read_and_reports_drift(tmp_path: Path) -> None:
@@ -107,13 +107,13 @@ def test_a_credential_for_another_request_is_refused_and_nothing_changes(tmp_pat
 def test_mint_prints_the_token_once_and_audits_everything_but_it(tmp_path: Path) -> None:
     gitea = FakeGitea(users={'server-reader'})
     request = TokenRequest('server-reader', 'host-x', 'read:repository', rotate=False)
-    token = forgeaccounts.mint(_role(tmp_path), gitea, request, redeem=_consent(request.subject()), credential={},
+    minted = forgeaccounts.mint(_role(tmp_path), gitea, request, redeem=_consent(request.subject()), credential={},
                                by='ops')  # fmt: skip
-    assert token == 'secret-host-x'  # noqa: S105 -- the fake's token
+    assert minted == 'secret-host-x'
     log = (tmp_path / 'forge.jsonl').read_text(encoding='utf-8')
     assert 'secret-host-x' not in log
     assert _audit(tmp_path)[-1] | {'at': ''} == {
-        'at': '', 'by': 'ops', 'action': forgeaccounts.TOKEN_ACTION, 'login': 'server-reader', 'name': 'host-x',
+        'at': '', 'by': 'ops', 'action': forgeaccounts.MINT_ACTION, 'login': 'server-reader', 'name': 'host-x',
         'scope': 'read:repository', 'rotated': False,
     }  # fmt: skip
 
@@ -136,9 +136,9 @@ def test_a_duplicate_name_is_refused_unless_rotated(tmp_path: Path) -> None:
     with pytest.raises(ForgeRefused, match='--rotate'):
         forgeaccounts.mint(_role(tmp_path), gitea, plain, redeem=_consent(plain.subject()), credential={}, by='ops')
     rotated = TokenRequest('server-reader', 'host-x', 'read:repository', rotate=True)
-    token = forgeaccounts.mint(_role(tmp_path), gitea, rotated, redeem=_consent(rotated.subject()), credential={},
+    minted = forgeaccounts.mint(_role(tmp_path), gitea, rotated, redeem=_consent(rotated.subject()), credential={},
                                by='ops')  # fmt: skip
-    assert token == 'secret-host-x'  # noqa: S105 -- the fake's token
+    assert minted == 'secret-host-x'
     assert _audit(tmp_path)[-1]['rotated'] is True
 
 

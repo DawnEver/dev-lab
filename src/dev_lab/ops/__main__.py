@@ -14,15 +14,11 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from lab_commons.log import emit
 
@@ -246,30 +242,26 @@ def _candidate_text(config: OpsConfig, candidate: Path | None) -> str:
     return configdoor.fetch(config.config_source, run=_git_with_env)
 
 
+def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
+    """``action -> redeem``: a credential's subject once the host's issuer registered its one use.
+
+    Raises:
+        ConsentRefused: no verifier key is reachable.
+
+    """
+    issuer = _issuer(config, config.consent) if config.consent is not None else None
+    key = issuer.public() if issuer is not None else public_key()
+    register = issuer.register if issuer is not None else _unreachable
+    return lambda action: (
+        lambda found: redeem(found, action=action, key=key, register=register, now=time.time()).subject
+    )
+
+
 def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) -> int:
     """``config apply [--from <file>] [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
-    redeem_ = None
-    granted = None
-    if credential:
-        role = config.consent
-        issuer = _issuer(config, role) if role is not None else None
-        try:
-            verifier = issuer.public() if issuer is not None else public_key()
-        except ConsentRefused as refused:
-            emit(f'refused: {refused}', err=True)
-            return 2
-        granted = json.loads(Path(credential).read_text(encoding='utf-8'))
-
-        def redeem_(found: dict) -> str:
-            return redeem(
-                found,
-                action=configdoor.ACTION,
-                key=verifier,
-                register=issuer.register if issuer is not None else _unreachable,
-                now=time.time(),
-            ).subject
-
     try:
+        redeem_ = _redeemer(config)(configdoor.ACTION) if credential else None
+        granted = json.loads(Path(credential).read_text(encoding='utf-8')) if credential else None
         done = configdoor.apply(
             config.path, _candidate_text(config, candidate), loads=load, checks=upgrade.checks(config),
             run=upgrade.run_check, redeem=redeem_, credential=granted,
@@ -285,73 +277,17 @@ def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) ->
     return 0
 
 
-def _run_argv(argv: list[str]) -> tuple[int, str]:
-    done = subprocess.run(argv, capture_output=True, text=True, check=False)
-    return done.returncode, done.stdout
-
-
-def _local_api(method: str, url: str, token: str, sudo: str, body: Mapping[str, Any] | None) -> tuple[int, Any]:
-    """One call to the host's own Gitea API; its status and parsed body (``None`` when empty or unparsable)."""
-    headers = {'Authorization': f'token {token}', 'Content-Type': 'application/json'} | ({'Sudo': sudo} if sudo else {})
-    data = None if body is None else json.dumps(body).encode('utf-8')
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310 -- [ops.forge] api
-    try:
-        with urllib.request.urlopen(request, timeout=30) as answer:  # noqa: S310 -- [ops.forge] api
-            status, raw = answer.status, answer.read()
-    except urllib.error.HTTPError as refused:
-        status, raw = refused.code, b''
-    try:
-        return status, json.loads(raw) if raw else None
-    except ValueError:
-        return status, None
-
-
 def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
-    """``forge account ensure`` / ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`)."""
-    role = config.forge
-    if role is None:
+    """``forge account ensure`` / ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`), consented here."""
+    if config.forge is None:
         emit(f'[ops] {config.path} enables no [ops.forge]', err=True)
         return 2
-    if args.kind == 'account':
-        request: Any = forgeaccounts.AccountRequest(args.login, tuple(args.read))
-        action = forgeaccounts.ACCOUNT_ACTION
-    else:
-        request = forgeaccounts.TokenRequest(args.login, args.name, args.scope, rotate=args.rotate)
-        action = forgeaccounts.TOKEN_ACTION
-    if args.subject:  # what the user's consent must name: the digest of exactly this request
-        emit(request.subject())
-        return 0
-    if not args.credential:
-        emit(f'refused: {action} needs --credential (its subject: {request.subject()})', err=True)
-        return 2
-    consent = config.consent
-    issuer = _issuer(config, consent) if consent is not None else None
     try:
-        verifier = issuer.public() if issuer is not None else public_key()
+        redeem_for = _redeemer(config)
     except ConsentRefused as refused:
         emit(f'refused: {refused}', err=True)
         return 2
-    granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
-
-    def redeem_(found: Mapping[str, Any]) -> str:
-        register = issuer.register if issuer is not None else _unreachable
-        return redeem(found, action=action, key=verifier, register=register, now=time.time()).subject
-
-    gitea = forgeaccounts.GiteaCli(role, run=_run_argv, http=_local_api)
-    by = os.environ.get('SUDO_USER', '') or 'root'
-    try:
-        if args.kind == 'account':
-            for line in forgeaccounts.ensure(role, gitea, request, redeem=redeem_, credential=granted, by=by):
-                emit(f'[ops forge] {line}')
-        else:  # the token goes to stdout ONCE, for the caller to place; never to a log
-            minted = forgeaccounts.mint(role, gitea, request, redeem=redeem_, credential=granted, by=by)
-            sys.stdout.write(minted + chr(10))
-    except (forgeaccounts.ForgeRefused, ConsentRefused) as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    finally:
-        gitea.close()
-    return 0
+    return forgeaccounts.run_verb(config.forge, args, redeem_for)
 
 
 def _probe(config: OpsConfig) -> int:
@@ -366,25 +302,6 @@ def _probe(config: OpsConfig) -> int:
     ):
         emit(f'[ops probe] {line}')
     return 0
-
-
-def _forge_parser(verbs: argparse._SubParsersAction) -> None:
-    """``forge account ensure`` and ``forge token mint``."""
-    forged = verbs.add_parser('forge', help="the forge's machine accounts and their tokens, each use consented")
-    kinds = forged.add_subparsers(dest='kind', required=True)
-    account = kinds.add_parser('account')
-    account.add_argument('action', choices=('ensure',))
-    account.add_argument('--login', required=True)
-    account.add_argument('--read', action='append', required=True, metavar='OWNER/REPO', help='grant exactly Read')
-    token = kinds.add_parser('token')
-    token.add_argument('action', choices=('mint',))
-    token.add_argument('--login', required=True)
-    token.add_argument('--name', required=True)
-    token.add_argument('--scope', required=True, help='Gitea scopes, comma-separated (a read-only login: read:*)')
-    token.add_argument('--rotate', action='store_true', help='delete an existing token of this name first')
-    for one in (account, token):
-        one.add_argument('--credential', default='', help='a single-use consent credential for exactly this request')
-        one.add_argument('--subject', action='store_true', help="print the request's digest the consent must name")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -415,7 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         '--from', dest='candidate', type=Path, default=None, help='a local candidate file'
     )  # default: the [ops.config] source
     configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
-    _forge_parser(verbs)
+    forgeaccounts.add_parser(verbs)
     for name in ('disk', 'clean'):
         sized = verbs.add_parser(name)
         sized.add_argument('--gitea-data', default=disk.DEFAULT_GITEA_DATA)
