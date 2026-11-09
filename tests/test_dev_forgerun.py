@@ -1892,3 +1892,29 @@ def test_an_incremental_run_submits_only_the_test_files_its_diff_reaches(
     assert 'tests/test_a.py::TestA::test_y[1]' in spec.only
     assert 'tests/test_c.py::test_c' not in spec.only
     assert list(spec.only) == ['tests/test_a.py'], 'a file collection error is matched by its path'
+
+
+def test_an_oom_ask_grows_from_the_measured_peak_not_the_limit(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """GROW FROM MEASUREMENT (lab-commons #147 B): the next ask is the read peak x MEASURED_GROWTH.
+
+    The kill read ``MaxRSS`` 4199 MB at a 4096 MB limit, so ``killed_need_mb`` of the two is asked -- never the
+    limit x OOM_GROWTH, which grows a part that measured its need past what it needs.
+    """
+    manifest = {'shards': [[0, 1], [1, 2]], 'items': [{'ids': ['tests/a.py::t']}, {'ids': ['tests/b.py::t']}]}
+
+    def runner(command: str, _stdin: object) -> str:
+        return json.dumps(manifest) if command.startswith('cat ') else _SACCT_KILLED
+
+    asks: list[float] = []
+    state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/r0'}, {'job_ids': ['8'], 'run_dir': '/r1'}]}
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
+    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 1000.0)
+    monkeypatch.setattr(learned, 'record_ask', lambda _url, _kind, _needs, gb, **_k: asks.append(gb))
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
+    cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
+    run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
+    record = home / 'run.json.gz'
+    record.write_bytes(gzip.compress(json.dumps({'peaks_mb': {}}).encode()))
+    cluster.killed(run, record)
+    assert asks == [pytest.approx(4199 / 1024 * measured.MEASURED_GROWTH, rel=1e-12, abs=0.0)]
