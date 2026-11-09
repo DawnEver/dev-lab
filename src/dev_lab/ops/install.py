@@ -34,8 +34,8 @@ from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_fi
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.accounts import account_of, may_enter
 from dev_lab.ops.backuprole import Backup
-from dev_lab.ops.caddy import allowlisted
-from dev_lab.ops.config import Caddy, OpsConfig, Probe
+from dev_lab.ops.caddy import install_caddy
+from dev_lab.ops.config import OpsConfig, Probe
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.totp import write_private
 from dev_lab.supervise.daemon import watchdog_seconds
@@ -286,8 +286,7 @@ def _probe_steps(config: OpsConfig) -> list[str]:
 
 
 def _under(root: Path, path: Path | str) -> Path:
-    path = Path(path)
-    return root / path.relative_to(path.anchor)
+    return root / Path(path).relative_to(Path(path).anchor)
 
 
 def _may_enter(path: Path, user: str) -> bool:
@@ -367,22 +366,6 @@ def _private(root: Path, chown: Chown | None, declared: str, user: str, group: s
     return [f'chown {user}{f":{group}" if group else ""} {declared} && chmod 600 {declared}']
 
 
-def _caddy(caddy: Caddy, root: Path, rendered: dict[str, str]) -> list[str]:
-    """Add the allowlisted Caddyfile to *rendered* when it changes, its old text kept beside it; the reload step."""
-    live = _under(root, caddy.file)
-    if not live.is_file():
-        msg = f'[ops.caddy] file {caddy.file} does not exist'
-        raise ValueError(msg)
-    old = live.read_text(encoding='utf-8')
-    new = allowlisted(old, caddy.allow, sites=caddy.sites)
-    relative = live.relative_to(root).as_posix()
-    rendered[relative] = new
-    if new == old:
-        return []
-    live.with_name(f'{live.name}.bak-dev-lab').write_text(old, encoding='utf-8', newline='\n')
-    return [f'caddy validate --config {caddy.file} && systemctl reload caddy']
-
-
 def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Rendered:
     """Write :func:`files` under *root*, each only when its content differs; sudoers and keys at mode 0440/0644.
 
@@ -402,8 +385,7 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
     private = access.private if access is not None else {}
     rendered |= (access.public if access is not None else {}) | private
     done, prepared = _prepare(config, root, chown)
-    if (caddy := config.caddy) is not None:
-        prepared += _caddy(caddy, root, rendered)
+    prepared += install_caddy(config.caddy, root, rendered)
     accounts = (config.breakglass, config.consent, config.access)
     if any(role is not None for role in accounts) or (config.backup and config.backup.dumpers):
         prepared += _keys_dir(root, chown, done)

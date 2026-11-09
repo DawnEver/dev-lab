@@ -13,9 +13,13 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections.abc import Sequence
-from typing import Final
+from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
-__all__ = ['allowlisted']
+if TYPE_CHECKING:
+    from dev_lab.ops.config import Caddy
+
+__all__ = ['allowlisted', 'install_caddy']
 
 _MATCHER: Final = re.compile(r'^(?P<head>\s*@\S+\s+remote_ip)\s+(?P<list>[^\n{}#]+?)\s*$')
 _SITE: Final = re.compile(r'^(?P<names>[^\s{#][^{#\n]*?)\s*\{\s*$')
@@ -48,14 +52,15 @@ def allowlisted(text: str, allow: Sequence[str], *, sites: Sequence[str] = ()) -
     site: tuple[str, ...] = ()
     seen: set[str] = set()
     rewritten = 0
-    for line in lines:
+    for raw in lines:
+        line = raw  # a matcher line is rewritten in place
         if depth == 0 and (top := _SITE.match(line.rstrip('\n'))):
             site = tuple(name.strip() for name in top['names'].replace(',', ' ').split())
             seen.update(site)
         inside = not sites or any(name in sites for name in site)
         if depth > 0 and inside and (matcher := _MATCHER.match(line.rstrip('\n'))):
             newline = '\n' if line.endswith('\n') else ''
-            line = f'{matcher["head"]} {wanted}{newline}'  # noqa: PLW2901 -- the rewritten line replaces it
+            line = f'{matcher["head"]} {wanted}{newline}'
             rewritten += 1
         depth += line.count('{') - line.count('}')
         if depth == 0:
@@ -68,3 +73,23 @@ def allowlisted(text: str, allow: Sequence[str], *, sites: Sequence[str] = ()) -
         msg = 'the Caddyfile has no `@<name> remote_ip ...` matcher to rewrite; declare the allowlist by hand once'
         raise ValueError(msg)
     return ''.join(out)
+
+
+def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str]) -> list[str]:
+    """The install step: add the allowlisted Caddyfile to *rendered*, its old text kept beside it when it changes.
+
+    Returns the reload step when the file changed; nothing when ``[ops.caddy]`` is undeclared or nothing moved.
+    """
+    if caddy is None:
+        return []
+    live = root / Path(caddy.file).relative_to(Path(caddy.file).anchor)
+    if not live.is_file():
+        msg = f'[ops.caddy] file {caddy.file} does not exist'
+        raise ValueError(msg)
+    old = live.read_text(encoding='utf-8')
+    new = allowlisted(old, caddy.allow, sites=caddy.sites)
+    rendered[live.relative_to(root).as_posix()] = new
+    if new == old:
+        return []
+    live.with_name(f'{live.name}.bak-dev-lab').write_text(old, encoding='utf-8', newline='\n')
+    return [f'caddy validate --config {caddy.file} && systemctl reload caddy']
