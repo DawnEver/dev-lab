@@ -105,7 +105,9 @@ def test_access_requires_key_and_code_and_narrows_sudo(tmp_path: Path) -> None:
     assert pam[2].startswith('auth [success=done default=die] pam_oath.so usersfile=/etc/dev-lab/ops/users.oath')
     assert not any(path.endswith(('totp', 'users.oath')) for path in rendered)  # secrets are never rendered
     sudo = rendered['etc/sudoers.d/dev-lab-ops-ops']
-    assert sudo == 'ops ALL=(root) NOPASSWD: /usr/bin/journalctl *, /usr/bin/systemctl restart gitea\n'
+    # sudo's `*` needs an argument and a bare command admits ANY; `""` is the form admitting none
+    bare = '/usr/bin/journalctl ""'
+    assert sudo == f'ops ALL=(root) NOPASSWD: {bare}, /usr/bin/journalctl *, /usr/bin/systemctl restart gitea\n'
     done = install(config, _pam_root(tmp_path))
     assert any('libpam-oath' in step for step in done.next_steps)
     assert not any('@include' in step for step in done.next_steps)
