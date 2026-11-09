@@ -1209,6 +1209,35 @@ def test_a_submitted_run_with_jobs_of_its_name_still_queued_is_kept(home: Path) 
     assert _tick(store, slurm) is not None
 
 
+@pytest.mark.parametrize('queued', [False, True])
+def test_a_submitted_run_whose_cluster_state_is_gone_is_released_not_held(
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, queued: bool
+) -> None:
+    """A submitted run whose cluster state is gone and of which Slurm holds no job is released, not held.
+
+    Ada 2026-11-08: gather could not ``cat .../manifest.json``; held, the run kept the account's whole memory
+    'used' and starved every PR part there. PLANTED CONTROL: jobs of its name still queued -- may be transient.
+    """
+    store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+    _submitted_run(home, store, slurm)
+    monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: SHA)
+
+    def gone(_run: forgerunstate.Run) -> Path | None:
+        msg = 'bash exited 1: cat: /home/u/ci/trees/x/.lab-hpc/run-x-base-r0/manifest.json: No such file or directory'
+        raise RuntimeError(msg)
+
+    slurm.gather = gone  # type: ignore[method-assign]
+    slurm.queue = ['4242'] if queued else []
+    if queued:
+        with pytest.raises(RuntimeError):
+            _tick(store, slurm, alarms=alarms)
+        return
+    assert _tick(store, slurm, alarms=alarms) is None
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    post = store.posts[-1]
+    assert (post['status'], post['description'].startswith(RETRYABLE)) == ('error', True)
+
+
 def test_an_unreachable_cluster_is_never_read_as_nothing_submitted(tmp_path: Path) -> None:
     """``load_state`` raises :class:`Unreachable` (a RuntimeError) when no login host answered; that is not ``[]``."""
 

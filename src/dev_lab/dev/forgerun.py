@@ -95,6 +95,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
+from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.tree import NotSubmitted
@@ -229,6 +230,15 @@ def _gather(
     except Unrecorded as why:
         forgerunpost.killed(client, run, cluster.killed(run), say, tag)
         _settle(root, run, client=client, why=str(why), say=say, alarm=alarm, ran=True)
+        return None
+    except (NotSubmitted, Unreachable):  # released by advance / transient: never read as a lost run
+        raise
+    except RuntimeError as why:
+        # Its cluster state cannot be read (Ada 2026-11-08: the tree's manifest.json gone). With no job of it in
+        # Slurm nothing more comes of it: released RETRYABLE, never held every tick with the account's memory.
+        if cluster.orphans(run):
+            raise
+        _settle(root, run, client=client, why=f'its cluster state is gone: {why}', say=say, alarm=alarm, ran=False)
         return None
     if record is None:
         # hpc submits retry rounds inside a gather: re-read every round's job id each tick (Ada,
