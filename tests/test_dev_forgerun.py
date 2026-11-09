@@ -1215,7 +1215,7 @@ def test_a_submitted_run_whose_cluster_state_is_gone_is_released_not_held(
 ) -> None:
     """A submitted run whose cluster state is gone and of which Slurm holds no job is released, not held.
 
-    Ada 2026-11-08: gather could not ``cat .../manifest.json``; held, the run kept the account's whole memory
+    2026-11-08: gather could not ``cat .../manifest.json``; held, the run kept the account's whole memory
     'used' and starved every PR part there. PLANTED CONTROL: jobs of its name still queued -- may be transient.
     """
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
@@ -1223,10 +1223,10 @@ def test_a_submitted_run_whose_cluster_state_is_gone_is_released_not_held(
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: SHA)
 
     def gone(_run: forgerunstate.Run) -> Path | None:
-        msg = 'bash exited 1: cat: /home/u/ci/trees/x/.lab-hpc/run-x-base-r0/manifest.json: No such file or directory'
+        msg = 'bash exited 1: cat: <tree>/.lab-hpc/run-x-base-r0/manifest.json: No such file or directory'
         raise RuntimeError(msg)
 
-    slurm.gather = gone  # type: ignore[method-assign]
+    monkeypatch.setattr(slurm, 'gather', gone)
     slurm.queue = ['4242'] if queued else []
     if queued:
         with pytest.raises(RuntimeError):

@@ -234,7 +234,7 @@ def _gather(
     except (NotSubmitted, Unreachable):  # released by advance / transient: never read as a lost run
         raise
     except RuntimeError as why:
-        # Its cluster state cannot be read (Ada 2026-11-08: the tree's manifest.json gone). With no job of it in
+        # Its cluster state cannot be read (2026-11-08: the tree's manifest.json gone). With no job of it in
         # Slurm nothing more comes of it: released RETRYABLE, never held every tick with the account's memory.
         if cluster.orphans(run):
             raise
