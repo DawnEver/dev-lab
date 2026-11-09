@@ -41,6 +41,9 @@ type Fetcher = Callable[[str, str], tuple[str, str]]
 #: Seconds one self-check may take before it counts as failed.
 CHECK_TIMEOUT = 120
 
+#: The judge's reviewer package; a judge host installs it, pinned by dev-lab's lock (:func:`locked_family`).
+REVIEWER = 'ai-lab'
+
 #: The package this upgrade installs itself; every OTHER git package of its lock is pinned by override.
 _SELF = 'dev-lab'
 _GIT = re.compile(r'^(?P<url>[^?#]+)(?:\?[^#]*)?#(?P<sha>[0-9a-f]{40})$')
@@ -99,7 +102,14 @@ def command(config: OpsConfig, ref: str | None = None, override: Path | None = N
     extras = f'[{",".join(role.extras)}]' if role.extras else ''
     line = [uv, 'pip', 'install', '--python', config.python, '--reinstall-package', 'dev-lab']
     line += ['--override', str(override)] if override is not None else []
-    return [*line, f'dev-lab{extras} @ git+{role.source}@{ref or role.ref}', *role.packages]
+    return [*line, f'dev-lab{extras} @ git+{role.source}@{ref or role.ref}', *role.packages, *_reviewer(config)]
+
+
+def _reviewer(config: OpsConfig) -> list[str]:
+    """``ai-lab`` on a judge host that names no reviewer itself: the judge role implies it, the lock pins its rev."""
+    packages = config.upgrade.packages if config.upgrade is not None else ()
+    named = any(package.split('@')[0].split('[')[0].strip() == REVIEWER for package in packages)
+    return [REVIEWER] if config.judge is not None and not named else []
 
 
 def checks(config: OpsConfig) -> dict[str, list[str]]:
