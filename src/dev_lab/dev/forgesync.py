@@ -235,7 +235,7 @@ def _commit(root: Path, paths: Sequence[str], *message: str) -> subprocess.Compl
     """``git commit --only -- <paths>``: exactly *paths*, whatever else the index holds.
 
     NO TIMEOUT: a local commit runs the repo's own commit hooks, which the hook runner itself runs unbounded
-    (:mod:`dev_lab.dev.githooks.runner`); motronics' exceed 30 s (2026-11-07), so any ceiling here is a guess.
+    (:mod:`dev_lab.dev.githooks.runner`); acme-consumer's exceed 30 s (2026-11-07), so any ceiling here is a guess.
     """
     argv = [_GIT, 'commit', '-q', *(arg for line in message for arg in ('-m', line)), '--only', '--', *paths]
     return _door.run(argv, cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)

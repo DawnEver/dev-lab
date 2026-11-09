@@ -1,8 +1,8 @@
 """A SYNC NEVER ROLLS A LANE BACK: every git pin of a synced lock contains both sides' pins.
 
-THE INCIDENT (2026-11-06). The forge's auto-sync merged integration into motronics ``pr/opt-refactor-all``; the
+THE INCIDENT (2026-11-06). The forge's auto-sync merged integration into acme-consumer ``pr/opt-refactor-all``; the
 lock conflicted, :mod:`dev_lab.dev.forgeautosync` took INTEGRATION's lock and relocked it, and the lane's newer
-family pins went back -- ai-lab, optimi-lab and lab-commons each to integration's older commit, so the lane's code
+family pins went back -- ai-lab, acme-lib and lab-commons each to integration's older commit, so the lane's code
 no longer imported. A relock resolves each sibling to the line it follows, which need not contain a lane's pin.
 
 THE RULE, read per package sourced from git on BOTH sides (an index package follows the normal resolution):

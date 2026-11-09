@@ -1,6 +1,6 @@
 """THE REVIEW RUNTIME FOLLOWS THE LOCK (2026-11-05): a host's ai-lab is the one its dev-lab's ``uv.lock`` pins.
 
-Host G's review failed because its ai-lab was a hand-built venv the machine file named, drifted from the pin. The
+Host host-a review failed because its ai-lab was a hand-built venv the machine file named, drifted from the pin. The
 runtime is now built under the forge home keyed by the pinned commit, by CI's own steps: a moved pin rebuilds, the
 same pin reuses, and a machine file still naming one is refused.
 """

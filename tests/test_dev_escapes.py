@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import pytest
+from lab_commons.home import HOME_ENV
 
 from dev_lab.dev import escapes
 from dev_lab.dev.forgealarm import ESCAPE, Alarm
@@ -38,9 +39,9 @@ def test_a_new_entry_under_a_watched_root_is_found_and_an_old_one_is_not(tmp_pat
 def test_the_home_top_level_is_watched_one_level_deep_and_an_allowed_root_never(tmp_path: Path) -> None:
     home = tmp_path / 'home'
     stray = _touch(home / 'output' / 'run.log')
-    _touch(home / '.motronics' / 'state' / 'x.json')
-    _touch(home / 'Documents' / 'PEMC' / 'repo' / 'output' / 'a.txt')
-    found = escapes.scan((), home=home, allowed=(home / '.motronics', home / 'Documents'), since=time.time() - 60)
+    _touch(home / '.acme-home' / 'state' / 'x.json')
+    _touch(home / 'Documents' / 'org-x' / 'repo' / 'output' / 'a.txt')
+    found = escapes.scan((), home=home, allowed=(home / '.acme-home', home / 'Documents'), since=time.time() - 60)
     assert found == [stray.parent]
 
 
@@ -62,9 +63,9 @@ def test_a_tick_alarms_each_escape_once_and_remembers_where_it_stopped(tmp_path:
 
 
 def _machine(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
-    """The user home *home*, its machine home ``.motronics``, no repos: ``lab_commons.home`` judges against it."""
+    """The user home *home*, its machine home ``.acme-home``, no repos: ``lab_commons.home`` judges against it."""
     monkeypatch.setattr(Path, 'home', classmethod(lambda _cls: home))
-    monkeypatch.setenv('MOTRONICS_HOME', str(home / '.motronics'))
+    monkeypatch.setenv(HOME_ENV, str(home / '.acme-home'))
     monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
 
 
@@ -74,7 +75,7 @@ def test_the_home_judges_its_entries_through_the_machine_home(tmp_path: Path, mo
     _touch(home / '.git-credentials')
     _touch(home / '.claude' / 'settings.json')
     _touch(home / '.claude-evans' / 'settings.json')
-    _touch(home / '.motronics' / 'state' / 'x.json')
+    _touch(home / '.acme-home' / 'state' / 'x.json')
     stray = _touch(home / '.foo')
     found = escapes.scan((), home=home, allowed=escapes.allowed_roots(), since=time.time() - 60)
     assert found == [stray], "git's credential store, Claude's homes and the machine home are not escapes; .foo is"

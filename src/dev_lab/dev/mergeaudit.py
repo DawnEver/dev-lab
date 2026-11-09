@@ -93,7 +93,7 @@ _LINE: Final = re.compile(
 )
 _GIT_TIMEOUT_S: Final = 120
 #: A ``cat-file --batch`` read's budget per object on top of :data:`_GIT_TIMEOUT_S`. Measured 2026-11-04: 6,561 local
-#: blobs (49.9 MB, motronics-studio ``tests/`` at a 1,235-commit-ahead PR) read in 0.66 s warm, 10.7 s cold -- 1.6 ms
+#: blobs (49.9 MB, acme-consumer ``tests/`` at a 1,235-commit-ahead PR) read in 0.66 s warm, 10.7 s cold -- 1.6 ms
 #: each at worst; 20 ms is a 12x margin that still bounds a read gone lazy (a round trip per object) by its count.
 _BATCH_S_PER_OBJECT: Final = 0.02
 #: The base of a test the merge bases disagree on: equal to no parent body, so only equal parents expect one.

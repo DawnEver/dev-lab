@@ -208,7 +208,7 @@ def landed(root: Path, policy: Policy, ref: str) -> Verdict:
     question (:func:`judge`); the sweep asks only whether integration now includes the branch.
 
     NO FILE IS EXEMPT HERE, generated ones included: "landed" closes an open PR, and a commit that only relocks
-    ``uv.lock`` is work integration lacks (wdg-lab PR #439 was closed and its branch deleted so, 2026-11-02).
+    ``uv.lock`` is work integration lacks (acme-consumer PR #439 was closed and its branch deleted so, 2026-11-02).
     """
     branch = ref.removeprefix(ORIGIN).removeprefix('refs/heads/')
     sha = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}') or '').strip()

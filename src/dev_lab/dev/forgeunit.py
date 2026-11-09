@@ -248,7 +248,7 @@ def offering_for(repo: Path, sha: str) -> Offer:
     """The ``offer`` for units of *repo* at *sha*, with this repo's forge client built here.
 
     THE ONE CALL A CONSUMER NEEDS. A product reaches it through an entry point
-    (``motronics.compute.offering = "dev_lab.dev.forgeunit:offering_for"``) and never imports the dev kit, so it
+    (``acme.compute.offering = "dev_lab.dev.forgeunit:offering_for"``) and never imports the dev kit, so it
     must not know how a forge client is made: two names in its seam (``client_for`` and ``offering``) were two
     signatures to keep in step across repos (user ruling 2026-11-05).
     """

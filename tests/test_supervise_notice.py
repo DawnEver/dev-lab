@@ -21,7 +21,7 @@ from dev_lab.supervise.notice import (
 from dev_lab.supervise.verdict import Severity
 
 DOORS = ('python -m dev_lab.dev.branchset --apply', 'python -m dev_lab.dev.retention --apply')
-FORGE = 'https://git.example.org/DawnEver/motronics-studio'
+FORGE = 'https://git.example.org/org-x/acme-consumer'
 CASES = {
     'critical': Notice(
         title='disk /',
@@ -61,7 +61,7 @@ CASES = {
         severity=Severity.CRITICAL,
         host='Gitea',
         context=Context(
-            repo='DawnEver/motronics-studio',
+            repo='org-x/acme-consumer',
             pr=5443,
             pr_title='feat(mesh): band rules own the MeshSpec',
             pr_url=f'{FORGE}/pulls/5443',
@@ -233,12 +233,12 @@ GOLDEN = {
             '\n'
             '<b>Action:</b> Fix the finding, or claim it is not a defect.\n'
             '\n'
-            '• <b>Repository:</b> DawnEver/motronics-studio\n'
-            '• <b>PR:</b> <a href="https://git.example.org/DawnEver/motronics-studio/pulls/5443">#5443 feat(mesh): '
+            '• <b>Repository:</b> org-x/acme-consumer\n'
+            '• <b>PR:</b> <a href="https://git.example.org/org-x/acme-consumer/pulls/5443">#5443 feat(mesh): '
             'band rules own the MeshSpec</a>\n'
             '• <b>Branch:</b> <code>pr/meshspec-band-rules</code>\n'
-            '• <b>Commit:</b> <a href="https://git.example.org/DawnEver/motronics-studio/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778"><code>3f2a9c81d7e4</code></a>\n'
-            '• <b>Run:</b> <a href="https://git.example.org/DawnEver/motronics-studio/actions/runs/812">open</a>\n'
+            '• <b>Commit:</b> <a href="https://git.example.org/org-x/acme-consumer/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778"><code>3f2a9c81d7e4</code></a>\n'
+            '• <b>Run:</b> <a href="https://git.example.org/org-x/acme-consumer/actions/runs/812">open</a>\n'
             '\n'
             '<b>Details</b>\n'
             '• security finding F-2a7e8020c00a holds the merge\n'
@@ -251,11 +251,11 @@ GOLDEN = {
             '\n'
             '**Action:** Fix the finding, or claim it is not a defect.\n'
             '\n'
-            '- **Repository:** DawnEver/motronics-studio\n'
-            '- **PR:** [\\#5443 feat(mesh): band rules own the MeshSpec](https://git.example.org/DawnEver/motronics-studio/pulls/5443)\n'
+            '- **Repository:** org-x/acme-consumer\n'
+            '- **PR:** [\\#5443 feat(mesh): band rules own the MeshSpec](https://git.example.org/org-x/acme-consumer/pulls/5443)\n'
             '- **Branch:** `pr/meshspec-band-rules`\n'
-            '- **Commit:** [`3f2a9c81d7e4`](https://git.example.org/DawnEver/motronics-studio/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778)\n'
-            '- **Run:** [open](https://git.example.org/DawnEver/motronics-studio/actions/runs/812)\n'
+            '- **Commit:** [`3f2a9c81d7e4`](https://git.example.org/org-x/acme-consumer/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778)\n'
+            '- **Run:** [open](https://git.example.org/org-x/acme-consumer/actions/runs/812)\n'
             '\n'
             '**Details**\n'
             '- security finding F-2a7e8020c00a holds the merge\n'
@@ -272,12 +272,12 @@ GOLDEN = {
             'blocks 3f2a9c81d7e4 (#5443)</h2>\n'
             '<p><b>Action:</b> Fix the finding, or claim it is not a defect.</p>\n'
             '<ul>\n'
-            '<li><b>Repository:</b> DawnEver/motronics-studio</li>\n'
-            '<li><b>PR:</b> <a href="https://git.example.org/DawnEver/motronics-studio/pulls/5443">#5443 '
+            '<li><b>Repository:</b> org-x/acme-consumer</li>\n'
+            '<li><b>PR:</b> <a href="https://git.example.org/org-x/acme-consumer/pulls/5443">#5443 '
             'feat(mesh): band rules own the MeshSpec</a></li>\n'
             '<li><b>Branch:</b> <code>pr/meshspec-band-rules</code></li>\n'
-            '<li><b>Commit:</b> <a href="https://git.example.org/DawnEver/motronics-studio/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778"><code>3f2a9c81d7e4</code></a></li>\n'
-            '<li><b>Run:</b> <a href="https://git.example.org/DawnEver/motronics-studio/actions/runs/812">open</a></li>\n'
+            '<li><b>Commit:</b> <a href="https://git.example.org/org-x/acme-consumer/commit/3f2a9c81d7e4b5a6c7d8e9f00112233445566778"><code>3f2a9c81d7e4</code></a></li>\n'
+            '<li><b>Run:</b> <a href="https://git.example.org/org-x/acme-consumer/actions/runs/812">open</a></li>\n'
             '</ul>\n'
             '<p><b>Details</b></p>\n'
             '<ul>\n'

@@ -8,11 +8,17 @@ the write can sit anywhere on the line (``echo {} > ...``).
 
 from __future__ import annotations
 
+import re
+
+from lab_commons.home import home as machine_home
+
 from dev_lab.dev.consentguard import HAZARD, REMEDY, RULE_ID, STATE_PARTS
 
 __all__ = ['CONSENT_CODE_FROM_THE_USER']
 
-_STATE = r'[\\/]+'.join(part.replace('.', r'\.') for part in STATE_PARTS)
+#: The machine home's directory name, read from its one declaration (``lab_commons.home``), never spelled here.
+_HOME = machine_home().name
+_STATE = r'[\\/]+'.join(re.escape(part) for part in (_HOME, *STATE_PARTS))
 _WRITERS = (
     r'(?:>|\btee\b|\bcp\b|\bmv\b|\bmkdir\b|\btouch\b'
     r'|Set-Content|Out-File|Add-Content|New-Item|Copy-Item|Move-Item)'
@@ -26,9 +32,9 @@ CONSENT_CODE_FROM_THE_USER: dict[str, object] = {
     'remedy': REMEDY,
     'needs': None,
     'refuses': (
-        'echo {} > ~/.motronics/state/consent/x.json',
-        'cp cred.json C:/Users/<user>/.motronics/state/consent/',
-        'Set-Content -Path $HOME\\.motronics\\state\\consent\\x.json -Value x',
+        f'echo {{}} > ~/{_HOME}/state/consent/x.json',
+        f'cp cred.json C:/Users/<user>/{_HOME}/state/consent/',
+        f'Set-Content -Path $HOME\\{_HOME}\\state\\consent\\x.json -Value x',
     ),
     'permits': (
         'python -m dev_lab.ops.consent grant output/req.json',
@@ -36,6 +42,6 @@ CONSENT_CODE_FROM_THE_USER: dict[str, object] = {
         'echo 123456 | python -m dev_lab.ops.consent grant output/req.json',
         'python -m dev_lab.dev.forge breakglass open --credential 0b1c2d3e-aaaa-bbbb-cccc-1234567890ab',
         'python -m dev_lab.dev.forge pr breakglass 123456 --reason "review bot is down"',
-        'cat ~/.motronics/state/consent/x.json',
+        f'cat ~/{_HOME}/state/consent/x.json',
     ),
 }

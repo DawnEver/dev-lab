@@ -93,7 +93,7 @@ class _GitHub:
     def getresponse(self) -> _Response:
         method, path, _ = self._last
         answers = {
-            ('GET', '/app'): {'id': self.app_id, 'slug': 'motronics-review'},
+            ('GET', '/app'): {'id': self.app_id, 'slug': 'acme-review'},
             ('GET', '/repos/o/r/installation'): {'id': 77},
             ('POST', '/app/installations/77/access_tokens'): {'token': 'inst', 'expires_at': '2026-11-04T13:00:00Z'},
         }
@@ -112,14 +112,14 @@ def test_the_installation_token_is_minted_once_per_run_and_names_the_app(
     github = _GitHub()
     for _ in range(2):
         app, token = forgeapp.installation(FORGE, APP, pem, transport=github, clock=lambda: NOW)
-        assert (app, token) == (forgeapp.App(APP, 'motronics-review'), 'inst')
+        assert (app, token) == (forgeapp.App(APP, 'acme-review'), 'inst')
     assert github.asked == [
         ('GET', '/app', 'Bearer'), ('GET', '/repos/o/r/installation', 'Bearer'),
         ('POST', '/app/installations/77/access_tokens', 'Bearer'),
     ]  # fmt: skip
-    assert app.login == 'motronics-review[bot]'
+    assert app.login == 'acme-review[bot]'
     client = forgeapp.AppClient(FORGE, 'inst', app=app)
-    assert client.whoami() == 'motronics-review[bot]'  # never asks /user
+    assert client.whoami() == 'acme-review[bot]'  # never asks /user
     assert (forgeapp.app_of(client), forgeapp.app_of(Client(FORGE, 'inst'))) == (app, None)
 
 
@@ -134,7 +134,7 @@ def test_a_key_github_names_another_app_for_is_refused(
 
 
 def _run(*, app: int | None = APP, head: str = HEAD, status: str = 'completed', conclusion: str = 'success',
-         ident: int = 1, slug: str = 'motronics-review') -> dict[str, Any]:  # fmt: skip
+         ident: int = 1, slug: str = 'acme-review') -> dict[str, Any]:  # fmt: skip
     owner = {'id': app, 'slug': slug} if app is not None else None
     return {'id': ident, 'name': JUDGE_CHECK, 'head_sha': head, 'status': status, 'conclusion': conclusion,
             'app': owner}  # fmt: skip

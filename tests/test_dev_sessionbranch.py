@@ -493,7 +493,7 @@ def test_a_branch_lands_under_its_own_name_and_a_detached_tip_only_on_a_machine_
 
 
 def test_a_detached_head_onto_a_pr_branch_is_refused(repo: Path) -> None:
-    """Motronics PR #5541: a refused lane, ``checkout --detach``, then ``HEAD:pr/<x>`` -- refused, never admitted."""
+    """acme-consumer #5541: a refused lane, ``checkout --detach``, then ``HEAD:pr/<x>`` -- refused, never admitted."""
     _git(repo, 'checkout', 'lane/x')
     _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
     _git(repo, 'checkout', '--detach')

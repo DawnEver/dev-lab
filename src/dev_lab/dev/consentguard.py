@@ -18,13 +18,15 @@ import os
 from pathlib import Path
 from typing import Final
 
+from lab_commons.home import home as machine_home
+
 from dev_lab.dev.disclosure import details_for
 
 __all__ = ['HAZARD', 'REMEDY', 'RULE_ID', 'STATE_PARTS', 'refuse_write', 'state_dir']
 
 RULE_ID: Final = 'CONSENT-CODE-FROM-THE-USER'
-#: The consent state directory, below the home.
-STATE_PARTS: Final = ('.motronics', 'state', 'consent')
+#: The consent state directory, below the machine home (:func:`lab_commons.home.home`).
+STATE_PARTS: Final = ('state', 'consent')
 HAZARD: Final = (
     'a consent credential is written by the grant from a code the USER gave; a planted one forges the consent.'
 )
@@ -36,8 +38,8 @@ REMEDY: Final = (
 
 
 def state_dir(home: Path | None = None) -> Path:
-    """Where granted credentials live: ``~/.motronics/state/consent``."""
-    return (Path.home() if home is None else home).joinpath(*STATE_PARTS)
+    """Where granted credentials live: ``<machine home>/state/consent``; *home* overrides the machine home."""
+    return (machine_home() if home is None else home).joinpath(*STATE_PARTS)
 
 
 def refuse_write(path: Path, *, home: Path | None = None) -> str | None:
