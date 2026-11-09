@@ -5,7 +5,7 @@ a tracked file, since the forge, its repos and the login host are private to the
 
     [deploy]
     host = "<login host>"          # the ONE host whose crontab serves this account (cron is per host)
-    root = ".local/share/lab-forge/repos"  # the served checkouts live in ~/<root>/<name> (the forge home)
+    root = ".local/share/lab-forge/repos"  # checkouts live in <root>/<name>; relative is under home
     python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
@@ -128,7 +128,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--repo', type=parse_repo, action='append', default=[], help='declare: <name>=<https url>@<branch>'
     )
-    parser.add_argument('--root', default=DEFAULT_ROOT, help='declare: checkouts live in ~/<root>/<name>')
+    parser.add_argument(
+        '--root', default=DEFAULT_ROOT, help='declare: checkouts live in <root>/<name>, a relative root under home'
+    )
     parser.add_argument('--python', default=DEFAULT_PYTHON, help='declare: the uv-managed interpreter request')
     parser.add_argument('--slurm-account', default='', help="declare: the grant's account, when Slurm names several")
     parser.add_argument('--partition', action='append', default=[], help='declare: a partition the grant may use')
@@ -389,7 +391,7 @@ def deploy(
         lambda: grant(step, spec, path, hostname),
         lambda: _declare(step, spec, path),
         lambda: _serve_git(step, home, path, slurm, setup),
-        lambda: _each(step, spec, home, f'[checkouts] under ~/{spec.root}', update, refused=refused),
+        lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
         lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
         lambda: _login(step, home),
         lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),

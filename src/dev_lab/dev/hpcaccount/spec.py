@@ -298,8 +298,12 @@ def tick_dirs(home: Path, slurm: Sequence[str] = ()) -> list[str]:
 
 
 def checkout_of(spec: Deployment, home: Path, repo: Repo) -> Path:
-    """Where *repo* is checked out: ``~/<root>/<name>``."""
-    return home / spec.root / repo.name
+    """Where *repo* is checked out: ``<root>/<name>``, a relative *root* under *home*.
+
+    An absolute root is taken as is: a site whose compute nodes never see home (``/work/...``).
+    """
+    root = PurePosixPath(spec.root)
+    return (Path(root) if root.is_absolute() else home / root) / repo.name
 
 
 def host_serve_argv() -> list[str]:
