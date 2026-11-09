@@ -262,13 +262,13 @@ def detached_worktree(root: Path, sha: str) -> Iterator[Path]:
     """A detached worktree of *root* at *sha* under its git directory, with its submodules; removed after."""
     common = Path(_must(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
     tree = common / 'relock' / sha[:SHORT]
-    _git(root, 'worktree', 'remove', '--force', str(tree))
+    _git(root, 'worktree', 'remove', '--force', '--force', str(tree))  # twice: a killed run's lock too
     _must(root, 'worktree', 'add', '--detach', str(tree), sha)
     try:
         mount_submodules(root, tree)
         yield tree
     finally:
-        _git(root, 'worktree', 'remove', '--force', str(tree))
+        _git(root, 'worktree', 'remove', '--force', '--force', str(tree))  # twice: a killed run's lock too
 
 
 def door_upgrade(tree: Path, packages: Sequence[str] = ()) -> int:
