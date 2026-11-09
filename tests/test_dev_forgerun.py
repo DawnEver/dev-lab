@@ -1580,7 +1580,9 @@ def test_a_heavy_oom_kill_floors_its_file_and_only_a_light_kill_sizes_the_part(
     run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
     cluster.killed(run)
     light_gb = measured.killed_need_mb(4199, 4096) / 1024
-    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(light_gb)
+    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
+        light_gb, rel=1e-12, abs=0.0
+    )
     assert learned.learned('https://f/o/r.git')['peaks_mb'] == {'tests/heavy.py': 204800.0, 'tests/a.py': 4096.0}
 
 

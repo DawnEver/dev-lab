@@ -66,7 +66,7 @@ from lab_commons.resources import Engine
 from dev_lab.dev import hpcusage
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, env_carries, reached_tests, read_by
-from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_items
+from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_files, task_items
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgescope import ReachedFiles
@@ -275,14 +275,10 @@ class SlurmCluster:
             grants = self.machine.grants
             ceiling = grantable_gb([(g, probe(self.connect(g), g.slurm_account)) for g in grants])
             items = task_items(state, shell, [one.job for one in found])
-            files = {
-                task: {str(n).split('::', 1)[0] for item in ran for n in item.get('ids', ())}
-                for task, ran in items.items()
-            }
             learned.record_kills(
                 run.repo_url,
                 needs_of_row(run.platform),
-                [(one.asked_mb, one.used_mb, files.get(one.job, set())) for one in oom],
+                [(one.asked_mb, one.used_mb, task_files(items.get(one.job, ()))) for one in oom],
                 heavy=state.get('heavy', ()),
                 safety=self.config.policy.safety,
                 ceiling_gb=ceiling,
