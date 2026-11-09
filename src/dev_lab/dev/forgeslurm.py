@@ -13,8 +13,8 @@ and the partitions, quota and storage a host card publishes. An unreadable quota
 
 A JOB SLURM KILLED IS READ, NAMED AND LEARNED (:meth:`SlurmCluster.killed`; Ada 2026-10-25, 24 h: 71
 ``OUT_OF_MEMORY`` jobs and 14 % ``TIMEOUT``, none visible on a PR). ``sacct`` gives each its ask and its use
-(``ReqMem``/``MaxRSS``, ``Timelimit``/``Elapsed``); an OOM's ask is recorded grown by
-:data:`~lab_commons.compute.learned.OOM_GROWTH` and held to the most any grant gives
+(``ReqMem``/``MaxRSS``, ``Timelimit``/``Elapsed``); a LIGHT OOM's need, grown from its measured peak, is
+recorded (:func:`~lab_commons.compute.learned.record_kills`) and held to the most any grant gives
 (:func:`~lab_commons.hpc.plan.grantable_gb`), so the part's next run asks for more. A TIMEOUT needs nothing
 here: the gather already keeps a killed item's floor (:meth:`lab_commons.compute.measured.Measured.killed`).
 
@@ -257,32 +257,37 @@ class SlurmCluster:
         return records[-1]
 
     def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
-        """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's ask is learned grown.
+        """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's need is learned.
 
-        Grown by :data:`~lab_commons.compute.learned.OOM_GROWTH`, held to the most any grant gives, never
-        lowering a known ask (:func:`~lab_commons.compute.learned.record_ask`): one learned store, read by the next
-        run's admission and plan. Each file an OOM task ran is floored at its ask (:mod:`dev_lab.dev.forgeoom`),
-        in the learned table and in *record*, the run record every host folds.
+        A LIGHT OOM task raises the part's ask, grown from its measured peak and held to the most any grant gives
+        (:func:`~lab_commons.compute.learned.record_kills`); a task that ran the run's heavy file, or whose need is
+        heavy, never sizes the part (Ada 2026-11-09: 324-412 GB asked by ~7200 light files). Each file an OOM task
+        ran is floored at its ask (:mod:`dev_lab.dev.forgeoom`), in the learned table and in *record*, the run
+        record every host folds -- so a heavy file is packed alone at its own floor.
         """
         state, shell = load_state(run.sha, run.platform, self.machine, self._runners())
         ids = [str(job) for one in state['rounds'] for job in one['job_ids']]
         if not ids:
             return ()
         found = killed_jobs(shell(f'sacct -n -P -j {",".join(ids)} -o {KILLED_FIELDS}', None))
-        oom = [one.asked_mb for one in found if one.state == 'OUT_OF_MEMORY']
+        oom = [one for one in found if one.state == 'OUT_OF_MEMORY']
         if oom:
             grants = self.machine.grants
             ceiling = grantable_gb([(g, probe(self.connect(g), g.slurm_account)) for g in grants])
-            ask_gb = max(oom) / 1024 * learned.OOM_GROWTH
-            learned.record_ask(
+            items = task_items(state, shell, [one.job for one in found])
+            files = {
+                task: {str(n).split('::', 1)[0] for item in ran for n in item.get('ids', ())}
+                for task, ran in items.items()
+            }
+            learned.record_kills(
                 run.repo_url,
-                learned.SLURM,
                 needs_of_row(run.platform),
-                ask_gb,
+                [(one.asked_mb, one.used_mb, files.get(one.job, set())) for one in oom],
+                heavy=state.get('heavy', ()),
                 safety=self.config.policy.safety,
                 ceiling_gb=ceiling,
             )
-            learn_floors(run.repo_url, oom_floors(found, task_items(state, shell, [one.job for one in found])), record)
+            learn_floors(run.repo_url, oom_floors(found, items), record)
         return found
 
     def progress(self, run: Run) -> str:
