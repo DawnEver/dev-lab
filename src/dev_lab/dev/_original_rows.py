@@ -340,6 +340,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'allocate',
     'checks',
     'deploy',
+    'division',  # ORIGINAL: the workstation's HPC division as data (user rulings 2026-11-09)
     'fleet',
     'spec',
     'steps',

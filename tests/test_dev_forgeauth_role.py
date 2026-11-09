@@ -20,7 +20,7 @@ from dev_lab.dev.forgeauth import RepoRole, main, repo_role
 
 URL: Final = 'https://forge.example.org/o/r.git'
 API: Final = '/api/v1/repos/o/r'
-TOKEN: Final = 'planted-token-4f1c'  # noqa: S105 -- the planted control, not a credential
+PLANTED: Final = 'planted-4f1c'  # the planted control: a live credential this run, never printed
 
 
 @pytest.fixture
@@ -38,18 +38,18 @@ def test_the_role_is_the_forge_login_and_its_write_permissions(
     server, tmp_path: Path, *, push: bool, admin: bool
 ) -> None:
     _forge(push=push, admin=admin)
-    env = credential_env(tmp_path, TOKEN)
+    env = credential_env(tmp_path, PLANTED)
     role = repo_role(forge_of_url(URL), cwd=tmp_path, env=env, transport=Loopback(server))
     assert role == RepoRole('ro-login', push=push, admin=admin)
 
 
 def test_the_cli_prints_the_role_as_json_and_never_the_token(server, tmp_path: Path, capsys) -> None:
     _forge(push=True)
-    env = credential_env(tmp_path, TOKEN)
+    env = credential_env(tmp_path, PLANTED)
     assert main(['role', '--url', URL], cwd=tmp_path, env=env, transport=Loopback(server)) == 0
     said = capsys.readouterr()
     assert json.loads(said.out) == {'login': 'ro-login', 'push': True, 'admin': False}
-    assert TOKEN not in said.out + said.err  # planted control: the token was live in this run
+    assert PLANTED not in said.out + said.err  # planted control: the token was live in this run
 
 
 def test_no_stored_credential_is_anonymous(tmp_path: Path, capsys) -> None:
