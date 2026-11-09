@@ -20,6 +20,10 @@ The ask bounds the files' COMBINED memory; which file held it is unknown, and a 
 (memory is not additive across one process's files, and one heavy file is the common case). Such a kill floors
 the id it cut (``id_peaks_mb``, :meth:`~lab_commons.compute.measured.Measured.learn`) and is bisected on retry
 until a one-file task says.
+
+A LONE ID PAST ITS GROWTH BUDGET IS TOLD, NOT RE-ASKED. The run grows a lone killed id at most twice
+(:data:`lab_commons.hpc.run.OOM_ROUNDS` rounds, then its cell settles ``out_of_memory``); past that nothing asks
+again, and :func:`budget_alarm` raises ONE ``run`` alarm about :data:`OOM_BUDGET` naming each such id and why.
 """
 
 from __future__ import annotations
@@ -28,14 +32,29 @@ import gzip
 import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from lab_commons.compute import learned
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Status
 
+from dev_lab.dev.forgealarm import RUN, Alarm
 from dev_lab.dev.forgerunstate import Killed
 from dev_lab.dev.forgestuck import remote_path
 
-__all__ = ['floor_record', 'learn_floors', 'oom_floors', 'raised', 'task_items']
+__all__ = [
+    'OOM_BUDGET',
+    'budget_alarm',
+    'budget_spent',
+    'floor_record',
+    'learn_floors',
+    'oom_floors',
+    'raised',
+    'task_items',
+]
+
+#: The ``about`` of the ``run`` alarm a lone id past its memory-growth budget raises.
+OOM_BUDGET: Final = 'oom-budget'
 
 
 def oom_floors(jobs: Sequence[Killed], items: Mapping[str, Sequence[Mapping[str, Any]]]) -> dict[str, float]:
@@ -90,3 +109,33 @@ def task_items(
                 start, stop = manifests[run_dir]['shards'][int(index)]
                 found[task] = manifests[run_dir]['items'][start:stop]
     return found
+
+
+def budget_spent(path: Path) -> dict[str, str]:
+    """``{id: why}`` -- each id the gzipped record at *path* settled ``out_of_memory``: its growth budget spent.
+
+    An unreadable record names none: the alarm is advisory, and publishing reads the record and says why it cannot.
+    """
+    try:
+        cells = json.loads(gzip.decompress(path.read_bytes()).decode('utf-8')).get('cells') or {}
+    except (OSError, ValueError):
+        return {}
+    spent = {}
+    for node, plain in cells.items():
+        cell = TestCell.from_plain(plain)
+        if cell.status is Status.OUT_OF_MEMORY:
+            spent[node] = cell.why or cell.word()
+    return spent
+
+
+def budget_alarm(repo: str, sha: str, spent: Mapping[str, str]) -> Alarm | None:
+    """ONE ``run`` alarm about :data:`OOM_BUDGET` naming every id of *spent* and why; ``None`` when none."""
+    if not spent:
+        return None
+    lines = '\n'.join(f'- {node}: {why}' for node, why in sorted(spent.items()))
+    body = (
+        f'{len(spent)} test(s) of {sha[:12]} were killed for memory past their growth budget and are no longer '
+        f're-asked:\n{lines}\nRemedy: cut the test memory, or split it; its ask grows no further.'
+    )
+    subject = f'{len(spent)} test(s) of {sha[:12]} out of memory past the growth budget'
+    return Alarm(RUN, repo, subject, body, about=OOM_BUDGET)

@@ -108,6 +108,7 @@ from dev_lab.dev.forgecarry import publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from dev_lab.dev.forgecoalesce import PUBLISHING
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgeoom import budget_alarm, budget_spent
 from dev_lab.dev.forgeroute import pyproject_at, route
 from dev_lab.dev.forgerunpost import DESCRIPTION_MAX
 from dev_lab.dev.forgerunstate import (
@@ -251,6 +252,8 @@ def _gather(
             client, run, f'{progress}; lost {lost}: forge run show' if lost else progress, lease, say
         )
     forgerunpost.killed(client, run, cluster.killed(run, record), say, tag)
+    if spent := budget_alarm(run.repo_url, run.sha, budget_spent(record)):
+        alarm(spent)
     run = forgerunpost.step(run, phase=GATHERED, record=str(record))
     return forgerunpost.report(client, run, PUBLISHING, lease, say)
 
