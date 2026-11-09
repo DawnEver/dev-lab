@@ -38,6 +38,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.home import part
+from lab_commons.log import emit
 
 from dev_lab.ops.totp import write_private
 
@@ -291,28 +292,25 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _out(text: str) -> None:
-    sys.stdout.write(text + '\n')
-
-
 def main(argv: list[str] | None = None) -> int:
     """The CLI; ``run`` exits with the remote status, a refusal with 2, a lost session with 255."""
     args = _parser().parse_args(argv)
     try:
         if args.verb == 'open':
             code = args.code if args.code is not None else sys.stdin.readline().strip()
-            _out(open_session(args.dest, args.hours, code))
+            emit(open_session(args.dest, args.hours, code))
         elif args.verb == 'run':
             words = args.command[1:] if args.command[:1] == ['--'] else args.command
             output, status = run_command(args.dest, ' '.join(words), args.timeout)
-            sys.stdout.write(output)
+            if output:
+                emit(output.removesuffix('\n'))  # emit ends the line itself
             return status
         elif args.verb == 'close':
-            _out(close_session(args.dest))
+            emit(close_session(args.dest))
         else:
-            _out('\n'.join(status_lines()))
+            emit('\n'.join(status_lines()))
     except HoldRefused as exc:
-        sys.stderr.write(f'sshhold: {exc}\n')
+        emit(f'sshhold: {exc}', err=True)
         return 255 if args.verb == 'run' and 'ssh connection ended' in str(exc) else 2
     return 0
 

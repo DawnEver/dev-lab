@@ -15,6 +15,13 @@ import sys
 _MARKER = re.compile(r"printf '\\n(__SSHHOLD_\w+_)%s\\n'")
 
 
+def _shell(body: str) -> str | list[str]:
+    """The platform shell running *body*, as a remote ``bash -s`` would: cmd.exe takes one command line."""
+    if sys.platform == 'win32':
+        return f'{os.environ.get("COMSPEC", "cmd.exe")} /d /c {body}'
+    return ['/bin/sh', '-c', body]
+
+
 def main() -> int:
     answer = subprocess.run(
         [os.environ['SSH_ASKPASS'], 'Verification code: '],
@@ -37,9 +44,7 @@ def main() -> int:
         lines.clear()
         if body.strip() == '__drop__':
             return 255
-        done = subprocess.run(  # noqa: S602 -- the fake IS a remote shell: it runs the framed body as one
-            body, shell=True, capture_output=True, text=True, encoding='utf-8', timeout=60, check=False
-        )
+        done = subprocess.run(_shell(body), capture_output=True, text=True, encoding='utf-8', timeout=60, check=False)
         said = f'{done.stdout}{done.stderr}'.replace('\r\n', '\n')  # a bash remote ends lines on LF alone
         sys.stdout.buffer.write(f'{said}\n{found.group(1)}{done.returncode}\n'.encode())
         sys.stdout.buffer.flush()

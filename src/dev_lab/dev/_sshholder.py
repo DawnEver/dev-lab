@@ -114,8 +114,7 @@ class Holder:
 
 
 def _say(word: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(word) + '\n')
-    sys.stdout.flush()
+    os.write(sys.stdout.fileno(), (json.dumps(word) + '\n').encode('ascii'))  # a pipe to the opener, not a console
     devnull = os.open(os.devnull, os.O_WRONLY)
     os.dup2(devnull, sys.stdout.fileno())  # the opener stops reading; nothing more goes to its pipe
 
