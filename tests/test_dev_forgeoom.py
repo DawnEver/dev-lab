@@ -60,3 +60,33 @@ def test_the_record_carries_the_floor_so_its_fold_does_not_lower_it(tmp_path: Pa
     floor_record(path, {_A: 1024.0, _B: 1024.0})
     record = json.loads(gzip.decompress(path.read_bytes()))
     assert record == {'sha': 'a', 'peaks_mb': {_A: 1024.0, _B: 3000.0}}
+
+
+def test_an_id_past_its_growth_budget_raises_one_named_run_alarm(tmp_path: Path) -> None:
+    """RETRY BUDGET: a lone id grows at most twice a run (lab_commons OOM_ROUNDS), then settles OUT_OF_MEMORY.
+
+    Nothing more is asked for it; a human is told once, by a ``run`` alarm about ``oom-budget`` naming each
+    id and why. PLANTED CONTROL: a record with no such cell raises nothing.
+    """
+    from lab_commons.hpc.testcells import TestCell  # noqa: PLC0415 -- the record's cell shape
+    from lab_commons.outcomes import Cell, Reason, Status  # noqa: PLC0415
+
+    from dev_lab.dev.forgealarm import RUN  # noqa: PLC0415
+    from dev_lab.dev.forgeoom import OOM_BUDGET, budget_alarm, budget_spent  # noqa: PLC0415
+
+    why = Reason('out_of_memory', 'killed for memory alone in 3 rounds')
+    cells = {
+        f'{_A}::t': TestCell(Cell(Status.OUT_OF_MEMORY, reason=why)).to_plain(),
+        f'{_B}::t': TestCell(Cell(Status.OK)).to_plain(),
+    }
+    path = tmp_path / 'run.json.gz'
+    path.write_bytes(gzip.compress(json.dumps({'cells': cells}).encode('utf-8')))
+    spent = budget_spent(path)
+    assert set(spent) == {f'{_A}::t'}
+    alarm = budget_alarm('https://g/r.git', 'a' * 40, spent)
+    assert alarm is not None
+    assert (alarm.kind, alarm.about) == (RUN, OOM_BUDGET)
+    assert f'{_A}::t' in alarm.body
+    assert 'alone in 3 rounds' in alarm.body
+    assert budget_alarm('https://g/r.git', 'a' * 40, {}) is None
+    assert budget_spent(tmp_path / 'gone.json.gz') == {}, 'an unreadable record names none'
