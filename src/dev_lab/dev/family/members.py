@@ -33,6 +33,7 @@ from typing import Final, Protocol
 
 import tomlkit
 
+from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.family import is_member
 from dev_lab.dev.famtests.onboarding import OnboardingViolation, assert_repo_is_onboarded
 from dev_lab.dev.lanepolicy import load_policy
@@ -93,7 +94,11 @@ def _forge_findings(name: str, facts: Facts, *, bundle_name: str, now: datetime)
               for b in facts.missing_branches]  # fmt: skip
     found += [Finding(name, f'protection: {line} -- python -m dev_lab.dev.forge protect apply')
               for line in facts.protection_drift]  # fmt: skip
-    if bundle_name not in facts.secrets and not any(why.startswith('secrets') for why in facts.unread):
+    if facts.host and facts.host != GITHUB_HOST:  # never a bundle off GitHub (dev_lab.dev.forgesecrets)
+        if bundle_name in facts.secrets:
+            found.append(Finding(name, f'secret: {bundle_name} is set on {facts.host}, where any PR can read it -- '
+                                       'delete it (ruling 2026-11-03)'))  # fmt: skip
+    elif bundle_name not in facts.secrets and not any(why.startswith('secrets') for why in facts.unread):
         found.append(
             Finding(
                 name, f'secret: {bundle_name} is absent -- python -m dev_lab.dev.forge secrets sync --task pr-review'

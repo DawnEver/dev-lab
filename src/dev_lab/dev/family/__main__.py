@@ -20,7 +20,7 @@ from dev_lab.dev import forgeprotect
 from dev_lab.dev.family.members import FamilyRefused, join
 from dev_lab.dev.family.watch import findings
 from dev_lab.dev.forge import forge_from_remote
-from dev_lab.dev.forgesecrets import Target, set_secret, stored_bundle
+from dev_lab.dev.forgesecrets import Target, set_secret, stored_bundle, withheld
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
@@ -52,7 +52,10 @@ def _protect(root: Path) -> list[str]:
 
 def _secrets(name: str, bundle: str) -> Callable[[Path], str]:
     def put(root: Path) -> str:
-        set_secret(Target(name, root, forge_from_remote(root)), secret_name(REVIEW_TASK), bundle)
+        target = Target(name, root, forge_from_remote(root))
+        if why := withheld(target):
+            return why
+        set_secret(target, secret_name(REVIEW_TASK), bundle)
         return f'set {secret_name(REVIEW_TASK)} (sha256 {hashlib.sha256(bundle.encode()).hexdigest()[:12]})'
 
     return put

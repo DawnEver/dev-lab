@@ -98,14 +98,12 @@ def test_sync_sets_the_derived_secret_on_every_declared_repo_and_logs_no_bundle(
         ['sync', '--task', 'pr-review'], stdin=lambda: _BUNDLE, members=lambda: repos,
         write=lambda target, name, bundle: wrote.append((target.forge.identity, name, bundle)),
     )  # fmt: skip
-    assert code == 0
-    assert wrote == [
-        ('github.com/o/hub', 'AI_LAB_KEYS_PR_REVIEW', _BUNDLE),
-        ('forge.example/o/tea', 'AI_LAB_KEYS_PR_REVIEW', _BUNDLE),
-    ]
+    assert code == 0, 'a withheld member is no failure'
+    assert wrote == [('github.com/o/hub', 'AI_LAB_KEYS_PR_REVIEW', _BUNDLE)], 'ruling 2026-11-03: never a Gitea member'
     said = capsys.readouterr()
     assert 'sk-planted' not in said.out + said.err
-    assert said.out.count('AI_LAB_KEYS_PR_REVIEW set (sha256 ') == 2
+    assert said.out.count('AI_LAB_KEYS_PR_REVIEW set (sha256 ') == 1
+    assert 'tea: withheld -- forge.example runs a PR branch with its secrets readable' in said.out
 
 
 def test_sync_dry_run_lists_targets_and_touches_nothing(
@@ -127,9 +125,9 @@ def test_sync_dry_run_lists_targets_and_touches_nothing(
     assert touched == []
     out = capsys.readouterr().out
     assert 'would set AI_LAB_KEYS_LIVE on github.com/o/hub' in out
-    assert 'would set AI_LAB_KEYS_LIVE on forge.example/o/tea' in out
+    assert 'would set AI_LAB_KEYS_LIVE on forge.example/o/tea' not in out
     assert forgesecrets.main(['sync', '--task', 'live'], stdin=stdin, members=lambda: repos, write=write) == 0
-    assert touched == ['stdin', 'write', 'write'], 'PLANTED CONTROL'
+    assert touched == ['stdin', 'write'], 'PLANTED CONTROL'
 
 
 def test_sync_refuses_an_empty_bundle_and_a_bad_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -165,7 +163,7 @@ def test_the_bundle_is_stored_once_and_sync_reads_it_when_nothing_is_piped(
     wrote: list[str] = []
     assert forgesecrets.main(['sync', '--task', 'pr-review'], stdin=lambda: '', members=lambda: repos,
                              write=lambda _t, _n, bundle: wrote.append(bundle)) == 0  # fmt: skip
-    assert wrote == [_BUNDLE, _BUNDLE]
+    assert wrote == [_BUNDLE]
     said = capsys.readouterr()
     assert 'sk-planted' not in said.out + said.err
     assert not [p for p in tmp_path.rglob('*') if p.is_file() and 'sk-planted' in p.read_text(errors='ignore')]
@@ -183,21 +181,15 @@ def test_github_takes_the_bundle_through_gh_on_stdin_never_argv(monkeypatch: pyt
     assert call['input'] == _BUNDLE
 
 
-def test_gitea_takes_the_bundle_through_the_unjournaled_door(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A journaled write keeps its body on disk to replay it: the bundle's client has no journal."""
-    seen: list[tuple[Any, ...]] = []
+def test_set_secret_refuses_a_gitea_member_and_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ruling 2026-11-03: Gitea's PR workflow runs the PR branch with its secrets readable.
 
-    class _Client:
-        repo = 'repos/o/tea'
-        journal = None
-
-        def call(self, *given: object) -> None:
-            seen.append(given)
-
-    def client(_forge: Forge, **kw: object) -> _Client:
-        assert 'journal' not in kw, 'never journaled'
-        return _Client()
-
-    monkeypatch.setattr(forgesecrets, 'stored_client', client)
-    forgesecrets.set_secret(Target('tea', Path(), Forge('forge.example', 'o', 'tea')), 'AI_LAB_KEYS_LIVE', _BUNDLE)
-    assert seen == [('PUT', 'repos/o/tea/actions/secrets/AI_LAB_KEYS_LIVE', {'data': _BUNDLE})]
+    PLANTED CONTROL: the same call on a GitHub member writes through ``gh``.
+    """
+    calls, run = _recording()
+    monkeypatch.setattr(forgesecrets._door, 'run', run)
+    with pytest.raises(OSError, match='withheld'):
+        forgesecrets.set_secret(Target('tea', Path(), Forge('forge.example', 'o', 'tea')), 'AI_LAB_KEYS_LIVE', _BUNDLE)
+    assert calls == []
+    forgesecrets.set_secret(Target('hub', Path(), Forge('github.com', 'o', 'hub')), 'AI_LAB_KEYS_LIVE', _BUNDLE)
+    assert len(calls) == 1

@@ -3,14 +3,15 @@
 A task's bundle (:mod:`dev_lab.dev.taskkeys`) lives in ONE secret per repo, named by
 :func:`~dev_lab.dev.taskkeys.secret_name`. The repos are this machine's FAMILY -- the machine file's ``[repos]``, the
 one member list (:mod:`dev_lab.dev.family.members`) -- each at its declared checkout and placed on its forge by
-that checkout's own ``origin`` remote; a name with no checkout is skipped with its reason:
+that checkout's own ``origin`` remote; a name with no checkout is skipped with its reason. The bundle is set through
+``gh secret set <NAME> -R <owner>/<repo>``, the value on stdin (GitHub seals it client-side, which ``gh`` does and the
+REST door does not), retried through :func:`~dev_lab.dev.netverb.run_network_verb`, whose table names a rate limit
+transient and a bad credential or a missing repository refused.
 
-* GitHub: ``gh secret set <NAME> -R <owner>/<repo>``, the value on stdin (GitHub seals it client-side, which
-  ``gh`` does and the REST door does not), retried through :func:`~dev_lab.dev.netverb.run_network_verb`, whose
-  table names a rate limit transient and a bad credential or a missing repository refused;
-* Gitea: ``PUT <repo>/actions/secrets/<NAME>`` through the forge door (:class:`~dev_lab.dev.forgework.Client`),
-  WITHOUT its outbox journal -- a journaled write keeps its body on disk to replay it, and a bundle never touches
-  disk. The write is idempotent, so the door's own retry sends a lost answer again.
+ONLY A GITHUB MEMBER GETS IT (ruling 2026-11-03). Gitea's ``pull_request`` workflow runs the PR branch's own code
+with the repository's secrets readable, so a bundle there is a bundle any PR can print; Gitea's review runs on the
+isolated judge host with its own key. A member on any other forge is WITHHELD by name (:func:`withheld`), and
+:func:`set_secret` refuses one -- and ``family check`` names a non-GitHub member that holds a bundle as a leak.
 
 ONE LOOP EACH, never one around another: a loop here around the door's re-sent a REFUSED write three times
 (nine requests), and named nothing but the last message.
@@ -44,7 +45,6 @@ from lab_commons.log import emit
 
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
-from dev_lab.dev.forgework import stored_client
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.taskkeys import secret_name
 
@@ -52,7 +52,17 @@ if TYPE_CHECKING:
     import subprocess
     from collections.abc import Callable, Mapping, Sequence
 
-__all__ = ['BUNDLE_HOST', 'Target', 'declared', 'main', 'set_secret', 'store_bundle', 'stored_bundle', 'targets']
+__all__ = [
+    'BUNDLE_HOST',
+    'Target',
+    'declared',
+    'main',
+    'set_secret',
+    'store_bundle',
+    'stored_bundle',
+    'targets',
+    'withheld',
+]
 
 
 #: The credential-store host the task bundles are kept under (a name, never contacted); the username is the secret.
@@ -101,6 +111,15 @@ def targets(repos: Mapping[str, Path]) -> tuple[list[Target], list[str]]:
     return found, skipped
 
 
+def withheld(target: Target) -> str:
+    """Why *target* never receives a bundle (its forge is not GitHub; module docstring), ``''`` when it may."""
+    if target.forge.host == GITHUB_HOST:
+        return ''
+    return (
+        f'{target.name}: withheld -- {target.forge.host} runs a PR branch with its secrets readable (ruling 2026-11-03)'
+    )
+
+
 def _gh(target: Target, name: str, bundle: str) -> None:
     """``gh secret set``, the bundle on stdin; a failure names the report's remedy, never the output (it may echo)."""
     argv = ['gh', 'secret', 'set', name, '-R', f'{target.forge.owner}/{target.forge.repo}']
@@ -113,11 +132,6 @@ def _gh(target: Target, name: str, bundle: str) -> None:
         raise OSError(report.remedy)
 
 
-def _gitea(target: Target, name: str, bundle: str) -> None:
-    client = stored_client(target.forge, cwd=target.checkout)  # no journal: the body would land on disk
-    client.call('PUT', f'{client.repo}/actions/secrets/{name}', {'data': bundle})
-
-
 def set_secret(target: Target, name: str, bundle: str) -> None:
     """Set secret *name* to *bundle* on *target*'s forge, retried by its one door; the last refusal raises.
 
@@ -125,7 +139,9 @@ def set_secret(target: Target, name: str, bundle: str) -> None:
         OSError: the door refused or ran out (``gh``'s report, or the forge's ``ForgeCallFailed``).
 
     """
-    (_gh if target.forge.host == GITHUB_HOST else _gitea)(target, name, bundle)
+    if why := withheld(target):
+        raise OSError(why)
+    _gh(target, name, bundle)
 
 
 def _piped() -> str:
@@ -146,6 +162,16 @@ def _parser() -> argparse.ArgumentParser:
     sync.add_argument('--task', required=True, help='the ai-lab task, e.g. pr-review')
     sync.add_argument('--dry-run', action='store_true', help='list the targets; read and write nothing')
     return parser
+
+
+def _reachable(repos: Mapping[str, Path]) -> tuple[list[Target], list[str]]:
+    """The targets a bundle may reach, each skipped and withheld one said; the skipped ones' reasons."""
+    every, skipped = targets(repos)
+    for why in skipped:
+        emit(f'[secrets] skipped {why}', err=True)
+    for why in filter(None, map(withheld, every)):
+        emit(f'[secrets] {why}')
+    return [target for target in every if not withheld(target)], skipped
 
 
 def _store(task: str, name: str, piped: str, store: Callable[[str, str], None]) -> int:
@@ -177,9 +203,7 @@ def main(
     read = stdin or _piped
     if args.verb == 'store':
         return _store(args.task, name, read(), store)
-    found, skipped = targets(members())
-    for why in skipped:
-        emit(f'[secrets] skipped {why}', err=True)
+    found, skipped = _reachable(members())
     if not found:
         emit('[secrets] refused: no [repos] member checkout on a forge in the machine file', err=True)
         return 2

@@ -7,7 +7,7 @@ order and prints what is left for the user. The forge is a fake here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -156,3 +156,24 @@ def test_the_watch_alarms_each_finding_on_the_kits_tick_only(tmp_path: Path) -> 
     watch.step(tmp_path / 'other', 'https://forge.example/o/other.git', say=lambda _s: None,
                alarm=raised.append, read=lambda: pytest.fail('read on a non-kit tick'))  # fmt: skip
     assert len(raised) == 2
+
+
+def test_a_gitea_member_is_never_owed_the_bundle_and_is_named_when_it_holds_one(tmp_path: Path) -> None:
+    """Ruling 2026-11-03. PLANTED CONTROLS: a GitHub member without it is named; a Gitea member holding it is a leak."""
+    _repo(tmp_path / 'work', 'a')
+    _repo(tmp_path / 'work', 'b')
+    family = {'a': tmp_path / 'work' / 'a', 'b': tmp_path / 'work' / 'b'}
+
+    def run(host: str, secrets: set[str]) -> set[str]:
+        @dataclass
+        class Hosted(FakeForge):
+            def facts(self, root: Path, trunk: str, integration: str) -> Facts:
+                return replace(super().facts(root, trunk, integration), host=host)
+
+        found = members.check(family, forge=lambda _n, _r: Hosted(secrets=secrets), served=None, now=NOW,
+                              bundle_name=REVIEW)  # fmt: skip
+        return {f.what.split(' --')[0] for f in found if f.member == 'a'}
+
+    assert not {w for w in run('forge.example', set()) if w.startswith('secret')}
+    assert any('where any PR can read it' in w for w in run('forge.example', {REVIEW}))
+    assert any(w.startswith(f'secret: {REVIEW} is absent') for w in run('github.com', set()))
