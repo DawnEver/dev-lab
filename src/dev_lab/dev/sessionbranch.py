@@ -18,7 +18,7 @@ The invariants refused here by name, with NO network call beyond the push itself
   published only as ``Y``: ``Y:Z`` and a bare push whose git upstream names another branch are refused, so a
   lane cut from ``origin/<integration>`` never lands there by accident. A detached HEAD and a bare sha name no
   branch, so they are refused onto EVERY branch (``git checkout --detach`` then ``HEAD:pr/x`` landed a lane on a
-  ``pr/`` name, motronics #5541) -- save the forge's own pushers' branches, :data:`MACHINE_BRANCHES`.
+  ``pr/`` name, acme-consumer #5541) -- save the forge's own pushers' branches, :data:`MACHINE_BRANCHES`.
 * ``SESSION-HISTORY-ONLY-GROWS`` (P3) -- the old remote tip git hands the hook is an ancestor of the new
   one; a forced non-fast-forward and a deletion are refused. ONE place: no other hook judges this.
 * ``INTEGRATION-IS-MERGES-ONLY`` (P4) -- every new first-parent commit of the integration branch is a

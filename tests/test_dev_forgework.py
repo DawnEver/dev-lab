@@ -477,7 +477,7 @@ def test_the_forge_clock_is_the_date_the_forge_answered_with_not_the_hosts(serve
 def test_the_forge_clock_is_asked_even_when_the_pass_memo_holds_the_user(server) -> None:
     """A later client in a poller pass reads the forge's clock from the forge, not from the pass memo.
 
-    2026-11-06: its ``whoami`` was answered from the memo, so it never saw a Date and every motronics integration
+    2026-11-06: its ``whoami`` was answered from the memo, so it never saw a Date and every acme-consumer integration
     step raised "answered without a Date header" -- no tests/security was posted.
 
     PLANTED CONTROL: the client that filled the memo was asked, so its clock was read from that answer.

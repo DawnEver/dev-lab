@@ -177,7 +177,7 @@ def test_an_oversize_head_is_read_in_diff_slices_and_the_rest_is_listed(tmp_path
     """D123 and the 2026-11-06 fix: an oversize head is never held and never one path-less review.
 
     The path-less "structure" slice was rendered by ai-lab as an ``agent`` call the forge's headless run mode
-    refuses, so every reviewer was ``unsupported`` (motronics #5490). Now: past the total, slices run strictest lens
+    refuses, so every reviewer was ``unsupported`` (acme-consumer #5490). Now: past the total, slices run strictest lens
     first and the code left out is listed in the comment; one file over a slice is a slice of its own.
 
     PLANTED control: the same head under wide bounds reads every path and lists nothing.

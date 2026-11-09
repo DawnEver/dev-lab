@@ -216,11 +216,11 @@ def test_github_an_unreadable_classic_protection_raises_rather_than_reading_as_n
 
 # -- Gitea: branch protections ---------------------------------------------------------------------------------------
 
-#: The motronics-studio rules as clicked by hand on 2026-11-04 (read from the forge's database, read-only).
+#: The acme-consumer rules as clicked by hand on 2026-11-04 (read from the forge's database, read-only).
 _HAND_SET = {
     'main': {'enable_push': True, 'enable_push_whitelist': True,
-             'push_whitelist_usernames': ['mingyangbao-admin', 'promote-bot'], 'enable_merge_whitelist': True,
-             'merge_whitelist_usernames': ['mingyangbao-admin'], 'enable_force_push': False,
+             'push_whitelist_usernames': ['user-a-admin', 'promote-bot'], 'enable_merge_whitelist': True,
+             'merge_whitelist_usernames': ['user-a-admin'], 'enable_force_push': False,
              'enable_bypass_allowlist': False, 'block_admin_merge_override': False, 'required_approvals': 0},
     'integrate/main': {'enable_push': False, 'enable_bypass_allowlist': True,
                        'bypass_allowlist_usernames': ['breakglass-bot'], 'block_on_rejected_reviews': True,
@@ -233,7 +233,7 @@ def test_gitea_names_every_hand_set_difference_and_apply_removes_them() -> None:
     wanted = targets(GITEA_TEXT, 'p', GITEA)
     steps = {step.subject: step.lines for step in plan(forge, GITEA, wanted)}
     trunk = steps['trunk main: branch protection differs -> update']
-    assert "push_whitelist_usernames: live=['mingyangbao-admin', 'promote-bot'] declared=['promote-bot']" in trunk
+    assert "push_whitelist_usernames: live=['promote-bot', 'user-a-admin'] declared=['promote-bot']" in trunk
     assert 'block_admin_merge_override: live=False declared=True' in trunk
     integration = steps['integration integrate/main: branch protection differs -> update']
     assert any(line.startswith('status_check_contexts: the forge did not answer') for line in integration)

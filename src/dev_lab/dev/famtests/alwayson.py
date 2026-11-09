@@ -15,7 +15,7 @@ pytester tree, an unpacked sdist) has no tracked corpus and gets none. :data:`de
 is the registry's half: an adoption may neither list these rules nor declare them absent.
 
 ONE ``git grep`` FINDS THE CANDIDATES (coordinator ruling 2026-11-07): a per-file Python read took
-331 s over motronics' 22k files. The PCRE class is built from :data:`dev_lab.dev.cjk.CJK_RANGES` and
+331 s over acme-consumer's 22k files. The PCRE class is built from :data:`dev_lab.dev.cjk.CJK_RANGES` and
 the exclusions from :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`; ``-I`` skips binaries. The translation
 exemption and orphan check run in Python on the short list, and only hit files are re-read to name
 line and column. The floor: ``git ls-files`` lists at least one file.

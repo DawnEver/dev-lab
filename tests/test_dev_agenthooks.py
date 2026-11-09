@@ -41,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
+
 if os.name == 'nt':
     import _winapi
 
@@ -527,6 +529,6 @@ def test_a_user_code_passes_and_a_planted_credential_is_refused_through_the_real
     """CONSENT-CODE-FROM-THE-USER: a code the USER gave passes (ruling 2026-11-08); a planted credential is refused."""
     assert agenthooks.decide('python -m dev_lab.ops.consent grant output/req.json --code 123456', rules) is None
     assert agenthooks.decide('echo 123456 | python -m dev_lab.ops.consent grant output/req.json', rules) is None
-    planted = agenthooks.decide('echo {} > ~/.motronics/state/consent/x.json', rules)
+    planted = agenthooks.decide(str(CONSENT_CODE_FROM_THE_USER['refuses'][0]), rules)  # the row's own example
     assert planted is not None
     assert planted.startswith('CONSENT-CODE-FROM-THE-USER:')

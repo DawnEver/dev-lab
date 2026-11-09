@@ -1,6 +1,6 @@
 """A SYNC NEVER ROLLS A LANE BACK: every git pin of the merged lock contains both sides' pins.
 
-The 2026-11-06 incident: the auto-sync took integration's lock over a lane's newer ai-lab, optimi-lab and
+The 2026-11-06 incident: the auto-sync took integration's lock over a lane's newer ai-lab, acme-lib and
 lab-commons pins. Ancestry is a planted history (``older -> newer`` edges); the evidence is the lock written.
 """
 

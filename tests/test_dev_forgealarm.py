@@ -111,17 +111,17 @@ def test_a_failure_alarm_is_a_host_failure_once_per_window_and_a_prompt_is_not(
 
 def test_a_forge_alarm_is_sent_with_its_pr_and_commit_linked() -> None:
     """The alarm's context reaches the notice; a forge URL links the PR and the commit; a prompt is a WARNING."""
-    repo = 'https://git.example.org/DawnEver/motronics-studio.git'
+    repo = 'https://git.example.org/org-x/acme-consumer.git'
     alarm = Alarm(
         INTEGRATION, repo, 'review blocks 3f2a9c81d7e4 (#5443)', 'fix it', context=Context(pr=5443, sha='3f2a9c81d7e4')
     )
     notice = alarm.as_notice()
     assert notice.severity is Severity.WARNING
     assert notice.context == Context(
-        repo='DawnEver/motronics-studio',
+        repo='org-x/acme-consumer',
         pr=5443,
-        pr_url='https://git.example.org/DawnEver/motronics-studio/pulls/5443',
+        pr_url='https://git.example.org/org-x/acme-consumer/pulls/5443',
         sha='3f2a9c81d7e4',
-        sha_url='https://git.example.org/DawnEver/motronics-studio/commit/3f2a9c81d7e4',
+        sha_url='https://git.example.org/org-x/acme-consumer/commit/3f2a9c81d7e4',
     )
     assert linked(Context(pr=1), 'owner/name') == Context(repo='owner/name', pr=1)  # control: no URL, no link

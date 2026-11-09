@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import lab_commons.launch as _door
 import pytest
 
+from dev_lab.dev import privatemarkers
 from dev_lab.dev.privatemarkers import load_markers, scan_text, scan_tree
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -108,3 +110,46 @@ def test_a_diff_marker_before_a_decorator_is_not_an_address() -> None:
     """A local part needs a letter or digit first: ``+@pytest.mark`` is a diff line, not an e-mail."""
     assert scan_text('+@pytest' + '.mark.parametrize') == []
     assert scan_text('x+tag@' + 'uni.ac.uk')
+
+
+def _staged_repo(root: Path, committed: str, staged: str) -> list[str]:
+    """A repo whose `note.md` holds *committed* at HEAD and *staged* in the index; returns the entry's argv."""
+
+    def git(*args: str) -> None:
+        _door.run(['git', *args], cwd=root, check=True, capture_output=True)
+
+    git('init', '-q')
+    git('config', 'user.email', 'a@example.com')
+    git('config', 'user.name', 'a')
+    (root / 'note.md').write_text(committed, encoding='utf-8')
+    git('add', 'note.md')
+    git('commit', '-q', '-m', 'base')
+    (root / 'note.md').write_text(staged, encoding='utf-8')
+    git('add', 'note.md')
+    denylist = root / 'private-markers'
+    denylist.write_text('SecretHost\n', encoding='utf-8')
+    return ['--root', str(root), '--markers', str(denylist), 'note.md']
+
+
+def test_the_pre_commit_entry_refuses_an_added_marker_without_echoing_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PRIVATE-MARKERS at commit time: the forge has no denylist, so only this machine can refuse the commit."""
+    argv = _staged_repo(tmp_path, 'clean\n', 'clean\nreached secrethost today\n')
+    assert privatemarkers.main(argv) == 1
+    out = capsys.readouterr()
+    assert 'note.md:2: private marker' in out.err
+    assert 'secrethost' not in (out.err + out.out).lower()
+
+
+def test_the_pre_commit_entry_judges_only_the_added_lines(tmp_path: Path) -> None:
+    """A legacy hit on an untouched line is not this commit's: refusing it would block every edit to that file."""
+    argv = _staged_repo(tmp_path, 'old secrethost line\nclean\n', 'old secrethost line\nclean, edited\n')
+    assert privatemarkers.main(argv) == 0
+
+
+def test_the_pre_commit_entry_passes_when_the_denylist_is_absent(tmp_path: Path) -> None:
+    """The forge and every other machine have no denylist: the row must then judge the generic layer only."""
+    argv = _staged_repo(tmp_path, 'clean\n', 'reached secrethost today\n')
+    argv[3] = str(tmp_path / 'missing')
+    assert privatemarkers.main(argv) == 0

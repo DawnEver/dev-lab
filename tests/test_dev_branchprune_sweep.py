@@ -171,7 +171,7 @@ def test_a_push_of_another_branch_or_a_fetch_detaches_nothing(tmp_path: Path) ->
 
 
 def test_an_open_pr_whose_one_commit_only_relocks_is_neither_closed_nor_deleted(tmp_path: Path) -> None:
-    """Wdg-lab PR #439 (2026-11-02): one commit on integration's tip changing only ``uv.lock``, merged nowhere.
+    """acme-consumer PR #439 (2026-11-02): one commit on integration's tip changing only ``uv.lock``, merged nowhere.
 
     ``uv.lock`` is a generated family file, and the content judge set generated files aside, so the sweep found
     no unlanded content, closed the PR "landed ... merged by <integration tip>" and deleted its branch.

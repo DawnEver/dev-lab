@@ -785,7 +785,7 @@ def test_prepare_stores_where_the_base_declares_never_where_the_head_does(
     assert fp.ref_of_pointer(prepared.forge.statuses[head][0]['target_url']).backend == 'folder'
 
 
-_APP = App(5619495, 'motronics-review')
+_APP = App(5619495, 'acme-review')
 
 
 @pytest.fixture(autouse=True)

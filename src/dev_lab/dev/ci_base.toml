@@ -776,7 +776,7 @@ issues = "write"
 # THE TOKEN. The Actions token merges and deletes branches with contents: write (POST pulls/{n}/merge asks
 # CanWrite(code), routers/api/v1/api.go 1.27; no Actions special case in services/pull/merge.go) unless the
 # integration branch's protection enables a merge whitelist, which the Actions user can never be on. Closing a PR
-# is pull-requests: write. No bot token: the forge-bot is parked (motronics memory 2026-11-01).
+# is pull-requests: write. No bot token: the forge-bot is parked (acme-consumer memory 2026-11-01).
 # A merge the Actions user makes starts no workflow (notifier_helper.go skips its events); the serve hosts produce
 # the integration parts by polling, as before.
 # Trees are needed (the trial merge, the audit), so it fetches through the persistent per-repo mirror (`lean`).

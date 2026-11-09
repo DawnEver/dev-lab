@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 from _ops_fixtures import NOW, RFC_KEY, code
+from lab_commons.home import HOME_ENV
 
 from dev_lab.dev.consentguard import refuse_write, state_dir
 from dev_lab.ops.consent import serve
@@ -238,4 +239,11 @@ def test_the_public_key_comes_from_the_machine_file_else_refuses(host: Host) -> 
 
 def test_an_agent_write_under_the_consent_state_is_refused(tmp_path: Path) -> None:
     assert refuse_write(state_dir(tmp_path) / 'x.json', home=tmp_path) is not None
-    assert refuse_write(tmp_path / '.motronics' / 'state' / 'other.json', home=tmp_path) is None  # the control
+    assert refuse_write(tmp_path / 'state' / 'other.json', home=tmp_path) is None  # the control
+
+
+def test_the_consent_state_lives_under_the_declared_machine_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(HOME_ENV, str(tmp_path / 'acme-home'))
+    assert state_dir() == tmp_path / 'acme-home' / 'state' / 'consent'

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from _ops_fixtures import config
 
+from dev_lab.dev.privatemarkers import load_markers, scan_text
 from dev_lab.ops.__main__ import main
 from dev_lab.ops.config import load
 from dev_lab.ops.install import files, install
@@ -42,10 +43,12 @@ def test_a_disabled_role_renders_nothing(tmp_path: Path) -> None:
 
 def test_no_host_fact_is_in_the_code() -> None:
     package = Path(__file__).resolve().parents[1] / 'src' / 'dev_lab' / 'ops'
+    markers = load_markers()
     for source in package.glob('*.py'):
         text = source.read_text(encoding='utf-8')
-        for fact in ('motronics', 'wdg-lab', 'Tianjie', 'mingyangbao', '79.72', '152.67', 'Europe/London'):
+        for fact in ('79.72', '152.67', 'Europe/London'):
             assert fact not in text, (source.name, fact)
+        assert not scan_text(text, markers), source.name  # the machine-local denylist names the rest
 
 
 @pytest.mark.parametrize(

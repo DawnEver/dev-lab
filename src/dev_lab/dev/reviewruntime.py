@@ -1,6 +1,6 @@
 """THE REVIEW RUNTIME FOLLOWS THE LOCK: a host's ai-lab is the one its installed dev-lab's ``uv.lock`` pins.
 
-INCIDENT 2026-11-05: host G's review failed "the review command on this host does not take these arguments": its
+INCIDENT 2026-11-05: host host-a review failed "the review command on this host does not take these arguments": its
 ai-lab was a hand-built venv the machine file named (``[runtimes.ai_lab] python``), and it had drifted from the
 ai-lab dev-lab pins. CI had already solved it (dev-lab #107, the ``method`` step of ``ci_base.toml``): the ai-lab
 COMMIT is the one the door's dev-lab lock pins, and every package beside it is ai-lab's OWN lock at that commit,

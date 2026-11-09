@@ -1,14 +1,14 @@
 """THE HOST'S uv FOLLOWS ITS PIN: before a lock is written, a uv that is not the pinned one is moved to it.
 
 THE INCIDENT (2026-11-06). Host G ran uv 0.13.5 while :data:`~dev_lab.dev.lockcheck.UV_PIN` pinned 0.13.7. The
-dependency door refused, rightly ("every lock is written by uv 0.13.7"), and every integration and sync on G failed
+dependency door refused, rightly ("every lock is written by uv 0.13.7"), and every integration and sync job failed
 for hours ("the lock could not be relocked: the dependency door exited 1") until a human ran winget. The refusal
 named the remedy; nothing applied it. User ruling 2026-11-06: a mechanism guarantees the update, by itself.
 
 ONE SOURCE, ONE DOOR. The version is :func:`~dev_lab.dev.lockcheck.uv_version` (``uv.toml``), never restated here;
 the place it is enforced is the place a lock is written (:func:`dev_lab.dev._dep_project.lock_writer`) and the
 relock that raises the pin (:func:`dev_lab.dev.relock.carry`). Every host that writes a lock -- the serve tick's
-relock on G, a workstation's ``--sync``/``--lock-upgrade`` on Ada, AMD-1/2, A1 -- passes through one of the two, so
+relock job, a workstation's ``--sync``/``--lock-upgrade`` on Ada, AMD-1/2, A1 -- passes through one of the two, so
 no poller and no second schedule is added.
 
 THE ROUTE IT WAS INSTALLED BY. uv updates through the installer that put it there, read from where the binary

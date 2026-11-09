@@ -242,7 +242,7 @@ def test_an_internal_pr_over_its_dollar_budget_merges_warned(tmp_path: Path) -> 
 def test_on_gitea_a_review_that_did_not_run_is_ready_warned_never_waiting_on_pending(
     tmp_path: Path, record: str
 ) -> None:
-    """Motronics #5490 (2026-11-06): every reviewer was unsupported and the PR waited; it now merges Unreviewed.
+    """acme-consumer #5490 (2026-11-06): every reviewer was unsupported and the PR waited; it now merges Unreviewed.
 
     The Merge tick (an Actions job) posts ready, WARNED with the ``Unreviewed:`` line -- never a wait on the pending.
     PLANTED CONTROL: the same pending status with no trusted record is no waiver; it still holds.
