@@ -967,14 +967,14 @@ def test_an_upgraded_runs_jobs_are_found_under_their_old_name_too(tmp_path: Path
     assert asked == [f'squeue -h --me -n run-{"a" * 12}-base,run-{"a" * 12} -o %F']
 
 
-def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learned(
+def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_nothing_learned(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Measured 2026-10-16: 52 tasks of 352 GB pended an hour on ``AssocGrpMemLimit``, 0 running, on one host.
 
-    The gather cancels the array, learns the 352 GB ask so this host stops admitting the part at its old
-    size, and raises :class:`NoRoom` -- the retryable release path -- so a host with headroom takes it.
-    PLANTED CONTROL: the same job pending for priority is kept and gathered on.
+    The gather cancels the array and raises :class:`NoRoom` -- the retryable release path -- so a host with
+    headroom takes it. A limit is CONTENTION, never a need: learning its ask ratcheted Ada's base row to the
+    whole 360 GB ceiling (2026-11-08), so nothing is learned. PLANTED CONTROL: pending for priority is kept.
     """
     asked: list[str] = []
 
@@ -996,9 +996,7 @@ def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learne
     with pytest.raises(NoRoom, match='AssocGrpMemLimit'):
         cluster.gather(run)
     assert any(command.startswith('scancel 7') for command in asked), asked
-    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
-        360658 / 1024, rel=1e-12, abs=0.0
-    )
+    assert learned.learned('https://f/o/r.git').get('runs', {}) == {}, 'contention writes no floor'
     monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: dataclasses.replace(held, reasons=('Priority',)))
     assert cluster.gather(run) is None
 
@@ -1528,7 +1526,9 @@ def test_a_job_slurm_killed_for_memory_or_time_is_read_with_its_ask_and_use_and_
     assert asked[0] == 'sacct -n -P -j 7,8 -o JobID,State,ReqMem,MaxRSS,Elapsed,Timelimit'
     assert (oom.job, oom.state, oom.asked_mb, oom.used_mb) == ('7_0', 'OUT_OF_MEMORY', 4096, 4199)
     assert (timeout.job, timeout.state, timeout.asked_s, timeout.used_s) == ('8_0', 'TIMEOUT', 3600, 3602)
-    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(6.0, rel=1e-12, abs=0.0)
+    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
+        6.0 * learned.ASK_CEILING_SHARE, rel=1e-12, abs=0.0
+    ), 'held strictly below the grant ceiling'
     # the OOM task's file is floored at its ask, locally and in the record every host folds; the TIMEOUT's is not
     assert learned.learned('https://f/o/r.git')['peaks_mb'] == {'tests/a.py': 4096.0}
     assert json.loads(gzip.decompress(record.read_bytes()))['peaks_mb'] == {'tests/a.py': 4096.0}

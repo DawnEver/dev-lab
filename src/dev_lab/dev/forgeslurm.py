@@ -239,19 +239,14 @@ class SlurmCluster:
         """One :func:`lab_commons.hpc.watch.settle` without waiting: the record it wrote, or ``None`` while pending.
 
         A run whose job pends on an ACCOUNT limit with nothing running past the stall bound
-        (:func:`lab_commons.hpc.progress.held_by_a_limit`) is given back: its ask is learned so this host stops
-        admitting the part at the old size, its jobs are cancelled, and :class:`NoRoom` releases the claim RETRYABLE.
+        (:func:`lab_commons.hpc.progress.held_by_a_limit`) is given back: its jobs are cancelled and :class:`NoRoom`
+        releases the claim RETRYABLE. Nothing is learned: a limit is contention, never an under-priced need.
         """
         output = Path(run.output)
         if settle([run.sha], self.machine, self.connect, self.config, output, part=run.platform, sleep=None) == PENDING:
             policy = self.config.policy
             why = held_by_a_limit(where(run.sha, run.platform, self.machine, self.connect, policy=policy), policy)
             if why:
-                state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
-                ask_gb = state['rounds'][-1]['mem_mb'] / 1024
-                learned.record_ask(
-                    run.repo_url, learned.SLURM, needs_of_row(run.platform), ask_gb, safety=policy.safety
-                )
                 self.cancel(run)
                 raise NoRoom(why)
             return None
@@ -279,9 +274,13 @@ class SlurmCluster:
             grants = self.machine.grants
             ceiling = grantable_gb([(g, probe(self.connect(g), g.slurm_account)) for g in grants])
             ask_gb = max(oom) / 1024 * learned.OOM_GROWTH
-            ask_gb = ask_gb if ceiling is None else min(ask_gb, ceiling)
             learned.record_ask(
-                run.repo_url, learned.SLURM, needs_of_row(run.platform), ask_gb, safety=self.config.policy.safety
+                run.repo_url,
+                learned.SLURM,
+                needs_of_row(run.platform),
+                ask_gb,
+                safety=self.config.policy.safety,
+                ceiling_gb=ceiling,
             )
             learn_floors(run.repo_url, oom_floors(found, task_items(state, shell, [one.job for one in found])), record)
         return found
