@@ -41,6 +41,7 @@ __all__ = [
     'Breakglass',
     'ConfigSource',
     'Consent',
+    'Forge',
     'Judge',
     'OpsConfig',
     'Probe',
@@ -264,6 +265,26 @@ class Access:
 
 
 @dataclass(frozen=True)
+class Forge:
+    """The forge's machine accounts, made only through ``forge account|token`` (:mod:`dev_lab.ops.forgeaccounts`).
+
+    ``api`` is the local Gitea's base URL; ``admin`` the Gitea admin whose SHORT-LIVED token (minted by the CLI per
+    use, deleted after it) grants a repository collaborator, which the Gitea CLI cannot. ``binary``, ``config`` and
+    ``user`` run the Gitea CLI as the Gitea user. ``read_only`` names the logins that may hold ``read:*`` scopes only;
+    ``email_domain`` the address a made account gets; ``log`` the audit (who, what -- never a token).
+    """
+
+    api: str
+    admin: str
+    binary: str = 'gitea'
+    config: str = '/etc/gitea/app.ini'
+    user: str = 'gitea'
+    read_only: tuple[str, ...] = ()
+    email_domain: str = 'noreply.invalid'
+    log: str = '/var/log/dev-lab-ops/forge.jsonl'
+
+
+@dataclass(frozen=True)
 class Supervise(Placement):
     """The host's supervisor daemon (:mod:`dev_lab.supervise`), serving ``project`` with this same file as config.
 
@@ -294,6 +315,7 @@ class OpsConfig:
     upgrade: Upgrade | None = None
     probe: Probe | None = None
     config_source: ConfigSource | None = None
+    forge: Forge | None = None
     environment_file: str = ''
 
     def checkout(self, url: str) -> Path:
@@ -306,9 +328,9 @@ def repo_name(url: str) -> str:
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
 
 
-def _role[T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe, ConfigSource)](
-    cls: type[T], table: object, where: str
-) -> T | None:
+def _role[
+    T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe, ConfigSource, Forge)
+](cls: type[T], table: object, where: str) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
         return None
     if not isinstance(table, dict):
@@ -449,6 +471,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         upgrade=_role(Upgrade, ops.get('upgrade'), '[ops.upgrade]'),
         probe=_role(Probe, ops.get('probe'), '[ops.probe]'),
         config_source=_role(ConfigSource, ops.get('config'), '[ops.config]'),
+        forge=_role(Forge, ops.get('forge'), '[ops.forge]'),
         environment_file=environment_file,
     )
 
