@@ -34,6 +34,7 @@ from dev_lab.ops.access import KEYS_DIR, Prepared, keys_file, prepare, secret_fi
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.accounts import account_of, may_enter
 from dev_lab.ops.backuprole import Backup
+from dev_lab.ops.caddy import install_caddy
 from dev_lab.ops.config import OpsConfig, Probe
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.totp import write_private
@@ -285,8 +286,7 @@ def _probe_steps(config: OpsConfig) -> list[str]:
 
 
 def _under(root: Path, path: Path | str) -> Path:
-    path = Path(path)
-    return root / path.relative_to(path.anchor)
+    return root / Path(path).relative_to(Path(path).anchor)
 
 
 def _may_enter(path: Path, user: str) -> bool:
@@ -385,6 +385,7 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
     private = access.private if access is not None else {}
     rendered |= (access.public if access is not None else {}) | private
     done, prepared = _prepare(config, root, chown)
+    prepared += install_caddy(config.caddy, root, rendered)
     accounts = (config.breakglass, config.consent, config.access)
     if any(role is not None for role in accounts) or (config.backup and config.backup.dumpers):
         prepared += _keys_dir(root, chown, done)
