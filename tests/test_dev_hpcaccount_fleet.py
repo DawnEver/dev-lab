@@ -6,6 +6,7 @@ from pathlib import Path
 
 from lab_commons.hpc.grants import Grant
 
+from dev_lab.dev.hpcaccount.division import load_division
 from dev_lab.dev.hpcaccount.fleet import Target, deploy_fleet, remote_argv
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT
 
@@ -72,6 +73,37 @@ def test_an_undeclared_account_is_refused_and_nothing_starts(tmp_path: Path) -> 
     code, started, _ = _run(tmp_path, ('alice', 'mallory'))
     assert code == 2
     assert started == []
+
+
+def test_the_workstations_role_and_table_are_passed_to_each_deploy() -> None:
+    """User rulings 2026-11-09: the workstation is the source of the division."""
+    division = load_division({'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob'}]})
+    argv = remote_argv('alice', Target('login02.example', 'src'), division)
+    assert '--fleet-role research --role-table ' in argv[-1]
+    assert '{"read_only": true, "serves": false}' in argv[-1]
+    assert '--fleet-role' not in remote_argv('bob', Target('login01.example', 'work'), division)[-1]
+
+
+def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the account whose role the table names still deploys."""
+    division = load_division(
+        {'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob', 'role': 'gone'}], 'roles': {'research': {}}}
+    )
+    started: list[list[str]] = []
+    said: list[str] = []
+    code = deploy_fleet(
+        _FLEET,
+        ('alice', 'bob'),
+        home=tmp_path,
+        dry_run=False,
+        say=said.append,
+        connect=lambda grant: lambda _cmd, _stdin=None: _DEPLOY[grant.user],
+        launch=lambda argv, _log: started.append(list(argv)),
+        division=division,
+    )
+    assert code == 2
+    assert [argv[5] for argv in started] == ['alice@login02.example']
+    assert any(line.startswith('bob:') and "'gone'" in line for line in said)
 
 
 def test_the_remote_runs_the_accounts_own_deploy_never_prompting() -> None:

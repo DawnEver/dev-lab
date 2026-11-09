@@ -19,6 +19,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 EVERY ACCOUNT DECLARES ITS ROLE (user ruling 2026-11-06), ``[deploy] role`` in its own machine file
 (:mod:`~dev_lab.dev.hpcaccount.spec`): only a ``verification`` account (a Forge Verification account) runs the serve
 cron; a ``research`` account is deployed for research and never carries one. Undeclared, ``deploy`` refuses.
+The workstation is the source of the division (user rulings 2026-11-09): each ``[[hpc.grant]]`` ``role`` and what
+a role does, ``[hpc.roles]`` (:mod:`~dev_lab.dev.hpcaccount.division`), which ``deploy-fleet`` passes on.
 
 Everything else about the cluster -- plan, submit, run, gather, clean -- stays ``python -m lab_commons.hpc``.
 """
