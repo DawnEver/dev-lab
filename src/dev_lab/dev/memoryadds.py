@@ -63,6 +63,20 @@ _FRONTMATTER = re.compile(r'\A---\n(.*?)\n---(?:\n|\Z)', re.DOTALL)
 _MERGED_FROM = re.compile(r'^merged_from:\s*(.*)$', re.MULTILINE)
 _VOLATILE = re.compile(rf'^(?:{"|".join(VOLATILE_FIELDS)}):')
 _CITATION = re.compile(r'[\w./-]*[\w-]\.(?:md|py|rs|mjs|js|ts|toml|json|txt|yaml|yml|csv)\b')
+REDACTION_NOTE: Final = 'Redacted {day}: site markers removed (public repo).'
+# A redaction swaps a site span for a placeholder token or one of these neutral role phrases -- nothing else.
+REDACTION_ROLES: Final = (
+    "the private consumer's",
+    'the private consumer repo',
+    'the private consumer',
+    "the second private consumer's",
+    'the second private consumer',
+    'an optimisation consumer',
+    "the integrator workstation's",
+    'the integrator workstation',
+)
+_PLACEHOLDER = re.compile('|'.join([r'<[a-z][a-z0-9-]*>', *(re.escape(role) for role in REDACTION_ROLES)]))
+_NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
 _MANUAL = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
 _MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
@@ -103,6 +117,24 @@ def _only_volatile_stripped(old: str, new: str) -> bool:
         return False
     head = '\n'.join(line for line in match.group(1).splitlines() if not _VOLATILE.match(line))
     return f'---\n{head}\n---\n' + old[match.end() :] == new
+
+
+def _only_redacted(old: str, new: str) -> bool:
+    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders."""
+    after_lines = _lf(new).splitlines()
+    if not any(_NOTE_LINE.fullmatch(line) for line in after_lines):
+        return False
+    before = [line for line in _lf(old).splitlines() if line.strip()]
+    after = [line for line in after_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
+    if len(before) != len(after):
+        return False
+    for was, now in zip(before, after, strict=True):
+        if was == now:
+            continue
+        literals = _PLACEHOLDER.split(now)
+        if len(literals) == 1 or not re.fullmatch('.+?'.join(map(re.escape, literals)), was):
+            return False
+    return True
 
 
 def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
@@ -204,7 +236,11 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
         elif status == 'M' and _is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
-            if not (_only_volatile_stripped(before, after) or _only_manual_tasks_updated(old, before, after)):
+            if not (
+                _only_volatile_stripped(before, after)
+                or _only_manual_tasks_updated(old, before, after)
+                or _only_redacted(before, after)
+            ):
                 remedy = 'a memory entry is immutable -- write a new entry with `corrects:` instead'
                 if _MANUAL.search(old):
                     remedy += (

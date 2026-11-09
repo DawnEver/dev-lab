@@ -6,10 +6,12 @@ metadata:
 created: 2026-11-05
 ---
 
+> Redacted 2026-11-09: site markers removed (public repo).
+
 # One rolling relock per repo; third-party on a cadence; a relock runs only what it reaches
 
 Evidence 2026-11-05: since 10-22 the family merged 114 relock PRs (about half of all merges in the small repos:
-optimi-lab 20/40, ai-lab 23/67, numerics-lab 9/25, wdg-lab 6/13), each a full verification. Cause: consumers
+an optimisation consumer 20/40, ai-lab 23/67, numerics-lab 9/25, the second private consumer 6/13), each a full verification. Cause: consumers
 follow their siblings' integration line (kept: user ruling), so every sibling merge staled every consumer's lock
 and the tick opened a `pr/relock-<dist>-<sha>`. Three user rulings, all in `dev_lab.dev.relock` and the carry.
 

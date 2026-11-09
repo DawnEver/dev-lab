@@ -17,7 +17,9 @@ Two layers:
 
 from __future__ import annotations
 
+import argparse
 import re
+import sys
 from pathlib import Path
 from typing import Final
 
@@ -136,3 +138,28 @@ def scan_tree(root: Path, markers: tuple[re.Pattern[str], ...] = (), *, public: 
         rel = path.relative_to(root).as_posix()
         found.extend(f'{rel}:{n}: {kind}: {m}' for n, kind, m in scan_text(text, markers, path=rel, public=public))
     return found
+
+
+def main(argv: list[str] | None = None) -> int:
+    """The local pre-commit row: refuse STAGED files carrying a marker. Only this machine holds the denylist."""
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.privatemarkers')
+    parser.add_argument('--root', type=Path, default=Path.cwd())
+    parser.add_argument('--markers', type=Path, default=MARKERS_FILE)
+    parser.add_argument('paths', nargs='*')
+    args = parser.parse_args(argv)
+    markers = load_markers(args.markers)
+    found: list[str] = []
+    for rel in args.paths:
+        path = args.root / rel
+        if not path.is_file() or b'\0' in (data := path.read_bytes()):
+            continue
+        text = data.decode('utf-8', errors='replace')
+        found.extend(f'{rel}:{n}: {kind}: {m}' for n, kind, m in scan_text(text, markers, path=rel))
+    if found:
+        sys.stderr.write('PRIVATE-MARKERS: a staged file names a private value; neutralise it before committing:\n')
+        sys.stderr.write('\n'.join(found) + '\n')
+    return 1 if found else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

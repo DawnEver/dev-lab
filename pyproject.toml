@@ -152,6 +152,13 @@ run = ["ruff", "format", "--check", "--force-exclude"]
 files = '\.pyi?$'
 pass_files = true
 
+# PRIVATE-MARKERS at commit time: an irreversible-harm row -- a pushed marker is public for good, and the forge has
+# no denylist to catch it (absent there, the row judges the generic layer only).
+[[tool.dev_lab.hooks.pre-commit]]
+id = "private-markers"
+run = ["python", "-m", "dev_lab.dev.privatemarkers"]
+pass_files = true
+
 [[tool.dev_lab.hooks.pre-push]]
 id = "pushgate"
 run = ["python", "-m", "dev_lab.dev.pushgate", "--trunk-ref", "refs/heads/main"]

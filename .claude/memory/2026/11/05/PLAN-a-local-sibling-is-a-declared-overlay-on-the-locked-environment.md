@@ -7,6 +7,8 @@ created: 2026-11-05
 accessed: 2026-11-05
 ---
 
+> Redacted 2026-11-09: site markers removed (public repo).
+
 # PLAN: a local sibling is a declared overlay on the locked environment (user directive 2026-11-05)
 
 Directive: an environment uses the LOCK by default. A local checkout of a family sibling replaces its
@@ -19,7 +21,7 @@ locked version only when needed, and that choice is RECORDED, not remembered.
 | where the family's checkouts sit | `worktreeplace.family_root` (the main checkout's parent) | names the place; installs nothing. REUSED: it resolves a sibling's path |
 | a product composing an engine from a tree | `[tool.dev_lab.components]` + `_dep_components` stamps | COMMITTED and shared: it pins every checkout of the product. A consumer retired it (2026-10-21) because no sibling must change in the same commit. REUSED: its tree stamp |
 | the one door that moves an environment | `dep` (`_change`: the seat, the census, anchor retirement) | the right door; it only knows the lock and components |
-| a consumer's dev recipe | motronics `pyproject.toml` comment: `uv pip install -e ../<repo>` | a bare install outside the door: refused for agents, unrecorded, and silently undone by the next frozen sync |
+| a consumer's dev recipe | the private consumer `pyproject.toml` comment: `uv pip install -e ../<repo>` | a bare install outside the door: refused for agents, unrecorded, and silently undone by the next frozen sync |
 
 ## The design
 
@@ -51,7 +53,7 @@ locked version only when needed, and that choice is RECORDED, not remembered.
 1. `local_overlays(root, cli_names)`: merge, validate, derive paths -- pure, with planted refusals
    (unknown name, missing checkout, wrong distribution).
 2. The overlay leg in `main` after a green sync, in the seat; the banner; `env_key` folding.
-3. The stamp; then the consumer doc: motronics' installation guide replaces the `uv pip install -e` recipe
+3. The stamp; then the consumer doc: the private consumer's installation guide replaces the `uv pip install -e` recipe
    with `dep --local`.
 
 ## State

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import privatemarkers
 from dev_lab.dev.privatemarkers import load_markers, scan_text, scan_tree
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -108,3 +109,25 @@ def test_a_diff_marker_before_a_decorator_is_not_an_address() -> None:
     """A local part needs a letter or digit first: ``+@pytest.mark`` is a diff line, not an e-mail."""
     assert scan_text('+@pytest' + '.mark.parametrize') == []
     assert scan_text('x+tag@' + 'uni.ac.uk')
+
+
+def test_the_pre_commit_entry_refuses_a_staged_marker_without_echoing_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PRIVATE-MARKERS at commit time: the forge has no denylist, so only this machine can refuse the commit."""
+    denylist = tmp_path / 'private-markers'
+    denylist.write_text('SecretHost\n', encoding='utf-8')
+    (tmp_path / 'note.md').write_text('clean\nreached secrethost today\n', encoding='utf-8')
+    (tmp_path / 'other.md').write_text('clean\n', encoding='utf-8')
+    argv = ['--root', str(tmp_path), '--markers', str(denylist), 'note.md', 'other.md']
+    assert privatemarkers.main(argv) == 1
+    out = capsys.readouterr()
+    assert 'note.md:2: private marker' in out.err + out.out
+    assert 'secrethost' not in (out.err + out.out).lower()
+    assert privatemarkers.main([*argv[:4], 'other.md']) == 0
+
+
+def test_the_pre_commit_entry_passes_when_the_denylist_is_absent(tmp_path: Path) -> None:
+    """The forge and every other machine have no denylist: the row must then judge the generic layer only."""
+    (tmp_path / 'note.md').write_text('reached secrethost today\n', encoding='utf-8')
+    assert privatemarkers.main(['--root', str(tmp_path), '--markers', str(tmp_path / 'missing'), 'note.md']) == 0

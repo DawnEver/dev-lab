@@ -7,6 +7,8 @@ created: 2026-11-04
 accessed: 2026-11-04
 ---
 
+> Redacted 2026-11-09: site markers removed (public repo).
+
 # Forge protection is declared, and the probe watches it (parity gaps 3 and 7)
 
 - DECLARATION (`dev_lab.dev.forgeprotect`): branches from `[tool.dev_lab.integrator]`; required contexts DERIVED from
@@ -24,8 +26,8 @@ accessed: 2026-11-04
 - GITEA renders one protection per branch: integration takes no push (bypass allowlist = breakglass), trunk push
   whitelist = promote, trunk merge whitelist enabled and empty, `block_admin_merge_override` on.
 - Live 2026-11-04: `forge protect plan` on DawnEver/dev-lab says 4 differences (two rulesets to create, two classic
-  protections to delete); motronics' rules, read read-only from Gitea's database, differ on status checks,
-  `mingyangbao-admin` in main's push/merge whitelists and `block_admin_merge_override`. The `/etc/breakglass/github-token`
+  protections to delete); the private consumer's rules, read read-only from Gitea's database, differ on status checks,
+  `<admin-account>` in main's push/merge whitelists and `block_admin_merge_override`. The `/etc/breakglass/github-token`
   on the forge host answered "Bad credentials" -- the GitHub break-glass identity is unverified.
 - PROBE (`dev_lab.ops.probe`, `[ops.probe] repos/tokens/state/schedule/user`): per repo reads the declaration at the
   integration branch through the forge, plans protection, reads the latest completed run per workflow among
@@ -33,5 +35,5 @@ accessed: 2026-11-04
   `<state>/probe.json`, key + mark; cleared when it clears; an undelivered alert is resent). Token: GitHub
   `Administration: read`; Gitea an admin token scoped `read:repository` (a non-admin gets 403 on branch_protections).
 - Left: `dev_lab.dev.forge.Protection/assess/apply_protection` (Gitea push whitelist only) is superseded; its one caller
-  is motronics' `scripts/repo/forge_protect.py` -- retire both when motronics adopts `forge protect` and declares its
+  is the private consumer's `scripts/repo/forge_protect.py` -- retire both when the private consumer adopts `forge protect` and declares its
   `[tool.dev_lab.protection]`.

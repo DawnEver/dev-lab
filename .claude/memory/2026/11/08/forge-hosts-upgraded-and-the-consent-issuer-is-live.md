@@ -5,14 +5,16 @@ metadata:
   type: project
 ---
 
+> Redacted 2026-11-09: site markers removed (public repo).
+
 # Forge hosts upgraded; the consent issuer is live (2026-11-08 evening)
 
 Follows `servers-waves-and-ops-are-written-down.md`. No secrets recorded.
 
 ## Access facts
-- AMD-1 (forge-amd1) has no public IP: private `10.0.1.222`, reachable only by a jump through AMD-2
-  (`152.67.158.77`). forge-a1 is `79.72.88.152`.
-- ServerOperation holds six login scripts: `ssh-forge-{a1,amd2,amd1}-{admin,ops}.bat`. The admin ones use
+- AMD-1 (forge-amd1) has no public IP: private `<ip>`, reachable only by a jump through AMD-2
+  (`<ip>`). forge-a1 is `<ip>`.
+- <private-ops-notes> holds six login scripts: `ssh-forge-{a1,amd2,amd1}-{admin,ops}.bat`. The admin ones use
   `ubuntu@` and stop working after the lockdown; the ops ones ask one code per hop.
 - `ops` needs NO password: key + TOTP through PAM keyboard-interactive. A password on ops may change what
   PAM prompts for, so none is set.
@@ -26,9 +28,9 @@ Follows `servers-waves-and-ops-are-written-down.md`. No secrets recorded.
   `/etc/dev-lab/supervise.toml.bak-20261108`).
 - `ops install` WRITES its files and then prints `next, on the live host:` -- steps root must run (useradd,
   visudo -cf, sshd -t + reload, enable timers, consent keygen). All 20 ran; no failed units.
-- The consent issuer is deployed: account `consent`, signing key under `/etc/dev-lab/consent/`. G's machine
-  file declares `[consent]` (endpoint `consent@79.72.88.152` + the public key; backup
-  `motronics.toml.bak-20261108-consent`).
+- The consent issuer is deployed: account `consent`, signing key under `/etc/dev-lab/consent/`. the integrator workstation's machine
+  file declares `[consent]` (endpoint `consent@<ip>` + the public key; backup
+  `the private consumer.toml.bak-20261108-consent`).
 
 ## AMD-2 and AMD-1
 - AMD-2 upgraded `34b7099a` -> `83c4f298` (its `[ops.upgrade] ref` is `main`), install + live-host steps run.
