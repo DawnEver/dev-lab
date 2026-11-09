@@ -68,6 +68,7 @@ __all__ = [
     'DRIFT',
     'ESCAPE',
     'EVENT',
+    'FAMILY',
     'FLEET',
     'IDLE',
     'INTEGRATION',
@@ -127,6 +128,8 @@ PRESSURE: Final = 'pressure'
 DRIFT: Final = 'drift'
 #: A file written outside every allowed root, found by the tick's census (:mod:`dev_lab.dev.escapes`, 2026-11-03).
 ESCAPE: Final = 'escape'
+#: A family member not fully joined, found by the tick's family watch (:mod:`dev_lab.dev.family.watch`, 2026-11-09).
+FAMILY: Final = 'family'
 
 
 #: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.

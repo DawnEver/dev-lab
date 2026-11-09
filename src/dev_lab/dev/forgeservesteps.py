@@ -21,6 +21,7 @@ from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
+from dev_lab.dev.family.watch import step as family_step
 from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
 from dev_lab.dev.forgebacklog import alarms as late_reviews
 from dev_lab.dev.forgebacklog import declared_wait
@@ -253,7 +254,8 @@ def repo_wide(
 
     In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
     branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
-    and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. A repo that
+    the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left -- and the
+    family watch (:mod:`dev_lab.dev.family.watch`, on the kit's tick). A repo that
     declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
     """
     serve_continue_landed(root, client(root), say=say, alarm=alarm)
@@ -272,6 +274,10 @@ def repo_wide(
         drift_step(root, repo, say=say, alarm=alarm, now=clock())
     except (OSError, ValueError) as why:
         say(f'[serve] the drift census did not run: {why}')
+    try:
+        family_step(root, repo, say=say, alarm=alarm)
+    except (OSError, ValueError) as why:
+        say(f'[serve] the family watch did not run: {why}')
 
 
 def demote_unreachable(produced: Sequence[Produced]) -> None:

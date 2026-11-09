@@ -152,7 +152,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'def read(self, key: tuple[str, str], attempt: Callable[[], Any]) -> Any:',
     ): "the memo hands back the forge read's parsed JSON unchanged, whose shape is the route it remembers",
     (
-        'src/dev_lab/dev/family.py',
+        'src/dev_lab/dev/family/__init__.py',
         'ANN401',
         'def declared_table(data: Mapping[str, Any], name: str, default: Any = None) -> Any:',
     ): 'a TOML table is untyped: the value is whatever the manifest declares, handed back unchanged',

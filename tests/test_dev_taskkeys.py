@@ -76,15 +76,13 @@ def _repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     return {name: tmp_path / name for name in forges}
 
 
-def test_the_targets_are_the_serve_repos_at_their_serve_checkouts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """PLANTED CONTROL: a declared name with no checkout is skipped with its reason, never fatal."""
+def test_the_targets_are_the_family_members_at_their_checkouts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The targets DERIVE from the family list, ``[repos]`` (:mod:`dev_lab.dev.family.members`).
+
+    PLANTED CONTROL: a declared name with no checkout is skipped with its reason, never fatal.
+    """
     _repos(tmp_path / 'repos', monkeypatch) if (tmp_path / 'repos').mkdir() is None else None
-    monkeypatch.setattr(forgesecrets, 'forge_home', lambda: tmp_path)
-    monkeypatch.setattr(
-        forgesecrets, 'section', lambda name: {'repos': ['hub', 'gone', 'tea']} if name == 'serve' else {}
-    )
+    monkeypatch.setattr(forgesecrets, 'repos', lambda: {n: tmp_path / 'repos' / n for n in ('hub', 'gone', 'tea')})
     found, skipped = forgesecrets.targets(forgesecrets.declared())
     assert [t.name for t in found] == ['hub', 'tea']
     assert [t.checkout for t in found] == [tmp_path / 'repos' / 'hub', tmp_path / 'repos' / 'tea']
@@ -97,7 +95,7 @@ def test_sync_sets_the_derived_secret_on_every_declared_repo_and_logs_no_bundle(
     repos = _repos(tmp_path, monkeypatch)
     wrote: list[tuple[str, str, str]] = []
     code = forgesecrets.main(
-        ['sync', '--task', 'pr-review'], stdin=lambda: _BUNDLE, repos=lambda: repos,
+        ['sync', '--task', 'pr-review'], stdin=lambda: _BUNDLE, members=lambda: repos,
         write=lambda target, name, bundle: wrote.append((target.forge.identity, name, bundle)),
     )  # fmt: skip
     assert code == 0
@@ -124,13 +122,13 @@ def test_sync_dry_run_lists_targets_and_touches_nothing(
     def write(*_: object) -> None:
         touched.append('write')
 
-    assert forgesecrets.main(['sync', '--task', 'live', '--dry-run'], stdin=stdin, repos=lambda: repos,
+    assert forgesecrets.main(['sync', '--task', 'live', '--dry-run'], stdin=stdin, members=lambda: repos,
                              write=write) == 0  # fmt: skip
     assert touched == []
     out = capsys.readouterr().out
     assert 'would set AI_LAB_KEYS_LIVE on github.com/o/hub' in out
     assert 'would set AI_LAB_KEYS_LIVE on forge.example/o/tea' in out
-    assert forgesecrets.main(['sync', '--task', 'live'], stdin=stdin, repos=lambda: repos, write=write) == 0
+    assert forgesecrets.main(['sync', '--task', 'live'], stdin=stdin, members=lambda: repos, write=write) == 0
     assert touched == ['stdin', 'write', 'write'], 'PLANTED CONTROL'
 
 
@@ -140,8 +138,40 @@ def test_sync_refuses_an_empty_bundle_and_a_bad_task(tmp_path: Path, monkeypatch
     def never(*_: object) -> None:
         pytest.fail('nothing is written')
 
-    assert forgesecrets.main(['sync', '--task', 'live'], stdin=lambda: ' \n', repos=lambda: repos, write=never) == 2
-    assert forgesecrets.main(['sync', '--task', 'Live'], stdin=lambda: _BUNDLE, repos=lambda: repos, write=never) == 2
+    assert forgesecrets.main(['sync', '--task', 'live'], stdin=lambda: ' \n', stored=lambda _t: '',
+                             members=lambda: repos, write=never) == 2  # fmt: skip
+    assert forgesecrets.main(['sync', '--task', 'Live'], stdin=lambda: _BUNDLE, members=lambda: repos, write=never) == 2
+
+
+def test_the_bundle_is_stored_once_and_sync_reads_it_when_nothing_is_piped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """User 2026-11-09: the bundle was asked for again on every sync; it is kept ONCE, in the credential store.
+
+    PLANTED CONTROLS: the bundle reaches the store base64-encoded (the credential protocol is line-based) under the
+    secret's name and nowhere else -- no output line, no file under the test root -- and a sync with nothing piped
+    reaches every member from it; a piped bundle still wins (a one-off override).
+    """
+    kept: dict[tuple[str, str], str] = {}
+    monkeypatch.setattr(
+        forgesecrets, 'store_credential', lambda host, user, secret: kept.update({(host, user): secret})
+    )
+    monkeypatch.setattr(forgesecrets, 'credential_for', lambda host, username: (username, kept[host, username]))
+    assert forgesecrets.main(['store', '--task', 'pr-review'], stdin=lambda: _BUNDLE) == 0
+    assert list(kept) == [(forgesecrets.BUNDLE_HOST, 'AI_LAB_KEYS_PR_REVIEW')]
+    assert '\n' not in next(iter(kept.values()))
+    assert forgesecrets.stored_bundle('pr-review') == _BUNDLE
+    repos = _repos(tmp_path, monkeypatch)
+    wrote: list[str] = []
+    assert forgesecrets.main(['sync', '--task', 'pr-review'], stdin=lambda: '', members=lambda: repos,
+                             write=lambda _t, _n, bundle: wrote.append(bundle)) == 0  # fmt: skip
+    assert wrote == [_BUNDLE, _BUNDLE]
+    said = capsys.readouterr()
+    assert 'sk-planted' not in said.out + said.err
+    assert not [p for p in tmp_path.rglob('*') if p.is_file() and 'sk-planted' in p.read_text(errors='ignore')]
+    assert forgesecrets.main(['sync', '--task', 'pr-review'], stdin=lambda: 'other', members=lambda: repos,
+                             write=lambda _t, _n, bundle: wrote.append(bundle)) == 0  # fmt: skip
+    assert wrote[-1] == 'other'
 
 
 def test_github_takes_the_bundle_through_gh_on_stdin_never_argv(monkeypatch: pytest.MonkeyPatch) -> None:
