@@ -1,4 +1,4 @@
-"""AN OOM-KILLED TASK FLOORS EVERY FILE IT RAN AT THE LIMIT IT DIED AT -- in the record every host folds.
+"""AN OOM-KILLED ONE-FILE TASK FLOORS ITS FILE AT THE LIMIT IT DIED AT -- in the record every host folds.
 
 Measured 2026-10-20..27 (Ada, user1): 302 ``base`` tasks OUT_OF_MEMORY, ~10 per downstream run, the same
 shape every run -- 1-2 GB tasks of multi-file items whose files' learned peaks were 0.5-0.8 GB. An item is ONE
@@ -8,11 +8,18 @@ grows and bisects it, then the files re-measure alone or in smaller items, the g
 (:meth:`lab_commons.compute.measured.Measured.learn`) -- so the NEXT run packs them together at the old ask and
 dies the same way.
 
-Here the kill is kept: each file of an OOM task's items is floored at the task's ask (ungrown -- the plan's
+Here the kill is kept: the file of an OOM task that ran ONE file is floored at the task's ask (ungrown -- the plan's
 ``policy.safety`` multiplies it once, :func:`lab_commons.compute.measured.task_gb`), never lowering a known peak.
 It goes into the run RECORD, because the learned table is a cache of the forge's records, each folded whole
 (:func:`lab_commons.compute.learned.learn_record`): a floor kept only locally is lowered by that fold. A file
 that later finishes un-killed re-measures and replaces it (:meth:`~lab_commons.compute.measured.Measured.learn`).
+
+A MULTI-FILE TASK'S ASK IS NO FILE'S FLOOR. Measured 2026-11-09 (Ada): five downstream test files each learned an
+identical 200181 MB -- one array task's ask credited to every file it ran -- and inflated every later base ask.
+The ask bounds the files' COMBINED memory; which file held it is unknown, and a share is no measurement either
+(memory is not additive across one process's files, and one heavy file is the common case). Such a kill floors
+the id it cut (``id_peaks_mb``, :meth:`~lab_commons.compute.measured.Measured.learn`) and is bisected on retry
+until a one-file task says.
 """
 
 from __future__ import annotations
@@ -32,15 +39,17 @@ __all__ = ['floor_record', 'learn_floors', 'oom_floors', 'raised', 'task_items']
 
 
 def oom_floors(jobs: Sequence[Killed], items: Mapping[str, Sequence[Mapping[str, Any]]]) -> dict[str, float]:
-    """``{file: MB}`` -- each file of an OUT_OF_MEMORY task's *items* (by task id) at that task's ask, the most."""
+    """``{file: MB}`` -- each one-file OUT_OF_MEMORY task's file (*items* by task id) at its ask, the most."""
     floors: dict[str, float] = {}
     for job in jobs:
         if job.state != 'OUT_OF_MEMORY':
             continue
-        for item in items.get(job.job, ()):
-            for node in item.get('ids', ()):
-                name = str(node).split('::', maxsplit=1)[0]
-                floors[name] = max(floors.get(name, 0.0), float(job.asked_mb))
+        files = {
+            str(node).split('::', maxsplit=1)[0] for item in items.get(job.job, ()) for node in item.get('ids', ())
+        }
+        if len(files) == 1:
+            (name,) = files
+            floors[name] = max(floors.get(name, 0.0), float(job.asked_mb))
     return floors
 
 

@@ -12,7 +12,7 @@ from dev_lab.dev.forgerunstate import Killed
 _A, _B, _C = 'tests/a.py', 'tests/b.py', 'tests/c.py'
 
 
-def test_an_oom_task_floors_every_file_of_its_items_at_its_ask_and_a_timeout_floors_none() -> None:
+def test_a_one_file_oom_task_floors_its_file_at_its_ask_and_a_timeout_floors_none() -> None:
     """Ada 2026-10-27: every run re-asked 1 GB for multi-file items whose last run died at 1 GB.
 
     The limit is a floor, ungrown (the next plan multiplies it by its safety once). PLANTED CONTROL: the
@@ -24,11 +24,28 @@ def test_an_oom_task_floors_every_file_of_its_items_at_its_ask_and_a_timeout_flo
         Killed('8_0', 'OUT_OF_MEMORY', 4096, 4200, 3600, 60),
     ]
     items = {
-        '7_0': [{'ids': [f'{_A}::t1', f'{_A}::t2']}, {'ids': [f'{_B}::t']}],
+        '7_0': [{'ids': [f'{_A}::t1']}, {'ids': [f'{_B}::t']}],
         '7_1': [{'ids': [f'{_C}::t']}],
         '8_0': [{'ids': [f'{_B}::u']}],
     }
-    assert oom_floors(jobs, items) == {_A: 1024.0, _B: 4096.0}
+    assert oom_floors(jobs, items) == {_B: 4096.0}
+
+
+def test_a_multi_file_oom_task_floors_none_of_its_files() -> None:
+    """Ada 2026-11-09: five files each learned 200181 MB, one array task's ask credited to every file it ran.
+
+    A task's ask is the memory of ALL its files together, so it says nothing of any one file; only a task that
+    ran ONE file measured that file alone. PLANTED CONTROL: the one-file task still floors its file.
+    """
+    jobs = [
+        Killed('9_0', 'OUT_OF_MEMORY', 200181, 200000, 3600, 900),
+        Killed('9_1', 'OUT_OF_MEMORY', 2048, 2000, 60, 30),
+    ]
+    items = {
+        '9_0': [{'ids': [f'{_A}::t1', f'{_B}::t2']}],
+        '9_1': [{'ids': [f'{_C}::t1']}, {'ids': [f'{_C}::t2']}],
+    }
+    assert oom_floors(jobs, items) == {_C: 2048.0}
 
 
 def test_a_floor_only_raises_a_known_peak() -> None:
