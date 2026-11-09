@@ -151,19 +151,21 @@ POLICY: Final[tuple[Door, ...]] = (
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
-        ('python', '-m', 'dev_lab.dev.sshhold', 'open'),
+        _module('sshhold', 'open'),
         MAIN,
         'Opening one held login session to a key and authenticator-code host, answered with the one-time code the '
         'user supplied in this conversation for it, within the machine ceiling on its hours; never an invented, '
         'stored, logged or reused code.',
     ),
+    Door(_module('sshhold', 'run'), MAIN, 'Running one command on a login session the user authenticated, audited.'),
     Door(
-        ('python', '-m', 'dev_lab.dev.sshhold', 'run'),
+        _module('sshhold', 'credential'),
         MAIN,
-        'Running one command on a login session the user already authenticated, recorded in its audit.',
+        "Storing a forge token on a held account's git credential helper, the token read on standard input from "
+        'where the user placed it; never a token typed into a command line, a log or a file the agent writes.',
     ),
-    Door(('python', '-m', 'dev_lab.dev.sshhold', 'close'), MAIN, 'Ending a held login session.'),
-    Door(('python', '-m', 'dev_lab.dev.sshhold', 'status'), MAIN, 'Read-only: the held login sessions and time left.'),
+    Door(_module('sshhold', 'close'), MAIN, 'Ending a held login session.'),
+    Door(_module('sshhold', 'status'), MAIN, 'Read-only: the held login sessions and time left.'),
     Door(_forge('status', 'list'), SUBAGENT, 'Read-only: the commit statuses the forge holds for one commit.'),
     Door(
         _forge('run', 'show'),
