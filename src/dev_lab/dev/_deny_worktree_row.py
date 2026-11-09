@@ -58,9 +58,8 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
     ),
     'hazard': 'a checkout outside its repository is outside every scan, ignore rule and search that repository runs.',
     'remedy': (
-        f'Put it inside: git worktree add --detach {WORKTREES_REL}/<name> '
-        f'<sha> (with -C, <repo>/{WORKTREES_REL}/<name>); '
-        f'relocate with git worktree move <tree> <repo>/{WORKTREES_REL}/<name>.'
+        f'Put it inside: git worktree add --detach {WORKTREES_REL}/<name> <sha>; '
+        f'relocate with git worktree move. A family repo clones beside its siblings.'
     ),
     'needs': None,
     # A family repo's checkout lives BESIDE its siblings, so cloning one there is the one placement outside
