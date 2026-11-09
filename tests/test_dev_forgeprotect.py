@@ -233,7 +233,7 @@ def test_gitea_names_every_hand_set_difference_and_apply_removes_them() -> None:
     wanted = targets(GITEA_TEXT, 'p', GITEA)
     steps = {step.subject: step.lines for step in plan(forge, GITEA, wanted)}
     trunk = steps['trunk main: branch protection differs -> update']
-    assert "push_whitelist_usernames: live=['user-a-admin', 'promote-bot'] declared=['promote-bot']" in trunk
+    assert "push_whitelist_usernames: live=['promote-bot', 'user-a-admin'] declared=['promote-bot']" in trunk
     assert 'block_admin_merge_override: live=False declared=True' in trunk
     integration = steps['integration integrate/main: branch protection differs -> update']
     assert any(line.startswith('status_check_contexts: the forge did not answer') for line in integration)
