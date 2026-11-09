@@ -481,3 +481,19 @@ def test_a_relock_tree_a_killed_run_left_registered_is_rebuilt(tmp_path: Path, *
         shutil.rmtree(tree)  # the killed run's tree is gone; its registration is not
         with detached_worktree(repo, sha) as again:
             assert (again / 'a.txt').is_file()
+
+
+def test_a_relock_dir_left_unregistered_is_cleared(tmp_path: Path) -> None:
+    """A pruned registration can leave its files: an add into a non-empty path fails (ezxmw9, 2026-11-09)."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    _git(repo, 'init', '-q', '-b', 'main')
+    sha = _commit(repo, {'a.txt': 'a'})
+    _commit(repo, {'b.txt': 'b'})
+    common = Path(_git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    leftover = common / 'relock' / sha[:12]
+    leftover.mkdir(parents=True)
+    (leftover / 'stale.txt').write_text('x', encoding='utf-8')
+    with detached_worktree(repo, sha) as tree:
+        assert (tree / 'a.txt').is_file()
+        assert not (tree / 'stale.txt').exists()

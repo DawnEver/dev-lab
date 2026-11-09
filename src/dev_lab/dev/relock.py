@@ -263,6 +263,8 @@ def detached_worktree(root: Path, sha: str) -> Iterator[Path]:
     common = Path(_must(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
     tree = common / 'relock' / sha[:SHORT]
     _git(root, 'worktree', 'remove', '--force', '--force', str(tree))  # twice: a killed run's lock too
+    shutil.rmtree(tree, ignore_errors=True)  # files a pruned registration left behind
+    _git(root, 'worktree', 'prune')
     _must(root, 'worktree', 'add', '--detach', str(tree), sha)
     try:
         mount_submodules(root, tree)
