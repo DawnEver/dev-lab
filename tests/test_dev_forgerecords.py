@@ -203,3 +203,18 @@ def test_a_named_file_is_replaced_never_duplicated_and_read_back(server) -> None
     deleted = [r['path'] for r in Recorder.received if r['method'] == 'DELETE']
     assert deleted == [f'{API}/issues/3/assets/4'], 'only the named file goes; a run record stays'
     assert remove_named(built, 'absent.json') == 0
+
+
+def test_the_listing_reads_every_page_so_prune_sees_every_record(server) -> None:
+    """The listing reads every page, so prune sees every record.
+
+    2026-11-09: GitHub answers 30 assets a page; the listing read one page, so prune saw 30 of 1000 and the
+    release filled to GitHub's 1000-asset cap -- every later upload was refused (422) and its status dropped.
+
+    PLANTED CONTROL: a dead record on the SECOND page is listed and pruned.
+    """
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    first = [_asset(i, f'run-{LIVE}-linux-r{i}.json.gz') for i in range(1, 51)]
+    answer('GET', '/repos/o/r/releases/9/assets', (200, first), (200, [_asset(51, f'run-{DEAD}-linux-r1.json.gz')]))
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    assert [a.id for a in prune(built, {LIVE}, unit_results=1, dry_run=True)] == [51]

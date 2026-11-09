@@ -43,6 +43,7 @@ from dev_lab.dev._forge_journal import Durable, Probe
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import STORAGE, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import GITHUB, Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
 
@@ -164,7 +165,7 @@ def listing(client: Client) -> tuple[Attachment, ...]:
     store = _store(client, create=False)
     if store is None:
         return ()
-    raw = client.call('GET', store.assets)
+    raw = pages(client, store.assets, {})  # every page: one page saw 30 of 1000 and the release filled up
     return tuple(sorted((_attachment(item) for item in raw), key=lambda item: item.id))
 
 
@@ -176,7 +177,7 @@ def attach(client: Client, path: Path) -> Attachment:
     upload whose answer was lost, so one upload is never stored twice.
     """
     store = cast('_Store', _store(client, create=True))  # create=True always yields a home
-    held = next((raw for raw in client.call('GET', store.assets) if raw.get('name') == path.name), None)
+    held = next((raw for raw in pages(client, store.assets, {}) if raw.get('name') == path.name), None)
     if held is not None:
         return _attachment(held)
     return _upload(client, store, path.name, path.read_bytes())
