@@ -684,5 +684,10 @@ which the `ops` account runs through its fixed sudo line. Each use redeems a sin
 `ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it). `ensure` makes a
 restricted login if absent and grants exactly Read, reporting drift; `mint` prints the token once to stdout, refuses
 a non-`read:*` scope for a login in `[ops.forge] read_only` and an existing name without `--rotate`. Every use is
-audited to `[ops.forge] log` without the token. Grant the line in `[ops.access] commands`:
+audited to `[ops.forge] log` without the token. A routine round of one login's per-host tokens costs one code, not
+one per host: `... forge token mint-batch --login <L> --item <NAME>:<SCOPE>... [--rotate <NAME>]...` redeems ONE
+single-use `ops.forge.tokens` credential whose subject is the digest of the login and every item in order (so a
+changed name, scope, order or rotate is another request). At most 16 items, each validated as `mint` validates it
+before the consent is spent; each token is printed as one JSON line `{"name", "token"}`; a failure mid-way is
+audited and reported naming the items minted and not minted. Grant the line in `[ops.access] commands`:
 `<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml forge *`.
