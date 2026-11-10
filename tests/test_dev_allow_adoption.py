@@ -15,7 +15,6 @@ from typing import Final
 
 import pytest
 
-from dev_lab.dev.agentpolicy import literal_rows
 from dev_lab.dev.allow_adoption import (
     AllowAdoption,
     DeclaredAllow,
@@ -32,6 +31,7 @@ from dev_lab.dev.allow_adoption import (
     settings_problems,
 )
 from dev_lab.dev.autodoors import claude_rows
+from dev_lab.dev.doorrows import literal_rows
 from dev_lab.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
 from dev_lab.dev.hook_adoption import HookAdoption
 from dev_lab.dev.hooks import Remedy

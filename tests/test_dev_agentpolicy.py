@@ -7,9 +7,10 @@ import re
 
 import pytest
 
-from dev_lab.dev.agentpolicy import INTERPRETERS, MAIN, POLICY, SUBAGENT, USER, Door, exits_of, module_verbs
+from dev_lab.dev.agentpolicy import MAIN, POLICY, SUBAGENT, USER, Door, exits_of, module_verbs
 from dev_lab.dev.autodoors import claude_rows
 from dev_lab.dev.automode import INTENTS, spelled_commands
+from dev_lab.dev.doorrows import INTERPRETERS
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 
 _RULES = rules_by_id(DENY_RULES)
