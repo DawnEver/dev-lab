@@ -11,6 +11,7 @@ Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` r
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -35,6 +36,7 @@ from dev_lab.ops import (
     offsite,
     probe,
     promote,
+    secretplace,
     sshkey,
     totp,
     upgrade,
@@ -254,6 +256,19 @@ def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
     return forgeaccounts.run_verb(config.forge, args, redeem_for)
 
 
+def _secret_place(config: OpsConfig, args: argparse.Namespace) -> int:
+    """``secret place`` (:mod:`dev_lab.ops.secretplace`): the content on stdin, the consent redeemed here."""
+    try:
+        granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
+        said = secretplace.place(config, args.path, sys.stdin.buffer.read(), redeem=_redeemer(config)(
+            secretplace.ACTION), credential=granted, chown=shutil.chown)  # fmt: skip
+    except (secretplace.SecretRefused, ConsentRefused, OSError, ValueError) as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    emit(said)
+    return 0
+
+
 def _probe(config: OpsConfig) -> int:
     role = config.probe
     if role is None:
@@ -297,6 +312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )  # default: the [ops.config] source
     configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
     forgeaccounts.add_parser(verbs)
+    secretplace.add_parser(verbs)
     for name in ('disk', 'clean'):
         sized = verbs.add_parser(name)
         sized.add_argument('--gitea-data', default=disk.DEFAULT_GITEA_DATA)
@@ -337,6 +353,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         ),
         'forge': lambda: _forge(config, args),
+        'secret': lambda: _secret_place(config, args),
     }
     return verbs_of[args.verb]()
 
