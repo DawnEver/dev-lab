@@ -616,6 +616,14 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   key bundle; which providers it holds is ai-lab's `routes.toml`, never dev-lab's. The name and the loader are
   `dev_lab.dev.taskkeys`'s; the review jobs pass `--keys-env AI_LAB_KEYS_PR_REVIEW`, a hosted part declares
   `tasks = [...]` (`dev_lab.dev.jobparts`), the ops judge reads `[ops.judge] keys_file`.
+- Store a task's bundle ONCE in the credential store, from stdin or from a file you placed outside every git
+  checkout; `--from` deletes the file after a successful store and keeps it (named) on any failure:
+
+  ```
+  python -m dev_lab.dev.forge secrets store --task pr-review --from <path outside any checkout>/keys.toml
+  <bundle source> | python -m dev_lab.dev.forge secrets store --task pr-review
+  ```
+
 - Set a task's bundle on every `[serve] repos` checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
 
   ```
@@ -684,5 +692,10 @@ which the `ops` account runs through its fixed sudo line. Each use redeems a sin
 `ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it). `ensure` makes a
 restricted login if absent and grants exactly Read, reporting drift; `mint` prints the token once to stdout, refuses
 a non-`read:*` scope for a login in `[ops.forge] read_only` and an existing name without `--rotate`. Every use is
-audited to `[ops.forge] log` without the token. Grant the line in `[ops.access] commands`:
+audited to `[ops.forge] log` without the token. A routine round of one login's per-host tokens costs one code, not
+one per host: `... forge token mint-batch --login <L> --item <NAME>:<SCOPE>... [--rotate <NAME>]...` redeems ONE
+single-use `ops.forge.tokens` credential whose subject is the digest of the login and every item in order (so a
+changed name, scope, order or rotate is another request). At most 16 items, each validated as `mint` validates it
+before the consent is spent; each token is printed as one JSON line `{"name", "token"}`; a failure mid-way is
+audited and reported naming the items minted and not minted. Grant the line in `[ops.access] commands`:
 `<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml forge *`.

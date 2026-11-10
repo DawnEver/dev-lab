@@ -127,7 +127,7 @@ def fetch(source: ConfigSource, *, run: EnvRunner) -> str:
         'GIT_TERMINAL_PROMPT': '0',
     }
     with tempfile.TemporaryDirectory() as scratch:
-        target = Path(scratch) / 'forge-hosts'
+        target = Path(scratch) / 'config-source'
         argv = ['git', 'clone', '--quiet', '--depth', '1', '--branch', source.ref, source.source, str(target)]
         status, _said = run(argv, env)
         if status != 0:

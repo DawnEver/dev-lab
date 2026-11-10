@@ -15,7 +15,9 @@ module is the client and the CLI::
   (CONSENT-CODE-FROM-THE-USER). It reaches the holder on a pipe and the ssh child through ``SSH_ASKPASS``;
   never argv, disk or a log. An empty code is allowed (a host's trusted window accepts an empty answer).
 * ``--hours`` above the ceiling (``[ssh.hold] max_hours`` in the machine file, default
-  :data:`DEFAULT_MAX_HOURS`) is REFUSED, never clamped. The holder also ends after ``idle_minutes`` idle.
+  :data:`DEFAULT_MAX_HOURS`) is REFUSED, never clamped. A quiet session lives to that ceiling (keepalives hold the
+  connection, :func:`dev_lab.dev._sshholder.ssh_argv`); it ends early on idle only when the machine file names
+  ``[ssh.hold] idle_minutes`` -- a 30 min default ended a 4 h session, measured 2026-11-10.
 * A dropped connection is said by name and the user re-opens: never a silent re-authentication.
 * Every open/run/credential/close appends one JSONL line to :func:`audit_path` -- a ``run`` records its command
   VERBATIM, so A SECRET NEVER GOES THROUGH ``run``. A forge token goes through ``credential`` alone: read from
@@ -49,7 +51,6 @@ from lab_commons.log import emit
 from dev_lab.ops.totp import write_private
 
 __all__ = [
-    'DEFAULT_IDLE_MINUTES',
     'DEFAULT_MAX_HOURS',
     'DEFAULT_TIMEOUT_S',
     'HoldRefused',
@@ -68,6 +69,7 @@ __all__ = [
     'read_session',
     'request',
     'run_command',
+    'session_over',
     'split_marker',
     'state_dir',
     'state_path',
@@ -78,8 +80,6 @@ __all__ = [
 
 #: The ceiling on ``--hours`` when the machine file names none (user ruling 2026-11-09: 4 h).
 DEFAULT_MAX_HOURS: Final = 4.0
-#: A session with no command for this long ends itself.
-DEFAULT_IDLE_MINUTES: Final = 30.0
 #: One command's bound; past it the session closes, since a half-read stream cannot be trusted.
 DEFAULT_TIMEOUT_S: Final = 600.0
 _OPEN_WAIT_S: Final = 120.0
@@ -116,9 +116,15 @@ def ceiling(table: dict[str, Any] | None = None) -> float:
     return float(_table(table).get('max_hours', DEFAULT_MAX_HOURS))
 
 
-def idle_s(table: dict[str, Any] | None = None) -> float:
-    """``[ssh.hold] idle_minutes`` in seconds, else :data:`DEFAULT_IDLE_MINUTES`."""
-    return float(_table(table).get('idle_minutes', DEFAULT_IDLE_MINUTES)) * 60
+def idle_s(table: dict[str, Any] | None = None) -> float | None:
+    """``[ssh.hold] idle_minutes`` in seconds, else ``None``: no idle limit, the session lives to its ceiling."""
+    minutes = _table(table).get('idle_minutes')
+    return None if minutes is None else float(minutes) * 60
+
+
+def session_over(*, now: float, expires: float, quiet_s: float, idle: float | None) -> bool:
+    """Whether a session ends: its ceiling *expires* reached, or *quiet_s* past a configured *idle* limit."""
+    return now >= expires or (idle is not None and quiet_s >= idle)
 
 
 def check_hours(hours: float, limit: float) -> None:

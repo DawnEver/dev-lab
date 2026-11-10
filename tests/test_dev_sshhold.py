@@ -136,3 +136,18 @@ def test_forgetting_a_session_the_other_side_is_deleting_is_not_an_error(monkeyp
     monkeypatch.setattr(sshhold.Path, 'unlink', broken)
     with pytest.raises(OSError, match='I/O'):
         sshhold.forget('ops@race')
+
+
+def test_a_quiet_session_lives_to_its_ceiling_and_the_ceiling_still_ends_it() -> None:
+    """MEASURED 2026-11-10: ``open --hours 4`` expired 1800 s after the last ``run`` -- a default idle limit.
+
+    No idle limit unless the machine file names one. PLANTED CONTROLS: the ceiling ends a session; a configured
+    ``idle_minutes`` still ends a quiet one.
+    """
+    assert sshhold.idle_s({}) is None
+    assert not sshhold.session_over(now=100.0, expires=200.0, quiet_s=31 * 60, idle=sshhold.idle_s({}))
+    assert sshhold.session_over(now=200.0, expires=200.0, quiet_s=0, idle=None), 'PLANTED CONTROL: the ceiling'
+    idle = sshhold.idle_s({'idle_minutes': 45})
+    assert idle == 45 * 60
+    assert sshhold.session_over(now=100.0, expires=200.0, quiet_s=46 * 60, idle=idle), 'a configured idle ends it'
+    assert not sshhold.session_over(now=100.0, expires=200.0, quiet_s=44 * 60, idle=idle)

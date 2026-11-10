@@ -10,15 +10,15 @@ by :func:`dev_lab.dev.forgemerge.decide`); the hook stays as early feedback only
 * :data:`SESSION_BRANCH_CONTEXT` -- :func:`dev_lab.dev.sessionbranch.head_refusals`: the head is published as
   itself and admitted by the branch set its own commit declares (P2, P6). A GATE.
 * :data:`PR_CURRENT_CONTEXT` -- :func:`dev_lab.dev.prcurrent.head_refusals`: a ``pr/`` head holds
-  ``origin/<integration>``'s tip and a lock no floated sibling has moved past. A GATE.
+  ``origin/<integration>``'s tip and a lock within the floated siblings' lag window. A GATE.
 * :data:`LOCK_CONTEXT` -- the head's ``uv.lock`` moves a resolution its BASE does not
   (:func:`dev_lab.dev.lockcheck.stale` on the head, then on its merge-base with ``origin/<integration>``, each in a
   detached worktree); the remedy is the one dependency door, :data:`LOCK_REMEDY`. A resolution that cannot run is
   ``error`` with its diagnosis, never a pass. A PR NEVER CHASES THE LOCK (user ruling 2026-10-28): a move the base
   lags too is integration's, carried by the forge's relock pull request (:mod:`dev_lab.dev.relock`).
-* :data:`LAG_CONTEXT` -- the head's ``uv.lock`` pins a floated sibling more than :data:`LAG_LIMIT` commits behind
-  that sibling's line (:func:`dev_lab.dev.locklag.floating_lag`): an ALARM that the relock is not carrying, never a
-  gate -- ``pr-current`` already refuses any floating move on a ``pr/`` head.
+* :data:`LAG_CONTEXT` -- the head's ``uv.lock`` pins a floated sibling more than
+  :data:`~dev_lab.dev.locklag.LAG_LIMIT` commits behind that sibling's line (:func:`dev_lab.dev.locklag.floating_lag`):
+  an ALARM that the relock is not carrying, never a gate -- ``pr-current`` reads the same window on a ``pr/`` head.
 
 The other two push rows are not head statuses, by what they judge: ``merge-resolution``
 (:func:`dev_lab.dev.mergeresolution.unresolved`) is already a condition of the merge decision itself, on the same
@@ -52,7 +52,7 @@ from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, UNRESOLVED, stale
-from dev_lab.dev.locklag import floating_lag
+from dev_lab.dev.locklag import LAG_LIMIT, floating_lag
 from dev_lab.dev.relock import detached_worktree
 
 if TYPE_CHECKING:
@@ -65,7 +65,6 @@ if TYPE_CHECKING:
 __all__ = [
     'GATES',
     'LAG_CONTEXT',
-    'LAG_LIMIT',
     'LOCK_CONTEXT',
     'LOCK_REMEDY',
     'PR_CURRENT_CONTEXT',
@@ -93,10 +92,6 @@ PR_CURRENT_CONTEXT: Final = prcurrent.HOOK_ID
 GATES: Final = (SESSION_BRANCH_CONTEXT, PR_CURRENT_CONTEXT)
 #: The contexts judged on every pass, posted only on a change: their verdict reads a tip the head does not hold.
 VOLATILE: Final = frozenset({PR_CURRENT_CONTEXT, LAG_CONTEXT})
-#: Commits a consumer's lock may pin a floated sibling behind that sibling's line before :data:`LAG_CONTEXT` fails.
-#: The relock pull request follows every sibling push within a serve tick or two, so a carried lock lags a handful
-#: of commits at most; twenty is about a working day of sibling merges -- past it, the relock is not carrying.
-LAG_LIMIT: Final = 20
 #: The fix a stale lock names, first, so the 140-character status keeps it whole.
 LOCK_REMEDY: Final = f'run `{DOOR}`, then commit {LOCK}'
 #: The states that are a verdict; any other (``error``, ``pending``) is judged again.

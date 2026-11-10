@@ -152,7 +152,14 @@ from dev_lab.dev.forgepoller import POLL_LEASE_TICKS, polls
 from dev_lab.dev.forgeproduce import Produced, produce
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
-from dev_lab.dev.forgeservesteps import demote_unreachable, pressed, repo_wide, retain_storage, review, tidy_runs
+from dev_lab.dev.forgeservesteps import (
+    demote_unreachable,
+    every_host,
+    pressed,
+    repo_wide,
+    retain_storage,
+    tidy_runs,
+)
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client, client_for
@@ -300,7 +307,7 @@ def serve(
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
         repo_wide(root, repo, remembering(client), name, cards, clock=clock, say=say, alarm=alarm)
-    review(root, client(root), say=say, host=name)  # wherever the command can run, never only on the poller
+    every_host(root, repo, client(root), say=say, alarm=alarm, host=name)  # never only on the poller
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced

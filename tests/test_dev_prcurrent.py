@@ -6,6 +6,7 @@ has its planted control: the same head, made current, passes.
 
 from __future__ import annotations
 
+import inspect
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 from _forge_state import StateForge
 
+from dev_lab.dev.locklag import within_window
 from dev_lab.dev.prcurrent import RULE, SYNC, behind, fetch_ref, lock_stale, ready_refusals, refusals
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
 
@@ -141,3 +143,9 @@ def test_ready_is_refused_on_a_dirty_tree_then_on_a_stale_head_and_passes_once_c
     (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_lagging)
     assert _LAG in why
     assert ready_refusals(repo, forge, forge.pr_view(number), read=_fresh) == [], 'PLANTED CONTROL'
+
+
+def test_pr_current_reads_the_lock_lag_window_never_exact_heads() -> None:
+    """DECISION 14: one source for current enough -- the default lock reading IS ``lock/lag``'s window."""
+    for judged_by in (lock_stale, refusals, ready_refusals):
+        assert inspect.signature(judged_by).parameters['read'].default is within_window, judged_by.__name__

@@ -6,8 +6,10 @@ judgement (:func:`judge`) refuses a head when either holds:
 
 * BEHIND -- ``origin/<integration>``, fetched afresh (that one ref), is not an ancestor of the head. A fetch that
   fails refuses with the network's reason, never passes unchecked;
-* STALE -- the head's lock lags a floated sibling's current head (dev-lab, lab-commons, ...): the floating-head
-  reading :func:`dev_lab.dev.locklag.floating_stale` of the head's ``uv.lock`` (an ``ls-remote`` per sibling).
+* STALE -- the head's lock pins a floated sibling (dev-lab, lab-commons, ...) more than
+  :data:`~dev_lab.dev.locklag.LAG_LIMIT` commits behind its line: :func:`dev_lab.dev.locklag.within_window`, the
+  ONE window the forge's ``lock/lag`` also reads (DECISION 14) -- exact heads made every landing stale every
+  dependent PR. The repo's OWN integration stays exact-contains (BEHIND).
 
 Both name the one remedy, :data:`SYNC` (``forge sync`` merges integration and relocks the floated siblings in the
 same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at three doors: the forge's ``pr-current`` status on
@@ -33,7 +35,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.lockcheck import LOCK
-from dev_lab.dev.locklag import floating_stale
+from dev_lab.dev.locklag import within_window
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.sessionbranch import MACHINE_BRANCHES
 
@@ -66,7 +68,7 @@ _FIELDS: Final = 4
 
 #: Fetches one ref of origin into *root*: ``None`` when it landed, else the network's reason.
 Fetch = Callable[[Path, str], str | None]
-#: The floating-head staleness of lock text, one sentence per lagging sibling (locklag.floating_stale).
+#: Why lock text is not current enough, one sentence per sibling past the window (locklag.within_window).
 Read = Callable[[str], tuple[str, ...]]
 
 #: What every refusal here ends with: this hook is early feedback, the forge's status is the gate.
@@ -100,8 +102,8 @@ def behind(root: Path, sha: str, integration: str, *, fetch: Fetch = fetch_ref) 
     return f'{RULE}: {sha[:12]} does not contain origin/{integration}; run `{SYNC}`, then push again'
 
 
-def lock_stale(root: Path, sha: str, *, read: Read = floating_stale) -> str | None:
-    """Why *sha*'s lock lags a floated sibling's current head, or ``None`` when it does not."""
+def lock_stale(root: Path, sha: str, *, read: Read = within_window) -> str | None:
+    """Why *sha*'s lock pins a floated sibling past the lag window, or ``None`` when it does not."""
     shown = _git(root, 'show', f'{sha}:{LOCK}')
     found = read(shown.stdout) if shown.returncode == 0 else ()  # no lock: nothing floats
     if not found:
@@ -109,15 +111,13 @@ def lock_stale(root: Path, sha: str, *, read: Read = floating_stale) -> str | No
     return f'{RULE}: the lock of {sha[:12]} is stale: {"; ".join(found)}; run `{SYNC}`, then push again'
 
 
-def judge(
-    root: Path, sha: str, integration: str, *, fetch: Fetch = fetch_ref, read: Read = floating_stale
-) -> list[str]:
+def judge(root: Path, sha: str, integration: str, *, fetch: Fetch = fetch_ref, read: Read = within_window) -> list[str]:
     """Every reason *sha* is not current against *integration*: BEHIND first, then STALE."""
     return [why for why in (behind(root, sha, integration, fetch=fetch), lock_stale(root, sha, read=read)) if why]
 
 
 def head_refusals(
-    root: Path, sha: str, branch: str, integration: str, *, fetch: Fetch = fetch_ref, read: Read = floating_stale
+    root: Path, sha: str, branch: str, integration: str, *, fetch: Fetch = fetch_ref, read: Read = within_window
 ) -> list[str]:
     """:func:`judge` on *branch* at *sha*; nothing where the rule does not apply (a machine branch, a non-``pr/``).
 
@@ -132,7 +132,7 @@ def judged(branch: str) -> bool:
     return branch.startswith('pr/') and branch not in MACHINE_BRANCHES
 
 
-def refusals(root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = floating_stale) -> list[str]:
+def refusals(root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = within_window) -> list[str]:
     """:func:`judge` over every created or updated branch git's pre-push *lines* name, machine branches aside."""
     found: list[str] = []
     for fields in (line.split() for line in lines.splitlines()):
@@ -151,7 +151,7 @@ def refusals(root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = f
 
 
 def ready_refusals(
-    root: Path, client: Client, pull: PullRequest, *, fetch: Fetch = fetch_ref, read: Read = floating_stale
+    root: Path, client: Client, pull: PullRequest, *, fetch: Fetch = fetch_ref, read: Read = within_window
 ) -> list[str]:
     """Why PR *pull* may not be marked ready: a dirty tree, then :func:`judge` on its head as origin holds it.
 

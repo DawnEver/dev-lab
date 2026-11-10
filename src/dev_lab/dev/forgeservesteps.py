@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'demote_unreachable',
+    'every_host',
     'hygiene',
     'pressed',
     'prompt',
@@ -254,8 +255,8 @@ def repo_wide(
 
     In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
     branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
-    the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left -- and the
-    family watch (:mod:`dev_lab.dev.family.watch`, on the kit's tick). A repo that
+    and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
+    family watch is per machine, not here (:func:`family`). A repo that
     declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
     """
     serve_continue_landed(root, client(root), say=say, alarm=alarm)
@@ -274,6 +275,17 @@ def repo_wide(
         drift_step(root, repo, say=say, alarm=alarm, now=clock())
     except (OSError, ValueError) as why:
         say(f'[serve] the drift census did not run: {why}')
+
+
+def every_host(
+    root: Path, repo: str, built: Client, *, say: Callable[[str], None], alarm: Callable[[Alarm], object], host: str
+) -> None:
+    """The passes every serving host runs, poller or not.
+
+    :func:`review` wherever its command can run, and the machine's own family watch
+    (:mod:`dev_lab.dev.family.watch`, daily) -- the family is the host's checkouts, so never only the poller's.
+    """
+    review(root, built, say=say, host=host)
     try:
         family_step(root, repo, say=say, alarm=alarm)
     except (OSError, ValueError) as why:
