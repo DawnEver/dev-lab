@@ -42,6 +42,7 @@ from dev_lab.dev.ciworkflows import (
 )
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
+from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
@@ -1427,3 +1428,42 @@ def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
         runs = [str(step.get('run', '')) for step in narrowed[job]['steps']]
         assert 'uv sync --frozen --extra dev' in runs, job
         assert not any('--all-extras' in run for run in runs), job
+
+
+def _door_ref(run: str, workspace: Path, temp: Path) -> subprocess.CompletedProcess[str]:
+    """Run the door step up to its clone and print the ref it chose -- no network."""
+    head = run.split('git clone', 1)[0] + 'echo "$DEV_LAB_REF"\n'
+    head = head.replace('python3 -I', f'"{Path(sys.executable).as_posix()}" -I')  # the runner's python3, here
+    env = {**unlocated(), 'RUNNER_TEMP': str(temp), 'GITHUB_WORKSPACE': str(workspace), 'DOOR_SHA': 'HEAD'}
+    return subprocess.run(
+        [shutil.which('bash') or 'bash', '-c', head],
+        capture_output=True, text=True, encoding='utf-8', check=False, env=env,
+    )  # fmt: skip
+
+
+def test_a_repo_that_locks_no_python_runs_the_family_line_s_door(tmp_path: Path) -> None:
+    """A data repo has no uv.lock, so it pins no door: the door is dev-lab's integration line (data repos, 11-10).
+
+    PLANTED CONTROL: the same workspace WITH a lock reads the lock's revision, never the line.
+    """
+    run = _door_steps(tmp_path)[0]['run']
+    workspace = tmp_path / 'ws'
+    workspace.mkdir()
+    env = unlocated()
+    git = ['git', '-C', str(workspace), '-c', 'user.name=t', '-c', 'user.email=t@t']
+    subprocess.run([*git, 'init', '-q'], check=True, env=env)
+    (workspace / 'a.toml').write_text('a = 1\n', encoding='utf-8')
+    subprocess.run([*git, 'add', '.'], check=True, env=env)
+    subprocess.run([*git, 'commit', '-q', '-m', 'data'], check=True, env=env)
+    done = _door_ref(run, workspace, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == 'integrate/main'
+    pin = 'c' * 40
+    (workspace / 'uv.lock').write_text(
+        f'[[package]]\nname = "dev-lab"\nsource = {{ git = "https://example.org/dev-lab.git#{pin}" }}\n',
+        encoding='utf-8',
+    )
+    subprocess.run([*git, 'add', '.'], check=True, env=env)
+    subprocess.run([*git, 'commit', '-q', '-m', 'lock'], check=True, env=env)
+    locked = _door_ref(run, workspace, tmp_path)
+    assert locked.stdout.strip() == pin, locked.stderr

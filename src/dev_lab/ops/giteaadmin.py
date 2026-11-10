@@ -93,17 +93,25 @@ if psql is None:
 ini = configparser.ConfigParser(interpolation=None)
 ini.read_string('[root]\n' + open(ini_path, encoding='utf-8').read())
 db = ini['database']
-host, _, port = db.get('HOST', '127.0.0.1:5432').strip().partition(':')
-env = dict(os.environ, PGPASSWORD=db.get('PASSWD', '').strip(), PGSSLMODE=db.get('SSL_MODE', '').strip() or 'disable')
+def value(key, default=''):
+    raw = db.get(key, default).strip()
+    return raw[1:-1] if len(raw) > 1 and raw[0] == raw[-1] and raw[0] in '"`' else raw
+password = value('PASSWD')
+where = value('HOST', '127.0.0.1:5432')
+host, _, port = (where, '', '') if where.startswith('/') else where.partition(':')
+env = dict(os.environ, PGPASSWORD=password, PGSSLMODE=value('SSL_MODE') or 'disable')
 uid = "SELECT id FROM \"user\" WHERE lower_name = lower(:'login')"
 sql = f'SELECT name FROM access_token WHERE uid = ({uid}) ORDER BY name;\n'
-argv = [psql, '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', host or '127.0.0.1', '-p', port or '5432',
-        '-U', db.get('USER', 'gitea').strip(), '-d', db.get('NAME', 'gitea').strip(), '-v', f'login={login}']
+argv = [psql, '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', host or '127.0.0.1',
+        *(() if where.startswith('/') else ('-p', port or '5432')),
+        '-U', value('USER', 'gitea'), '-d', value('NAME', 'gitea'), '-v', f'login={login}']
 if verb == 'delete':
     argv += ['-v', f'name={sys.argv[4]}']
     sql = f"DELETE FROM access_token WHERE uid = ({uid}) AND name = :'name';\n" + sql
 done = subprocess.run([*argv, '-f', '-'], input=sql, capture_output=True, text=True, env=env, check=False)
 if done.returncode != 0:
+    why = done.stderr.strip()[:300]
+    print(json.dumps({'error': why.replace(password, '<redacted>') if password else why}))
     sys.exit(done.returncode)
 print(json.dumps(sorted(line for line in done.stdout.splitlines() if line)))
 """
@@ -143,12 +151,14 @@ class TokenStore:
             msg = 'the token store needs psql on the forge host; it is not installed'
             raise ForgeRefused(msg)
         try:
-            names = json.loads(said) if code == 0 else None
+            answer = json.loads(said)
         except json.JSONDecodeError:
-            names = None
+            answer = None
+        names = answer if code == 0 else None
         if not isinstance(names, list):
             what = 'reading' if verb == 'list' else f'deleting {name[0]} of'
-            msg = f'{what} {login} token names failed (exit {code})'
+            why = f': {answer["error"]}' if isinstance(answer, dict) and answer.get('error') else ''
+            msg = f'{what} {login} token names failed (exit {code}){why}'
             raise ForgeRefused(msg)
         return {str(found) for found in names}
 
