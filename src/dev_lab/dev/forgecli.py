@@ -42,6 +42,7 @@ from dev_lab.dev import (
     forgehosts,
     forgeintegration,
     forgeissue,
+    forgelabel,
     forgemerge,
     forgenotice,
     forgeoutbox,
@@ -103,6 +104,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
         argv
     ),
     'secrets': forgesecrets.main,
+    'label': forgelabel.main,
     'headgate': forgeheadgate.main,
     'security': forgesecurity.main,
     'tidy': forgetidy.main,
@@ -164,7 +166,7 @@ def _parser() -> argparse.ArgumentParser:
         epilog=(
             'also: pr breakglass N --reason R, breakglass open|close|ack|status, pr close-landed [N...], '
             'pr close-superseded N... --by <M|sha|ref>, '
-            'issue claim|status N, status post|list SHA; token: auth login|status'
+            'issue claim|status N, label create --name N --color C, status post|list SHA; token: auth login|status'
         ),
     )
     nouns = parser.add_subparsers(dest='noun', required=True)

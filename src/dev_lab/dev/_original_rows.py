@@ -422,6 +422,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
     'doorrows',
+    # ORIGINAL: the door's label verb (2026-11-10, a repo's needs-consent label); no consumer wrote a label.
+    'forgelabel',
     # ORIGINAL: the refusal feedback of `forge auth` (2026-11-10); no consumer recorded a verdict.
     'forgeverdict',
     # ORIGINAL: split out of `forgeauth` inside the kit (2026-11-10); no consumer held it.
