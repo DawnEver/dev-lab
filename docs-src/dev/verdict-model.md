@@ -55,8 +55,8 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - A key the run cache already holds is cited without running (`dev_lab.dev.runcache`); `--rerun` overrides.
 - A measure waits at most `verifybox.MEASURE_WAIT_S` for the box and then refuses naming the holder.
 - A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: one core per
-  worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, else `compute.learned.fit_width` of
-  `SELECTION_CPU`, the files selected and the box's free room unless the caller names a width -- the memory its files measured, `verifybox.selection_mem_gb`, and `SELECTION_WALL_S`) beside whatever else fits; a producer runs
+  worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, else
+  `verifybox.selection_width`: one worker a file, at most the box's free cores, narrowed by its free memory, unless the caller names a width -- the memory its files measured, `verifybox.selection_mem_gb`, and `SELECTION_WALL_S`) beside whatever else fits; a producer runs
   at the demand serve admitted it at ([box resources](box-resources.md)).
 - Where nothing was learned (a hosted runner: the table lives beside the machine config, not in the checkout) a
   worker is priced at `[tool.dev_lab.verify] worker_mem_gb`, the peak the repo's last run measured, times the box

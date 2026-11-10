@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import math
 import os
 import sys
 from collections.abc import Sequence
@@ -41,7 +42,6 @@ from dev_lab.dev.platformparts import origin_url
 
 __all__ = [
     'MEASURE_WAIT_S',
-    'SELECTION_CPU',
     'SELECTION_WALL_S',
     'UNENFORCED_PLATFORMS',
     'WAIT_S',
@@ -55,6 +55,7 @@ __all__ = [
     'selection_files',
     'selection_mem_gb',
     'selection_producer',
+    'selection_width',
     'selection_workers',
     'serial_width',
     'xdist_installed',
@@ -71,9 +72,6 @@ WAIT_S: Final = 1800.0
 #: no claim, no ledger row, no kill, its width the repo's own, judged by pytest's exit alone. Only the macOS
 #: CI row lands here, and it runs on push only (D84) on a single-tenant hosted VM with no ledger to share.
 UNENFORCED_PLATFORMS: Final = frozenset({'darwin'})
-
-#: The pytest-xdist workers a selection runs at most when its caller names no width.
-SELECTION_CPU: Final = 4
 
 #: The wall a selection declares, in seconds: killed past it.
 SELECTION_WALL_S: Final = 3600
@@ -111,17 +109,26 @@ def free_room(capacity: Capacity) -> Resources:
     return room(capacity, held, Reading.now([one.pid for one in held]))
 
 
+def selection_width(room: Resources, *, files: int, per_gb: float) -> int:
+    """The workers a selection of *files* (``0``: unknown) runs in *room*: one a file, at most its cores.
+
+    No fixed cap: :func:`~lab_commons.compute.learned.fit_width` of the *room*'s cores, narrowed by its memory
+    at *per_gb* a worker -- memory is the binding constraint, the cores only the ceiling. Measured 2026-11-10:
+    a fixed cap of 4 held a 24-core / 63 GB box to 4 workers with its CPU at ~15-20 %.
+    """
+    cores = max(1, math.floor(room['cpu']))
+    return learned.fit_width(min(cores, files or cores), cpu=room['cpu'], mem_gb=room['mem_gb'], per_gb=per_gb)
+
+
 def selection_workers(
     argv: Sequence[str], free: Resources, *, files: int, per_gb: float, xdist: bool
 ) -> tuple[int, list[str]]:
     """The workers *argv*'s pytest runs, and the ``-n`` to append so it runs exactly that many.
 
-    The caller's own width is honoured as given; else (and for ``auto``) xdist runs
-    :func:`~lab_commons.compute.learned.fit_width` of :data:`SELECTION_CPU` and the *files* selected (``0``:
-    unknown) in the *free* room at *per_gb* a worker, and without xdist the step is one interpreter: ``0``.
+    The caller's own width is honoured as given; else (and for ``auto``) xdist runs :func:`selection_width`
+    of the *free* room, and without xdist the step is one interpreter: ``0``.
     """
-    cap = min(SELECTION_CPU, files or SELECTION_CPU)
-    fit = learned.fit_width(cap, cpu=free['cpu'], mem_gb=free['mem_gb'], per_gb=per_gb)
+    fit = selection_width(free, files=files, per_gb=per_gb)
     if not xdist:
         return 0, []
     given = _explicit_width(argv)
