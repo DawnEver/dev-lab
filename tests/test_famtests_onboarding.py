@@ -104,6 +104,28 @@ def test_the_built_in_ephemeral_default_needs_no_restating() -> None:
         "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\npr_merges_since = 'abc'\n"
         "[tool.dev_lab.hooks]\n[tool.lab_commons.tests]\nproduce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']\n"
     )
-    assert onboarding_gaps(text, lambda _name: True, 'origin/x') == []
+    assert onboarding_gaps(text, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x') == []
     off = text.replace("sessions = ['integrate/main']\n", "sessions = ['integrate/main']\nephemeral = ['wip/*']\n")
-    assert onboarding_gaps(off, lambda _name: True, 'origin/x') != []
+    assert onboarding_gaps(off, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x') != []
+
+
+def test_a_rendered_family_file_without_its_render_input_declared_is_a_gap() -> None:
+    """A family file a renderer writes, held with that renderer's input undeclared, is an onboarding gap.
+
+    MEASURED 2026-11-10: three members held family files and declared no ``[tool.dev_lab.render]``, so every relock
+    left them stale and the forge went red on the symptoms. A renderer is DUE where a file it writes is present
+    (:func:`dev_lab.dev.famfiles.due_renderers`); each due renderer's required input must be declared.
+
+    PLANTED CONTROLS: the same manifest with the inputs declared has no gap; a tree holding no file the renderer
+    writes owes none of its inputs.
+    """
+    present = {'AGENTS.md', 'uv.lock', '.gitignore', '.claude/hooks/deny-rules.json'}
+    gaps = ' '.join(onboarding_gaps(_COMPLETE, present.__contains__, 'origin/x'))
+    assert '[tool.dev_lab.render] deltas' in gaps
+    assert '[tool.dev_lab.render] adoption' in gaps
+    declared = _COMPLETE + '[tool.dev_lab.render]\ndeltas = "tests/_famconfig.py"\nadoption = "scripts/deny_rules.py"\n'
+    assert onboarding_gaps(declared, present.__contains__, 'origin/x') == []
+    only_gitignore = {'AGENTS.md', 'uv.lock', '.gitignore'}
+    left = ' '.join(onboarding_gaps(_COMPLETE, only_gitignore.__contains__, 'origin/x'))
+    assert 'deltas' in left
+    assert 'adoption' not in left
