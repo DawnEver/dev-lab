@@ -27,7 +27,7 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
     [tool.dev_lab.protection]
     approvals = 1                                  # optional; default 1 with a judge, else 0 (more needs a judge)
     [tool.dev_lab.protection.forges."github.com"]
-    breakglass = "role:admin"                      # GitHub: role:<admin|maintain|write> | app:<id> | team:<id>
+    breakglass = ["app:<id>", "role:admin"]        # GitHub: a list of role:<admin|maintain|write>|app:<id>|team:<id>
     [tool.dev_lab.protection.forges."gitea.example"]
     breakglass = "breakglass-bot"                  # Gitea: a login
     promote = ["promote-bot"]                      # Gitea: who may push the trunk (its fast-forward)
@@ -108,9 +108,9 @@ class Api(Protocol):
 
 @dataclass(frozen=True)
 class Identities:
-    """One forge's identities: the ONE bypass actor (break-glass) and who may push the trunk (promote)."""
+    """One forge's identities: its bypass actors (break-glass; Gitea names ONE login) and who pushes the trunk."""
 
-    breakglass: str
+    breakglass: tuple[str, ...]
     promote: tuple[str, ...] = ()
 
 
@@ -129,7 +129,7 @@ class Target:
     role: str
     branch: str
     contexts: tuple[str, ...]
-    bypass: str
+    bypass: tuple[str, ...]
     pushers: tuple[str, ...] = ()
     approvals: int = 0
     approver: str = ''
@@ -158,7 +158,9 @@ def declaration_from(text: str, origin: str) -> Declaration:
         if not entry.get('breakglass'):
             msg = f'[tool.dev_lab.{_TABLE}.forges."{host}"] in {origin} names no breakglass: the bypass is undecided'
             raise ValueError(msg)
-        forges[host] = Identities(str(entry['breakglass']), tuple(entry.get('promote', ())))
+        named = entry['breakglass']
+        bypass = (str(named),) if isinstance(named, str) else tuple(str(one) for one in named)
+        forges[host] = Identities(bypass, tuple(entry.get('promote', ())))
     review = review_from(text, origin)
     judged = review.where == JUDGE and not review.judge_app
     approvals = int(table.get('approvals', 1 if judged else 0))
