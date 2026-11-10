@@ -223,7 +223,7 @@ def test_store_from_a_file_keeps_the_bundle_deletes_the_file_and_never_says_a_ke
     source = _outside_git(tmp_path) / 'keys.toml'
     source.write_text(_BUNDLE, encoding='utf-8')
     assert forgesecrets.main(['store', '--task', 'pr-review', '--from', str(source)], stdin=lambda: '') == 0
-    assert forgesecrets.stored_bundle('pr-review') == _BUNDLE
+    assert forgesecrets.stored_bundle(taskkeys.secret_name('pr-review')) == _BUNDLE
     assert list(kept) == [(forgesecrets.BUNDLE_HOST, 'AI_LAB_KEYS_PR_REVIEW')]
     assert not source.exists()
     said = capsys.readouterr()
