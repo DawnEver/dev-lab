@@ -18,6 +18,10 @@ ONE DECLARATION (``pyproject.toml``)::
   at any other commit, naming the sync.
 * :func:`relock` moves ``rev`` to ``line``'s current head -- ``forge sync`` calls it beside the lock relock, so a
   data pin follows its line exactly the way a floated sibling does.
+* ``tests = [...]`` (optional) names the consumer's tests that judge the data; absent, its whole suite does.
+* :data:`OVERRIDE` (``name=sha[,name=sha]``) replaces a pin for ONE run -- a data repo's PR is judged by its
+  consumers at the PR head (:mod:`dev_lab.dev.dataconsumers`). :func:`relock` never reads it, so an override can
+  never become a pin.
 
 ``python -m dev_lab.dev.datadeps sync|check|relock [--root DIR]``.
 """
@@ -25,6 +29,7 @@ ONE DECLARATION (``pyproject.toml``)::
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import tomllib
@@ -41,12 +46,14 @@ from dev_lab.dev.netverb import run_network_verb
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-__all__ = ['DataDep', 'DataRefused', 'declared', 'main', 'relock', 'stale', 'sync']
+__all__ = ['OVERRIDE', 'DataDep', 'DataRefused', 'declared', 'main', 'relock', 'stale', 'sync']
 
 _GIT: Final = 'git'
 _SHA: Final = re.compile(r'[0-9a-f]{40}')
 #: The remedy every refusal names.
 SYNC: Final = 'python -m dev_lab.dev.datadeps sync'
+#: One run's replacement pins, ``name=sha[,name=sha]``; read by :func:`declared`, never by :func:`relock`.
+OVERRIDE: Final = 'DEV_LAB_DATA_REV'
 
 
 class DataRefused(RuntimeError):
@@ -62,10 +69,23 @@ class DataDep:
     line: str
     rev: str
     path: str
+    tests: tuple[str, ...] = ()
 
 
-def declared(root: Path) -> tuple[DataDep, ...]:
-    """Every data dependency *root*'s ``pyproject.toml`` declares; RAISES :class:`DataRefused` on a malformed row."""
+def _overrides() -> dict[str, str]:
+    pairs = [pair.partition('=') for pair in os.environ.get(OVERRIDE, '').split(',') if pair.strip()]
+    if any(not name or not _SHA.fullmatch(sha) for name, _, sha in pairs):
+        msg = f'{OVERRIDE} must read name=<40-hex sha>[,name=<sha>], not {os.environ[OVERRIDE]!r}'
+        raise DataRefused(msg)
+    return {name.strip(): sha for name, _, sha in pairs}
+
+
+def declared(root: Path, *, overridden: bool = True) -> tuple[DataDep, ...]:
+    """Every data dependency *root* declares, :data:`OVERRIDE` applied unless *overridden* is false.
+
+    RAISES :class:`DataRefused` on a malformed row or override.
+    """
+    swap = _overrides() if overridden else {}
     pyproject = root / 'pyproject.toml'
     if not pyproject.is_file():
         return ()
@@ -82,7 +102,11 @@ def declared(root: Path) -> tuple[DataDep, ...]:
         if Path(row['path']).is_absolute() or '..' in Path(row['path']).parts:
             msg = f'[tool.dev_lab.data.{name}] path {row["path"]!r} must stay inside the repo'
             raise DataRefused(msg)
-        deps.append(DataDep(name, row['url'], row['line'], row['rev'], row['path']))
+        tests = row.get('tests', [])
+        if not isinstance(tests, list) or not all(isinstance(test, str) for test in tests):
+            msg = f'[tool.dev_lab.data.{name}] tests must be a list of test paths'
+            raise DataRefused(msg)
+        deps.append(DataDep(name, row['url'], row['line'], swap.get(name, row['rev']), row['path'], tuple(tests)))
     return tuple(deps)
 
 
@@ -152,7 +176,7 @@ def _line_head(dep: DataDep) -> str:
 
 def relock(root: Path) -> tuple[str, ...]:
     """Move every declared pin to its line's head, rewriting ``pyproject.toml`` only; the names that moved."""
-    moves = {dep.name: head for dep in declared(root) if (head := _line_head(dep)) != dep.rev}
+    moves = {dep.name: head for dep in declared(root, overridden=False) if (head := _line_head(dep)) != dep.rev}
     if moves:
         pyproject = root / 'pyproject.toml'
         doc = tomlkit.parse(pyproject.read_text(encoding='utf-8'))
