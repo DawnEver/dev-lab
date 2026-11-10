@@ -81,6 +81,9 @@ class Judge(Placement):
     root-time refusal when unreadable (:func:`_root_secret`), plus it must parse as a bundle; empty, the operator
     pipes the bundle to the printed step. ``environment_file`` is an optional
     root-owned 0600 file of further ``KEY=VALUE`` lines loaded into the judge's unit only -- never a model key.
+    ``family`` is the judge's lab-commons family layer, ``{source, file, max_age}``: install renders it as the
+    ``[family]`` table of the judge's machine file, so the facts every machine shares (the review month among them)
+    come from the family file, not a hand-kept copy on the host.
     """
 
     user: str
@@ -92,10 +95,14 @@ class Judge(Placement):
     keys_file: str = ''
     environment_file: str = ''
     memory_max: str = '2G'
+    family: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Refuse a declaration that lies: a role's repos and one credential per forge (:func:`served_by`)."""
+        """Refuse a declaration that lies: a role's repos, one credential per forge, a sourceless family."""
         served_by(self.repos, self.tokens, self.apps, '[ops.judge]')
+        if self.family and not self.family.get('source'):
+            msg = '[ops.judge.family] names no source (a family checkout or the family file on this host)'
+            raise ValueError(msg)
 
     def credential(self, url: str) -> list[str]:
         """The ``forge review judge`` arguments naming the judge's credential on *url*'s forge: App, else token."""
@@ -437,10 +444,8 @@ def load(
     root = (_is_root() if as_root is None else as_root) and not structure_only
     judge_table = ops.get('judge')
     if root and isinstance(judge_table, dict) and (keys_file := str(judge_table.get('keys_file', ''))):
-        keyless = 'the reviewer would run keyless'
-        require_bundle(
-            _root_secret(Path(keys_file), '[ops.judge] keys_file', keyless), f'[ops.judge] keys_file {keys_file}'
-        )
+        where, keyless = f'[ops.judge] keys_file {keys_file}', 'the reviewer would run keyless'
+        require_bundle(_root_secret(Path(keys_file), '[ops.judge] keys_file', keyless), where)
     if (environment_file := str(ops.get('environment_file', ''))) and not structure_only:
         process = dict(os.environ if environ is None else environ)
         if root:
@@ -452,8 +457,7 @@ def load(
             )
             raise ValueError(msg)
     repos = tuple(ops.get('repos', ()))
-    names = [repo_name(url) for url in repos]
-    if len(set(names)) != len(names):
+    if len(set(names := [repo_name(url) for url in repos])) != len(names):
         msg = f'[ops] repos name one repository twice: {names}'
         raise ValueError(msg)
     if not ops.get('home') or not ops.get('python'):

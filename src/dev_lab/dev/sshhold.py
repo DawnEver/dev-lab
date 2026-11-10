@@ -7,6 +7,7 @@ module is the client and the CLI::
 
     python -m dev_lab.dev.sshhold open <dest> --hours H [--code CODE]   # code on stdin when omitted
     python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <D> [--code CODE]
+    python -m dev_lab.dev.sshhold open <dest> --hours H --jump <bastion> [...]   # through a ProxyJump
     python -m dev_lab.dev.sshhold run <dest> -- <command...>            # exits with the remote status
     python -m dev_lab.dev.sshhold credential <dest> --url <https url> --login <login>   # token on stdin
     python -m dev_lab.dev.sshhold close <dest>
@@ -19,6 +20,9 @@ module is the client and the CLI::
   credential per grant of the plan the user was shown (:func:`dev_lab.ops.consent.client.grant_plan`; the digest
   is ``python -m dev_lab.ops.consent plan <plan.json>``'s), then opens the session. The host's one TOTP secret is
   verified by its issuer and its pam_oath, each once (:mod:`dev_lab.ops.consent.plan`).
+* ``--jump <bastion>``: a host reachable only through a bastion. ssh asks each hop's keyboard-interactive
+  prompt through the same ``SSH_ASKPASS``, so ONE code answers both -- valid only where the hops share one TOTP
+  secret (each pam_oath records the step it accepted, so the code is spent once per host, never twice on one).
 * ``--hours`` above the ceiling (``[ssh.hold] max_hours`` in the machine file, default
   :data:`DEFAULT_MAX_HOURS`) is REFUSED, never clamped. A quiet session lives to that ceiling (keepalives hold the
   connection, :func:`dev_lab.dev._sshholder.ssh_argv`); it ends early on idle only when the machine file names
@@ -393,6 +397,7 @@ def _parser() -> argparse.ArgumentParser:
         '--plan', type=Path, help='a plan the same code consents to (python -m dev_lab.ops.consent plan)'
     )
     opening.add_argument('--digest', default='', help="the plan's digest, as shown to the user")
+    opening.add_argument('--jump', help='a bastion the session rides through (ssh -J); the one code answers both')
     running = verbs.add_parser('run', help='run one command on the held connection')
     running.add_argument('dest')
     running.add_argument('--timeout', type=float, default=DEFAULT_TIMEOUT_S)
@@ -411,10 +416,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         if args.verb == 'open':
-            code = given_code(args.code)
-            planned = args.plan is not None
-            opened = open_planned(args.dest, args.hours, code, args.plan, args.digest) if planned else None
-            emit('\n'.join(opened) if opened else open_session(args.dest, args.hours, code))
+            code, ssh = given_code(args.code), ('ssh', '-J', args.jump) if args.jump else ('ssh',)
+            if args.plan is not None:
+                emit('\n'.join(open_planned(args.dest, args.hours, code, args.plan, args.digest, ssh=ssh)))
+            else:
+                emit(open_session(args.dest, args.hours, code, ssh=ssh))
         elif args.verb == 'run':
             words = args.command[1:] if args.command[:1] == ['--'] else args.command
             output, status = run_command(args.dest, ' '.join(words), args.timeout)
