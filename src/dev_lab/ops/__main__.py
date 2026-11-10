@@ -2,7 +2,7 @@
 
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
 ``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
-(:mod:`dev_lab.ops.disk`), ``config apply`` (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and
+(:mod:`dev_lab.ops.disk`), ``config apply|tick`` (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and
 ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
@@ -11,12 +11,11 @@ Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` r
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,12 +23,11 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops import (
     access,
     backup,
     breakglass,
-    configdoor,
+    configverbs,
     disk,
     forgeaccounts,
     install,
@@ -227,21 +225,6 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
     return 0
 
 
-def _git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
-    report = run_network_verb(argv, env=os.environ | dict(env), timeout=300)  # the one retry door
-    return report.returncode, ''  # git's output may echo the header: never returned
-
-
-def _candidate_text(config: OpsConfig, candidate: Path | None) -> str:
-    """``--from <file>`` when given, else ``[ops.config]``'s reviewed file (:func:`configdoor.fetch`)."""
-    if candidate is not None:
-        return candidate.read_text(encoding='utf-8')
-    if config.config_source is None:
-        msg = f'{config.path} declares no [ops.config] source and no --from <file> was given'
-        raise configdoor.ConfigRefused(msg)
-    return configdoor.fetch(config.config_source, run=_git_with_env)
-
-
 def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
     """``action -> redeem``: a credential's subject once the host's issuer registered its one use.
 
@@ -255,26 +238,6 @@ def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
     return lambda action: (
         lambda found: redeem(found, action=action, key=key, register=register, now=time.time()).subject
     )
-
-
-def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) -> int:
-    """``config apply [--from <file>] [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
-    try:
-        redeem_ = _redeemer(config)(configdoor.ACTION) if credential else None
-        granted = json.loads(Path(credential).read_text(encoding='utf-8')) if credential else None
-        done = configdoor.apply(
-            config.path, _candidate_text(config, candidate), loads=load, checks=upgrade.checks(config),
-            run=upgrade.run_check, redeem=redeem_, credential=granted,
-        )  # fmt: skip
-    except (configdoor.ConfigRefused, ConsentRefused) as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    if not done.changed:
-        emit('[ops config] unchanged')
-        return 0
-    emit(f'[ops config] applied; changed {list(done.changed)}; boundary {list(done.boundary)}; backup {done.backup}')
-    _alert(config, 'config applied', f'changed {list(done.changed)}; boundary {list(done.boundary)}')
-    return 0
 
 
 def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
@@ -327,7 +290,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     opened.add_argument('--uri', action='store_true', help='print the otpauth URI, not its QR')
     opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")
     configured = verbs.add_parser('config', help='change this host config through the one door')
-    configured.add_argument('action', choices=('apply',))
+    configured.add_argument('action', choices=('apply', 'tick'))
     configured.add_argument(
         '--from', dest='candidate', type=Path, default=None, help='a local candidate file'
     )  # default: the [ops.config] source
@@ -361,7 +324,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         'consent': lambda: _consent(config, args.action, force=args.force, uri_only=args.uri),
         'judge': lambda: _judge(config),
         'upgrade': lambda: _upgrade(config),
-        'config': lambda: _config_apply(config, args.candidate, args.credential),
+        'config': lambda: (
+            configverbs.tick(config, alert=lambda title, detail: _alert(config, title, detail))
+            if args.action == 'tick'
+            else configverbs.apply(
+                config,
+                args.candidate,
+                args.credential,
+                alert=lambda title, detail: _alert(config, title, detail),
+                redeemer=lambda: _redeemer(config),
+            )
+        ),
         'forge': lambda: _forge(config, args),
     }
     return verbs_of[args.verb]()

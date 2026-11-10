@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.agentpolicy import INTERPRETERS, POLICY, USER
+from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import (
     CODEX_RULES_REL,
     claude_rows,
@@ -20,6 +20,7 @@ from dev_lab.dev.autodoors import (
     promises_raw,
     script_doors,
 )
+from dev_lab.dev.doorrows import INTERPRETERS
 from dev_lab.dev.famtests.visibility import plant_checkout
 from dev_lab.dev.venvpath import VENV_INTERPRETER_GLOB
 

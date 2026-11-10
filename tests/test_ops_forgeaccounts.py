@@ -18,7 +18,8 @@ import pytest
 from dev_lab.ops import forgeaccounts
 from dev_lab.ops.config import Forge
 from dev_lab.ops.consent.actions import ACTIONS, SINGLE
-from dev_lab.ops.forgeaccounts import AccountRequest, ForgeRefused, TokenRequest
+from dev_lab.ops.forgeaccounts import AccountRequest, TokenRequest
+from dev_lab.ops.giteaadmin import ForgeRefused, GiteaCli
 
 
 @dataclass
@@ -159,7 +160,7 @@ def test_the_gitea_cli_adapter_runs_as_the_gitea_user_and_reads_a_raw_token() ->
         return 0, 'tok123\n'
 
     role = Forge(api='http://127.0.0.1:3000', admin='site-admin', config='/etc/gitea/app.ini')
-    cli = forgeaccounts.GiteaCli(role, run=run, http=lambda *_a: (200, None))
+    cli = GiteaCli(role, run=run, http=lambda *_a: (200, None))
     assert cli.generate_token('server-reader', 'host-x', 'read:repository') == 'tok123'
     assert calls[-1] == [
         'runuser', '-u', 'gitea', '--', 'gitea', '--config', '/etc/gitea/app.ini', 'admin', 'user',

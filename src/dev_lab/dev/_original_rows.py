@@ -420,7 +420,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgememo',
     # ORIGINAL: user ruling 2026-11-07, one table of agent doors; it replaces kit-internal copies, no consumer's.
     'agentpolicy',
+    # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
+    'doorrows',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
     'opsserver',
     'remote',
+    # ORIGINAL: hpcaccount's forget verb (2026-11-10), one learned row off a cluster account; no consumer held it.
+    'forget',
 )
