@@ -70,6 +70,13 @@ account it reads that account's own `[deploy]` host, root and role, then one det
 `deploy`, one log each under
 `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log`. An account outside the grants is refused.
 
+A learned row no run can supersede (an OOM-inflated `slurm|` peak, say) is forgotten on the accounts that hold it
+with `python -m dev_lab.dev.hpcaccount forget --repo <url> --row "slurm|" (--fleet | --account <user>...) [--dry-run]`:
+through each grant's own login hosts it runs lab-commons' `learned forget` in the account's declared checkout
+(the table is backed up beside itself), printing per account `forgotten` with the backup, `absent`, or `refused`
+with its reason; `--dry-run` prints the row (its peak) each account holds and changes nothing
+(`dev_lab.dev.hpcaccount.forget`).
+
 ## Grants: the machine file
 
 The account's `[hpc]` table in `~/.config/lab-commons/config.toml` (`$LAB_COMMONS_CONFIG` overrides the path)

@@ -325,6 +325,13 @@ POLICY: Final[tuple[Door, ...]] = (
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
+        _module('hpcaccount', 'forget'),
+        MAIN,
+        "Forgetting one stale row of each trusted cluster account's learned memory table, backed up beside itself, "
+        "through the grant's own login hosts; a dry run only reads what each account holds.",
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
         _module('opsserver'),
         MAIN,
         "Running one of the ops account's fixed verbs on a declared server the integrator deploys: install, a "

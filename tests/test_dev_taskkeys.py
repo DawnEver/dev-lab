@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -193,3 +194,68 @@ def test_set_secret_refuses_a_gitea_member_and_writes_nothing(monkeypatch: pytes
     assert calls == []
     forgesecrets.set_secret(Target('hub', Path(), Forge('github.com', 'o', 'hub')), 'AI_LAB_KEYS_LIVE', _BUNDLE)
     assert len(calls) == 1
+
+
+def _keeping(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
+    kept: dict[tuple[str, str], str] = {}
+    monkeypatch.setattr(
+        forgesecrets, 'store_credential', lambda host, user, secret: kept.update({(host, user): secret})
+    )
+    monkeypatch.setattr(forgesecrets, 'credential_for', lambda host, username: (username, kept[host, username]))
+    return kept
+
+
+def _outside_git(tmp_path: Path) -> Path:
+    """A key file's home with no ``.git`` above it; skips when the test root itself sits in a checkout."""
+    if any((parent / '.git').exists() for parent in (tmp_path, *tmp_path.parents)):
+        pytest.skip('the test root sits inside a git checkout')
+    return tmp_path
+
+
+def test_store_from_a_file_keeps_the_bundle_deletes_the_file_and_never_says_a_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """User ruling 2026-11-10: the user places the bundle as a FILE; ``--from`` stores it, then unlinks it.
+
+    PLANTED CONTROL: the fake key values reach the store and nothing else -- no output line, no file left.
+    """
+    kept = _keeping(monkeypatch)
+    source = _outside_git(tmp_path) / 'keys.toml'
+    source.write_text(_BUNDLE, encoding='utf-8')
+    assert forgesecrets.main(['store', '--task', 'pr-review', '--from', str(source)], stdin=lambda: '') == 0
+    assert forgesecrets.stored_bundle('pr-review') == _BUNDLE
+    assert list(kept) == [(forgesecrets.BUNDLE_HOST, 'AI_LAB_KEYS_PR_REVIEW')]
+    assert not source.exists()
+    said = capsys.readouterr()
+    assert 'sk-planted' not in said.out + said.err
+    assert not [p for p in tmp_path.rglob('*') if p.is_file() and 'sk-planted' in p.read_text(errors='ignore')]
+
+
+def test_store_from_a_file_refuses_a_directory_a_checkout_and_a_failed_store_keeping_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    kept = _keeping(monkeypatch)
+    root = _outside_git(tmp_path)
+    assert forgesecrets.main(['store', '--task', 'pr-review', '--from', str(root)], stdin=lambda: '') == 2
+    checkout = root / 'checkout'
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(checkout)], check=True, capture_output=True)
+    inside = checkout / 'sub' / 'keys.toml'
+    inside.parent.mkdir()
+    inside.write_text(_BUNDLE, encoding='utf-8')
+    assert forgesecrets.main(['store', '--task', 'pr-review', '--from', str(inside)], stdin=lambda: '') == 2
+    assert inside.exists()
+    assert not kept
+
+    def refuse(*_given: str) -> None:
+        unavailable = 'credential store unavailable'
+        raise OSError(unavailable)
+
+    monkeypatch.setattr(forgesecrets, 'store_credential', refuse)
+    source = root / 'keys.toml'
+    source.write_text(_BUNDLE, encoding='utf-8')
+    assert forgesecrets.main(['store', '--task', 'pr-review', '--from', str(source)], stdin=lambda: '') == 2
+    assert source.exists()
+    said = capsys.readouterr()
+    assert str(source) in said.err
+    assert str(inside) in said.err
+    assert 'sk-planted' not in said.out + said.err

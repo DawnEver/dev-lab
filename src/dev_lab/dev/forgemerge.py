@@ -4,7 +4,8 @@ User ruling 2026-10-19: every change is a short-lived branch returning by a PR t
 which takes ONLY server-side merges. THE TEST PARTS GATE THAT MERGE (user ruling 2026-11-04, superseding
 2026-10-29's "parts never gate", after dev-lab#78 merged with ``tests/base`` FAILED and reddened integration): every
 part the head needs stands PASS (:func:`dev_lab.dev.platformparts.standing`, the reading promotion uses at scope full
-in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses. Opted into by declaring
+in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses -- every HOSTED part: a hand part
+(:func:`hand_parts`, user ruling 2026-11-10) is named and tested later, never waited on. Opted into by declaring
 ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration tick
 (:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and,
 when nothing is missing, asks the forge to merge it (:func:`merge`). A client push adding a commit to the
@@ -24,7 +25,8 @@ The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
-* its head's test parts all stand PASS (:func:`parts_wait`);
+* its head's HOSTED test parts all stand PASS (:func:`parts_wait`); a hand part is named, never waited on
+  (:func:`hand_parts`, user ruling 2026-11-10);
 * its head is REVIEWED (:func:`dev_lab.dev.forgereview_gate.review_gate`, user ruling 2026-10-31): the
   latest ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold``
   is pending -- or, where the base declares ``where = "judge"``, the declared judge login's latest verdict review
@@ -70,6 +72,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
@@ -86,16 +89,15 @@ from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITHUB, client_for
-from dev_lab.dev.jobparts import pull_request_waived
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.platformparts import standing
+from dev_lab.dev.partrows import row_part
+from dev_lab.dev.platformparts import derived, part_context, parts_of, standing
 from dev_lab.dev.reviewcap import unreviewed_waiver
 from dev_lab.dev.reviewturn import review_turn
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
-from dev_lab.dev.unproduced import unproduced_waived
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -176,13 +178,44 @@ def merge_message(branch: str, number: int, policy: Policy) -> str:
     )
 
 
-def parts_wait(root: Path, head: str, statuses: Sequence[CommitStatus]) -> str | None:
-    """Why *head*'s test parts do not all stand PASS, or ``None``: the one :func:`standing` reading, any scope.
+def hand_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
+    """The parts *statuses* derive that only a hand host produces: every part but :data:`BASE` and its OS rows.
 
-    An unproduced part and a hosted one (produced only on a full run, never for a pull request) are waived.
+    USER RULING 2026-11-10: such a part (``windows``, ``gpu``, ``vendor``...) is tested LATER, when a hand host has
+    room, and is never a merge condition; a hosted runner produces ``tests/base`` and each ``tests/base@<os>``.
     """
-    waived = unproduced_waived(root, head, statuses) | pull_request_waived(root, head)
-    parts = standing(statuses, head=head, waived=waived)
+    parts, _ = parts_of(statuses)
+    return frozenset(name for name in {*derived(statuses), *parts} if row_part(name) != BASE)
+
+
+def hand_note(statuses: Sequence[CommitStatus]) -> str | None:
+    """How *statuses*' hand parts stand, each by name (``tests/windows FAIL``), or ``None`` when there is none.
+
+    It is said, never waited on: absent, unposted or red, a hand part is a later finding (:func:`hand_parts`).
+    """
+    hands = hand_parts(statuses)
+    if not hands:
+        return None
+    parts, _ = parts_of(statuses)
+    latest = {status.context: status for status in statuses}
+
+    def said(name: str) -> str:
+        context = part_context(name)
+        if name in parts:
+            return f'{context} {parts[name].result.name}'
+        status = latest.get(context)
+        return f'{context} not posted' if status is None else f'{context} {status.state} ({status.description})'
+
+    return 'hand parts, tested later, never a merge condition: ' + ', '.join(said(name) for name in sorted(hands))
+
+
+def parts_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
+    """Why *head*'s hosted test parts do not all stand PASS, or ``None``: the one :func:`standing` reading.
+
+    Every hand part (:func:`hand_parts`) is waived -- an unproduced one and a secrets-hosted one (produced only on a
+    full run, never for a pull request) among them.
+    """
+    parts = standing(statuses, head=head, waived=hand_parts(statuses))
     if parts.result is Conclusion.PASS:
         return None
     return '; '.join([f'they stand {parts.reading}', *parts.problems])
@@ -221,7 +254,7 @@ def decide(
         missing.append(f'its security check: {unsafe}')
     if (gated := gates_wait(statuses)) is not None:
         missing.append(f'its head gates: {gated}')
-    if (red := parts_wait(root, head, statuses)) is not None:
+    if (red := parts_wait(head, statuses)) is not None:
         missing.append(f'its test parts: {red}')
     tried = trial(root, base, head)
     if not tried.clean:
@@ -248,8 +281,13 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    notes = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
-    return Decision(tuple(missing), message, unreviewed, waived, notes)
+    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses))
+
+
+def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
+    """What the decision says without waiting on it: an undeclared message row, and the hand parts."""
+    unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
+    return (*unjudged, *filter(None, [hand_note(statuses)]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:
@@ -305,7 +343,7 @@ def ready(root: Path, client: Client, number: int) -> str:
         decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
     missing = decision.missing
     suffix = f' ({"; ".join(decision.notes)})' if decision.notes else ''
-    state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY + suffix)
+    state, why = ('failure', 'waits on: ' + '; '.join(missing) + suffix) if missing else ('success', READY + suffix)
     if decision.unreviewed and not missing:
         why = f'{READY}{suffix}, WARNED -- {decision.unreviewed}'
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)

@@ -1,4 +1,4 @@
-"""``config apply`` reads the host's reviewed file from its declared forge-hosts repository.
+"""``config apply`` reads the host's reviewed file from its declared config repository.
 
 The token travels in the environment of the one git process (``GIT_CONFIG_*``), never on argv and never in output.
 """
@@ -20,7 +20,7 @@ def _source(tmp_path: Path) -> ConfigSource:
     token = tmp_path / 'token'
     token.write_text(_PLANTED + '\n', encoding='utf-8')
     return ConfigSource(
-        source='https://gitea.example/Team/forge-hosts.git',
+        source='https://forge.example/team/host-config.git',
         path='hosts/forge-a1.toml',
         token_file=str(token),
         ref='main',
@@ -42,7 +42,7 @@ def test_fetch_reads_the_declared_file_with_the_token_only_in_the_environment(tm
     assert text == '[cycle]\ninterval_s = 60\n'
     argv, env = seen[0]
     assert _PLANTED not in ' '.join(argv)
-    assert 'https://gitea.example/Team/forge-hosts.git' in argv
+    assert 'https://forge.example/team/host-config.git' in argv
     assert '--branch' in argv
     assert 'main' in argv
     assert env['GIT_CONFIG_KEY_0'] == 'http.extraHeader'
