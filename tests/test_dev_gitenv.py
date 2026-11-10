@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,9 @@ from dev_lab.ops import upgrade
 
 def _git(cwd: Path, *argv: str) -> str:
     env = gitenv.unlocated()
-    done = subprocess.run([_GIT, '-C', str(cwd), *argv], capture_output=True, text=True, check=True, env=env)
+    done = subprocess.run(
+        [_GIT, '-C', str(cwd), *argv], capture_output=True, text=True, encoding='utf-8', check=True, env=env
+    )
     return done.stdout.strip()
 
 
@@ -60,11 +63,11 @@ def test_the_lock_lag_read_leaves_the_caller_non_bare(caller: Path, upstream: tu
     assert _bare(caller) == 'false'
 
 
-@pytest.mark.parametrize('module', [drift, syncpins], ids=['drift', 'syncpins'])
-def test_a_cache_init_leaves_the_caller_non_bare(caller: Path, tmp_path: Path, module: object) -> None:
+@pytest.mark.parametrize('git', [drift._git, syncpins._git], ids=['drift', 'syncpins'])
+def test_a_cache_init_leaves_the_caller_non_bare(caller: Path, tmp_path: Path, git: Callable[..., object]) -> None:
     cache = tmp_path / 'cache.git'
     cache.mkdir()
-    module._git(cache, 'init', '-q', '--bare')  # type: ignore[attr-defined]
+    git(cache, 'init', '-q', '--bare')
     assert _bare(caller) == 'false'
     assert (cache / 'HEAD').is_file()
 
