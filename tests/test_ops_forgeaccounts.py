@@ -15,11 +15,11 @@ from typing import Any
 
 import pytest
 
-from dev_lab.ops import forgeaccounts
+from dev_lab.ops import forgeaccounts, forgerequests
 from dev_lab.ops.config import Forge
 from dev_lab.ops.consent.actions import ACTIONS, SINGLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.forgeaccounts import AccountRequest, TokenRequest
+from dev_lab.ops.forgerequests import AccountRequest, TokenRequest
 from dev_lab.ops.giteaadmin import ForgeRefused, GiteaCli
 
 
@@ -46,8 +46,8 @@ class FakeGitea:
             raise ForgeRefused(msg)
         return self.collaborators.get((repo, login))
 
-    def grant_read(self, repo: str, login: str) -> None:
-        self.collaborators[repo, login] = 'read'
+    def grant(self, repo: str, login: str, permission: str) -> None:
+        self.collaborators[repo, login] = permission
 
     def token_names(self, login: str) -> set[str]:
         return set(self.tokens.get(login, {}))
@@ -61,8 +61,11 @@ class FakeGitea:
 
 
 def _role(tmp_path: Path) -> Forge:
-    return Forge(api='http://127.0.0.1:3000', admin='site-admin', read_only=('server-reader',),
-                 log=str(tmp_path / 'forge.jsonl'))  # fmt: skip
+    return Forge(api='http://127.0.0.1:3000', admin='site-admin', log=str(tmp_path / 'forge.jsonl'), accounts={
+        'server-reader': {'role': 'read', 'repos': ['owner/b', 'owner/a']},
+        'forge-ci': {'role': 'write', 'repos': ['owner/a']},
+        'forge-judge': {'role': 'review', 'repos': ['owner/a']},
+    })  # fmt: skip
 
 
 def _consent(subject: str) -> Callable[[object, str], None]:
@@ -81,13 +84,13 @@ def _audit(tmp_path: Path) -> list[dict[str, Any]]:
 
 
 def test_the_two_actions_are_single_use_registry_rows() -> None:
-    assert {forgeaccounts.ACCOUNT_ACTION, forgeaccounts.MINT_ACTION} <= set(ACTIONS)
-    assert {ACTIONS[forgeaccounts.ACCOUNT_ACTION].scope, ACTIONS[forgeaccounts.MINT_ACTION].scope} == {SINGLE}
+    assert {forgerequests.ACCOUNT_ACTION, forgerequests.MINT_ACTION} <= set(ACTIONS)
+    assert {ACTIONS[forgerequests.ACCOUNT_ACTION].scope, ACTIONS[forgerequests.MINT_ACTION].scope} == {SINGLE}
 
 
 def test_ensure_creates_a_restricted_reader_grants_exactly_read_and_reports_drift(tmp_path: Path) -> None:
     gitea = FakeGitea(collaborators={('owner/b', 'server-reader'): 'write'})
-    request = AccountRequest('server-reader', ('owner/b', 'owner/a'))
+    request = AccountRequest('server-reader', 'read', ('owner/b', 'owner/a'))
     said = forgeaccounts.ensure(_role(tmp_path), gitea, request, redeem=_consent(request.subject()), credential={},
                                 by='ops')  # fmt: skip
     assert gitea.created == [('server-reader', 'server-reader@noreply.invalid')]
@@ -103,8 +106,8 @@ def test_ensure_creates_a_restricted_reader_grants_exactly_read_and_reports_drif
 
 def test_a_credential_for_another_request_is_refused_and_nothing_changes(tmp_path: Path) -> None:
     gitea = FakeGitea()
-    request = AccountRequest('server-reader', ('owner/a',))
-    other = AccountRequest('server-reader', ('owner/a', 'owner/b')).subject()
+    request = AccountRequest('server-reader', 'read', ('owner/a', 'owner/b'))
+    other = AccountRequest('server-reader', 'read', ('owner/a',)).subject()
     with pytest.raises(ConsentRefused, match='another request'):
         forgeaccounts.ensure(_role(tmp_path), gitea, request, redeem=_consent(other), credential={}, by='ops')
     assert gitea.users == set()
@@ -120,7 +123,7 @@ def test_mint_prints_the_token_once_and_audits_everything_but_it(tmp_path: Path)
     log = (tmp_path / 'forge.jsonl').read_text(encoding='utf-8')
     assert 'secret-host-x' not in log
     assert _audit(tmp_path)[-1] | {'at': ''} == {
-        'at': '', 'by': 'ops', 'action': forgeaccounts.MINT_ACTION, 'login': 'server-reader', 'name': 'host-x',
+        'at': '', 'by': 'ops', 'action': forgerequests.MINT_ACTION, 'login': 'server-reader', 'name': 'host-x',
         'scope': 'read:repository', 'rotated': False,
     }  # fmt: skip
 
@@ -131,10 +134,47 @@ def test_a_read_only_login_is_refused_a_write_scope(tmp_path: Path) -> None:
     with pytest.raises(ForgeRefused, match='read-only'):
         forgeaccounts.mint(_role(tmp_path), gitea, wide, redeem=_consent(wide.subject()), credential={}, by='ops')
     assert gitea.tokens == {}
-    # PLANTED CONTROL: a login not declared read-only may hold a write scope
-    other = TokenRequest('builder', 'host-x', 'write:repository', rotate=False)
+    # PLANTED CONTROL: a login whose declared role is write may hold a write scope
+    gitea.users.add('forge-ci')
+    other = TokenRequest('forge-ci', 'host-x', 'write:repository', rotate=False)
     forgeaccounts.mint(_role(tmp_path), gitea, other, redeem=_consent(other.subject()), credential={}, by='ops')
-    assert gitea.tokens == {'builder': {'host-x': 'write:repository'}}
+    assert gitea.tokens == {'forge-ci': {'host-x': 'write:repository'}}
+
+
+def test_a_role_grants_its_narrowest_permission(tmp_path: Path) -> None:
+    gitea = FakeGitea()
+    for login, role in (('forge-ci', 'write'), ('forge-judge', 'review')):
+        request = AccountRequest(login, role, ('owner/a',))
+        forgeaccounts.ensure(_role(tmp_path), gitea, request, redeem=_consent(request.subject()), credential={},
+                             by='ops')  # fmt: skip
+    # a commit status needs code write on Gitea, so a reviewer is a write collaborator; its token scope is the limit
+    assert gitea.collaborators == {('owner/a', 'forge-ci'): 'write', ('owner/a', 'forge-judge'): 'write'}
+
+
+def test_an_undeclared_login_is_refused_before_the_consent_is_spent(tmp_path: Path) -> None:
+    gitea, spent = FakeGitea(), []
+    request = AccountRequest('stranger', 'write', ('owner/a',))
+    with pytest.raises(ForgeRefused, match=r'stranger is not declared in \[ops.forge.accounts\]'):
+        forgeaccounts.ensure(_role(tmp_path), gitea, request, redeem=lambda _c, s: spent.append(s), credential={},
+                             by='ops')  # fmt: skip
+    assert (spent, gitea.users) == ([], set())
+
+
+def test_a_role_widened_after_the_consent_is_refused(tmp_path: Path) -> None:
+    gitea = FakeGitea()
+    consented = AccountRequest('server-reader', 'read', ('owner/a', 'owner/b')).subject()
+    widened = AccountRequest('server-reader', 'write', ('owner/a', 'owner/b'))
+    with pytest.raises(ForgeRefused, match='declares server-reader read'):
+        forgeaccounts.ensure(_role(tmp_path), gitea, widened, redeem=_consent(consented), credential={}, by='ops')
+    # PLANTED CONTROL: the consent names (login, role, repos), so a widened subject differs from the consented one
+    assert widened.subject() != consented
+    assert gitea.collaborators == {}
+
+
+def test_the_cli_reads_role_and_repos_from_the_declaration(tmp_path: Path) -> None:
+    request = forgerequests.declared_request(_role(tmp_path), 'forge-judge')
+    assert request == AccountRequest('forge-judge', 'review', ('owner/a',))
+    assert forgerequests.declared_request(_role(tmp_path), 'server-reader').repos == ('owner/a', 'owner/b')
 
 
 def test_a_duplicate_name_is_refused_unless_rotated(tmp_path: Path) -> None:
@@ -174,12 +214,12 @@ def test_the_gitea_cli_adapter_runs_as_the_gitea_user_and_reads_a_raw_token() ->
     ]  # fmt: skip
 
 
-def _batch(*items: tuple[str, str, bool], login: str = 'server-reader') -> forgeaccounts.TokenBatch:
-    return forgeaccounts.TokenBatch(login, tuple(forgeaccounts.BatchItem(*item) for item in items))
+def _batch(*items: tuple[str, str, bool], login: str = 'server-reader') -> forgerequests.TokenBatch:
+    return forgerequests.TokenBatch(login, tuple(forgerequests.BatchItem(*item) for item in items))
 
 
 def _mint_batch(
-    tmp_path: Path, gitea: FakeGitea, batch: forgeaccounts.TokenBatch, subject: str = ''
+    tmp_path: Path, gitea: FakeGitea, batch: forgerequests.TokenBatch, subject: str = ''
 ) -> list[tuple[str, str]]:
     placed: list[tuple[str, str]] = []
     redeemed: list[object] = []
@@ -195,7 +235,7 @@ def _mint_batch(
 
 
 def test_the_batch_action_is_a_single_use_registry_row() -> None:
-    assert ACTIONS[forgeaccounts.BATCH_ACTION].scope == SINGLE
+    assert ACTIONS[forgerequests.BATCH_ACTION].scope == SINGLE
 
 
 def test_a_batch_mints_every_item_in_order_and_audits_names_only(tmp_path: Path) -> None:
@@ -205,7 +245,7 @@ def test_a_batch_mints_every_item_in_order_and_audits_names_only(tmp_path: Path)
     log = (tmp_path / 'forge.jsonl').read_text(encoding='utf-8')
     assert 'secret-' not in log  # PLANTED CONTROL: the tokens were minted, yet none reached the audit
     assert [row['name'] for row in _audit(tmp_path)] == ['host-a', 'host-b']
-    assert {row['action'] for row in _audit(tmp_path)} == {forgeaccounts.BATCH_ACTION}
+    assert {row['action'] for row in _audit(tmp_path)} == {forgerequests.BATCH_ACTION}
 
 
 def test_changing_one_item_changes_the_subject_and_is_refused(tmp_path: Path) -> None:
@@ -236,7 +276,7 @@ def test_changing_one_item_changes_the_subject_and_is_refused(tmp_path: Path) ->
     ],
 )
 def test_a_malformed_batch_is_refused_before_any_consent_is_spent(
-    tmp_path: Path, batch: forgeaccounts.TokenBatch, match: str
+    tmp_path: Path, batch: forgerequests.TokenBatch, match: str
 ) -> None:
     gitea = FakeGitea(users={'server-reader'})
 
@@ -288,7 +328,7 @@ def test_a_failure_mid_batch_places_what_minted_and_names_the_rest(tmp_path: Pat
                                  by='ops', place=lambda name, token: placed.append((name, token)))  # fmt: skip
     assert placed == [('host-a', 'secret-host-a')]
     assert _audit(tmp_path)[-1] | {'at': ''} == {
-        'at': '', 'by': 'ops', 'action': forgeaccounts.BATCH_ACTION, 'login': 'server-reader',
+        'at': '', 'by': 'ops', 'action': forgerequests.BATCH_ACTION, 'login': 'server-reader',
         'failed': 'host-b', 'minted': ['host-a'], 'not_minted': ['host-b', 'host-c'],
     }  # fmt: skip
 
@@ -323,26 +363,26 @@ def test_a_placed_token_is_one_json_line() -> None:
 # --- token revoke: one named token of one login, consented, idempotent ---
 
 
-def _revoke(tmp_path: Path, gitea: FakeGitea, request: forgeaccounts.RevokeRequest, subject: str) -> str:
+def _revoke(tmp_path: Path, gitea: FakeGitea, request: forgerequests.RevokeRequest, subject: str) -> str:
     return forgeaccounts.revoke(_role(tmp_path), gitea, request, redeem=_consent(subject), credential={}, by='ops')
 
 
 def test_revoke_is_a_single_use_consent_action() -> None:
-    assert ACTIONS[forgeaccounts.REVOKE_ACTION].scope == SINGLE
+    assert ACTIONS[forgerequests.REVOKE_ACTION].scope == SINGLE
 
 
 def test_revoke_deletes_exactly_the_named_token_and_audits_it(tmp_path: Path) -> None:
     gitea = FakeGitea(
         users={'server-reader'}, tokens={'server-reader': {'host-x': 'read:repository', 'host-y': 'read:repository'}}
     )
-    request = forgeaccounts.RevokeRequest('server-reader', 'host-x')
+    request = forgerequests.RevokeRequest('server-reader', 'host-x')
     said = _revoke(tmp_path, gitea, request, request.subject())
     assert said == 'revoked server-reader token host-x'
     assert gitea.tokens == {'server-reader': {'host-y': 'read:repository'}}
     assert _audit(tmp_path)[0] | {'at': ''} == {
         'at': '',
         'by': 'ops',
-        'action': forgeaccounts.REVOKE_ACTION,
+        'action': forgerequests.REVOKE_ACTION,
         'login': 'server-reader',
         'name': 'host-x',
         'revoked': True,
@@ -352,15 +392,15 @@ def test_revoke_deletes_exactly_the_named_token_and_audits_it(tmp_path: Path) ->
 def test_revoking_a_name_the_login_does_not_hold_is_already_absent(tmp_path: Path) -> None:
     """Planted control: a wrong name deletes nothing and says so; the other tokens stay."""
     gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-y': 'read:repository'}})
-    request = forgeaccounts.RevokeRequest('server-reader', 'host-x')
+    request = forgerequests.RevokeRequest('server-reader', 'host-x')
     assert _revoke(tmp_path, gitea, request, request.subject()) == 'server-reader token host-x already absent'
     assert gitea.tokens == {'server-reader': {'host-y': 'read:repository'}}
 
 
 def test_revoke_refuses_a_credential_for_another_request(tmp_path: Path) -> None:
     gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-x': 'read:repository'}})
-    request = forgeaccounts.RevokeRequest('server-reader', 'host-x')
-    other = forgeaccounts.RevokeRequest('server-reader', 'host-y').subject()
+    request = forgerequests.RevokeRequest('server-reader', 'host-x')
+    other = forgerequests.RevokeRequest('server-reader', 'host-y').subject()
     with pytest.raises(ConsentRefused, match='another request'):
         _revoke(tmp_path, gitea, request, other)
     assert gitea.tokens == {'server-reader': {'host-x': 'read:repository'}}
@@ -373,8 +413,8 @@ def test_revoke_without_a_credential_is_refused_naming_its_subject(capsys: pytes
     args = parser.parse_args(['forge', 'token', 'revoke', '--login', 'server-reader', '--name', 'host-x'])
     role = Forge(api='http://127.0.0.1:3000', admin='site-admin')
     assert forgeaccounts.run_verb(role, args, lambda _action: _consent('')) == 2
-    subject = forgeaccounts.RevokeRequest('server-reader', 'host-x').subject()
-    assert f'{forgeaccounts.REVOKE_ACTION} needs --credential (its subject: {subject})' in capsys.readouterr().err
+    subject = forgerequests.RevokeRequest('server-reader', 'host-x').subject()
+    assert f'{forgerequests.REVOKE_ACTION} needs --credential (its subject: {subject})' in capsys.readouterr().err
 
 
 def test_list_prints_each_token_name_of_the_login_sorted() -> None:
