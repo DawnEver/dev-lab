@@ -11,6 +11,7 @@ caused the 2026-10-12 flood: every plain issue carries ``"pull_request": null``.
 from __future__ import annotations
 
 import base64
+import itertools
 import urllib.parse
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -27,6 +28,8 @@ from dev_lab.dev.platformparts import REVIEW_CONTEXT
 API = '/api/v1/repos/o/r'
 FORGE = Forge('forge.example.org', 'o', 'r')
 NOW_HTTP = 'Mon, 12 Oct 2026 12:00:00 GMT'
+#: Every pull write's order, as gitea's ``updated_unix`` keeps it: ``sort=recentupdate`` lists by it.
+_TOUCHES = itertools.count()
 
 
 class StateForge(Client):
@@ -118,7 +121,15 @@ class StateForge(Client):
         return max([*self.issues_by_number, *self.pulls], default=0) + 1
 
     def add_pull(
-        self, head: str, base: str, *, title: str = 't', body: str = '', sha: str = '', fork: bool = False
+        self,
+        head: str,
+        base: str,
+        *,
+        title: str = 't',
+        body: str = '',
+        sha: str = '',
+        fork: bool = False,
+        draft: bool = False,
     ) -> int:
         number = self._number()
         self.pulls[number] = {
@@ -126,6 +137,8 @@ class StateForge(Client):
             'title': title,
             'state': 'open',
             'merged': False,
+            'draft': draft,
+            'touched': next(_TOUCHES),
             'body': body,
             'html_url': f'https://{self.forge.host}/o/r/pulls/{number}',
             'user': {'login': 'a'},
@@ -194,7 +207,7 @@ class StateForge(Client):
         if route.startswith(f'{api}/pulls/'):
             rest = route.removeprefix(f'{api}/pulls/')
             number, _, tail = rest.partition('/')
-            # gitea's ``pulls/{base}/{head}`` is the newest PR of that pair
+            # gitea's ``pulls/{base}/{head}`` is the OLDEST PR of that pair
             kind = 'pull_pair' if not number.isdigit() else 'merge' if tail == 'merge' else 'pull'
             kind = 'reviews' if tail == 'reviews' else kind
             return kind, rest if kind == 'pull_pair' else number
@@ -245,28 +258,34 @@ class StateForge(Client):
             and (not head or p['head']['ref'] == head)
             and query.get('base', p['base']['ref']) == p['base']['ref']
         ]
+        if query.get('sort') == 'recentupdate':  # gitea: the most recently updated first
+            listed.sort(key=lambda p: p['touched'], reverse=True)
         return self._page(listed, query)
 
     def _pull_pair(self, key: str) -> dict[str, Any]:
-        """Gitea's ``GET pulls/{base}/{head}``: the newest PR of the pair, else 404."""
+        """Gitea's ``GET pulls/{base}/{head}``: the OLDEST PR of the pair, whatever its state, else 404.
+
+        Measured 2026-11-10 on a consumer forge: the pair answered closed #6078 while open draft #6151 had the
+        same head and base, so the route is no "newest" lookup and a fake saying it was hid the defect.
+        """
         base, _, head = key.partition('/')
         base = urllib.parse.unquote(base)
         found = [p for _, p in sorted(self.pulls.items()) if p['base']['ref'] == base and p['head']['ref'] == head]
         if not found:
             raise ForgeCallFailed(Report(('GET', 'pull'), (Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED),), 1))
-        return found[-1]
+        return found[0]
 
     def _create_pull(self, body: dict[str, Any]) -> dict[str, Any]:
         number = self.add_pull(body['head'], body['base'], title=body['title'], body=body['body'])
         return self.pulls[number]
 
     def _edit_pull(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
-        self.pulls[number] |= body
+        self.pulls[number] |= body | {'touched': next(_TOUCHES)}
         return self.pulls[number]
 
     def _merge(self, number: int, body: dict[str, Any]) -> None:
         self.merges.append((number, body))
-        self.pulls[number] |= {'state': 'closed', 'merged': True}
+        self.pulls[number] |= {'state': 'closed', 'merged': True, 'touched': next(_TOUCHES)}
 
     def _merge_github(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
         """GitHub refuses a merge pinned to a sha that is no longer the PR head (409)."""

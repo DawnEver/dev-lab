@@ -204,24 +204,47 @@ def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
 
 
 def pr_by_head(client: Client, head: str, base: str) -> PullRequest | None:
-    """The newest PR, in any state, of branch *head* into *base*; ``None`` when there is none. ONE forge call.
+    """The PR that governs branch *head* into *base*: its newest OPEN one (draft or not), else its last closed one.
 
-    GitHub filters its listing (``state=all&head=<owner>:<head>&base=<base>``); gitea answers the pair directly
-    (``GET /pulls/{base}/{head}``, the newest such PR, 404 when none). Neither lists every closed PR.
+    An open PR carries a push whatever closed or merged PRs the pair had before it, so state ranks before number.
+    GitHub filters its listing (``state=all&head=<owner>:<head>&base=<base>``), ONE call. Gitea's pair route
+    (``GET /pulls/{base}/{head}``, 404 when none) answers the pair's OLDEST PR -- measured 2026-11-10, closed
+    #6078 over open draft #6151 -- so it only says whether the pair has a PR; the open listing then finds an open
+    one, and failing that the closed listing, most recently updated first, is read up to the pair's first entry.
+    Neither forge lists every closed PR.
     """
     if client.backend is GITHUB:
         query = {'state': 'all', 'head': f'{client.forge.owner}:{head}', 'base': base}
         query[client.backend.page_param] = str(_PAGE)
         listed = client.call('GET', f'{client.repo}/pulls?{urllib.parse.urlencode(query)}')
-        found = [pull_of(raw) for raw in listed]
-        return max(found, key=lambda pull: pull.number) if found else None
+        return max((pull_of(raw) for raw in listed), key=lambda pull: (pull.state == 'open', pull.number), default=None)
     path = f'{client.repo}/pulls/{urllib.parse.quote(base, safe="")}/{urllib.parse.quote(head, safe="/")}'
     try:
-        return pull_of(client.call('GET', path))
+        client.call('GET', path)
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode == _NOT_FOUND:
             return None
         raise
+    opened = [pull for pull in pr_list(client) if _of_pair(pull, head, base)]
+    return max(opened, key=lambda pull: pull.number) if opened else _last_closed(client, head, base)
+
+
+def _of_pair(pull: PullRequest, head: str, base: str) -> bool:
+    return pull.head == head and pull.base == base and not pull.fork
+
+
+def _last_closed(client: Client, head: str, base: str) -> PullRequest:
+    """Gitea's most recently updated closed PR of *head* into *base*, read page by page up to its first entry."""
+    for page in range(1, _PAGES + 1):
+        params = {'state': 'closed', 'sort': 'recentupdate', client.backend.page_param: str(_PAGE), 'page': str(page)}
+        listed = client.call('GET', f'{client.repo}/pulls?{urllib.parse.urlencode(params)}')
+        for raw in listed:
+            if _of_pair(pull := pull_of(raw), head, base):
+                return pull
+        if len(listed) < _PAGE:
+            break
+    msg = f'{client.repo}/pulls lists no closed PR of {head} into {base}, which its pair route answered'
+    raise ListingIncomplete(msg)
 
 
 def pulls_off(client: Client, failed: ForgeCallFailed) -> bool:
