@@ -13,8 +13,9 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   ``tests/base`` and ``tests/security``, never ``tests/review`` (user ruling 2026-11-05: the merge decision enforces
   the review itself, and a review that did not run merges WARNED, :mod:`dev_lab.dev.reviewcap`). The trunk requires the
   base part's rows the promotion event runs (``tests/base`` and, where workflows fan
-  parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and ``tests/<resource>`` for each
-  resource the repo ITSELF declares (``[tool.lab_commons.tests] resources``): its own part, never another repo's;
+  parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and NO other part: a part a
+  declared resource derives (``tests/windows``) is a hand part, tested later and never a merge condition (user ruling
+  2026-11-10, :func:`dev_lab.dev.forgemerge.hand_parts`);
 * the APPROVER is ``[tool.dev_lab.review] judge_login``: only a judge posts an approving PR review, so approvals
   are required only where one is declared -- a count with nobody to approve would hold every merge forever;
 * a GitHub repo judged by an App (``judge_app``) requires the App's
@@ -47,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
 
-from lab_commons.hpc.needsets import BASE, read_vocabulary
+from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
 from dev_lab.dev import _protect_gitea, _protect_github
@@ -59,7 +60,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT, SECURITY_CONTEXT
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.jobparts import HOSTED_RUNNERS, rows
+from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
 
 __all__ = [
@@ -190,10 +191,7 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
         trunk = tuple(sorted(f'{CONTEXT_PREFIX}{row["part"]}' for row in rows(BASE, _PROMOTION_EVENT, {})))
     else:
         trunk = (f'{CONTEXT_PREFIX}{BASE}',)
-    # the repo's own parts a HOSTED runner always produces; a vendor resource (one host's tool) would block the
-    # trunk whenever that host is away (integrator ruling 2026-11-10)
-    owned = tuple(f'{CONTEXT_PREFIX}{name}' for name in read_vocabulary(text).resources if name in HOSTED_RUNNERS)
-    return {INTEGRATION: integration, TRUNK: tuple(sorted({*trunk, *owned}))}
+    return {INTEGRATION: integration, TRUNK: trunk}
 
 
 def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
