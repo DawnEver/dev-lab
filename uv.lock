@@ -4,8 +4,8 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "ai-lab"
-version = "0.0.1.dev336+gd0c86e9b2"
-source = { git = "https://github.com/DawnEver/ai-lab.git#d0c86e9b205e6301d8eb1ff06a4ba13facba25c3" }
+version = "0.0.1.dev342+ga03438df8"
+source = { git = "https://github.com/DawnEver/ai-lab.git#a03438df8d0d045cf9f8c1139abb65bd32aba52a" }
 dependencies = [
     { name = "lab-commons", extra = ["paths"] },
 ]
@@ -477,8 +477,8 @@ wheels = [
 
 [[package]]
 name = "lab-commons"
-version = "0.3.1.dev1400+gd869c6ca3"
-source = { git = "https://github.com/DawnEver/lab-commons.git#d869c6ca34ecceeda43eb08c73c2ba4365e7e3c8" }
+version = "0.3.1.dev1419+g9d8c20c48"
+source = { git = "https://github.com/DawnEver/lab-commons.git#9d8c20c48a6a8f983dfa4c864305b5b98762de18" }
 
 [package.optional-dependencies]
 io = [
