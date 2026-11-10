@@ -20,7 +20,7 @@ All read git objects only and never touch the network.
 
 THE PIN IS THE FORGE'S ALONE (user rulings 2026-10-22 and 2026-10-24); FRESHNESS AGAINST THE FLOATED SIBLINGS'
 HEADS is also read when a ``pr/*`` head is published or marked ready (user ruling 2026-11-07,
-:mod:`dev_lab.dev.prcurrent` through :func:`dev_lab.dev.locklag.floating_stale`). The forge judges the PIN in
+:mod:`dev_lab.dev.prcurrent` through :func:`dev_lab.dev.locklag.within_window`). The forge judges the PIN in
 the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``HEAD``), and a PR head's
 freshness against its base as a status (:mod:`dev_lab.dev.forgeheadgate`;
 a PR never chases the lock). The serve tick keeps integration at the newest
@@ -32,7 +32,6 @@ and a lane takes it with ``forge sync``.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 from pathlib import Path
@@ -41,6 +40,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forge import _GIT
+from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import Report, run_network_verb
 
 if TYPE_CHECKING:
@@ -114,18 +114,6 @@ def _git(root: Path, *argv: str, env: Mapping[str, str] | None = None) -> tuple[
     return done.returncode, done.stdout
 
 
-#: The variables that point git at ONE repository. A hook runs with them set to the repository pushing, so a
-#: clone or checkout of ANOTHER repository from inside a hook must run without them.
-_REPOSITORY_LOCATORS: Final = frozenset({
-    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-    'GIT_COMMON_DIR', 'GIT_PREFIX',
-})  # fmt: skip
-
-
-def _unlocated() -> dict[str, str]:
-    return {name: value for name, value in os.environ.items() if name not in _REPOSITORY_LOCATORS}
-
-
 def _holds(text: str) -> bool:
     """Whether quoted *text* is a requirement (or a bare specifier set) that keeps something below the newest."""
     named = _NAME.match(text)
@@ -178,7 +166,7 @@ def mount_submodules(root: Path, tree: Path) -> None:
             raise OSError(msg)
         if target.is_dir() and not any(target.iterdir()):
             target.rmdir()  # git leaves an empty directory at an uninitialised submodule
-        bare = _unlocated()
+        bare = unlocated()
         code, _ = _git(root, 'clone', '--quiet', '--no-checkout', '--shared', str(source), str(target), env=bare)
         if code == 0:
             code, _ = _git(target, 'checkout', '--quiet', gitlink, env=bare)

@@ -22,6 +22,7 @@ from lab_commons.hpc.retired import RETIRED
 from dev_lab.dev.hpcaccount import deploy, tick
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount import steps as deploy_steps
+from dev_lab.dev.hpcaccount.account import UNREACHED
 from dev_lab.dev.hpcaccount.steps import Tools
 
 URL: Final = 'https://forge.example/team'
@@ -299,6 +300,18 @@ def test_a_token_the_api_refuses_is_refused_before_anything_changes(
     assert 'clone' not in box.logged()
     box.refused_api.clear()
     assert box.run(*DECLARE) == 0
+
+
+def test_a_forge_api_that_does_not_answer_never_says_restore_the_token(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """2026-11-10: a deploy said the token was refused when the forge had only not answered."""
+    box.refused_api['beta'] = f'{UNREACHED}: [forge] the forge did not answer'
+    assert box.run(*DECLARE) == 2
+    err = capsys.readouterr().err
+    assert 're-run the deploy' in err
+    assert 'auth login' not in err
+    assert 'clone' not in box.logged()
 
 
 def test_an_unset_credential_helper_is_refused_naming_the_fix(

@@ -7,6 +7,7 @@ and after the lockdown nobody holds root -- so the allowlist moves through the o
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -74,7 +75,23 @@ def test_install_rewrites_the_caddyfile_keeps_a_backup_and_names_the_reload(tmp_
     assert done.paths['etc/caddy/Caddyfile'] == 'written'
     assert '128.243.0.0/16 8.208.22.233/32' in live.read_text(encoding='utf-8')
     assert (root / 'etc/caddy/Caddyfile.bak-dev-lab').read_text(encoding='utf-8') == _CADDYFILE
-    assert 'caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy' in done.next_steps
+    reload = [step for step in done.next_steps if 'systemctl reload caddy' in step]
+    step = (
+        'caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy && '
+        'sha256sum /etc/caddy/Caddyfile > /etc/caddy/Caddyfile.reloaded-sha256'
+    )
+    assert reload == [step]
+    # PLANTED CONTROL (forge-a1, 2026-11-10): the file is already right but the reload never ran -- the running
+    # Caddy still served the old allowlist. An unchanged file is NOT a live config; install names the reload again.
     again = install(config, root)
     assert again.paths['etc/caddy/Caddyfile'] == 'unchanged'
-    assert not any('caddy' in step for step in again.next_steps), 'nothing changed, nothing to reload'
+    assert again.next_steps.count(reload[0]) == 1, 'the file is unchanged but no reload was stamped'
+    # the reload ran (its stamp records the digest it loaded): only now does install have nothing to reload
+    stamp = root / 'etc/caddy/Caddyfile.reloaded-sha256'
+    stamp.write_text(f'{hashlib.sha256(live.read_bytes()).hexdigest()}  /etc/caddy/Caddyfile\n', encoding='utf-8')
+    settled = install(config, root)
+    assert not any('caddy' in step for step in settled.next_steps), 'the live config is the file, nothing to reload'
+    # a later hand edit (or `config apply`) that did not reload: the stamp no longer matches, install reloads
+    live.write_text(live.read_text(encoding='utf-8') + '# edited\n', encoding='utf-8')
+    drifted = install(config, root)
+    assert reload[0] in drifted.next_steps

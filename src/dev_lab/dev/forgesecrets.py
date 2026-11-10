@@ -24,8 +24,12 @@ the credential protocol is line-based. ``secrets sync`` reads stdin when one is 
 rotation is one ``store`` and one ``sync``, and ``family join`` sets a new member's secret with no user step. THE
 TRADE-OFF: any process running as this OS user can read the credential store -- as it can every forge token there.
 
-The bundle is never argv, never a file, never a log line: a line names the repo, the secret and the bundle's sha256
-prefix only. ``--dry-run`` lists the targets and reads and writes nothing.
+The bundle is never argv, never a log line: a line names the repo, the secret and the bundle's sha256 prefix only.
+``secrets store --from <path>`` reads a bundle the USER placed as a file (ruling 2026-11-10), stores it as stdin
+would, then deletes the file; a failure keeps the file and names it. A path inside a git checkout is refused -- a
+key file must never sit where git could commit it -- and so is a directory.
+
+``--dry-run`` lists the targets and reads and writes nothing.
 """
 
 from __future__ import annotations
@@ -156,8 +160,14 @@ def _said(bundle: str) -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forge secrets', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
-    keep = verbs.add_parser('store', help="keep the task's key bundle (read on stdin) in the credential store")
+    keep = verbs.add_parser('store', help="keep the task's key bundle (stdin, or --from) in the credential store")
     keep.add_argument('--task', required=True, help='the ai-lab task, e.g. pr-review')
+    keep.add_argument(
+        '--from',
+        dest='source',
+        type=Path,
+        help='read the bundle from this file instead of stdin, then delete it; refused inside a git checkout',
+    )
     sync = verbs.add_parser('sync', help="set the task's key bundle (stdin, else the stored one) on every member")
     sync.add_argument('--task', required=True, help='the ai-lab task, e.g. pr-review')
     sync.add_argument('--dry-run', action='store_true', help='list the targets; read and write nothing')
@@ -174,13 +184,61 @@ def _reachable(repos: Mapping[str, Path]) -> tuple[list[Target], list[str]]:
     return [target for target in every if not withheld(target)], skipped
 
 
-def _store(task: str, name: str, piped: str, store: Callable[[str, str], None]) -> int:
-    """``secrets store``: keep the piped bundle; refused (2) when nothing was piped."""
+def _store(
+    task: str, name: str, read: Callable[[], str], store: Callable[[str, str], None], source: Path | None
+) -> int:
+    """``secrets store``: keep the bundle from *source* when named, else the piped one; refused (2) when none."""
+    if source is not None:
+        return _store_from(task, name, source, store)
+    piped = read()
     if not piped.strip():
         emit(f'[secrets] refused: no {task} key bundle on stdin', err=True)
         return 2
     store(task, piped)
     emit(f'[secrets] stored {name} ({_said(piped)}); run `secrets sync --task {task}` to reach every member')
+    return 0
+
+
+def _in_checkout(path: Path) -> Path | None:
+    """The git checkout *path* sits in (a ``.git`` dir or file above it), ``None`` when none."""
+    return next((parent for parent in path.parents if (parent / '.git').exists()), None)
+
+
+def _read_source(task: str, source: Path) -> tuple[str, str]:
+    """*source*'s bundle and ``''``, or ``''`` and why it is refused (the file untouched)."""
+    if source.is_dir():
+        return '', f'{source} is a directory, not a key bundle file'
+    if checkout := _in_checkout(source):
+        return '', f'{source} sits in the git checkout {checkout}; move it outside any checkout'
+    try:
+        bundle = source.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as unread:
+        return '', f'cannot read {source} ({type(unread).__name__})'
+    if not bundle.strip():
+        return '', f'{source} holds no {task} key bundle; the file is kept'
+    return bundle, ''
+
+
+def _store_from(task: str, name: str, source: Path, store: Callable[[str, str], None]) -> int:
+    """``secrets store --from``: keep the bundle in *source*, then unlink it; refused (2) with the file kept."""
+    source = source.absolute()
+    bundle, why = _read_source(task, source)
+    if why:
+        emit(f'[secrets] refused: {why}', err=True)
+        return 2
+    try:
+        store(task, bundle)
+    except (OSError, NoCredential) as failed:  # its message is not echoed: it never names a key, but need not
+        emit(f'[secrets] refused: storing {source} failed ({type(failed).__name__}); the file is kept', err=True)
+        return 2
+    try:
+        source.unlink()
+    except OSError as kept:
+        emit(f'[secrets] stored {name} ({_said(bundle)}) but could not delete {source} ({type(kept).__name__}); '
+             'delete it by hand', err=True)  # fmt: skip
+        return 1
+    emit(f'[secrets] stored {name} ({_said(bundle)}) and deleted {source}; '
+         f'run `secrets sync --task {task}` to reach every member')  # fmt: skip
     return 0
 
 
@@ -202,7 +260,7 @@ def main(
         return 2
     read = stdin or _piped
     if args.verb == 'store':
-        return _store(args.task, name, read(), store)
+        return _store(args.task, name, read, store, args.source)
     found, skipped = _reachable(members())
     if not found:
         emit('[secrets] refused: no [repos] member checkout on a forge in the machine file', err=True)

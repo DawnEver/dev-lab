@@ -15,6 +15,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 
 * ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpcaccount.fleet`) starts, detached over ssh,
   every declared account's own ``deploy``, one log per account.
+* ``forget --repo <url> --row <key> (--account <user>... | --fleet) [--dry-run]``
+  (:mod:`~dev_lab.dev.hpcaccount.forget`) runs lab-commons' ``learned forget`` of one row on each account.
 
 EVERY ACCOUNT DECLARES ITS ROLE (user ruling 2026-11-06), ``[deploy] role`` in its own machine file
 (:mod:`~dev_lab.dev.hpcaccount.spec`): only a ``verification`` account (a Forge Verification account) runs the serve
@@ -34,12 +36,15 @@ from lab_commons.log import emit
 
 __all__ = ['main']
 
-_USAGE = 'usage: python -m dev_lab.dev.hpcaccount {deploy [...] | deploy-fleet [...] | tick <repo>... | allocate [...]}'
+_USAGE = (
+    'usage: python -m dev_lab.dev.hpcaccount '
+    '{deploy [...] | deploy-fleet [...] | forget [...] | tick <repo>... | allocate [...]}'
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Dispatch ``deploy``, ``tick <repo>...`` or ``allocate``; anything else is refused naming the verbs."""
-    from dev_lab.dev.hpcaccount import allocate, deploy, fleet, tick  # noqa: PLC0415 -- the package imports no verb
+    from dev_lab.dev.hpcaccount import allocate, deploy, fleet, forget, tick  # noqa: PLC0415 -- the package imports no verb
 
     argv = sys.argv[1:] if argv is None else argv
     verb, rest = (argv[0], argv[1:]) if argv else ('', [])
@@ -47,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         return deploy.main(rest)
     if verb == 'deploy-fleet':
         return fleet.main(rest)
+    if verb == 'forget':
+        return forget.main(rest)
     if verb == 'allocate':
         return allocate.allocate(rest)
     if verb == 'tick' and rest:

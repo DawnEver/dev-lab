@@ -147,12 +147,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as reply:',
     ): 'opens only the request built above from the FORGE_URL the job declares',
     (
-        'src/dev_lab/ops/forgeaccounts.py',
+        'src/dev_lab/ops/giteaadmin.py',
         'S310',
         'request = urllib.request.Request(url, data=data, headers=headers, method=method)',
     ): "the host's own Gitea API, [ops.forge] api, a boundary key only an ops.config consent changes",
     (
-        'src/dev_lab/ops/forgeaccounts.py',
+        'src/dev_lab/ops/giteaadmin.py',
         'S310',
         'with urllib.request.urlopen(request, timeout=30) as answer:',
     ): 'opens only the request built above to [ops.forge] api',
@@ -214,7 +214,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/hpcaccount/__init__.py',
         'PLC0415',
-        'from dev_lab.dev.hpcaccount import allocate, deploy, fleet, tick',
+        'from dev_lab.dev.hpcaccount import allocate, deploy, fleet, forget, tick',
     ): 'the package imports no verb: each verb imports the package, so a top-level import would be a cycle',
     (
         'src/dev_lab/dev/servelock.py',

@@ -53,7 +53,8 @@ EXEMPT: Final[tuple[str, ...]] = ('src/dev_lab/dev/famtests/echoedtoken.py',)
 #: re-priced on the same ~90%: 6812.
 #: RE-MEASURED 2026-10-22 at 5885, after the split left lab-commons' runtime and execution trees behind;
 #: re-priced on the same ~90%: 5300.
-FUNCTION_FLOOR: Final = 5300
+#: RE-MEASURED 2026-11-10 at 10632 (CI's walk, the 11-08..11-10 waves); re-priced on the same ~90%: 9570.
+FUNCTION_FLOOR: Final = 9570
 
 #: How far past the floor the population may grow before the floor is re-measured.
 HEADROOM: Final = 1200

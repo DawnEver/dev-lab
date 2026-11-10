@@ -112,7 +112,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 ## WORKTREES-STAY-INSIDE
 
 - **Why it is refused.** a checkout created OUTSIDE its repository is outside every scan, ignore rule and search that repository runs over itself, and outside the place the next agent looks for it. MEASURED 2026-10-03: eight worktrees across the family had been created as siblings of their repos, and the user ruled that day that it is forbidden family-wide.
-- **The exit.** Put it inside the repository: git worktree add --detach .claude/worktrees/<name> <sha> (from the repo root; with -C, git -C <repo> worktree add --detach <repo>/.claude/worktrees/<name> <sha>). To relocate one: git worktree move <tree> <repo>/.claude/worktrees/<name>. A clone takes an explicit target <repo>/.claude/worktrees/<name> -- or is better a worktree.
+- **The exit.** Put it inside the repository: git worktree add --detach .claude/worktrees/<name> <sha> (from the repo root; with -C, git -C <repo> worktree add --detach <repo>/.claude/worktrees/<name> <sha>). To relocate one: git worktree move <tree> <repo>/.claude/worktrees/<name>. A clone takes an explicit target <repo>/.claude/worktrees/<name> -- or is better a worktree. A FAMILY repo is the one clone that goes outside: into the siblings root, the directory holding the family's checkouts (`[repos]` in the machine file, `dev_lab.dev.family.members.siblings_root`), as `cd`s then ONE `git clone <url> <root>/<repo>` whose <repo> is new and named for the url, from a forge (scheme, host, owner) a sibling's `origin` already uses.
 
 ## BARE-INTERPRETER
 
@@ -172,6 +172,7 @@ HINT: the hazard is minutes, not harm.
 
 - **Why it is refused.** A consent credential (`dev_lab.ops.consent`) stands for the USER's word, given with the code of their Authenticator. The user gives the code and the agent runs the grant with it (user ruling 2026-11-08; the retired name is registered in `_deny_rows.RETIRED_IDS`). A code the user did not give is never passed, and none is stored, logged or reused. What stays refused is a shell write under `<machine home>/state/consent/`: a credential no issuer signed. The row matches the whole command line (`matches: 'line'`); the Write/Edit half is `dev_lab.dev.consentguard.refuse_write`.
 - **The exit.** Write the request JSON (`action`, `subject`, `params`, and `cap`/`ttl` where the action allows), ask the user for their Authenticator code, run `python -m dev_lab.ops.consent grant <request.json> --code <the code they gave>`, then use the credential it wrote (`forge breakglass open --credential <id>`).
+- **One code for a session and its consents.** When the work needs a host session AND consents on it, write a plan (`{"host": "<user>@<host>", "grants": [<request>, ...]}`), show it to the user with `python -m dev_lab.ops.consent plan <plan.json>`, and give their ONE code to `python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <the digest shown>` (`dev_lab.ops.consent.plan`).
 
 ## Cross-repo refusals
 

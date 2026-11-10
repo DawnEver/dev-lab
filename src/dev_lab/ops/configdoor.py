@@ -32,7 +32,9 @@ from typing import TYPE_CHECKING, Any, Final
 if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource
 
-__all__ = ['ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest', 'fetch']
+__all__ = [
+    'ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest', 'fetch', 'tick',
+]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
 ACTION: Final = 'ops.config'
@@ -63,8 +65,8 @@ ROUTINE: Final[tuple[str, ...]] = (
 type Checks = Mapping[str, list[str]]
 #: Runs one argv; its exit code and output.
 type Runner = Callable[[list[str]], tuple[int, str]]
-#: Redeems a credential for ACTION, raising when it does not consent; returns the credential's subject.
-type Redeem = Callable[[Mapping[str, Any]], str]
+#: Redeems a credential for ACTION on one subject (:func:`dev_lab.ops.consent.client.redeem`); raises when it does not.
+type Redeem = Callable[[Mapping[str, Any], str], object]
 #: Runs one argv with extra environment; its exit code and output (the git clone of :func:`fetch`).
 type EnvRunner = Callable[[list[str], Mapping[str, str]], tuple[int, str]]
 
@@ -127,7 +129,7 @@ def fetch(source: ConfigSource, *, run: EnvRunner) -> str:
         'GIT_TERMINAL_PROMPT': '0',
     }
     with tempfile.TemporaryDirectory() as scratch:
-        target = Path(scratch) / 'forge-hosts'
+        target = Path(scratch) / 'config-source'
         argv = ['git', 'clone', '--quiet', '--depth', '1', '--branch', source.ref, source.source, str(target)]
         status, _said = run(argv, env)
         if status != 0:
@@ -179,9 +181,7 @@ def apply(
         if credential is None or redeem is None:
             msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
             raise ConfigRefused(msg)
-        if redeem(credential) != digest(candidate):
-            msg = f"the {ACTION} credential consents to another candidate (subject is not this file's SHA-256)"
-            raise ConfigRefused(msg)
+        redeem(credential, digest(candidate))
     with tempfile.TemporaryDirectory() as scratch:  # loaded by the current code BEFORE the live file is touched
         probe = Path(scratch) / live.name
         probe.write_text(candidate, encoding='utf-8')
@@ -201,3 +201,36 @@ def apply(
             msg = f'self-check {name} failed ({status}) on the applied file; restored the previous one: {said[-400:]}'
             raise ConfigRefused(msg)
     return Applied(changed, guarded, backup)
+
+
+def tick(
+    live: Path, candidate: str, *, pending: Path, notify: Callable[[str], object], loads: Callable[[Path], object],
+    checks: Checks, run: Runner, now: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> str:  # fmt: skip
+    """One scheduled pass of the door over the merged source: ``applied``, ``unchanged`` or ``needs-consent``.
+
+    A merge is not consent. A ROUTINE change applies here with nobody present; a change touching the boundary is
+    PARKED -- the live file stays, *pending* records the candidate's SHA-256 and *notify* tells the user once per
+    candidate what to grant -- until ``config apply --credential`` lands it. A pass that finds nothing to do clears
+    *pending*.
+
+    Raises:
+        ConfigRefused: the routine candidate does not load or failed the self-check (the backup was restored).
+
+    """
+    changed = changes(tomllib.loads(live.read_text(encoding='utf-8')), tomllib.loads(candidate))
+    if not changed:
+        pending.unlink(missing_ok=True)
+        return 'unchanged'
+    if guarded := boundary(changed):
+        subject = digest(candidate)
+        if not pending.is_file() or pending.read_text(encoding='utf-8').strip() != subject:
+            notify(
+                f'merged config touches boundary keys {list(guarded)}; it applies only with consent: grant '
+                f'{ACTION} for subject {subject}, then config apply --credential <file>'
+            )
+            pending.write_text(f'{subject}\n', encoding='utf-8')
+        return 'needs-consent'
+    apply(live, candidate, loads=loads, checks=checks, run=run, now=now)
+    pending.unlink(missing_ok=True)
+    return 'applied'

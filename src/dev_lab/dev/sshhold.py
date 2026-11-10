@@ -6,6 +6,7 @@ owning ONE ``ssh -T <dest> bash --noprofile --norc -s``. It listens on 127.0.0.1
 module is the client and the CLI::
 
     python -m dev_lab.dev.sshhold open <dest> --hours H [--code CODE]   # code on stdin when omitted
+    python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <D> [--code CODE]
     python -m dev_lab.dev.sshhold run <dest> -- <command...>            # exits with the remote status
     python -m dev_lab.dev.sshhold credential <dest> --url <https url> --login <login>   # token on stdin
     python -m dev_lab.dev.sshhold close <dest>
@@ -14,8 +15,14 @@ module is the client and the CLI::
 * The keyboard-interactive answer is the user's single-use code from THIS conversation
   (CONSENT-CODE-FROM-THE-USER). It reaches the holder on a pipe and the ssh child through ``SSH_ASKPASS``;
   never argv, disk or a log. An empty code is allowed (a host's trusted window accepts an empty answer).
+* ONE CODE, ONE PLAN (user ruling 2026-11-10): with ``--plan`` the same code first buys one single-use consent
+  credential per grant of the plan the user was shown (:func:`dev_lab.ops.consent.client.grant_plan`; the digest
+  is ``python -m dev_lab.ops.consent plan <plan.json>``'s), then opens the session. The host's one TOTP secret is
+  verified by its issuer and its pam_oath, each once (:mod:`dev_lab.ops.consent.plan`).
 * ``--hours`` above the ceiling (``[ssh.hold] max_hours`` in the machine file, default
-  :data:`DEFAULT_MAX_HOURS`) is REFUSED, never clamped. The holder also ends after ``idle_minutes`` idle.
+  :data:`DEFAULT_MAX_HOURS`) is REFUSED, never clamped. A quiet session lives to that ceiling (keepalives hold the
+  connection, :func:`dev_lab.dev._sshholder.ssh_argv`); it ends early on idle only when the machine file names
+  ``[ssh.hold] idle_minutes`` -- a 30 min default ended a 4 h session, measured 2026-11-10.
 * A dropped connection is said by name and the user re-opens: never a silent re-authentication.
 * Every open/run/credential/close appends one JSONL line to :func:`audit_path` -- a ``run`` records its command
   VERBATIM, so A SECRET NEVER GOES THROUGH ``run``. A forge token goes through ``credential`` alone: read from
@@ -36,6 +43,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -46,10 +54,11 @@ from lab_commons.config import section
 from lab_commons.home import part
 from lab_commons.log import emit
 
+from dev_lab.ops.consent.client import given_code, grant_plan
+from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.totp import write_private
 
 __all__ = [
-    'DEFAULT_IDLE_MINUTES',
     'DEFAULT_MAX_HOURS',
     'DEFAULT_TIMEOUT_S',
     'HoldRefused',
@@ -64,10 +73,12 @@ __all__ = [
     'frame',
     'idle_s',
     'main',
+    'open_planned',
     'open_session',
     'read_session',
     'request',
     'run_command',
+    'session_over',
     'split_marker',
     'state_dir',
     'state_path',
@@ -78,8 +89,6 @@ __all__ = [
 
 #: The ceiling on ``--hours`` when the machine file names none (user ruling 2026-11-09: 4 h).
 DEFAULT_MAX_HOURS: Final = 4.0
-#: A session with no command for this long ends itself.
-DEFAULT_IDLE_MINUTES: Final = 30.0
 #: One command's bound; past it the session closes, since a half-read stream cannot be trusted.
 DEFAULT_TIMEOUT_S: Final = 600.0
 _OPEN_WAIT_S: Final = 120.0
@@ -116,9 +125,15 @@ def ceiling(table: dict[str, Any] | None = None) -> float:
     return float(_table(table).get('max_hours', DEFAULT_MAX_HOURS))
 
 
-def idle_s(table: dict[str, Any] | None = None) -> float:
-    """``[ssh.hold] idle_minutes`` in seconds, else :data:`DEFAULT_IDLE_MINUTES`."""
-    return float(_table(table).get('idle_minutes', DEFAULT_IDLE_MINUTES)) * 60
+def idle_s(table: dict[str, Any] | None = None) -> float | None:
+    """``[ssh.hold] idle_minutes`` in seconds, else ``None``: no idle limit, the session lives to its ceiling."""
+    minutes = _table(table).get('idle_minutes')
+    return None if minutes is None else float(minutes) * 60
+
+
+def session_over(*, now: float, expires: float, quiet_s: float, idle: float | None) -> bool:
+    """Whether a session ends: its ceiling *expires* reached, or *quiet_s* past a configured *idle* limit."""
+    return now >= expires or (idle is not None and quiet_s >= idle)
 
 
 def check_hours(hours: float, limit: float) -> None:
@@ -241,6 +256,24 @@ def open_session(dest: str, hours: float, code: str, *, ssh: tuple[str, ...] = (
     return f'{dest}: session open for {hours:g} h (holder pid {word["pid"]})'
 
 
+def open_planned(
+    dest: str, hours: float, code: str, plan: Path, shown: str, *, ssh: tuple[str, ...] = ('ssh',),
+    grant: Callable[[Path, str, str, str], list[Path]] = grant_plan,
+) -> list[str]:  # fmt: skip
+    """Spend ONE *code* on *plan* (the one *shown*) and then on *dest*'s session; what it granted, then the session.
+
+    The plan's host must be *dest*: a code the user gave for one host's plan never opens another.
+    """
+    check_hours(hours, ceiling())  # before the code is spent on the grants
+    try:
+        written = grant(plan, shown, code, dest)
+    except ConsentRefused as refused:
+        msg = f'the plan was not granted: {refused}'
+        raise HoldRefused(msg) from refused
+    audit('plan', dest, command=shown, status=0, grants=len(written))
+    return [*(f'{dest}: consent granted: {path}' for path in written), open_session(dest, hours, code, ssh=ssh)]
+
+
 def _exchange(dest: str, command: str, timeout_s: float) -> dict[str, Any]:
     """Send *command* through *dest*'s holder; the reply, or :class:`HoldRefused` when the holder is gone."""
     session = _live(dest)
@@ -356,6 +389,10 @@ def _parser() -> argparse.ArgumentParser:
     opening.add_argument('dest')
     opening.add_argument('--hours', type=float, required=True)
     opening.add_argument('--code', help='the code the user gave; read from stdin when omitted')
+    opening.add_argument(
+        '--plan', type=Path, help='a plan the same code consents to (python -m dev_lab.ops.consent plan)'
+    )
+    opening.add_argument('--digest', default='', help="the plan's digest, as shown to the user")
     running = verbs.add_parser('run', help='run one command on the held connection')
     running.add_argument('dest')
     running.add_argument('--timeout', type=float, default=DEFAULT_TIMEOUT_S)
@@ -374,8 +411,10 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         if args.verb == 'open':
-            code = args.code if args.code is not None else sys.stdin.readline().strip()
-            emit(open_session(args.dest, args.hours, code))
+            code = given_code(args.code)
+            planned = args.plan is not None
+            opened = open_planned(args.dest, args.hours, code, args.plan, args.digest) if planned else None
+            emit('\n'.join(opened) if opened else open_session(args.dest, args.hours, code))
         elif args.verb == 'run':
             words = args.command[1:] if args.command[:1] == ['--'] else args.command
             output, status = run_command(args.dest, ' '.join(words), args.timeout)

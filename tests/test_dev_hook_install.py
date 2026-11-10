@@ -319,3 +319,48 @@ def test_a_retire_that_fails_leaves_the_new_shim_written_beside_the_slot(
         install(repo)
     assert (directory / 'pre-commit').read_text(encoding='utf-8') == old, 'the old hook still guards the slot'
     assert (directory / 'pre-commit.new').is_file(), 'the new shim was written first'
+
+
+#: The shims are POSIX sh; every runner (Linux, Git for Windows) carries one, so its absence is a red, not a skip.
+_SH = shutil.which('sh')
+
+
+def _run_shim_without_interpreter(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    assert _SH is not None, 'no sh on PATH: the hook shims cannot run on this box'
+    script = tmp_path / 'pre-commit'
+    script.write_text(shim('pre-commit', (tmp_path / 'gone' / 'python').as_posix()), encoding='utf-8', newline='\n')
+    return subprocess.run(
+        [_SH, str(script)], cwd=repo, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False
+    )
+
+
+def _git_dir(repo: Path) -> Path:
+    return (repo / _git_out(repo, 'rev-parse', '--git-dir')).resolve()
+
+
+def test_a_merge_commit_without_any_interpreter_is_refused_and_names_the_remedy(repo: Path, tmp_path: Path) -> None:
+    """A merge message cannot be amended later, so a hookless merge is refused (user ruling 2026-11-10)."""
+    (_git_dir(repo) / 'MERGE_HEAD').write_text('0' * 40 + '\n', encoding='utf-8')
+    done = _run_shim_without_interpreter(repo, tmp_path)
+    assert done.returncode == 1
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
+    assert 'dev_lab.dev.hook_install --install' in done.stderr
+
+
+def test_a_plain_commit_without_any_interpreter_still_skips(repo: Path, tmp_path: Path) -> None:
+    """PLANTED CONTROL: with no merge in progress the shim passes, as ruled 2026-10-22."""
+    done = _run_shim_without_interpreter(repo, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert 'hooks skipped' in done.stderr
+
+
+def test_a_shim_without_the_merge_refusal_is_stale_and_replaced(repo: Path) -> None:
+    current = shim('pre-commit')
+    old = '\n'.join(line for line in current.splitlines() if 'MERGE_HEAD' not in line) + '\n'
+    assert old != current
+    directory = hooks_dir(repo)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / 'pre-commit').write_text(old, encoding='utf-8')
+    assert {s.stage: s.status for s in hook_installation(repo).stages}['pre-commit'] == STALE
+    install(repo)
+    assert {s.status for s in hook_installation(repo).stages} == {INSTALLED}

@@ -217,6 +217,10 @@ def shim(stage: str, fallback: str | None = None) -> str:
     file) when it can import lab_commons, and runs only the rows that need nothing of the repo's own
     environment. With no lab_commons interpreter anywhere it says so in one line and exits 0; the
     forge runs every row anyway.
+
+    The one exception is a MERGE commit (a ``MERGE_HEAD`` in the git dir; user ruling 2026-11-10):
+    there the shim refuses and names the remedy, because a merge message cannot be amended later and
+    the forge's MERGE-RESOLUTION-DECLARED would then force a history rewrite.
     """
     candidates = ' '.join('/'.join(parts) for parts in CANDIDATE_RELATIVE_PATHS)
     recorded = Path(fallback if fallback is not None else sys.executable).as_posix()
@@ -233,6 +237,13 @@ def shim(stage: str, fallback: str | None = None) -> str:
         f'fallback={_sh_quote(recorded)}\n'
         'if [ -x "$fallback" ] && "$fallback" -c "import dev_lab.dev.githooks" >/dev/null 2>&1; then\n'
         f'  {FOREIGN_INTERPRETER_ENV}=1 exec "$fallback" -m dev_lab.dev.githooks run {stage} "$@"\n'
+        'fi\n'
+        'if [ -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then\n'
+        f'  echo "[githooks] {stage}: no venv in $top, no lab_commons interpreter, and a MERGE is in progress;'
+        ' refused -- a merge message cannot be amended later. Bootstrap the venv'
+        ' (python -m dev_lab.dev.dep --bootstrap $top), install the hooks'
+        f' ({INSTALL_COMMAND}), then commit again." >&2\n'
+        '  exit 1\n'
         'fi\n'
         f'echo "[githooks] {stage}: no venv in $top, no lab_commons interpreter; '
         'hooks skipped (the forge runs them)." >&2\n'

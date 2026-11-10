@@ -19,7 +19,7 @@ from test_dev_githook_scripts import _plant_checker
 from dev_lab.dev import forgeintegration, forgemessages
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import Ticked, tick
-from dev_lab.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
+from dev_lab.dev.forgemerge import FORGE_PULL, Decision, decide, merge, merge_message
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import ACTIONS_BOT
@@ -470,3 +470,44 @@ def test_a_failed_head_gate_holds_the_merge(tmp_path: Path, gate: str) -> None:
     assert forge.merges == []
     (comment,) = forge.comments[number]
     assert f'its head gates: {gate} is failure: {gate} refused' in comment['body']
+
+
+def test_a_hand_part_never_holds_the_merge_and_is_named(tmp_path: Path) -> None:
+    """USER RULING 2026-11-10: a part only a hand host produces is tested later, never a merge condition.
+
+    document-lab#8: ``tests/base`` and ``tests/base@windows`` PASS handing ``gpu ocr vendor windows``, and
+    ``tests/windows`` is ``pending`` absent. Absent, unposted or RED, a hand part is NAMED in the decision's notes and
+    holds nothing -- forge code may be temporarily broken, and a later red is a finding. PLANTED CONTROLS: a red
+    hosted row, and a missing ``tests/base``, still hold it.
+    """
+    work, head = _work(tmp_path)
+    gates = [r for r in _green() if r['context'] != 'tests/base']
+    hands = 'scope=full ran=339 hands=gpu:1,ocr:1,vendor:3,windows:14'
+    base = [
+        {'id': 7, 'context': 'tests/base', 'status': 'success', 'description': hands},
+        {'id': 8, 'context': 'tests/base@windows', 'status': 'success', 'description': hands},
+    ]
+    absent = {'id': 9, 'context': 'tests/windows', 'status': 'pending', 'description': 'absent: no job settled'}
+    red = {'id': 9, 'context': 'tests/windows', 'status': 'failure', 'description': 'scope=full ran=14 hands=-'}
+
+    def judge(raw: list[dict[str, object]]) -> Decision:
+        return decide(
+            work,
+            POLICY,
+            branch='pr/x',
+            number=8,
+            head=head,
+            statuses=_statuses(raw),
+            reviewed=status_gate(github_posted),
+        )
+
+    for hand in (absent, red):
+        found = judge([*gates, *base, hand])
+        assert found.ready, found.missing
+        (note,) = [one for one in found.notes if one.startswith('hand parts, tested later')]
+        assert 'tests/windows' in note, note
+        assert 'tests/gpu not posted' in note, note
+    assert 'tests/windows FAIL' in next(one for one in judge([*gates, *base, red]).notes if 'hand' in one)
+    hosted_red = [*gates, base[0], {**base[1], 'status': 'failure'}, red]
+    assert not judge(hosted_red).ready, 'PLANTED CONTROL: a red hosted row holds the merge'
+    assert not judge([*gates, base[1], absent]).ready, 'PLANTED CONTROL: a missing tests/base holds the merge'

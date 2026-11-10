@@ -16,7 +16,7 @@ from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import escapes, forgeship, hostalarm, retention
+from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, retention
 from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
@@ -56,7 +56,10 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgeproduce import Produced
 
 __all__ = [
+    'cancel_stalled',
+    'cancel_strays',
     'demote_unreachable',
+    'every_host',
     'hygiene',
     'pressed',
     'prompt',
@@ -68,6 +71,24 @@ __all__ = [
     'starved',
     'tidy_runs',
 ]
+
+
+def cancel_strays(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge jobs no run file holds, every tick, runs in flight or not: one alarm, counted."""
+    if stray := slurm.strays(forgerunstate.held_names):
+        body = f'jobs {" ".join(stray)} carried a forge job name no run file here holds; cancelled'
+        alarm(Alarm(RUN, repo, f'{len(stray)} orphaned forge job(s) cancelled on {seat}', body, about='strays'))
+
+
+def cancel_stalled(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge tasks past their stall bound, every tick: one alarm naming each sha and test."""
+    if stalled := slurm.stalled():
+        body = '\n'.join(one.text() for one in stalled)
+        alarm(Alarm(RUN, repo, f'{len(stalled)} stalled forge task(s) cancelled on {seat}', body, about='stalled'))
 
 
 def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Callable[[Alarm], object]) -> None:
@@ -254,8 +275,8 @@ def repo_wide(
 
     In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
     branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
-    the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left -- and the
-    family watch (:mod:`dev_lab.dev.family.watch`, on the kit's tick). A repo that
+    and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
+    family watch is per machine, not here (:func:`family`). A repo that
     declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
     """
     serve_continue_landed(root, client(root), say=say, alarm=alarm)
@@ -274,6 +295,17 @@ def repo_wide(
         drift_step(root, repo, say=say, alarm=alarm, now=clock())
     except (OSError, ValueError) as why:
         say(f'[serve] the drift census did not run: {why}')
+
+
+def every_host(
+    root: Path, repo: str, built: Client, *, say: Callable[[str], None], alarm: Callable[[Alarm], object], host: str
+) -> None:
+    """The passes every serving host runs, poller or not.
+
+    :func:`review` wherever its command can run, and the machine's own family watch
+    (:mod:`dev_lab.dev.family.watch`, daily) -- the family is the host's checkouts, so never only the poller's.
+    """
+    review(root, built, say=say, host=host)
     try:
         family_step(root, repo, say=say, alarm=alarm)
     except (OSError, ValueError) as why:
