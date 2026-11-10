@@ -18,6 +18,7 @@ from typing import Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
+from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.lockcheck import LOCK, UNRESOLVED
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import SHORT, RelockFailed, floated
@@ -41,13 +42,13 @@ def _commits_behind(url: str, branch: str, sha: str) -> int:
         def git(*argv: str) -> subprocess.CompletedProcess[str]:
             return _door.run(
                 [_GIT, '-C', bare, *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-                check=False, timeout=_GIT_TIMEOUT_S,
+                check=False, timeout=_GIT_TIMEOUT_S, env=unlocated(),
             )  # fmt: skip
 
         git('init', '--quiet', '--bare')
         fetched = run_network_verb(
             [_GIT, '-C', bare, 'fetch', '--quiet', '--no-tags', '--filter=tree:0', url, f'refs/heads/{branch}'],
-            timeout=300,
+            timeout=300, env=unlocated(),
         )
         if not fetched.ok:
             msg = f'{url} {branch} could not be fetched: {fetched.remedy}'
