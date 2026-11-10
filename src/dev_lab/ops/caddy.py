@@ -13,13 +13,24 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
-if TYPE_CHECKING:
-    from dev_lab.ops.config import Caddy
+__all__ = ['Caddy', 'allowlisted', 'install_caddy']
 
-__all__ = ['allowlisted', 'install_caddy']
+
+@dataclass(frozen=True)
+class Caddy:
+    """The forge's Caddy allowlist (:mod:`dev_lab.ops.caddy`).
+
+    Every ``remote_ip`` matcher of ``sites`` (all, when empty) in ``file`` admits exactly ``allow`` (IPs or CIDRs).
+    """
+
+    allow: tuple[str, ...]
+    file: str = '/etc/caddy/Caddyfile'
+    sites: tuple[str, ...] = ()
+
 
 _MATCHER: Final = re.compile(r'^(?P<head>\s*@\S+\s+remote_ip)\s+(?P<list>[^\n{}#]+?)\s*$')
 _SITE: Final = re.compile(r'^(?P<names>[^\s{#][^{#\n]*?)\s*\{\s*$')

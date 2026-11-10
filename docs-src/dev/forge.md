@@ -674,3 +674,15 @@ probe commands) and needs an `ops.config` consent credential whose subject is th
 code, about once a year. The candidate is loaded by the current code first, the live file is backed up beside itself,
 replaced atomically, self-checked, and restored on a failed check. Grant the line in `[ops.access] commands`:
 `<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml config apply *`.
+
+## Making the forge's machine accounts
+
+A machine account (a read-only reader for every server that pulls code) and each of its per-host tokens are made only
+through `python -m dev_lab.ops --config <file> forge account ensure --login <L> --read <owner/repo>...` and
+`... forge token mint --login <L> --name <N> --scope read:repository [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`),
+which the `ops` account runs through its fixed sudo line. Each use redeems a single-use `ops.forge.account` /
+`ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it). `ensure` makes a
+restricted login if absent and grants exactly Read, reporting drift; `mint` prints the token once to stdout, refuses
+a non-`read:*` scope for a login in `[ops.forge] read_only` and an existing name without `--rotate`. Every use is
+audited to `[ops.forge] log` without the token. Grant the line in `[ops.access] commands`:
+`<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml forge *`.

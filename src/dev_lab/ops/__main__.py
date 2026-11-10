@@ -2,7 +2,8 @@
 
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
 ``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
-(:mod:`dev_lab.ops.disk`), ``config apply`` (:mod:`dev_lab.ops.configdoor`).
+(:mod:`dev_lab.ops.disk`), ``config apply`` (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and
+``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -30,6 +31,7 @@ from dev_lab.ops import (
     breakglass,
     configdoor,
     disk,
+    forgeaccounts,
     install,
     judge,
     offsite,
@@ -240,30 +242,26 @@ def _candidate_text(config: OpsConfig, candidate: Path | None) -> str:
     return configdoor.fetch(config.config_source, run=_git_with_env)
 
 
+def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
+    """``action -> redeem``: a credential's subject once the host's issuer registered its one use.
+
+    Raises:
+        ConsentRefused: no verifier key is reachable.
+
+    """
+    issuer = _issuer(config, config.consent) if config.consent is not None else None
+    key = issuer.public() if issuer is not None else public_key()
+    register = issuer.register if issuer is not None else _unreachable
+    return lambda action: (
+        lambda found: redeem(found, action=action, key=key, register=register, now=time.time()).subject
+    )
+
+
 def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) -> int:
     """``config apply [--from <file>] [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
-    redeem_ = None
-    granted = None
-    if credential:
-        role = config.consent
-        issuer = _issuer(config, role) if role is not None else None
-        try:
-            verifier = issuer.public() if issuer is not None else public_key()
-        except ConsentRefused as refused:
-            emit(f'refused: {refused}', err=True)
-            return 2
-        granted = json.loads(Path(credential).read_text(encoding='utf-8'))
-
-        def redeem_(found: dict) -> str:
-            return redeem(
-                found,
-                action=configdoor.ACTION,
-                key=verifier,
-                register=issuer.register if issuer is not None else _unreachable,
-                now=time.time(),
-            ).subject
-
     try:
+        redeem_ = _redeemer(config)(configdoor.ACTION) if credential else None
+        granted = json.loads(Path(credential).read_text(encoding='utf-8')) if credential else None
         done = configdoor.apply(
             config.path, _candidate_text(config, candidate), loads=load, checks=upgrade.checks(config),
             run=upgrade.run_check, redeem=redeem_, credential=granted,
@@ -277,6 +275,19 @@ def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) ->
     emit(f'[ops config] applied; changed {list(done.changed)}; boundary {list(done.boundary)}; backup {done.backup}')
     _alert(config, 'config applied', f'changed {list(done.changed)}; boundary {list(done.boundary)}')
     return 0
+
+
+def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
+    """``forge account ensure`` / ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`), consented here."""
+    if config.forge is None:
+        emit(f'[ops] {config.path} enables no [ops.forge]', err=True)
+        return 2
+    try:
+        redeem_for = _redeemer(config)
+    except ConsentRefused as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    return forgeaccounts.run_verb(config.forge, args, redeem_for)
 
 
 def _probe(config: OpsConfig) -> int:
@@ -321,6 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         '--from', dest='candidate', type=Path, default=None, help='a local candidate file'
     )  # default: the [ops.config] source
     configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
+    forgeaccounts.add_parser(verbs)
     for name in ('disk', 'clean'):
         sized = verbs.add_parser(name)
         sized.add_argument('--gitea-data', default=disk.DEFAULT_GITEA_DATA)
@@ -350,6 +362,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         'judge': lambda: _judge(config),
         'upgrade': lambda: _upgrade(config),
         'config': lambda: _config_apply(config, args.candidate, args.credential),
+        'forge': lambda: _forge(config, args),
     }
     return verbs_of[args.verb]()
 

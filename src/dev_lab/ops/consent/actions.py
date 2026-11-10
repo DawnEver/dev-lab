@@ -55,5 +55,9 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         Action('breakglass.wave', {'max_merges': int, 'hours': float}, SINGLE, 15 * _MINUTE, 24 * _HOUR),
         # One change of a host's security boundary through `ops config apply`; subject = the candidate's SHA-256.
         Action('ops.config', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        # One `ops forge account ensure` (a machine account and its Read grants); subject = the request's digest.
+        Action('ops.forge.account', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        # One `ops forge token mint` (one named token of one login); subject = the request's digest.
+        Action('ops.forge.token', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
     )
 })  # fmt: skip
