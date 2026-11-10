@@ -507,6 +507,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`dev_lab.dev.agentpolicy` -- AGENT-POLICY: the one table of agent doors; allow rows, intents, remedies derive.
+* :mod:`dev_lab.dev.forgeverdict` -- a reported credential refusal, recorded; a later success with it logs a MISREAD.
 * :mod:`dev_lab.dev.doorrows` -- how one door argv is spelled as allow rows: one literal interpreter per layout.
 * :mod:`dev_lab.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`dev_lab.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.

@@ -422,6 +422,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
     'doorrows',
+    # ORIGINAL: the refusal feedback of `forge auth` (2026-11-10); no consumer recorded a verdict.
+    'forgeverdict',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
     'opsserver',
     'remote',
