@@ -10,6 +10,7 @@ file root's web server parses, so it is checked by :mod:`ipaddress`, not by shap
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import re
 from collections.abc import Sequence
@@ -89,7 +90,14 @@ def allowlisted(text: str, allow: Sequence[str], *, sites: Sequence[str] = ()) -
 def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str]) -> list[str]:
     """The install step: add the allowlisted Caddyfile to *rendered*, its old text kept beside it when it changes.
 
-    Returns the reload step when the file changed; nothing when ``[ops.caddy]`` is undeclared or nothing moved.
+    Returns the reload step whenever the file Caddy would load is not the one it last loaded; nothing when
+    ``[ops.caddy]`` is undeclared or the live config is the file.
+
+    WHY A STAMP, NOT "THE FILE CHANGED" (2026-11-10): the reload is a next step an operator runs, and one write's
+    reload was never run -- the next install found the file already right, said ``unchanged`` and named nothing,
+    while the running Caddy still served the old allowlist. An unchanged FILE is not a live CONFIG. So the reload
+    step records the digest it loaded in ``<file>.reloaded-sha256``, and install names the reload until that stamp
+    matches the file -- which also catches a file placed by ``config apply`` or a hand edit that never reloaded.
     """
     if caddy is None:
         return []
@@ -100,7 +108,22 @@ def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str]) -> 
     old = live.read_text(encoding='utf-8')
     new = allowlisted(old, caddy.allow, sites=caddy.sites)
     rendered[live.relative_to(root).as_posix()] = new
-    if new == old:
+    if new != old:
+        live.with_name(f'{live.name}.bak-dev-lab').write_text(old, encoding='utf-8', newline='\n')
+    elif _reloaded(live) == hashlib.sha256(live.read_bytes()).hexdigest():
         return []
-    live.with_name(f'{live.name}.bak-dev-lab').write_text(old, encoding='utf-8', newline='\n')
-    return [f'caddy validate --config {caddy.file} && systemctl reload caddy']
+    stamp = f'{caddy.file}{_STAMP}'
+    return [f'caddy validate --config {caddy.file} && systemctl reload caddy && sha256sum {caddy.file} > {stamp}']
+
+
+#: Beside the Caddyfile: ``sha256sum``'s line for the file the last reload loaded.
+_STAMP: Final = '.reloaded-sha256'
+
+
+def _reloaded(live: Path) -> str | None:
+    """The digest the last reload stamped beside *live*, or None when no reload ever stamped one."""
+    stamp = live.with_name(f'{live.name}{_STAMP}')
+    if not stamp.is_file():
+        return None
+    words = stamp.read_text(encoding='utf-8').split()
+    return words[0] if words else None

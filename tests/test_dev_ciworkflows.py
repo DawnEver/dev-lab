@@ -65,7 +65,8 @@ def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    assert set(workflows(_ROOT)) == _GITHUB_BASE, 'a floor: an empty table drifts from nothing'
+    # dev-lab is a judge repo (user ruling 2026-11-10): its bundle prepare renders beside the base set.
+    assert set(workflows(_ROOT)) == {*_GITHUB_BASE, PREPARE_WORKFLOW}, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 
