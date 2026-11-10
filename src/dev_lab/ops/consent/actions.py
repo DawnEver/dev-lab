@@ -61,5 +61,7 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         Action('ops.forge.token', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
         # One `ops forge token mint-batch` (one login's closed, ordered batch); subject = the whole batch's digest.
         Action('ops.forge.tokens', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        # One `ops forge token revoke` (one named token of one login, deleted); subject = the request's digest.
+        Action('ops.forge.revoke', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
     )
 })  # fmt: skip
