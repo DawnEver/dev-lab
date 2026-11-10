@@ -18,6 +18,7 @@ import pytest
 from dev_lab.ops import forgeaccounts
 from dev_lab.ops.config import Forge
 from dev_lab.ops.consent.actions import ACTIONS, SINGLE
+from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.forgeaccounts import AccountRequest, ForgeRefused, TokenRequest
 
 
@@ -63,9 +64,13 @@ def _role(tmp_path: Path) -> Forge:
                  log=str(tmp_path / 'forge.jsonl'))  # fmt: skip
 
 
-def _consent(subject: str) -> Callable[[object], str]:
-    def redeem(_credential: object) -> str:
-        return subject
+def _consent(subject: str) -> Callable[[object, str], None]:
+    """A redeemer consenting to *subject* alone, as :func:`dev_lab.ops.consent.client.redeem` is."""
+
+    def redeem(_credential: object, asked: str) -> None:
+        if asked != subject:
+            msg = 'the credential consents to another request'
+            raise ConsentRefused(msg)
 
     return redeem
 
@@ -99,7 +104,7 @@ def test_a_credential_for_another_request_is_refused_and_nothing_changes(tmp_pat
     gitea = FakeGitea()
     request = AccountRequest('server-reader', ('owner/a',))
     other = AccountRequest('server-reader', ('owner/a', 'owner/b')).subject()
-    with pytest.raises(ForgeRefused, match='another request'):
+    with pytest.raises(ConsentRefused, match='another request'):
         forgeaccounts.ensure(_role(tmp_path), gitea, request, redeem=_consent(other), credential={}, by='ops')
     assert gitea.users == set()
     assert gitea.collaborators == {}
@@ -178,9 +183,9 @@ def _mint_batch(
     placed: list[tuple[str, str]] = []
     redeemed: list[object] = []
 
-    def redeem(credential: object) -> str:
+    def redeem(credential: object, asked: str) -> None:
         redeemed.append(credential)
-        return subject or batch.subject()
+        _consent(subject or batch.subject())(credential, asked)
 
     forgeaccounts.mint_batch(_role(tmp_path), gitea, batch, redeem=redeem, credential={}, by='ops',
                              place=lambda name, token: placed.append((name, token)))  # fmt: skip
@@ -212,7 +217,7 @@ def test_changing_one_item_changes_the_subject_and_is_refused(tmp_path: Path) ->
     assert len({b.subject() for b in (base, renamed, rescoped, reordered, rotated, other_login)}) == 6
     assert base.subject() != TokenRequest('server-reader', 'host-a', 'read:repository', rotate=False).subject()
     gitea = FakeGitea(users={'server-reader'})
-    with pytest.raises(ForgeRefused, match='another request'):
+    with pytest.raises(ConsentRefused, match='another request'):
         _mint_batch(tmp_path, gitea, renamed, subject=base.subject())
     assert gitea.tokens == {}
     # PLANTED CONTROL: the very batch consented to mints
@@ -234,7 +239,7 @@ def test_a_malformed_batch_is_refused_before_any_consent_is_spent(
 ) -> None:
     gitea = FakeGitea(users={'server-reader'})
 
-    def redeem(_credential: object) -> str:
+    def redeem(_credential: object, _asked: str) -> None:
         pytest.fail('consent spent on a refused batch')
 
     with pytest.raises(ForgeRefused, match=match):
@@ -278,7 +283,7 @@ def test_a_failure_mid_batch_places_what_minted_and_names_the_rest(tmp_path: Pat
     batch = _batch(*((f'host-{c}', 'read:repository', False) for c in 'abc'))
     placed: list[tuple[str, str]] = []
     with pytest.raises(ForgeRefused, match=r"minted \['host-a'\]; not minted \['host-b', 'host-c'\]"):
-        forgeaccounts.mint_batch(_role(tmp_path), gitea, batch, redeem=lambda _c: batch.subject(), credential={},
+        forgeaccounts.mint_batch(_role(tmp_path), gitea, batch, redeem=_consent(batch.subject()), credential={},
                                  by='ops', place=lambda name, token: placed.append((name, token)))  # fmt: skip
     assert placed == [('host-a', 'secret-host-a')]
     assert _audit(tmp_path)[-1] | {'at': ''} == {
@@ -355,7 +360,7 @@ def test_revoke_refuses_a_credential_for_another_request(tmp_path: Path) -> None
     gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-x': 'read:repository'}})
     request = forgeaccounts.RevokeRequest('server-reader', 'host-x')
     other = forgeaccounts.RevokeRequest('server-reader', 'host-y').subject()
-    with pytest.raises(ForgeRefused, match='another request'):
+    with pytest.raises(ConsentRefused, match='another request'):
         _revoke(tmp_path, gitea, request, other)
     assert gitea.tokens == {'server-reader': {'host-x': 'read:repository'}}
 

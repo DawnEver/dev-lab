@@ -243,7 +243,7 @@ def _candidate_text(config: OpsConfig, candidate: Path | None) -> str:
 
 
 def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
-    """``action -> redeem``: a credential's subject once the host's issuer registered its one use.
+    """``action -> redeem(credential, subject)``: the use registered once the credential names *subject*.
 
     Raises:
         ConsentRefused: no verifier key is reachable.
@@ -253,8 +253,9 @@ def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
     key = issuer.public() if issuer is not None else public_key()
     register = issuer.register if issuer is not None else _unreachable
     return lambda action: (
-        lambda found: redeem(found, action=action, key=key, register=register, now=time.time()).subject
-    )
+        lambda found, subject: redeem(found, action=action, subject=subject, key=key, register=register,
+                                      now=time.time())
+    )  # fmt: skip
 
 
 def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) -> int:

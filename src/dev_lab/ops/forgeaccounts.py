@@ -105,7 +105,8 @@ BATCH_CAP: Final = 16
 READ: Final = 'read'
 
 #: Redeems a credential for one action, raising when it does not consent; returns the credential's subject.
-type Redeem = Callable[[Mapping[str, Any]], str]
+#: Redeems a credential on one subject (:func:`dev_lab.ops.consent.client.redeem`); raises when it does not.
+type Redeem = Callable[[Mapping[str, Any], str], object]
 #: Runs one argv; its exit code and output.
 type Runner = Callable[[list[str]], tuple[int, str]]
 #: One local API call ``(method, path, token, sudo, body) -> (status, json)``.
@@ -214,12 +215,6 @@ def _audit(role: Forge, by: str, line: Mapping[str, Any]) -> None:
         out.write(json.dumps({'at': datetime.now(UTC).isoformat(timespec='seconds'), 'by': by, **line}) + '\n')
 
 
-def _consented(redeem: Redeem, credential: Mapping[str, Any], subject: str, action: str) -> None:
-    if redeem(credential) != subject:
-        msg = f'the {action} credential consents to another request (its subject is not this request digest)'
-        raise ForgeRefused(msg)
-
-
 def ensure(
     role: Forge, gitea: GiteaAdmin, request: AccountRequest, *, redeem: Redeem, credential: Mapping[str, Any], by: str
 ) -> tuple[str, ...]:
@@ -232,7 +227,7 @@ def ensure(
     if not request.read:
         msg = 'account ensure grants Read on at least one --read owner/repo'
         raise ForgeRefused(msg)
-    _consented(redeem, credential, request.subject(), ACCOUNT_ACTION)
+    redeem(credential, request.subject())
     said: list[str] = []
     if gitea.user_exists(request.login):
         said.append(f'{request.login} exists')
@@ -261,7 +256,7 @@ def mint(
 
     """
     scopes = _scopes(role, request.login, request.name, request.scope)
-    _consented(redeem, credential, request.subject(), MINT_ACTION)
+    redeem(credential, request.subject())
     _login_exists(gitea, request.login)
     if request.name in gitea.token_names(request.login):
         _rotatable(request.login, request.name, rotate=request.rotate)
@@ -281,7 +276,7 @@ def revoke(
         ForgeRefused: the login is absent, or the credential does not consent to exactly this request.
 
     """
-    _consented(redeem, credential, request.subject(), REVOKE_ACTION)
+    redeem(credential, request.subject())
     _login_exists(gitea, request.login)
     held = request.name in gitea.token_names(request.login)
     if held:
@@ -351,7 +346,7 @@ def mint_batch(
 
     """
     scopes = _checked(role, batch)
-    _consented(redeem, credential, batch.subject(), BATCH_ACTION)
+    redeem(credential, batch.subject())
     _login_exists(gitea, batch.login)
     held = gitea.token_names(batch.login)
     for item in batch.items:
