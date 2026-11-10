@@ -44,7 +44,6 @@ import argparse
 import getpass
 import hashlib
 import json
-import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -54,8 +53,10 @@ import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S
 from lab_commons.log import emit
 
+from dev_lab.dev import forgeverdict
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import (
+    AUTH_REFUSED,
     Forge,
     NoCredential,
     Transport,
@@ -67,19 +68,20 @@ from dev_lab.dev.forge import (
     store_credential,
 )
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgekeyfile import KeyLine, format_key_file, parse_key_file
 from dev_lab.dev.forgework import Client, stored_client
+from dev_lab.dev.netverb import Diagnosis
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.worktreeplace import family_root
 
 __all__ = [
     'TICK_SCOPES',
-    'KeyLine',
+    'UNREACHABLE',
+    'UNREACHABLE_EXIT',
     'RepoRole',
     'family_hosts',
-    'format_key_file',
     'login',
     'main',
-    'parse_key_file',
     'repo_role',
     'status',
     'tick_refusal',
@@ -88,57 +90,8 @@ __all__ = [
 #: The exit status for a usage error, as argparse uses it.
 _USAGE = 2
 
-#: A key file line's fields: ``<username>@<host>`` and the token.
-_KEY_FIELDS: Final = 2
-# A host the token is SENT to: a DNS name, an IPv4 or a bracketed IPv6, with an optional numeric port -- never a path,
-# query, fragment or userinfo, which would turn a key file into a forwarder of the token to any URL.
-_LABEL: Final = r'[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?'
-_HOST: Final = re.compile(rf'(?:{_LABEL}(?:\.{_LABEL})*|\[[0-9A-Fa-f:.]+\])(?::[0-9]{{1,5}})?')
-
 #: The token scopes a tick needs, as the forge's token page names them.
 TICK_SCOPES: Final = 'repository (read and write), issue (read and write), user (read)'
-
-
-class KeyLine(NamedTuple):
-    """One credential of a key file: ``<username>@<host> <token>``."""
-
-    host: str
-    username: str
-    token: str
-
-
-def format_key_file(keys: Sequence[KeyLine]) -> str:
-    """The key file :func:`parse_key_file` reads back: one ``<username>@<host> <token>`` line per key."""
-    head = '# forge credentials: python -m dev_lab.dev.forge auth login --from-file <this file|->\n'
-    return head + ''.join(f'{k.username}@{k.host} {k.token}\n' for k in keys)
-
-
-def parse_key_file(text: str) -> tuple[KeyLine, ...]:
-    """Every key of *text*; a malformed or repeated line refuses the WHOLE file, naming its number only.
-
-    Raises:
-        ValueError: a line is not ``<username>@<host> <token>``, its host is not a bare name with an optional
-            port, or it names one username of a host twice.
-
-    """
-    keys: dict[tuple[str, str], KeyLine] = {}
-    for number, raw in enumerate(text.splitlines(), start=1):
-        line = raw.strip()
-        if not line or line.startswith('#'):
-            continue
-        fields = line.split()
-        username, at, host = fields[0].rpartition('@')
-        if len(fields) != _KEY_FIELDS or not (at and username and host):
-            msg = f'key file line {number}: expected `<username>@<host> <token>`'
-            raise ValueError(msg)
-        if not _HOST.fullmatch(host):
-            msg = f'key file line {number}: host is not a bare name with an optional port'
-            raise ValueError(msg)
-        if (host, username) in keys:
-            msg = f'key file line {number}: {username}@{host} named twice'
-            raise ValueError(msg)
-        keys[host, username] = KeyLine(host, username, fields[1])
-    return tuple(keys.values())
 
 
 def family_hosts(root: Path) -> tuple[str, ...]:
@@ -217,10 +170,27 @@ def repo_role(
     return RepoRole(client.whoami(), push=bool(permissions.get('push')), admin=bool(permissions.get('admin')))
 
 
+#: The exit of ``auth check|status`` when the forge could not be asked: no answer, a 5xx, an unmeasured 401/403.
+#: EX_TEMPFAIL, so a caller tells it from a refusal (exit 1) by the code, never by reading the message.
+UNREACHABLE_EXIT: Final = 75
+
+#: The lead of the message ``auth check|status`` give with :data:`UNREACHABLE_EXIT`.
+UNREACHABLE: Final = 'the forge did not answer -- NOT a token fault, do not re-store it; re-run the same command'
+
+
 def tick_refusal(
     forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = forge_transport
 ) -> str:
-    """What the forge API refuses the stored credential that a tick needs on *forge*'s repo; ``''`` when nothing."""
+    """What the forge API refuses the stored credential that a tick needs on *forge*'s repo; ``''`` when nothing.
+
+    Only an ANSWERED refusal is named: a credential refusal measured against ``GET /user`` or a final refusal of
+    the call (:class:`~dev_lab.dev.forgefailure.ForgeCallFailed`). Anything else -- no answer, a 5xx, a 401/403
+    the measurement did not confirm -- is no verdict on the token, and is raised after the bounded retries.
+
+    Raises:
+        ForgeCallFailed: the forge could not be asked; retrying the same command is the remedy.
+
+    """
     try:
         client = stored_client(forge, cwd=cwd, env=env, transport=transport)
     except NoCredential as none:
@@ -240,11 +210,49 @@ def tick_refusal(
 
 
 def _answers(call: Callable[[], object]) -> bool:
+    """Whether *call* answered; ``False`` only for an answered refusal, a transient is re-raised."""
     try:
         call()
-    except ForgeCallFailed:
-        return False
+    except ForgeCallFailed as failed:
+        if _refusal(failed):
+            return False
+        raise
     return True
+
+
+def _refusal(failed: ForgeCallFailed) -> bool:
+    """An ANSWERED refusal: measured, final, or a 401/403 every attempt was answered with (a missing scope).
+
+    Gitea's transient "Failed to authenticate user" clears on the next attempt, so a 401/403 that held on every
+    one of the bounded attempts is the forge's answer; one that came with a dropped connection, a 5xx or a rate
+    limit on any attempt is not.
+    """
+    if failed.credential_refused or failed.final is not None:
+        return True
+    attempts = failed.report.attempts
+    held = all(a.returncode in AUTH_REFUSED and a.diagnosis is not Diagnosis.RATE_LIMITED for a in attempts)
+    return bool(attempts) and len(attempts) == failed.report.allowed_attempts and held
+
+
+def _unreachable(where: str, failed: ForgeCallFailed) -> int:
+    attempts = len(failed.report.attempts)
+    emit(f'[forge] {where}: {UNREACHABLE} ({attempts} attempts). {failed}', err=True)
+    return UNREACHABLE_EXIT
+
+
+def _settle(host: str, digest: str, why: str) -> None:
+    """The feedback: remember a reported refusal, or settle one now that the host answered."""
+    if why:
+        forgeverdict.refused(host, digest, why)
+    elif misread := forgeverdict.answered(host, digest):
+        emit(f'[forge] {misread}', err=True)
+
+
+def _digest_of(forge: Forge, root: Path, env: Mapping[str, str] | None) -> str:
+    try:
+        return _digest(credential_for(forge.host, cwd=root, env=env)[1])
+    except NoCredential:
+        return ''
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -332,7 +340,12 @@ def _without_prompt(
 
 def _check(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Transport) -> int:
     where = f'{forge.host}/{forge.owner}/{forge.repo}'
-    if why := tick_refusal(forge, cwd=root, env=env, transport=transport):
+    try:
+        why = tick_refusal(forge, cwd=root, env=env, transport=transport)
+    except ForgeCallFailed as failed:
+        return _unreachable(where, failed)
+    _settle(forge.host, _digest_of(forge, root, env), why)
+    if why:
         emit(f'[forge] {where}: {why}. A tick needs a token with the scopes {TICK_SCOPES}: '
              f'{running_interpreter()} -m dev_lab.dev.forge auth login', err=True)  # fmt: skip
         return 1
@@ -357,9 +370,13 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         emit(f'[forge] {forge.host}: no token. Run: {running_interpreter()} -m dev_lab.dev.forge auth login', err=True)
         return 1
     except ForgeCallFailed as failed:
-        emit(f'[forge] {forge.host}: the token did not authenticate. {failed}', err=True)
+        if not _refusal(failed):
+            return _unreachable(forge.host, failed)
+        _settle(forge.host, _digest_of(forge, root, env), 'GET /user refused')
+        emit(f'[forge] {forge.host}: the forge refused the token. {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
+    _settle(forge.host, _digest_of(forge, root, env), '')
     emit(f'[forge] {forge.host}: token from git credential; authenticated as {who}')
     return 0
 

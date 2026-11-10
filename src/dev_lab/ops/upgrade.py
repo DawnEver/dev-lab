@@ -29,6 +29,7 @@ from typing import Final
 import lab_commons.launch as _door
 
 from dev_lab.dev._dep_project import follow_pin
+from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops.config import OpsConfig
 
@@ -77,15 +78,16 @@ def fetch_lock(source: str, ref: str) -> tuple[str, str]:
     """The commit *ref* names in *source* and dev-lab's ``uv.lock`` there: a shallow fetch into a scratch repo."""
     with tempfile.TemporaryDirectory(prefix='dev-lab-upgrade-') as scratch:
         git = ['git', '-C', scratch]
-        _door.run([*git, 'init', '-q'], check=True, capture_output=True)
-        report = run_network_verb([*git, 'fetch', '-q', '--depth', '1', source, ref])
+        env = unlocated()
+        _door.run([*git, 'init', '-q'], check=True, capture_output=True, env=env)
+        report = run_network_verb([*git, 'fetch', '-q', '--depth', '1', source, ref], env=env)
         if not report.ok:
             raise ValueError(report.remedy)
         sha = _door.run(
-            [*git, 'rev-parse', 'FETCH_HEAD'], check=True, capture_output=True, text=True, encoding='utf-8'
+            [*git, 'rev-parse', 'FETCH_HEAD'], check=True, capture_output=True, text=True, encoding='utf-8', env=env
         ).stdout.strip()
         lock = _door.run(
-            [*git, 'show', 'FETCH_HEAD:uv.lock'], check=True, capture_output=True, text=True, encoding='utf-8'
+            [*git, 'show', 'FETCH_HEAD:uv.lock'], check=True, capture_output=True, text=True, encoding='utf-8', env=env
         ).stdout
     return sha, lock
 

@@ -13,8 +13,7 @@ from pathlib import Path
 import pytest
 from _ops_fixtures import config
 
-from dev_lab.ops import accounts
-from dev_lab.ops import install as install_module
+from dev_lab.ops import accounts, installpaths
 from dev_lab.ops.__main__ import main
 from dev_lab.ops.config import load
 from dev_lab.ops.install import files, install
@@ -178,7 +177,7 @@ def test_install_never_widens_a_credential_directory_or_re_owns_a_home_it_did_no
     home = _under(root, host.home)
     home.mkdir(parents=True)  # an existing deploy:deploy 0750 home
     mode = home.stat().st_mode
-    monkeypatch.setattr(install_module, '_may_enter', lambda path, _user: path != credential.parent)
+    monkeypatch.setattr(installpaths, '_may_enter', lambda path, _user: path != credential.parent)
     calls: list[tuple[Path, str | None, str | None]] = []
     done = install(host, root, chown=lambda p, u, g: calls.append((p, u, g)))
     assert not any(path in {credential.parent, home} for path, _, _ in calls)
