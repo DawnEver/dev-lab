@@ -9,6 +9,13 @@ keep, moving that tree's outputs home, verified, before it goes.
 step before a deliberate removal (:mod:`dev_lab.dev.worktree_archive`): it moves the tree's outputs home,
 saves its work, and reports whether removing it loses anything -- it removes nothing itself.
 
+A THROWAWAY CHECKOUT (2026-11-10, a consumer, three times in one day: a detached base tree made to diff tests
+against was kept by reclaim as ``not landed`` and refused to ``git worktree remove``, so each needed the user):
+``--scratch NAME SHA`` makes it DETACHED under the worktree home and declares it DISPOSABLE; ``--discard NAME``
+removes it now (:func:`dev_lab.dev.reclaim.discard`), and ``--prune`` once it is quiet. Disposable means its
+untracked content is scratch and it waits for no landing -- never that a tracked change, a commit no ref holds,
+a lock or a live process may go with it.
+
 THE INCIDENT IT ENCODES (a consumer, 2026-10-04): a cleanup loop ran ``mkdir -p "$D" && mv output "$D"``
 and then ``; git worktree remove --force``. The archive helper failed, ``mv`` never ran, and the ``;``
 let the removal delete five worktrees' ignored ``output/``. So:
@@ -33,7 +40,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
 from dev_lab.dev.checkout import authority_for, worktrees
-from dev_lab.dev.reclaim import blockers, reclaim
+from dev_lab.dev.reclaim import blockers, discard, reclaim, scratch
 from dev_lab.dev.worktree_archive import archive
 
 __all__ = ['blockers', 'main', 'prune']
@@ -89,7 +96,26 @@ def main(argv: list[str] | None = None) -> int:
         metavar='NAME',
         help='move the outputs of worktree NAME home and save its work (worktree_archive); removes nothing',
     )
+    parser.add_argument(
+        '--scratch',
+        nargs=2,
+        metavar=('NAME', 'SHA'),
+        help='make a DETACHED throwaway worktree NAME at SHA under the worktree home, declared disposable',
+    )
+    parser.add_argument(
+        '--discard',
+        action='append',
+        default=[],
+        metavar='NAME',
+        help='remove the disposable worktree NAME now (made by --scratch; refused with tracked work or a process)',
+    )
     args = parser.parse_args(argv)
+    if args.scratch or args.discard:
+        made = [scratch(args.root.resolve(), *args.scratch)] if args.scratch else []
+        lines = made + [discard(args.root.resolve(), name) for name in args.discard]
+        for line in lines:
+            emit(line)
+        return 1 if any(not line.startswith(('made', 'removed')) for line in lines) else 0
     if args.archive:
         done = [archive(args.root.resolve(), name) for name in args.archive]
         for line in (line for one in done for line in one.lines()):

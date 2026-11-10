@@ -45,16 +45,20 @@ from dev_lab.dev.liverun import Census, removal_holders
 from dev_lab.dev.worktree_archive import home_outputs, outputs_held
 
 __all__ = [
+    'DISPOSABLE',
     'QUIET_S',
     'Lease',
     'blockers',
     'declared_generated',
+    'discard',
+    'disposable_base',
     'orphan_reason',
     'reclaim',
     'reclaimable',
     'remove_tree',
     'repository_at',
     'runtime_of',
+    'scratch',
     'untracked',
 ]
 
@@ -230,16 +234,57 @@ def _unsaved(tree: Path, generated: tuple[str, ...]) -> str:
     return f'untracked files -- add, move or delete them first: {_shown(loose)}' if loose else ''
 
 
+#: The file in a linked tree's OWN git admin directory that declares it DISPOSABLE; it holds the sha it was made at.
+DISPOSABLE: Final = 'dev-lab-disposable'
+
+
+def _marker(tree: Path) -> Path | None:
+    """*tree*'s :data:`DISPOSABLE` path inside its own admin directory; ``None`` when git cannot say."""
+    path = (git_out(tree, 'rev-parse', '--path-format=absolute', '--git-path', DISPOSABLE) or '').strip()
+    return Path(path) if path else None
+
+
+def disposable_base(tree: Path) -> str:
+    """The sha *tree* was made at when it is declared DISPOSABLE (:func:`scratch`); ``''`` when it is not.
+
+    The declaration lives in git's per-worktree admin directory, so it is born with the registration and goes with
+    its prune: there is no second registry to drift from ``git worktree list``.
+    """
+    marker = _marker(tree) if (tree / '.git').is_file() else None
+    try:
+        return marker.read_text(encoding='utf-8').strip() if marker and marker.is_file() else ''
+    except OSError:
+        return ''
+
+
+def _scrap_unsaved(tree: Path, base: str, generated: tuple[str, ...]) -> str:
+    """Why disposable *tree* still holds work: a TRACKED change, or a HEAD no ref holds that is not its *base*.
+
+    Untracked and ignored files are the scratch the declaration disowns; a commit made in it is not, unless a ref
+    (a branch, a tag, a remote ref) already holds it.
+    """
+    blocking = blockers(tree, generated) if tree.is_dir() else None
+    if blocking is None:
+        return 'unreadable'
+    if blocking:
+        return f'tracked changes -- commit or revert first: {_shown(blocking)}'
+    head = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
+    if head == base or (git_out(tree, 'for-each-ref', '--count=1', '--contains', 'HEAD') or '').strip():
+        return ''
+    return f'HEAD {head[:12]} is a commit no ref holds -- branch it (git branch <name>) first'
+
+
 def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str:
     holders = judge.holders
     if locked:
         return 'locked (git worktree unlock first)'
-    if unsaved := _unsaved(tree, judge.generated):
+    base = disposable_base(tree)
+    if unsaved := _scrap_unsaved(tree, base, judge.generated) if base else _unsaved(tree, judge.generated):
         return unsaved
     age = _index_age_s(tree)
     if age is not None and age < judge.quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
-    if not _landed(tree, branch, holders):
+    if not base and not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
     return ''
 
@@ -428,3 +473,71 @@ def reclaim(
     if apply:
         git_out(root, 'worktree', 'prune')
     return tuple(out)
+
+
+def _scratch_path(root: Path, name: str, home: Path) -> tuple[Path, Path] | None:
+    """(main checkout, ``<main>/<home>/<name>``) when *name* is one plain path segment and git reads *root*."""
+    trees = worktrees(root)
+    if not trees or name in {'', '.', '..'} or any(sep in name for sep in '/\\:'):
+        return None
+    main = trees[0][0].resolve()
+    return main, main / home / name
+
+
+def scratch(root: Path, name: str, sha: str, *, home: Path = DEFAULT_WORKTREE_HOME) -> str:
+    """Make a DETACHED tree ``<home>/<name>`` of *root*'s main checkout at *sha* and declare it DISPOSABLE.
+
+    The throwaway comparison checkout (a base to diff tests against): its untracked and ignored content is scratch,
+    so :func:`discard` removes it, and :func:`reclaim` once it is quiet, with no landing to wait for. One line:
+    ``made ...`` or ``refused: ...``.
+    """
+    place = _scratch_path(root, name, home)
+    if place is None:
+        return f'refused: {name!r} is not one plain directory name, or git cannot read {root}'
+    main, tree = place
+    if tree.exists():
+        return f'refused: {tree} already exists'
+    if git_out(main, 'worktree', 'add', '--detach', str(tree), sha) is None:
+        return f'refused: git worktree add --detach {tree} {sha} failed'
+    commit = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
+    marker = _marker(tree)
+    if not commit or marker is None:
+        return f'FAILED   {tree} was made but not declared disposable; it is an ordinary lease'
+    marker.write_text(commit + '\n', encoding='utf-8')
+    return f'made     {tree}  [detached {commit[:12]}, disposable]'
+
+
+def discard(
+    root: Path, name: str, *, home: Path = DEFAULT_WORKTREE_HOME, occupied: Callable[[Path], bool] | None = None
+) -> str:
+    """Remove the DISPOSABLE tree ``<home>/<name>`` of *root*'s main checkout now; one line, ``removed`` or why not.
+
+    Refused: a path that is not a registered linked worktree, a main checkout or repository
+    (:func:`repository_at`), a tree :func:`scratch` did not declare, a locked one, one with a tracked change or a
+    HEAD no ref holds, one any process works in, executes from or reads (:func:`occupancy`, the asker's own family
+    included), and one holding run outputs (a writer defect). Submodule checkouts inside it go with it: git keeps
+    their repositories in the tree's admin directory, which the prune removes.
+    """
+    place = _scratch_path(root, name, home)
+    locked = _locked(root)
+    trees = worktrees(root)
+    if place is None or locked is None or trees is None:
+        return f'refused: {name!r} is not one plain directory name, or git cannot read {root}'
+    main, tree = place[0], place[1].resolve()
+    if tree not in {path.resolve() for path, _ in trees[1:]}:
+        return f'refused: {tree} is not a linked worktree of {main}'
+    base = disposable_base(tree)
+    reason = (
+        repository_at(main, tree)
+        or ('' if base else 'not declared disposable -- only a tree made by --scratch is discarded')
+        or ('locked (git worktree unlock first)' if tree in locked else '')
+        or _scrap_unsaved(tree, base, declared_generated(main))
+        or (_LIVE if (occupied or occupancy())(tree) else '')
+        or _outputs_refusal(main, tree, frozenset())
+    )
+    if reason:
+        return f'refused: {tree} ({reason})'
+    if refused := _removed(tree):
+        return refused.replace('{label}', str(tree))
+    git_out(main, 'worktree', 'prune')
+    return f'removed  {tree}'
