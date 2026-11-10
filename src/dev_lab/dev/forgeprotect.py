@@ -59,7 +59,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT, SECURITY_CONTEXT
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.jobparts import rows
+from dev_lab.dev.jobparts import HOSTED_RUNNERS, rows
 from dev_lab.dev.lanepolicy import policy_from
 
 __all__ = [
@@ -190,7 +190,9 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
         trunk = tuple(sorted(f'{CONTEXT_PREFIX}{row["part"]}' for row in rows(BASE, _PROMOTION_EVENT, {})))
     else:
         trunk = (f'{CONTEXT_PREFIX}{BASE}',)
-    owned = tuple(f'{CONTEXT_PREFIX}{name}' for name in read_vocabulary(text).resources)  # the repo's own parts
+    # the repo's own parts a HOSTED runner always produces; a vendor resource (one host's tool) would block the
+    # trunk whenever that host is away (integrator ruling 2026-11-10)
+    owned = tuple(f'{CONTEXT_PREFIX}{name}' for name in read_vocabulary(text).resources if name in HOSTED_RUNNERS)
     return {INTEGRATION: integration, TRUNK: tuple(sorted({*trunk, *owned}))}
 
 
