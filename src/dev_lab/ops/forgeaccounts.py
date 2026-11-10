@@ -14,7 +14,9 @@ credential whose subject is the whole batch's digest (:meth:`TokenBatch.subject`
 mint is, all of them before the consent is spent, and each token is printed as one JSON line ``{"name", "token"}``.
 A login declared read-only (``[ops.forge] read_only``) is refused any scope that is not ``read:*``; an existing token
 name is refused unless ``--rotate``, which deletes the old token first. Every use is audited -- who, what --
-never a token.
+never a token. ``token revoke`` deletes one named token of one login under ONE :data:`REVOKE_ACTION` credential
+whose subject is the login and name's digest (:meth:`RevokeRequest.subject`); a name the login does not hold is
+reported already absent, so a revoke can be re-run.
 
 Gitea is reached as the Gitea user through its CLI (:class:`GiteaCli`) where the CLI can; a repository collaborator
 and a token list/delete have no CLI, so those go to the local API with an admin token the CLI mints for this one
@@ -45,17 +47,20 @@ __all__ = [
     'BATCH_ACTION',
     'BATCH_CAP',
     'MINT_ACTION',
+    'REVOKE_ACTION',
     'AccountRequest',
     'BatchItem',
     'ForgeRefused',
     'GiteaAdmin',
     'Redeem',
+    'RevokeRequest',
     'TokenBatch',
     'TokenRequest',
     'add_parser',
     'ensure',
     'mint',
     'mint_batch',
+    'revoke',
     'run_verb',
     'token_line',
 ]
@@ -66,6 +71,8 @@ ACCOUNT_ACTION: Final = 'ops.forge.account'
 MINT_ACTION: Final = 'ops.forge.token'
 #: The consent action of one ``token mint-batch``: one login's closed, ordered batch of tokens.
 BATCH_ACTION: Final = 'ops.forge.tokens'
+#: The consent action of one ``token revoke``: one named token of one login, deleted.
+REVOKE_ACTION: Final = 'ops.forge.revoke'
 #: The most tokens one batch consent may mint.
 BATCH_CAP: Final = 16
 
@@ -103,6 +110,18 @@ class TokenRequest:
         """The digest an ``ops.forge.token`` credential's subject must equal."""
         fields = {'login': self.login, 'name': self.name, 'scope': self.scope, 'rotate': str(int(self.rotate))}
         return _digest(MINT_ACTION, fields)
+
+
+@dataclass(frozen=True)
+class RevokeRequest:
+    """``token revoke --login L --name N``."""
+
+    login: str
+    name: str
+
+    def subject(self) -> str:
+        """The digest an ``ops.forge.revoke`` credential's subject must equal."""
+        return _digest(REVOKE_ACTION, {'login': self.login, 'name': self.name})
 
 
 @dataclass(frozen=True)
@@ -217,6 +236,25 @@ def mint(
     return token
 
 
+def revoke(
+    role: Forge, gitea: GiteaAdmin, request: RevokeRequest, *, redeem: Redeem, credential: Mapping[str, Any], by: str
+) -> str:
+    """Delete *request*'s token if the login holds it; what it did. Audited (login, name), never a token.
+
+    Raises:
+        ForgeRefused: the login is absent, or the credential does not consent to exactly this request.
+
+    """
+    _consented(redeem, credential, request.subject(), REVOKE_ACTION)
+    _login_exists(gitea, request.login)
+    held = request.name in gitea.token_names(request.login)
+    if held:
+        gitea.delete_token(request.login, request.name)
+    _audit(role, by, {'action': REVOKE_ACTION, 'login': request.login, 'name': request.name, 'revoked': held})
+    return (f'revoked {request.login} token {request.name}' if held
+            else f'{request.login} token {request.name} already absent')  # fmt: skip
+
+
 def _scopes(role: Forge, login: str, name: str, scope: str) -> list[str]:
     scopes = [one.strip() for one in scope.split(',') if one.strip()]
     if not scopes:
@@ -325,24 +363,40 @@ def add_parser(verbs: argparse._SubParsersAction) -> None:
     batch.add_argument('--login', required=True)
     batch.add_argument('--item', action='append', required=True, metavar='NAME:SCOPE', help='in order; scope as mint')
     batch.add_argument('--rotate', action='append', default=[], metavar='NAME', help='rotate this item if it exists')
-    for one in (account, minting, batch):
+    revoking = tokens.add_parser('revoke', help='delete one named token of one login, one consent')
+    revoking.add_argument('--login', required=True)
+    revoking.add_argument('--name', required=True)
+    for one in (account, minting, batch, revoking):
         one.add_argument('--credential', default='', help='a single-use consent credential for exactly this request')
         one.add_argument('--subject', action='store_true', help="print the request's digest the consent must name")
 
 
+type _Request = AccountRequest | TokenRequest | TokenBatch | RevokeRequest
+
+
+def _parsed_request(args: argparse.Namespace) -> tuple[_Request, str]:
+    """The parsed verb's request and its consent action.
+
+    Raises:
+        ForgeRefused: a ``mint-batch`` item is malformed.
+
+    """
+    if args.kind == 'account':
+        return AccountRequest(args.login, tuple(args.read)), ACCOUNT_ACTION
+    if args.action == 'revoke':
+        return RevokeRequest(args.login, args.name), REVOKE_ACTION
+    if args.action == 'mint':
+        return TokenRequest(args.login, args.name, args.scope, rotate=args.rotate), MINT_ACTION
+    return _batch_request(args), BATCH_ACTION
+
+
 def run_verb(role: Forge, args: argparse.Namespace, redeem_for: Callable[[str], Redeem]) -> int:
     """Run the parsed verb; exit 0 done, 2 refused. A minted token goes to stdout ONCE, never to a log."""
-    request: AccountRequest | TokenRequest | TokenBatch
-    if args.kind == 'account':
-        request, action = AccountRequest(args.login, tuple(args.read)), ACCOUNT_ACTION
-    elif args.action == 'mint':
-        request, action = TokenRequest(args.login, args.name, args.scope, rotate=args.rotate), MINT_ACTION
-    else:
-        try:
-            request, action = _batch_request(args), BATCH_ACTION
-        except ForgeRefused as refused:
-            emit(f'refused: {refused}', err=True)
-            return 2
+    try:
+        request, action = _parsed_request(args)
+    except ForgeRefused as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
     if args.subject:
         emit(request.subject())
         return 0
@@ -356,6 +410,8 @@ def run_verb(role: Forge, args: argparse.Namespace, redeem_for: Callable[[str], 
         if isinstance(request, AccountRequest):
             for line in ensure(role, gitea, request, redeem=redeem_for(action), credential=granted, by=by):
                 emit(f'[ops forge] {line}')
+        elif isinstance(request, RevokeRequest):
+            emit(f'[ops forge] {revoke(role, gitea, request, redeem=redeem_for(action), credential=granted, by=by)}')
         elif isinstance(request, TokenRequest):
             emit(mint(role, gitea, request, redeem=redeem_for(action), credential=granted, by=by))
         else:
