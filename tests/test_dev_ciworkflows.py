@@ -1403,3 +1403,26 @@ def test_the_review_job_s_posted_status_is_judged_again_in_the_same_run(tmp_path
     tick = workflows(tmp_path)['merge-tick.yml']['jobs']
     assert set(tick) == {'merge-tick', 'review'}
     assert 'forge merge ready)' in tick['merge-tick']['steps'][-2]['run']
+
+
+def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
+    """merge-ready and merge-rejudge sync through ``setup``, so a repo that narrows it narrows both.
+
+    document-lab 2026-11-10: dev-lab #365 inlined a copy of ``setup`` into the merge steps, so document-lab's narrowed
+    ``setup`` (no ``--all-extras``: its ``gpu`` extra has no wheel on a hosted runner) no longer reached the merge jobs
+    and its rendered-workflow test went red on every PR. PLANTED CONTROL: the base, un-narrowed, still syncs
+    ``--all-extras`` in both jobs.
+    """
+    base = _base_ci(tmp_path)['jobs']
+    for job in ('merge-ready', 'merge-rejudge'):
+        assert any(step.get('run') == 'uv sync --frozen --all-extras' for step in base[job]['steps']), job
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci._steps]\n'
+        'setup = [{ name = "Sync the environment", run = "uv sync --frozen --extra dev" }]\n',
+        encoding='utf-8',
+    )
+    narrowed = workflows(tmp_path)['ci.yml']['jobs']
+    for job in ('merge-ready', 'merge-rejudge'):
+        runs = [str(step.get('run', '')) for step in narrowed[job]['steps']]
+        assert 'uv sync --frozen --extra dev' in runs, job
+        assert not any('--all-extras' in run for run in runs), job
