@@ -3,7 +3,7 @@
 Started by ``sshhold open`` with the code on its stdin. It hands the code to the ssh child ALONE, through
 ``SSH_ASKPASS`` (a helper that prints an environment variable -- the helper file carries no secret), proves the
 login with one framed probe, then says one JSON word on stdout (``{"ok": true}`` or ``{"error": ...}``) and
-serves until ``close``, its expiry, its idle limit, a command timeout, or the ssh child's end.
+serves until ``close``, its ceiling, a configured idle limit, a command timeout, or the ssh child's end.
 """
 
 from __future__ import annotations
@@ -136,7 +136,7 @@ def _answer(conn: socket.socket, token: str, holder: Holder) -> tuple[dict[str, 
 
 
 def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> None:
-    """Record the session, then answer one client at a time until a verb, expiry or idle limit ends it."""
+    """Record the session, then answer one client at a time until a verb, the ceiling or a set idle limit ends it."""
     opened = time.time()
     token = secrets.token_urlsafe(32)
     session = sshhold.Session(dest, os.getpid(), listener.getsockname()[1], token, opened, opened + hours * 3600)
@@ -145,7 +145,9 @@ def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> N
     _say({'ok': True, 'pid': session.pid})
     listener.settimeout(_TICK_S)
     try:
-        while time.time() < session.expires and time.monotonic() - last < idle:
+        while not sshhold.session_over(
+            now=time.time(), expires=session.expires, quiet_s=time.monotonic() - last, idle=idle
+        ):
             try:
                 conn, _ = listener.accept()
             except TimeoutError:
