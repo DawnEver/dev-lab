@@ -469,7 +469,7 @@ def test_the_uv_pin_is_raised_to_the_newest_release_of_2026_11_05() -> None:
 
 @pytest.mark.parametrize('locked', [False, True])
 def test_a_relock_tree_a_killed_run_left_registered_is_rebuilt(tmp_path: Path, *, locked: bool) -> None:
-    """A run killed inside the tree leaves its registration (2026-11-09, ezxmw9): the next add must not fail on it."""
+    """A run killed inside the tree leaves its registration (2026-11-09, a cluster account): the next add must not fail on it."""
     repo = tmp_path / 'repo'
     repo.mkdir()
     _git(repo, 'init', '-q', '-b', 'main')
@@ -484,7 +484,7 @@ def test_a_relock_tree_a_killed_run_left_registered_is_rebuilt(tmp_path: Path, *
 
 
 def test_a_relock_dir_left_unregistered_is_cleared(tmp_path: Path) -> None:
-    """A pruned registration can leave its files: an add into a non-empty path fails (ezxmw9, 2026-11-09)."""
+    """A pruned registration can leave its files: an add into a non-empty path fails (a cluster account, 2026-11-09)."""
     repo = tmp_path / 'repo'
     repo.mkdir()
     _git(repo, 'init', '-q', '-b', 'main')
