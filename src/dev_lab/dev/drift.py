@@ -44,6 +44,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import DRIFT, Alarm, sound
 from dev_lab.dev.forgenotice import duration
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.lockcheck import unlocated_env
 from dev_lab.dev.lockpins import Installed, installed_git, locked_git, sync_door
 from dev_lab.dev.netverb import Report, run_network_verb
 
@@ -144,14 +145,14 @@ def fetch(repo: Path, dist: str, url: str, schemes: tuple[str, ...]) -> Report:
         _GIT, '-C', str(repo), '-c', 'protocol.allow=never', *allow,
         'fetch', '-q', '--filter=tree:0', '--no-tags', '--', url, f'+HEAD:refs/drift/{dist}',
     ]  # fmt: skip
-    return run_network_verb(argv, cwd=repo, timeout=300)
+    return run_network_verb(argv, cwd=repo, timeout=300, env=unlocated_env())
 
 
 def _git(cwd: Path, *argv: str) -> str:
     try:
         done = _door.run(
             [_GIT, '-C', str(cwd), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-            check=False, timeout=_GIT_TIMEOUT_S,
+            check=False, timeout=_GIT_TIMEOUT_S, env=unlocated_env(),
         )  # fmt: skip
     except subprocess.TimeoutExpired as why:
         msg = f'git {" ".join(argv[:2])} timed out after {why.timeout} s in {cwd}'

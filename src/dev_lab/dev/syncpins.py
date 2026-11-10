@@ -30,6 +30,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.drift import SCHEMES, cache_dir, require_fetchable, sources
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
+from dev_lab.dev.lockcheck import unlocated_env
 from dev_lab.dev.netverb import run_network_verb
 
 __all__ = ['DIVERGED', 'Ancestry', 'Diverged', 'ancestor', 'carry']
@@ -54,7 +55,7 @@ class Diverged(OSError):
 def _git(repo: Path, *argv: str) -> tuple[int, str]:
     done = _door.run(
         [_GIT, '-C', str(repo), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-        check=False, timeout=_GIT_TIMEOUT_S,
+        check=False, timeout=_GIT_TIMEOUT_S, env=unlocated_env(),
     )  # fmt: skip
     return done.returncode, (done.stdout + done.stderr).strip()
 
@@ -74,7 +75,7 @@ def ancestor(cache: Path) -> Ancestry:
             _GIT, '-C', str(repo), '-c', 'protocol.allow=never', *allow,
             'fetch', '-q', '--filter=tree:0', '--no-tags', '--', url, '+refs/heads/*:refs/syncpins/*',
         ]  # fmt: skip
-        report = run_network_verb(argv, cwd=repo, timeout=300)
+        report = run_network_verb(argv, cwd=repo, timeout=300, env=unlocated_env())
         if not report.ok:
             msg = f'the fetch of {url} failed: {report.remedy}'
             raise OSError(msg)

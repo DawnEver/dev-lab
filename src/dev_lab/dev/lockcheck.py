@@ -122,7 +122,8 @@ _REPOSITORY_LOCATORS: Final = frozenset({
 })  # fmt: skip
 
 
-def _unlocated() -> dict[str, str]:
+def unlocated_env() -> dict[str, str]:
+    """The process environment without the variables that locate ONE repository -- for every git run on another."""
     return {name: value for name, value in os.environ.items() if name not in _REPOSITORY_LOCATORS}
 
 
@@ -178,7 +179,7 @@ def mount_submodules(root: Path, tree: Path) -> None:
             raise OSError(msg)
         if target.is_dir() and not any(target.iterdir()):
             target.rmdir()  # git leaves an empty directory at an uninitialised submodule
-        bare = _unlocated()
+        bare = unlocated_env()
         code, _ = _git(root, 'clone', '--quiet', '--no-checkout', '--shared', str(source), str(target), env=bare)
         if code == 0:
             code, _ = _git(target, 'checkout', '--quiet', gitlink, env=bare)
