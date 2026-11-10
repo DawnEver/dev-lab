@@ -424,6 +424,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'doorrows',
     # ORIGINAL: the refusal feedback of `forge auth` (2026-11-10); no consumer recorded a verdict.
     'forgeverdict',
+    # ORIGINAL: the read-only secret-name list (2026-11-10); no consumer listed names.
+    'forgesecretnames',
     # ORIGINAL: split out of `forgeauth` inside the kit (2026-11-10); no consumer held it.
     'forgekeyfile',
     # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.

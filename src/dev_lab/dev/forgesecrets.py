@@ -1,5 +1,7 @@
 """``forge secrets sync --task <task>``: one ai-lab task's key bundle set on every repo this machine declares.
 
+``secrets list [--org]`` reads the secret NAMES a member (or its org) holds, read only (:mod:`forgesecretnames`).
+
 A task's bundle (:mod:`dev_lab.dev.taskkeys`) lives in ONE secret per repo, named by
 :func:`~dev_lab.dev.taskkeys.secret_name`. The repos are this machine's FAMILY -- the machine file's ``[repos]``, the
 one member list (:mod:`dev_lab.dev.family.members`) -- each at its declared checkout and placed on its forge by
@@ -49,6 +51,8 @@ from lab_commons.log import emit
 
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
+from dev_lab.dev.forgesecretnames import Reader, listed
+from dev_lab.dev.forgework import client_for
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.taskkeys import secret_name
 
@@ -171,6 +175,9 @@ def _parser() -> argparse.ArgumentParser:
     sync = verbs.add_parser('sync', help="set the task's key bundle (stdin, else the stored one) on every member")
     sync.add_argument('--task', required=True, help='the ai-lab task, e.g. pr-review')
     sync.add_argument('--dry-run', action='store_true', help='list the targets; read and write nothing')
+    names = verbs.add_parser('list', help="print the secret NAMES the checkout's repository (or --org) holds")
+    names.add_argument('--org', action='store_true', help="the owner org's secrets, not the repository's")
+    names.add_argument('--path', type=Path, default=Path(), help='the checkout whose origin is read (default: .)')
     return parser
 
 
@@ -242,6 +249,15 @@ def _store_from(task: str, name: str, source: Path, store: Callable[[str, str], 
     return 0
 
 
+def _named(task: str) -> str:
+    """The task's secret name, ``''`` (said) when the task is malformed."""
+    try:
+        return secret_name(task)
+    except ValueError as bad:
+        emit(f'[secrets] refused: {bad}', err=True)
+        return ''
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -250,17 +266,31 @@ def main(
     store: Callable[[str, str], None] = store_bundle,
     members: Callable[[], Mapping[str, Path]] = declared,
     write: Callable[[Target, str, str], None] = set_secret,
+    client: Callable[[Path], Reader] = client_for,
 ) -> int:
-    """``secrets store|sync --task <task> [--dry-run]``: exit 0 done, 1 one target refused or skipped, 2 refused."""
+    """``secrets store|sync --task <task> [--dry-run]|list``: exit 0 done, 1 one target refused/skipped, 2 refused."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    try:
-        name = secret_name(args.task)
-    except ValueError as bad:
-        emit(f'[secrets] refused: {bad}', err=True)
+    if args.verb == 'list':
+        return listed(client(args.path), org=args.org)
+    name = _named(args.task)
+    if not name:
         return 2
     read = stdin or _piped
     if args.verb == 'store':
         return _store(args.task, name, read, store, args.source)
+    return _sync(args, name, read, stored=stored, members=members, write=write)
+
+
+def _sync(
+    args: argparse.Namespace,
+    name: str,
+    read: Callable[[], str],
+    *,
+    stored: Callable[[str], str],
+    members: Callable[[], Mapping[str, Path]],
+    write: Callable[[Target, str, str], None],
+) -> int:
+    """``secrets sync``: the bundle set on every reachable member; see :func:`main`'s exit codes."""
     found, skipped = _reachable(members())
     if not found:
         emit('[secrets] refused: no [repos] member checkout on a forge in the machine file', err=True)
