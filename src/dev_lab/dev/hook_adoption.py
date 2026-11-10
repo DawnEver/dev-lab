@@ -170,13 +170,28 @@ def deny_rules(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES) -
     return tuple(out)
 
 
-def render(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> str:
-    """The shippable rows as the engine's JSON file, indented and newline-terminated.
+def render(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES, local: Sequence[DenyRule] = ()) -> str:
+    """The shippable rows, then the repo's *local* rows, as the engine's JSON file, indented.
 
-    Indented because the file is COMMITTED in the consuming repo and read in diffs by people: a
-    one-line blob would make every rule change look like the same change.
+    *local* is the population a shared registry cannot hold -- rows whose reason is true of one repo
+    only -- rendered after the family's and never in place of one. Indented because the file is
+    COMMITTED in the consuming repo and read in diffs by people: a one-line blob would make every
+    rule change look like the same change.
+
+    Raises:
+        UnremediedRule: a local row reuses a family id -- a repo-local copy of a shared rule is the
+            fork this split exists to prevent.
+
     """
-    return json.dumps(deny_rules(adoption, rules), indent=2, ensure_ascii=False) + '\n'
+    shadowed = sorted({rule.id for rule in local} & set(rules_by_id(rules)))
+    if shadowed:
+        msg = (
+            f'{adoption.app_name} declares local rows {shadowed}, which the family registry already defines. '
+            f'Adopt the registry row and supply a remedy, or argue the difference upstream.'
+        )
+        raise UnremediedRule(msg)
+    out = (*deny_rules(adoption, rules), *(rule.rendered() for rule in local))
+    return json.dumps(out, indent=2, ensure_ascii=False) + '\n'
 
 
 def remedy_gaps(adoption: HookAdoption, tracked: Iterable[str]) -> tuple[str, ...]:
@@ -232,7 +247,9 @@ def assert_shippable(adoption: HookAdoption, tracked: Iterable[str], rules: Sequ
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``--adoption <module> [--repo R]``: write R's rules file from the ``ADOPTION`` its module declares.
+    """``--adoption <module> [--repo R]``: write R's rules file from its module's ``ADOPTION`` and ``LOCAL_RULES``.
+
+    ``LOCAL_RULES`` (optional) is the rows the family registry cannot hold, rendered after the family's.
 
     The renderer of ``.claude/hooks/deny-rules.json`` (:data:`dev_lab.dev.famfiles.RENDERERS`), re-run by a relock.
     """
@@ -241,10 +258,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--adoption', type=Path, required=True, help='the module declaring ADOPTION, from --repo')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
-    adoption = runpy.run_path(str(root / args.adoption))['ADOPTION']
+    declared = runpy.run_path(str(root / args.adoption))
     target = root / RULES_REL
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(render(adoption), encoding='utf-8')
+    target.write_text(render(declared['ADOPTION'], local=declared.get('LOCAL_RULES', ())), encoding='utf-8')
     emit(f'[hook-adoption] wrote {RULES_REL} from {args.adoption.as_posix()}')
     return 0
 
