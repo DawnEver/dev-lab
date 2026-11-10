@@ -112,6 +112,9 @@ class Post:
     state: str
     description: str
     record: str = ''
+    #: The repository the status lands on when it is not this checkout's ``origin`` -- a data PR's consumer run
+    #: (:mod:`dev_lab.dev.forgedataruns`) posts on the DATA repo; empty is ``origin``.
+    repo: str = ''
 
     def __post_init__(self) -> None:
         """A state the forge does not take, or a sha that is not a full commit id, is refused at queueing."""
@@ -125,7 +128,8 @@ class Post:
     @property
     def key(self) -> str:
         """The entry's file stem: one entry per commit and context, a newer run replacing an older one."""
-        return f'{self.sha}-{self.context.replace("/", "_")}'
+        stem = f'{self.sha}-{self.context.replace("/", "_").replace(":", "_")}'  # a file name on every OS
+        return f'{stem}-{hashlib.sha256(self.repo.encode()).hexdigest()[:8]}' if self.repo else stem
 
 
 def content_name(name: str, data: bytes) -> str:
@@ -144,7 +148,7 @@ def enqueue(root: Path, post: Post, *, record: Path | None = None) -> Path:
     if record is not None:
         data = record.read_bytes()
         kept = durable_write(directory / content_name(record.name, data), data)
-        post = Post(post.sha, post.context, post.state, post.description, record=kept.name)
+        post = dataclasses.replace(post, record=kept.name)
     return durable_write(
         directory / f'{post.key}.json', json.dumps({**asdict(post), 'queued_at': time.time()}).encode()
     )
@@ -157,7 +161,10 @@ def queued(root: Path) -> tuple[Post, ...]:
     for path in sorted(directory.glob('*.json')) if directory.is_dir() else ():
         try:
             raw = json.loads(path.read_text(encoding='utf-8'))
-            found.append(Post(raw['sha'], raw['context'], raw['state'], raw['description'], raw.get('record', '')))
+            found.append(
+                Post(raw['sha'], raw['context'], raw['state'], raw['description'], raw.get('record', ''),
+                     raw.get('repo', ''))
+            )  # fmt: skip
         except (ValueError, KeyError, TypeError):
             continue
     return tuple(found)
@@ -167,13 +174,13 @@ def queued(root: Path) -> tuple[Post, ...]:
 _NO_PROMPT: Final = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
 
 
-def unprompted_client(root: Path) -> Client:
-    """The forge client for *root* whose credential lookup never opens a prompt nobody is watching."""
+def unprompted_client(root: Path, *, url: str = '') -> Client:
+    """The forge client for *root*, or another repository's *url*, whose credential lookup never prompts."""
     # Set in THIS process rather than passed as ``env=``: an explicit env is the test seam, which
     # also blanks PATH for ``git credential`` -- and that hides the real helper from a real run.
     for name, value in _NO_PROMPT.items():
         os.environ.setdefault(name, value)
-    return client_for(root)
+    return client_for(root, url=url)
 
 
 def replay(journal: Journal, client: Client, *, now: float | None = None) -> list[str]:
@@ -276,6 +283,17 @@ def _decided(built: Client, post: Post) -> CommitStatus | None:
     return next((one for one in history if one.context == post.context and one.state in RESULTS), None)
 
 
+def _elsewhere(root: Path, post: Post, alarm: Callable[[Alarm], object], failures: list[str]) -> str:
+    """Deliver *post* to its own repository (:attr:`Post.repo`); a failure joins *failures* and stays queued."""
+    try:
+        return _deliver(root, unprompted_client(root, url=post.repo), post, alarm)
+    except (NoCredential, UnreadableRemote) as exc:
+        return f'status: kept {post.context} on {post.sha[:12]} for {post.repo} -- no forge credential ({exc})'
+    except (ForgeCallFailed, OSError, ValueError, KeyError) as exc:
+        failures.append(f'{post.context} on {post.sha[:12]} for {post.repo}: {exc}')
+        return f'status: kept {post.context} on {post.sha[:12]} for {post.repo}'
+
+
 def flush(
     root: Path, *, client: Callable[[Path], Client] = unprompted_client, alarm: Callable[[Alarm], object] = sound
 ) -> list[str]:
@@ -290,6 +308,9 @@ def flush(
     failures: list[str] = []
     built: Client | None = None
     for post in queued(root):
+        if post.repo:  # another repository's commit: its own forge holds it, never this origin
+            lines.append(_elsewhere(root, post, alarm, failures))
+            continue
         if not on_origin(root, post.sha):
             lines.append(f'status: held {post.context} on {post.sha[:12]} -- the commit is not on origin yet')
             continue
