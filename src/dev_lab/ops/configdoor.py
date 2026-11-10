@@ -65,8 +65,8 @@ ROUTINE: Final[tuple[str, ...]] = (
 type Checks = Mapping[str, list[str]]
 #: Runs one argv; its exit code and output.
 type Runner = Callable[[list[str]], tuple[int, str]]
-#: Redeems a credential for ACTION, raising when it does not consent; returns the credential's subject.
-type Redeem = Callable[[Mapping[str, Any]], str]
+#: Redeems a credential for ACTION on one subject (:func:`dev_lab.ops.consent.client.redeem`); raises when it does not.
+type Redeem = Callable[[Mapping[str, Any], str], object]
 #: Runs one argv with extra environment; its exit code and output (the git clone of :func:`fetch`).
 type EnvRunner = Callable[[list[str], Mapping[str, str]], tuple[int, str]]
 
@@ -181,9 +181,7 @@ def apply(
         if credential is None or redeem is None:
             msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
             raise ConfigRefused(msg)
-        if redeem(credential) != digest(candidate):
-            msg = f"the {ACTION} credential consents to another candidate (subject is not this file's SHA-256)"
-            raise ConfigRefused(msg)
+        redeem(credential, digest(candidate))
     with tempfile.TemporaryDirectory() as scratch:  # loaded by the current code BEFORE the live file is touched
         probe = Path(scratch) / live.name
         probe.write_text(candidate, encoding='utf-8')

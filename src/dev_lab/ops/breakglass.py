@@ -262,8 +262,8 @@ class Server:
             raise BreakglassRefused(msg)
         hours, cap = _granted(asked.credential, self.role)  # before the use is registered: a refusal spends nothing
         try:
-            granted = redeem(asked.credential, action='breakglass.wave', key=self.consent_key, register=self.register,
-                            now=self.now())  # fmt: skip
+            granted = redeem(asked.credential, action='breakglass.wave', subject=None, key=self.consent_key,
+                             register=self.register, now=self.now())  # fmt: skip
         except ConsentRefused as refused:
             raise BreakglassRefused(str(refused)) from refused
         now = self.now()

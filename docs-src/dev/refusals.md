@@ -172,6 +172,7 @@ HINT: the hazard is minutes, not harm.
 
 - **Why it is refused.** A consent credential (`dev_lab.ops.consent`) stands for the USER's word, given with the code of their Authenticator. The user gives the code and the agent runs the grant with it (user ruling 2026-11-08; the retired name is registered in `_deny_rows.RETIRED_IDS`). A code the user did not give is never passed, and none is stored, logged or reused. What stays refused is a shell write under `<machine home>/state/consent/`: a credential no issuer signed. The row matches the whole command line (`matches: 'line'`); the Write/Edit half is `dev_lab.dev.consentguard.refuse_write`.
 - **The exit.** Write the request JSON (`action`, `subject`, `params`, and `cap`/`ttl` where the action allows), ask the user for their Authenticator code, run `python -m dev_lab.ops.consent grant <request.json> --code <the code they gave>`, then use the credential it wrote (`forge breakglass open --credential <id>`).
+- **One code for a session and its consents.** When the work needs a host session AND consents on it, write a plan (`{"host": "<user>@<host>", "grants": [<request>, ...]}`), show it to the user with `python -m dev_lab.ops.consent plan <plan.json>`, and give their ONE code to `python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <the digest shown>` (`dev_lab.ops.consent.plan`).
 
 ## Cross-repo refusals
 

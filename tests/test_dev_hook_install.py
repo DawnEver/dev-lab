@@ -321,10 +321,12 @@ def test_a_retire_that_fails_leaves_the_new_shim_written_beside_the_slot(
     assert (directory / 'pre-commit.new').is_file(), 'the new shim was written first'
 
 
+#: The shims are POSIX sh; every runner (Linux, Git for Windows) carries one, so its absence is a red, not a skip.
 _SH = shutil.which('sh')
 
 
 def _run_shim_without_interpreter(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    assert _SH is not None, 'no sh on PATH: the hook shims cannot run on this box'
     script = tmp_path / 'pre-commit'
     script.write_text(shim('pre-commit', (tmp_path / 'gone' / 'python').as_posix()), encoding='utf-8', newline='\n')
     return subprocess.run(
@@ -336,7 +338,6 @@ def _git_dir(repo: Path) -> Path:
     return (repo / _git_out(repo, 'rev-parse', '--git-dir')).resolve()
 
 
-@pytest.mark.skipif(_SH is None, reason='no sh on PATH')
 def test_a_merge_commit_without_any_interpreter_is_refused_and_names_the_remedy(repo: Path, tmp_path: Path) -> None:
     """A merge message cannot be amended later, so a hookless merge is refused (user ruling 2026-11-10)."""
     (_git_dir(repo) / 'MERGE_HEAD').write_text('0' * 40 + '\n', encoding='utf-8')
@@ -346,7 +347,6 @@ def test_a_merge_commit_without_any_interpreter_is_refused_and_names_the_remedy(
     assert 'dev_lab.dev.hook_install --install' in done.stderr
 
 
-@pytest.mark.skipif(_SH is None, reason='no sh on PATH')
 def test_a_plain_commit_without_any_interpreter_still_skips(repo: Path, tmp_path: Path) -> None:
     """PLANTED CONTROL: with no merge in progress the shim passes, as ruled 2026-10-22."""
     done = _run_shim_without_interpreter(repo, tmp_path)

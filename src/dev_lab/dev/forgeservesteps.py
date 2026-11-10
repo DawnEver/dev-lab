@@ -16,7 +16,7 @@ from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import escapes, forgeship, hostalarm, retention
+from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, retention
 from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
@@ -56,6 +56,8 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgeproduce import Produced
 
 __all__ = [
+    'cancel_stalled',
+    'cancel_strays',
     'demote_unreachable',
     'every_host',
     'hygiene',
@@ -69,6 +71,24 @@ __all__ = [
     'starved',
     'tidy_runs',
 ]
+
+
+def cancel_strays(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge jobs no run file holds, every tick, runs in flight or not: one alarm, counted."""
+    if stray := slurm.strays(forgerunstate.held_names):
+        body = f'jobs {" ".join(stray)} carried a forge job name no run file here holds; cancelled'
+        alarm(Alarm(RUN, repo, f'{len(stray)} orphaned forge job(s) cancelled on {seat}', body, about='strays'))
+
+
+def cancel_stalled(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge tasks past their stall bound, every tick: one alarm naming each sha and test."""
+    if stalled := slurm.stalled():
+        body = '\n'.join(one.text() for one in stalled)
+        alarm(Alarm(RUN, repo, f'{len(stalled)} stalled forge task(s) cancelled on {seat}', body, about='stalled'))
 
 
 def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Callable[[Alarm], object]) -> None:

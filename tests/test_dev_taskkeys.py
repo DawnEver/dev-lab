@@ -205,10 +205,15 @@ def _keeping(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
     return kept
 
 
-def _outside_git(tmp_path: Path) -> Path:
-    """A key file's home with no ``.git`` above it; skips when the test root itself sits in a checkout."""
-    if any((parent / '.git').exists() for parent in (tmp_path, *tmp_path.parents)):
-        pytest.skip('the test root sits inside a git checkout')
+def _outside_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A key file's home with no ``.git`` above it: a checkout ABOVE the test root is not the test's to see."""
+    real = forgesecrets._in_checkout
+
+    def within(path: Path) -> Path | None:
+        found = real(path)
+        return found if found is not None and found.is_relative_to(tmp_path) else None
+
+    monkeypatch.setattr(forgesecrets, '_in_checkout', within)
     return tmp_path
 
 
@@ -220,7 +225,7 @@ def test_store_from_a_file_keeps_the_bundle_deletes_the_file_and_never_says_a_ke
     PLANTED CONTROL: the fake key values reach the store and nothing else -- no output line, no file left.
     """
     kept = _keeping(monkeypatch)
-    source = _outside_git(tmp_path) / 'keys.toml'
+    source = _outside_git(tmp_path, monkeypatch) / 'keys.toml'
     source.write_text(_BUNDLE, encoding='utf-8')
     assert forgesecrets.main(['store', '--task', 'pr-review', '--from', str(source)], stdin=lambda: '') == 0
     assert forgesecrets.stored_bundle('pr-review') == _BUNDLE
@@ -235,7 +240,7 @@ def test_store_from_a_file_refuses_a_directory_a_checkout_and_a_failed_store_kee
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     kept = _keeping(monkeypatch)
-    root = _outside_git(tmp_path)
+    root = _outside_git(tmp_path, monkeypatch)
     assert forgesecrets.main(['store', '--task', 'pr-review', '--from', str(root)], stdin=lambda: '') == 2
     checkout = root / 'checkout'
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(checkout)], check=True, capture_output=True)

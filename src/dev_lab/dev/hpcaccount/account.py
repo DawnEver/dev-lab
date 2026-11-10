@@ -21,11 +21,12 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev._forgebackends import GITHUB_HOST
+from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
 from dev_lab.dev.hpcaccount.checks import grant_of, store_problem
 from dev_lab.dev.hpcaccount.spec import Deployment, has_grant, render_grant
 from dev_lab.dev.hpcaccount.steps import Step
 
-__all__ = ['ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']
+__all__ = ['UNREACHED', 'ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']
 
 _CREDENTIAL_REMEDY: Final = (
     'store your OWN forge token for it once: `git config --global credential.helper store`, then '
@@ -37,6 +38,9 @@ _READER_REMEDY: Final = (
     "the USER replaces this account's forge line in ~/.git-credentials with a read-only forge account's token "
     "(the role's reader when [hpc.roles.<role>] reader names one); an agent never handles the token. Then re-run"
 )
+
+#: The lead of an :data:`ApiCheck` answer saying the forge did not answer, which is no verdict on the token.
+UNREACHED: Final = 'unreachable'
 
 #: Reads the forge API a tick needs for one repo url; ``''`` when nothing is refused.
 ApiCheck = Callable[[str, Path], str]
@@ -73,7 +77,15 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
     if denied:
         emit(f'deploy refused: no read access to {", ".join(denied)}; {_CREDENTIAL_REMEDY}', err=True)
         return 2
-    refused = {repo.name: why for repo in served if (why := api(repo.url, home))}
+    checked = {repo.name: why for repo in served if (why := api(repo.url, home))}
+    unreachable = {name: why for name, why in checked.items() if why.startswith(UNREACHED)}
+    refused = {name: why for name, why in checked.items() if name not in unreachable}
+    for name, why in unreachable.items():
+        emit(f'  {name}: {why}', err=True)
+    if unreachable and not refused:
+        emit(f'deploy stopped: the forge API did not answer for {", ".join(unreachable)} -- the token is not '
+             'at fault; re-run the deploy', err=True)  # fmt: skip
+        return 2
     for name, why in refused.items():
         emit(f'  {name}: {why}', err=True)
     if refused:
@@ -87,10 +99,16 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
 
 
 def auth_check(url: str, home: Path) -> str:
-    """The forge's own ``auth check`` of *url*, run as a subprocess, as a person runs it."""
+    """The forge's own ``auth check`` of *url*, run as a subprocess, as a person runs it.
+
+    Its :data:`~dev_lab.dev.forgeauth.UNREACHABLE_EXIT` -- the forge did not answer -- leads with :data:`UNREACHED`.
+    """
     argv = [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', 'check', '--url', url]
     done = _door.run(argv, cwd=home, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
-    return '' if done.returncode == 0 else done.stderr.strip() or f'auth check exited {done.returncode}'
+    said = done.stderr.strip() or f'auth check exited {done.returncode}'
+    if done.returncode == 0:
+        return ''
+    return f'{UNREACHED}: {said}' if done.returncode == UNREACHABLE_EXIT else said
 
 
 def role_of(url: str, home: Path) -> dict[str, object]:

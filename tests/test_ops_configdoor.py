@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from dev_lab.ops.configdoor import ConfigRefused, apply, boundary, changes, digest
+from dev_lab.ops.consent.credential import ConsentRefused
 
 LIVE = """\
 [cycle]
@@ -69,13 +70,15 @@ def test_a_boundary_change_applies_only_with_consent_to_exactly_that_file(tmp_pa
     live = _live(tmp_path)
     candidate = LIVE.replace('status *"]', 'status *", "/usr/bin/journalctl --no-pager -u gitea"]')
 
-    def redeem_for(subject: str) -> Callable[[Mapping[str, Any]], str]:
-        def redeem(_credential: Mapping[str, Any]) -> str:
-            return subject
+    def redeem_for(subject: str) -> Callable[[Mapping[str, Any], str], None]:
+        def redeem(_credential: Mapping[str, Any], asked: str) -> None:
+            if asked != subject:
+                msg = 'the credential consents to another request'
+                raise ConsentRefused(msg)
 
         return redeem
 
-    with pytest.raises(ConfigRefused, match='another candidate'):
+    with pytest.raises(ConsentRefused, match='another request'):
         apply(live, candidate, loads=_ok, checks={}, run=_green, redeem=redeem_for('0' * 64), credential={})
     assert live.read_text(encoding='utf-8') == LIVE
     done = apply(live, candidate, loads=_ok, checks={}, run=_green, redeem=redeem_for(digest(candidate)),
