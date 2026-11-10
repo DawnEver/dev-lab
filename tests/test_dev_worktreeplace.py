@@ -117,6 +117,7 @@ def test_a_family_repo_clones_beside_its_siblings(family: Path, rules: Path, whe
         f'{_CLONE} https://evil.example/x/gamma.git ../gamma',  # no sibling comes from that forge
         f'{_CLONE} https://forge.example/fam/gamma.git ../other',  # not named for its repo
         f'{_CLONE} https://forge.example/fam/gamma.git ../../gamma',  # not beside the siblings
+        f'{_CLONE} https://forge.example/fam/gamma.git ../taken/gamma',  # deeper than the siblings root
         f'{_CLONE} https://forge.example/fam/gamma.git ../gamma && git clone https://forge.example/fam/zeta.git ../x',
         f'{_CLONE} https://forge.example/fam/gamma.git ../gamma && git worktree add ../w HEAD',
         'git clone https://forge.example/fam/gamma.git',  # lands inside the checkout, unnamed

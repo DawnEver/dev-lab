@@ -11,7 +11,7 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 
 | mechanism | where | what it refuses |
 |---|---|---|
-| PREVENT | deny row `WORKTREES-STAY-INSIDE` in `dev_lab.dev._deny_rows`, rendered into every repo's `.claude/hooks/deny-rules.json` | `git [-C <dir>] worktree add` / `worktree move` / `git clone` whose target is not `.../.claude/worktrees/<name>`; any `..`; a clone with no explicit target |
+| PREVENT | deny row `WORKTREES-STAY-INSIDE` in `dev_lab.dev._deny_rows`, rendered into every repo's `.claude/hooks/deny-rules.json` | `git [-C <dir>] worktree add` / `worktree move` / `git clone` whose target is not `.../.claude/worktrees/<name>`; any `..`; a clone with no explicit target. Admitted (`admits: family-sibling-clone`, judged on the filesystem by `deny-commands.js`): ONE clone of a family repo into the siblings root |
 | DETECT | `dev_lab.dev.famtests.worktreeplace.assert_every_worktree_stays_inside(root=...)` | any `git worktree list --porcelain` entry (main checkout excepted) not inside `<main>/.claude/worktrees/`; the red names the `git worktree move` that fixes it |
 | IGNORE | the family `.gitignore` base's Claude section: `**/.claude/**` with only the shared directories re-included | a worktree showing up as untracked content of its own repository |
 
