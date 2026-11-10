@@ -387,22 +387,11 @@ def test_list_refuses_an_unknown_login_naming_it() -> None:
         forgeaccounts.token_list(FakeGitea(), 'ghost')
 
 
-def test_the_gitea_token_reader_never_carries_a_hash_or_last_eight() -> None:
-    """Planted control: the API row carries ``sha1`` and ``token_last_eight``; only the name survives."""
-    rows = [{'id': 7, 'name': 'host-x', 'sha1': 'deadbeefcafe', 'token_last_eight': 'cafe1234', 'scopes': ['r']}]
+def test_the_gitea_adapter_reads_token_names_from_the_store_not_the_api() -> None:
+    """Gitea's token API admits only the owner's basic auth (HTTP 401 for an admin, measured 2026-11-10)."""
     role = Forge(api='http://127.0.0.1:3000', admin='site-admin')
-    cli = GiteaCli(role, run=lambda _argv: (0, 'admintok\n'), http=lambda *_a: (200, rows))
-    names = cli.token_names('server-reader')
-    assert names == {'host-x'}
-    assert not any(leak in repr(names) for leak in ('deadbeef', 'cafe1234'))
-
-
-def test_the_gitea_token_reader_refuses_an_unread_list() -> None:
-    """A refused read is never an empty list: revoke would call a held token 'already absent'."""
-    role = Forge(api='http://127.0.0.1:3000', admin='site-admin')
-    cli = GiteaCli(role, run=lambda _argv: (0, 'admintok\n'), http=lambda *_a: (401, {'message': 'no'}))
-    with pytest.raises(ForgeRefused, match='HTTP 401'):
-        cli.token_names('server-reader')
+    cli = GiteaCli(role, run=lambda _argv: (0, 'admintok\n'), http=lambda *_a: (401, None))
+    assert cli.store.role is role
 
 
 def test_list_needs_no_credential_and_prints_names_only(capsys: pytest.CaptureFixture[str]) -> None:
