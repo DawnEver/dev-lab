@@ -15,18 +15,19 @@ other consumer carries.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from dev_lab.dev.branchset import EPHEMERAL_OFF, BranchSetNotDeclared, declared_branchset
+from dev_lab.dev.branchset import EPHEMERAL_OFF, BranchSetNotDeclared, branchset_from
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.lanepolicy import policy_from
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from dev_lab.dev.forgework import Client
 
-__all__ = ['OnboardingViolation', 'assert_repo_is_onboarded', 'assert_the_forge_takes_pull_requests']
+__all__ = ['OnboardingViolation', 'assert_repo_is_onboarded', 'assert_the_forge_takes_pull_requests', 'onboarding_gaps']
 
 #: The files a repo must carry, and what each is for.
 _FILES: tuple[tuple[str, str], ...] = (
@@ -40,7 +41,7 @@ class OnboardingViolation(AssertionError):
 
 
 def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
-    """Refuse a repo the flow cannot run in, naming EVERY missing declaration at once.
+    """Refuse a repo the flow cannot run in, naming EVERY missing declaration at once (its working tree).
 
     Returns:
         The notes a caller may print (today: none), so the signature matches the other family assertions.
@@ -49,14 +50,28 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
         OnboardingViolation: one or more pieces are missing, each with the line that supplies it.
 
     """
+    manifest = root / 'pyproject.toml'
+    text = manifest.read_text(encoding='utf-8') if manifest.is_file() else ''
+    if missing := onboarding_gaps(text, lambda name: (root / name).is_file(), str(root)):
+        msg = f'{root} is not onboarded; add or supply:\n  - ' + '\n  - '.join(missing)
+        raise OnboardingViolation(msg)
+    return ()
+
+
+def onboarding_gaps(text: str, has: Callable[[str], bool], where: str) -> list[str]:
+    """Every missing piece of a tree whose manifest is *text* and whose file *name* exists iff ``has(name)``.
+
+    *where* names the tree in every refusal -- a working tree, or a ref (:mod:`dev_lab.dev.family.origin`).
+    """
+    origin = f'{where}:pyproject.toml'
     missing: list[str] = []
     try:
-        policy = load_policy(root)
+        policy = policy_from(text, origin)
     except ValueError as undeclared:
         policy = None
         missing.append(f'[tool.dev_lab.integrator] integration = "integrate/main" -- {undeclared}')
     try:
-        declared = declared_branchset(root)
+        declared = branchset_from(text, origin)
     except BranchSetNotDeclared as undeclared:
         declared = None
         missing.append(f'[tool.dev_lab.branchset] trunk/sessions/ephemeral -- absent ({undeclared})')
@@ -69,6 +84,7 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
                 else []
             ),
         ]
+    data = _manifest(text)
     missing += [
         *(
             ['[tool.dev_lab.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"']
@@ -77,29 +93,23 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
         ),
         *(
             ['[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]']
-            if not _produces(root)
+            if not (data.get('tool', {}).get('lab_commons', {}).get('tests') or {}).get('produce')
             else []
         ),
-        *([] if _hooks_declared(root) else ['[tool.dev_lab.hooks] -- an empty table, so the base rows run']),
+        *(
+            []
+            if declared_table(data, 'hooks') is not None
+            else ['[tool.dev_lab.hooks] -- an empty table, so the base rows run']
+        ),
     ]
-    missing += [f'{name} -- {why}' for name, why in _FILES if not (root / name).is_file()]
-    if missing:
-        msg = f'{root} is not onboarded; add or supply:\n  - ' + '\n  - '.join(missing)
-        raise OnboardingViolation(msg)
-    return ()
+    return missing + [f'{name} -- {why}' for name, why in _FILES if not has(name)]
 
 
-def _manifest(root: Path) -> dict[str, Any]:
-    manifest = root / 'pyproject.toml'
-    return tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
-
-
-def _produces(root: Path) -> bool:
-    return bool((_manifest(root).get('tool', {}).get('lab_commons', {}).get('tests') or {}).get('produce'))
-
-
-def _hooks_declared(root: Path) -> bool:
-    return declared_table(_manifest(root), 'hooks') is not None
+def _manifest(text: str) -> dict[str, Any]:
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return {}
 
 
 def assert_the_forge_takes_pull_requests(client: Client) -> None:

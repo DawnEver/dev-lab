@@ -19,7 +19,7 @@ from typing import Any, Final
 
 from lab_commons.hpc.declared import RetiredTable, kit_tables
 
-__all__ = ['NAMESPACE', 'declared_in', 'declared_table', 'is_member']
+__all__ = ['NAMESPACE', 'declared_in', 'declared_table', 'declares_membership', 'is_member']
 
 #: The ``[tool.<NAMESPACE>]`` dev-lab's own configuration tables live under.
 NAMESPACE: Final = 'dev_lab'
@@ -61,8 +61,15 @@ def is_member(root: Path) -> bool:
     has nothing to admit.
     """
     try:
-        data = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError):
+        return declares_membership((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    except OSError:
         return False
-    tool = data.get('tool', {})
+
+
+def declares_membership(text: str) -> bool:
+    """Whether manifest *text* declares a ``[tool.dev_lab]`` or ``[tool.lab_commons]`` table; non-TOML does not."""
+    try:
+        tool = tomllib.loads(text).get('tool', {})
+    except tomllib.TOMLDecodeError:
+        return False
     return isinstance(tool.get(NAMESPACE), dict) or isinstance(tool.get('lab_commons'), dict)

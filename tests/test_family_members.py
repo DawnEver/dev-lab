@@ -7,6 +7,7 @@ order and prints what is left for the user. The forge is a fake here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ import pytest
 
 from dev_lab.dev.family import members, watch
 from dev_lab.dev.family.members import Facts, Finding
+from dev_lab.dev.family.origin import Snapshot
 
 REVIEW = 'AI_LAB_KEYS_PR_REVIEW'
 NOW = datetime(2026, 11, 9, tzinfo=UTC)
@@ -46,7 +48,7 @@ class FakeForge:
     secrets: set[str] = field(default_factory=lambda: {'AI_LAB_KEYS_PR_REVIEW'})
     oldest: tuple[int, datetime] | None = None
 
-    def facts(self, _root: Path, trunk: str, integration: str) -> Facts:
+    def facts(self, _held: Snapshot, trunk: str, integration: str) -> Facts:
         return Facts(
             pulls=self.pulls,
             missing_branches=tuple(b for b in (trunk, integration) if b not in self.branches),
@@ -57,18 +59,25 @@ class FakeForge:
 
 
 def _repo(parent: Path, name: str, text: str = ONBOARDED) -> Path:
+    """A checkout whose ORIGIN (the fake :func:`_origin` reads) is the tree written here."""
     root = parent / name
-    root.mkdir(parents=True)
+    (root / '.git').mkdir(parents=True)
     (root / 'pyproject.toml').write_text(text, encoding='utf-8')
     (root / 'AGENTS.md').write_text('x', encoding='utf-8')
     (root / 'uv.lock').write_text('x', encoding='utf-8')
     return root
 
 
+def _origin(root: Path) -> Snapshot:
+    """The fake origin read: the files under *root* stand for what its integration branch holds."""
+    paths = frozenset(p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file() and '.git' not in p.parts)
+    return Snapshot('origin/integrate/main', paths, (root / 'pyproject.toml').read_text(encoding='utf-8'))
+
+
 def _check(tmp_path: Path, forge: FakeForge, served: tuple[str, ...] | None = ('a', 'b')) -> list[Finding]:
     family = {'a': tmp_path / 'work' / 'a', 'b': tmp_path / 'work' / 'b'}
     return members.check(family, forge=lambda _name, _root: forge, served=served, now=NOW,
-                         bundle_name='AI_LAB_KEYS_PR_REVIEW')  # fmt: skip
+                         bundle_name='AI_LAB_KEYS_PR_REVIEW', read=_origin)  # fmt: skip
 
 
 def test_a_fully_onboarded_family_has_no_finding(tmp_path: Path) -> None:
@@ -100,7 +109,9 @@ def test_a_member_not_beside_its_siblings_or_absent_is_named(tmp_path: Path) -> 
     _repo(tmp_path / 'work', 'a')
     _repo(tmp_path / 'elsewhere', 'b')
     family = {'a': tmp_path / 'work' / 'a', 'b': tmp_path / 'elsewhere' / 'b', 'c': tmp_path / 'work' / 'c'}
-    found = members.check(family, forge=lambda _n, _r: FakeForge(), served=None, now=NOW, bundle_name=REVIEW)
+    found = members.check(
+        family, forge=lambda _n, _r: FakeForge(), served=None, now=NOW, bundle_name=REVIEW, read=_origin
+    )
     whats = {(f.member, f.what.split(':')[0]) for f in found}
     assert ('c', 'not cloned') in whats
     assert ('a', 'not beside') not in whats
@@ -167,13 +178,50 @@ def test_a_gitea_member_is_never_owed_the_bundle_and_is_named_when_it_holds_one(
     def run(host: str, secrets: set[str]) -> set[str]:
         @dataclass
         class Hosted(FakeForge):
-            def facts(self, root: Path, trunk: str, integration: str) -> Facts:
-                return replace(super().facts(root, trunk, integration), host=host)
+            def facts(self, held: Snapshot, trunk: str, integration: str) -> Facts:
+                return replace(super().facts(held, trunk, integration), host=host)
 
         found = members.check(family, forge=lambda _n, _r: Hosted(secrets=secrets), served=None, now=NOW,
-                              bundle_name=REVIEW)  # fmt: skip
+                              bundle_name=REVIEW, read=_origin)  # fmt: skip
         return {f.what.split(' --')[0] for f in found if f.member == 'a'}
 
     assert not {w for w in run('forge.example', set()) if w.startswith('secret')}
     assert any('where any PR can read it' in w for w in run('forge.example', {REVIEW}))
     assert any(w.startswith(f'secret: {REVIEW} is absent') for w in run('github.com', set()))
+
+
+def test_content_is_read_from_origin_and_an_unread_member_is_never_lacking(tmp_path: Path) -> None:
+    """MEASURED 2026-11-10: a stale working tree read as "lacks"; the member's fact is its origin branch.
+
+    PLANTED CONTROLS: a working tree with NO manifest whose origin is onboarded raises nothing; a member whose origin
+    cannot be read is ``unread`` and handed to no comparison, while its readable sibling is.
+    """
+    _repo(tmp_path / 'work', 'a')
+    stale = _repo(tmp_path / 'work', 'b')
+    held = _origin(stale)
+    (stale / 'pyproject.toml').unlink()
+    (stale / 'AGENTS.md').unlink()
+    family = {'a': tmp_path / 'work' / 'a', 'b': stale}
+    compared: list[set[str]] = []
+
+    def read(root: Path) -> Snapshot:
+        return held if root == stale else _origin(root)
+
+    def compare(seen: Mapping[str, object]) -> list[Finding]:
+        compared.append(set(seen))
+        return []
+
+    assert members.check(family, forge=lambda _n, _r: FakeForge(), served=None, now=NOW, bundle_name=REVIEW,
+                         read=read, compare=compare) == []  # fmt: skip
+    assert compared == [{'a', 'b'}]
+
+    def unreadable(root: Path) -> Snapshot:
+        if root == stale:
+            msg = 'fetch refused'
+            raise OSError(msg)
+        return _origin(root)
+
+    found = members.check(family, forge=lambda _n, _r: FakeForge(), served=None, now=NOW, bundle_name=REVIEW,
+                          read=unreadable, compare=compare)  # fmt: skip
+    assert [(f.member, f.what.split(' (')[0]) for f in found] == [('b', 'unread: its origin integration branch')]
+    assert compared[-1] == {'a'}

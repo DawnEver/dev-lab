@@ -60,7 +60,9 @@ rules and secrets, the checkout's place, the machine lists. Both verbs implement
 4. **On its forge** -- Pull Requests on; the trunk and integration branches exist; protection as declared
    (`forge protect`); the review secret present (by name); no PR open past `OPEN_PR_DAYS`.
 
-`python -m dev_lab.dev.family check` names every fact that is not so and exits 1; the serve tick runs the same
+`python -m dev_lab.dev.family check` names every fact that is not so and exits 1 -- a member's files and manifest are
+read from `origin/<integration>` after a fetch, never its working tree, and a member that cannot be fetched is
+`unread`, never lacking (`dev_lab.dev.family.origin`); the serve tick runs the same
 reading on the dev-lab checkout's tick and raises one `family` alarm per finding (`dev_lab.dev.family.watch`).
 `python -m dev_lab.dev.family join <name> <url> [--secrets]` runs the steps in order -- clone, record the
 member (first, so the watch sees a half-joined repo), onboarding, protection, the review secret from the

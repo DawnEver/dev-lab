@@ -19,6 +19,7 @@ from lab_commons.home import repos
 from dev_lab.dev.family.forgefacts import ClientFacts
 from dev_lab.dev.family.horizontal import compare, features
 from dev_lab.dev.family.members import Facts, Finding, check
+from dev_lab.dev.family.origin import Snapshot, snapshot
 from dev_lab.dev.forgealarm import FAMILY, Alarm
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hpcaccount.spec import KIT
@@ -34,16 +35,16 @@ def findings() -> list[Finding]:
     serve = section('serve')
     exceptions = section('family').get('exceptions', {})
 
-    def horizontally(read: Mapping[str, tuple[Path, Facts]]) -> list[Finding]:
+    def horizontally(seen: Mapping[str, tuple[Snapshot, Facts]]) -> list[Finding]:
         return compare(
-            {name: (facts.host, features(root, facts)) for name, (root, facts) in read.items()},
+            {name: (facts.host, features(held, facts)) for name, (held, facts) in seen.items()},
             exceptions,
             {secret_name(REVIEW_TASK)},
         )
 
     found = check(repos(), forge=lambda _name, root: ClientFacts(client_for(root)),
                   served=serve.get('repos') if serve else None, now=datetime.now(UTC),
-                  bundle_name=secret_name(REVIEW_TASK), compare=horizontally)  # fmt: skip
+                  bundle_name=secret_name(REVIEW_TASK), read=snapshot, compare=horizontally)  # fmt: skip
     return found + uv_pin(uv_version(repos().get(KIT)), newest_uv)
 
 

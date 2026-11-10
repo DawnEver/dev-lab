@@ -212,6 +212,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgefacts',
     'watch',
     'horizontal',
+    # ORIGINAL: a member's content read from its origin integration branch, never its working tree (2026-11-10).
+    'origin',
     # ORIGINAL: one parse of git's pre-push refspec lines for every pre-push row.
     'refspec',
     # ORIGINAL: the lock PIN moved from a pre-push row into the repo's own forge-judged suite (2026-10-24).
