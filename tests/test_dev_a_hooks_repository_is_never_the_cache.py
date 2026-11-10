@@ -58,6 +58,7 @@ def _bare(repo: Path) -> str:
         [_GIT, '--git-dir', str(repo / '.git'), 'config', 'core.bare'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=False,
         env=unlocated_env(),
     ).stdout.strip()
