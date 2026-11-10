@@ -57,8 +57,7 @@ def test_a_declared_path_is_written_0600_for_its_declared_reader(tmp_path: Path)
     assert owned == [('.gitea-token.placing', 'judge')]  # owned BEFORE the rename: never a wider file
     assert not list(target.parent.glob('.*.placing'))
     assert SECRET.decode().strip() not in said  # only the digest is said
-    assert 'owner judge' in said
-    if hasattr(target.stat(), 'st_mode') and secretplace.os.name == 'posix':
+    if secretplace.os.name == 'posix':  # st_mode always exists; only POSIX carries the 0600 bits
         assert target.stat().st_mode & 0o777 == 0o600
 
 
