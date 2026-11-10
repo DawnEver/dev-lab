@@ -21,7 +21,7 @@ The first reads the tree and names every missing declaration at once; the second
 | piece | the line | why |
 |---|---|---|
 | the trunk and its sessions | `[tool.dev_lab.branchset] trunk = 'main'`, `sessions = ['integrate/main']` | ONE-BRANCH-PER-SESSION: anything else is debt |
-| the PR namespace | `ephemeral = ['pr/*']` | a PR head pushes with no declared session row |
+| the PR namespace | nothing: `pr/*` is ephemeral by default (`branchset.FAMILY_EPHEMERAL`); declare `ephemeral` only to differ | a PR head pushes with no declared session row |
 | the flow's start | `[tool.dev_lab.integrator] pr_merges_since = "<sha>"` | INTEGRATION-TAKES-ONLY-FORGE-MERGES from that commit |
 | the one producer | `[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]` | a part nobody can produce is a sha nobody can merge |
 | the hook rows | `[tool.dev_lab.hooks]` (an empty table is the whole declaration) | the family base rows run |
@@ -35,17 +35,15 @@ The first reads the tree and names every missing declaration at once; the second
 declares it before relocking makes its own tooling refuse its manifest (`unknown key(s) ['pr_merges_since']`).
 The relock belongs in the same PR as the declaration.
 
-## Then the two lines every consumer carries
+## Then the line every consumer carries
 
 ```toml
-[tool.dev_lab.branchset]
-ephemeral = ['pr/*']
-
 [tool.dev_lab.integrator]
 pr_merges_since = "<the integrate/main sha the flow starts after>"
 ```
 
-A repo that runs the call above has both, and a test of its own that fails the day either goes missing.
+A repo that runs the call above has it, and a test of its own that fails the day it goes missing. A line that
+restates a built-in default (`ephemeral = ['pr/*']`) is a second source: leave it out.
 
 ## The family side: a repo joins this machine's family
 

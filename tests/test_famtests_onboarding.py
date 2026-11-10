@@ -14,6 +14,7 @@ from dev_lab.dev.famtests.onboarding import (
     OnboardingViolation,
     assert_repo_is_onboarded,
     assert_the_forge_takes_pull_requests,
+    onboarding_gaps,
 )
 
 _COMPLETE = """[tool.dev_lab.branchset]
@@ -91,3 +92,18 @@ def test_a_repo_with_pull_requests_off_is_refused_by_name() -> None:
     assert_the_forge_takes_pull_requests(_Forge(pulls=True))
     with pytest.raises(OnboardingViolation, match='Pull Requests unit is OFF'):
         assert_the_forge_takes_pull_requests(_Forge(pulls=False))
+
+
+def test_the_built_in_ephemeral_default_needs_no_restating() -> None:
+    """``branchset.FAMILY_EPHEMERAL`` already makes ``pr/*`` ephemeral; a manifest without the line is onboarded.
+
+    PLANTED CONTROL: a value that drops ``pr/*`` is still named.
+    """
+    text = (
+        "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\npr_merges_since = 'abc'\n"
+        "[tool.dev_lab.hooks]\n[tool.lab_commons.tests]\nproduce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']\n"
+    )
+    assert onboarding_gaps(text, lambda _name: True, 'origin/x') == []
+    off = text.replace("sessions = ['integrate/main']\n", "sessions = ['integrate/main']\nephemeral = ['wip/*']\n")
+    assert onboarding_gaps(off, lambda _name: True, 'origin/x') != []

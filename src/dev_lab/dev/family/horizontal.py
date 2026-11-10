@@ -23,13 +23,16 @@ secret name, :func:`dev_lab.dev.taskkeys.secret_name`), never a list of old name
 
 from __future__ import annotations
 
+import tomllib
 from collections import defaultdict
 from collections.abc import Collection, Mapping
 from typing import Final
 
 from lab_commons.hpc.needsets import read_vocabulary
 
+from dev_lab.dev.branchset import FAMILY_EPHEMERAL
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.family.members import Facts, Finding
 from dev_lab.dev.family.origin import Snapshot
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
@@ -51,12 +54,24 @@ def features(held: Snapshot, facts: Facts) -> frozenset[str]:
     except ValueError:
         pass
     text = held.manifest
-    found |= {'manifest:ephemeral'} if 'ephemeral' in text else set()
+    found |= _off_default(text)
     found |= {f'secret:{name}' for name in facts.secrets}
     own = {f'{CONTEXT_PREFIX}{name}' for name in read_vocabulary(text).resources}  # its own parts, by design
     found |= {f'protect:{role}:{context}' for role, contexts in facts.contexts.items() for context in contexts
               if context not in own}  # fmt: skip
     return frozenset(found)
+
+
+def _off_default(text: str) -> set[str]:
+    """A branchset value that DIFFERS from its built-in default; a line restating the default is no feature."""
+    try:
+        table = declared_table(tomllib.loads(text), 'branchset', {})
+    except (tomllib.TOMLDecodeError, ValueError):
+        return set()
+    ephemeral = table.get('ephemeral') if isinstance(table, dict) else None
+    if ephemeral is None or sorted(ephemeral) == sorted(FAMILY_EPHEMERAL):
+        return set()
+    return {f'manifest:ephemeral={sorted(ephemeral)}'}
 
 
 def compare(
