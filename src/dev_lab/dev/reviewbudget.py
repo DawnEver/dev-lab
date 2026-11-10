@@ -28,8 +28,11 @@ share as its own provider-level allotment ``reserve>owner/repo#n`` (:func:`share
 review's: it runs past a spent review month, at its raised cap, never degraded -- a deliberate, recorded spend --
 and ai-lab refuses it, naming the level, when the provider's free month cannot hold it.
 
-A host with no ``[runtimes.ai_lab]`` caps nothing, and says so; an ai-lab whose report has no ``review`` allotment
-is refused naming the row to declare.
+A host with no ``[runtimes.ai_lab]`` caps nothing, and says so. An ai-lab whose report has no ``review`` allotment
+(:class:`NoReviewAllotment`) -- a GitHub-hosted runner has no machine file -- is the reached-cap case (integrator
+ruling 2026-11-10): the review is SKIPPED AND NAMED (:data:`NO_REVIEW_ALLOTMENT`) and the PR merges ``Unreviewed:``.
+No budget is invented there: an ephemeral runner's ledger is always empty, so a month bound on it means nothing; the
+provider's console cap bounds it.
 """
 
 from __future__ import annotations
@@ -59,6 +62,7 @@ __all__ = [
     'DEGRADE_BELOW',
     'INITIAL_PRS_PER_MONTH',
     'MIN_FITTED_PRS',
+    'NO_REVIEW_ALLOTMENT',
     'RAISE_DOOR',
     'REVIEW_ALLOTMENT',
     'SCOPE_ENV',
@@ -66,6 +70,7 @@ __all__ = [
     'TAG_ENV',
     'Fit',
     'Gate',
+    'NoReviewAllotment',
     'Raised',
     'ShareRefused',
     'Spend',
@@ -90,6 +95,9 @@ SCOPE_ENV: Final = 'AI_LAB_SCOPE'
 
 #: The ai-lab standing allotment every review draws on: its month is the review's budget.
 REVIEW_ALLOTMENT: Final = 'review'
+
+#: Why a host whose ai-lab allots no :data:`REVIEW_ALLOTMENT` skips the review (it merges ``Unreviewed:``).
+NO_REVIEW_ALLOTMENT: Final = f'no [ai_lab.standing] {REVIEW_ALLOTMENT} on this host'
 
 #: The ai-lab spend report version this reader knows: 2 reports each allotment's allotted and spent.
 SPEND_SCHEMA: Final = 2
@@ -150,11 +158,7 @@ class Spend:
             raise ValueError(msg)
         review = doc['budgets'].get(REVIEW_ALLOTMENT)
         if review is None:
-            msg = (
-                f"this host's ai-lab allots no {REVIEW_ALLOTMENT!r}: declare [ai_lab.standing] {REVIEW_ALLOTMENT} = "
-                "{ provider, amount, currency } in its machine file (the review's month, carved out of the cap)"
-            )
-            raise ValueError(msg)
+            raise NoReviewAllotment(NO_REVIEW_ALLOTMENT)
         window = doc['window']
         return cls(
             review['allotted_usd'], review['spent_usd'], window['days'], dict(window['by_tag']), doc['unpriced_calls'],
@@ -304,6 +308,10 @@ def tag_of(pull_url: str, number: int) -> str:
 def share_of(tag: str, *, reserve: bool = False) -> str:
     """One PR's ai-lab allotment: a child of :data:`REVIEW_ALLOTMENT`, or its reserve draw."""
     return f'{RESERVE_ALLOTMENT if reserve else REVIEW_ALLOTMENT}>{tag}'
+
+
+class NoReviewAllotment(ValueError):
+    """The host's ai-lab allots no :data:`REVIEW_ALLOTMENT`: the review is SKIPPED, named, like a reached cap."""
 
 
 class ShareRefused(RuntimeError):

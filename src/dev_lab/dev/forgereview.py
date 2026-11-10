@@ -84,6 +84,7 @@ from dev_lab.dev.forgereview_stands import asked_again, restands, stands
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.reviewbudget import (
     Gate,
+    NoReviewAllotment,
     ShareRefused,
     Spend,
     charged_to,
@@ -180,7 +181,10 @@ def _budget(
 ) -> tuple[Review | None, str, Gate]:
     """*review* as the PR's dollar budget lets it run (:mod:`dev_lab.dev.reviewbudget`), else ``None``; why; its cap."""
     bodies = trusted_bodies(client, pull.number, review.reviewers)
-    spend = runner.spend(runner.runtimes, root)
+    try:
+        spend = runner.spend(runner.runtimes, root)
+    except NoReviewAllotment as none:  # the reached-cap case: skipped, named (ruling 2026-11-10)
+        return None, f'skipped: {none}', Gate('skip', f'skipped: {none}')
     spent = max(recorded_usd(bodies), 0.0 if spend is None else spend.of(tag_of(pull.url, pull.number)))
     allowed = gate(number=pull.number, spent_usd=spent, spend=spend, raised=raised_of(bodies))
     if allowed.state != 'run':
