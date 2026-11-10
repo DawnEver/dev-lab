@@ -389,7 +389,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgecontexts` -- the status contexts under ``tests/``: the part prefix, and those never a part.
 * :mod:`dev_lab.dev.forgesecurity` -- ``tests/security``, one status per head from a serve step; a merge condition.
 * :mod:`dev_lab.dev.taskkeys` -- an ai-lab task's ONE key-bundle secret: its derived name and stdin loader.
-* :mod:`dev_lab.dev.forgesecrets` -- ``forge secrets sync --task``: a task's bundle set on every declared repo.
+* :mod:`dev_lab.dev.forgesecrets` -- ``forge secrets store|sync --task``: a task's bundle kept once in the credential
+  store, set on every family member.
 * :mod:`dev_lab.dev.forgereview` -- ONE review per PR by the declared command: advice; only security blocks.
 * :mod:`dev_lab.dev.forgereview_claim` -- a head's review claim: who may take it, a retry, a review that did not run.
 * :mod:`dev_lab.dev.forgereview_declared` -- the review a repo declares, read from the integration branch a PR trusts.

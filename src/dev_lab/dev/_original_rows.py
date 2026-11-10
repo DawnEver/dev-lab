@@ -207,6 +207,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset',
     'family',
+    # ORIGINAL: the family member list's check, its forge reading and its serve watch are new (2026-11-09).
+    'members',
+    'forgefacts',
+    'watch',
+    'horizontal',
     # ORIGINAL: one parse of git's pre-push refspec lines for every pre-push row.
     'refspec',
     # ORIGINAL: the lock PIN moved from a pre-push row into the repo's own forge-judged suite (2026-10-24).

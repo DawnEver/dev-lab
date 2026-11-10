@@ -135,6 +135,8 @@ POLICY: Final[tuple[Door, ...]] = (
         SUBAGENT,
         'The worktree census; pruning removes only a clean, pushed worktree, archiving moves its outputs home.',
     ),
+    Door(_module('family', 'check'), SUBAGENT, "Read-only: every fact of this machine's family members, named."),
+    Door(_module('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
     Door(_module('famfiles'), SUBAGENT, "Rendering the family project files of a checkout from the kit's one source."),
     Door(_module('autodoors'), SUBAGENT, "Rendering this checkout's door rules for each agent client."),
     Door(

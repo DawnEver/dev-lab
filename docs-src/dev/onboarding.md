@@ -46,3 +46,22 @@ pr_merges_since = "<the integrate/main sha the flow starts after>"
 ```
 
 A repo that runs the call above has both, and a test of its own that fails the day either goes missing.
+
+## The family side: a repo joins this machine's family
+
+The tree being onboarded is half of joining; the other half is everything OUTSIDE the tree -- the forge's
+rules and secrets, the checkout's place, the machine lists. Both verbs implement this checklist
+(`dev_lab.dev.family.members`, whose docstring is the authority):
+
+1. **One member list** -- the machine file's `[repos]` (name -> checkout path). What else lists repos derives
+   from it (`forge secrets sync`'s targets) or is checked against it (`[serve] repos`).
+2. **Cloned beside its siblings** -- the parent most members share.
+3. **Onboarded** -- the call above, over the member's own tree.
+4. **On its forge** -- Pull Requests on; the trunk and integration branches exist; protection as declared
+   (`forge protect`); the review secret present (by name); no PR open past `OPEN_PR_DAYS`.
+
+`python -m dev_lab.dev.family check` names every fact that is not so and exits 1; the serve tick runs the same
+reading on the dev-lab checkout's tick and raises one `family` alarm per finding (`dev_lab.dev.family.watch`).
+`python -m dev_lab.dev.family join <name> <url> [--secrets]` runs the steps in order -- clone, record the
+member (first, so the watch sees a half-joined repo), onboarding, protection, the review secret from the
+bundle on stdin -- and prints each `left:` step for the user.

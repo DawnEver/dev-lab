@@ -81,6 +81,30 @@ def test_a_forge_whose_workflows_post_the_decision_requires_it_and_every_base_ro
     }
 
 
+def test_the_trunk_requires_each_declared_resource_part_and_no_other() -> None:
+    """A repo declaring ``resources = ["windows"]`` produces ``tests/windows``: its trunk requires it.
+
+    PLANTED CONTROL: the same repo declaring no resource requires no ``tests/windows``.
+    """
+    declared = GITHUB_TEXT + '[tool.lab_commons.tests]\nresources = ["windows"]\n'
+    assert 'tests/windows' in required_contexts(declared, 'p', GITHUB)[TRUNK]
+    assert 'tests/windows' not in required_contexts(GITHUB_TEXT, 'p', GITHUB)[TRUNK]
+
+
+def test_a_resource_only_a_particular_host_produces_is_never_required_on_the_trunk() -> None:
+    """A resource only a particular host produces is never required on the trunk.
+
+    Integrator ruling 2026-11-10 (user away, for review): only a part a HOSTED runner always produces is
+    required; a vendor resource (one host's licensed tool) would block the trunk whenever that host is away.
+
+    PLANTED CONTROL: the hosted-runner resource beside it is still required.
+    """
+    declared = GITHUB_TEXT + '[tool.lab_commons.tests]\nresources = ["windows", "vendortool"]\n'
+    trunk = required_contexts(declared, 'p', GITHUB)[TRUNK]
+    assert 'tests/windows' in trunk
+    assert 'tests/vendortool' not in trunk
+
+
 def test_a_served_forge_requires_its_tests_and_never_the_review_status() -> None:
     """User ruling 2026-11-05: the merge decision enforces the review itself; a capped review merges WARNED."""
     assert required_contexts(GITEA_TEXT, 'p', GITEA) == {

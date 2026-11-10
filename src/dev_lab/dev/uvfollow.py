@@ -18,6 +18,11 @@ is reinstalled at exactly the version by ``winget``; any other (the standalone i
 that refusal is reported, not guessed around. Both reach the network, so both run through
 :func:`~dev_lab.dev.netverb.run_network_verb` and a transient failure is retried, not reported as "stale uv".
 
+THE HOSTS FOLLOW TOO (measured 2026-11-09: the pin 0.13.7 was the newest release, a cloud host ran 0.12.5): the
+cluster deploy and every kit tick (:mod:`dev_lab.dev.hpcaccount`) and ``ops upgrade``
+(:func:`dev_lab.ops.upgrade.follow_uv`)
+call the same follower, and ``family check`` names a pin lagging the newest release (:func:`lag`).
+
 When the update cannot land, :func:`follow` says why; the door's refusal carries it, and on a serving host the
 relock step alarms with it (:func:`dev_lab.dev.forgeservesteps.relock`).
 """
@@ -31,7 +36,7 @@ from typing import Final
 
 from dev_lab.dev.netverb import Report, run_network_verb
 
-__all__ = ['WINGET_ID', 'Route', 'follow', 'route_of', 'update_argv']
+__all__ = ['WINGET_ID', 'Route', 'follow', 'lag', 'route_of', 'update_argv']
 
 #: The WinGet package uv is installed as on Windows hosts (docs-src/dev/adding-a-workstation.md).
 WINGET_ID: Final = 'astral-sh.uv'
@@ -85,3 +90,12 @@ def follow(
         return ''
     said = '' if report.ok else f': {report.remedy}'
     return f'uv {found or "(unreadable)"} at {uv} did not follow to {version} through `{" ".join(argv)}`{said}'
+
+
+def lag(pinned: str, newest: str) -> str:
+    """Why the *pinned* uv lags the *newest* release, one sentence; ``''`` when it does not."""
+
+    def parts(version: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in version.split('.'))
+
+    return f'the uv pin {pinned} lags the newest release {newest}' if parts(pinned) < parts(newest) else ''

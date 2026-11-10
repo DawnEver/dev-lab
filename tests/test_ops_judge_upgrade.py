@@ -155,11 +155,17 @@ def test_a_passing_self_check_keeps_the_tip(tmp_path: Path) -> None:
     """PLANTED CONTROL for the rollback: a passing check installs once and restores nothing."""
     host = _config(tmp_path, UPGRADE)
     installed, checked, install, probe = _upgrade_fakes([NEW], passes=True)
-    assert upgrade.run(host, install=install, probe=probe, fetch=_fetch) == (0, f'dev-lab {OLD} -> {NEW}')
+    assert upgrade.run(host, install=install, probe=probe, fetch=_fetch, follow=lambda _c, _p: '') == (
+        0,
+        f'dev-lab {OLD} -> {NEW}',
+    )
     assert [_dev_lab_at(line) for line in installed] == [
         f'dev-lab[ops] @ git+https://forge.example/owner/dev-lab.git@{NEW}'
     ]
     assert checked == list(upgrade.checks(host).values())
+    _i, _c, install, probe = _upgrade_fakes([NEW], passes=True)
+    lagging = upgrade.run(host, install=install, probe=probe, fetch=_fetch, follow=lambda _c, _p: 'uv did not follow')
+    assert lagging == (0, f'dev-lab {OLD} -> {NEW}; uv did not follow'), 'the upgrade stands; the line says so'
 
 
 def test_a_failing_self_check_restores_the_recorded_commit(tmp_path: Path) -> None:

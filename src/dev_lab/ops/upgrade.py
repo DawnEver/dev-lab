@@ -24,9 +24,11 @@ import tempfile
 import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops.config import OpsConfig
 
@@ -141,6 +143,23 @@ def _install(argv: Sequence[str]) -> tuple[int, str]:
     return report.returncode, report.attempts[-1].output if report.attempts else ''
 
 
+#: Prints the uv pin of the dev-lab the ``[ops] python`` imports -- the NEW one, right after an install.
+PIN_PROBE: Final = 'from dev_lab.dev.lockcheck import uv_version; print(uv_version())'
+
+
+def follow_uv(config: OpsConfig, probe: Runner = run_check) -> str:
+    """Move the host's uv to the pin of the dev-lab just installed (:func:`~dev_lab.dev._dep_project.follow_pin`).
+
+    ``''`` once it is there; else why it is not -- the upgrade stands, and the line says the uv did not follow.
+    """
+    code, out = probe([config.python, '-c', PIN_PROBE])
+    if code != 0 or not out.strip():
+        return 'the new pin is unreadable; uv left as it is'
+    role = config.upgrade
+    uv = (role.uv if role is not None else '') or shutil.which('uv')
+    return follow_pin(uv, out.strip()) if uv else 'this host has no uv on PATH'
+
+
 def commit(config: OpsConfig, probe: Runner = run_check) -> str:
     """The installed dev-lab's vcs commit (its ``direct_url.json``); empty when none is recordable."""
     code, out = probe([config.python, '-c', _COMMIT])
@@ -165,7 +184,12 @@ def _install_locked(config: OpsConfig, ref: str, install: Runner, fetch: Fetcher
 
 
 def run(
-    config: OpsConfig, *, install: Runner = _install, probe: Runner = run_check, fetch: Fetcher = fetch_lock
+    config: OpsConfig,
+    *,
+    install: Runner = _install,
+    probe: Runner = run_check,
+    fetch: Fetcher = fetch_lock,
+    follow: Callable[[OpsConfig, Runner], str] | None = None,
 ) -> tuple[int, str]:
     """Install the tip, self-check it, roll back to the recorded commit on failure; the exit code and what happened."""
     if config.upgrade is None:
@@ -180,7 +204,8 @@ def run(
     new = commit(config, probe) or 'unknown'
     failed = _failed_check(config, probe)
     if not failed:
-        return 0, f'dev-lab {old} -> {new}'
+        lagging = (follow or follow_uv)(config, probe)
+        return 0, f'dev-lab {old} -> {new}' + (f'; {lagging}' if lagging else '')
     code, out = _install_locked(config, old, install, fetch)
     again = _failed_check(config, probe) if code == 0 else 'reinstall'
     if again:
