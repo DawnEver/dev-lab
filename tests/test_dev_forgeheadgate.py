@@ -15,6 +15,7 @@ from dev_lab.dev.forgeintegration import tick
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UNRESOLVED
+from dev_lab.dev.locklag import LAG_LIMIT
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -185,7 +186,7 @@ def test_the_gates_wait_until_each_stands_success() -> None:
 
 
 def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
-    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`LAG_LIMIT`.
+    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`locklag.LAG_LIMIT`.
 
     PLANTED CONTROLS: no lock is ``success``; an uncounted sibling is ``error``, never a pass.
     """
@@ -205,7 +206,7 @@ def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
     assert forgeheadgate.lag_verdict(work, head, lag=lag((behind,))) == ('failure', behind)
     assert forgeheadgate.lag_verdict(work, head, lag=lag(()))[0] == 'success'
     assert forgeheadgate.lag_verdict(work, head, lag=lag((f'{UNRESOLVED}: dev-lab: offline',)))[0] == 'error'
-    assert set(seen) == {forgeheadgate.LAG_LIMIT}
+    assert set(seen) == {LAG_LIMIT}
 
 
 def _head(work: Path, branch: str) -> str:
