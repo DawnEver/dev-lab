@@ -212,7 +212,7 @@ needs = ["security", "head-gates", "part", "absent-parts"]
 if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
 outputs = { due = "${{ steps.ready.outputs.due }}" }
-steps = [{ use-steps = "merge-ready" }]
+steps = [{ use-steps = "setup" }, { use-steps = "merge-ready" }]
 
 # Merges the PR and deletes its head branch with the job token (contents: write, pull-requests: write), then
 # dispatches CI on integration (actions: write).
@@ -233,7 +233,7 @@ env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["review"]
 if = "${{ always() && needs.review.result != 'skipped' && needs.review.result != 'cancelled' }}"
 runs-on = "ubuntu-latest"
-steps = [{ use-steps = "merge-ready" }]
+steps = [{ use-steps = "setup" }, { use-steps = "merge-ready" }]
 
 ["ci.yml".jobs.merge-rejudge.permissions]
 contents = "write"
@@ -339,11 +339,9 @@ setup = [
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
     { name = "Sync the environment", run = "uv sync --frozen --all-extras" },
 ]
-# `setup`, then ci.yml's merge decision on its one PR (one-level use-steps), and the smoke run its merge dispatches: merge-ready and merge-rejudge run it.
+# ci.yml's merge decision on its one PR and the smoke run its merge dispatches; merge-ready and merge-rejudge list
+# `setup` before it, so a repo that narrows `setup` (document-lab: no `--all-extras`) narrows both -- never a copy.
 merge-ready = [
-    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
-    { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
-    { name = "Sync the environment", run = "uv sync --frozen --all-extras" },
     { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr "$PR_NUMBER")"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
     { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
 ]
