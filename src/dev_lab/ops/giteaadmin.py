@@ -58,9 +58,12 @@ class ForgeRefused(ValueError):
 #: Why the token store is the database, not the API: Gitea's ``GET``/``DELETE /users/{u}/tokens`` sit behind
 #: ``reqBasicOrRevProxyAuth`` -- only the owner's basic auth; an admin token, with or without ``Sudo``, is refused
 #: (HTTP 401, measured 2026-11-10 on Gitea 28.3.0) -- and the CLI mints but cannot list or delete. A token VALUE is
-#: never read: the table holds a hash, and it is never selected. Coverage (UNSUPPORTED-RAISES): ``sqlite3``.
+#: never read: the table holds a hash, and it is never selected. Coverage (UNSUPPORTED-RAISES): ``sqlite3`` and
+#: ``postgres``; any other ``DB_TYPE`` is refused by name.
 #: A token name or login the store will put into a statement; anything else is refused before it runs.
 _NAME: Final = re.compile(r'[\w.-]{1,255}')
+#: The child's exit when its database client is missing.
+_NO_TOOL: Final = 3
 
 #: Run by the Gitea user's ``python3``: argv = (db, verb, login[, name]); prints the names as JSON, or nothing.
 _SQLITE: Final = """
@@ -73,6 +76,36 @@ if verb == 'delete':
         conn.execute(f'DELETE FROM access_token WHERE uid = ({uid}) AND name = ?', (login.lower(), sys.argv[4]))
 rows = conn.execute(f'SELECT name FROM access_token WHERE uid = ({uid})', (login.lower(),)).fetchall()
 print(json.dumps(sorted(row[0] for row in rows)))
+"""
+
+
+#: Run by the Gitea user's ``python3``: argv = (app.ini, verb, login[, name]). ASSUMPTION (measured on the Gitea host
+#: 2026-11-10: psql 16, no psycopg): the host has ``psql``. The child reads ``[database]`` ITSELF, so the password
+#: travels only in psql's ``PGPASSWORD`` and never through the caller's argv, log or output; values reach SQL only
+#: as psql variables (``:'login'``), read from stdin where psql interpolates them. No psql: exit 3, naming it.
+_POSTGRES: Final = r"""
+import configparser, json, os, shutil, subprocess, sys
+ini_path, verb, login = sys.argv[1:4]
+psql = shutil.which('psql')
+if psql is None:
+    sys.stderr.write('psql not found')
+    sys.exit(3)
+ini = configparser.ConfigParser(interpolation=None)
+ini.read_string('[root]\n' + open(ini_path, encoding='utf-8').read())
+db = ini['database']
+host, _, port = db.get('HOST', '127.0.0.1:5432').strip().partition(':')
+env = dict(os.environ, PGPASSWORD=db.get('PASSWD', '').strip(), PGSSLMODE=db.get('SSL_MODE', '').strip() or 'disable')
+uid = "SELECT id FROM \"user\" WHERE lower_name = lower(:'login')"
+sql = f'SELECT name FROM access_token WHERE uid = ({uid}) ORDER BY name;\n'
+argv = [psql, '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', host or '127.0.0.1', '-p', port or '5432',
+        '-U', db.get('USER', 'gitea').strip(), '-d', db.get('NAME', 'gitea').strip(), '-v', f'login={login}']
+if verb == 'delete':
+    argv += ['-v', f'name={sys.argv[4]}']
+    sql = f"DELETE FROM access_token WHERE uid = ({uid}) AND name = :'name';\n" + sql
+done = subprocess.run([*argv, '-f', '-'], input=sql, capture_output=True, text=True, env=env, check=False)
+if done.returncode != 0:
+    sys.exit(done.returncode)
+print(json.dumps(sorted(line for line in done.stdout.splitlines() if line)))
 """
 
 
@@ -90,19 +123,25 @@ class TokenStore:
         """Bind *role*'s ``app.ini`` and Gitea user to *run*."""
         self.role, self.run = role, run
 
-    def _database(self) -> str:
+    def _program(self) -> tuple[str, str]:
+        """The child program and its first argument for the declared ``DB_TYPE``; any other type is refused."""
         ini = configparser.ConfigParser(interpolation=None)
         ini.read_string('[root]\n' + Path(self.role.config).read_text(encoding='utf-8'))
         kind = ini.get('database', 'DB_TYPE', fallback='sqlite3').strip()
-        if kind != 'sqlite3':
-            msg = f'the token store reads sqlite3 only; {self.role.config} names DB_TYPE {kind}'
-            raise ForgeRefused(msg)
-        return ini.get('database', 'PATH', fallback='data/gitea.db').strip()
+        if kind == 'sqlite3':
+            return _SQLITE, ini.get('database', 'PATH', fallback='data/gitea.db').strip()
+        if kind == 'postgres':
+            return _POSTGRES, self.role.config
+        msg = f'the token store reads sqlite3 and postgres; {self.role.config} names DB_TYPE {kind}'
+        raise ForgeRefused(msg)
 
     def _ask(self, verb: str, login: str, *name: str) -> set[str]:
         argv = [verb, _checked('login', login), *(_checked('name', n) for n in name)]
-        code, said = self.run(['runuser', '-u', self.role.user, '--', 'python3', '-I', '-c', _SQLITE,
-                               self._database(), *argv])  # fmt: skip
+        program, first = self._program()
+        code, said = self.run(['runuser', '-u', self.role.user, '--', 'python3', '-I', '-c', program, first, *argv])
+        if code == _NO_TOOL:
+            msg = 'the token store needs psql on the forge host; it is not installed'
+            raise ForgeRefused(msg)
         try:
             names = json.loads(said) if code == 0 else None
         except json.JSONDecodeError:
