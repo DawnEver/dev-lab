@@ -313,3 +313,60 @@ def test_a_placed_token_is_one_json_line() -> None:
     line = forgeaccounts.token_line('host-a', 'tok')
     assert '\n' not in line
     assert json.loads(line) == {'name': 'host-a', 'token': 'tok'}
+
+
+# --- token revoke: one named token of one login, consented, idempotent ---
+
+
+def _revoke(tmp_path: Path, gitea: FakeGitea, request: forgeaccounts.RevokeRequest, subject: str) -> str:
+    return forgeaccounts.revoke(_role(tmp_path), gitea, request, redeem=_consent(subject), credential={}, by='ops')
+
+
+def test_revoke_is_a_single_use_consent_action() -> None:
+    assert ACTIONS[forgeaccounts.REVOKE_ACTION].scope == SINGLE
+
+
+def test_revoke_deletes_exactly_the_named_token_and_audits_it(tmp_path: Path) -> None:
+    gitea = FakeGitea(
+        users={'server-reader'}, tokens={'server-reader': {'host-x': 'read:repository', 'host-y': 'read:repository'}}
+    )
+    request = forgeaccounts.RevokeRequest('server-reader', 'host-x')
+    said = _revoke(tmp_path, gitea, request, request.subject())
+    assert said == 'revoked server-reader token host-x'
+    assert gitea.tokens == {'server-reader': {'host-y': 'read:repository'}}
+    assert _audit(tmp_path)[0] | {'at': ''} == {
+        'at': '',
+        'by': 'ops',
+        'action': forgeaccounts.REVOKE_ACTION,
+        'login': 'server-reader',
+        'name': 'host-x',
+        'revoked': True,
+    }
+
+
+def test_revoking_a_name_the_login_does_not_hold_is_already_absent(tmp_path: Path) -> None:
+    """Planted control: a wrong name deletes nothing and says so; the other tokens stay."""
+    gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-y': 'read:repository'}})
+    request = forgeaccounts.RevokeRequest('server-reader', 'host-x')
+    assert _revoke(tmp_path, gitea, request, request.subject()) == 'server-reader token host-x already absent'
+    assert gitea.tokens == {'server-reader': {'host-y': 'read:repository'}}
+
+
+def test_revoke_refuses_a_credential_for_another_request(tmp_path: Path) -> None:
+    gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-x': 'read:repository'}})
+    request = forgeaccounts.RevokeRequest('server-reader', 'host-x')
+    other = forgeaccounts.RevokeRequest('server-reader', 'host-y').subject()
+    with pytest.raises(ForgeRefused, match='another request'):
+        _revoke(tmp_path, gitea, request, other)
+    assert gitea.tokens == {'server-reader': {'host-x': 'read:repository'}}
+
+
+def test_revoke_without_a_credential_is_refused_naming_its_subject(capsys: pytest.CaptureFixture[str]) -> None:
+    """Planted control: no consent, nothing touched; the refusal names the digest to grant."""
+    parser = argparse.ArgumentParser()
+    forgeaccounts.add_parser(parser.add_subparsers(dest='verb'))
+    args = parser.parse_args(['forge', 'token', 'revoke', '--login', 'server-reader', '--name', 'host-x'])
+    role = Forge(api='http://127.0.0.1:3000', admin='site-admin')
+    assert forgeaccounts.run_verb(role, args, lambda _action: _consent('')) == 2
+    subject = forgeaccounts.RevokeRequest('server-reader', 'host-x').subject()
+    assert f'{forgeaccounts.REVOKE_ACTION} needs --credential (its subject: {subject})' in capsys.readouterr().err
