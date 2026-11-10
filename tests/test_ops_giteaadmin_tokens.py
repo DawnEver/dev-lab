@@ -105,7 +105,11 @@ args = sys.argv[1:]
 values = dict(args[i + 1].split('=', 1) for i, flag in enumerate(args) if flag == '-v')
 sql = sys.stdin.read()
 with open(os.environ['FAKE_PG_LOG'], 'a', encoding='utf-8') as log:
-    log.write(json.dumps({'argv': args, 'password_by_env': bool(os.environ.get('PGPASSWORD')), 'sql': sql}) + '\n')
+    log.write(json.dumps({'argv': args, 'password_by_env': bool(os.environ.get('PGPASSWORD')),
+                          'pg_env': os.environ.get('PGPASSWORD'), 'sql': sql}) + '\n')
+if os.environ.get('FAKE_PG_FAIL'):
+    sys.stderr.write(f'psql: error: password authentication failed for "{os.environ["PGPASSWORD"]}"\n')
+    sys.exit(2)
 if any(f"'{value}'" in sql for key, value in values.items() if key in ('login', 'name')):
     sys.exit(9)
 table = json.load(open(os.environ['FAKE_PG_DB'], encoding='utf-8'))
@@ -117,7 +121,14 @@ print('\n'.join(sorted(table.get(login, []))))
 """
 
 
-def _pg_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, psql: bool = True) -> tuple[TokenStore, Path]:
+PLANTED_VALUE = 's3cret-PLANTED'  # the planted control value every redaction test hunts for
+_PG_INI = ('[database]\nDB_TYPE = postgres\nHOST = 127.0.0.1:5432\nNAME = gitea\nUSER = gitea\n'
+           'PASSWD = s3cret-PLANTED\nSSL_MODE = disable\n')  # fmt: skip
+
+
+def _pg_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, psql: bool = True, ini_text: str = _PG_INI
+) -> tuple[TokenStore, Path]:
     bindir = tmp_path / 'bin'
     bindir.mkdir()
     if psql:
@@ -134,8 +145,7 @@ def _pg_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, psql: bool = T
     monkeypatch.setenv('PATH', str(bindir))
     monkeypatch.setenv('FAKE_PG_DB', str(table))
     monkeypatch.setenv('FAKE_PG_LOG', str(tmp_path / 'pg.log'))
-    ini = _ini(tmp_path, '[database]\nDB_TYPE = postgres\nHOST = 127.0.0.1:5432\nNAME = gitea\nUSER = gitea\n'
-                         'PASSWD = s3cret-PLANTED\nSSL_MODE = disable\n')  # fmt: skip
+    ini = _ini(tmp_path, ini_text)
     return TokenStore(Forge(api='x', admin='a', config=str(ini)), run=_local), tmp_path / 'pg.log'
 
 
@@ -183,3 +193,31 @@ def test_a_postgres_sql_shaped_name_never_reaches_psql(tmp_path: Path, monkeypat
     with pytest.raises(ForgeRefused, match='not a token name'):
         store.delete_token('server-reader', "x' OR '1'='1")
     assert not log.exists()
+
+
+def test_gitea_quoting_is_stripped_and_a_socket_host_is_not_split(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gitea's ini allows `...` and "..." around a value; a HOST starting with / is a socket directory."""
+    text = ('[database]\nDB_TYPE = postgres\nHOST = /var/run/postgresql\nNAME = "gitea"\nUSER = `gitea`\n'
+            'PASSWD = `s3cret-PLANTED`\n')  # fmt: skip
+    store, log = _pg_store(tmp_path, monkeypatch, ini_text=text)
+    assert store.token_names('server-reader') == {'host-a', 'host-b'}
+    call = json.loads(log.read_text(encoding='utf-8').splitlines()[0])
+    argv = call['argv']
+    assert argv[argv.index('-h') + 1] == '/var/run/postgresql'
+    assert '-p' not in argv
+    assert argv[argv.index('-U') + 1] == 'gitea'
+    assert argv[argv.index('-d') + 1] == 'gitea'
+    assert call['pg_env'] == PLANTED_VALUE
+
+
+def test_a_psql_failure_says_why_and_never_the_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Planted control: psql's stderr echoes the password; the refusal carries psql's reason, redacted."""
+    store, _log = _pg_store(tmp_path, monkeypatch)
+    monkeypatch.setenv('FAKE_PG_FAIL', '1')
+    with pytest.raises(ForgeRefused) as refused:
+        store.token_names('server-reader')
+    said = str(refused.value)
+    assert 'password authentication failed' in said
+    assert 'PLANTED' not in said
