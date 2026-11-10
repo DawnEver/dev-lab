@@ -25,6 +25,7 @@ import importlib.util
 import shutil
 import sys
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -58,6 +59,7 @@ __all__ = [
     'render_all',
     'render_argv',
     'unaccounted',
+    'undeclared_inputs',
 ]
 
 #: The one command a repo re-renders every family file with (its own deltas module named).
@@ -170,8 +172,29 @@ RENDERERS: Final = tuple(dict.fromkeys(row.renderer for row in PROJECT_FILES.val
 
 def due_renderers(root: Path) -> tuple[Renderer, ...]:
     """The renderers of :data:`RENDERERS` writing a file present in *root*: what a re-render there runs."""
-    present = {row.renderer for row in PROJECT_FILES.values() if row.renderer and (root / row.path).is_file()}
+    return _due(lambda path: (root / path).is_file())
+
+
+def _due(has: Callable[[str], bool]) -> tuple[Renderer, ...]:
+    present = {row.renderer for row in PROJECT_FILES.values() if row.renderer and has(row.path)}
     return tuple(renderer for renderer in RENDERERS if renderer in present)
+
+
+def _render_table(text: str) -> dict[str, object]:
+    table: object = tomllib.loads(text) if text else {}
+    for part in RENDER_TABLE.split('.'):
+        table = table.get(part, {}) if isinstance(table, dict) else {}
+    return table if isinstance(table, dict) else {}
+
+
+def undeclared_inputs(text: str, has: Callable[[str], bool]) -> list[str]:
+    """Each required input of a renderer due in a tree that manifest *text* leaves undeclared, ``"<renderer> <key>"``.
+
+    A renderer is DUE where a file it writes is present (``has(path)``); without its input a relock cannot
+    re-render that tree's family files, and they go stale.
+    """
+    declared = _render_table(text)
+    return [f'{r.name} {key}' for r in _due(has) for key in sorted(r.required - set(declared))]
 
 
 def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
@@ -180,10 +203,7 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
     RAISES :class:`ValueError` naming the key when a required input is not declared.
     """
     manifest = root / 'pyproject.toml'
-    table: object = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
-    for part in RENDER_TABLE.split('.'):
-        table = table.get(part, {}) if isinstance(table, dict) else {}
-    declared: dict[str, object] = table if isinstance(table, dict) else {}
+    declared = _render_table(manifest.read_text(encoding='utf-8') if manifest.is_file() else '')
     if missing := sorted(renderer.required - set(declared)):
         msg = (
             f'{renderer.name} renders files {root} holds, but [{RENDER_TABLE}] {", ".join(missing)} is not '

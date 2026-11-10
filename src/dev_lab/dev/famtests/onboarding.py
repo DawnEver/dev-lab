@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from dev_lab.dev.branchset import EPHEMERAL_OFF, BranchSetNotDeclared, branchset_from
+from dev_lab.dev.famfiles import undeclared_inputs
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.lanepolicy import policy_from
 
@@ -101,6 +102,11 @@ def onboarding_gaps(text: str, has: Callable[[str], bool], where: str) -> list[s
             if declared_table(data, 'hooks') is not None
             else ['[tool.dev_lab.hooks] -- an empty table, so the base rows run']
         ),
+    ]
+    missing += [
+        f'[tool.dev_lab.render] {key} = "<the path {renderer} reads>" -- declare it as a sibling does, or a relock '
+        'leaves the family files it renders stale'
+        for renderer, key in (gap.split(' ', 1) for gap in undeclared_inputs(text, has))
     ]
     return missing + [f'{name} -- {why}' for name, why in _FILES if not has(name)]
 

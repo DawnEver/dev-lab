@@ -24,6 +24,7 @@ The first reads the tree and names every missing declaration at once; the second
 | the PR namespace | nothing: `pr/*` is ephemeral by default (`branchset.FAMILY_EPHEMERAL`); declare `ephemeral` only to differ | a PR head pushes with no declared session row |
 | the flow's start | `[tool.dev_lab.integrator] pr_merges_since = "<sha>"` | INTEGRATION-TAKES-ONLY-FORGE-MERGES from that commit |
 | the one producer | `[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]` | a part nobody can produce is a sha nobody can merge |
+| what the renderers read | `[tool.dev_lab.render] deltas = "<its famconfig deltas module>"` (+ `adoption = "scripts/deny_rules.py"` where it holds `.claude/hooks/deny-rules.json`) | a renderer is due where a file it writes is present (`famfiles.undeclared_inputs`); undeclared, a relock leaves those files stale |
 | the hook rows | `[tool.dev_lab.hooks]` (an empty table is the whole declaration) | the family base rows run |
 | the entry point for an agent | `AGENTS.md` (+ `CLAUDE.md` = `@AGENTS.md`) | it names [the integration branch](integration.md) by link and restates nothing |
 | a committed lock | `uv.lock` | PIN + FRESHNESS: a verdict pins an environment to it |
