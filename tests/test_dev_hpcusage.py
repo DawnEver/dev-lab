@@ -71,7 +71,9 @@ def test_an_oom_or_timeout_job_takes_its_steps_state_and_an_oom_carries_ask_and_
 
 def _snapshot() -> Snapshot:
     quota = Quota(account='a', cpus=64, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
-    return Snapshot(nodes=(Node('n1', ('defq',), 64, 65536, 0, schedulable=True),), partitions={}, quota=quota)
+    return Snapshot(
+        nodes=(Node('n1', ('defq',), 64, 65536, 0, schedulable=True, total_cpus=64),), partitions={}, quota=quota
+    )
 
 
 def test_a_tick_reads_sacct_once_for_both_the_budget_and_the_card(

@@ -1316,7 +1316,9 @@ def test_the_standing_carries_the_most_any_grant_gives(tmp_path: Path, monkeypat
 
 def _snapshot_untagged() -> Snapshot:
     quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
-    return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)
+    return Snapshot(
+        nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True, total_cpus=8),), partitions={}, quota=quota
+    )
 
 
 @pytest.mark.parametrize('ref', [INTEGRATION_REF, PR_REF])
