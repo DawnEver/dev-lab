@@ -161,7 +161,7 @@ def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> N
         sshhold.audit('expire', dest, status=0)
     finally:
         holder.stop()
-        sshhold.state_path(dest).unlink(missing_ok=True)
+        sshhold.forget(dest)
 
 
 def main(argv: list[str] | None = None) -> int:
