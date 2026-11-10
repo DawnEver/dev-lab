@@ -48,7 +48,8 @@ def _commits_behind(url: str, branch: str, sha: str) -> int:
         git('init', '--quiet', '--bare')
         fetched = run_network_verb(
             [_GIT, '-C', bare, 'fetch', '--quiet', '--no-tags', '--filter=tree:0', url, f'refs/heads/{branch}'],
-            timeout=300, env=unlocated(),
+            timeout=300,
+            env=unlocated(),
         )
         if not fetched.ok:
             msg = f'{url} {branch} could not be fetched: {fetched.remedy}'
