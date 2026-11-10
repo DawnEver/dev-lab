@@ -113,8 +113,11 @@ class GiteaCli:
 
     def token_names(self, login: str) -> set[str]:
         """The names of *login*'s tokens."""
-        _status, found = self._api('GET', f'/users/{login}/tokens', sudo=login)
-        return {str(row.get('name')) for row in found} if isinstance(found, list) else set()
+        status, found = self._api('GET', f'/users/{login}/tokens', sudo=login)
+        if status != HTTPStatus.OK or not isinstance(found, list):
+            msg = f'reading {login} token names failed (HTTP {status})'
+            raise ForgeRefused(msg)
+        return {str(row.get('name')) for row in found}
 
     def delete_token(self, login: str, name: str) -> None:
         """Delete *login*'s token *name*."""
