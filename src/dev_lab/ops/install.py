@@ -176,6 +176,25 @@ def _probe(config: OpsConfig) -> dict[str, str]:
     return _timer(config, role, 'probe', 'Probe forge protection and CI runs', _door(config, 'probe'))
 
 
+def _config_tick(config: OpsConfig) -> dict[str, str]:
+    """The ``config tick`` timer: root, since it replaces the root-owned live file through the door."""
+    if (source := config.config_source) is None or not source.schedule:
+        return {}
+    what = 'Apply the merged config source (dev_lab.ops)'
+    env = [f'EnvironmentFile={config.environment_file}'] if config.environment_file else []
+    exec_start = _door(config, 'config', 'tick')
+    service = (
+        f'[Unit]\nDescription={what}\nWants=network-online.target\nAfter=network-online.target\n[Service]\n'
+        + ''.join(f'{line}\n' for line in (*env, 'Type=oneshot', f'ExecStart={exec_start}'))
+    )
+    timer = (
+        f'[Unit]\nDescription={what}\n'
+        f'[Timer]\nOnCalendar={source.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
+    )
+    name = f'etc/systemd/system/{_UNIT}-config-tick'
+    return {f'{name}.service': service, f'{name}.timer': timer}
+
+
 def _supervise(config: OpsConfig) -> dict[str, str]:
     role = config.supervise
     if role is None:
@@ -212,6 +231,7 @@ def files(config: OpsConfig) -> dict[str, str]:
         **_consent(config),
         **_backup(config),
         **_probe(config),
+        **_config_tick(config),
         **access,
         **_supervise(config),
     }
@@ -248,6 +268,8 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
         steps += [f'id {backup.user} || useradd --system {backup.user}', 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-backup-pull.timer']  # fmt: skip
     steps += _probe_steps(config)
+    if config.config_source is not None and config.config_source.schedule:
+        steps += ['systemctl daemon-reload', f'systemctl enable --now {_UNIT}-config-tick.timer']
     if (role := config.access) is not None:
         steps += ['apt-get install -y libpam-oath', f'id {role.account} || useradd --create-home {role.account}',
                   'sshd -t && systemctl reload ssh']  # fmt: skip

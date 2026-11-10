@@ -125,13 +125,15 @@ class ConfigSource:
     """Where ``config apply`` reads this host's reviewed file: ``path`` at the tip of ``ref`` of ``source``.
 
     ``token_file`` holds a read-only forge token (root 600); it is sent as an HTTP header in the git process's
-    environment, never on argv. The whole table is security boundary: a change to it needs consent.
+    environment, never on argv. The whole table is security boundary: a change to it needs consent -- except
+    ``schedule`` (when ``config tick`` runs as a root timer; empty: never), which is routine.
     """
 
     source: str
     path: str
     token_file: str
     ref: str = 'main'
+    schedule: str = ''
 
 
 @dataclass(frozen=True)
@@ -415,8 +417,13 @@ def _is_root() -> bool:
     return sys.platform != 'win32' and os.geteuid() == 0
 
 
-def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None) -> OpsConfig:
+def load(
+    path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None, structure_only: bool = False
+) -> OpsConfig:
     """Read *path*'s ``[ops]`` table and its environment (see the module docstring).
+
+    *structure_only* checks the file OFF its host (a config-source repository's CI): the declared environment
+    file and secret files are named but never read, so only the shape is judged.
 
     *as_root* defaults to the process's own euid. Refuses a missing table, a declared environment that did not
     arrive (root: the file unreadable; non-root: no ``SUPERVISE_*`` variable), a duplicate repo name, a bad role.
@@ -427,14 +434,14 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
     ops = _upgraded(ops)
-    root = _is_root() if as_root is None else as_root
+    root = (_is_root() if as_root is None else as_root) and not structure_only
     judge_table = ops.get('judge')
     if root and isinstance(judge_table, dict) and (keys_file := str(judge_table.get('keys_file', ''))):
         keyless = 'the reviewer would run keyless'
         require_bundle(
             _root_secret(Path(keys_file), '[ops.judge] keys_file', keyless), f'[ops.judge] keys_file {keys_file}'
         )
-    if environment_file := str(ops.get('environment_file', '')):
+    if (environment_file := str(ops.get('environment_file', ''))) and not structure_only:
         process = dict(os.environ if environ is None else environ)
         if root:
             merged = load_config(path, environ=process | _environment(Path(environment_file)))

@@ -2,7 +2,7 @@
 
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
 ``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
-(:mod:`dev_lab.ops.disk`), ``config apply`` (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and
+(:mod:`dev_lab.ops.disk`), ``config apply|tick`` (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and
 ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
@@ -277,6 +277,22 @@ def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) ->
     return 0
 
 
+def _config_tick(config: OpsConfig) -> int:
+    """``config tick``: apply the merged source's routine change; park a boundary one and alert the user once."""
+    try:
+        said = configdoor.tick(
+            config.path, _candidate_text(config, None), pending=config.home / 'config-pending.sha256',
+            notify=lambda detail: _alert(config, 'config needs consent', detail), loads=load,
+            checks=upgrade.checks(config), run=upgrade.run_check,
+        )  # fmt: skip
+    except configdoor.ConfigRefused as refused:
+        emit(f'refused: {refused}', err=True)
+        _alert(config, 'config tick FAILED', str(refused))
+        return 1
+    emit(f'[ops config] tick: {said}')
+    return 0
+
+
 def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
     """``forge account ensure`` / ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`), consented here."""
     if config.forge is None:
@@ -327,7 +343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     opened.add_argument('--uri', action='store_true', help='print the otpauth URI, not its QR')
     opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")
     configured = verbs.add_parser('config', help='change this host config through the one door')
-    configured.add_argument('action', choices=('apply',))
+    configured.add_argument('action', choices=('apply', 'tick'))
     configured.add_argument(
         '--from', dest='candidate', type=Path, default=None, help='a local candidate file'
     )  # default: the [ops.config] source
@@ -361,7 +377,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         'consent': lambda: _consent(config, args.action, force=args.force, uri_only=args.uri),
         'judge': lambda: _judge(config),
         'upgrade': lambda: _upgrade(config),
-        'config': lambda: _config_apply(config, args.candidate, args.credential),
+        'config': lambda: (
+            _config_tick(config) if args.action == 'tick' else _config_apply(config, args.candidate, args.credential)
+        ),
         'forge': lambda: _forge(config, args),
     }
     return verbs_of[args.verb]()
