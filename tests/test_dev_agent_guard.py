@@ -23,7 +23,7 @@ import pytest
 from dev_lab.dev import agent_guard, agenthooks, hook_adoption
 from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
-from dev_lab.dev.hooks import Remedy
+from dev_lab.dev.hooks import DENY_RULES, Remedy, UnremediedRule
 from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.plugin_settings import DISABLED_PLUGINS, live_disabled_plugins
 
@@ -492,3 +492,33 @@ def test_the_rules_file_is_written_from_the_repos_declared_adoption(repo: Path) 
     assert not (repo / agent_guard.RULES_REL).exists()
     assert hook_adoption.main(['--repo', str(repo), '--adoption', 'scripts/deny_rules.py']) == 0
     assert (repo / agent_guard.RULES_REL).read_text(encoding='utf-8') == render(ADOPTION)
+
+
+def test_a_declared_adoption_modules_local_rules_survive_the_render(repo: Path) -> None:
+    """A module's ``LOCAL_RULES`` -- rows the family registry cannot hold -- render after the family rows.
+
+    PLANTED CONTROL: the planted row is absent from the family render, so a pass is the local half and not a
+    re-render of the registry alone, which would delete it (the motronics 2026-11-10 forge-sync refusal).
+    """
+    waived = frozenset({'BARE-TEST-INVOCATION', 'NETWORK-VERB', 'PUSH-NO-VERIFY', 'RAW-PROCESS-KILL'})
+    module = repo / 'scripts' / 'deny_rules.py'
+    module.parent.mkdir(parents=True)
+    module.write_text(
+        'from dev_lab.dev.hook_adoption import HookAdoption\n'
+        'from dev_lab.dev.hooks import DenyRule\n'
+        f"ADOPTION = HookAdoption(app_name='planted', declared_absent=frozenset({sorted(waived)!r}))\n"
+        "LOCAL_RULES = (DenyRule(id='PLANTED-LOCAL', pattern='planted-verb', "
+        "hazard='a planted hazard', remedy='run the planted door'),)\n",
+        encoding='utf-8',
+    )
+    family = HookAdoption(app_name='planted', declared_absent=waived)
+    assert 'PLANTED-LOCAL' not in [row['name'] for row in json.loads(render(family))]
+    assert hook_adoption.main(['--repo', str(repo), '--adoption', 'scripts/deny_rules.py']) == 0
+    names = [row['name'] for row in json.loads((repo / agent_guard.RULES_REL).read_text(encoding='utf-8'))]
+    assert names[-1] == 'PLANTED-LOCAL'
+
+
+def test_a_local_rule_shadowing_a_family_rule_is_refused() -> None:
+    """A local row reusing a family id is the fork the split exists to prevent; the render refuses it."""
+    with pytest.raises(UnremediedRule, match=DENY_RULES[0].id):
+        render(HookAdoption(app_name='planted'), local=(DENY_RULES[0],))
