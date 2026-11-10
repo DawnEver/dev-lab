@@ -1,18 +1,21 @@
 """``forge account ensure`` / ``forge token mint``: the forge's machine accounts, made only through this door.
 
-After the lockdown no agent holds root or a Gitea admin token (user rulings 2026-11-09). A machine account -- a
-read-only reader for every server that pulls code, later others -- and each of its per-host tokens are made here,
-run by the ``ops`` account through its fixed sudo line, each use authorised by a SINGLE-USE consent credential the
-user granted with their code (:data:`ACCOUNT_ACTION`, :data:`MINT_ACTION`), whose ``subject`` is the request's
-digest (:meth:`AccountRequest.subject`, :meth:`TokenRequest.subject`): it consents to exactly that request.
+After the lockdown no agent holds root or a Gitea admin token (user rulings 2026-11-09). A machine account -- one
+declared role, ``[ops.forge.accounts] <login> = {role, repos}`` with role ``read``, ``write`` or ``review`` -- and
+each of its per-host tokens are made here, run by the ``ops`` account through its fixed sudo line, each use
+authorised by a SINGLE-USE consent credential the user granted with their code, whose ``subject`` is the request's
+digest (:mod:`dev_lab.ops.forgerequests`): it consents to exactly that request.
 
-``account ensure`` makes the login if absent -- restricted, random password, no password change -- and grants
-EXACTLY Read on each named repository, reporting a different permission as drift and setting it to Read.
+``account ensure --login L`` reads L's role and repositories from the declaration (one source), makes the login if
+absent -- restricted, random password, no password change -- and grants EXACTLY its role's permission
+(:data:`~dev_lab.ops.giteaadmin.ROLE_GRANTS`) on each, reporting a different permission as drift and setting it. An
+undeclared login is refused before any consent is spent; the consent names (login, role, repos), so a role widened
+after it was granted is refused.
 ``token mint`` prints the token ONCE to stdout for the caller to place; it is never logged. ``token mint-batch``
 mints a closed, ordered batch of one login's tokens (at most :data:`BATCH_CAP`) under ONE :data:`BATCH_ACTION`
 credential whose subject is the whole batch's digest (:meth:`TokenBatch.subject`); each item is validated as a single
 mint is, all of them before the consent is spent, and each token is printed as one JSON line ``{"name", "token"}``.
-A login declared read-only (``[ops.forge] read_only``) is refused any scope that is not ``read:*``; an existing token
+A login whose declared role is ``read`` is refused any scope that is not ``read:*``; an existing token
 name is refused unless ``--rotate``, which deletes the old token first. Every use is audited -- who, what --
 never a token. ``token revoke`` deletes one named token of one login under ONE :data:`REVOKE_ACTION` credential
 whose subject is the login and name's digest (:meth:`RevokeRequest.subject`); a name the login does not hold is
@@ -25,37 +28,38 @@ use and the door deletes after it.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from lab_commons.log import emit
 
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.giteaadmin import READ, Forge, ForgeRefused, GiteaCli, local_api, run_argv
+from dev_lab.ops.forgerequests import (
+    ACCOUNT_ACTION,
+    BATCH_ACTION,
+    BATCH_CAP,
+    MINT_ACTION,
+    REVOKE_ACTION,
+    AccountRequest,
+    BatchItem,
+    RevokeRequest,
+    TokenBatch,
+    TokenRequest,
+    declared_request,
+)
+from dev_lab.ops.giteaadmin import ROLE_GRANTS, Forge, ForgeRefused, GiteaCli, local_api, run_argv
 
 if TYPE_CHECKING:
     import argparse
 
 __all__ = [
-    'ACCOUNT_ACTION',
-    'BATCH_ACTION',
-    'BATCH_CAP',
-    'MINT_ACTION',
-    'REVOKE_ACTION',
-    'AccountRequest',
-    'BatchItem',
     'ForgeRefused',
     'GiteaAdmin',
     'Redeem',
-    'RevokeRequest',
-    'TokenBatch',
-    'TokenRequest',
     'add_parser',
     'ensure',
     'mint',
@@ -67,85 +71,8 @@ __all__ = [
     'token_list',
 ]
 
-#: The consent action of one ``account ensure`` (:mod:`dev_lab.ops.consent.actions`).
-ACCOUNT_ACTION: Final = 'ops.forge.account'
-#: The consent action of one ``token mint``.
-MINT_ACTION: Final = 'ops.forge.token'
-#: The consent action of one ``token mint-batch``: one login's closed, ordered batch of tokens.
-BATCH_ACTION: Final = 'ops.forge.tokens'
-#: The consent action of one ``token revoke``: one named token of one login, deleted.
-REVOKE_ACTION: Final = 'ops.forge.revoke'
-#: The most tokens one batch consent may mint.
-BATCH_CAP: Final = 16
-
 #: Redeems a credential on one subject (:func:`dev_lab.ops.consent.client.redeem`); raises when it does not.
 type Redeem = Callable[[Mapping[str, Any], str], object]
-
-
-def _digest(action: str, fields: Mapping[str, str]) -> str:
-    text = '\n'.join([action, *(f'{key}={value}' for key, value in sorted(fields.items()))])
-    return hashlib.sha256(text.encode('utf-8')).hexdigest()
-
-
-@dataclass(frozen=True)
-class AccountRequest:
-    """``account ensure --login L --read owner/repo ...``."""
-
-    login: str
-    read: tuple[str, ...]
-
-    def subject(self) -> str:
-        """The digest an ``ops.forge.account`` credential's subject must equal."""
-        return _digest(ACCOUNT_ACTION, {'login': self.login, 'read': ','.join(sorted(set(self.read)))})
-
-
-@dataclass(frozen=True)
-class TokenRequest:
-    """``token mint --login L --name N --scope S [--rotate]``."""
-
-    login: str
-    name: str
-    scope: str
-    rotate: bool
-
-    def subject(self) -> str:
-        """The digest an ``ops.forge.token`` credential's subject must equal."""
-        fields = {'login': self.login, 'name': self.name, 'scope': self.scope, 'rotate': str(int(self.rotate))}
-        return _digest(MINT_ACTION, fields)
-
-
-@dataclass(frozen=True)
-class RevokeRequest:
-    """``token revoke --login L --name N``."""
-
-    login: str
-    name: str
-
-    def subject(self) -> str:
-        """The digest an ``ops.forge.revoke`` credential's subject must equal."""
-        return _digest(REVOKE_ACTION, {'login': self.login, 'name': self.name})
-
-
-@dataclass(frozen=True)
-class BatchItem:
-    """One token of a :class:`TokenBatch`: ``--item NAME:SCOPE``, rotated when ``--rotate NAME``."""
-
-    name: str
-    scope: str
-    rotate: bool
-
-
-@dataclass(frozen=True)
-class TokenBatch:
-    """``token mint-batch --login L --item NAME:SCOPE ... [--rotate NAME]``: ordered, closed, one login."""
-
-    login: str
-    items: tuple[BatchItem, ...]
-
-    def subject(self) -> str:
-        """The digest an ``ops.forge.tokens`` credential's subject must equal: the login and every item, in order."""
-        listed = json.dumps([[item.name, item.scope, int(item.rotate)] for item in self.items], separators=(',', ':'))
-        return _digest(BATCH_ACTION, {'login': self.login, 'items': listed})
 
 
 class GiteaAdmin(Protocol):
@@ -160,8 +87,8 @@ class GiteaAdmin(Protocol):
     def permission(self, repo: str, login: str) -> str | None:
         """*login*'s permission on *repo*; ``None`` or ``none`` when it holds none."""
 
-    def grant_read(self, repo: str, login: str) -> None:
-        """Make *login* a Read collaborator of *repo*."""
+    def grant(self, repo: str, login: str, permission: str) -> None:
+        """Make *login* a collaborator of *repo* holding *permission*."""
 
     def token_names(self, login: str) -> set[str]:
         """The names of *login*'s tokens."""
@@ -183,29 +110,33 @@ def _audit(role: Forge, by: str, line: Mapping[str, Any]) -> None:
 def ensure(
     role: Forge, gitea: GiteaAdmin, request: AccountRequest, *, redeem: Redeem, credential: Mapping[str, Any], by: str
 ) -> tuple[str, ...]:
-    """Make *request*'s login if absent and grant it exactly Read on each repository; what it did, line by line.
+    """Make *request*'s login if absent and grant exactly its role's permission on each repository; what it did.
 
     Raises:
-        ForgeRefused: no repository was named, or the credential does not consent to exactly this request.
+        ForgeRefused: the login is undeclared, the request is not what the declaration says (a widened role), or
+            the credential does not consent to exactly this request.
 
     """
-    if not request.read:
-        msg = 'account ensure grants Read on at least one --read owner/repo'
+    declared = declared_request(role, request.login)
+    if (declared.role, declared.repos) != (request.role, tuple(sorted(set(request.repos)))):
+        msg = (f'[ops.forge.accounts] declares {request.login} {declared.role} on {sorted(declared.repos)}; '
+               f'asked {request.role} on {sorted(request.repos)}')  # fmt: skip
         raise ForgeRefused(msg)
     redeem(credential, request.subject())
+    grant = ROLE_GRANTS[request.role]
     said: list[str] = []
     if gitea.user_exists(request.login):
         said.append(f'{request.login} exists')
     else:
         gitea.create_user(request.login, f'{request.login}@{role.email_domain}')
         said.append(f'created {request.login}')
-    for repo in sorted(set(request.read)):
+    for repo in sorted(set(request.repos)):
         held = gitea.permission(repo, request.login)
-        if held == READ:
-            said.append(f'{repo}: read')
+        if held == grant:
+            said.append(f'{repo}: {grant}')
             continue
-        gitea.grant_read(repo, request.login)
-        said.append(f'{repo}: granted read' if held in {None, 'none'} else f'{repo}: drift {held} -> read')
+        gitea.grant(repo, request.login, grant)
+        said.append(f'{repo}: granted {grant}' if held in {None, 'none'} else f'{repo}: drift {held} -> {grant}')
     _audit(role, by, {'action': ACCOUNT_ACTION, 'login': request.login, 'what': said})
     return tuple(said)
 
@@ -278,8 +209,9 @@ def _scopes(role: Forge, login: str, name: str, scope: str) -> list[str]:
     if not scopes:
         msg = f'token {name} needs a scope'
         raise ForgeRefused(msg)
-    if login in role.read_only and (wide := [s for s in scopes if not s.startswith('read:')]):
-        msg = f'{login} is declared read-only ([ops.forge] read_only): refused scopes {wide}'
+    reader = role.accounts.get(login, {}).get('role') == 'read'
+    if reader and (wide := [s for s in scopes if not s.startswith('read:')]):
+        msg = f'{login} is declared read-only ([ops.forge.accounts] role read): refused scopes {wide}'
         raise ForgeRefused(msg)
     return scopes
 
@@ -370,12 +302,11 @@ def add_parser(verbs: argparse._SubParsersAction) -> None:
     account = kinds.add_parser('account')
     account.add_argument('action', choices=('ensure',))
     account.add_argument('--login', required=True)
-    account.add_argument('--read', action='append', required=True, metavar='OWNER/REPO', help='grant exactly Read')
     tokens = kinds.add_parser('token').add_subparsers(dest='action', required=True)
     minting = tokens.add_parser('mint')
     minting.add_argument('--login', required=True)
     minting.add_argument('--name', required=True)
-    minting.add_argument('--scope', required=True, help='Gitea scopes, comma-separated (a read-only login: read:*)')
+    minting.add_argument('--scope', required=True, help='Gitea scopes, comma-separated (a read login: read:*)')
     minting.add_argument('--rotate', action='store_true', help='delete an existing token of this name first')
     batch = tokens.add_parser('mint-batch', help=f'one login, up to {BATCH_CAP} tokens, one consent')
     batch.add_argument('--login', required=True)
@@ -394,7 +325,7 @@ def add_parser(verbs: argparse._SubParsersAction) -> None:
 type _Request = AccountRequest | TokenRequest | TokenBatch | RevokeRequest
 
 
-def _parsed_request(args: argparse.Namespace) -> tuple[_Request, str]:
+def _parsed_request(role: Forge, args: argparse.Namespace) -> tuple[_Request, str]:
     """The parsed verb's request and its consent action.
 
     Raises:
@@ -402,7 +333,7 @@ def _parsed_request(args: argparse.Namespace) -> tuple[_Request, str]:
 
     """
     if args.kind == 'account':
-        return AccountRequest(args.login, tuple(args.read)), ACCOUNT_ACTION
+        return declared_request(role, args.login), ACCOUNT_ACTION
     if args.action == 'revoke':
         return RevokeRequest(args.login, args.name), REVOKE_ACTION
     if args.action == 'mint':
@@ -419,7 +350,7 @@ def run_verb(role: Forge, args: argparse.Namespace, redeem_for: Callable[[str], 
         finally:
             reader.close()
     try:
-        request, action = _parsed_request(args)
+        request, action = _parsed_request(role, args)
     except ForgeRefused as refused:
         emit(f'refused: {refused}', err=True)
         return 2

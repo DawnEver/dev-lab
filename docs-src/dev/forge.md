@@ -685,13 +685,19 @@ replaced atomically, self-checked, and restored on a failed check. Grant the lin
 
 ## Making the forge's machine accounts
 
-A machine account (a read-only reader for every server that pulls code) and each of its per-host tokens are made only
-through `python -m dev_lab.ops --config <file> forge account ensure --login <L> --read <owner/repo>...` and
-`... forge token mint --login <L> --name <N> --scope read:repository [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`),
-which the `ops` account runs through its fixed sudo line. Each use redeems a single-use `ops.forge.account` /
-`ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it). `ensure` makes a
-restricted login if absent and grants exactly Read, reporting drift; `mint` prints the token once to stdout, refuses
-a non-`read:*` scope for a login in `[ops.forge] read_only` and an existing name without `--rotate`. Every use is
+A machine account is declared once, `[ops.forge.accounts] <login> = {role = "read"|"write"|"review", repos = [...]}`,
+one role per login (a reader for every server that pulls code, a writer for the hosts that post verdicts, a reviewer
+for the judge). It and each of its per-host tokens are made only through
+`python -m dev_lab.ops --config <file> forge account ensure --login <L>` and
+`... forge token mint --login <L> --name <N> --scope <S> [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`), which the
+`ops` account runs through its fixed sudo line. `ensure` reads the role and repositories from the declaration, so an
+undeclared login is refused before a consent is spent. Each use redeems a single-use `ops.forge.account` /
+`ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it;
+:mod:`dev_lab.ops.forgerequests`); an account's digest names (login, role, repos), so a role widened after consent
+is refused. `ensure` makes a restricted login if absent and grants exactly the role's permission
+(`ROLE_GRANTS`: read -> read; write and review -> write, because Gitea posts a commit status only for a code writer,
+so a reviewer's limit is its token's scopes), reporting drift; `mint` prints the token once to stdout, refuses a
+non-`read:*` scope for a `read` login and an existing name without `--rotate`. Every use is
 audited to `[ops.forge] log` without the token. A routine round of one login's per-host tokens costs one code, not
 one per host: `... forge token mint-batch --login <L> --item <NAME>:<SCOPE>... [--rotate <NAME>]...` redeems ONE
 single-use `ops.forge.tokens` credential whose subject is the digest of the login and every item in order (so a

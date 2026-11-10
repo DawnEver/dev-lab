@@ -14,17 +14,32 @@ import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import launch
 
-__all__ = ['READ', 'Forge', 'ForgeRefused', 'GiteaCli', 'Http', 'Runner', 'TokenStore', 'local_api', 'run_argv']
+__all__ = [
+    'READ',
+    'ROLE_GRANTS',
+    'Forge',
+    'ForgeRefused',
+    'GiteaCli',
+    'Http',
+    'Runner',
+    'TokenStore',
+    'local_api',
+    'run_argv',
+]
 
-#: The permission a reader is granted, and the only one ``account ensure`` grants.
+#: The permission a reader is granted.
 READ: Final = 'read'
+#: Each declared machine-account role and the narrowest Gitea collaborator permission that serves it. A review
+#: posts a pull review and a commit status; Gitea routes ``POST /repos/{o}/{r}/statuses/{sha}`` behind
+#: ``reqRepoWriter(unit.TypeCode)``, so a reviewer is a WRITE collaborator and its token's scopes are its limit.
+ROLE_GRANTS: Final = {'read': READ, 'write': 'write', 'review': 'write'}
 #: Runs one argv; its exit code and output.
 type Runner = Callable[[list[str]], tuple[int, str]]
 #: One local API call ``(method, path, token, body) -> (status, json)``.
@@ -37,7 +52,8 @@ class Forge:
 
     ``api`` is the local Gitea's base URL; ``admin`` the Gitea admin whose SHORT-LIVED token (minted by the CLI per
     use, deleted after it) grants a repository collaborator, which the Gitea CLI cannot. ``binary``, ``config`` and
-    ``user`` run the Gitea CLI as the Gitea user. ``read_only`` names the logins that may hold ``read:*`` scopes only;
+    ``user`` run the Gitea CLI as the Gitea user. ``accounts`` declares each machine account,
+    ``{login: {role, repos}}`` with a role of :data:`ROLE_GRANTS`; a ``read`` login may hold ``read:*`` scopes only;
     ``email_domain`` the address a made account gets; ``log`` the audit (who, what -- never a token).
     """
 
@@ -46,7 +62,7 @@ class Forge:
     binary: str = 'gitea'
     config: str = '/etc/gitea/app.ini'
     user: str = 'gitea'
-    read_only: tuple[str, ...] = ()
+    accounts: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     email_domain: str = 'noreply.invalid'
     log: str = '/var/log/dev-lab-ops/forge.jsonl'
 
@@ -227,11 +243,11 @@ class GiteaCli:
             raise ForgeRefused(msg)
         return str(found.get('permission', 'none')) if isinstance(found, dict) else None
 
-    def grant_read(self, repo: str, login: str) -> None:
-        """Make *login* a Read collaborator of *repo*."""
-        status, _ = self._api('PUT', f'/repos/{repo}/collaborators/{login}', body={'permission': READ})
+    def grant(self, repo: str, login: str, permission: str) -> None:
+        """Make *login* a collaborator of *repo* holding *permission*."""
+        status, _ = self._api('PUT', f'/repos/{repo}/collaborators/{login}', body={'permission': permission})
         if status not in {HTTPStatus.OK, HTTPStatus.NO_CONTENT}:
-            msg = f'granting {login} read on {repo} failed (HTTP {status})'
+            msg = f'granting {login} {permission} on {repo} failed (HTTP {status})'
             raise ForgeRefused(msg)
 
     def token_names(self, login: str) -> set[str]:
