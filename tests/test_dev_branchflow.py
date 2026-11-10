@@ -388,3 +388,19 @@ def test_a_repo_without_ephemeral_lanes_lists_no_closed_pr(server, tmp_path: Pat
     built = client(GITEA, Loopback(server))
     assert open_lanes(work, built, POLICY, set()) == ([], []), 'no branch set declared: no namespace to open from'
     assert Recorder.received == []
+
+
+def test_a_moved_data_pin_alone_commits_pyproject_in_the_relock(tmp_path: Path) -> None:
+    """A data pin follows its line like a floated sibling (dev_lab.dev.datadeps). PLANTED: no sibling moved."""
+    work = _child(tmp_path)
+    commit(work, 'pyproject.toml', 'rev = "old"\n')
+    forgesync.sync(work, POLICY)
+
+    def data(root: Path) -> tuple[str, ...]:
+        (root / 'pyproject.toml').write_text('rev = "new"\n', encoding='utf-8')
+        return ('recipes',)
+
+    assert forgesync.relock(work, door=lambda _root: (), render=lambda _root: (), data=data) == ('recipes',)
+    assert 'Relocked: recipes' in git_out(work, 'log', '-1', '--format=%b')
+    assert git_out(work, 'show', 'HEAD:pyproject.toml') == 'rev = "new"'
+    assert git_out(work, 'status', '--porcelain') == ''

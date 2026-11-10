@@ -430,6 +430,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgekeyfile',
     # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
     'gitenv',
+    # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.
+    'datadeps',
     # ORIGINAL: split out of `hpcaccount.fleet` inside the kit (2026-11-10); the judge's machine file reads it too.
     'machinehome',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.

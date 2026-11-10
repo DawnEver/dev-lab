@@ -39,6 +39,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import datadeps
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.lockcheck import LOCK
@@ -55,8 +56,10 @@ CONFIG_KEY: Final = 'labSyncFrom'
 
 _ORIGIN: Final = 'origin/'
 
+#: The file a data pin's relock rewrites (:mod:`dev_lab.dev.datadeps`).
+PYPROJECT: Final = 'pyproject.toml'
 #: The subject of the commit a sync's relock lands as.
-RELOCK_TITLE: Final = 'build(deps): relock the floated siblings to their current heads'
+RELOCK_TITLE: Final = 'build(deps): relock the floated siblings and data pins to their current heads'
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -193,6 +196,7 @@ def relock(
     *,
     door: Callable[[Path], Sequence[str]] = relock_floating,
     render: Callable[[Path], Sequence[str]] = rerender,
+    data: Callable[[Path], Sequence[str]] = datadeps.relock,
 ) -> tuple[str, ...]:
     """Relock *root*'s floated siblings (*door*); when the lock moved, re-*render* and commit both; the moved names.
 
@@ -208,12 +212,13 @@ def relock(
         raise RelockFailed(msg)
     clean = _touched(root)
     try:
-        names = tuple(door(root))
-        if not names or not _git(root, 'status', '--porcelain', '--', LOCK).stdout.strip():
+        names = (*door(root), *data(root))
+        moved = {row[3:] for row in _git(root, 'status', '--porcelain', '--', LOCK, PYPROJECT).stdout.splitlines()}
+        if not names or not moved:
             return ()
         rendered = tuple(render(root))
         # ONLY what the door and the renderers wrote: they never stage, so a path staged meanwhile is someone else's.
-        wrote = sorted(({path for _, path in _touched(root) - clean} - set(_staged(root))) | {LOCK})
+        wrote = sorted(({path for _, path in _touched(root) - clean} - set(_staged(root))) | moved)
         body = '\n'.join([f'Relocked: {", ".join(names)}', *([f'Rendered: {", ".join(rendered)}'] if rendered else [])])
         if (done := _git(root, 'add', '--', *wrote)).returncode != 0 or (
             done := _commit(root, wrote, RELOCK_TITLE, body)
