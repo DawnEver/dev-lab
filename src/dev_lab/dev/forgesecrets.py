@@ -1,5 +1,10 @@
 """``forge secrets sync --task <task>``: one ai-lab task's key bundle set on every repo this machine declares.
 
+The same door carries the family review month's two derived facts (:mod:`dev_lab.dev.reviewledger`): ``secrets
+store|sync --secret DEV_LAB_LEDGER_TOKEN`` keeps and distributes the ONE ledger's token like a bundle, and ``secrets
+month`` writes the machine's month as the repository VARIABLE ``DEV_LAB_REVIEW_MONTH`` (``gh variable set``, the
+value on stdin) -- derived data, no secret, from the one source ``section('ai_lab')`` and ``section('review')``.
+
 A task's bundle (:mod:`dev_lab.dev.taskkeys`) lives in ONE secret per repo, named by
 :func:`~dev_lab.dev.taskkeys.secret_name`. The repos are this machine's FAMILY -- the machine file's ``[repos]``, the
 one member list (:mod:`dev_lab.dev.family.members`) -- each at its declared checkout and placed on its forge by
@@ -50,6 +55,7 @@ from lab_commons.log import emit
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.reviewledger import LEDGER_TOKEN, MONTH_VAR, FamilyMonth, declared_month
 from dev_lab.dev.taskkeys import secret_name
 
 if TYPE_CHECKING:
@@ -58,10 +64,12 @@ if TYPE_CHECKING:
 
 __all__ = [
     'BUNDLE_HOST',
+    'PLAIN_SECRETS',
     'Target',
     'declared',
     'main',
     'set_secret',
+    'set_variable',
     'store_bundle',
     'stored_bundle',
     'targets',
@@ -72,17 +80,20 @@ __all__ = [
 #: The credential-store host the task bundles are kept under (a name, never contacted); the username is the secret.
 BUNDLE_HOST: Final = 'task-keys.dev-lab.invalid'
 
+#: The secrets that are no task bundle, each kept and synced by its own name (``--secret``).
+PLAIN_SECRETS: Final = (LEDGER_TOKEN,)
 
-def store_bundle(task: str, bundle: str) -> None:
-    """Keep *task*'s *bundle* in the git credential store, replacing the one there (a rotation)."""
+
+def store_bundle(name: str, bundle: str) -> None:
+    """Keep secret *name*'s *bundle* in the git credential store, replacing the one there (a rotation)."""
     encoded = base64.b64encode(bundle.encode('utf-8')).decode('ascii')
-    store_credential(BUNDLE_HOST, secret_name(task), encoded)
+    store_credential(BUNDLE_HOST, name, encoded)
 
 
-def stored_bundle(task: str) -> str:
-    """*task*'s stored bundle; ``''`` when none is stored."""
+def stored_bundle(name: str) -> str:
+    """Secret *name*'s stored value; ``''`` when none is stored."""
     try:
-        return base64.b64decode(credential_for(BUNDLE_HOST, username=secret_name(task))[1]).decode('utf-8')
+        return base64.b64decode(credential_for(BUNDLE_HOST, username=name)[1]).decode('utf-8')
     except NoCredential:
         return ''
 
@@ -124,9 +135,9 @@ def withheld(target: Target) -> str:
     )
 
 
-def _gh(target: Target, name: str, bundle: str) -> None:
-    """``gh secret set``, the bundle on stdin; a failure names the report's remedy, never the output (it may echo)."""
-    argv = ['gh', 'secret', 'set', name, '-R', f'{target.forge.owner}/{target.forge.repo}']
+def _gh(target: Target, name: str, bundle: str, *, kind: str = 'secret') -> None:
+    """``gh <kind> set``, the value on stdin; a failure names the report's remedy, never the output (it may echo)."""
+    argv = ['gh', kind, 'set', name, '-R', f'{target.forge.owner}/{target.forge.repo}']
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         return _door.run(command, input=bundle, capture_output=True, check=False, **kwargs)
@@ -148,6 +159,18 @@ def set_secret(target: Target, name: str, bundle: str) -> None:
     _gh(target, name, bundle)
 
 
+def set_variable(target: Target, name: str, value: str) -> None:
+    """Set repository variable *name* to *value* on *target* (``gh variable set``); a non-GitHub member is refused.
+
+    Raises:
+        OSError: withheld, or the door refused or ran out.
+
+    """
+    if why := withheld(target):
+        raise OSError(why)
+    _gh(target, name, value, kind='variable')
+
+
 def _piped() -> str:
     """Stdin when something is piped to it; ``''`` at a terminal, which would otherwise wait for a person."""
     return '' if sys.stdin.isatty() else sys.stdin.read()
@@ -160,18 +183,50 @@ def _said(bundle: str) -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forge secrets', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
-    keep = verbs.add_parser('store', help="keep the task's key bundle (stdin, or --from) in the credential store")
-    keep.add_argument('--task', required=True, help='the ai-lab task, e.g. pr-review')
+    keep = verbs.add_parser('store', help='keep a bundle or named secret (stdin or --from) in the credential store')
     keep.add_argument(
         '--from',
         dest='source',
         type=Path,
-        help='read the bundle from this file instead of stdin, then delete it; refused inside a git checkout',
+        help='read the value from this file instead of stdin, then delete it; refused inside a git checkout',
     )
     sync = verbs.add_parser('sync', help="set the task's key bundle (stdin, else the stored one) on every member")
-    sync.add_argument('--task', required=True, help='the ai-lab task, e.g. pr-review')
+    for one in (keep, sync):
+        which = one.add_mutually_exclusive_group(required=True)
+        which.add_argument('--task', help='the ai-lab task, e.g. pr-review')
+        which.add_argument('--secret', choices=PLAIN_SECRETS, help='a secret that is no task bundle, by its name')
     sync.add_argument('--dry-run', action='store_true', help='list the targets; read and write nothing')
+    month = verbs.add_parser('month', help=f"set {MONTH_VAR} on every GitHub member from this machine's month")
+    month.add_argument('--dry-run', action='store_true', help='list the targets and the value; write nothing')
     return parser
+
+
+def _month(
+    found: Sequence[Target], skipped: Sequence[str], month: Callable[[], FamilyMonth | None], *, dry_run: bool,
+    write: Callable[[Target, str, str], None],
+) -> int:  # fmt: skip
+    """``secrets month``: the derived variable on every reachable member; refused (2) when no month is declared."""
+    try:
+        family = month()
+    except ValueError as bad:
+        emit(f'[secrets] refused: {bad}', err=True)
+        return 2
+    if family is None:
+        emit('[secrets] refused: this machine declares no review month ([ai_lab.standing] review)', err=True)
+        return 2
+    value, failed = family.text(), False
+    for target in found:
+        if dry_run:
+            emit(f'[secrets] would set {MONTH_VAR}={value} on {target.forge.identity}')
+            continue
+        try:
+            write(target, MONTH_VAR, value)
+        except OSError as refused:
+            failed = True
+            emit(f'[secrets] {target.forge.identity}: {MONTH_VAR} refused: {refused}', err=True)
+            continue
+        emit(f'[secrets] {target.forge.identity}: {MONTH_VAR} set ({value})')
+    return 1 if failed or skipped else 0
 
 
 def _reachable(repos: Mapping[str, Path]) -> tuple[list[Target], list[str]]:
@@ -185,17 +240,17 @@ def _reachable(repos: Mapping[str, Path]) -> tuple[list[Target], list[str]]:
 
 
 def _store(
-    task: str, name: str, read: Callable[[], str], store: Callable[[str, str], None], source: Path | None
+    flag: str, name: str, read: Callable[[], str], store: Callable[[str, str], None], source: Path | None
 ) -> int:
-    """``secrets store``: keep the bundle from *source* when named, else the piped one; refused (2) when none."""
+    """``secrets store``: keep *source*'s value, else the piped one, under *name*; refused (2) when none."""
     if source is not None:
-        return _store_from(task, name, source, store)
+        return _store_from(flag, name, source, store)
     piped = read()
     if not piped.strip():
-        emit(f'[secrets] refused: no {task} key bundle on stdin', err=True)
+        emit(f'[secrets] refused: no {name} value on stdin', err=True)
         return 2
-    store(task, piped)
-    emit(f'[secrets] stored {name} ({_said(piped)}); run `secrets sync --task {task}` to reach every member')
+    store(name, piped)
+    emit(f'[secrets] stored {name} ({_said(piped)}); run `secrets sync {flag}` to reach every member')
     return 0
 
 
@@ -219,15 +274,15 @@ def _read_source(task: str, source: Path) -> tuple[str, str]:
     return bundle, ''
 
 
-def _store_from(task: str, name: str, source: Path, store: Callable[[str, str], None]) -> int:
+def _store_from(flag: str, name: str, source: Path, store: Callable[[str, str], None]) -> int:
     """``secrets store --from``: keep the bundle in *source*, then unlink it; refused (2) with the file kept."""
     source = source.absolute()
-    bundle, why = _read_source(task, source)
+    bundle, why = _read_source(name, source)
     if why:
         emit(f'[secrets] refused: {why}', err=True)
         return 2
     try:
-        store(task, bundle)
+        store(name, bundle)
     except (OSError, NoCredential) as failed:  # its message is not echoed: it never names a key, but need not
         emit(f'[secrets] refused: storing {source} failed ({type(failed).__name__}); the file is kept', err=True)
         return 2
@@ -238,7 +293,7 @@ def _store_from(task: str, name: str, source: Path, store: Callable[[str, str], 
              'delete it by hand', err=True)  # fmt: skip
         return 1
     emit(f'[secrets] stored {name} ({_said(bundle)}) and deleted {source}; '
-         f'run `secrets sync --task {task}` to reach every member')  # fmt: skip
+         f'run `secrets sync {flag}` to reach every member')  # fmt: skip
     return 0
 
 
@@ -250,30 +305,54 @@ def main(
     store: Callable[[str, str], None] = store_bundle,
     members: Callable[[], Mapping[str, Path]] = declared,
     write: Callable[[Target, str, str], None] = set_secret,
+    variable: Callable[[Target, str, str], None] = set_variable,
+    month: Callable[[], FamilyMonth | None] = declared_month,
 ) -> int:
-    """``secrets store|sync --task <task> [--dry-run]``: exit 0 done, 1 one target refused or skipped, 2 refused."""
+    """``secrets store|sync --task|--secret [--dry-run]``, ``secrets month [--dry-run]``.
+
+    Exit 0 done, 1 one target refused or skipped, 2 refused.
+    """
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
+    task, plain = getattr(args, 'task', None), getattr(args, 'secret', None)
     try:
-        name = secret_name(args.task)
+        name = secret_name(task) if task else plain or ''
     except ValueError as bad:
         emit(f'[secrets] refused: {bad}', err=True)
         return 2
+    flag = f'--task {task}' if task else f'--secret {plain}'
     read = stdin or _piped
     if args.verb == 'store':
-        return _store(args.task, name, read, store, args.source)
+        return _store(flag, name, read, store, args.source)
     found, skipped = _reachable(members())
     if not found:
         emit('[secrets] refused: no [repos] member checkout on a forge in the machine file', err=True)
         return 2
-    if args.dry_run:
+    if args.verb == 'month':
+        return _month(found, skipped, month, dry_run=args.dry_run, write=variable)
+
+    def value() -> str:
+        return _or_stored(read(), name, stored)
+
+    return _sync(found, skipped, name, flag, dry_run=args.dry_run, value=value, write=write)
+
+
+def _or_stored(piped: str, name: str, stored: Callable[[str], str]) -> str:
+    """The piped value when one was piped, else the one stored under *name*."""
+    return piped if piped.strip() else stored(name)
+
+
+def _sync(
+    found: Sequence[Target], skipped: Sequence[str], name: str, flag: str, *, dry_run: bool,
+    value: Callable[[], str], write: Callable[[Target, str, str], None],
+) -> int:  # fmt: skip
+    """``secrets sync``: secret *name* on every reachable member, its value piped else stored."""
+    if dry_run:
         for target in found:
             emit(f'[secrets] would set {name} on {target.forge.identity}')
         return 1 if skipped else 0
-    piped = read()
-    bundle = piped if piped.strip() else stored(args.task)
+    bundle = value()
     if not bundle.strip():
-        emit(f'[secrets] refused: no {args.task} key bundle on stdin or stored: `secrets store --task {args.task}`',
-             err=True)  # fmt: skip
+        emit(f'[secrets] refused: no {name} value on stdin or stored: `secrets store {flag}`', err=True)
         return 2
     said = _said(bundle)
     failed = False

@@ -44,6 +44,7 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
+from dev_lab.dev.reviewledger import LEDGER_TOKEN, MONTH_VAR
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -170,10 +171,13 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     assert 'env' not in store, 'the store holds no key: the door loads it'
     helper = 'credential.helper "cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket"'
     assert helper in store['run'], 'in memory, one review long, the job its own'
-    assert set(review['env']) == {name}
-    assert review['env'][name].endswith(f"&& secrets.{name} || '' }}}}"), (
-        'a fork PR is withheld it (test_a_fork_pr_s_review_job_holds_secret_free)'
-    )
+    # the family review month reaches the job as a derived VARIABLE, the one ledger's token as a secret
+    assert set(review['env']) == {name, MONTH_VAR, LEDGER_TOKEN}
+    assert review['env'][MONTH_VAR] == f'${{{{ vars.{MONTH_VAR} }}}}'
+    for secret in (name, LEDGER_TOKEN):
+        assert review['env'][secret].endswith(f"&& secrets.{secret} || '' }}}}"), (
+            'a fork PR is withheld it (test_a_fork_pr_s_review_job_holds_secret_free)'
+        )
     assert f'--keys-env {name}' in review['run']
     names = list(steps)
     assert names.index('Keep the review keys in memory') < names.index('tests/review')
@@ -183,7 +187,7 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     again = rendered['review-again.yml']['jobs']['again']['steps'][-1]
     assert 'forge review run --pr ${{ github.event.issue.number }}' in again['run']
     assert f'--keys-env {name}' in again['run']
-    assert set(again['env']) == {name}
+    assert set(again['env']) == {name, MONTH_VAR, LEDGER_TOKEN}
     assert _PROVIDERS.findall('env: { ANTHROPIC_' + 'API_KEY: x }'), 'PLANTED CONTROL'
 
 

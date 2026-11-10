@@ -70,7 +70,9 @@
           "name": "Review the PR again",
           "run": "trap \"git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit\" EXIT; uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.issue.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"",
           "env": {
-            "AI_LAB_KEYS_PR_REVIEW": "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}"
+            "AI_LAB_KEYS_PR_REVIEW": "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}",
+            "DEV_LAB_REVIEW_MONTH": "${{ vars.DEV_LAB_REVIEW_MONTH }}",
+            "DEV_LAB_LEDGER_TOKEN": "${{ secrets.DEV_LAB_LEDGER_TOKEN }}"
           }
         }
       ],

@@ -19,9 +19,12 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.reviewbudget import Spend, open_share, read_spend
+from dev_lab.dev.reviewledger import forge_ledger, hosted_here, month_here
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+
+    from dev_lab.dev.reviewledger import FamilyMonth, Ledger
 
 __all__ = [
     'PENDING_EXIT', 'REFUSED_EXIT', 'ReviewPending', 'ReviewRefused', 'ReviewUnsupported', 'Runner', 'can_start',
@@ -142,6 +145,12 @@ class Runner:
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend
     #: Opens a PR's share of the review allotment in this host's ai-lab (:func:`dev_lab.dev.reviewbudget.open_share`).
     allot: Callable[..., str | None] = open_share  # (runtimes, root, share, usd[, provider])
+    #: The family's ONE review month on this host (:func:`dev_lab.dev.reviewledger.month_here`); ``None``: none.
+    month: Callable[[], FamilyMonth | None] = month_here
+    #: The ONE ledger the month names (:func:`dev_lab.dev.reviewledger.forge_ledger`), every reviewer's.
+    ledger: Callable[[FamilyMonth], Ledger] = forge_ledger
+    #: Whether this host has no machine file (:func:`dev_lab.dev.reviewledger.hosted_here`): ai-lab reads a derived one.
+    hosted: Callable[[], bool] = hosted_here
     #: Whether a standing success the gate does not count is reviewed afresh rather than stood on -- the review JOB
     #: (dev-lab #38): Gitea re-runs a run in place, its conclusion reset, so a re-run cannot verify the success its
     #: earlier attempt posted from one a PR-head workflow planted, and reviews the head again.

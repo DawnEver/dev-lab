@@ -42,6 +42,7 @@ once it is ``quiet`` old. DRAFTS are never reviewed. A BATCH STILL RUNNING IS NO
 from __future__ import annotations
 
 import dataclasses
+import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
@@ -98,6 +99,16 @@ from dev_lab.dev.reviewbudget import (
 from dev_lab.dev.reviewcap import unreviewed_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
+from dev_lab.dev.reviewledger import (
+    LEDGER_UNREAD,
+    FamilyMonth,
+    Hosted,
+    Ledger,
+    forge_ledger,
+    hosted_here,
+    month_here,
+    spend_of,
+)
 from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
@@ -178,18 +189,46 @@ def _grown(record: Record, size: int) -> bool:
 
 def _budget(
     root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner
-) -> tuple[Review | None, str, Gate]:
-    """*review* as the PR's dollar budget lets it run (:mod:`dev_lab.dev.reviewbudget`), else ``None``; why; its cap."""
+) -> tuple[Review | None, str, Gate, Hosted | None]:
+    """*review* as the PR's dollar budget lets it run (:mod:`dev_lab.dev.reviewbudget`), else ``None``; why; its cap.
+
+    The family's ONE month, when this host has it (:func:`~dev_lab.dev.reviewledger.month_here`), is charged to the
+    ONE ledger (:mod:`dev_lab.dev.reviewledger`): the fourth value. Otherwise the host's ai-lab gates, and one with
+    no review allotment skips, named.
+    """
     bodies = trusted_bodies(client, pull.number, review.reviewers)
+    hosted = None
     try:
-        spend = runner.spend(runner.runtimes, root)
+        family = runner.month()
+        if family is not None:
+            hosted = _hosted(root, family, runner)
+    except (ForgeCallFailed, OSError, ValueError) as unread:
+        why = f'skipped: {LEDGER_UNREAD}: {unread}'
+        return None, why, Gate('skip', why), None
+    try:
+        spend = hosted.spend if hosted is not None else runner.spend(runner.runtimes, root)
     except NoReviewAllotment as none:  # the reached-cap case: skipped, named (ruling 2026-11-10)
-        return None, f'skipped: {none}', Gate('skip', f'skipped: {none}')
+        return None, f'skipped: {none}', Gate('skip', f'skipped: {none}'), None
     spent = max(recorded_usd(bodies), 0.0 if spend is None else spend.of(tag_of(pull.url, pull.number)))
     allowed = gate(number=pull.number, spent_usd=spent, spend=spend, raised=raised_of(bodies))
     if allowed.state != 'run':
-        return None, allowed.why, allowed
-    return dataclasses.replace(review, model=allowed.model or review.model), allowed.why, allowed
+        return None, allowed.why, allowed, None
+    return dataclasses.replace(review, model=allowed.model or review.model), allowed.why, allowed, hosted
+
+
+def _hosted(root: Path, family: FamilyMonth, runner: Runner) -> Hosted:
+    """The family *month* on this host, its spend read from the ONE ledger (:mod:`dev_lab.dev.reviewledger`)."""
+    ledger, now = runner.ledger(family), runner.clock()
+    spend = spend_of(family.month, ledger.entries(), now=now)
+
+    def read_spent() -> float | None:
+        try:
+            got = runner.spend(runner.runtimes, root)
+        except (NoReviewAllotment, OSError, ValueError):
+            return None
+        return None if got is None else got.spent_usd
+
+    return Hosted(family.month, ledger, spend, read_spent, now, derive=runner.hosted())
 
 
 def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner) -> str | None:
@@ -220,10 +259,24 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
         return stands(client, pull, record, carry)
     if (wait := _young(root, head, runner)) is not None:
         return f'#{pull.number} {head[:12]}: {wait}'
-    allowed, note, held = _budget(root, client, review, pull, runner)
+    allowed, note, held, hosted = _budget(root, client, review, pull, runner)
     if allowed is None:
         return unreviewed(client, pull, f'review {note}')
-    return f'{_run(root, client, allowed, pull, runner, held=held, carry=carry)} ({note})'
+    return _run_hosted(root, client, allowed, pull, runner, held=held, carry=carry, hosted=hosted, note=note)
+
+
+def _run_hosted(
+    root: Path, client: Client, review: Review, pull: PullRequest, runner: Runner, *, held: Gate,
+    carry: Carried | None, hosted: Hosted | None, note: str,
+) -> str:  # fmt: skip
+    """:func:`_run`; a *hosted* one inside its forge hold (:meth:`~dev_lab.dev.reviewledger.Hosted.run`)."""
+    if hosted is None:
+        return f'{_run(root, client, review, pull, runner, held=held, carry=carry)} ({note})'
+    repo = tag_of(pull.url, pull.number).rpartition('#')[0]
+    with hosted.run(repo=repo, number=pull.number, usd=held.usd, env=os.environ) as refused:
+        if refused is not None:
+            return unreviewed(client, pull, f'review skipped: {refused}')
+        return f'{_run(root, client, review, pull, runner, held=held, carry=carry)} ({note}; the family month)'
 
 
 def _run(
@@ -343,6 +396,9 @@ def review_tick(
     spend: Callable[[Mapping[str, Mapping[str, Any]], Path], Spend | None] = read_spend,
     quiet: timedelta = timedelta(0),
     allot: Callable[..., str | None] = open_share,  # (runtimes, root, share, usd[, provider]),
+    month: Callable[[], FamilyMonth | None] = month_here,
+    ledger: Callable[[FamilyMonth], Ledger] = forge_ledger,
+    hosted: Callable[[], bool] = hosted_here,
 ) -> tuple[str, ...]:
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
 
@@ -361,6 +417,9 @@ def review_tick(
         spend=spend,
         quiet=quiet,
         allot=allot,
+        month=month,
+        ledger=ledger,
+        hosted=hosted,
     )
 
     def said(pull: PullRequest) -> str | None:

@@ -159,7 +159,7 @@ def test_the_bundle_is_stored_once_and_sync_reads_it_when_nothing_is_piped(
     assert forgesecrets.main(['store', '--task', 'pr-review'], stdin=lambda: _BUNDLE) == 0
     assert list(kept) == [(forgesecrets.BUNDLE_HOST, 'AI_LAB_KEYS_PR_REVIEW')]
     assert '\n' not in next(iter(kept.values()))
-    assert forgesecrets.stored_bundle('pr-review') == _BUNDLE
+    assert forgesecrets.stored_bundle('AI_LAB_KEYS_PR_REVIEW') == _BUNDLE
     repos = _repos(tmp_path, monkeypatch)
     wrote: list[str] = []
     assert forgesecrets.main(['sync', '--task', 'pr-review'], stdin=lambda: '', members=lambda: repos,

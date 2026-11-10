@@ -129,7 +129,9 @@
           "name": "Review the due heads",
           "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --due --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
           "env": {
-            "AI_LAB_KEYS_PR_REVIEW": "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}"
+            "AI_LAB_KEYS_PR_REVIEW": "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}",
+            "DEV_LAB_REVIEW_MONTH": "${{ vars.DEV_LAB_REVIEW_MONTH }}",
+            "DEV_LAB_LEDGER_TOKEN": "${{ secrets.DEV_LAB_LEDGER_TOKEN }}"
           }
         }
       ],

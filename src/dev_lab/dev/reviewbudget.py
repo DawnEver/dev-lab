@@ -29,10 +29,10 @@ review's: it runs past a spent review month, at its raised cap, never degraded -
 and ai-lab refuses it, naming the level, when the provider's free month cannot hold it.
 
 A host with no ``[runtimes.ai_lab]`` caps nothing, and says so. An ai-lab whose report has no ``review`` allotment
-(:class:`NoReviewAllotment`) -- a GitHub-hosted runner has no machine file -- is the reached-cap case (integrator
-ruling 2026-11-10): the review is SKIPPED AND NAMED (:data:`NO_REVIEW_ALLOTMENT`) and the PR merges ``Unreviewed:``.
-No budget is invented there: an ephemeral runner's ledger is always empty, so a month bound on it means nothing; the
-provider's console cap bounds it.
+(:class:`NoReviewAllotment`) is the reached-cap case (integrator ruling 2026-11-10): the review is SKIPPED AND NAMED
+(:data:`NO_REVIEW_ALLOTMENT`) and the PR merges ``Unreviewed:``. Where the family's ONE month reaches a host (the
+judge's machine file, a runner's derived variable: :class:`Month`, :mod:`dev_lab.dev.reviewledger`), the month's
+spend is the ONE shared ledger's, every reviewer's, never one host's ai-lab ledger.
 """
 
 from __future__ import annotations
@@ -62,6 +62,7 @@ __all__ = [
     'DEGRADE_BELOW',
     'INITIAL_PRS_PER_MONTH',
     'MIN_FITTED_PRS',
+    'MONTH_CURRENCY',
     'NO_REVIEW_ALLOTMENT',
     'RAISE_DOOR',
     'REVIEW_ALLOTMENT',
@@ -70,6 +71,7 @@ __all__ = [
     'TAG_ENV',
     'Fit',
     'Gate',
+    'Month',
     'NoReviewAllotment',
     'Raised',
     'ShareRefused',
@@ -125,9 +127,45 @@ RESERVE_ALLOTMENT: Final = 'reserve'
 #: The integrator's door to raise one PR's cap, with its reason recorded on the PR.
 RAISE_DOOR: Final = 'forge review cap {pr} --usd <n> --why "<reason>"'
 
+#: The one currency a declared :class:`Month` is in: every cap here is US dollars.
+MONTH_CURRENCY: Final = 'USD'
+
 _DAYS_PER_MONTH: Final = 30
 _SPEND_TIMEOUT_S: Final = 300
 _RAISED: Final = re.compile(r'<!-- review-cap (?P<json>\{.*?\}) -->', re.DOTALL)
+
+
+@dataclass(frozen=True)
+class Month:
+    """The family's review month (:mod:`dev_lab.dev.reviewledger`): ``{ provider, amount, currency }``.
+
+    The shape of ai-lab's ``[ai_lab.standing] review``; the provider it draws on, the US dollars a month.
+    """
+
+    provider: str
+    amount: float
+    currency: str = MONTH_CURRENCY
+
+    def __post_init__(self) -> None:
+        """Refuse an empty provider, an amount that is no non-negative finite number, or a currency but USD."""
+        if not isinstance(self.provider, str) or not self.provider:
+            msg = f'month provider = {self.provider!r} names no ai-lab provider'
+            raise ValueError(msg)
+        if isinstance(self.amount, bool) or not isinstance(self.amount, int | float) or not 0 <= self.amount < math.inf:
+            msg = f'month amount = {self.amount!r} is no finite, non-negative number of US dollars'
+            raise ValueError(msg)
+        if self.currency != MONTH_CURRENCY:
+            msg = f'month currency = {self.currency!r}: every review cap is in {MONTH_CURRENCY}'
+            raise ValueError(msg)
+
+    @classmethod
+    def from_declared(cls, value: object) -> Month:
+        """The :class:`Month` a manifest's inline table declares; an unknown key or a non-table is refused."""
+        known = {'provider', 'amount', 'currency'}
+        if not isinstance(value, dict) or set(value) - known or not {'provider', 'amount'} <= set(value):
+            msg = f'month = {value!r} is not {{ provider = "<ai-lab provider>", amount = <USD>, currency = "USD" }}'
+            raise ValueError(msg)
+        return cls(**value)
 
 
 @dataclass(frozen=True)
