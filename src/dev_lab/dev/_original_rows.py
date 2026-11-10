@@ -426,6 +426,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeverdict',
     # ORIGINAL: split out of `forgeauth` inside the kit (2026-11-10); no consumer held it.
     'forgekeyfile',
+    # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
+    'gitenv',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
     'opsserver',
     'remote',
