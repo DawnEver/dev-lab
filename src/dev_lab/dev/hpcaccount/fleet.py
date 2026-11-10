@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import sys
 import tomllib
@@ -42,6 +41,7 @@ from lab_commons.log import emit
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.hpcaccount.division import Division, split_hpc
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
+from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.remote import detached, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
 
@@ -52,18 +52,7 @@ KIND: Final = 'deploy-fleet'
 _BASE: Final = '.cache/dev-lab'
 
 
-def _default_layout() -> tuple[str, str]:
-    """The machine home under ``$HOME`` and the machine file under it, as lab-commons lays them out unset."""
-    saved = {name: os.environ.pop(name) for name in (_home.HOME_ENV, CONFIG_ENV) if name in os.environ}
-    try:
-        machine_home = _home.home().relative_to(Path.home())
-        under = _home.config_path().relative_to(_home.home())
-    finally:
-        os.environ.update(saved)
-    return PurePosixPath(*machine_home.parts).as_posix(), PurePosixPath(*under.parts).as_posix()
-
-
-_MACHINE_HOME, _CONFIG_UNDER_HOME = _default_layout()
+_MACHINE_HOME, _CONFIG_UNDER_HOME = default_layout()
 
 #: The account's machine file as ITS python resolves it (:func:`lab_commons.config.config_path`): the override, else
 #: the machine home's file. Prints ``# <path>`` first, so a refusal names the file it looked in.

@@ -23,17 +23,21 @@ remedy, never opened.
 
 from __future__ import annotations
 
+import json
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from lab_commons.config import FAMILY_TABLE
+
+from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
 from dev_lab.ops import forcecommand
 from dev_lab.ops.access import Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.backuprole import Backup
 from dev_lab.ops.caddy import install_caddy
-from dev_lab.ops.config import OpsConfig, Probe
+from dev_lab.ops.config import Judge, OpsConfig, Probe
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.totp import write_private
@@ -103,7 +107,18 @@ def _judge(config: OpsConfig) -> dict[str, str]:
         '[Unit]\nDescription=Bundle-review judge pass (dev_lab.ops)\n'
         f'[Timer]\nOnCalendar={role.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
     )
-    return {f'etc/systemd/system/{_UNIT}-judge.service': service, f'etc/systemd/system/{_UNIT}-judge.timer': timer}
+    rendered = {f'etc/systemd/system/{_UNIT}-judge.service': service, f'etc/systemd/system/{_UNIT}-judge.timer': timer}
+    if role.family:  # the judge's machine file: its family layer, read under the HOME the unit sets
+        keys = [key for key in ('source', 'file', 'max_age') if key in role.family]
+        table = ''.join(f'{key} = {json.dumps(role.family[key])}\n' for key in keys)
+        rendered[_judge_machine_file(role).lstrip('/')] = f'[{FAMILY_TABLE}]\n{table}'
+    return rendered
+
+
+def _judge_machine_file(role: Judge) -> str:
+    """The judge's machine file, laid out under its HOME as lab-commons lays it out (:mod:`dev_lab.dev.machinehome`)."""
+    machine_home, under_home = default_layout()
+    return f'{role.home_dir}/{machine_home}/{under_home}'
 
 
 def _consent(config: OpsConfig) -> dict[str, str]:
@@ -290,6 +305,7 @@ def _judge_steps(config: OpsConfig) -> list[str]:
             f'id {judged.user} || useradd --system --create-home --home-dir {judged.home_dir} {judged.user}',
             f'chmod 700 {judged.home_dir}', f'{as_judge} git config --global credential.helper store',
             f'{as_judge} {shlex.join(loader(config.python, REVIEW_TASK))}{bundle}',
+            *([f'chown -R {judged.user}: {judged.home_dir}/{default_layout()[0]}'] if judged.family else []),
             'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-judge.timer']  # fmt: skip
 
 

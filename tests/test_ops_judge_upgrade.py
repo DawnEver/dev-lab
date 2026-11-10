@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import sys
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.machinehome import default_layout
 from dev_lab.ops import __main__ as door
-from dev_lab.ops import install as install_module
-from dev_lab.ops import judge, upgrade
+from dev_lab.ops import installpaths, judge, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.install import install
 
@@ -258,7 +259,7 @@ def test_install_names_the_remedy_when_the_judge_cannot_enter_its_keys_directory
     where = tmp_path.as_posix()
     remedy = f'forge-judge cannot enter {where}: chown root:forge-judge {where} && chmod 750 {where}'
     for enters, named in ((False, True), (True, False)):
-        monkeypatch.setattr(install_module, '_may_enter', lambda path, _user, enters=enters: enters or path != keys)
+        monkeypatch.setattr(installpaths, '_may_enter', lambda path, _user, enters=enters: enters or path != keys)
         steps = install(host, root, chown=lambda *_: None).next_steps
         assert any(step.startswith(remedy) for step in steps) is named
 
@@ -346,3 +347,28 @@ def test_install_narrows_a_0644_keys_file_to_root_0600(tmp_path: Path) -> None:
     assert ('pr-review.toml', 'root', 'root') in seen
     if sys.platform != 'win32':
         assert bundle.stat().st_mode & 0o777 == 0o600
+
+
+def test_install_renders_the_judges_machine_file_with_the_family_layer(tmp_path: Path) -> None:
+    """The judge reads its review month through lab-commons' family layer: install renders that one table."""
+    family = '[ops.judge.family]\nsource = "/srv/family-config"\nfile = "family.toml"\nmax_age = 172800\n'
+    host = _config(tmp_path, _judge_table(tmp_path) + family)
+    done = install(host, tmp_path / 'root')
+    machine_home, under_home = default_layout()
+    machine = tmp_path / 'root' / 'var/lib/judge' / machine_home / under_home
+    rendered = tomllib.loads(machine.read_text(encoding='utf-8'))
+    assert rendered == {'family': {'source': '/srv/family-config', 'file': 'family.toml', 'max_age': 172800}}
+    chown = f'chown -R judge: /var/lib/judge/{machine_home}'
+    assert chown in done.next_steps
+    useradd = next(i for i, step in enumerate(done.next_steps) if 'useradd' in step)
+    assert useradd < done.next_steps.index(chown)  # the account exists first
+
+
+def test_no_family_renders_no_judge_machine_file(tmp_path: Path) -> None:
+    install(_config(tmp_path, _judge_table(tmp_path)), tmp_path / 'root')
+    assert not (tmp_path / 'root' / 'var/lib/judge' / default_layout()[0]).exists()
+
+
+def test_a_family_with_no_source_is_refused_at_load(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match='names no source'):
+        _config(tmp_path, _judge_table(tmp_path) + '[ops.judge.family]\nfile = "family.toml"\n')
