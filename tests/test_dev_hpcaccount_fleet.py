@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from lab_commons.config import CONFIG_ENV
+from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev.hpcaccount.division import load_division
-from dev_lab.dev.hpcaccount.fleet import Target, deploy_fleet, remote_argv
+from dev_lab.dev.hpcaccount.fleet import _READ_DEPLOY, Target, declared_target, deploy_fleet, remote_argv
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -180,3 +182,16 @@ def test_the_fleet_view_prints_each_accounts_declared_role(tmp_path: Path) -> No
     assert code == 0
     assert any(line.startswith('alice (research): started') for line in said)
     assert any(line.startswith('bob (role undeclared): started') for line in said)
+
+
+def test_the_deploy_table_is_read_where_the_accounts_own_config_path_resolves() -> None:
+    """Measured 2026-11-10: a retired ``~/.config/lab-commons`` path refused two deployed accounts."""
+    assert '${LAB_COMMONS_CONFIG:-${' in _READ_DEPLOY
+    assert _READ_DEPLOY.startswith(f'f="${{{CONFIG_ENV}:-${{{HOME_ENV}:-$HOME/')
+    assert '.config/lab-commons' not in _READ_DEPLOY
+
+
+def test_a_refusal_names_the_file_it_looked_in() -> None:
+    grant = Grant(user='carol', hosts=_HOSTS, slurm_account='acct')
+    why = declared_target(grant, lambda _cmd, _stdin=None: '# /srv/u/machine/config.toml\n')
+    assert why == 'carol: refused -- no [deploy] host in /srv/u/machine/config.toml; deploy it once by hand'

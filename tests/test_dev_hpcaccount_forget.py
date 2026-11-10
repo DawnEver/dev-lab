@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.hpc.grants import Grant
 
+from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR, exits, remedy
 from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.hpcaccount.forget import forget_fleet
 
@@ -24,7 +26,7 @@ def _account(row: str | None, *, unreachable: bool = False, seen: list[str]) -> 
             msg = 'no login host answered'
             raise Unreachable(msg)
         seen.append(cmd)
-        if cmd.startswith('sed'):
+        if 'sed -n' in cmd:
             return _DEPLOY
         if ' -c ' in cmd:
             return 'null' if row is None else row
@@ -99,3 +101,25 @@ def test_named_accounts_run_only_those() -> None:
 
 def test_forget_is_an_exit_of_hpc_through_the_door() -> None:
     assert 'forget' in exits_of('HPC-THROUGH-THE-DOOR', 'dev_lab.dev.hpcaccount')
+
+
+def test_the_hpc_refusal_names_the_forget_command_with_its_flags() -> None:
+    """User ruling 2026-11-10: a refusal names, per need, the exact unified door command."""
+    text = str(HPC_THROUGH_THE_DOOR['remedy'])
+    assert 'forget a learned row `hpcaccount forget --repo <url> --row <key> --fleet|--account <u> [--dry-run]`' in text
+    assert '-m dev_lab.dev.<door>' in text
+    assert '`forge queue`' in text
+    assert '`hpcaccount deploy-fleet' in text
+
+
+def test_a_verb_removed_from_the_exits_leaves_the_refusal() -> None:
+    """PLANTED CONTROL: without forget among the exits, the rendered refusal no longer names it."""
+    kept = [argv for argv in exits() if argv != ('dev_lab.dev.hpcaccount', 'forget')]
+    assert len(kept) == len(exits()) - 1
+    assert 'hpcaccount forget' not in remedy(kept)
+
+
+def test_an_exit_with_no_usage_line_is_refused() -> None:
+    """PLANTED CONTROL: a new door exit with no command line cannot render a vague refusal."""
+    with pytest.raises(KeyError, match='no USAGES line'):
+        remedy([*exits(), ('dev_lab.dev.hpcaccount', 'tick')])

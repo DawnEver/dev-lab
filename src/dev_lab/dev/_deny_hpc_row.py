@@ -15,12 +15,46 @@ command, or anywhere after ``ssh``. A non-HPC host (a workstation, a forge VM by
 
 from __future__ import annotations
 
-from dev_lab.dev.agentpolicy import exits_of
+from collections.abc import Iterable, Mapping
+from typing import Final
+
+from dev_lab.dev.agentpolicy import POLICY
 from dev_lab.dev.venvpath import PYTHON_SLOT
 
 _ID = 'HPC-THROUGH-THE-DOOR'
 
-__all__ = ['HPC_THROUGH_THE_DOOR']
+__all__ = ['HPC_THROUGH_THE_DOOR', 'USAGES', 'exits', 'remedy']
+
+#: Per door exit (its argv after ``python -m``): the need it serves, and its full command line. EVERY exit of
+#: :data:`POLICY` must have one (:func:`remedy` raises otherwise), so the refusal names each unified verb in full.
+USAGES: Final[Mapping[tuple[str, ...], tuple[str, str]]] = {
+    ('dev_lab.dev.forge', 'queue'): ('status', 'forge queue'),
+    ('dev_lab.dev.forge', 'run', 'show'): ('run', 'forge run show <sha>'),
+    ('dev_lab.dev.hpcaccount', 'deploy-fleet'): ('redeploy', 'hpcaccount deploy-fleet [--dry-run]'),
+    ('dev_lab.dev.hpcaccount', 'forget'): (
+        'forget a learned row',
+        'hpcaccount forget --repo <url> --row <key> --fleet|--account <u> [--dry-run]',
+    ),
+    ('dev_lab.dev.hpcaccount', 'deploy'): ('user-only', 'hpcaccount deploy'),
+}
+
+
+def exits() -> tuple[tuple[str, ...], ...]:
+    """Every door of :data:`POLICY` that is this row's exit, as its argv after ``python -m``."""
+    return tuple(door.argv[2:] for door in POLICY if door.deny == _ID and door.argv[:2] == ('python', '-m'))
+
+
+def remedy(exit_argvs: Iterable[tuple[str, ...]]) -> str:
+    """The refusal's remedy: per need, the exact door command; an exit with no :data:`USAGES` line raises."""
+    lines = []
+    for argv in exit_argvs:
+        if argv not in USAGES:
+            msg = f'{_ID} exit {argv} has no USAGES line: a refusal must name its full command'
+            raise KeyError(msg)
+        need, usage = USAGES[argv]
+        lines.append(f'{need} `{usage}`')
+    return f'Door ({PYTHON_SLOT} -m dev_lab.dev.<door>): ' + '; '.join(lines) + '; tests: push.'
+
 
 _SLURM = r'(?:sbatch|srun|salloc|scancel)\b'
 #: A login host as an ssh/scp/sftp/rsync target: ``[user@]<label with login>[.domain]`` ended by ``:``, ``/``, space.
@@ -32,10 +66,7 @@ HPC_THROUGH_THE_DOOR: dict[str, object] = {
     'matches': 'command',
     'hazard': 'an agent on an HPC login host or Slurm opens connections nobody budgets; a poll loop took the '
     "cluster's ssh down (2026-11-06).",
-    'remedy': f'Status: the forge host card, {PYTHON_SLOT} -m dev_lab.dev.forge '
-    f'{exits_of(_ID, "dev_lab.dev.forge")}; a cluster account: {PYTHON_SLOT} -m dev_lab.dev.hpcaccount '
-    f'{exits_of(_ID, "dev_lab.dev.hpcaccount")} (deploy is run by the user on the account); tests: push and let the '
-    'forge run them.',
+    'remedy': remedy(exits()),
     'needs': None,
     'refuses': (
         'ssh alice@hpclogin01.example.org ls',
