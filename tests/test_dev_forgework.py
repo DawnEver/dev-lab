@@ -241,6 +241,38 @@ def test_a_refusal_whose_credential_still_authenticates_is_retried_and_names_no_
     assert 'retrying cannot change' not in str(caught.value)
 
 
+_NOT_ADMIN = {'message': 'user should be an owner or a collaborator with admin write of a repository'}
+
+
+def test_a_403_whose_credential_authenticates_is_a_permission_refusal_said_once(server) -> None:
+    """2026-11-10: a push-only account read ``branch_protections``; three retries then "transient" misled."""
+    _answer('GET', _STATUSES, (403, _NOT_ADMIN), (200, []))
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    with pytest.raises(ForgeCallFailed) as caught:
+        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES)
+    said = str(caught.value)
+    assert caught.value.report.diagnosis is Diagnosis.PERMISSION_REFUSED
+    assert len(caught.value.report.attempts) == 1, 'an answered permission refusal is never retried'
+    assert not caught.value.credential_refused
+    assert caught.value.final == 403
+    assert 'admin write of a repository' in said, "the forge's own reason is named"
+    assert 'grant' in said
+    assert 'admin account' in said
+    assert 'transient' not in said
+    assert 'auth login' not in said
+
+
+@pytest.mark.parametrize('answer', [(502, {'message': 'bad gateway'}), (401, _INVALID), (403, _INVALID)])
+def test_a_5xx_or_an_auth_glitch_stays_transient_beside_a_permission_refusal(server, answer) -> None:
+    """PLANTED CONTROL: only an answered 403 naming no credential fault is a permission refusal."""
+    _answer('GET', _STATUSES, answer)
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    with pytest.raises(ForgeCallFailed) as caught:
+        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES)
+    assert caught.value.report.diagnosis is not Diagnosis.PERMISSION_REFUSED
+    assert caught.value.report.disposition is Disposition.EXHAUSTED
+
+
 def _oauth_basic(secret: str) -> str:
     return 'Basic ' + base64.b64encode(f'oauth2:{secret}'.encode()).decode()
 
