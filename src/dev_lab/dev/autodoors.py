@@ -6,7 +6,7 @@ blanket interpreter row -- while a NARROW row naming one door stays live and ski
 row here names ONE door. THE DOORS ARE :data:`dev_lab.dev.agentpolicy.POLICY` (user ruling 2026-11-07: one
 source for agent permissions); this module renders them, plus the repo's tracked ``scripts/`` entry points.
 
-THE INTERPRETER IS :data:`dev_lab.dev.agentpolicy.INTERPRETERS`, one literal per platform layout -- never a
+THE INTERPRETER IS :data:`dev_lab.dev.doorrows.INTERPRETERS`, one literal per platform layout -- never a
 ``./`` or worktree variant (six rows per script before 2026-11-07), and never the ``.venv/*/python*`` glob, whose
 trailing ``*`` admits ``python.exe -c <code>`` ahead of the door. A door run through another checkout's
 interpreter is prompted once; from the repository root it is this checkout's.
@@ -45,7 +45,8 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.agentpolicy import INTERPRETERS, POLICY, USER, allow_rows
+from dev_lab.dev.agentpolicy import POLICY, USER
+from dev_lab.dev.doorrows import INTERPRETERS, allow_rows
 
 __all__ = [
     'CODEX_RULES_REL',
@@ -119,7 +120,7 @@ def _wrappers(scripts: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def claude_rows(scripts: tuple[str, ...] = ()) -> dict[str, str]:
-    """Each narrow door row (:func:`dev_lab.dev.agentpolicy.allow_rows`), mapped to what the door is for."""
+    """Each narrow door row (:func:`dev_lab.dev.doorrows.allow_rows`), mapped to what the door is for."""
     out = {row: why for argv, why in doors(scripts).items() for row in allow_rows(argv)}
     for rel in _wrappers(scripts):
         out[f'Bash(sh */{rel} push *)'] = 'a push through a checkout`s retry wrapper (MAIN-SESSION-PUBLISHES)'

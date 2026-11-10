@@ -94,8 +94,8 @@ from typing import Any, Final
 
 from dev_lab.dev._allow_settings import BASH, ROW, block_problems, live_bash_rows, merged_permissions
 from dev_lab.dev._allow_settings import promised_command as _promised
-from dev_lab.dev.agentpolicy import literal_rows
 from dev_lab.dev.autodoors import claude_rows
+from dev_lab.dev.doorrows import literal_rows
 from dev_lab.dev.floors import assert_floor, assert_floor_still_binds
 from dev_lab.dev.hook_adoption import HookAdoption
 from dev_lab.dev.hooks import DENY_RULES, DenyRule, denies
@@ -288,7 +288,7 @@ def allow_entries(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) 
     The doors come from :data:`dev_lab.dev.agentpolicy.POLICY`, the one table the Codex rules are rendered from
     too. A derived row a door row already COVERS (the door's prefix admits it) is not repeated: the stoprun
     remedy's ``--pid`` row under the stoprun door was the same road listed twice. Every interpreter glob is
-    rendered as one literal row per layout (:func:`dev_lab.dev.agentpolicy.literal_rows`).
+    rendered as one literal row per layout (:func:`dev_lab.dev.doorrows.literal_rows`).
     """
     doors = list(claude_rows(allow.scripts))
     derived = [row for row in derived_entries(allow.adoption, rules) if not _covered(row, doors)]
