@@ -153,6 +153,8 @@ from dev_lab.dev.forgeproduce import Produced, produce
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
 from dev_lab.dev.forgeservesteps import (
+    cancel_stalled,
+    cancel_strays,
     demote_unreachable,
     every_host,
     pressed,
@@ -181,24 +183,6 @@ class ServeReport:
     in_flight: tuple[str, ...]
     published: tuple[str, ...]
     broken: tuple[str, ...]
-
-
-def _cancel_strays(
-    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
-) -> None:
-    """Cancel this account's forge jobs no run file holds, every tick, runs in flight or not: one alarm, counted."""
-    if stray := slurm.strays(forgerunstate.held_names):
-        body = f'jobs {" ".join(stray)} carried a forge job name no run file here holds; cancelled'
-        alarm(Alarm(RUN, repo, f'{len(stray)} orphaned forge job(s) cancelled on {seat}', body, about='strays'))
-
-
-def _cancel_stalled(
-    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
-) -> None:
-    """Cancel this account's forge tasks past their stall bound, every tick: one alarm naming each sha and test."""
-    if stalled := slurm.stalled():
-        body = '\n'.join(one.text() for one in stalled)
-        alarm(Alarm(RUN, repo, f'{len(stalled)} stalled forge task(s) cancelled on {seat}', body, about='stalled'))
 
 
 def serve(
@@ -254,8 +238,8 @@ def serve(
     role = deployed.role if seat is not None and (deployed := load(config_path())) else ''  # its card shows it
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     if slurm is not None:
-        _cancel_strays(slurm, repo, seat, alarm)
-        _cancel_stalled(slurm, repo, seat, alarm)
+        cancel_strays(slurm, repo, seat, alarm)
+        cancel_stalled(slurm, repo, seat, alarm)
     if standing is not None and (untagged := standing.facts.get('untagged')):
         body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
         alarm(Alarm(UNTAGGED, repo, f'{untagged} untagged job task(s) on {seat}', body, about=str(seat)))
