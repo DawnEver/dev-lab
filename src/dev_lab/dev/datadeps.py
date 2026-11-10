@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast
 
 import tomlkit
+from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev.gitenv import unlocated
@@ -87,7 +88,7 @@ def declared(root: Path) -> tuple[DataDep, ...]:
 
 
 def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return launch.run(
         [_GIT, '-C', str(cwd), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
         check=False, env=unlocated(),
     )  # fmt: skip
