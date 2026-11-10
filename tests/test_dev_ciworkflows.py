@@ -108,6 +108,7 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
         'head-gates': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
         'merge-ready': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write', 'actions': 'write'},
+        'merge-rejudge': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write', 'actions': 'write'},
         'promote': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write'},
     }
 
@@ -1380,3 +1381,25 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
     assert not _guard_holds(READY_ONLY, {'action': 'synchronize', 'pull_request': {'draft': True, 'title': 'x'}})
     for title in ('WIP: x', 'wip: x', '[WIP] x'):
         assert not _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'title': title}}), title
+
+
+def test_the_review_job_s_posted_status_is_judged_again_in_the_same_run(tmp_path: Path) -> None:
+    """After ``review`` posts tests/review (a verdict OR a named skip), ``merge-rejudge`` runs merge-ready's ONE step.
+
+    A status the job token posts starts no workflow on GitHub and a hosted runner has no tick, so without it a PR
+    whose review was its last gate sits at merge-ready=failure until a human re-runs the job (numerics-lab #19).
+    PLANTED CONTROL: the review job gains no write on contents, and the merge tick's decision is unchanged.
+    """
+    jobs = _base_ci(tmp_path)['jobs']
+    again = jobs['merge-rejudge']
+    assert again['needs'] == ['review']
+    assert "needs.review.result != 'skipped'" in again['if'], 'only after the review job ran'
+    assert again['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}')), 'a failed review is judged too'
+    assert again['steps'] == jobs['merge-ready']['steps'], 'one source for the decision step'
+    assert again['permissions'] == jobs['merge-ready']['permissions']
+    assert again['env'] == jobs['merge-ready']['env']
+    assert jobs['review']['permissions']['contents'] == 'read', 'the job holding the key never merges'
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
+    tick = workflows(tmp_path)['merge-tick.yml']['jobs']
+    assert set(tick) == {'merge-tick', 'review'}
+    assert 'forge merge ready)' in tick['merge-tick']['steps'][-2]['run']
