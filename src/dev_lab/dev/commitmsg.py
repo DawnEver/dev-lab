@@ -17,6 +17,13 @@ REV...``, so git's own ``--remotes`` (every remote-tracking ref) is a valid *REV
 it is first published; one already published is history. That -- not a name or sha list -- is what keeps an
 off-format commit published long ago from blocking every later push that merges it.
 
+ONE NAMED LANE'S HISTORY, the one exception (user ruling 2026-11-10, motronics #6153): a repo may declare
+``[tool.dev_lab.commitmsg] history = [{ head = "pr/<lane>", through = "<sha>" }]`` for a lane that predates
+the 11-05 rule and was never published. Every commit reachable from *through* counts as published, in both
+modes of ``cz-push-range`` (this module reads it, so neither caller can forget it); a commit after it is
+judged. :data:`HISTORY_CEILING` is ONE entry and only goes down (ESCAPE-HATCH-CEILING); an entry the base
+already holds is said to be removable.
+
 THE EMPTY MESSAGE IS AN ABORT, NOT A REFUSAL (commitizen's ``--allow-abort``): git abandons an empty commit
 itself, so a refusal would only be noise. Comment lines and everything under git's scissors line are not
 part of the recorded message and are not read.
@@ -29,7 +36,9 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
@@ -37,7 +46,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-__all__ = ['DEFAULT_PREFIXES', 'SHAPE', 'TYPES', 'main', 'refusal']
+__all__ = ['DEFAULT_PREFIXES', 'HISTORY_CEILING', 'SHAPE', 'TYPES', 'main', 'refusal']
 
 #: The commit types the family's ``cz_conventional_commits`` config accepted.
 TYPES: Final[tuple[str, ...]] = (
@@ -61,6 +70,9 @@ SHAPE: Final = re.compile(rf'(?s)(?:{"|".join(TYPES)})(?:\(\S+\))?!?: [^\n\r]+(?
 #: Message starts that pass unjudged: ONLY the subjects git itself writes (merge, revert, fixup/squash/amend).
 #: No ``Pull request`` (a web-UI merge subject; the forge merges as ``chore(merge): ...``) and no repo extension.
 DEFAULT_PREFIXES: Final[tuple[str, ...]] = ('Merge', 'Revert', 'fixup!', 'squash!', 'amend!')
+
+#: How many lanes may declare their history published; it only goes down (ESCAPE-HATCH-CEILING).
+HISTORY_CEILING: Final = 1
 
 _SCISSORS: Final = '# ------------------------ >8 ------------------------'
 _EXPECTED: Final = f'expected `type(scope)!: subject` with type one of {", ".join(TYPES)}'
@@ -99,6 +111,25 @@ def _range(spec: str, published: Sequence[str]) -> list[tuple[str, str]]:
     return [(sha, body.strip('\n')) for sha, body in pairs]
 
 
+def _git(*argv: str) -> subprocess.CompletedProcess[str]:
+    return _door.run(['git', *argv], capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
+
+
+def _declared_history() -> list[dict[str, str]]:
+    """The repo's ``[tool.dev_lab.commitmsg] history`` entries; ``[]`` outside a repo or when undeclared."""
+    top = _git('rev-parse', '--show-toplevel')
+    pyproject = Path(top.stdout.strip()) / 'pyproject.toml'
+    if top.returncode or not pyproject.is_file():
+        return []
+    table = tomllib.loads(pyproject.read_text(encoding='utf-8')).get('tool', {}).get('dev_lab', {})
+    return list(table.get('commitmsg', {}).get('history', []))
+
+
+def _held_by(sha: str, refs: Sequence[str]) -> bool:
+    """Whether any of *refs* already holds *sha* (so the entry naming it is removable)."""
+    return any(_git('merge-base', '--is-ancestor', sha, ref).returncode == 0 for ref in refs if ref != '--remotes')
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Judge one message file, one message, or every commit of a range; 0 when all pass, else 1."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.commitmsg', description=__doc__.splitlines()[0])
@@ -117,7 +148,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.published and args.rev_range is None:
         parser.error('--published narrows a --rev-range and means nothing without one')
     if args.rev_range is not None:
-        judged = _range(args.rev_range, args.published)
+        history = _declared_history()
+        if len(history) > HISTORY_CEILING:
+            emit(
+                f'[commit-msg] refused: {len(history)} [tool.dev_lab.commitmsg] history entries, the ceiling is '
+                f'{HISTORY_CEILING} -- remove the entries whose lane has merged'
+            )
+            return 1
+        for entry in history:
+            if _held_by(entry['through'], args.published):
+                emit(f'[commit-msg] history entry {entry["head"]} is removable: the base holds {entry["through"][:12]}')
+        published = [*args.published, *(entry['through'] for entry in history)]
+        judged = _range(args.rev_range, published)
     else:
         text = args.message if args.message is not None else args.commit_msg_file.read_text(encoding='utf-8')
         judged = [('', _recorded(text))]
