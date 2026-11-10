@@ -72,7 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.verb == 'check':
         return _check()
-    bundle = stored_bundle(REVIEW_TASK)  # the one stored copy (`forge secrets store`); none: a step left
+    bundle = stored_bundle(secret_name(REVIEW_TASK))  # the one stored copy (`forge secrets store`); none: a step left
     try:
         said = join(args.name, args.url, machine=config_path(), clone=_clone, protect=_protect,
                     secrets=_secrets(args.name, bundle) if bundle else None)  # fmt: skip

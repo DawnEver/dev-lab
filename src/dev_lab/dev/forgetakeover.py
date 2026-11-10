@@ -17,6 +17,8 @@ never the forge's -- only the forge posts ``tests/review``.
 from __future__ import annotations
 
 import argparse
+import functools
+import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -54,6 +56,7 @@ from dev_lab.dev.labsession import sessions
 from dev_lab.dev.reviewbudget import Raised, raise_line
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
+from dev_lab.dev.reviewledger import LEDGER_TOKEN, forge_ledger
 from dev_lab.dev.reviewruntime import review_runtimes
 from dev_lab.dev.taskkeys import REVIEW_TASK, keys_loaded
 
@@ -250,8 +253,10 @@ def _job(
 ) -> int:  # fmt: skip
     """``forge review run``: one PR's head (``--pr``), or every head whose review batch is pending; the exit."""
     runtimes = review_runtimes(args.runtime)
+    # the ledger token is taken out of the env before any reviewer starts: no review command inherits it
+    ledger = functools.partial(forge_ledger, token=os.environ.pop(LEDGER_TOKEN, '').strip())
     runner = Runner(this_machine(), runtimes, run=run, ready=ready, secret=keys_loaded(args.keys_env, runtimes),
-                    verifies=True)  # fmt: skip
+                    verifies=True, ledger=ledger)  # fmt: skip
     review = review_at(root, base)
     if args.due:
         for one in review_due(root, origin, review, base=base, runner=runner, fetch=fetch):

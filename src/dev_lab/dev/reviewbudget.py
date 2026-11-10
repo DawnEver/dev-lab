@@ -30,10 +30,9 @@ and ai-lab refuses it, naming the level, when the provider's free month cannot h
 
 A host with no ``[runtimes.ai_lab]`` caps nothing, and says so. An ai-lab whose report has no ``review`` allotment
 (:class:`NoReviewAllotment`) is the reached-cap case (integrator ruling 2026-11-10): the review is SKIPPED AND NAMED
-(:data:`NO_REVIEW_ALLOTMENT`) and the PR merges ``Unreviewed:`` -- UNLESS the host has no machine file at all (a
-GitHub-hosted runner) and the base declares the review's month (:class:`Month`, ``[tool.dev_lab.review] month``):
-that host then reviews under the declared month, its spend charged to the forge's shared ledger
-(:mod:`dev_lab.dev.reviewledger`), because an ephemeral runner's own ledger is always empty.
+(:data:`NO_REVIEW_ALLOTMENT`) and the PR merges ``Unreviewed:``. Where the family's ONE month reaches a host (the
+judge's machine file, a runner's derived variable: :class:`Month`, :mod:`dev_lab.dev.reviewledger`), the month's
+spend is the ONE shared ledger's, every reviewer's, never one host's ai-lab ledger.
 """
 
 from __future__ import annotations
@@ -138,11 +137,9 @@ _RAISED: Final = re.compile(r'<!-- review-cap (?P<json>\{.*?\}) -->', re.DOTALL)
 
 @dataclass(frozen=True)
 class Month:
-    """The review's month a REPO declares (``[tool.dev_lab.review] month``), for a host with no machine file.
+    """The family's review month (:mod:`dev_lab.dev.reviewledger`): ``{ provider, amount, currency }``.
 
-    ``{ provider, amount, currency }``, the shape of ai-lab's ``[ai_lab.standing] review``; the provider it draws on,
-    the US dollars a month. Undeclared (``None`` on :class:`~dev_lab.dev.forgereview_declared.Review`): such a host
-    skips the review, named (:data:`NO_REVIEW_ALLOTMENT`).
+    The shape of ai-lab's ``[ai_lab.standing] review``; the provider it draws on, the US dollars a month.
     """
 
     provider: str

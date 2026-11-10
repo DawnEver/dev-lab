@@ -36,9 +36,6 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     batch = true               # FAMILY_BATCH: model calls via the vendor batch endpoint ({batch}); false: at once
     on_expiry = "sync"         # a request the batch let expire (24 h): answered at once ("sync") or failed ("fail")
     batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one review waits this long on its batches, then pending
-    month = { provider = "<ai-lab provider>", amount = <USD>, currency = "USD" }
-                               # the review's month on a host with NO machine file (a GitHub runner), its spend
-                               # charged to the forge's shared ledger (reviewledger); undeclared: that host skips
 
 Retired keys (:data:`RETIRED_KEYS`: ``max_tokens``, ``rules``, ``max_rounds``, ``judge``) are refused by name.
 """
@@ -64,7 +61,6 @@ from dev_lab.dev.forgereview_command import ReviewUnsupported
 from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
 from dev_lab.dev.forgereview_scope import Budget
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.reviewbudget import Month
 from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
 from dev_lab.dev.rules import RULES
 
@@ -211,7 +207,6 @@ class Review:
     batch: bool = batching_.FAMILY_BATCH  # via the vendor batch endpoint; False: at once (forgereview_batch)
     on_expiry: str = batching_.FAMILY_ON_EXPIRY  # an expired batch request: one of batching_.ON_EXPIRY
     batch_wait: str = batching_.DEFAULT_BATCH_WAIT  # a duration: one review waits this long, then posts pending
-    month: Month | None = None  # the review's month on a host with no machine file (reviewledger); None: it skips
 
     def __post_init__(self) -> None:
         """Refuse a ``where`` outside :data:`WHERE`, a judge with no login, a bad ``bundle`` or duration."""
@@ -271,10 +266,7 @@ def review_from(text: str, origin: str) -> Review:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     try:
-        fields = {key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()}
-        if 'month' in fields:
-            fields['month'] = Month.from_declared(fields['month'])
-        review = Review(**fields)
+        review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
     except ValueError as bad:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {bad}'
         raise ValueError(msg) from bad
