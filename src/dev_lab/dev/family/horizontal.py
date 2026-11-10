@@ -6,7 +6,8 @@ unprotected on two, the trunk's contexts differing on one, a rendered workflow p
 a branchset key on two, ``pr_merges_since`` absent on one, the kit itself without the ``AGENTS.md`` its own
 onboarding page requires -- each found by a person looking, none by a check.
 
-A member's PROFILE is a set of features (:func:`features`): its rendered workflow files, the files every member
+A member's PROFILE is a set of features (:func:`features`), its content read from ``origin/<integration>``, never
+its working tree (:mod:`dev_lab.dev.family.origin`): its rendered workflow files, the files every member
 carries, the manifest declarations of the flow, its forge's secret NAMES and each branch role's required contexts.
 Members are compared within ONE forge host -- what a forge requires is derived per forge
 (:mod:`dev_lab.dev.forgeprotect`), so a Gitea member is no GitHub member's peer. A feature some peer holds and a
@@ -22,17 +23,20 @@ secret name, :func:`dev_lab.dev.taskkeys.secret_name`), never a list of old name
 
 from __future__ import annotations
 
+import tomllib
 from collections import defaultdict
 from collections.abc import Collection, Mapping
-from pathlib import Path
 from typing import Final
 
 from lab_commons.hpc.needsets import read_vocabulary
 
+from dev_lab.dev.branchset import FAMILY_EPHEMERAL
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.family.members import Facts, Finding
+from dev_lab.dev.family.origin import Snapshot
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
-from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.lanepolicy import policy_from
 
 __all__ = ['FILES', 'compare', 'features']
 
@@ -40,22 +44,34 @@ __all__ = ['FILES', 'compare', 'features']
 FILES: Final = ('AGENTS.md', 'CLAUDE.md')
 
 
-def features(root: Path, facts: Facts) -> frozenset[str]:
-    """The member at *root*'s profile: local declarations and files, and its forge's *facts*."""
-    found = {f'workflow:{p.name}' for d in WORKFLOW_DIRS.values() for p in (root / d).glob('*.yml')}
-    found |= {f'file:{name}' for name in FILES if (root / name).is_file()}
+def features(held: Snapshot, facts: Facts) -> frozenset[str]:
+    """A member's profile: the declarations and files its origin integration branch *held* carries, and its *facts*."""
+    found = {f'workflow:{name}' for d in WORKFLOW_DIRS.values() for name in held.names(d) if name.endswith('.yml')}
+    found |= {f'file:{name}' for name in FILES if held.has(name)}
     try:
-        policy = load_policy(root)
+        policy = policy_from(held.manifest, f'{held.rev}:pyproject.toml')
         found |= {'manifest:pr_merges_since'} if policy.pr_merges_since else set()
     except ValueError:
         pass
-    text = (root / 'pyproject.toml').read_text(encoding='utf-8') if (root / 'pyproject.toml').is_file() else ''
-    found |= {'manifest:ephemeral'} if 'ephemeral' in text else set()
+    text = held.manifest
+    found |= _off_default(text)
     found |= {f'secret:{name}' for name in facts.secrets}
     own = {f'{CONTEXT_PREFIX}{name}' for name in read_vocabulary(text).resources}  # its own parts, by design
     found |= {f'protect:{role}:{context}' for role, contexts in facts.contexts.items() for context in contexts
               if context not in own}  # fmt: skip
     return frozenset(found)
+
+
+def _off_default(text: str) -> set[str]:
+    """A branchset value that DIFFERS from its built-in default; a line restating the default is no feature."""
+    try:
+        table = declared_table(tomllib.loads(text), 'branchset', {})
+    except (tomllib.TOMLDecodeError, ValueError):
+        return set()
+    ephemeral = table.get('ephemeral') if isinstance(table, dict) else None
+    if ephemeral is None or sorted(ephemeral) == sorted(FAMILY_EPHEMERAL):
+        return set()
+    return {f'manifest:ephemeral={sorted(ephemeral)}'}
 
 
 def compare(

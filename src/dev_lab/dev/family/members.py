@@ -13,7 +13,8 @@ else lists repos DERIVES from it (``forge secrets sync``'s targets) or is CHECKE
 a served name that is no member, a member this serving machine does not serve).
 
 :func:`check` names, per member, every fact that is not so (:class:`Finding`): cloned, beside its siblings,
-onboarded (:func:`~dev_lab.dev.famtests.onboarding.assert_repo_is_onboarded`), and on its forge (:class:`Facts`):
+onboarded (:func:`~dev_lab.dev.famtests.onboarding.onboarding_gaps`, read from ``origin/<integration>`` -- never a
+working tree, :mod:`dev_lab.dev.family.origin`), and on its forge (:class:`Facts`):
 Pull Requests on, the trunk and integration branches present, protection as declared (:mod:`dev_lab.dev.forgeprotect`),
 the review secret present (by NAME; a value is never read), no PR open past :data:`OPEN_PR_DAYS`.
 
@@ -34,9 +35,10 @@ from typing import Final, Protocol
 import tomlkit
 
 from dev_lab.dev._forgebackends import GITHUB_HOST
-from dev_lab.dev.family import is_member
-from dev_lab.dev.famtests.onboarding import OnboardingViolation, assert_repo_is_onboarded
-from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.family import declares_membership
+from dev_lab.dev.family.origin import Snapshot
+from dev_lab.dev.famtests.onboarding import OnboardingViolation, assert_repo_is_onboarded, onboarding_gaps
+from dev_lab.dev.lanepolicy import policy_from
 
 __all__ = ['OPEN_PR_DAYS', 'Facts', 'FamilyRefused', 'Finding', 'ForgeFacts', 'check', 'join', 'siblings_root']
 
@@ -76,8 +78,8 @@ class Facts:
 class ForgeFacts(Protocol):
     """Reads one member's :class:`Facts` (:mod:`dev_lab.dev.family.forgefacts` on a forge, a fake in tests)."""
 
-    def facts(self, root: Path, trunk: str, integration: str) -> Facts:
-        """The facts of the member at *root*."""
+    def facts(self, held: Snapshot, trunk: str, integration: str) -> Facts:
+        """The facts of the member whose integration branch is *held*."""
         ...
 
 
@@ -111,23 +113,26 @@ def _forge_findings(name: str, facts: Facts, *, bundle_name: str, now: datetime)
 
 
 def _member(
-    name: str, root: Path, home: Path | None, forge: ForgeFacts, *, bundle_name: str, now: datetime
-) -> tuple[list[Finding], Facts | None]:
-    if not (root / 'pyproject.toml').is_file():
+    name: str, root: Path, home: Path | None, read: Callable[[Path], Snapshot], forge: ForgeFacts, *,
+    bundle_name: str, now: datetime,
+) -> tuple[list[Finding], tuple[Snapshot, Facts] | None]:  # fmt: skip
+    if not (root / '.git').exists():
         return [Finding(name, f'not cloned: no checkout at {root} -- python -m dev_lab.dev.family join')], None
     found = [] if home is None or root.parent == home else [Finding(name, f'not beside its siblings in {home}')]
-    if not is_member(root):
-        return [*found, Finding(name, 'onboarding: declares no [tool.dev_lab] table -- it is no family member')], None
     try:
-        assert_repo_is_onboarded(root=root)
-    except OnboardingViolation as missing:
-        found.append(Finding(name, f'onboarding: {missing}'))
+        held = read(root)
+    except (OSError, ValueError) as why:  # never fetched or unreadable: unread, never "lacks"
+        return [*found, Finding(name, f'unread: its origin integration branch ({why})'.splitlines()[0])], None
+    if not declares_membership(held.manifest):
+        return [*found, Finding(name, f'onboarding: {held.rev} declares no [tool.dev_lab] table -- no member')], None
+    if missing := onboarding_gaps(held.manifest, held.has, held.rev):
+        found.append(Finding(name, f'onboarding: {held.rev} is not onboarded; add or supply: ' + '; '.join(missing)))
     try:
-        policy = load_policy(root)
+        policy = policy_from(held.manifest, f'{held.rev}:pyproject.toml')
     except ValueError:
         return found, None  # the onboarding finding names the missing integrator table
-    facts = forge.facts(root, policy.trunk, policy.integration)
-    return found + _forge_findings(name, facts, bundle_name=bundle_name, now=now), facts
+    facts = forge.facts(held, policy.trunk, policy.integration)
+    return found + _forge_findings(name, facts, bundle_name=bundle_name, now=now), (held, facts)
 
 
 def check(
@@ -137,22 +142,25 @@ def check(
     served: Iterable[str] | None,
     now: datetime,
     bundle_name: str,
-    compare: Callable[[Mapping[str, tuple[Path, Facts]]], list[Finding]] | None = None,
+    read: Callable[[Path], Snapshot],
+    compare: Callable[[Mapping[str, tuple[Snapshot, Facts]]], list[Finding]] | None = None,
 ) -> list[Finding]:
     """Every :class:`Finding` of *family*; *served* is ``[serve] repos`` (``None``: this machine serves nothing).
 
-    *compare* is handed every member whose forge was read, ``{name: (root, facts)}``, for the findings that exist
+    Every member's CONTENT is *read* from its origin integration branch (:func:`dev_lab.dev.family.origin.snapshot`),
+    never its working tree; a member that cannot be read is named ``unread`` and compared with nobody.
+    *compare* is handed every member whose forge was read, ``{name: (snapshot, facts)}``, for the findings that exist
     only BETWEEN members (:mod:`dev_lab.dev.family.horizontal`).
     """
     home = siblings_root(family)
     found: list[Finding] = []
-    read: dict[str, tuple[Path, Facts]] = {}
+    seen: dict[str, tuple[Snapshot, Facts]] = {}
     for name, root in sorted(family.items()):
-        own, facts = _member(name, root, home, forge(name, root), bundle_name=bundle_name, now=now)
+        own, both = _member(name, root, home, read, forge(name, root), bundle_name=bundle_name, now=now)
         found += own
-        if facts is not None:
-            read[name] = (root, facts)
-    found += compare(read) if compare is not None else []
+        if both is not None:
+            seen[name] = both
+    found += compare(seen) if compare is not None else []
     if served is not None:
         named = set(served)
         found += [Finding(name, 'served but no [repos] member') for name in sorted(named - set(family))]
