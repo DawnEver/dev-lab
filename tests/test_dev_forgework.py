@@ -254,7 +254,7 @@ def test_a_403_whose_credential_authenticates_is_a_permission_refusal_said_once(
     assert caught.value.report.diagnosis is Diagnosis.PERMISSION_REFUSED
     assert len(caught.value.report.attempts) == 1, 'an answered permission refusal is never retried'
     assert not caught.value.credential_refused
-    assert caught.value.final == 403
+    assert caught.value.final is None, 'a missing grant is the account, not the call: a queued post stays queued'
     assert 'admin write of a repository' in said, "the forge's own reason is named"
     assert 'grant' in said
     assert 'admin account' in said

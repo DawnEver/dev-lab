@@ -148,10 +148,11 @@ class ForgeCallFailed(OSError):
 
         Final is an answered refusal (:attr:`~dev_lab.dev.netverb.Diagnosis.FORGE_REFUSED`, e.g. a 405 on
         merging a merged PR) that is not a refused CREDENTIAL: that one is the box's fault, not the call's.
+        A PERMISSION refusal is not final either: the account lacks a grant, and the same call lands once it is
+        granted, so a queued post stays queued for it (never dropped).
         """
         last = self.report.attempts[-1] if self.report.attempts else None
-        refused = (Diagnosis.FORGE_REFUSED, Diagnosis.PERMISSION_REFUSED)
-        if last is None or last.diagnosis not in refused or self.credential_refused:
+        if last is None or last.diagnosis is not Diagnosis.FORGE_REFUSED or self.credential_refused:
             return None
         return last.returncode
 
