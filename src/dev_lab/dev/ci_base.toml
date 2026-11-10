@@ -432,6 +432,8 @@ door = [
 cd "$RUNNER_TEMP"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}" | base64 -w0)"
 [ -n "$DOOR_SHA" ] || { echo "no commit names the door: no pull request base and no INTEGRATION_SHA"; exit 1; }
+# A repo that locks no Python (a data repo) pins no door: the family's integration line is the door it runs.
+if ! git -C "$GITHUB_WORKSPACE" cat-file -e "$DOOR_SHA:uv.lock" 2>/dev/null; then DEV_LAB_REF=integrate/main; else
 DEV_LAB_REF=$(git -C "$GITHUB_WORKSPACE" show "$DOOR_SHA:uv.lock" | python3 -I -c 'import sys, tomllib
 lock = tomllib.loads(sys.stdin.read())
 (source,) = [p["source"] for p in lock.get("package", []) if p["name"] == "dev-lab"] or sys.exit("the base lock pins no dev-lab")
@@ -441,9 +443,10 @@ elif source.get("editable") == ".":
     print(sys.argv[1])
 else:
     sys.exit(f"dev-lab is locked from {source}, not a git revision")' "$DOOR_SHA") || exit 1
+fi
 git clone -q --no-tags --filter=blob:none --no-checkout "${FAMILY_SOURCE}dev-lab.git" "$RUNNER_TEMP/dev-lab"
 git -C "$RUNNER_TEMP/dev-lab" fetch -q --no-tags origin "$DEV_LAB_REF"
-git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach "$DEV_LAB_REF"
+git -C "$RUNNER_TEMP/dev-lab" checkout -q --detach FETCH_HEAD
 python3 -I -m venv "$RUNNER_TEMP/review" && "$RUNNER_TEMP/review/bin/python" -I -m pip install -q uv
 "$RUNNER_TEMP/review/bin/uv" export --no-config --project "$RUNNER_TEMP/dev-lab" --frozen --no-hashes --no-header --no-annotate --no-emit-project > "$RUNNER_TEMP/review.txt"
 if [ -n "$DOOR_ONLY" ]; then
@@ -585,7 +588,7 @@ runs-on = "review"
 steps = [
     { use-steps = "reach" },
     { name = "Settle a PR with no code to review", id = "code", env = { GITHUB_TOKEN = "${{ github.token }}", PR_NUMBER = "${{ github.event.pull_request.number }}", BASE_SHA = "${{ github.event.pull_request.base.sha }}" }, run = '''
-python3 -I -c 'import os, sys, tomllib, urllib.request
+python3 -I -c 'import os, sys, tomllib, urllib.error, urllib.request
 env = os.environ
 api = env["FORGE_URL"] + "/api/v1/repos/" + env["GITHUB_REPOSITORY"]
 auth = {"Authorization": "token " + env["GITHUB_TOKEN"]}
@@ -593,7 +596,12 @@ def get(url, headers):
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as reply:
         return reply.read().decode("utf-8")
 base, path = env["BASE_SHA"], "src/dev_lab/dev/reviewcode.py"
-lock = tomllib.loads(get(api + "/raw/uv.lock?ref=" + base, auth))
+try:
+    lock = tomllib.loads(get(api + "/raw/uv.lock?ref=" + base, auth))
+except urllib.error.HTTPError as absent:
+    if absent.code != 404:
+        raise
+    lock = {"package": [{"name": "dev-lab", "source": {"git": "#integrate/main"}}]}  # no lock: the family line
 (source,) = [p["source"] for p in lock.get("package", []) if p["name"] == "dev-lab"] or sys.exit("the base lock pins no dev-lab")
 if "git" in source:
     text = get(env["FAMILY_SOURCE"] + "dev-lab/raw/" + source["git"].rpartition("#")[2] + "/" + path, {})
