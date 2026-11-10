@@ -147,12 +147,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as reply:',
     ): 'opens only the request built above from the FORGE_URL the job declares',
     (
-        'src/dev_lab/ops/forgeaccounts.py',
+        'src/dev_lab/ops/giteaadmin.py',
         'S310',
         'request = urllib.request.Request(url, data=data, headers=headers, method=method)',
     ): "the host's own Gitea API, [ops.forge] api, a boundary key only an ops.config consent changes",
     (
-        'src/dev_lab/ops/forgeaccounts.py',
+        'src/dev_lab/ops/giteaadmin.py',
         'S310',
         'with urllib.request.urlopen(request, timeout=30) as answer:',
     ): 'opens only the request built above to [ops.forge] api',
