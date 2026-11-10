@@ -17,7 +17,7 @@ REV...``, so git's own ``--remotes`` (every remote-tracking ref) is a valid *REV
 it is first published; one already published is history. That -- not a name or sha list -- is what keeps an
 off-format commit published long ago from blocking every later push that merges it.
 
-ONE NAMED LANE'S HISTORY, the one exception (user ruling 2026-11-10, motronics #6153): a repo may declare
+ONE NAMED LANE'S HISTORY, the one exception (user ruling 2026-11-10): a repo may declare
 ``[tool.dev_lab.commitmsg] history = [{ head = "pr/<lane>", through = "<sha>" }]`` for a lane that predates
 the 11-05 rule and was never published. Every commit reachable from *through* counts as published, in both
 modes of ``cz-push-range`` (this module reads it, so neither caller can forget it); a commit after it is

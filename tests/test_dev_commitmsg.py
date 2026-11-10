@@ -168,7 +168,7 @@ def test_published_without_a_range_is_a_usage_error() -> None:
         commitmsg.main(['--message', 'feat: x', '--published', 'base'])
 
 
-# --- a named lane's history (motronics #6153, user ruling 2026-11-10) ---------------------------------------
+# --- a named lane's history (user ruling 2026-11-10) --------------------------------------------------------
 
 
 def _lane(tmp_path: Path) -> tuple[str, str]:

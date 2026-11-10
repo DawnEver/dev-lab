@@ -32,9 +32,10 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forgebreakglass import Send, ssh_send
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
 from dev_lab.ops.consent.issuer import requested
+from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.totp import write_private
 
-__all__ = ['TABLE', 'Register', 'grant', 'public_key', 'redeem', 'remote_register']
+__all__ = ['TABLE', 'Register', 'given_code', 'grant', 'grant_plan', 'public_key', 'redeem', 'remote_register']
 
 #: The machine-file table.
 TABLE: Final = 'consent'
@@ -62,19 +63,27 @@ def public_key(table: Mapping[str, Any] | None = None) -> Ed25519PublicKey:
 
 
 def redeem(
-    credential: Mapping[str, Any], *, action: str, key: Ed25519PublicKey, register: Register, now: float,
-    amount: int = 1,
+    credential: Mapping[str, Any], *, action: str, subject: str | None, key: Ed25519PublicKey, register: Register,
+    now: float, amount: int = 1,
 ) -> Credential:  # fmt: skip
-    """*credential* for one IRREVERSIBLE use of *action*: verified offline, then registered with the issuer.
+    """*credential* for one IRREVERSIBLE use of *action* on *subject*: verified offline, then registered.
+
+    *subject* is the digest the caller derived from the request it is about to carry out; ``None`` only for an
+    action whose subject is a free label (a wave). It is compared BEFORE the use is registered, so a credential
+    shown to the wrong request is refused without being spent.
 
     Raises:
-        ConsentRefused: it does not verify, names another action, the issuer refused the use, or the issuer could
-            not be reached (fail closed).
+        ConsentRefused: it does not verify, names another action or subject, the issuer refused the use, or the
+            issuer could not be reached (fail closed).
 
     """
     found = verify(dict(credential), key, now=now)
     if found.action != action:
         msg = f'the credential consents to {found.action}, not {action}'
+        raise ConsentRefused(msg)
+    if subject is not None and found.subject != subject:
+        msg = (f'the {action} credential consents to another request (subject {found.subject[:12]}, this request '
+               f'{subject[:12]}): refused before its use was registered')  # fmt: skip
         raise ConsentRefused(msg)
     try:
         register(credential, amount)
@@ -88,10 +97,7 @@ def redeem(
 
 def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> Register:
     """A :data:`Register` over ssh to ``[consent] endpoint``; exit 2 is the issuer's refusal, anything else raises."""
-    found = section(TABLE) if table is None else table
-    if not found.get('endpoint'):
-        msg = f'the machine file has no [{TABLE}] endpoint = "<account>@<host>"'
-        raise ConsentRefused(msg)
+    found = _endpoint(table)
 
     def register(credential: Mapping[str, Any], amount: int) -> object:
         status, said = send(found, {'verb': 'register', 'credential': dict(credential), 'amount': amount})
@@ -103,6 +109,51 @@ def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_
         return said
 
     return register
+
+
+def given_code(
+    code: str | None, *, tty: bool | None = None, ask: Callable[[str], str] = getpass.getpass,
+    read: Callable[[], str] = sys.stdin.readline,
+) -> str:  # fmt: skip
+    """The code the USER gave: *code* when passed, else a no-echo prompt on a terminal, else one stdin line.
+
+    The one intake of a user's code (CONSENT-CODE-FROM-THE-USER): a grant here, and ``sshhold open``.
+    """
+    given = code if code is not None else ask(_PROMPT) if (sys.stdin.isatty() if tty is None else tty) else read()
+    return given.strip()
+
+
+def _six_digits(code: str) -> str:
+    if not (len(code) == _DIGITS and code.isdigit()):
+        msg = f'the Authenticator code must be six digits (got {len(code)} characters)'
+        raise ConsentRefused(msg)
+    return code
+
+
+def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    found = section(TABLE) if table is None else table
+    if not found.get('endpoint'):
+        msg = f'the machine file has no [{TABLE}] endpoint = "<account>@<host>"'
+        raise ConsentRefused(msg)
+    return found
+
+
+def _issued(
+    found: Mapping[str, Any], payload: dict[str, Any], *, send: Send, home: Path | None, now: float
+) -> list[Path]:  # fmt: skip
+    """Send *payload* to the issuer; each credential it answered, verified and written private, by path."""
+    key = public_key(found)
+    status, said = send(found, payload)
+    if status != 0:
+        raise ConsentRefused(said)
+    answered = json.loads(said)
+    written = []
+    for credential in answered if isinstance(answered, list) else [answered]:
+        issued = verify(credential, key, now=now)
+        target = state_dir(home) / f'{issued.id}.json'
+        write_private(target, json.dumps(credential, indent=1, sort_keys=True) + '\n')
+        written.append(target)
+    return written
 
 
 def grant(
@@ -123,23 +174,40 @@ def grant(
         ConsentRefused: the code is not six digits, the request is malformed, or the issuer refused.
 
     """
-    found = section(TABLE) if table is None else table
-    if not found.get('endpoint'):
-        msg = f'the machine file has no [{TABLE}] endpoint = "<account>@<host>"'
-        raise ConsentRefused(msg)
-    key = public_key(found)
+    found = _endpoint(table)
+    public_key(found)  # refused here, before the user spends a code
     request = json.loads(request_file.read_text(encoding='utf-8'))
-    requested(request)  # refused here, before the user spends a code
-    given = code if code is not None else ask(_PROMPT) if (sys.stdin.isatty() if tty is None else tty) else read()
-    given = given.strip()
-    if not (len(given) == _DIGITS and given.isdigit()):
-        msg = f'the Authenticator code must be six digits (got {len(given)} characters)'
+    requested(request)
+    given = _six_digits(given_code(code, tty=tty, ask=ask, read=read))
+    return _issued(found, {'verb': 'issue', 'request': request, 'code': given}, send=send, home=home, now=now())[0]
+
+
+def grant_plan(
+    plan_file: Path,
+    shown: str,
+    code: str,
+    host: str,
+    *,
+    table: Mapping[str, Any] | None = None,
+    send: Send = ssh_send,
+    home: Path | None = None,
+    now: Callable[[], float] = time.time,
+) -> list[Path]:
+    """One credential per grant of the plan at *plan_file*, the one the user was *shown* for *host*, for ONE *code*.
+
+    Raises:
+        ConsentRefused: the plan is not the one shown or names another host, a grant is malformed, the code is not
+            six digits, or the issuer refused.
+
+    """
+    found = _endpoint(table)
+    public_key(found)
+    plan = load_plan(plan_file, shown)
+    if plan.host != host:
+        msg = f'the plan opens {plan.host}, not {host}: a code given for one host never opens another'
         raise ConsentRefused(msg)
-    status, said = send(found, {'verb': 'issue', 'request': request, 'code': given})
-    if status != 0:
-        raise ConsentRefused(said)
-    credential = json.loads(said)
-    issued = verify(credential, key, now=now())
-    target = state_dir(home) / f'{issued.id}.json'
-    write_private(target, json.dumps(credential, indent=1, sort_keys=True) + '\n')
-    return target
+    for grant_ in plan.grants:
+        requested(grant_)  # refused here, before the user spends a code
+    payload = {'verb': 'issue-plan', 'plan': {'host': plan.host, 'grants': list(plan.grants)},
+               'code': _six_digits(code)}  # fmt: skip
+    return _issued(found, payload, send=send, home=home, now=now())
