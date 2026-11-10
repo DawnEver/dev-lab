@@ -61,8 +61,10 @@ __all__ = [
     'mint',
     'mint_batch',
     'revoke',
+    'run_list',
     'run_verb',
     'token_line',
+    'token_list',
 ]
 
 #: The consent action of one ``account ensure`` (:mod:`dev_lab.ops.consent.actions`).
@@ -76,8 +78,8 @@ REVOKE_ACTION: Final = 'ops.forge.revoke'
 #: The most tokens one batch consent may mint.
 BATCH_CAP: Final = 16
 
-#: Redeems a credential for one action, raising when it does not consent; returns the credential's subject.
-type Redeem = Callable[[Mapping[str, Any]], str]
+#: Redeems a credential on one subject (:func:`dev_lab.ops.consent.client.redeem`); raises when it does not.
+type Redeem = Callable[[Mapping[str, Any], str], object]
 
 
 def _digest(action: str, fields: Mapping[str, str]) -> str:
@@ -178,12 +180,6 @@ def _audit(role: Forge, by: str, line: Mapping[str, Any]) -> None:
         out.write(json.dumps({'at': datetime.now(UTC).isoformat(timespec='seconds'), 'by': by, **line}) + '\n')
 
 
-def _consented(redeem: Redeem, credential: Mapping[str, Any], subject: str, action: str) -> None:
-    if redeem(credential) != subject:
-        msg = f'the {action} credential consents to another request (its subject is not this request digest)'
-        raise ForgeRefused(msg)
-
-
 def ensure(
     role: Forge, gitea: GiteaAdmin, request: AccountRequest, *, redeem: Redeem, credential: Mapping[str, Any], by: str
 ) -> tuple[str, ...]:
@@ -196,7 +192,7 @@ def ensure(
     if not request.read:
         msg = 'account ensure grants Read on at least one --read owner/repo'
         raise ForgeRefused(msg)
-    _consented(redeem, credential, request.subject(), ACCOUNT_ACTION)
+    redeem(credential, request.subject())
     said: list[str] = []
     if gitea.user_exists(request.login):
         said.append(f'{request.login} exists')
@@ -225,7 +221,7 @@ def mint(
 
     """
     scopes = _scopes(role, request.login, request.name, request.scope)
-    _consented(redeem, credential, request.subject(), MINT_ACTION)
+    redeem(credential, request.subject())
     _login_exists(gitea, request.login)
     if request.name in gitea.token_names(request.login):
         _rotatable(request.login, request.name, rotate=request.rotate)
@@ -245,7 +241,7 @@ def revoke(
         ForgeRefused: the login is absent, or the credential does not consent to exactly this request.
 
     """
-    _consented(redeem, credential, request.subject(), REVOKE_ACTION)
+    redeem(credential, request.subject())
     _login_exists(gitea, request.login)
     held = request.name in gitea.token_names(request.login)
     if held:
@@ -253,6 +249,28 @@ def revoke(
     _audit(role, by, {'action': REVOKE_ACTION, 'login': request.login, 'name': request.name, 'revoked': held})
     return (f'revoked {request.login} token {request.name}' if held
             else f'{request.login} token {request.name} already absent')  # fmt: skip
+
+
+def token_list(gitea: GiteaAdmin, login: str) -> tuple[str, ...]:
+    """The names of *login*'s tokens, sorted; read-only, so no consent. Never a value, hash or last-eight.
+
+    Raises:
+        ForgeRefused: the login is absent, or the forge did not answer the read.
+
+    """
+    _login_exists(gitea, login)
+    return tuple(sorted(gitea.token_names(login)))
+
+
+def run_list(gitea: GiteaAdmin, args: argparse.Namespace) -> int:
+    """``forge token list --login L``: one name per line; exit 0, or 2 refused."""
+    try:
+        for name in token_list(gitea, args.login):
+            emit(name)
+    except ForgeRefused as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    return 0
 
 
 def _scopes(role: Forge, login: str, name: str, scope: str) -> list[str]:
@@ -315,7 +333,7 @@ def mint_batch(
 
     """
     scopes = _checked(role, batch)
-    _consented(redeem, credential, batch.subject(), BATCH_ACTION)
+    redeem(credential, batch.subject())
     _login_exists(gitea, batch.login)
     held = gitea.token_names(batch.login)
     for item in batch.items:
@@ -366,6 +384,8 @@ def add_parser(verbs: argparse._SubParsersAction) -> None:
     revoking = tokens.add_parser('revoke', help='delete one named token of one login, one consent')
     revoking.add_argument('--login', required=True)
     revoking.add_argument('--name', required=True)
+    listing = tokens.add_parser('list', help="the names of one login's tokens; read-only, no consent")
+    listing.add_argument('--login', required=True)
     for one in (account, minting, batch, revoking):
         one.add_argument('--credential', default='', help='a single-use consent credential for exactly this request')
         one.add_argument('--subject', action='store_true', help="print the request's digest the consent must name")
@@ -392,6 +412,12 @@ def _parsed_request(args: argparse.Namespace) -> tuple[_Request, str]:
 
 def run_verb(role: Forge, args: argparse.Namespace, redeem_for: Callable[[str], Redeem]) -> int:
     """Run the parsed verb; exit 0 done, 2 refused. A minted token goes to stdout ONCE, never to a log."""
+    if args.kind == 'token' and args.action == 'list':
+        reader = GiteaCli(role, run=run_argv, http=local_api)
+        try:
+            return run_list(reader, args)
+        finally:
+            reader.close()
     try:
         request, action = _parsed_request(args)
     except ForgeRefused as refused:

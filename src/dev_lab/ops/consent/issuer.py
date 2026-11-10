@@ -28,11 +28,15 @@ from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption,
 
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, params_hash, sign, verify
+from dev_lab.ops.consent.plan import parsed
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.totp import TotpRefused, accept, write_private
 
 __all__ = ['Issuer', 'keygen', 'requested']
+
+#: One checked request: ``(row, subject, params, cap, ttl)``.
+type _Row = tuple[Action, str, dict[str, Any], int | None, float]
 
 
 def keygen(key_file: Path, *, force: bool = False) -> Ed25519PrivateKey:
@@ -129,9 +133,9 @@ class Issuer:
         """The public half of the signing key: what a verifier on this host checks with."""
         return self._private().public_key()
 
-    def _record(self, event: str, credential: Credential, amount: int | None = None) -> None:
-        line = {'event': event, 'id': credential.id, 'action': credential.action,
-                'subject': credential.subject} | ({} if amount is None else {'amount': amount})  # fmt: skip
+    def _record(self, event: str, credential: Credential, amount: int | None = None, plan: str | None = None) -> None:
+        line = {'event': event, 'id': credential.id, 'action': credential.action, 'subject': credential.subject}
+        line |= ({} if amount is None else {'amount': amount}) | ({} if plan is None else {'plan': plan})
         self.ledger.parent.mkdir(parents=True, exist_ok=True)
         with self.ledger.open('a', encoding='utf-8') as out:
             out.write(json.dumps(line, sort_keys=True) + '\n')
@@ -154,17 +158,30 @@ class Issuer:
 
     def issue(self, request: object, code: str) -> dict[str, Any]:
         """The signed credential *request* asks for, paid for with the user's TOTP *code*."""
-        row, subject, params, cap, ttl = requested(request)  # before the code: a refused request spends no step
+        return self._issue([requested(request)], code, plan=None)[0]  # before the code: a refused request spends none
+
+    def issue_plan(self, plan: object, code: str) -> list[dict[str, Any]]:
+        """One single-use credential per grant of *plan* (:mod:`.plan`), all paid for with ONE TOTP *code*.
+
+        Every grant is checked as a lone request is, before the code; the ledger records the plan's digest on each.
+        """
+        found = parsed(plan)
+        return self._issue([requested(grant) for grant in found.grants], code, plan=found.digest)
+
+    def _issue(self, rows: list[_Row], code: str, *, plan: str | None) -> list[dict[str, Any]]:
         with exclusive(self.state):
             key = self._private()
             self._code(code)
             now = self.now()
-            fields = {'id': str(uuid.uuid4()), 'action': row.name, 'subject': subject, 'params': params,
-                      'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'issued': now,
-                      'expires': now + ttl, 'issuer': self.name}  # fmt: skip
-            credential = sign(fields, key)
-            self._record('granted', verify(credential, key.public_key(), now=now))
-            return credential
+            issued = []
+            for row, subject, params, cap, ttl in rows:
+                fields = {'id': str(uuid.uuid4()), 'action': row.name, 'subject': subject, 'params': params,
+                          'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'issued': now,
+                          'expires': now + ttl, 'issuer': self.name}  # fmt: skip
+                credential = sign(fields, key)
+                self._record('granted', verify(credential, key.public_key(), now=now), plan=plan)
+                issued.append(credential)
+            return issued
 
     def register(self, credential: object, amount: int = 1) -> int | None:
         """Record one irreversible use of *credential*; the campaign's remaining cap, ``None`` for a single one.
