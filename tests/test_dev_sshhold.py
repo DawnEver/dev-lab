@@ -151,3 +151,42 @@ def test_a_quiet_session_lives_to_its_ceiling_and_the_ceiling_still_ends_it() ->
     assert idle == 45 * 60
     assert sshhold.session_over(now=100.0, expires=200.0, quiet_s=46 * 60, idle=idle), 'a configured idle ends it'
     assert not sshhold.session_over(now=100.0, expires=200.0, quiet_s=44 * 60, idle=idle)
+
+
+def test_one_code_answers_both_hops_of_a_jump_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A ProxyJump session asks the bastion's pam_oath and then the host's; ONE code answers both.
+
+    Assumption (user ruling 2026-11-04): the bastion and the host share one TOTP secret. Each pam_oath records the
+    step IT accepted, so the same code is spent once on each host and never twice on either.
+    """
+    monkeypatch.setenv('FAKESSH_CODE', CODE)
+    monkeypatch.setenv('FAKESSH_ARGV_OUT', str(tmp_path / 'argv.json'))
+    dest = 'ops@inner'
+    sshhold.open_session(dest, 1.0, CODE, ssh=(*FAKE, '-J', 'ops@bastion'))
+    try:
+        assert sshhold.run_command(dest, 'echo through', timeout_s=60) == ('through\n', 0)
+    finally:
+        sshhold.close_session(dest)
+    argv = json.loads((tmp_path / 'argv.json').read_text(encoding='utf-8'))
+    assert argv[argv.index('-J') + 1] == 'ops@bastion'
+    assert argv.index('-J') < argv.index(dest)
+
+
+def test_a_bastion_that_refuses_the_code_fails_the_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Planted control: the host would accept the code but the bastion's secret differs, so nothing opens."""
+    monkeypatch.setenv('FAKESSH_CODE', CODE)
+    monkeypatch.setenv('FAKESSH_JUMP_CODE', '999999')
+    with pytest.raises(HoldRefused, match='authenticat'):
+        sshhold.open_session('ops@inner', 1.0, CODE, ssh=(*FAKE, '-J', 'ops@bastion'))
+    assert sshhold.read_session('ops@inner') is None
+
+
+def test_the_cli_jump_rides_both_the_plain_and_the_planned_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[tuple[str, ...]] = []
+    monkeypatch.setattr(sshhold, 'open_session', lambda *_a, ssh: seen.append(ssh) or 'opened')
+    monkeypatch.setattr(sshhold, 'open_planned', lambda *_a, ssh: seen.append(ssh) or ['granted', 'opened'])
+    assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion']) == 0
+    plan = ['--plan', 'plan.json', '--digest', 'abc']
+    assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion', *plan]) == 0
+    assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE]) == 0
+    assert seen == [('ssh', '-J', 'ops@bastion'), ('ssh', '-J', 'ops@bastion'), ('ssh',)]

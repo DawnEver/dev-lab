@@ -5,7 +5,8 @@ It asks ``$SSH_ASKPASS`` for the keyboard-interactive answer exactly as ssh woul
 the reply ends on the marker with the status, as ``bash -s`` would print it. ``__drop__`` exits mid-session.
 A ``git credential approve`` heredoc is answered as bash and git would: its data lines are written to
 ``$FAKESSH_CRED_OUT``, or, when ``$FAKESSH_HELPER_FILE`` holds no helper, the remote's refusal with status 3.
-The fake's own argv goes to ``$FAKESSH_ARGV_OUT``.
+The fake's own argv goes to ``$FAKESSH_ARGV_OUT``. With ``-J`` it is a two-hop transport: the bastion's prompt is
+asked first and must get ``$FAKESSH_JUMP_CODE`` (default ``$FAKESSH_CODE``, the hosts' one shared secret).
 """
 
 from __future__ import annotations
@@ -45,10 +46,9 @@ def _run(body: str) -> tuple[str, int]:
     return f'{done.stdout}{done.stderr}'.replace('\r\n', '\n'), done.returncode  # a bash remote ends lines on LF
 
 
-def main() -> int:
-    if path := os.environ.get('FAKESSH_ARGV_OUT'):
-        Path(path).write_text(json.dumps(sys.argv), encoding='utf-8')
-    answer = subprocess.run(
+def _asked() -> str:
+    """The keyboard-interactive answer, asked of ``$SSH_ASKPASS`` exactly as ssh asks it."""
+    return subprocess.run(
         [os.environ['SSH_ASKPASS'], 'Verification code: '],
         capture_output=True,
         text=True,
@@ -56,9 +56,17 @@ def main() -> int:
         timeout=30,
         check=False,
     ).stdout.strip()
-    if answer != os.environ.get('FAKESSH_CODE', ''):
-        sys.stderr.write('Permission denied (keyboard-interactive).\n')
-        return 255
+
+
+def main() -> int:
+    if path := os.environ.get('FAKESSH_ARGV_OUT'):
+        Path(path).write_text(json.dumps(sys.argv), encoding='utf-8')
+    expected = os.environ.get('FAKESSH_CODE', '')
+    hops = [os.environ.get('FAKESSH_JUMP_CODE', expected)] if '-J' in sys.argv else []
+    for wanted in [*hops, expected]:  # a -J session: the bastion's pam_oath asks first, then the host's
+        if _asked() != wanted:
+            sys.stderr.write('Permission denied (keyboard-interactive).\n')
+            return 255
     lines: list[str] = []
     for raw in sys.stdin:
         lines.append(raw)
