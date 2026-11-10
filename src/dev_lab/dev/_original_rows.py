@@ -414,6 +414,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'doorrows',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-16); no consumer held it.
     'remotedoors',
+    # ORIGINAL: the read-only secret-name list (2026-11-10); no consumer listed names.
+    'forgesecretnames',
     # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
     'gitenv',
     # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.
