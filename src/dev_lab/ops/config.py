@@ -32,6 +32,8 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
+from dev_lab.ops.caddy import Caddy
+from dev_lab.ops.forgeaccounts import Forge
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.served import served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
@@ -41,6 +43,7 @@ __all__ = [
     'Breakglass',
     'ConfigSource',
     'Consent',
+    'Forge',
     'Judge',
     'OpsConfig',
     'Probe',
@@ -264,18 +267,6 @@ class Access:
 
 
 @dataclass(frozen=True)
-class Caddy:
-    """The forge's Caddy allowlist (:mod:`dev_lab.ops.caddy`).
-
-    Every ``remote_ip`` matcher of ``sites`` (all, when empty) in ``file`` admits exactly ``allow`` (IPs or CIDRs).
-    """
-
-    allow: tuple[str, ...]
-    file: str = '/etc/caddy/Caddyfile'
-    sites: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
 class Supervise(Placement):
     """The host's supervisor daemon (:mod:`dev_lab.supervise`), serving ``project`` with this same file as config.
 
@@ -306,6 +297,7 @@ class OpsConfig:
     upgrade: Upgrade | None = None
     probe: Probe | None = None
     config_source: ConfigSource | None = None
+    forge: Forge | None = None
     environment_file: str = ''
     caddy: Caddy | None = None
 
@@ -320,7 +312,21 @@ def repo_name(url: str) -> str:
 
 
 def _role[
-    T: (Promote, Breakglass, Consent, Backup, Offsite, Access, Supervise, Judge, Upgrade, Probe, ConfigSource, Caddy)
+    T: (
+        Promote,
+        Breakglass,
+        Consent,
+        Backup,
+        Offsite,
+        Access,
+        Supervise,
+        Judge,
+        Upgrade,
+        Probe,
+        ConfigSource,
+        Forge,
+        Caddy,
+    )
 ](cls: type[T], table: object, where: str) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
         return None
@@ -463,6 +469,7 @@ def load(path: Path, *, environ: dict[str, str] | None = None, as_root: bool | N
         upgrade=_role(Upgrade, ops.get('upgrade'), '[ops.upgrade]'),
         probe=_role(Probe, ops.get('probe'), '[ops.probe]'),
         config_source=_role(ConfigSource, ops.get('config'), '[ops.config]'),
+        forge=_role(Forge, ops.get('forge'), '[ops.forge]'),
         environment_file=environment_file,
     )
 
