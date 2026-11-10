@@ -60,6 +60,7 @@ __all__ = [
     'check_hours',
     'close_session',
     'credential_script',
+    'forget',
     'frame',
     'idle_s',
     'main',
@@ -161,6 +162,15 @@ def write_session(session: Session) -> None:
     write_private(state_path(session.dest), json.dumps(asdict(session)))
 
 
+def forget(dest: str) -> None:
+    """Remove *dest*'s state file; already gone, or being removed by the other side (Windows: delete pending), is fine.
+
+    The client and the ending holder both remove it, so one of them loses that race with PermissionError.
+    """
+    with contextlib.suppress(FileNotFoundError, PermissionError):
+        state_path(dest).unlink()
+
+
 def read_session(dest: str) -> Session | None:
     """The recorded session of *dest*, or ``None``."""
     path = state_path(dest)
@@ -237,11 +247,11 @@ def _exchange(dest: str, command: str, timeout_s: float) -> dict[str, Any]:
     try:
         reply = request(session, {'verb': 'run', 'command': command, 'timeout_s': timeout_s}, timeout_s + 30)
     except OSError as exc:
-        state_path(dest).unlink(missing_ok=True)
+        forget(dest)
         msg = f'the holder of {dest} is gone ({exc}); open a new session'
         raise HoldRefused(msg) from exc
     if reply.get('fatal'):
-        state_path(dest).unlink(missing_ok=True)  # the holder is ending; its file goes now, not after its exit
+        forget(dest)  # the holder is ending; its file goes now, not after its exit
     return reply
 
 
@@ -312,7 +322,7 @@ def close_session(dest: str) -> str:
         if not state_path(dest).exists():
             break
         time.sleep(0.1)
-    state_path(dest).unlink(missing_ok=True)
+    forget(dest)
     audit('close', dest, status=0, duration_s=time.monotonic() - started)
     return f'{dest}: session closed'
 
@@ -331,7 +341,7 @@ def status_lines() -> list[str]:
         dest = json.loads(path.read_text(encoding='utf-8')).get('dest', path.stem)
         session = read_session(dest)
         if session is None or not _ping(session):
-            path.unlink(missing_ok=True)
+            forget(dest)
             lines.append(f'{dest}: dead (holder gone); state removed')
             continue
         left = max(0.0, session.expires - time.time()) / 60

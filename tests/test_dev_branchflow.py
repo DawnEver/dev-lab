@@ -329,7 +329,9 @@ def test_github_run_records_are_assets_of_one_release(server, tmp_path: Path) ->
     assert 'uploads.github.com' in loop.asked
     created = next(r for r in Recorder.received if r['path'] == f'{HAPI}/releases' and r['method'] == 'POST')
     assert created['body']['tag_name'] == RECORDS_TAG
-    upload = next(r for r in Recorder.received if r['path'].startswith(f'{HAPI}/releases/77/assets?'))
+    upload = next(
+        r for r in Recorder.received if r['method'] == 'POST' and r['path'].startswith(f'{HAPI}/releases/77/assets?')
+    )
     assert upload['raw'] == b'gz'
     assert [item.id for item in listing(built)] == [5]
 

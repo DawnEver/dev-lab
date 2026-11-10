@@ -112,3 +112,27 @@ def test_a_dead_holder_is_reported_and_its_state_removed() -> None:
 def test_the_cli_refuses_hours_above_the_ceiling(capsys: pytest.CaptureFixture[str]) -> None:
     assert sshhold.main(['open', 'ops@x', '--hours', '99', '--code', '1']) == 2
     assert 'max_hours' in capsys.readouterr().err
+
+
+def test_forgetting_a_session_the_other_side_is_deleting_is_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forgetting a session the other side is already deleting is not an error.
+
+    Windows CI 2026-11-10: the client and the ending holder both remove the state file; the loser of that race
+    gets PermissionError (delete pending), which ``unlink(missing_ok=True)`` does not cover.
+
+    PLANTED CONTROL: any other OSError still surfaces.
+    """
+    sshhold.write_session(sshhold.Session('ops@race', 1, 1, 'x', 0.0, 9e12))
+
+    def pending(*_args: object, **_kw: object) -> None:
+        raise PermissionError(13, 'delete pending')
+
+    monkeypatch.setattr(sshhold.Path, 'unlink', pending)
+    sshhold.forget('ops@race')
+
+    def broken(*_args: object, **_kw: object) -> None:
+        raise OSError(5, 'I/O error')
+
+    monkeypatch.setattr(sshhold.Path, 'unlink', broken)
+    with pytest.raises(OSError, match='I/O'):
+        sshhold.forget('ops@race')

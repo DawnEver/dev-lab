@@ -43,16 +43,19 @@ from dev_lab.dev._forge_journal import Durable, Probe
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import STORAGE, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import GITHUB, Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
 
 __all__ = [
     'DEFAULT_KEEP_TRUNK',
+    'GITHUB_ASSET_CAP',
     'PRUNE_EVERY',
     'RECORDS_TAG',
     'RECORDS_TITLE',
     'UNIT_RESULT',
     'Attachment',
+    'RecordsHomeFull',
     'attach',
     'kept_shas',
     'listing',
@@ -81,6 +84,13 @@ RECORDS_TAG: Final = 'run-records'
 
 #: GitHub serves release-asset uploads from its own host.
 _GITHUB_UPLOADS: Final = 'uploads.github.com'
+#: GitHub's limit of assets on one release: past it every upload is refused (422).
+GITHUB_ASSET_CAP: Final = 1000
+
+
+class RecordsHomeFull(ValueError):
+    """The records home holds the forge's maximum: an upload would be refused, so it is refused here, by name."""
+
 
 #: How often ``forge serve`` prunes the records home: the one statement of the interval.
 PRUNE_EVERY: Final = timedelta(hours=6)
@@ -164,7 +174,7 @@ def listing(client: Client) -> tuple[Attachment, ...]:
     store = _store(client, create=False)
     if store is None:
         return ()
-    raw = client.call('GET', store.assets)
+    raw = pages(client, store.assets, {})  # every page: one page saw 30 of 1000 and the release filled up
     return tuple(sorted((_attachment(item) for item in raw), key=lambda item: item.id))
 
 
@@ -176,9 +186,16 @@ def attach(client: Client, path: Path) -> Attachment:
     upload whose answer was lost, so one upload is never stored twice.
     """
     store = cast('_Store', _store(client, create=True))  # create=True always yields a home
-    held = next((raw for raw in client.call('GET', store.assets) if raw.get('name') == path.name), None)
+    found = pages(client, store.assets, {})
+    held = next((raw for raw in found if raw.get('name') == path.name), None)
     if held is not None:
         return _attachment(held)
+    if store.upload_host is not None and len(found) >= GITHUB_ASSET_CAP:
+        msg = (
+            f'the records home of {client.forge.repo} holds {len(found)} assets, the forge maximum: run '
+            '`python -m dev_lab.dev.forge records prune`, then publish again (the status stays queued)'
+        )
+        raise RecordsHomeFull(msg)
     return _upload(client, store, path.name, path.read_bytes())
 
 
