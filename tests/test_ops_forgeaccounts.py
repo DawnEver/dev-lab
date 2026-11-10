@@ -375,3 +375,40 @@ def test_revoke_without_a_credential_is_refused_naming_its_subject(capsys: pytes
     assert forgeaccounts.run_verb(role, args, lambda _action: _consent('')) == 2
     subject = forgeaccounts.RevokeRequest('server-reader', 'host-x').subject()
     assert f'{forgeaccounts.REVOKE_ACTION} needs --credential (its subject: {subject})' in capsys.readouterr().err
+
+
+def test_list_prints_each_token_name_of_the_login_sorted() -> None:
+    gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-b': 'r', 'host-a': 'r'}})
+    assert forgeaccounts.token_list(gitea, 'server-reader') == ('host-a', 'host-b')
+
+
+def test_list_refuses_an_unknown_login_naming_it() -> None:
+    with pytest.raises(ForgeRefused, match='no login ghost'):
+        forgeaccounts.token_list(FakeGitea(), 'ghost')
+
+
+def test_the_gitea_token_reader_never_carries_a_hash_or_last_eight() -> None:
+    """Planted control: the API row carries ``sha1`` and ``token_last_eight``; only the name survives."""
+    rows = [{'id': 7, 'name': 'host-x', 'sha1': 'deadbeefcafe', 'token_last_eight': 'cafe1234', 'scopes': ['r']}]
+    role = Forge(api='http://127.0.0.1:3000', admin='site-admin')
+    cli = GiteaCli(role, run=lambda _argv: (0, 'admintok\n'), http=lambda *_a: (200, rows))
+    names = cli.token_names('server-reader')
+    assert names == {'host-x'}
+    assert not any(leak in repr(names) for leak in ('deadbeef', 'cafe1234'))
+
+
+def test_the_gitea_token_reader_refuses_an_unread_list() -> None:
+    """A refused read is never an empty list: revoke would call a held token 'already absent'."""
+    role = Forge(api='http://127.0.0.1:3000', admin='site-admin')
+    cli = GiteaCli(role, run=lambda _argv: (0, 'admintok\n'), http=lambda *_a: (401, {'message': 'no'}))
+    with pytest.raises(ForgeRefused, match='HTTP 401'):
+        cli.token_names('server-reader')
+
+
+def test_list_needs_no_credential_and_prints_names_only(capsys: pytest.CaptureFixture[str]) -> None:
+    parser = argparse.ArgumentParser()
+    forgeaccounts.add_parser(parser.add_subparsers(dest='verb'))
+    args = parser.parse_args(['forge', 'token', 'list', '--login', 'server-reader'])
+    gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-x': 'r'}})
+    assert forgeaccounts.run_list(gitea, args) == 0
+    assert capsys.readouterr().out.splitlines() == ['host-x']
