@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import sys
 import tomllib
@@ -32,7 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final
 
-from lab_commons.config import section
+from lab_commons import home as _home
+from lab_commons.config import CONFIG_ENV, section
 from lab_commons.hpc.cluster import Runner, runner_for
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
@@ -49,8 +51,24 @@ __all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'main', 'remote_
 KIND: Final = 'deploy-fleet'
 _BASE: Final = '.cache/dev-lab'
 
-#: The account's ``[deploy]`` table, read on its cluster: its machine file (``lab_commons.config``'s default).
-_READ_DEPLOY: Final = "sed -n '/^\\[deploy\\]/,/^\\[/p' ~/.config/lab-commons/config.toml 2>/dev/null; true"
+
+def _default_layout() -> tuple[str, str]:
+    """The machine home under ``$HOME`` and the machine file under it, as lab-commons lays them out unset."""
+    saved = {name: os.environ.pop(name) for name in (_home.HOME_ENV, CONFIG_ENV) if name in os.environ}
+    try:
+        machine_home = _home.home().relative_to(Path.home())
+        under = _home.config_path().relative_to(_home.home())
+    finally:
+        os.environ.update(saved)
+    return PurePosixPath(*machine_home.parts).as_posix(), PurePosixPath(*under.parts).as_posix()
+
+
+_MACHINE_HOME, _CONFIG_UNDER_HOME = _default_layout()
+
+#: The account's machine file as ITS python resolves it (:func:`lab_commons.config.config_path`): the override, else
+#: the machine home's file. Prints ``# <path>`` first, so a refusal names the file it looked in.
+_MACHINE_FILE: Final = f'"${{{CONFIG_ENV}:-${{{_home.HOME_ENV}:-$HOME/{_MACHINE_HOME}}}/{_CONFIG_UNDER_HOME}}}"'
+_READ_DEPLOY: Final = f'f={_MACHINE_FILE}; echo "# $f"; ' + 'sed -n \'/^\\[deploy\\]/,/^\\[/p\' "$f" 2>/dev/null; true'
 
 #: Starts one detached process: ``(argv, log) -> None``.
 Launch = Callable[[Sequence[str], IO[Any]], object]
@@ -71,12 +89,14 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
     The host may name a grant login host in full or by its first DNS label (``login01``); a label resolves
     to the ONE full host it names, and a label two login hosts share is refused rather than the first kept.
     """
-    lines = shell(_READ_DEPLOY, None).splitlines()
+    out = shell(_READ_DEPLOY, None).splitlines()
+    looked = next((line[2:] for line in out if line.startswith('# ')), 'its machine file')
+    lines = [line for line in out if not line.startswith('#')]
     table = '\n'.join(lines[:1] + [line for line in lines[1:] if not line.startswith('[')])
     deploy = tomllib.loads(table).get('deploy', {}) if table.strip() else {}
     host = deploy.get('host', '')
     if not host:
-        return f'{grant.user}: refused -- its machine file declares no [deploy] host; run its first deploy by hand'
+        return f'{grant.user}: refused -- no [deploy] host in {looked}; deploy it once by hand'
     named = [login for login in grant.hosts if host in {login, login.split('.', 1)[0]}]
     if not named:
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
