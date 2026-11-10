@@ -35,7 +35,7 @@ EXEMPT: Final[dict[str, str]] = {
     'src/dev_lab/dev/_dep_project.py': 'builds the `uv sync`/`uv lock` argv _dep_network.run_change routes through '
     'run_network_verb by is_network_verb',
     'src/dev_lab/dev/dep.py': 'pip_argv returns the uv pip argv _dep_network.run_change routes',
-    'src/dev_lab/ops/configdoor.py': 'fetch hands its forge-hosts clone argv to an injected runner whose default '
+    'src/dev_lab/ops/configdoor.py': 'fetch hands its config-source clone argv to an injected runner whose default '
     '(ops.__main__._git_with_env) routes through run_network_verb (injected so the tests run offline)',
     'src/dev_lab/dev/reviewruntime.py': 'build and kit hand their clone/fetch/pip argv to an injected `net` runner '
     'whose default _net routes through run_network_verb (injected so the tests run offline)',

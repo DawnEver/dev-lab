@@ -112,7 +112,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 ## WORKTREES-STAY-INSIDE
 
 - **Why it is refused.** a checkout created OUTSIDE its repository is outside every scan, ignore rule and search that repository runs over itself, and outside the place the next agent looks for it. MEASURED 2026-10-03: eight worktrees across the family had been created as siblings of their repos, and the user ruled that day that it is forbidden family-wide.
-- **The exit.** Put it inside the repository: git worktree add --detach .claude/worktrees/<name> <sha> (from the repo root; with -C, git -C <repo> worktree add --detach <repo>/.claude/worktrees/<name> <sha>). To relocate one: git worktree move <tree> <repo>/.claude/worktrees/<name>. A clone takes an explicit target <repo>/.claude/worktrees/<name> -- or is better a worktree.
+- **The exit.** Put it inside the repository: git worktree add --detach .claude/worktrees/<name> <sha> (from the repo root; with -C, git -C <repo> worktree add --detach <repo>/.claude/worktrees/<name> <sha>). To relocate one: git worktree move <tree> <repo>/.claude/worktrees/<name>. A clone takes an explicit target <repo>/.claude/worktrees/<name> -- or is better a worktree. A FAMILY repo is the one clone that goes outside: into the siblings root, the directory holding the family's checkouts (`[repos]` in the machine file, `dev_lab.dev.family.members.siblings_root`), as `cd`s then ONE `git clone <url> <root>/<repo>` whose <repo> is new and named for the url, from a forge (scheme, host, owner) a sibling's `origin` already uses.
 
 ## BARE-INTERPRETER
 

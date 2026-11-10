@@ -46,7 +46,7 @@ HPC_THROUGH_THE_DOOR: dict[str, object] = {
         "ssh x@h 'sbatch j'",
     ),
     'permits': (
-        'ssh ubuntu@79.72.88.152 uptime',
+        'ssh ubuntu@203.0.113.10 uptime',
         'scp ubuntu@forge-vm:/srv/out.csv output/',
         'echo "ssh alice@hpclogin01 then sbatch job.sh"',
         'git commit -m "sbatch goes through the forge"',
