@@ -78,7 +78,7 @@ PROSE_CEILING: Final = 141
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
 #:
 #: EVERY ONE OF THEM NEEDS A CONSUMER EDIT FIRST, and the first draft of this table claimed two did
-#: not -- `agent_guard.py::path` and `rostercensus.py::path`, on the reasoning that a hardcode in
+#: not -- `agent_wiring.py::path` and `rostercensus.py::path`, on the reasoning that a hardcode in
 #: MACHINERY is this repo's to fix alone. MEASURED: consumer-b and consumer-c both import
 #: `famtests.rostercensus` and both name `agent_guard` in their placement rosters, so turning either
 #: hardcode into a no-default argument reds two trees. The claim was the exact defect this registry
@@ -116,7 +116,7 @@ EVICTED: Final[dict[str, str]] = {
         '4 roster paths (`tests/architecture/_placement.py` and consumer-a` two layering helpers) '
         'that travel with the readings above.'
     ),
-    'src/dev_lab/dev/agent_guard.py::path': (
+    'src/dev_lab/dev/agent_wiring.py::path': (
         'THE THREE `.claude/` PATHS, AND THEY ARE IN THE MACHINERY. `deny-commands.js`, '
         '`deny-rules.json` and `settings.json` resolve in all three consumers and in NEITHER this '
         'checkout -- the guard hardcodes a layout it cannot itself exhibit. The three names become '
