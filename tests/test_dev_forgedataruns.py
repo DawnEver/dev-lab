@@ -85,7 +85,7 @@ def test_the_run_never_edits_the_consumer_tree_or_moves_its_pin(tmp_path: Path) 
     _step(root, _Calls())
     assert (root / 'pyproject.toml').read_text(encoding='utf-8') == PYPROJECT  # PLANTED CONTROL: the pin stays
     status = subprocess.run([_GIT, '-C', str(root), 'status', '--porcelain', '--untracked-files=no'],
-                            capture_output=True, text=True, check=True).stdout  # fmt: skip
+                            capture_output=True, text=True, encoding='utf-8', check=True).stdout  # fmt: skip
     assert status == ''
     restore = [env for argv, _cwd, env in calls_last(root) if argv[-1] == 'sync']
     assert restore, 'the copy is put back on the pin after the run'
