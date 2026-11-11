@@ -21,6 +21,10 @@ whose body is :func:`dev_lab.dev.diskusage.pressure_text` -- which limit, used/l
 home's biggest directories by file count, the ones the forge does not own named and never touched. The
 host alarms; it does not let jobs fail on a full quota in silence.
 
+A TREE IS RE-CHECKED IMMEDIATELY BEFORE IT GOES: a build may touch it (``.lab-ci``) between the plan and the
+removal, so :func:`apply` re-reads :func:`~dev_lab.dev.retentionplan.idle_for` against the plan's window
+(:attr:`~dev_lab.dev.retentionplan.Doomed.idle_hours`) and keeps a tree that turned active, one ``kept`` line.
+
 EVERY DELETION IS ONE JSON LINE (path, bytes, files, rule), and ``python -m dev_lab.dev.retention``
 prints this host's plan without deleting anything.
 """
@@ -34,7 +38,7 @@ import shutil
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -52,6 +56,7 @@ from dev_lab.dev.retentionplan import (
     Policy,
     carry_sources,
     cluster_plan,
+    idle_for,
     load_policy,
     runs,
     slurm_occupied,
@@ -93,6 +98,16 @@ def _remove(doomed: Doomed) -> None:
         doomed.path.unlink(missing_ok=True)
 
 
+def _kept_active(doomed: Doomed, say: Callable[[str], None]) -> bool:
+    """The plan's activity predicate re-read at removal; a path touched within its window is kept, one line."""
+    if doomed.idle_hours is None or not doomed.path.is_dir():
+        return False
+    if idle_for(doomed.path, datetime.now(UTC)) >= timedelta(hours=doomed.idle_hours):
+        return False
+    say(json.dumps({'event': EVENT, 'path': str(doomed.path), 'rule': doomed.rule, 'kept': 'became active'}))
+    return True
+
+
 def apply(
     plan: Plan,
     policy: Policy,
@@ -107,7 +122,7 @@ def apply(
     by_rule: dict[str, tuple[int, int, int]] = {}
 
     def one(doomed: Doomed) -> None:
-        if not (doomed.path.exists() or doomed.path.is_symlink()):
+        if not (doomed.path.exists() or doomed.path.is_symlink()) or _kept_active(doomed, say):
             return
         size, files = measure(doomed.path)
         if not dry_run:

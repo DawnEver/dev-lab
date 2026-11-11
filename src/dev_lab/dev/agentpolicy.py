@@ -214,9 +214,10 @@ POLICY: Final[tuple[Door, ...]] = (
         _forge('pr', 'breakglass'),
         MAIN,
         'A Break-Glass merge into the integration branch inside a wave the user opened with a one-time code, '
-        "only after the pull request's current head is pushed and its base, base on windows and security test "
-        'statuses are all posted green, carried by a commit trailer that states the reason, so every use stays in '
-        'the history it bypassed (integrator ruling 2026-11-08: a merge follows a verified push).',
+        "at the pull request's current head, past its review AND its tests -- unrun, pending or red (user ruling "
+        '2026-11-11: the tests are the slowest step) -- with the test state at merge time named in the PR comment, '
+        'the audit and the wave summary, and carried by a commit trailer that states the reason, so every use '
+        'stays in the history it bypassed.',
     ),
     Door(
         _forge('breakglass', 'open'),
