@@ -5,7 +5,7 @@ A client holds no secret. The machine file's ``[consent]`` table names the issue
 ``public_key`` (:func:`dev_lab.ops.consent.credential.public_text`); a key shipped in the package
 (``issuer.pub`` beside this module) is the fallback.
 
-:func:`grant` takes the TOTP code the USER gave -- the agent passes it as ``code`` or on stdin, a terminal is
+:func:`grant` takes the cluster code the USER gave -- the agent passes it as ``code`` or on stdin, a terminal is
 prompted without echo (user ruling 2026-11-08) -- and writes the credential to
 :func:`dev_lab.dev.consentguard.state_dir` ``/<id>.json``, which only the grant writes (CONSENT-CODE-FROM-THE-USER).
 The code is sent once and never echoed, logged or kept.
@@ -51,7 +51,7 @@ __all__ = [
 #: The machine-file table.
 TABLE: Final = 'consent'
 _DIGITS: Final = 6
-_PROMPT: Final = 'Authenticator code (not echoed): '
+_PROMPT: Final = 'Cluster code (not echoed): '
 _PACKAGED: Final = 'issuer.pub'
 #: The serve verb's exit status for a refusal (as every ops door's).
 _REFUSED: Final = 2
@@ -146,7 +146,7 @@ def given_code(
 
 def _six_digits(code: str) -> str:
     if not (len(code) == _DIGITS and code.isdigit()):
-        msg = f'the Authenticator code must be six digits (got {len(code)} characters)'
+        msg = f'the cluster code must be six digits (got {len(code)} characters)'
         raise ConsentRefused(msg)
     return code
 

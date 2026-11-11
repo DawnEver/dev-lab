@@ -125,12 +125,15 @@ declares (`dev_lab.ops.config.load`).
 
 ## 5. Consent: one code per shown plan
 
-- The forge host's consent ISSUER alone holds the host's TOTP seed and an Ed25519 key (`dev_lab.ops.consent`);
+- THE CLUSTER CODE is the 6-digit TOTP code the user types: every ops host of a cluster (its consent issuer
+  and each `[ops.access]` login) holds the SAME TOTP secret, so one Authenticator entry answers for the whole
+  cluster, never one per host. Every prompt, refusal and doc names it "the cluster code".
+- The forge host's consent ISSUER alone holds the cluster's TOTP seed and an Ed25519 key (`dev_lab.ops.consent`);
   verifiers hold the public key; clients hold nothing. A credential is signed for ONE action of the registry
   (`dev_lab.ops.consent.actions`) and ONE subject (a digest), and an irreversible action registers its single use
   online.
 - A plan (`{"host", "grants": [...]}`, at most `MAX_GRANTS` = 16) is shown to the user with its digest
-  (`python -m dev_lab.ops.consent plan <plan.json>`); one code from the user buys one credential per grant AND opens
+  (`python -m dev_lab.ops.consent plan <plan.json>`); one cluster code from the user buys one credential per grant AND opens
   the host session. A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
 - `sshhold` holds that session: one authentication per work session, every later command rides it
   (`python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
@@ -194,8 +197,8 @@ declares (`dev_lab.ops.config.load`).
 3. `python -m dev_lab.ops --config /etc/dev-lab/supervise.toml install` renders every unit, sudoers line, sshd
    block and PAM include, and prints the root `next_steps` (accounts, `systemctl daemon-reload`, sshd test and
    reload). It is idempotent (`dev_lab.ops.install`).
-4. Enrol the host's ONE TOTP secret: `consent enrol` (or `access adopt` for a secret the user's Authenticator
-   already holds); `consent keygen` makes the issuer key if absent.
+4. Place the cluster's ONE TOTP secret: `consent enrol` on the cluster's first host only, `access adopt` on every
+   other (the secret the user's Authenticator already holds); `consent keygen` makes the issuer key if absent.
 5. Place each declared secret: `python -m dev_lab.ops secret place --path <declared path> --credential <cred>`
    with the content on stdin (`dev_lab.ops.secretplace`: 0600, owned by the declared role's user, only a sha256
    prefix ever printed). The break-glass forge token or App key, the promote credential, the config token.
