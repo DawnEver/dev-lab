@@ -49,47 +49,37 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Final
 from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
 from lab_commons.config import section
-from lab_commons.home import part
 from lab_commons.log import emit
 
+from dev_lab.dev.sshholdstate import Session, audit, forget, read_session, state_dir, state_path
 from dev_lab.ops.consent.client import given_code, grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.totp import write_private
 
 __all__ = [
     'DEFAULT_MAX_HOURS',
     'DEFAULT_TIMEOUT_S',
     'HoldRefused',
-    'Session',
-    'audit',
-    'audit_path',
     'ceiling',
     'check_hours',
     'close_session',
     'credential_script',
-    'forget',
     'frame',
     'idle_s',
     'main',
     'open_planned',
     'open_session',
-    'read_session',
     'request',
     'run_command',
     'session_over',
     'split_marker',
-    'state_dir',
-    'state_path',
     'status_lines',
     'store_credential',
-    'write_session',
 ]
 
 #: The ceiling on ``--hours`` when the machine file names none (user ruling 2026-11-09: 4 h).
@@ -104,18 +94,6 @@ _NO_HELPER: Final = 3
 
 class HoldRefused(RuntimeError):
     """A session verb that cannot proceed; the message says why and what to do."""
-
-
-@dataclass(frozen=True)
-class Session:
-    """One live holder as its state file records it."""
-
-    dest: str
-    pid: int
-    port: int
-    token: str
-    opened: float
-    expires: float
 
 
 def _table(table: dict[str, Any] | None) -> dict[str, Any]:
@@ -160,55 +138,6 @@ def split_marker(text: str, nonce: str) -> tuple[str, int] | None:
     """``(output, status)`` once *text* ends on *nonce*'s marker line; ``None`` while it has not."""
     found = re.search(rf'\n__SSHHOLD_{re.escape(nonce)}_(\d+)\r?\n\Z', text)
     return None if found is None else (text[: found.start()], int(found.group(1)))
-
-
-def state_dir() -> Path:
-    """``<machine home>/state/sshhold``: one state file per dest, and the audit."""
-    return part('state') / 'sshhold'
-
-
-def state_path(dest: str) -> Path:
-    """The state file of *dest*, its name made filesystem-safe."""
-    return state_dir() / f'{re.sub(r"[^A-Za-z0-9._-]", "_", dest)}.json'
-
-
-def audit_path() -> Path:
-    """The append-only JSONL audit of every open, run and close."""
-    return state_dir() / 'audit.jsonl'
-
-
-def write_session(session: Session) -> None:
-    """Record *session* private (it carries the token)."""
-    write_private(state_path(session.dest), json.dumps(asdict(session)))
-
-
-def forget(dest: str) -> None:
-    """Remove *dest*'s state file; already gone, or being removed by the other side (Windows: delete pending), is fine.
-
-    The client and the ending holder both remove it, so one of them loses that race with PermissionError.
-    """
-    with contextlib.suppress(FileNotFoundError, PermissionError):
-        state_path(dest).unlink()
-
-
-def read_session(dest: str) -> Session | None:
-    """The recorded session of *dest*, or ``None``."""
-    path = state_path(dest)
-    try:
-        return Session(**json.loads(path.read_text(encoding='utf-8')))
-    except (OSError, ValueError, TypeError):
-        return None
-
-
-def audit(
-    verb: str, dest: str, *, command: str = '', status: int | None = None, duration_s: float = 0.0, **fields: object
-) -> None:
-    """Append one audit line: what the caller passes, never more. A secret is never a field (a digest may be)."""
-    line = {'time': time.time(), 'dest': dest, 'verb': verb, 'command': command, 'status': status, **fields}
-    line['duration_s'] = round(duration_s, 3)
-    state_dir().mkdir(parents=True, exist_ok=True)
-    with audit_path().open('a', encoding='utf-8') as out:
-        out.write(json.dumps(line) + '\n')
 
 
 def request(session: Session, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
