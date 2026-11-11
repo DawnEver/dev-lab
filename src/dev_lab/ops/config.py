@@ -367,6 +367,25 @@ _CONSENT_DEFAULTS: Final = {
 }
 
 
+def _forge_accounts(ops: dict[str, Any]) -> dict[str, Any]:
+    """A pre-#402 ``[ops.forge] read_only`` upgraded on read to ``accounts`` with role ``read``; both is refused.
+
+    The old list named no repositories (``account ensure --read`` took them as arguments), so each upgraded reader
+    reads the host's own served repositories on its forge (``[ops] repos`` not on github.com).
+    """
+    forge = ops.get('forge')
+    if not isinstance(forge, dict) or 'read_only' not in forge:
+        return ops
+    if 'accounts' in forge:
+        msg = '[ops.forge] holds both read_only (retired by #402) and accounts; keep accounts only'
+        raise ValueError(msg)
+    urls = [url for url in ops.get('repos', ()) if 'github.com' not in url]
+    served = sorted('/'.join(url.removesuffix('.git').split('/')[-2:]) for url in urls)
+    accounts = {login: {'role': 'read', 'repos': served} for login in forge['read_only']}
+    emit(f'[ops] upgraded [ops.forge] read_only on read: {sorted(accounts)} -> accounts role read', err=True)
+    return dict(ops, forge={**{k: v for k, v in forge.items() if k != 'read_only'}, 'accounts': accounts})
+
+
 def _upgraded(ops: dict[str, Any]) -> dict[str, Any]:
     """*ops* with every retired shape upgraded on read: the ONE place an old shape is read.
 
@@ -374,8 +393,10 @@ def _upgraded(ops: dict[str, Any]) -> dict[str, Any]:
     from dev-lab's own lock at the installed commit. A pre-#311 ``[ops.breakglass]``: the moved keys leave the
     break-glass table. Its ``totp`` and lockout seed the consent issuer when the file declares none (keys =
     break-glass's); a declared ``[ops.consent]`` wins. ``wave_hours``/``max_merges`` are dropped: a wave's window and
-    cap are its credential's params now, and the ceilings stay where they were.
+    cap are its credential's params now, and the ceilings stay where they were. A pre-#402 ``[ops.forge] read_only``
+    becomes ``accounts`` (:func:`_forge_accounts`).
     """
+    ops = _forge_accounts(ops)
     lifted = ops.get('upgrade')
     if isinstance(lifted, dict) and 'overrides' in lifted:
         ops = dict(ops, upgrade={key: value for key, value in lifted.items() if key != 'overrides'})
