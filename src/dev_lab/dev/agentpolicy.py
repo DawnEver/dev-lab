@@ -131,8 +131,14 @@ POLICY: Final[tuple[Door, ...]] = (
         'Opening one held login session to a key and authenticator-code host, answered with the one-time code the '
         'user supplied in this conversation for it, within the machine ceiling on its hours; never an invented, '
         'stored, logged or reused code.',
+        deny='HPC-THROUGH-THE-DOOR',
     ),
-    Door(_module('sshhold', 'run'), MAIN, 'Running one command on a login session the user authenticated, audited.'),
+    Door(
+        _module('sshhold', 'run'),
+        MAIN,
+        'Running one command on a login session the user authenticated, audited.',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
     Door(
         _module('sshhold', 'credential'),
         MAIN,
@@ -221,7 +227,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         ('python', '-m', 'dev_lab.ops.consent', 'grant'),
         MAIN,
-        'Granting one consent credential with the authenticator code the user supplied in this conversation for '
+        'Granting one consent credential with the cluster code the user supplied in this conversation for '
         'it (user ruling 2026-11-08: only the user provides the code, the agent runs the grant); never an '
         'invented, stored, logged or reused code.',
     ),
