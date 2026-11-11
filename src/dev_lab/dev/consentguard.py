@@ -1,7 +1,7 @@
 """CONSENT-CODE-FROM-THE-USER: a consent code is the user's, and its credentials are written by the grant alone.
 
 User ruling 2026-11-08 (it replaces the 2026-11-07 reading that only the user may type a code): the USER gives the
-TOTP code, the AGENT runs ``dev_lab.ops.consent grant --code`` with it. A code the user did not give in this
+cluster code, the AGENT runs ``dev_lab.ops.consent grant --code`` with it. A code the user did not give in this
 conversation is never passed, and none is stored, logged or reused. What stays refused is the forgery no code
 excuses: an agent writing under the consent state directory plants a credential no issuer signed. Two callers read
 this module:
@@ -31,7 +31,7 @@ HAZARD: Final = (
     'a consent credential is written by the grant from a code the USER gave; a planted one forges the consent.'
 )
 REMEDY: Final = (
-    'Write the request JSON, ask the user for their Authenticator code, run '
+    'Write the request JSON, ask the user for the cluster code, run '
     '`{python} -m dev_lab.ops.consent grant <request.json> --code <the code they gave>`, '
     'then read the credential it wrote.'
 )
