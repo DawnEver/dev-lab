@@ -40,6 +40,10 @@ fail its check; a workflow left with no job is not rendered.
 A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of a workflow a PR event starts (:data:`PR_EVENTS`) is
 AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`ready_only`) -- never typed per job.
 
+WHO PRODUCES IS THE FORGE'S DATA (:attr:`~dev_lab.dev._forgebackends.Backend.producers`, user ruling 2026-11-11):
+a repo whose review is a producer its forge does not wire -- ``where = "judge"`` on GitHub, which Actions alone
+gates -- is refused at render (:func:`placed`), so neither its prepare workflow nor its judge-only shape is written.
+
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
@@ -61,7 +65,7 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev._forgebackends import backend_for
+from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
@@ -294,6 +298,7 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
     prepare = base.pop(PREPARE)
     judge = review_from(text, origin).where == JUDGE
     if judge:
+        require_producer(BACKENDS[forge], JUDGE_HOST, f'{origin}: [tool.dev_lab.review] where = "{JUDGE}"')
         base[PREPARE_WORKFLOW] = prepare
         declared.setdefault(PREPARE_WORKFLOW, {})
     elif PREPARE_WORKFLOW in declared:

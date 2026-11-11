@@ -10,7 +10,7 @@
 # `forge serve` runs: the same tests/<part> parts, the same review, the same merge decision -- only
 # who PRODUCES and who TRIGGERS differ. Every job runs a dev_lab door; none holds logic of its own:
 #
-#   parts         `jobparts matrix --event`: the commit's parts and the runner each need-set needs, an
+#   parts         `jobparts matrix --runners hosted --event`: the commit's parts and the runner each need-set needs, an
 #                 OS-free part on every OS of the event -- PR linux+windows, a full run also macos (D84) -- (the
 #                 matrix is the COMMAND's output, never a list typed here). PARTS_EVENT names the event: a merge
 #                 (a push, or merge-ready's `smoke` dispatch) takes the PR's set as its SMOKE -- every part, no
@@ -39,6 +39,12 @@
 #                 refuses unless every part stands PASS at scope full,
 #                 the SAME decision Gitea's integrator runs, fast-forwards main and the job token pushes it;
 #                 then `branchprune sweep` deletes every branch integration now contains
+#
+# ACTIONS ALONE (user rulings 2026-11-11): a GitHub repo is a toolchain repo, tested and gated by these jobs on
+# GitHub-hosted runners and nothing else -- no forge serve host, cluster, workstation or judge host posts a check
+# its merge or promotion reads (_forgebackends.Backend.producers). A heavy part no hosted runner produces is KEPT
+# (a consumer's unified run selects it) and OFF this gate: no row, nothing waits on it (jobparts.off_gate).
+# Gitea keeps those producers.
 #
 # Permissions are least per job; the workflow grants only `contents: read`.
 ["ci.yml"]
@@ -89,7 +95,7 @@ contents = "read"
 ["ci.yml".env]
 HEAD_SHA = "${{ github.event.pull_request.head.sha || github.sha }}"
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # the family repos sit beside this one
-# The event whose part set this run takes (`jobparts matrix --event`): a merge's smoke takes the PR's.
+# The event whose part set this run takes (`jobparts matrix --runners hosted --event`): a merge's smoke takes the PR's.
 PARTS_EVENT = "${{ (github.event_name == 'push' || inputs.smoke || inputs.pr != '') && 'pull_request' || github.event_name }}"
 # The PR this run is: the event's, else the dispatched one's (continue.yml); empty outside a PR.
 PR_NUMBER = "${{ github.event.pull_request.number || inputs.pr }}"
@@ -243,7 +249,7 @@ pull-requests = "write"
 actions = "write"
 
 # GITHUB'S MERGE TICK (user ruling 2026-11-04): the parts gate the merge, and a part can settle AFTER ci.yml's
-# merge-ready ran -- a workstation or HPC part, or a late CI part -- so a posted `tests/<part>` re-judges every open PR
+# merge-ready ran -- a re-run job's part -- so a posted `tests/<part>` re-judges every open PR
 # into integration (`forge merge ready`, no number: the ONE decision) and merges each ready head as the job token, the
 # way Gitea's merge.yml does. TRIGGERS: `status` and `schedule` run the DEFAULT branch's file (integrate/main), never a
 # PR head's, so the merging token runs no head's code; the schedule catches a status the job token posted (it starts

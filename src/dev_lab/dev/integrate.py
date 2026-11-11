@@ -29,18 +29,21 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import metrics
+from dev_lab.dev._forgebackends import FORGE_SERVE
 from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.jobparts import hosted_parts, off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
-from dev_lab.dev.platformparts import standing
+from dev_lab.dev.platformparts import derived, standing
 from dev_lab.dev.trialmerge import contains, rev
 from dev_lab.dev.unproduced import unproduced_waived
 
@@ -117,10 +120,28 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
         why = f'{policy.trunk} ({trunk[:12]}) is not an ancestor of {found[:12]}: it cannot fast-forward'
         return Promotion('refused', found, (why,))
     statuses = status_list(client, found)
-    parts = standing(statuses, head=found, scope=FULL, waived=unproduced_waived(root, found, statuses))
+    off = _off_gate(root, client, found, statuses)
+    parts = standing(statuses, head=found, scope=FULL, waived=unproduced_waived(root, found, statuses) | off)
     if parts.result is not Conclusion.PASS:
         return Promotion('refused', found, (f'the parts of {found[:12]} stand {parts.result.name}', *parts.problems))
-    return Promotion('promote', found)
+    return Promotion(
+        'promote', found, tuple(f'tests/{part}: off the gate, no Actions job produces it' for part in sorted(off))
+    )
+
+
+def _off_gate(root: Path, client: Client, sha: str, statuses: Sequence[CommitStatus]) -> frozenset[str]:
+    """The derived parts no producer *client*'s forge wires, waived (a heavy test: kept, never waited on).
+
+    On GitHub (Actions alone, user ruling 2026-11-11) that is each part no Actions job produces
+    (:func:`dev_lab.dev.jobparts.off_gate`).
+    """
+    if FORGE_SERVE in client.backend.producers:
+        return frozenset()
+    try:
+        declared = hosted_parts(pyproject_at(root, sha))
+    except (ValueError, subprocess.SubprocessError):
+        declared = {}
+    return off_gate(derived(statuses), declared)
 
 
 def promote(root: Path, client: Client, sha: str) -> Promotion:
@@ -180,6 +201,8 @@ def main(
             emit(f'[integrate]   {reason}', err=True)
         return 2
     _log(root, metrics.HAND_ACTION, args.sha)
+    for reason in found.reasons:
+        emit(f'[integrate]   {reason}')
     verb = 'already at' if found.action == 'current' else 'fast-forwarded to'
     emit(f'[integrate] {trunk} {verb} {found.sha}; publish it: git push origin {trunk}')
     return 0

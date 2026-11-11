@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from dev_lab.dev._forgebackends import JUDGE_HOST, require_producer
 from dev_lab.dev.forgereview_declared import JUDGE, forge_review
 from dev_lab.dev.reviewgate import (
     app_missing,
@@ -33,8 +34,14 @@ def review_gate(client: Client, head: str, *, base: str) -> Reviewed:
     declared ``judge_login`` approved *head* (:func:`~dev_lab.dev.reviewgate.judge_missing`) -- or, declaring
     ``judge_app``, when THAT App's check run approved it (:func:`~dev_lab.dev.reviewgate.app_missing`) -- a
     ``serve`` repo when the forge posted a ``tests/review`` success (:func:`~dev_lab.dev.reviewgate.review_missing`).
+
+    Raises:
+        NotWired: a ``judge`` declaration on a forge that wires no judge host (GitHub: Actions alone, 2026-11-11).
+
     """
     review = forge_review(client, base)
+    if review.where == JUDGE:
+        require_producer(client.backend, JUDGE_HOST, f'[tool.dev_lab.review] where = "{JUDGE}" at {base}')
     if review.where == JUDGE and review.judge_app:
         runs = app_verdicts(client, head)
         return lambda statuses: app_missing(statuses, runs, head=head, app_id=review.judge_app)
