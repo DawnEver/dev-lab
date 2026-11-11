@@ -683,6 +683,13 @@ code, about once a year. The candidate is loaded by the current code first, the 
 replaced atomically, self-checked, and restored on a failed check. Grant the line in `[ops.access] commands`:
 `<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml config apply *`.
 
+A host that is NOT the consent issuer verifies through `[ops.consent_client]`, itself a boundary key: on first
+contact it could verify nothing, so the table could never land. A bare `config apply` (no `--from`, no
+`--credential`) on a host whose live file has neither `[ops.consent]` nor `[ops.consent_client]` first takes exactly
+that one table from the reviewed `[ops.config]` file -- the merged hosts-config `main`, never a local candidate --
+backs the live file up and prints the endpoint and the key's fingerprint (`configdoor.anchor`); every other boundary
+change in that file still needs consent. Once the table exists, changing it is a boundary change.
+
 ## Making the forge's machine accounts
 
 A machine account is declared once, `[ops.forge.accounts] <login> = {role = "read"|"write"|"review", repos = [...]}`,
