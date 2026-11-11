@@ -10,6 +10,9 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev._forgebackends import GITHUB, backend_for
+from dev_lab.dev.forge import forge_of_url
+
 __all__ = ['BREAKGLASS_MOVED', 'upgraded']
 
 
@@ -43,6 +46,40 @@ def _forge_accounts(ops: dict[str, Any]) -> dict[str, Any]:
     return dict(ops, forge={**{k: v for k, v in forge.items() if k != 'read_only'}, 'accounts': accounts})
 
 
+#: The roles that act on GitHub as an App since #403, never with a standing token.
+_APP_ROLES: Final = ('breakglass', 'judge')
+
+
+def _on_github(url: str) -> bool:
+    return backend_for(forge_of_url(url)) is GITHUB
+
+
+def _github_tokens(ops: dict[str, Any]) -> dict[str, Any]:
+    """A pre-#403 standing GitHub token of an App role, DROPPED on read with that role's GitHub repositories.
+
+    Stricter, never wider: the role refuses to act on GitHub until ``[ops.<role>.apps]`` names an App, and the dropped
+    PAT is never presented. A token beside an App for the same forge is left for :func:`served_by` to refuse.
+    """
+    for role in _APP_ROLES:
+        table = ops.get(role)
+        if not isinstance(table, dict) or not isinstance(tokens := table.get('tokens'), dict):
+            continue
+        apps = table.get('apps') or {}
+        dropped = sorted(host for host in tokens if host not in apps and _on_github(f'https://{host}/o/r.git'))
+        if not dropped:
+            continue
+        kept_repos = [url for url in table.get('repos', ()) if forge_of_url(url).host not in dropped]
+        kept = {key: value for key, value in tokens.items() if key not in dropped}
+        ops = dict(ops, **{role: {**table, 'tokens': kept, 'repos': kept_repos}})
+        emit(
+            f'[ops] upgraded [ops.{role}.tokens] {", ".join(dropped)} on read: a standing GitHub token is dropped and '
+            f'the role does not act there; declare [ops.{role}.apps] "{dropped[0]}" = {{app_id, key_file}} '
+            '(the next config apply writes the new shape)',
+            err=True,
+        )
+    return ops
+
+
 def upgraded(ops: dict[str, Any]) -> dict[str, Any]:
     """*ops* with every retired shape upgraded on read: the ONE place an old shape is read.
 
@@ -51,9 +88,9 @@ def upgraded(ops: dict[str, Any]) -> dict[str, Any]:
     break-glass table. Its ``totp`` and lockout seed the consent issuer when the file declares none (keys =
     break-glass's); a declared ``[ops.consent]`` wins. ``wave_hours``/``max_merges`` are dropped: a wave's window and
     cap are its credential's params now, and the ceilings stay where they were. A pre-#402 ``[ops.forge] read_only``
-    becomes ``accounts`` (:func:`_forge_accounts`).
+    becomes ``accounts`` (:func:`_forge_accounts`); a pre-#403 GitHub token is dropped (:func:`_github_tokens`).
     """
-    ops = _forge_accounts(ops)
+    ops = _github_tokens(_forge_accounts(ops))
     lifted = ops.get('upgrade')
     if isinstance(lifted, dict) and 'overrides' in lifted:
         ops = dict(ops, upgrade={key: value for key, value in lifted.items() if key != 'overrides'})

@@ -11,13 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from dev_lab.dev._forgebackends import GITHUB, backend_for
 from dev_lab.dev.forge import forge_of_url
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['app_of_forge', 'credential_files', 'no_standing_github_token', 'served', 'served_by']
+__all__ = ['app_of_forge', 'credential_files', 'served', 'served_by']
 
 
 def served(repos: tuple[str, ...], tokens: Mapping[str, str], where: str) -> None:
@@ -50,7 +49,7 @@ def served_by(
 ) -> None:
     """:func:`served` over a token OR an App per forge, also refusing a forge named by both or by a bad App.
 
-    An App is ``{app_id, key_file}``; a GitHub forge given a token is refused (:func:`no_standing_github_token`).
+    An App is ``{app_id, key_file}``; a GitHub token is dropped on read (:mod:`dev_lab.ops.configupgrade`).
     """
     if twice := sorted(set(tokens) & set(apps)):
         msg = f'{where} forge {", ".join(twice)} names both a token and an app: one identity per forge'
@@ -60,24 +59,6 @@ def served_by(
             msg = f'{where[:-1]}.apps] {host} must be {{app_id = <positive integer>, key_file = "<path>"}}: {app}'
             raise ValueError(msg)
     served(repos, {**tokens, **dict.fromkeys(apps, '')}, where)
-    no_standing_github_token(repos, tokens, where)
-
-
-def no_standing_github_token(repos: tuple[str, ...], tokens: Mapping[str, str], where: str) -> None:
-    """Refuse a token file keyed by a GITHUB forge: there a role acts as an App, ``[<where>.apps]``, never a PAT.
-
-    A personal access token is a standing credential of a person or a bot account: it outlives every use, names a
-    user no ruleset can name, and must not sit on a host. An App's installation token lasts one hour
-    (:mod:`dev_lab.dev.forgeapp`). Gitea has no Apps, so its token stays.
-    """
-    github = sorted({forge.host for forge in map(forge_of_url, repos) if backend_for(forge) is GITHUB} & set(tokens))
-    if github:
-        table = where[:-1]
-        msg = (
-            f'{table}.tokens] {", ".join(github)} is a standing GitHub token: on GitHub this role acts as an App -- '
-            f'declare {table}.apps] "{github[0]}" = {{app_id = <id>, key_file = "<path>"}} and delete the token'
-        )
-        raise ValueError(msg)
 
 
 def credential_files(tokens: Mapping[str, str], apps: Mapping[str, Mapping[str, Any]]) -> tuple[str, ...]:
