@@ -34,6 +34,7 @@ from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
+from dev_lab.ops.forgerunner import ForgeRunner, runners
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.httpsdoor import HttpsDoor, behind_allowlist
 from dev_lab.ops.judgerole import Judge
@@ -249,6 +250,7 @@ class OpsConfig:
     caddy: Caddy | None = None
     status: Status | None = None
     postgres: Postgres | None = None
+    runners: tuple[ForgeRunner, ...] = ()
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -260,7 +262,7 @@ class OpsConfig:
 OPS_KEYS: Final = frozenset({
     'home', 'python', 'repos', 'environment_file',
     'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
-    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres', clientkeys.TABLE,
+    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres', 'runner', clientkeys.TABLE,
 })  # fmt: skip
 
 
@@ -407,6 +409,7 @@ def load(
         environment_file=environment_file,
         status=_role(Status, ops.get('status'), '[ops.status]'),
         postgres=_role(Postgres, ops.get('postgres'), '[ops.postgres]'),
+        runners=runners(ops.get('runner')),
     )
     found = _with_clients(found, ops.get(clientkeys.TABLE))
     doors = {name: role for name, role in (('consent', found.consent), ('breakglass', found.breakglass))
