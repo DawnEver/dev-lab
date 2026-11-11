@@ -32,8 +32,18 @@ PLAN = parsed({'host': HOST, 'grants': [APPLY, PLACE]})
 CONF, PY = '/etc/dev-lab/supervise.toml', '/usr/bin/python3'
 STEPS = planrun.Steps((
     planrun.Step(('config', 'apply', '--from', CANDIDATE), HOST, CONF, PY),
-    planrun.Step(('secret', 'place', '--path', '/etc/x'), HOST, CONF, PY, '/srv/plan/x.secret'),
+    planrun.Step(('secret', 'place', '--path', '/etc/x'), HOST, CONF, PY, 'x.secret'),
 ))  # fmt: skip
+SECRET, LOCAL = b'bot-token-PLANTED-7f3a', 'x.secret'
+
+
+@pytest.fixture(autouse=True)
+def secret_here(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The secret step's ``stdin_local`` file, on THIS machine (relative to the test's own cwd)."""
+    monkeypatch.chdir(tmp_path)
+    local = tmp_path / LOCAL
+    local.write_bytes(SECRET)
+    return local
 
 
 class FakeHost:
@@ -41,7 +51,7 @@ class FakeHost:
 
     def __init__(self) -> None:
         """The green host: every door, a ready verifier, the plan's subjects."""
-        self.doors = {('consent', 'ready'), ('config', 'apply'), ('secret', 'place')}
+        self.doors = {('config', 'apply'), ('secret', 'place')}
         self.ready = (0, '[ops consent] ready: key abcdef, uses register at the local issuer')
         self.subjects = {'config': APPLY['subject'], 'secret': PLACE['subject']}
         self.commands: list[str] = []
@@ -49,10 +59,12 @@ class FakeHost:
         self.outcomes: dict[str, tuple[str, int, bool]] = {}  # verb -> (output, status, registers its use)
         self.ledger: set[str] = set()
         self.carried: list[str] = []
+        self.stdins: list[tuple[str, bytes | None]] = []
 
-    def run(self, command: str) -> tuple[str, int]:
+    def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
         self.commands.append(command)
-        words = shlex.split(command.split(' < ', maxsplit=1)[0])
+        self.stdins.append((command, stdin))
+        words = shlex.split(command)
         verb = tuple(words[words.index('--config') + 2 :][:2]) if '--config' in words else ()
         if words[:3] == ['sudo', '-n', '-l']:
             return ('', 0) if verb in self.doors else ('sudo: a password is required', 1)
@@ -82,7 +94,8 @@ def test_a_host_with_every_door_is_green() -> None:
     green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
     assert green, lines
     assert lines[-1].startswith('preflight: green')
-    assert any(command.endswith('< /srv/plan/x.secret') and '--subject' in command for command in host.commands)
+    assert any(given == SECRET and '--subject' in command for command, given in host.stdins)
+    assert not any(SECRET.decode() in command for command in host.commands)
 
 
 def test_a_host_that_cannot_verify_or_register_is_blocked() -> None:
@@ -93,12 +106,20 @@ def test_a_host_that_cannot_verify_or_register_is_blocked() -> None:
     assert 'BLOCKED -- refused: no consent public key' in lines[0]
 
 
-def test_a_missing_ready_door_is_blocked_by_name() -> None:
+def test_consent_ready_is_asked_without_sudo_so_a_host_needs_no_sudoers_row_for_it() -> None:
     host = FakeHost()
-    host.doors.discard(('consent', 'ready'))
+    planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    asked = [command for command in host.commands if command.endswith('consent ready')]
+    assert asked == [shlex.join([PY, '-m', 'dev_lab.ops', '--config', CONF, 'consent', 'ready'])]
+
+
+def test_a_missing_stdin_local_file_is_blocked_before_any_code(secret_here: Path) -> None:
+    host = FakeHost()
+    assert planrun.preflight(PLAN, STEPS, lambda _dest: host)[0]  # the control: the file is here
+    secret_here.unlink()
     green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
     assert not green
-    assert 'no sudo door for `consent ready`' in lines[0]
+    assert f'BLOCKED -- no stdin_local file here: {LOCAL}' in lines[2]
 
 
 def test_a_missing_door_with_no_config_step_before_it_is_blocked() -> None:
@@ -143,8 +164,10 @@ def _steps_file(tmp_path: Path, steps: object) -> Path:
 
 
 def test_a_steps_file_lists_one_step_per_grant(tmp_path: Path) -> None:
-    good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin': '/h/x'}]
-    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN, HOST).steps[1].stdin == '/h/x'  # the control
+    good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_local': '/h/x'}]
+    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN, HOST).steps[1].stdin_local == '/h/x'  # the control
+    with pytest.raises(ConsentRefused, match='stdin_local'):  # the host-side `stdin` is gone, not aliased
+        planrun.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place'], 'stdin': '/h/x'}]), PLAN, HOST)
     with pytest.raises(ConsentRefused, match='one step per grant'):
         planrun.load_steps(_steps_file(tmp_path, good[:1]), PLAN, HOST)
     with pytest.raises(ConsentRefused, match='the runner adds them'):
@@ -219,7 +242,8 @@ def test_a_granted_plan_runs_in_order_and_deletes_only_spent_credentials(tmp_pat
     assert not any(path.exists() for path in written)
     assert host.files == {}  # every carried copy removed from the host
     secret = next(command for command in host.commands if '--credential' in command and 'secret' in command)
-    assert secret.endswith('< /srv/plan/x.secret')
+    assert dict(host.stdins)[secret] == SECRET
+    assert SECRET.decode() not in secret
 
 
 def test_a_refusal_stops_the_run_and_keeps_every_unspent_credential(tmp_path: Path) -> None:
