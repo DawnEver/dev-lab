@@ -25,12 +25,12 @@ from lab_commons import launch
 from lab_commons.home import repos
 
 from dev_lab.dev import dataconsumers, datadeps
-from dev_lab.dev.forge import origin_url
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import Post, enqueue, unprompted_client
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.venvpath import checkout_interpreter, current_os_name
 
 if TYPE_CHECKING:
