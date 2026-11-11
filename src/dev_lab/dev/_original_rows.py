@@ -368,6 +368,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
     'pushwatch',
     'pushstop',
+    'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'venvfollow',
     'liverun',
     'metrics',

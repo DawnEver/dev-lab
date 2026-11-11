@@ -9,6 +9,14 @@ It never posts, claims or cancels anything.
 ``--stream`` is the shape a Claude Code ``Monitor`` reads (PUSHED-HEAD-IS-WATCHED, :mod:`dev_lab.dev.pushwatch`):
 ONE flushed line per status CHANGE of any context -- ``<sha12> <context> <state>`` -- and a last line
 ``<sha12> green|red|deadline``; a re-read status that did not change prints nothing.
+
+``--session <id> --stream`` (SESSION-HEARS-ITS-PRS, user ruling 2026-11-11: lab-commons #158 went red and the
+session heard nothing) watches every PR the session opened or pushed, in any repository, on either forge
+(:mod:`dev_lab.dev.sessionprs`, its record): ONE line per change -- ``<key> <sha12> <context> failure|error
+<description>``, ``<key> <sha12> green`` once every ``tests/*`` check is final and green, ``<key> merged`` /
+``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. :func:`unacknowledged_reds` is what
+the ``Stop`` hook (:mod:`dev_lab.dev.pushstop`) refuses on, until a newer head is pushed or
+``--ack <key> --reason <why>`` records why the red stands.
 """
 
 from __future__ import annotations
@@ -18,16 +26,33 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev import sessionprs
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client, PullRequest, client_for, stored_client
 from dev_lab.dev.pushwatch import record_deadline
 
-__all__ = ['EVERY_S', 'FLOOR_S', 'TESTS', 'main', 'settled', 'watch']
+if TYPE_CHECKING:
+    from dev_lab.dev.forge import Forge
+
+__all__ = [
+    'EVERY_S',
+    'FLOOR_S',
+    'RED',
+    'TESTS',
+    'clients_at',
+    'main',
+    'session_main',
+    'settled',
+    'unacknowledged_reds',
+    'watch',
+    'watch_session',
+]
 
 #: The context prefix a part's verdict is posted under.
 TESTS: Final = 'tests/'
@@ -82,8 +107,161 @@ def watch(
         sleep(every_s)
 
 
+#: The states a check reads red in, on both forges.
+RED: Final = frozenset({'failure', 'error'})
+#: The session watch's poll period and floor: each open PR costs two reads per poll, and GitHub allows 5000 an hour.
+SESSION_EVERY_S: Final = 90.0
+SESSION_FLOOR_S: Final = 60.0
+
+
+def clients_at(root: Path) -> Callable[[Forge], Client]:
+    """One stored-credential client per repository, built once."""
+    made: dict[Forge, Client] = {}
+
+    def client(forge: Forge) -> Client:
+        if forge not in made:
+            made[forge] = stored_client(forge, cwd=root)
+        return made[forge]
+
+    return client
+
+
+def _pull(session: str, row: sessionprs.Row, client: Client) -> tuple[sessionprs.Row, PullRequest | None]:
+    """*row*'s PR as the forge holds it; a branch row is resolved to its OPEN PR, ``None`` when it has none."""
+    if row.number:
+        return row, client.pr_view(row.number)
+    found = [pr for pr in pr_list(client) if pr.head == row.branch]
+    if not found:
+        return row, None
+    pr = max(found, key=lambda one: one.number)
+    return sessionprs.resolve(session, row, pr.number), pr
+
+
+def _reds(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
+    return [status for status in statuses if status.state in RED]
+
+
+def _green(statuses: Sequence[CommitStatus]) -> bool:
+    return settled(statuses) and all(s.state == 'success' for s in statuses if s.context.startswith(TESTS))
+
+
+def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str], None], seen: set[str]) -> bool:
+    """Say each new change on *row*; whether it is still open."""
+    row, pr = _pull(session, row, client)
+    if pr is None:
+        return False
+    if pr.merged or pr.state == 'closed':
+        done = 'merged' if pr.merged else 'closed'
+        sessionprs.close(session, row, done)
+        say(f'{row.key} {done}')
+        return False
+    statuses = status_list(client, pr.head_sha) if pr.head_sha else ()
+    lines = [f'{row.key} {pr.head_sha[:12]} {s.context} {s.state} {s.description}'.rstrip() for s in _reds(statuses)]
+    if _green(statuses):
+        lines.append(f'{row.key} {pr.head_sha[:12]} green')
+    for line in lines:
+        if line not in seen:
+            seen.add(line)
+            say(line)
+    return True
+
+
+def watch_session(
+    session: str,
+    *,
+    clients: Callable[[Forge], Client],
+    say: Callable[[str], None],
+    every_s: float = SESSION_EVERY_S,
+    deadline_s: float = 4 * 3600.0,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3)."""
+    end, seen = clock() + deadline_s, set()
+    while True:
+        live = 0
+        for row in sessionprs.open_rows(session):
+            try:
+                live += _poll(session, row, clients(row.forge), say, seen)
+            except (ForgeCallFailed, ValueError) as failed:
+                live += 1  # an unreadable PR is still open: read again next poll
+                if (line := f'{row.key} unreadable: {failed}'.splitlines()[0]) not in seen:
+                    seen.add(line)
+                    say(line)
+        if not live:
+            say(f'session {session}: no open PR left')
+            return 0
+        if clock() >= end:
+            say(f'session {session}: deadline, {live} PR(s) still open')
+            return _DEADLINE
+        sleep(every_s)
+
+
+def unacknowledged_reds(session: str, *, clients: Callable[[Forge], Client]) -> list[str]:
+    """``<pr url> <sha12> <context> <state>`` per red check on a session PR head no reason was recorded for.
+
+    Raises :class:`ForgeCallFailed`/``ValueError`` when a forge cannot answer.
+    """
+    said = []
+    for recorded in sessionprs.open_rows(session):
+        client = clients(recorded.forge)
+        row, pr = _pull(session, recorded, client)
+        if pr is None or pr.merged or pr.state == 'closed' or not pr.head_sha or pr.head_sha in row.acks:
+            continue
+        said += [f'{pr.url} {pr.head_sha[:12]} {s.context} {s.state}' for s in _reds(status_list(client, pr.head_sha))]
+    return said
+
+
+def _ack(session: str, key: str, reason: str, clients: Callable[[Forge], Client]) -> int:
+    found = [row for row in sessionprs.rows(session).values() if key in {row.key, f'#{row.number}', str(row.number)}]
+    if len(found) != 1:
+        emit(f'watch: {key!r} names {len(found)} PR(s) of session {session}; give the key it prints', err=True)
+        return 2
+    row, pr = _pull(session, found[0], clients(found[0].forge))
+    if pr is None or not pr.head_sha:
+        emit(f'watch: {row.key} has no open PR head to acknowledge', err=True)
+        return 2
+    sessionprs.ack(session, row, pr.head_sha, reason)
+    emit(f'{row.key} {pr.head_sha[:12]} acknowledged: {reason}')
+    return 0
+
+
+def session_main(argv: Sequence[str] | None = None, *, clients: Callable[[Forge], Client] | None = None) -> int:
+    """``forge watch --session <id> --stream [--every-seconds S]``, or ``--ack <key> --reason <why>``."""
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.forge watch --session', description=session_main.__doc__)
+    parser.add_argument('--session', required=True)
+    parser.add_argument('--stream', action='store_true', help='one flushed line per change, for a Monitor')
+    parser.add_argument(
+        '--every-seconds', type=float, default=SESSION_EVERY_S, help=f'poll period (floor {SESSION_FLOOR_S:g})'
+    )
+    parser.add_argument('--deadline-minutes', type=float, default=240.0)
+    parser.add_argument('--ack', default='', help="a PR's key or number: let the red on its current head stand")
+    parser.add_argument('--reason', default='', help='why the red stands (required with --ack)')
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    if not sessionprs.valid(args.session):
+        parser.error(f'--session {args.session!r} is not a session id')
+    if args.ack and not args.reason.strip():
+        parser.error('--ack: --reason must say why the red stands')
+    made = clients or clients_at(Path.cwd())
+    if args.ack:
+        try:
+            return _ack(args.session, args.ack, args.reason.strip(), made)
+        except (ForgeCallFailed, ValueError) as failed:
+            emit(f'watch: {failed}', err=True)
+            return 2
+    return watch_session(
+        args.session,
+        clients=made,
+        say=lambda line: emit(line, flush=True),
+        every_s=max(args.every_seconds, SESSION_FLOOR_S),
+        deadline_s=args.deadline_minutes * 60,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """``forge watch <sha>... [--deadline-minutes M] [--every-seconds S] [--stream]``."""
+    """``forge watch <sha>... [--deadline-minutes M] [--every-seconds S] [--stream]``; ``--session``: the PRs'."""
+    if any(word.startswith('--session') for word in (sys.argv[1:] if argv is None else argv)):
+        return session_main(argv)
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge watch', description=main.__doc__)
     parser.add_argument('sha', nargs='+')
     parser.add_argument('--deadline-minutes', type=float, default=120.0)

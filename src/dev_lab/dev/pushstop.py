@@ -7,8 +7,10 @@ forge for each one's checks (:func:`stop_refusal`):
 
 * a head still ``pending`` with no live ``forge watch`` refuses the stop EVERY time, naming the one watch to
   arm -- arming it is the remedy, and a live watcher lifts the refusal;
-* a RED head refuses it ONCE, naming where to read the red: a red may need the user's decision, so a stop
-  already refused (``stop_hook_active``) is let through rather than looping;
+* a RED check refuses it only on a PR the session opened or pushed, in ANY repository (SESSION-HEARS-ITS-PRS,
+  :func:`dev_lab.dev.forgewatch.unacknowledged_reds`, ruling 2026-11-11), and EVERY time until the session
+  pushes a newer head or records why the red stands (``forge watch --session <id> --ack <key> --reason <why>``);
+  a red head that is no session PR's -- an integration head the session merely pushed -- is not blocked on;
 * a head with no ``tests/*`` status :data:`GRACE_S` after its push has nothing to watch (review F-05c3ae4cb27f);
 * a pending head whose ``forge watch`` ran to its deadline is released on a repeated stop, with a note;
 * a green head, a session that pushed nothing, or a forge that cannot answer ends the turn. Always exits 0.
@@ -26,9 +28,10 @@ from typing import TYPE_CHECKING, Final, TextIO
 from lab_commons.census import processes as census
 from lab_commons.log import emit
 
+from dev_lab.dev import sessionprs
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgewatch import TESTS, settled
+from dev_lab.dev.forgewatch import TESTS, clients_at, settled, unacknowledged_reds
 from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.pushwatch import RULE, deadline_reached, pushed_at, pushed_by, watch_command, watched
 from dev_lab.dev.venvpath import running_interpreter
@@ -36,7 +39,9 @@ from dev_lab.dev.venvpath import running_interpreter
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
-__all__ = ['GRACE_S', 'Stop', 'main', 'stop_refusal']
+    from dev_lab.dev.forge import Forge
+
+__all__ = ['GRACE_S', 'Stop', 'main', 'red_refusal', 'stop_refusal']
 
 
 #: How long after its push a head with NO ``tests/*`` status is still awaited: time for CI to post its first
@@ -63,14 +68,14 @@ def stop_refusal(
 ) -> Stop:
     """Whether *session* may end its turn; *again* is a stop already refused once, *now* the clock (epoch s).
 
-    ONE remedy per state: a pending head with no live watcher names the watch to arm; a red head names where to
-    read its verdict, and only on the first stop. A head with no ``tests/*`` status :data:`GRACE_S` after its
-    push has nothing to watch; a pending head whose watch ran to its deadline is released on a repeated stop,
-    with a note -- the user decides. Raises :class:`ForgeCallFailed`/``ValueError`` when unreadable.
+    A pending head with no live watcher names the watch to arm (a red is :func:`red_refusal`'s). A head with no
+    ``tests/*`` status :data:`GRACE_S` after its push has nothing to watch; a pending head whose
+    watch ran to its deadline is released on a repeated stop, with a note -- the user decides.
+    Raises :class:`ForgeCallFailed`/``ValueError`` when unreadable.
     """
     pushed = pushed_at(root, session)
     clock = time.time() if now is None else now
-    pending, red = [], []
+    pending = []
     for sha in sorted(pushed):
         statuses = status_list(client, sha)
         if not any(s.context.startswith(TESTS) for s in statuses):
@@ -78,8 +83,6 @@ def stop_refusal(
                 pending.append(sha)
         elif not settled(statuses):
             pending.append(sha)
-        elif any(s.state != 'success' for s in statuses if s.context.startswith(TESTS)):
-            red.append(sha)
     live = list(processes())
     unwatched = [sha for sha in pending if not watched(sha, live)]
     ran_out = deadline_reached(root) if again else frozenset()
@@ -90,13 +93,6 @@ def stop_refusal(
             block=f'{RULE}: this session pushed {named}, its checks are pending and nothing watches them.\n'
             f'Arm a Monitor and act on each result before ending the turn: {watch_command(*unwatched)}'
         )
-    if red and not again:
-        named = ' '.join(sha[:12] for sha in red)
-        return Stop(
-            block=f'{RULE}: this session pushed {named} and its checks are red.\n'
-            f'Read the red, fix it and push before ending the turn: '
-            f'{running_interpreter()} -m dev_lab.dev.forge status list {red[0]}'
-        )
     if released:
         named = ' '.join(sha[:12] for sha in released)
         return Stop(note=f'{RULE}: {named} is still pending after its watch reached its deadline; released -- '
@@ -104,24 +100,45 @@ def stop_refusal(
     return Stop()
 
 
+def red_refusal(session: str, *, clients: Callable[[Forge], Client]) -> Stop:
+    """Refuse the stop while a session PR's head is red and unacknowledged, naming each PR and failing context."""
+    reds = unacknowledged_reds(session, clients=clients)
+    if not reds:
+        return Stop()
+    return Stop(
+        block=f'{sessionprs.RULE}: a PR of this session has a red check:\n'
+        + ''.join(f'  {line}\n' for line in reds)
+        + 'Read it, fix it and push a newer head -- or, when the red stands on purpose, record why: '
+        f'{running_interpreter()} -m dev_lab.dev.forge watch --session {session} --ack <pr url|key> --reason <why>'
+    )
+
+
 def _gate(
     payload: dict,
     processes: Callable[[], Iterable[str]],
     client: Callable[[Path], Client] | None,
+    clients: Callable[[Forge], Client] | None,
     out: TextIO | None,
 ) -> int:
     session = str(payload.get('session_id') or '')
     root = Path(payload.get('cwd') or Path.cwd())
-    if not pushed_by(root, session):
+    pushed, prs = pushed_by(root, session), sessionprs.open_rows(session)
+    if not pushed and not prs:
         return 0
     try:
-        said = stop_refusal(
-            root,
-            session,
-            client=(client or client_for)(root),
-            processes=processes,
-            again=bool(payload.get('stop_hook_active')),
+        said = (
+            stop_refusal(
+                root,
+                session,
+                client=(client or client_for)(root),
+                processes=processes,
+                again=bool(payload.get('stop_hook_active')),
+            )
+            if pushed
+            else Stop()
         )
+        if said.block is None and prs and (red := red_refusal(session, clients=clients or clients_at(root))).block:
+            said = red
     except (ForgeCallFailed, OSError, ValueError):
         return 0
     if said.block is not None:
@@ -143,6 +160,7 @@ def main(
     stdin: TextIO | None = None,
     processes: Callable[[], Iterable[str]] | None = None,
     client: Callable[[Path], Client] | None = None,
+    clients: Callable[[Forge], Client] | None = None,
     out: TextIO | None = None,
 ) -> int:
     """The ``Stop`` hook: block once per state above, else stay silent. Never exits nonzero."""
@@ -153,7 +171,7 @@ def main(
         return 0
     if not isinstance(payload, dict):
         return 0
-    return _gate(payload, processes or (lambda: (one.command_line for one in census())), client, out)
+    return _gate(payload, processes or (lambda: (one.command_line for one in census())), client, clients, out)
 
 
 if __name__ == '__main__':

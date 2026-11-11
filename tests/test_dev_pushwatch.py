@@ -196,16 +196,15 @@ def test_a_stop_is_refused_while_a_pushed_head_is_pending_and_unwatched_naming_t
     assert _stop(work, forge, []) is None
 
 
-def test_a_red_pushed_head_refuses_the_stop_once_and_names_where_to_read_it(tmp_path: Path) -> None:
+def test_a_red_pushed_head_that_is_no_session_pr_does_not_refuse_the_stop(tmp_path: Path) -> None:
+    """A red blocks only on a PR of the session (SESSION-HEARS-ITS-PRS, tests/test_dev_sessionwatch.py)."""
     work, head = _work(tmp_path)
     _hook(work, 'git push origin HEAD')
     forge = StateForge()
+    _post(forge, head, 'tests/base', 'pending')
+    assert _stop(work, forge, []) is not None, 'PLANTED CONTROL: the same head pending and unwatched is refused'
     _post(forge, head, 'tests/base', 'failure')
-    block = _stop(work, forge, [])
-    assert block is not None
-    assert head[:12] in block['reason']
-    assert 'forge status list' in block['reason']
-    assert _stop(work, forge, [], again=True) is None, 'a red may need the user: refused once, never a loop'
+    assert _stop(work, forge, []) is None
 
 
 def test_a_session_that_pushed_nothing_or_a_forge_that_cannot_answer_ends_the_turn(tmp_path: Path) -> None:

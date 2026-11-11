@@ -23,6 +23,7 @@ __all__ = [
     'RECLAIM_COMMAND',
     'RETIRED_WIRING',
     'RULES_REL',
+    'SESSIONPRS_COMMAND',
     'SETTINGS_REL',
     'SHELL_TOOLS',
     'STRAY_COMMAND',
@@ -87,6 +88,10 @@ JOURNALDOOR_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_
 #: no live ``forge watch <sha>`` watches the pushed head -- never a block.
 PUSHWATCH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushwatch'
 
+#: SESSION-HEARS-ITS-PRS (:mod:`dev_lab.dev.sessionprs`, ruling 2026-11-11): after a shell call that pushed or ran
+#: ``forge pr create``, the PR is recorded as the session's, in any repository; an opened PR names the watch to arm.
+SESSIONPRS_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.sessionprs'
+
 #: PUSHED-HEAD-IS-WATCHED, the ``Stop`` half (:mod:`dev_lab.dev.pushstop`, ruling 2026-11-04): a turn does not end
 #: while a head the session pushed is pending with no live watcher, or red (refused once).
 PUSHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushstop'
@@ -138,6 +143,7 @@ WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
     Wire('PreToolUse', JOURNALDOOR_COMMAND, 'dev_lab.dev.journaldoor', on_shells=True),
     Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True),
+    Wire('PostToolUse', SESSIONPRS_COMMAND, 'dev_lab.dev.sessionprs', on_shells=True),
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
     Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
