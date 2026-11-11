@@ -21,7 +21,9 @@ from dev_lab.dev.gitenv import unlocated
 
 
 def _git(*argv: str, cwd: Path) -> str:
-    return subprocess.run([_GIT, *argv], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(
+        [_GIT, *argv], cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True
+    ).stdout.strip()
 
 
 @pytest.fixture
@@ -45,7 +47,9 @@ def source(tmp_path) -> tuple[str, str]:
         ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'c'],
     ):
         subprocess.run([_GIT, *argv], cwd=repo, env=env, check=True)
-    sha = subprocess.run([_GIT, 'rev-parse', 'HEAD'], cwd=repo, env=env, capture_output=True, text=True, check=True)
+    sha = subprocess.run(
+        [_GIT, 'rev-parse', 'HEAD'], cwd=repo, env=env, capture_output=True, text=True, encoding='utf-8', check=True
+    )
     return repo.as_uri(), sha.stdout.strip()
 
 
@@ -54,6 +58,7 @@ def _bare(repo: Path) -> str:
         [_GIT, '--git-dir', str(repo / '.git'), 'config', 'core.bare'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=False,
         env=unlocated(),
     ).stdout.strip()
