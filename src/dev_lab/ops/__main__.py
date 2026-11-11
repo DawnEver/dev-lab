@@ -26,6 +26,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
 from dev_lab.ops import (
     access,
+    alertless,
     backup,
     breakglass,
     configverbs,
@@ -263,6 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Route one verb; see the module docstring."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops', description=__doc__.splitlines()[0])
     parser.add_argument('--config', type=Path, required=True)
+    parser.set_defaults(action=None, subject=False)  # every verb form reads both (alertless.sends_no_alert)
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('install').add_argument('--root', type=Path, default=Path('/'))
     verbs.add_parser('promote')
@@ -297,11 +299,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         sized.add_argument('--journal-max-mb', type=int, default=disk.DEFAULT_JOURNAL_MAX_MB)
     args = parser.parse_args(argv)
     if args.verb in {'disk', 'clean'}:  # read only the disk: no role config is needed to measure or free it
-        return (
-            disk.measure(args.gitea_data) if args.verb == 'disk' else disk.clean(args.gitea_data, args.journal_max_mb)
-        )
+        sized = disk.measure(args.gitea_data) if args.verb == 'disk' else None
+        return sized if sized is not None else disk.clean(args.gitea_data, args.journal_max_mb)
     try:
-        config = load(args.config)
+        config = load(args.config, alerts=not alertless.sends_no_alert(args))
     except (ValueError, TypeError) as bad:
         emit(f'[ops] {bad}', err=True)
         return 2
