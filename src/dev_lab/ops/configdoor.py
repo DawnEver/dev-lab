@@ -29,11 +29,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from dev_lab.dev.netverb import run_network_verb
+
 if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource
 
 __all__ = [
-    'ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest', 'fetch', 'tick',
+    'ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest', 'fetch', 'git_with_env',
+    'tick',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
@@ -109,6 +112,12 @@ def changes(old: Mapping[str, Any], new: Mapping[str, Any]) -> tuple[str, ...]:
 def boundary(changed: tuple[str, ...]) -> tuple[str, ...]:
     """The keys of *changed* no :data:`ROUTINE` pattern admits."""
     return tuple(key for key in changed if not any(fnmatch.fnmatchcase(key, pattern) for pattern in ROUTINE))
+
+
+def git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
+    """Run one network git through the retry door with *env* added; git's output may echo a header: never returned."""
+    report = run_network_verb(argv, env=os.environ | dict(env), timeout=300)
+    return report.returncode, ''
 
 
 def fetch(source: ConfigSource, *, run: EnvRunner) -> str:

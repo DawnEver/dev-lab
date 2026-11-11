@@ -10,7 +10,7 @@ than the one the lock pins. The lock is the one source: the upgrade derives the 
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
@@ -136,3 +136,54 @@ def test_a_judge_host_installs_its_reviewer_at_the_locked_revision(tmp_path: Pat
 def test_a_host_without_a_judge_installs_no_reviewer(tmp_path: Path) -> None:
     line = upgrade.command(_config(tmp_path), TIP, tmp_path / 'family.txt')
     assert not any(part.startswith('ai-lab') for part in line), line
+
+
+def _split_probe(
+    installs: list[list[str]], live: str, *, candidate_loads: bool
+) -> Callable[[Sequence[str]], tuple[int, str]]:
+    """A probe whose tip refuses the LIVE file; the candidate file loads iff *candidate_loads*."""
+    commits = iter([OLD, TIP])
+
+    def probe(argv: Sequence[str]) -> tuple[int, str]:
+        if '-c' in argv and 'direct_url' in argv[-1]:
+            return 0, next(commits, OLD)
+        if len(installs) != 1:
+            return 0, ''  # the rolled-back commit loads everything
+        if live in argv:
+            return 1, 'ValueError: [ops.breakglass.tokens] github.com is a standing GitHub token'
+        return (0, '') if candidate_loads else (1, 'ValueError: the candidate refuses too')
+
+    return probe
+
+
+def test_a_tip_the_live_file_refuses_is_admitted_when_its_candidate_loads(tmp_path: Path) -> None:
+    host = _config(tmp_path)
+    installs: list[list[str]] = []
+    code, said = upgrade.run(
+        host,
+        install=lambda argv: (installs.append(list(argv)), (0, ''))[1],
+        probe=_split_probe(installs, str(host.path), candidate_loads=True),
+        fetch=lambda _source, ref: (TIP if ref != OLD else OLD, LOCK),
+        candidate=lambda _config: '[ops]\n# the reviewed file the tip will run\n',
+        follow=lambda _config, _probe: '',
+    )
+    assert code == 0
+    assert 'config apply pending' in said
+    assert 'standing GitHub token' in said  # the live refusal is named
+    assert len(installs) == 1  # PLANTED CONTROL against a rollback: the tip stays
+
+
+def test_a_tip_neither_the_live_file_nor_its_candidate_loads_under_is_restored(tmp_path: Path) -> None:
+    host = _config(tmp_path)
+    installs: list[list[str]] = []
+    code, said = upgrade.run(
+        host,
+        install=lambda argv: (installs.append(list(argv)), (0, ''))[1],
+        probe=_split_probe(installs, str(host.path), candidate_loads=False),
+        fetch=lambda _source, ref: (TIP if ref != OLD else OLD, LOCK),
+        candidate=lambda _config: '[ops]\n',
+    )
+    assert code == 1
+    assert 'restored' in said
+    assert 'standing GitHub token' in said  # the self-check names the key it refused
+    assert installs[1][-1].endswith(f'@{OLD}')

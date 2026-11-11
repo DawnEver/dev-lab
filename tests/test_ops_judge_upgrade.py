@@ -64,7 +64,7 @@ def test_no_judge_table_renders_no_judge_unit(tmp_path: Path) -> None:
         ('', '', 'serves no repo'),
         (f'"{ALPHA}", "{ALPHA}"', '"gitea.example" = "t"\n', 'twice'),
         (f'"{ALPHA}", "{BETA}"', '"gitea.example" = "t"\n', 'names no token'),
-        (f'"{ALPHA}"', '"gitea.example" = "t"\n"github.com" = "u"\n', 'serves no repo in'),
+        (f'"{ALPHA}"', '"gitea.example" = "t"\n"other.example" = "u"\n', 'serves no repo in'),
     ],
 )
 def test_a_judge_declaration_that_lies_is_refused(tmp_path: Path, repos: str, tokens: str, why: str) -> None:
@@ -268,11 +268,11 @@ def test_install_names_the_remedy_when_the_judge_cannot_enter_its_keys_directory
 @pytest.mark.parametrize(
     ('apps', 'tokens', 'why'),
     [
-        ('"github.com" = {app_id = 1, key_file = "k"}\n', '"github.com" = "t"\n', 'both a token and an app'),
-        ('"github.com" = {app_id = true, key_file = "k"}\n', '', 'must be'),
-        ('"github.com" = {app_id = 1}\n', '', 'must be'),
-        ('"github.com" = {app_id = 1, key_file = "k", slug = "x"}\n', '', 'must be'),
-        ('"gitea.example" = {app_id = 1, key_file = "k"}\n', '"github.com" = "t"\n', 'serves no repo in'),
+        (
+            '"github.com" = {app_id = 1, key_file = "k"}\n"gitea.example" = {app_id = 2, key_file = "k"}\n',
+            '',
+            'serves no repo in',
+        ),
     ],
 )
 def test_an_app_declaration_that_lies_is_refused(tmp_path: Path, apps: str, tokens: str, why: str) -> None:

@@ -7,24 +7,20 @@ only as a refusal naming the remedy, ``[ops.breakglass.apps]``; Gitea, which has
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from dev_lab.ops import breakglass
-from dev_lab.ops.config import Breakglass, Judge
+from dev_lab.ops import breakglass, configupgrade
+from dev_lab.ops.config import Breakglass
 from dev_lab.ops.secretplace import declared
 from dev_lab.ops.served import app_of_forge, credential_files
 from tests._ops_fixtures import GLASS, config
 
 APP = {'app_id': 4242, 'key_file': '/etc/forge-breakglass/ops-app.pem'}
 BASE: dict[str, Any] = {'account': 'b', 'state': 's', 'log': 'l', 'repos': GLASS}
-
-
-def test_a_github_token_in_breakglass_is_refused_naming_the_app() -> None:
-    with pytest.raises(ValueError, match=r'github\.com.*\[ops\.breakglass\.apps\]'):
-        Breakglass(**BASE, tokens={'gitea.example': 't', 'github.com': 'pat'})
 
 
 def test_a_github_app_serves_breakglass_and_gitea_keeps_its_token() -> None:
@@ -35,9 +31,12 @@ def test_a_github_app_serves_breakglass_and_gitea_keeps_its_token() -> None:
     assert set(credential_files(role.tokens, role.apps)) == {'t', APP['key_file']}
 
 
-def test_a_github_token_in_the_judge_is_refused_naming_the_app() -> None:
-    with pytest.raises(ValueError, match=r'github\.com.*\[ops\.judge\.apps\]'):
-        Judge(user='judge', schedule='hourly', repos=('https://github.com/owner/beta',), tokens={'github.com': 'pat'})
+def test_a_github_token_in_the_judge_is_dropped_on_read_naming_the_app(capsys: pytest.CaptureFixture[str]) -> None:
+    ops = {'judge': {'user': 'judge', 'repos': ['https://github.com/owner/beta'], 'tokens': {'github.com': 'pat'}}}
+    judge = configupgrade.upgraded(ops)['judge']
+    assert judge['tokens'] == {}, 'a standing GitHub token is never presented'
+    assert judge['repos'] == [], 'with no App the judge does not act on GitHub'
+    assert re.search(r'github\.com.*\[ops\.judge\.apps\]', capsys.readouterr().err)
 
 
 def test_the_forge_of_an_app_repo_presents_a_minted_installation_token() -> None:

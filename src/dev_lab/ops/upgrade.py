@@ -31,6 +31,7 @@ import lab_commons.launch as _door
 from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.ops import configdoor
 from dev_lab.ops.config import OpsConfig
 
 __all__ = ['checks', 'command', 'commit', 'failed_check', 'fetch_lock', 'locked_family', 'run', 'run_check']
@@ -116,16 +117,16 @@ def _reviewer(config: OpsConfig) -> list[str]:
     return [REVIEWER] if config.judge is not None and not named else []
 
 
-def checks(config: OpsConfig) -> dict[str, list[str]]:
+def checks(config: OpsConfig, file: Path | None = None) -> dict[str, list[str]]:
     """The self-check, by name: each runs in a fresh ``[ops] python`` and must exit 0.
 
     ``loads`` imports ``dev_lab.ops`` and loads this host's own config, so every role it declares parses;
     ``breakglass`` runs the break-glass verb's ``--help`` -- the repair tool's door, with no side effect.
     """
-    file = str(config.path)
+    path = str(file or config.path)
     return {
-        'loads': [config.python, '-c', _LOADS, file],
-        'breakglass': [config.python, '-m', 'dev_lab.ops', '--config', file, 'breakglass', '--help'],
+        'loads': [config.python, '-c', _LOADS, path],
+        'breakglass': [config.python, '-m', 'dev_lab.ops', '--config', path, 'breakglass', '--help'],
     }
 
 
@@ -169,14 +170,35 @@ def commit(config: OpsConfig, probe: Runner = run_check) -> str:
     return out.strip() if code == 0 else ''
 
 
-def failed_check(config: OpsConfig, probe: Runner) -> str:
-    """The first self-check that fails, with the last line it said (the key a load refused), else empty."""
-    for name, argv in checks(config).items():
+def failed_check(config: OpsConfig, probe: Runner, file: Path | None = None) -> str:
+    """The first self-check that fails on *file* (default the live one), with its last line (the refused key)."""
+    for name, argv in checks(config, file).items():
         code, said = probe(argv)
         if code != 0:
             last = said.strip().splitlines()[-1:] if said.strip() else []
             return f'{name} ({last[0][:300]})' if last else name
     return ''
+
+
+def reviewed_candidate(config: OpsConfig) -> str | None:
+    """The text of the reviewed config the host will run next (``[ops.config]``'s source), else ``None``."""
+    if config.config_source is None:
+        return None
+    return configdoor.fetch(config.config_source, run=configdoor.git_with_env)
+
+
+def _candidate_loads(config: OpsConfig, probe: Runner, candidate: Callable[[OpsConfig], str | None]) -> str:
+    """``''`` when the reviewed candidate passes every self-check under the tip; else why not (``none``: none)."""
+    try:
+        text = candidate(config)
+    except configdoor.ConfigRefused as refused:
+        return f'unread ({refused})'
+    if text is None:
+        return 'none'
+    with tempfile.TemporaryDirectory(prefix='dev-lab-candidate-') as scratch:
+        file = Path(scratch) / config.path.name
+        file.write_text(text, encoding='utf-8')
+        return failed_check(config, probe, file)
 
 
 def _install_locked(config: OpsConfig, ref: str, install: Runner, fetch: Fetcher) -> tuple[int, str]:
@@ -198,6 +220,7 @@ def run(
     probe: Runner = run_check,
     fetch: Fetcher = fetch_lock,
     follow: Callable[[OpsConfig, Runner], str] | None = None,
+    candidate: Callable[[OpsConfig], str | None] | None = None,
 ) -> tuple[int, str]:
     """Install the tip, self-check it, roll back to the recorded commit on failure; the exit code and what happened."""
     if config.upgrade is None:
@@ -214,6 +237,11 @@ def run(
     if not failed:
         lagging = (follow or follow_uv)(config, probe)
         return 0, f'dev-lab {old} -> {new}' + (f'; {lagging}' if lagging else '')
+    if not (pending := _candidate_loads(config, probe, candidate or reviewed_candidate)):
+        lagging = (follow or follow_uv)(config, probe)
+        said = f'dev-lab {old} -> {new}; config apply pending: the live file does not load under the tip ({failed}); '
+        return 0, said + 'run config apply --credential <consent> now' + (f'; {lagging}' if lagging else '')
+    failed = f'{failed}; candidate {pending}' if pending != 'none' else failed
     code, out = _install_locked(config, old, install, fetch)
     again = failed_check(config, probe) if code == 0 else 'reinstall'
     if again:
