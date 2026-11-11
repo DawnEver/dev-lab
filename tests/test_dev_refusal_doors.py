@@ -44,16 +44,14 @@ def test_a_remedy_naming_no_door_fails(vague: str) -> None:
 
 
 def test_the_hpc_refusal_names_every_door_by_purpose() -> None:
-    """User ruling 2026-11-11: an account shell, deploy, verify work and a research batch, each with its shape."""
+    """User ruling 2026-11-11: an account shell, deploy, verify work and a research batch; flags in refusals.md."""
     text = str(HPC_THROUGH_THE_DOOR['remedy'])
     for door in (
-        '`sshhold open <user>@<host> --hours N --code <code>`',
-        "`sshhold run <dest> '<cmd>'`",
-        '`hpcaccount deploy-fleet|forget|deploy`',
+        '`sshhold open|run --code`',
+        '`hpcaccount deploy*|forget`',
         '`forge queue|run show <sha>`',
-        '`-m lab_commons.hpc plan|submit|status|gather|retry -c <job>`',
-        '`-m lab_commons.hpc run submit|gather|build --sha <sha>`',
-        '`-m lab_commons.hpc clean --root <abs> [--dry-run] [--timeout s] --at <user@host> <name>...`',
+        '`lab_commons.hpc plan|submit|status|gather|retry|run`',
+        '`lab_commons.hpc clean`',
     ):
         assert door in text
     assert 'key-only' in text  # user ruling 2026-11-11: Ada is key-only and never needs a code

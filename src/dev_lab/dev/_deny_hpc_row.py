@@ -41,12 +41,9 @@ CAMPAIGN: Final[tuple[tuple[str, ...], ...]] = (
 #: under one (:func:`remedy` raises otherwise), so the refusal names every door by purpose (user ruling 2026-11-11);
 #: the flags beyond the shape live in ``docs-src/dev/refusals.md#hpc-through-the-door``.
 USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
-    'on a key+TOTP account': (
+    'TOTP host': (
         (('dev_lab.dev.sshhold', 'open'), ('dev_lab.dev.sshhold', 'run')),
-        (
-            "`sshhold open <user>@<host> --hours N --code <code>`, `sshhold run <dest> '<cmd>'`"
-            ' (a key-only host needs no code: the lab_commons.hpc doors below)'
-        ),
+        '`sshhold open|run --code` (key-only: no code)',
     ),
     'deploy': (
         (
@@ -54,7 +51,7 @@ USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
             ('dev_lab.dev.hpcaccount', 'forget'),
             ('dev_lab.dev.hpcaccount', 'deploy'),
         ),
-        '`hpcaccount deploy-fleet|forget|deploy`',
+        '`hpcaccount deploy*|forget`',
     ),
     'verify: push,': (
         (('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'run', 'show')),
@@ -62,14 +59,11 @@ USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
     ),
     'batch': (
         CAMPAIGN[: len(_BATCH) + len(_RUN)],
-        (
-            '`-m lab_commons.hpc plan|submit|status|gather|retry -c <job>`, '
-            '`-m lab_commons.hpc run submit|gather|build --sha <sha>`'
-        ),
+        '`lab_commons.hpc plan|submit|status|gather|retry|run`',
     ),
     'clean': (
         (('lab_commons.hpc', 'clean'),),
-        '`-m lab_commons.hpc clean --root <abs> [--dry-run] [--timeout s] --at <user@host> <name>...`',
+        '`lab_commons.hpc clean`',
     ),
 }
 
