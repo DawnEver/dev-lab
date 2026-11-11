@@ -159,7 +159,7 @@ def declaration_from(text: str, origin: str) -> Declaration:
         bypass = (str(named),) if isinstance(named, str) else tuple(str(one) for one in named)
         forges[host] = Identities(bypass, tuple(entry.get('promote', ())))
     approvals = int(table.get('approvals', 0))
-    if approvals:  # only a judge approves, and its verdict is ADVISORY on every forge (user ruling 2026-11-11)
+    if approvals > 0:  # only a judge approves, and its verdict is ADVISORY on every forge (user ruling 2026-11-11)
         msg = (
             f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} -- only the judge posts an approving '
             f'review, and the judge is advisory: no merge waits on it (user ruling 2026-11-11)'

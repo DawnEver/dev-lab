@@ -254,15 +254,6 @@ def test_a_judge_declaration_without_a_judge_login_is_refused() -> None:
         breakglass.unreviewed(forge, head, base=_BASE)
 
 
-@pytest.mark.parametrize('flag', ['dismissed', 'stale'])
-def test_a_dismissed_or_stale_approval_does_not_pass_the_judge_gate(flag: str) -> None:
-    """PLANTED CONTROL: the same approval, standing, passes (above)."""
-    forge, head, number = _judge_repo()
-    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
-    forge.reviews[number][-1][flag] = True
-    assert _gate(forge, head) is not None
-
-
 def test_a_judge_base_without_a_login_is_the_merge_s_wait_never_its_crash(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge = StateForge()

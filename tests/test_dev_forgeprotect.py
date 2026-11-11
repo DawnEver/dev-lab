@@ -35,7 +35,7 @@ JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
         (GITEA_TEXT + '[tool.dev_lab.protection]\nextra = 1\n', 'unknown key'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\npromote = ["p"]\n', 'names no breakglass'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\nwho = 1\n', 'unknown'),
-        (GITEA_TEXT + '[tool.dev_lab.protection]\napprovals = 1\n', 'nobody posts an approving review'),
+        (GITEA_TEXT + '[tool.dev_lab.protection]\napprovals = 1\n', 'the judge is advisory'),
         (GITEA_TEXT + JUDGED + '[tool.dev_lab.protection]\napprovals = -1\n', 'below zero'),
     ],
 )
@@ -45,9 +45,9 @@ def test_a_declaration_that_cannot_mean_anything_is_refused(text: str, said: str
         declaration_from(text, 'pyproject.toml')
 
 
-def test_the_approver_is_the_declared_judge_and_one_approval_its_default() -> None:
+def test_a_judge_reviewed_repo_requires_no_approval_since_the_judge_is_advisory() -> None:
     integration, trunk = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
-    assert (integration.approvals, integration.approver) == (1, 'review-bot')
+    assert (integration.approvals, integration.approver) == (0, '')
     assert (trunk.approvals, trunk.approver) == (0, '')
 
 
@@ -266,7 +266,7 @@ def test_gitea_creates_an_absent_rule_and_reads_its_nulls_as_empty_lists() -> No
     assert len(plan(forge, GITEA, wanted)) == 2  # FLOOR: an empty forge is never clean
     assert apply(forge, GITEA, wanted) == []
     integration = forge.protections['integrate/main']
-    assert (integration['enable_push'], integration['approvals_whitelist_username']) == (False, ['review-bot'])
+    assert (integration['enable_push'], integration['approvals_whitelist_username']) == (False, [])
     assert forge.protections['main']['merge_whitelist_usernames'] == []
 
 
@@ -302,7 +302,7 @@ def test_an_app_judged_github_repo_is_refused_since_actions_alone_gate_it() -> N
 
 
 def test_an_app_judge_takes_no_approval_and_never_renders_on_gitea() -> None:
-    with pytest.raises(ValueError, match='the App posts a check'):
+    with pytest.raises(ValueError, match='the judge is advisory'):
         declaration_from(GITHUB_TEXT + APP_JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
     with pytest.raises(ValueError, match='no GitHub App'):
         plan(FakeGitea(), GITEA, targets(GITEA_TEXT + APP_JUDGED, 'p', GITEA))
