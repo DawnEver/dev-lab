@@ -239,3 +239,11 @@ def test_the_supervisor_service_is_watched_on_its_own_cycle(tmp_path: Path, cycl
     for line in ('Type=notify', 'NotifyAccess=main', f'WatchdogSec={watchdog}', 'Restart=always', 'RestartSec=10'):
         assert f'{line}\n' in unit
     assert 'Type=simple' not in unit
+
+
+def test_the_break_glass_tick_reaches_the_forge(tmp_path: Path) -> None:
+    # the tick lands an open wave's green PRs (dev_lab.ops.wavesweep): it must wait for the network
+    path = _host(tmp_path, extra=_PULL)
+    units = _units(files(load(path, environ={}, as_root=True)))
+    tick = next(text for unit, text in units.items() if unit.endswith('breakglass-tick.service'))
+    assert 'network-online.target' in tick

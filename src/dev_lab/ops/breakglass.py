@@ -57,6 +57,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemerge import merge, parts_wait
+from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
@@ -69,6 +70,7 @@ from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.statelock import exclusive
+from dev_lab.ops.wavesweep import Pull, sweep
 
 __all__ = ['BreakglassRefused', 'ClientForge', 'Forge', 'Server', 'merge_message']
 
@@ -92,6 +94,10 @@ class Forge(Protocol):
 
     def statuses(self, head: str) -> Sequence[CommitStatus]:
         """The commit statuses *head* carries, newest first."""
+        ...
+
+    def open_pulls(self) -> Sequence[Pull]:
+        """Every open PR (:mod:`dev_lab.ops.wavesweep` lands the green ones of an open wave)."""
         ...
 
     def comment(self, number: int, body: str) -> None:
@@ -127,6 +133,10 @@ class ClientForge:
     def statuses(self, head: str) -> Sequence[CommitStatus]:
         """The commit statuses *head* carries (:func:`dev_lab.dev.forgestatus.status_list`)."""
         return status_list(self._client, head)
+
+    def open_pulls(self) -> Sequence[Pull]:
+        """Every open PR (:func:`dev_lab.dev.forgepulls.pr_list`)."""
+        return [Pull(one.number, one.base, one.head_sha, one.draft) for one in pr_list(self._client)]
 
     def comment(self, number: int, body: str) -> None:
         """Comment on PR *number*."""
@@ -386,10 +396,18 @@ class Server:
         return '\n'.join(listed) or 'no wave'
 
     def tick(self) -> str:
-        """The timer's step, under the role lock: end an expired wave; resend each summary no channel delivered."""
+        """The timer's step, under the role lock: land what is green, end an expired wave, resend unsent summaries.
+
+        An open wave lands each green, non-draft PR it serves (:mod:`dev_lab.ops.wavesweep`) through :meth:`_merge`.
+        """
         with exclusive(self.state):
-            self._current()
+            landed = sweep(self.role.repos, self.forge_for, wave=self._open_id, land=self._merge,
+                           refused=BreakglassRefused)  # fmt: skip
             for wave in waves.held(self.state):
                 if wave.closed is not None:
                     self._summarize(wave)
-            return self._status(None)
+            return '\n'.join([*landed, self._status(None)])
+
+    def _open_id(self) -> str | None:
+        held = self._current()
+        return None if held is None else held.id
