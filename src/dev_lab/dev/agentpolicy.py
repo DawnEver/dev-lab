@@ -227,7 +227,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         ('python', '-m', 'dev_lab.ops.consent', 'grant'),
         MAIN,
-        'Granting one consent credential with the authenticator code the user supplied in this conversation for '
+        'Granting one consent credential with the cluster code the user supplied in this conversation for '
         'it (user ruling 2026-11-08: only the user provides the code, the agent runs the grant); never an '
         'invented, stored, logged or reused code.',
     ),

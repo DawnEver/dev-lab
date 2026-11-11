@@ -211,10 +211,10 @@ class Breakglass(Placement):
 
 @dataclass(frozen=True)
 class Consent:
-    """The consent ISSUER (:mod:`dev_lab.ops.consent.issuer`): the host's TOTP seed, its signing key, its ledger.
+    """The consent ISSUER (:mod:`dev_lab.ops.consent.issuer`): the cluster's TOTP seed, its signing key, its ledger.
 
     ``account`` is the restricted ssh account whose ForceCommand is ``consent serve``, ``keys`` its ssh keys; ``totp``
-    the host's ONE TOTP secret (base32, root 600); ``key`` the Ed25519 private key (PEM, root 600); ``state`` the
+    the cluster's ONE TOTP secret (base32, root 600); ``key`` the Ed25519 private key (PEM, root 600); ``state`` the
     directory of the append-only ledger, the last accepted TOTP step and the lockout. ``issuer`` names it in each
     credential and labels the Authenticator entry; ``lockout_after`` consecutive wrong codes refuse every code for
     ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`).
