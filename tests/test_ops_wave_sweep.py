@@ -10,9 +10,14 @@ from dataclasses import dataclass, field
 from _ops_fixtures import GLASS, config
 from test_ops_breakglass import GREEN, HEAD, FakeForge, Host
 
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.netverb import Report
 from dev_lab.ops.wavesweep import Pull
 
+#: A head a wave may land: green tests AND current (it holds the integration branch, its lock is fresh).
+CURRENT = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'success', 'holds integrate/main', ''))
 RED = (
     CommitStatus('tests/base', 'failure', 'VERDICT result=fail', ''),
     CommitStatus('tests/security', 'success', 'nothing found', ''),
@@ -34,7 +39,7 @@ class ListingForge(FakeForge):
         return 'open', found.base, found.head
 
     def statuses(self, head: str) -> list[CommitStatus]:
-        return list(self.by_head.get(head, GREEN))
+        return list(self.by_head.get(head, CURRENT))
 
 
 @dataclass
@@ -114,3 +119,37 @@ def test_a_green_pr_outside_the_waves_repos_is_not_merged(tmp_path) -> None:  # 
     host.server.tick()
     assert _merged(host) == []
     assert GLASS[0] not in host.asked, 'a repo the wave does not serve is never even asked'
+
+
+@dataclass
+class RefusingForge(ListingForge):
+    """A forge that refuses the merge of one PR, as GitHub refused dev-lab #307 on 2026-11-11."""
+
+    refuses: int = 0
+
+    def merge(self, number: int, *, head: str, message: str) -> None:
+        if number == self.refuses:
+            raise ForgeCallFailed(Report(f'PUT /pulls/{number}/merge', (), 1))
+        super().merge(number, head=head, message=message)
+
+
+def test_a_refused_merge_is_skipped_and_the_next_pr_still_merges(tmp_path) -> None:  # PLANTED CONTROL
+    pulls = [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)]
+    host = Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=GLASS),
+                 forge=RefusingForge(pulls=pulls, refuses=7))  # fmt: skip
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [8]
+
+
+def test_a_green_pr_that_is_not_current_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+    stale = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'failure', 'lacks integrate/main', ''))
+    host = _host(
+        tmp_path,
+        [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)],
+        {HEAD: stale, 'c' * 40: GREEN},
+    )
+    host.forge.pulls.append(Pull(9, 'integrate/main', 'c' * 40, draft=False))  # green, pr-current absent
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [8]

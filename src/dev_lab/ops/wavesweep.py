@@ -10,7 +10,10 @@ parts stand green (``_tests_stand``). The sweep only decides WHICH PRs to ask fo
 
 - a draft is left alone (a draft runs nothing, so it is never judged);
 - a PR whose ``tests/merge-ready`` already stands ``success`` lands by the normal path, which wins;
-- a PR whose admission is refused (red, pending, off the integration branch) is skipped, never forced.
+- a PR whose head is not current (``pr-current`` does not stand ``success``: it lacks the integration branch or its
+  lock is stale) is left alone -- a wave lands only what is current, never a stale green head;
+- a PR whose admission or merge is refused (red, pending, off the integration branch, the forge's own refusal) is
+  skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick.
 
 Every merge counts against the wave's cap; the merge that reaches it closes the wave, whose ONE summary is the alert.
 """
@@ -21,8 +24,12 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from lab_commons.log import emit
+
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.ops import request as requests
@@ -61,8 +68,8 @@ def reason_of(wave: str) -> str:
     return f'wave {wave} lands what is green: the review is waived, its security and test parts stand green'
 
 
-def _merge_ready(forge: Listing, head: str) -> bool:
-    return any(one.context == MERGE_READY_CONTEXT and one.state == 'success' for one in forge.statuses(head))
+def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
+    return any(one.context == context and one.state == 'success' for one in posted)
 
 
 def sweep(
@@ -71,7 +78,8 @@ def sweep(
 ) -> list[str]:  # fmt: skip
     """Ask *land* for every green, non-draft PR of each of *repos* while *wave* names an open wave; what each said.
 
-    *land* is the server's one admission and merge; a PR it refuses with *refused* is skipped, never forced. The
+    *land* is the server's one admission and merge; a PR it refuses with *refused*, or the forge refuses
+    (:class:`ForgeCallFailed`), is skipped and logged, never forced. The
     caller holds the role lock. No open wave: nothing is read and nothing merges.
     """
     said: list[str] = []
@@ -84,11 +92,15 @@ def sweep(
         except ValueError:
             continue
         for pull in forge.open_pulls():
-            if pull.draft or pull.base != integration or _merge_ready(forge, pull.head):
+            if pull.draft or pull.base != integration:
+                continue
+            posted = forge.statuses(pull.head)
+            if _stands(posted, MERGE_READY_CONTEXT) or not _stands(posted, PR_CURRENT_CONTEXT):
                 continue
             try:
                 said.append(land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held))))
-            except refused:
+            except (refused, ForgeCallFailed) as why:
+                emit(f'[breakglass] wave {held}: {url} #{pull.number} skipped: {str(why).splitlines()[0]}', err=True)
                 continue
             if wave() is None:  # the cap closed the wave
                 return said
