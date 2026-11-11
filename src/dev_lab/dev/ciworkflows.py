@@ -32,7 +32,9 @@ A JUDGE REPO RENDERS ITS PREPARE WORKFLOW, undeclared: when the repo's ``[tool.d
 base's :data:`PREPARE` table is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one
 name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that
 name merged over it; the layer's ``forge`` picks the forge it runs on (Gitea by default). Any other repo renders
-none, and a layer of that name there is refused.
+none, and a layer of that name there is refused. Such a repo renders no job the base marks ``served``
+(:data:`SERVED_KEY`, :func:`served_only`): its verdict is the judge's, so a job reviewing on the runner could only
+fail its check; a workflow left with no job is not rendered.
 
 A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of a workflow a PR event starts (:data:`PR_EVENTS`) is
 AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`ready_only`) -- never typed per job.
@@ -121,6 +123,8 @@ NIGHTLY_KEY: Final = 'nightly'
 #: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
 NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
+#: A job key, never rendered: ``served = true`` marks a job that reviews on the runner (``forge review run``).
+SERVED_KEY: Final = 'served'
 
 
 def runner_labels() -> dict[str, str]:
@@ -195,6 +199,30 @@ def ready_only(workflow: dict[str, Any]) -> dict[str, Any]:
     return {**workflow, 'jobs': {name: guarded(job) for name, job in workflow['jobs'].items()}}
 
 
+def needs(job: dict[str, Any]) -> set[str]:
+    """The jobs *job* ``needs``: Actions takes one name or a list."""
+    named = job.get('needs', [])
+    return {named} if isinstance(named, str) else set(named)
+
+
+def served_only(workflow: dict[str, Any], *, judge: bool) -> dict[str, Any]:
+    """*workflow* without its :data:`SERVED_KEY` marks; for a *judge* repo, without the jobs they mark either. PURE.
+
+    A judge repo's verdict is the judge host's, so a job reviewing on the runner could only say "not reviewed
+    here" and fail its check. A job that ``needs`` a dropped job is dropped with it.
+    """
+    if 'jobs' not in workflow:
+        return workflow
+    jobs = dict(workflow['jobs'])
+    dropped = {name for name, job in jobs.items() if judge and job.get(SERVED_KEY)}
+    while grown := {n for n, job in jobs.items() if n not in dropped and dropped & needs(job)}:
+        dropped |= grown
+    kept = {
+        name: {k: v for k, v in job.items() if k != SERVED_KEY} for name, job in jobs.items() if name not in dropped
+    }
+    return {**workflow, 'jobs': kept}
+
+
 def _declared(root: Path) -> tuple[str, dict[str, Any]]:
     """*root*'s ``pyproject.toml`` text (empty when absent) and its ``[tool.dev_lab.ci]`` tables."""
     pyproject = root / 'pyproject.toml'
@@ -260,7 +288,8 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
     prepare = base.pop(PREPARE)
-    if review_from(text, origin).where == JUDGE:
+    judge = review_from(text, origin).where == JUDGE
+    if judge:
         base[PREPARE_WORKFLOW] = prepare
         declared.setdefault(PREPARE_WORKFLOW, {})
     elif PREPARE_WORKFLOW in declared:
@@ -272,7 +301,9 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
-        workflow = ready_only(hosted_jobs(expand(merged, shared), hosted))
+        workflow = ready_only(hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted))
+        if 'jobs' in workflow and not workflow['jobs']:
+            continue  # every job reviewed on the runner, in a judge repo: nothing to render
         if workflow.pop(NIGHTLY_KEY, False):
             workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
         if forge not in WORKFLOW_DIRS:
