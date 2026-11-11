@@ -184,6 +184,7 @@ pull-requests = "read"
 # branch's review declaration (forgereview_declared.review_at) -> the command; a PR into any other base is not reviewed.
 # The dev_lab door is the shared `door` steps': the dev-lab DOOR_SHA's uv.lock pins.
 ["ci.yml".jobs.review]
+served = true  # a judge repo renders it not (ciworkflows.served_only)
 needs = ["merge-ready"]
 if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') && needs.merge-ready.outputs.due == 'true' }}"
 runs-on = "ubuntu-latest"
@@ -292,6 +293,7 @@ actions = "write"
 # its decision called a head due. It runs the default branch's file, never a PR head's, with the review method and
 # key as the review job holds them.
 ["merge-tick.yml".jobs.review]
+served = true  # a judge repo renders it not (ciworkflows.served_only)
 needs = ["merge-tick"]
 if = "${{ always() && (github.event_name != 'status' || needs.merge-tick.outputs.due == 'true') }}"
 runs-on = "ubuntu-latest"
@@ -583,6 +585,7 @@ UV_CONCURRENT_BUILDS = "1"
 # dev_lab.dev.reviewcode -- fetched alone at the door's locked dev-lab commit -- which posts the review's own
 # ONLY_GENERATED success on a PR holding no code and skips every later step; whatever it cannot read, the review runs.
 ["review.yml".jobs.review]
+served = true  # a judge repo renders it not (ciworkflows.served_only)
 if = "${{ github.event.label.name == 'review-due' }}"
 runs-on = "review"
 steps = [
@@ -774,6 +777,7 @@ FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # th
 GITHUB_TOKEN = "${{ github.token }}"
 
 ["review-again.yml".jobs.again]
+served = true  # a judge repo renders it not (ciworkflows.served_only)
 if = "${{ github.event.issue.pull_request && (contains(github.event.comment.body, '<!-- lab-commons:review-again:') || contains(github.event.comment.body, '<!-- lab-commons:review-carry:')) }}"
 runs-on = "ubuntu-latest"
 steps = [

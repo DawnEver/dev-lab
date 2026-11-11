@@ -66,8 +66,11 @@ def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    # dev-lab is a judge repo (user ruling 2026-11-10): its bundle prepare renders beside the base set.
-    assert set(workflows(_ROOT)) == {*_GITHUB_BASE, PREPARE_WORKFLOW}, 'a floor: an empty table drifts from nothing'
+    # dev-lab is a judge repo (user ruling 2026-11-10): its bundle prepare renders beside the base set, less the
+    # review-again workflow, whose one job reviews on the runner (ciworkflows.served_only).
+    assert set(workflows(_ROOT)) == {*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW}, (
+        'a floor: an empty table drifts from nothing'
+    )
     assert drift(_ROOT) == []
 
 
@@ -180,7 +183,7 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     names = list(steps)
     assert names.index('Keep the review keys in memory') < names.index('tests/review')
     (tmp_path / 'hub').mkdir()
-    rendered = {**workflows(_ROOT), 'review.yml': _gitea_review(tmp_path / 'hub')}
+    rendered = {**workflows(_ROOT), **workflows(tmp_path), 'review.yml': _gitea_review(tmp_path / 'hub')}
     assert {key: _PROVIDERS.findall(render(body)) for key, body in rendered.items()} == {key: [] for key in rendered}
     again = rendered['review-again.yml']['jobs']['again']['steps'][-1]
     assert 'forge review run --pr ${{ github.event.issue.number }}' in again['run']
@@ -586,7 +589,7 @@ def test_every_job_installing_the_method_installs_the_door_first(tmp_path: Path)
     names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
     tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
     _hosted(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + tables, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')  # a serve repo: its jobs review
     all_jobs = [(f'{w}:{j}', job) for w, flow in workflows(tmp_path).items() for j, job in flow['jobs'].items()]
     users = 0
     for name, job in all_jobs:
@@ -1158,12 +1161,38 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
     assert 'Install the review method' not in text
     assert job['runs-on'] in tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS]
     assert {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)} == {
-        f'.gitea/workflows/{name}' for name in {PREPARE_WORKFLOW, *_GITEA_BASE}
+        f'.gitea/workflows/{name}' for name in {PREPARE_WORKFLOW, *_GITEA_BASE - {'review.yml'}}
     }
     assert drift(tmp_path) == []
     for serve in ('', '[tool.dev_lab.review]\nwhere = "serve"\n'):
         (tmp_path / 'pyproject.toml').write_text(serve, encoding='utf-8')
         assert PREPARE_WORKFLOW not in workflows(tmp_path)
+
+
+@pytest.mark.parametrize('forge', ['github', 'gitea'])
+def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str
+) -> None:
+    """``where = "judge"``: the judge host posts the verdict, so no rendered job runs ``forge review run``.
+
+    Such a job could only print "not reviewed here" and exit 1 -- a red check on every judge-reviewed PR (dev-lab
+    #413, 2026-11-11). A job marked ``served`` (:data:`~ciworkflows.SERVED_KEY`) renders only for a serve repo, a job
+    that ``needs`` one goes with it, and a workflow left with no job is not rendered; the key itself never is.
+    PLANTED CONTROL: the same tables in a serve repo render every review job.
+    """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
+    names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
+    tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
+    for review, reviews in ((_JUDGE_REVIEW, False), ('', True)):
+        (tmp_path / 'pyproject.toml').write_text(review + tables, encoding='utf-8')
+        rendered = {name: render(flow) for name, flow in workflows(tmp_path).items()}
+        assert all(f'"{ciworkflows.SERVED_KEY}"' not in text for text in rendered.values())
+        running = sorted(name for name, text in rendered.items() if 'forge review run' in text)
+        assert bool(running) is reviews, running
+        for flow in workflows(tmp_path).values():
+            jobs = flow.get('jobs', {})
+            assert jobs, 'a workflow with no job is not rendered'
+            assert all(ciworkflows.needs(job) <= set(jobs) for job in jobs.values())
 
 
 def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path) -> None:
@@ -1195,7 +1224,7 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     assert 'AI_LAB_KEYS_' not in text
     assert 'Install the review method' not in text
     written = {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)}
-    assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE, PREPARE_WORKFLOW)}
+    assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW)}
     assert drift(tmp_path) == []
 
 
@@ -1375,7 +1404,7 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
         for job_name, job in workflow['jobs'].items():
             assert _bare(job['if']).startswith(f'({READY_ONLY})'), f'{name} {job_name}: a draft runs it'
     if forge == 'github':
-        assert _bare(rendered['ci.yml']['jobs']['review']['if']).endswith("needs.merge-ready.outputs.due == 'true')")
+        assert _bare(rendered['ci.yml']['jobs']['merge-ready']['if']).endswith("inputs.pr != ''))")
     assert all(READY_ONLY not in render(w) for name, w in rendered.items() if name not in triggered)
     assert _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'draft': False, 'title': 'feat: x'}})
     assert _guard_holds(READY_ONLY, {'action': 'ready_for_review', 'pull_request': {'draft': False, 'title': 'x'}})
