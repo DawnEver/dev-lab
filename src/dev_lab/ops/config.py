@@ -133,6 +133,9 @@ class ConfigSource:
     ``token_file`` holds a read-only forge token (root 600); it is sent as an HTTP header in the git process's
     environment, never on argv. The whole table is security boundary: a change to it needs consent -- except
     ``schedule`` (when ``config tick`` runs as a root timer; empty: never), which is routine.
+
+    ``family``, ``{file, to}``: the family file (``file`` in the same source, at the same ref) the door also puts at
+    the absolute ``to`` on this host, where ``[ops.judge.family] source`` reads it (:mod:`.configdoor`).
     """
 
     source: str
@@ -140,6 +143,13 @@ class ConfigSource:
     token_file: str
     ref: str = 'main'
     schedule: str = ''
+    family: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Refuse a family declaration that is not exactly ``{file, to}`` with ``to`` absolute."""
+        if self.family and (set(self.family) != {'file', 'to'} or not str(self.family['to']).startswith('/')):
+            msg = f'[ops.config] family is {{file = "<in the source>", to = "/<absolute>"}}, not {dict(self.family)}'
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -435,7 +445,10 @@ def load(
     ops = upgraded(ops)
     root = (_is_root() if as_root is None else as_root) and not structure_only
     judge_table = ops.get('judge')
-    if root and isinstance(judge_table, dict) and (keys_file := str(judge_table.get('keys_file', ''))):
+    # a declared keys_file ABSENT is "not yet placed" (`secret place` writes only a declared path, so `config apply`
+    # must declare it first; install refuses until it is placed); a PRESENT one must be a bundle
+    keys_file = str(judge_table.get('keys_file', '')) if isinstance(judge_table, dict) else ''
+    if root and keys_file and os.path.lexists(keys_file):
         where, keyless = f'[ops.judge] keys_file {keys_file}', 'the reviewer would run keyless'
         require_bundle(_root_secret(Path(keys_file), '[ops.judge] keys_file', keyless), where)
     if (environment_file := str(ops.get('environment_file', ''))) and not structure_only:

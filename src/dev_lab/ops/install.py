@@ -325,13 +325,17 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
     The ``[ops.access]`` pam_oath users file is derived here (mode 600) from the host's one TOTP secret, once it exists.
 
     Raises:
-        ValueError: ``[ops.access]`` is declared and the sshd PAM stack is absent or of an unexpected shape, or the
-            host declares two TOTP secrets.
+        ValueError: ``[ops.access]`` is declared and the sshd PAM stack is absent or of an unexpected shape, the
+            host declares two TOTP secrets, or the judge's declared ``keys_file`` is not placed yet.
 
     Then prepare the promote home, its credential and the environment file (see the module docstring): *chown* is
     applied where given, and what it could not apply is a next step.
 
     """
+    if (judged := config.judge) is not None and judged.keys_file and not under(root, judged.keys_file).is_file():
+        msg = (f'keys_file {judged.keys_file} is declared but not placed: place it with '
+               f'`secret place --path {judged.keys_file}`')  # fmt: skip
+        raise ValueError(msg)
     rendered = files(config)
     # refuses an unexpected PAM stack (or two secrets) before anything is written
     access = prepare(config, root) if config.access is not None else None

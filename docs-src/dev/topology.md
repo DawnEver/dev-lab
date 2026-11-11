@@ -211,6 +211,17 @@ declares (`dev_lab.ops.config.load`).
 3. Each repo names the judge in `[tool.dev_lab.review]` (`where = "judge"`, `judge_login` or `judge_app`) and is
    listed in `[ops.judge] repos`; then `forge protect apply` makes the judge's verdict required.
 
+Its review model keys and the family spend cap arrive as ONE consent plan of three steps
+(`python -m dev_lab.dev.planrun preflight|run`, one code):
+
+1. `config apply` -- the host file declares `[ops.judge] keys_file` and `[ops.config] family = { file = "family.toml",
+   to = "/etc/dev-lab/family.toml" }`, with `[ops.judge.family] source = "/etc/dev-lab/family.toml"`. The door takes
+   `family.toml` from the same reviewed source and ref and places it (0644, no secrets); a family change is boundary.
+   A declared keys_file not yet placed loads; one present but not a `[keys]` bundle refuses.
+2. `secret place --path <keys_file>` with `"stdin_task": "pr-review"`: the task's bundle streams from this machine's
+   `forge secrets` store into the verb's stdin -- no file anywhere, never on a command line or the audit.
+3. `install` -- it refuses while the keys_file is declared but not placed, and names step 2.
+
 ### A CI verify account (HPC)
 
 1. Add its `[[hpc.grant]]` to `family.toml` (user, login hosts, scheduler account, partitions, setup).
