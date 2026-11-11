@@ -27,11 +27,11 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.writeroots import TEMP_PREFIX
 from dev_lab.ops import configdoor
 from dev_lab.ops.config import OpsConfig
 

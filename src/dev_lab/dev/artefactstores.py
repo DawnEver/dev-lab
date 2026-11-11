@@ -22,10 +22,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final, Protocol
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forgerecords import Attachment, attach, listing, records_issue
 from dev_lab.dev.forgework import GITHUB, Client
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 __all__ = [
     'ARCHIVE',

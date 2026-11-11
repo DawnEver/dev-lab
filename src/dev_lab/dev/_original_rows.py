@@ -332,6 +332,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # Node-free cluster verdict host (2026-10-28) made that host dependency red.
     'jsrun',
     'worktreeplace',
+    # ORIGINAL: no consumer file asked it; the need arose when the Temp sweep was ruled to remove only the
+    # family's own prefixed entries (2026-11-11) and the other repos' unprefixed ones would pile up forever.
+    'tempprefix',
     'ephemeralrefs',
     'famfiles',
     # ORIGINAL: an audit (2026-10-21) found consumer pages restating registry rules, and no consumer
