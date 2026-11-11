@@ -499,7 +499,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   refused before it is written.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the command to arm as a Monitor after a push, and an
   advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``; it journals each push.
-* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending or red.
+* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
+  while a PR of the session is red and unacknowledged.
+* :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.

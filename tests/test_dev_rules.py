@@ -88,6 +88,7 @@ _IDS = frozenset(
         'FORGE-DOORS-ARE-CONSENT',
         'DOCS-ONLY-CARRIES',
         'PUSHED-HEAD-IS-WATCHED',
+        'SESSION-HEARS-ITS-PRS',
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',
         'RECURSIVE-DELETE',

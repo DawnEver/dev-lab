@@ -299,6 +299,7 @@ def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: P
 
 #: PUSHED-HEAD-IS-WATCHED: the advisory reminder after every shell call, beside the stray census.
 _PUSHWATCH = {'type': 'command', 'command': agent_wiring.PUSHWATCH_COMMAND}
+_SESSIONPRS = {'type': 'command', 'command': agent_wiring.SESSIONPRS_COMMAND}
 _SWEEP = {'type': 'command', 'command': agent_wiring.SWEEP_COMMAND}
 #: A PRESSED HOST TELLS ITS AGENTS (D54): after every shell call, and on each prompt.
 _PRESSURE = {'type': 'command', 'command': agent_wiring.PRESSURE_COMMAND}
@@ -311,7 +312,9 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
     after = agent_guard.wire_settings({})
     stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
+    assert after['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
+    ]
     assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
     assert 'dev_lab.dev.codeplace stray' in agent_wiring.STRAY_COMMAND
@@ -333,7 +336,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
     assert once['hooks']['PostToolUse'] == [
         {
             'matcher': 'Bash|PowerShell',
-            'hooks': [{'type': 'command', 'command': 'node log.js'}, _PUSHWATCH, _SWEEP, _PRESSURE],
+            'hooks': [{'type': 'command', 'command': 'node log.js'}, _PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE],
         }
     ]
     handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
@@ -353,7 +356,9 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     after = agent_guard.wire_settings(old)
     stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
+    assert after['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
+    ]
     assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
 
 
@@ -437,7 +442,7 @@ def test_a_retired_wire_is_removed_from_an_installed_settings_file() -> None:
     old = {'hooks': {'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [foreign, stray]}]}}
     after = agent_guard.wire_settings(old)
     assert after['hooks']['PostToolUse'] == [
-        {'matcher': 'Bash|PowerShell', 'hooks': [foreign, _PUSHWATCH, _SWEEP, _PRESSURE]}
+        {'matcher': 'Bash|PowerShell', 'hooks': [foreign, _PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
     ]
 
 

@@ -74,8 +74,20 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'push through the family door print that exact command; a `PostToolUse` hook journals the push and '
             'adds one reminder line when its head has no live `forge watch`; and a `Stop` hook (ruling '
             '2026-11-04) refuses to end a turn while a journalled head is pending with no live watcher, naming '
-            'the watch to arm, or red, naming where to read it (once).'
+            'the watch to arm; a red blocks only as SESSION-HEARS-ITS-PRS.'
         ),
         ('tests/test_dev_pushwatch.py',),
+    ),
+    (
+        'SESSION-HEARS-ITS-PRS',
+        (
+            'A session hears every change on every PR it opened or pushed, in any repository and on both forges, '
+            'without the user telling it (ruling 2026-11-11): a `PostToolUse` hook records each such PR in the '
+            'machine home, one file per session; `forge watch --session <id> --stream` prints one line per red '
+            'check, all-green, merge or close and exits when none is open; and the `Stop` hook refuses to end a '
+            'turn while a session PR head is red, naming the PR and its failing context, until a newer head is '
+            'pushed or `--ack <pr> --reason <why>` records why it stands. A head that is no session PR is not blocked.'
+        ),
+        ('tests/test_dev_sessionwatch.py',),
     ),
 )
