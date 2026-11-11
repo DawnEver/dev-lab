@@ -43,6 +43,7 @@ from lab_commons.compute.store import Nondeterministic, Result, ResultStore
 from lab_commons.compute.unit import Engine, Environment, Unit, environment_here
 from lab_commons.config import config_path
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.artefactpack import pack, unpack
 from dev_lab.dev.artefacts import load_config, resolve, store_for
@@ -53,7 +54,6 @@ from dev_lab.dev.forgerecords import UNIT_RESULT, attach, listing
 from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client, client_for
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 __all__ = ['ForgeResults', 'UnitJob', 'main', 'offering', 'offering_for', 'result_name', 'unit_request']
 

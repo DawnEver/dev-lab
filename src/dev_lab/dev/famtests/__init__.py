@@ -66,6 +66,8 @@ WHAT IS HERE, one module per shared body:
   declaration the family flow needs, and every missing piece is named at once.
 * :mod:`dev_lab.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
   ``<toplevel>/.claude/worktrees/``.
+* :mod:`dev_lab.dev.famtests.tempprefix` -- every ``tempfile`` entry in the shared temp dir carries
+  :data:`lab_commons.temp.TEMP_PREFIX`, the only entries the sweep may remove.
 * :mod:`dev_lab.dev.famtests.remedypaths` -- a printed remedy names an ABSOLUTE interpreter, never a
   relative ``.venv`` one or a bare ``python -m``.
 * :mod:`dev_lab.dev.famtests.rulespages` -- the always-loaded pages, pinned per page AND

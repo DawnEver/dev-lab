@@ -72,6 +72,7 @@ from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
@@ -95,7 +96,6 @@ from dev_lab.dev.hpcaccount.spec import (
     ticked,
 )
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, update
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 __all__ = ['deploy', 'main']
 
