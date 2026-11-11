@@ -97,7 +97,7 @@ def unreviewed(client: Client, head: str, *, base: str) -> str | None:
 
     *base* is the integration branch whose declaration, with *head*'s, says who the forge is.
     """
-    return review_gate(client, head, base=base)(status_list(client, head))
+    return review_gate(client, base=base)(status_list(client, head))
 
 
 def forge_unreviewed(root: Path, head: str) -> str | None:

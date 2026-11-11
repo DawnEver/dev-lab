@@ -15,6 +15,7 @@ from dev_lab.dev.forge import Forge
 __all__ = [
     'ACTIONS',
     'ACTIONS_BOT',
+    'ADVISORY',
     'BACKENDS',
     'FORGE_SERVE',
     'GITEA',
@@ -48,6 +49,11 @@ GITEA_ACTIONS_LOGIN: Final = 'gitea-actions'
 ACTIONS: Final = 'actions'
 FORGE_SERVE: Final = 'forge-serve'
 JUDGE_HOST: Final = 'judge-host'
+
+
+#: The producers whose verdict is INFORMATION, never a merge condition, on every forge (user ruling 2026-11-11): the
+#: judge host's review is posted, and no merge gate, required context or approval count waits on it.
+ADVISORY: Final = frozenset({JUDGE_HOST})
 
 
 class NotWired(ValueError):

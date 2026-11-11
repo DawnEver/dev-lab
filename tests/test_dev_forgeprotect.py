@@ -6,13 +6,14 @@ planted control is a declaration or a live rule that must NOT read as clean.
 
 from __future__ import annotations
 
-from pathlib import Path
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, FakeGitea, FakeGitHub, refused
 
 from dev_lab.dev import forgeprotect
+from dev_lab.dev._forgebackends import NotWired
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -290,31 +291,14 @@ def test_the_door_is_the_forge_noun() -> None:
 APP_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_app = 5619495\n'
 
 
-def test_an_app_judged_integration_requires_the_apps_check_from_that_app_and_no_approval() -> None:
-    forge = FakeGitHub()
-    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
-    integration, trunk = wanted
-    assert (integration.judge_app, integration.approvals, integration.approver, trunk.judge_app) == (5619495, 0, '', 0)
-    assert apply(forge, GITHUB, wanted) == []
-    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
-    (checks,) = [rule['parameters']['required_status_checks'] for rule in ruleset['rules']
-                 if rule['type'] == 'required_status_checks']  # fmt: skip
-    assert {'context': 'review/judge', 'integration_id': 5619495} in checks
-    assert plan(forge, GITHUB, wanted) == []
-
-
-def test_the_judge_check_required_from_another_app_is_drift() -> None:
-    """PLANTED: the same context name, required from any other App, is not the declared judge."""
-    forge = FakeGitHub()
-    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
-    apply(forge, GITHUB, wanted)
-    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
-    for rule in ruleset['rules']:
-        for check in rule.get('parameters', {}).get('required_status_checks', ()):
-            if check['context'] == 'review/judge':
-                check['integration_id'] = 1
-    (step,) = plan(forge, GITHUB, wanted)
-    assert 'review/judge@5619495' in ' '.join(step.lines)
+def test_an_app_judged_github_repo_is_refused_since_actions_alone_gate_it() -> None:
+    """User ruling 2026-11-11: GitHub wires no judge host, and on Gitea the judge is advisory: no approval required."""
+    with pytest.raises(NotWired, match='judge-host'):
+        targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
+    integration, _ = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
+    assert (integration.approvals, integration.approver) == (0, '')
+    with pytest.raises(ValueError, match='the judge is advisory'):
+        declaration_from(GITEA_TEXT + JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
 
 
 def test_an_app_judge_takes_no_approval_and_never_renders_on_gitea() -> None:
@@ -350,37 +334,21 @@ INVALID_APP = (
 )
 
 
-class _RefusingGitHub(FakeGitHub):
-    """PLANTED: a forge that answers every ruleset write with the 422 an uninstalled judge App draws."""
-
-    def answer(self, method: str, path: str, body: dict[str, Any] | None) -> object:
-        if method != 'GET' and path.endswith('/rulesets'):
-            raise ForgeCallFailed(Report(('POST', path), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
-        return super().answer(method, path, body)
-
-
-def test_a_refused_apply_prints_the_forge_s_status_its_errors_and_the_app_to_install(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (tmp_path / 'pyproject.toml').write_text(GITHUB_TEXT + APP_JUDGED, encoding='utf-8')
-    forge = _RefusingGitHub()
-    forge.forge = GITHUB
-    monkeypatch.setattr(forgeprotect, 'client_for', lambda *_, **__: forge)
-    assert forgeprotect.main(['apply', '--root', str(tmp_path)]) != 0
-    out = capsys.readouterr()
-    text = out.out + out.err
+def test_a_refused_write_names_the_app_a_target_requires_a_check_from() -> None:
+    failed = ForgeCallFailed(Report(('POST', 'x'), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
+    wanted = [replace(one, judge_app=5619495) for one in targets(GITHUB_TEXT, 'p', GITHUB)]
+    text = ' '.join(forgeprotect.refusal(failed, wanted))
     assert '422' in text
     assert 'Invalid integration ids' in text
     assert '5619495' in text
     assert 'install' in text
-    assert 'read the output' not in text
 
 
 def test_a_refusal_without_an_app_fault_names_no_app() -> None:
     failed = ForgeCallFailed(
         Report(('POST', 'x'), (Attempt(1, 422, '{"message":"nope"}', Diagnosis.FORGE_REFUSED),), 3)
     )
-    lines = forgeprotect.refusal(failed, targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB))
+    lines = forgeprotect.refusal(failed, targets(GITHUB_TEXT, 'p', GITHUB))
     assert 'nope' in '\n'.join(lines)
     assert 'install' not in '\n'.join(lines)
 

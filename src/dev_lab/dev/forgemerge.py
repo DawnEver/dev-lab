@@ -304,7 +304,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     try:
-        reviewed = review_gate(client, head, base=policy.integration)
+        reviewed = review_gate(client, base=policy.integration)
     except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash
 
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:

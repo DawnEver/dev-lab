@@ -19,7 +19,6 @@ import pytest
 from dev_lab.dev import ciworkflows
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
-    BY_FORGE,
     NIGHTLY_CRON,
     PR_EVENTS,
     PREPARE,
@@ -41,7 +40,6 @@ from dev_lab.dev.ciworkflows import (
     write,
 )
 from dev_lab.dev.forgedraft import READY_ONLY
-from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
@@ -66,11 +64,8 @@ def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    # dev-lab is a judge repo (user ruling 2026-11-10): its bundle prepare renders beside the base set, less the
-    # review-again workflow, whose one job reviews on the runner (ciworkflows.served_only).
-    assert set(workflows(_ROOT)) == {*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW}, (
-        'a floor: an empty table drifts from nothing'
-    )
+    # dev-lab is gated by Actions alone (user ruling 2026-11-11): exactly GitHub's base set, its review an Actions job.
+    assert set(workflows(_ROOT)) == _GITHUB_BASE, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 
@@ -1169,7 +1164,7 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
         assert PREPARE_WORKFLOW not in workflows(tmp_path)
 
 
-@pytest.mark.parametrize('forge', ['github', 'gitea'])
+@pytest.mark.parametrize('forge', ['gitea'])  # GitHub refuses a judge (test_dev_actions_alone)
 def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str
 ) -> None:
@@ -1193,39 +1188,6 @@ def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
             jobs = flow.get('jobs', {})
             assert jobs, 'a workflow with no job is not rendered'
             assert all(ciworkflows.needs(job) <= set(jobs) for job in jobs.values())
-
-
-def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path) -> None:
-    """``forge = "github"`` renders the prepare to ``.github/workflows``, under the same name, event and job.
-
-    GitHub hands a ``run`` step no runtime token, so ``actions/upload-artifact`` attaches the file ``prepare`` leaves
-    to the run, under the very name the judge reads (:data:`~dev_lab.dev.forgereview_pointer.ARTIFACT`). Read-only,
-    no credential kept by the checkout, a fork PR not prepared (no fork run names its PR), no method and no key.
-    PLANTED CONTROL: none of Gitea's part -- the host runner's reach and mirror -- reaches GitHub's render.
-    """
-    layer = f'\n[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]\nforge = "github"\n'
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + layer, encoding='utf-8')
-    prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
-    assert set(prepare['on']) == {REVIEW_EVENT}
-    assert BY_FORGE not in prepare
-    (job,) = prepare['jobs'].values()
-    assert job['permissions'] == {'contents': 'read', 'pull-requests': 'read'}
-    assert job['if'] == _guarded('${{ github.event.pull_request.head.repo.full_name == github.repository }}')
-    names = [step.get('name') for step in job['steps']]
-    assert "Reach the forge on the runner's instance" not in names
-    assert 'Fetch the head' not in names
-    checkout, upload = job['steps'][0], job['steps'][-1]
-    assert checkout['with']['persist-credentials'] is False
-    assert names.index('Install the review door') < names.index('Prepare the review bundle') < len(names) - 1
-    assert upload['uses'].startswith('actions/upload-artifact@')
-    assert upload['with']['name'] == ARTIFACT
-    assert upload['with']['path'] == f'${{{{ runner.temp }}}}/{ARTIFACT}/{BUNDLE_FILE}'
-    text = render(prepare)
-    assert 'AI_LAB_KEYS_' not in text
-    assert 'Install the review method' not in text
-    written = {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)}
-    assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW)}
-    assert drift(tmp_path) == []
 
 
 def test_a_pr_with_no_code_is_settled_before_any_clone_or_install(tmp_path: Path) -> None:
@@ -1364,10 +1326,10 @@ def test_no_pr_event_that_brings_no_work_can_cancel_a_live_run(
     group is not keyed on the label is caught.
     """
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW if forge == 'gitea' else '', encoding='utf-8')
     rendered = workflows(tmp_path)
     assert {name: _cancels_for_nothing(w) for name, w in rendered.items() if _cancels_for_nothing(w)} == {}
-    review = rendered.get('review.yml') or rendered[PREPARE_WORKFLOW]
+    review = rendered.get('review.yml') or rendered.get(PREPARE_WORKFLOW) or rendered['ci.yml']
     (trigger,) = PR_EVENTS & set(review['on'])
     types = [*review['on'][trigger]['types'], 'edited']
     planted = {**review, 'on': {trigger: {'types': types}}}
@@ -1391,11 +1353,11 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
     condition survives the AND; a workflow no PR starts carries no guard.
     """
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW if forge == 'gitea' else '', encoding='utf-8')
     rendered = workflows(tmp_path)
     events = {'pull_request', 'pull_request_target'}
     triggered = {name: w for name, w in rendered.items() if events & set(w['on'])}
-    assert PREPARE_WORKFLOW in triggered
+    assert (PREPARE_WORKFLOW if forge == 'gitea' else 'ci.yml') in triggered
     for name, workflow in triggered.items():
         (trigger,) = events & set(workflow['on'])
         # Review is the last gate: a `labeled` workflow starts on the decision's label, which a draft never earns.

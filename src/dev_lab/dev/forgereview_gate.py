@@ -9,14 +9,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dev_lab.dev._forgebackends import JUDGE_HOST, require_producer
+from dev_lab.dev._forgebackends import ADVISORY, JUDGE_HOST, require_producer
 from dev_lab.dev.forgereview_declared import JUDGE, forge_review
 from dev_lab.dev.reviewgate import (
-    app_missing,
-    app_verdicts,
     forge_posted,
-    head_reviews,
-    judge_missing,
     status_gate,
 )
 
@@ -27,13 +23,13 @@ if TYPE_CHECKING:
 __all__ = ['review_gate']
 
 
-def review_gate(client: Client, head: str, *, base: str) -> Reviewed:
-    """THE ONE GATE of whether *head* is reviewed, for the merge, merge-ready and Break-Glass alike.
+def review_gate(client: Client, *, base: str) -> Reviewed:
+    """THE ONE GATE of whether a head is reviewed, for the merge, merge-ready and Break-Glass alike.
 
-    The mode is the TRUSTED declaration at *base* (:func:`forge_review`): a ``judge`` repo is reviewed when its
-    declared ``judge_login`` approved *head* (:func:`~dev_lab.dev.reviewgate.judge_missing`) -- or, declaring
-    ``judge_app``, when THAT App's check run approved it (:func:`~dev_lab.dev.reviewgate.app_missing`) -- a
-    ``serve`` repo when the forge posted a ``tests/review`` success (:func:`~dev_lab.dev.reviewgate.review_missing`).
+    The mode is the TRUSTED declaration at *base* (:func:`forge_review`): a ``serve`` repo is reviewed when the forge
+    posted a ``tests/review`` success (:func:`~dev_lab.dev.reviewgate.review_missing`). A ``judge`` repo's verdict is
+    ADVISORY (:data:`~dev_lab.dev._forgebackends.ADVISORY`, user ruling 2026-11-11): posted as information on Gitea,
+    never a merge condition on either forge, so its gate never waits.
 
     Raises:
         NotWired: a ``judge`` declaration on a forge that wires no judge host (GitHub: Actions alone, 2026-11-11).
@@ -42,10 +38,6 @@ def review_gate(client: Client, head: str, *, base: str) -> Reviewed:
     review = forge_review(client, base)
     if review.where == JUDGE:
         require_producer(client.backend, JUDGE_HOST, f'[tool.dev_lab.review] where = "{JUDGE}" at {base}')
-    if review.where == JUDGE and review.judge_app:
-        runs = app_verdicts(client, head)
-        return lambda statuses: app_missing(statuses, runs, head=head, app_id=review.judge_app)
-    if review.where == JUDGE:
-        reviews = head_reviews(client, head)
-        return lambda statuses: judge_missing(statuses, reviews, head=head, judge=review.judge_login)
+        if JUDGE_HOST in ADVISORY:  # posted as information, never waited on (user ruling 2026-11-11)
+            return lambda _statuses: None
     return status_gate(forge_posted(client))
