@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import sshhold
+from dev_lab.dev import sshhold, sshholdstate
 from dev_lab.dev.sshhold import HoldRefused
 
 FAKE = (sys.executable, str(Path(__file__).with_name('_sshhold_fake.py')))
@@ -60,15 +60,15 @@ def held(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
 
 
 def test_a_credential_reaches_the_remote_and_nowhere_else(held: dict[str, Path]) -> None:
-    state = sshhold.state_path('ops@fake').read_text(encoding='utf-8')
+    state = sshholdstate.state_path('ops@fake').read_text(encoding='utf-8')
     sshhold.store_credential('ops@fake', URL, 'ro-login', PLANTED)
     said = held['cred'].read_text(encoding='utf-8')
     assert said == f'protocol=https\nhost=forge.example\nusername=ro-login\npassword={PLANTED}\n'
-    line = json.loads(sshhold.audit_path().read_text(encoding='utf-8').splitlines()[-1])
+    line = json.loads(sshholdstate.audit_path().read_text(encoding='utf-8').splitlines()[-1])
     assert line['verb'] == 'credential'
     assert (line['host'], line['login'], line['status']) == ('forge.example', 'ro-login', 0)
     assert line['sha256'] == hashlib.sha256(PLANTED.encode()).hexdigest()[:12]
-    assert PLANTED not in sshhold.audit_path().read_text(encoding='utf-8')
+    assert PLANTED not in sshholdstate.audit_path().read_text(encoding='utf-8')
     assert PLANTED not in state
     assert PLANTED not in held['argv'].read_text(encoding='utf-8')
 

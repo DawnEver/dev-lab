@@ -18,11 +18,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
 from dev_lab.ops import totp
-from dev_lab.ops.config import Consent, OpsConfig
+from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import Register, public_key, remote_register
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
+from dev_lab.ops.consentrole import Consent
 
 __all__ = ['VERBS', 'issuer', 'ready', 'run']
 
