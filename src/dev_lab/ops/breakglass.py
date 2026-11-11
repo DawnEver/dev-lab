@@ -44,7 +44,7 @@ the summary goes once however often the tick runs. Refusals, failures and a lock
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,7 +55,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgemerge import merge
+from dev_lab.dev.forgemerge import merge, parts_wait
+from dev_lab.dev.forgesecurity import security_wait
+from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
@@ -84,6 +86,10 @@ class Forge(Protocol):
 
     def pull(self, number: int) -> tuple[str, str, str]:
         """``(state, base, head_sha)`` of PR *number*."""
+        ...
+
+    def statuses(self, head: str) -> Sequence[CommitStatus]:
+        """The commit statuses *head* carries, newest first."""
         ...
 
     def comment(self, number: int, body: str) -> None:
@@ -116,6 +122,10 @@ class ClientForge:
         found = self._client.pr_view(number)
         return found.state, found.base, found.head_sha
 
+    def statuses(self, head: str) -> Sequence[CommitStatus]:
+        """The commit statuses *head* carries (:func:`dev_lab.dev.forgestatus.status_list`)."""
+        return status_list(self._client, head)
+
     def comment(self, number: int, body: str) -> None:
         """Comment on PR *number*."""
         self._client.issue_comment(number, body)
@@ -123,6 +133,21 @@ class ClientForge:
     def merge(self, number: int, *, head: str, message: str) -> None:
         """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemerge.merge`, either backend); the branch is kept."""
         merge(self._client, number, head=head, message=message, delete_branch=False)
+
+
+def _tests_stand(forge: Forge, asked: requests.Merge) -> None:
+    """Refuse a head whose security check or test parts do not stand PASS: break-glass waives the review alone.
+
+    The rule is merge-ready's own (:func:`dev_lab.dev.forgesecurity.security_wait`,
+    :func:`dev_lab.dev.forgemerge.parts_wait`), on either forge -- a Gitea ruleset enforces no check, so this is the
+    one place a break-glass merge meets its tests.
+    """
+    posted = forge.statuses(asked.head)
+    red = [wait for wait in (security_wait(posted), parts_wait(asked.head, posted)) if wait is not None]
+    if red:
+        said = '; '.join(red)
+        msg = f'break-glass bypasses only the review, never the tests: #{asked.pr} at {asked.head[:12]}: {said}'
+        raise BreakglassRefused(msg)
 
 
 def merge_message(pr: int, integration: str, reason: str, wave: str) -> str:
@@ -316,6 +341,7 @@ class Server:
         if found != asked.head:
             msg = f'#{asked.pr} head is {found[:12]}, not the {asked.head[:12]} you were shown: re-run the verb'
             raise BreakglassRefused(msg)
+        _tests_stand(forge, asked)
         return forge, integration
 
     def _close_verb(self, _asked: None) -> str:
