@@ -1,9 +1,9 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
-``consent serve|enrol|keygen|ready``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
-(:mod:`dev_lab.ops.disk`), ``config apply|tick`` (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and
-``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`).
+``consent serve|enrol|keygen|ready`` (:mod:`dev_lab.ops.consentverbs`), ``backup export|pull``,
+``access enrol|adopt``, ``disk``, ``clean`` (:mod:`dev_lab.ops.disk`), ``config apply|tick``
+(:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -29,6 +29,7 @@ from dev_lab.ops import (
     backup,
     breakglass,
     configverbs,
+    consentverbs,
     disk,
     forgeaccounts,
     githubwho,
@@ -43,10 +44,9 @@ from dev_lab.ops import (
     upgrade,
 )
 from dev_lab.ops.config import Consent, OpsConfig, load
-from dev_lab.ops.consent import serve as consent_serve
 from dev_lab.ops.consent.client import public_key, redeem
-from dev_lab.ops.consent.credential import ConsentRefused, public_text
-from dev_lab.ops.consent.issuer import Issuer, keygen
+from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.consent.issuer import Issuer
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
 
@@ -167,50 +167,7 @@ def _backup(config: OpsConfig, verb: str) -> int:
 
 
 def _issuer(config: OpsConfig, role: Consent) -> Issuer:
-    def locked(until: float) -> None:
-        when = datetime.fromtimestamp(until, UTC).isoformat(timespec='seconds')
-        _alert(config, 'consent LOCKED OUT', f'{role.lockout_after} wrong codes; every code refused until {when}')
-
-    return Issuer(Path(role.totp), Path(role.key), Path(role.state), role.issuer, time.time,
-                  role.lockout_after, role.lockout_minutes, locked)  # fmt: skip
-
-
-def _ready(config: OpsConfig) -> int:
-    """``consent ready``: could a consented verb here verify a credential AND register its use; 0 yes, 2 the blocker.
-
-    Asked before a code is spent (:mod:`dev_lab.dev.planrun`).
-    """
-    try:
-        key = public_text(_issuer(config, config.consent).public() if config.consent is not None else public_key())
-    except ConsentRefused as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    if config.consent is None:
-        emit(f'refused: {config.path} enables no [ops.consent] issuer: a consented use here cannot register', err=True)
-        return 2
-    emit(f'[ops consent] ready: key {key[:12]}, uses register at the local issuer')
-    return 0
-
-
-def _consent(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) -> int:
-    if verb == 'ready':
-        return _ready(config)
-    role = config.consent
-    if role is None:
-        emit(f'[ops] {config.path} enables no [ops.consent]', err=True)
-        return 2
-    try:
-        if verb == 'enrol':
-            secret = totp.enrol(Path(role.totp), force=force)
-            _show(totp.uri(secret, issuer=role.issuer, account=role.account), uri_only=uri_only)
-        elif verb == 'keygen':  # the PUBLIC key goes to every verifier: [consent] public_key, or the package
-            emit(public_text(keygen(Path(role.key), force=force).public_key()))
-        else:
-            emit(consent_serve.handle(_issuer(config, role), sys.stdin.readline()))
-    except (ConsentRefused, totp.TotpRefused) as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    return 0
+    return consentverbs.issuer(role, alert=lambda title, detail: _alert(config, title, detail))
 
 
 def _unreachable(_credential: object, _amount: int) -> object:
@@ -322,7 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'tick'))
     issuing = verbs.add_parser('consent')
-    issuing.add_argument('action', choices=('serve', 'enrol', 'keygen', 'ready'))
+    issuing.add_argument('action', choices=consentverbs.VERBS)
     issuing.add_argument('--force', action='store_true', help='enrol / keygen: replace an existing secret / key')
     issuing.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
     verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
@@ -366,7 +323,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         'probe': lambda: _probe(config),
         'breakglass': lambda: _breakglass(config, args.action),
-        'consent': lambda: _consent(config, args.action, force=args.force, uri_only=args.uri),
+        'consent': lambda: consentverbs.run(
+            config,
+            args.action,
+            force=args.force,
+            alert=lambda title, detail: _alert(config, title, detail),
+            show=lambda link: _show(link, uri_only=args.uri),
+        ),
         'judge': lambda: _judge(config),
         'upgrade': lambda: _upgrade(config),
         'config': lambda: (

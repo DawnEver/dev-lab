@@ -16,12 +16,13 @@ from _ops_fixtures import RFC_KEY, code, config
 
 from dev_lab.dev import planrun
 from dev_lab.ops import __main__ as ops_main
-from dev_lab.ops import configdoor
+from dev_lab.ops import configdoor, consentverbs
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import spent_ids
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.ops.consent.plan import parsed
+from dev_lab.ops.secretplace import subject
 
 HOST = 'ops@judge.example.org'
 CANDIDATE = '/srv/plan/candidate.toml'
@@ -168,7 +169,6 @@ def test_secret_place_subject_binds_the_stdin_content_and_places_nothing(
         'sys.stdin', type('S', (), {'buffer': type('B', (), {'read': staticmethod(lambda: content)})})()
     )
     assert ops_main.main(['--config', str(host.path), 'secret', 'place', '--path', '/etc/x', '--subject']) == 0
-    from dev_lab.ops.secretplace import subject  # noqa: PLC0415
 
     assert capsys.readouterr().out.strip() == subject('/etc/x', content)
     assert ops_main.main(['--config', str(host.path), 'secret', 'place', '--path', '/etc/x']) == 2  # no credential
@@ -178,9 +178,9 @@ def test_consent_ready_is_green_at_the_issuer_and_blocked_where_no_use_can_regis
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     host = config(tmp_path, [])
-    assert ops_main._ready(host) == 0  # the control: the issuer's own host
+    assert consentverbs.ready(host, alert=lambda *_: None) == 0  # the control: the issuer's own host
     assert 'ready: key' in capsys.readouterr().out
-    assert ops_main._ready(dataclasses.replace(host, consent=None)) == 2
+    assert consentverbs.ready(dataclasses.replace(host, consent=None), alert=lambda *_: None) == 2
     assert 'refused' in capsys.readouterr().err
 
 

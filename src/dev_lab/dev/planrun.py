@@ -33,7 +33,9 @@ where the first stopped.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import secrets
 import shlex
 import sys
 import time
@@ -77,6 +79,7 @@ CONFIG_ACTION: Final = 'ops.config'
 #: Where a carried credential lives on the host, relative to the session account's home (umask 077).
 REMOTE_DIR: Final = '.dev-lab/consent'
 _TIMEOUT_S: Final = 600.0
+_PUT_S: Final = 60.0
 
 
 class Remote(Protocol):
@@ -102,8 +105,23 @@ class HeldRemote:
         return sshhold.run_command(self.dest, command)
 
     def put(self, path: str, text: str) -> None:
-        """Write *text* through the held channel; audited as a path and a sha256 prefix."""
-        sshhold.put_private(self.dest, path, text)
+        """Write *text* through the held channel as heredoc DATA; audited as the path and a sha256 prefix only."""
+        session = sshhold.read_session(self.dest)
+        if session is None:
+            msg = f'no held session for {self.dest}'
+            raise sshhold.HoldRefused(msg)
+        end = f'__PLANRUN_PUT_{secrets.token_hex(8)}'
+        script = f"{_put_command(path)} <<'{end}'\n{text.rstrip()}\n{end}"
+        try:
+            reply = sshhold.request(session, {'verb': 'run', 'command': script, 'timeout_s': _PUT_S}, _PUT_S + 30)
+        except OSError as gone:
+            msg = f'the holder of {self.dest} is gone ({gone}); open a new session'
+            raise sshhold.HoldRefused(msg) from gone
+        digest = hashlib.sha256(text.encode()).hexdigest()[:12]
+        sshhold.audit('put', self.dest, command=path, status=reply.get('status'), sha256=digest)
+        if 'error' in reply or reply.get('status'):
+            msg = f'{self.dest}: could not write {path}: {reply.get("error") or reply.get("output", "").strip()}'
+            raise sshhold.HoldRefused(msg)
 
 
 @dataclass(frozen=True)
@@ -114,7 +132,9 @@ class SshRemote:
 
     def _ssh(self, command: str, data: str | None) -> tuple[str, int]:
         argv = ssh_remote.ssh_argv(self.dest, command, batch=True)
-        done = _door.run(argv, input=data, capture_output=True, text=True, check=False, timeout=_TIMEOUT_S)
+        done = _door.run(
+            argv, input=data, capture_output=True, text=True, encoding='utf-8', check=False, timeout=_TIMEOUT_S
+        )
         return done.stdout + done.stderr, done.returncode
 
     def run(self, command: str) -> tuple[str, int]:
@@ -276,8 +296,9 @@ def run_plan(
             continue
         local = _local(plan, index, home, now())
         if local is None:
-            lines.append(f'{name}: STOPPED -- no unexpired credential for it here; one the issuer granted and never '
-                         'registered can be fetched again, else the plan needs a new code')  # fmt: skip
+            lines.append(f'{name}: STOPPED -- no unexpired credential for it here; `python -m dev_lab.ops.consent '
+                         'recover <plan.json> --digest <D>` fetches one the issuer granted and never registered, '
+                         'else the plan needs a new code')  # fmt: skip
             return False, lines
         text = local.read_text(encoding='utf-8')
         ident = str(json.loads(text)['id'])
