@@ -229,7 +229,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'matches': 'argument',
         'hazard': 'rewriting a shared ref invalidates every verdict taken '
         'against the old tree; --force-with-lease included.',
-        'remedy': 'Land the change FORWARD as a new commit on your own lane, then push without the force flag.',
+        'remedy': 'Land the change FORWARD: git revert <sha> or a new commit on your own lane, then push without '
+        'the force flag.',
         'needs': None,
         'refuses': (
             'git push --force origin main',
