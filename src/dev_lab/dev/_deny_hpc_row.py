@@ -27,15 +27,26 @@ __all__ = ['CAMPAIGN', 'HPC_THROUGH_THE_DOOR', 'USAGES', 'exits', 'remedy']
 
 #: The doors that are no :data:`POLICY` row of this table but are this row's exits all the same: the research batch
 #: door lives in lab-commons, whose CLI is its own (``python -m lab_commons.hpc --help``).
-CAMPAIGN: Final[tuple[tuple[str, ...], ...]] = (('lab_commons.hpc', 'submit'), ('lab_commons.hpc', 'gather'))
+#: They are KEY-ONLY: a key-only host (Ada, user ruling 2026-11-11) never needs a code, so every agent publishes,
+#: gathers and cleans through them with no session held.
+_BATCH: Final = ('plan', 'submit', 'status', 'gather', 'retry')
+_RUN: Final = (('run', 'submit'), ('run', 'gather'), ('run', 'build'))
+CAMPAIGN: Final[tuple[tuple[str, ...], ...]] = (
+    *(('lab_commons.hpc', verb) for verb in _BATCH),
+    *(('lab_commons.hpc', *verbs) for verbs in _RUN),
+    ('lab_commons.hpc', 'clean'),
+)
 
 #: Per PURPOSE: the door exits (argv after ``python -m``) serving it, and their command shape. EVERY exit must be
 #: under one (:func:`remedy` raises otherwise), so the refusal names every door by purpose (user ruling 2026-11-11);
 #: the flags beyond the shape live in ``docs-src/dev/refusals.md#hpc-through-the-door``.
 USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
-    'on an account': (
+    'on a key+TOTP account': (
         (('dev_lab.dev.sshhold', 'open'), ('dev_lab.dev.sshhold', 'run')),
-        "`sshhold open <user>@<host> --hours N --code <code>`, `sshhold run <dest> '<cmd>'`",
+        (
+            "`sshhold open <user>@<host> --hours N --code <code>`, `sshhold run <dest> '<cmd>'`"
+            ' (a key-only host needs no code: the lab_commons.hpc doors below)'
+        ),
     ),
     'deploy': (
         (
@@ -49,7 +60,17 @@ USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
         (('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'run', 'show')),
         '`forge queue|run show <sha>`',
     ),
-    'batch': (CAMPAIGN, '`-m lab_commons.hpc submit|gather -c <job>`'),
+    'batch': (
+        CAMPAIGN[: len(_BATCH) + len(_RUN)],
+        (
+            '`-m lab_commons.hpc plan|submit|status|gather|retry -c <job>`, '
+            '`-m lab_commons.hpc run submit|gather|build --sha <sha>`'
+        ),
+    ),
+    'clean': (
+        (('lab_commons.hpc', 'clean'),),
+        '`-m lab_commons.hpc clean --root <abs> [--dry-run] [--timeout s] --at <user@host> <name>...`',
+    ),
 }
 
 
@@ -97,5 +118,8 @@ HPC_THROUGH_THE_DOOR: dict[str, object] = {
         'echo "ssh alice@hpclogin01 then sbatch job.sh"',
         'git commit -m "sbatch goes through the forge"',
         'python -m dev_lab.dev.forge queue',
+        'python -m lab_commons.hpc clean --root /gpfs01/home/alice/out --at alice@hpclogin01.example.org e69',
+        'python -m lab_commons.hpc gather -c job.toml --wait',
+        'python -m lab_commons.hpc run submit --sha 0123abc',
     ),
 }

@@ -156,7 +156,12 @@ def request(session: Session, payload: dict[str, Any], timeout_s: float) -> dict
 def _live(dest: str) -> Session:
     session = read_session(dest)
     if session is None:
-        msg = f'no held session for {dest}: open one with the code the user gives'
+        msg = (
+            f'no held session for {dest}. A key-only host (Ada) needs no code and no session: use the '
+            '`python -m lab_commons.hpc` doors (plan|submit|status|gather|retry|run, and '
+            '`clean --root <abs> [--dry-run] --at <user@host> <name>...`). A key+TOTP host: '
+            f'`python -m dev_lab.dev.sshhold open {dest} --hours N --code <code>`, the code the user gave.'
+        )
         raise HoldRefused(msg)
     return session
 

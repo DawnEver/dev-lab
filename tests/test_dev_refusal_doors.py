@@ -51,6 +51,21 @@ def test_the_hpc_refusal_names_every_door_by_purpose() -> None:
         "`sshhold run <dest> '<cmd>'`",
         '`hpcaccount deploy-fleet|forget|deploy`',
         '`forge queue|run show <sha>`',
-        '`-m lab_commons.hpc submit|gather -c <job>`',
+        '`-m lab_commons.hpc plan|submit|status|gather|retry -c <job>`',
+        '`-m lab_commons.hpc run submit|gather|build --sha <sha>`',
+        '`-m lab_commons.hpc clean --root <abs> [--dry-run] [--timeout s] --at <user@host> <name>...`',
     ):
         assert door in text
+    assert 'key-only' in text  # user ruling 2026-11-11: Ada is key-only and never needs a code
+
+
+def test_the_key_only_hpc_doors_are_admitted() -> None:
+    """The doors the refusal names must not themselves be refused, even when they name a login host."""
+    pattern = re.compile(str(HPC_THROUGH_THE_DOOR['pattern']))
+    for door in (
+        'python -m lab_commons.hpc clean --root /gpfs01/home/alice/out --at alice@hpclogin01.example.org e69',
+        'python -m lab_commons.hpc gather -c job.toml --wait',
+        'python -m lab_commons.hpc run submit --sha 0123abc',
+    ):
+        assert door in HPC_THROUGH_THE_DOOR['permits']
+        assert not pattern.search(door)
