@@ -53,6 +53,8 @@ class Wave:
     summarized: float | None = None
     #: The fingerprint of the ssh key that opened it (:mod:`dev_lab.ops.sshkey`).
     key: str = ''
+    #: ``<repo>#<pr>`` of each PR the sweep held back for its own consent, so each is logged once per wave.
+    held_back: list[str] = field(default_factory=list)
 
     def state(self, now: float) -> str:
         """``open``, ``expired`` (closing is due), ``audit`` (closed, unacknowledged) or ``acknowledged``."""

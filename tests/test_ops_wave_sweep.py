@@ -31,13 +31,6 @@ class ListingForge(FakeForge):
 
     pulls: list[Pull] = field(default_factory=list)
     by_head: dict[str, tuple[CommitStatus, ...]] = field(default_factory=dict)
-    labelled: dict[int, tuple[str, ...]] = field(default_factory=dict)
-    unreadable: frozenset[int] = frozenset()
-
-    def labels(self, number: int) -> tuple[str, ...]:
-        if number in self.unreadable:
-            raise ForgeCallFailed(Report(f'GET /pulls/{number}', (), 1))
-        return self.labelled.get(number, ())
 
     def open_pulls(self) -> list[Pull]:
         return list(self.pulls)
@@ -184,10 +177,18 @@ def test_a_needs_consent_pr_is_skipped_and_spends_no_merge(tmp_path, capsys) -> 
     host = _consent_host(tmp_path, labelled={7: (LABEL,)})
     host.open(max_merges=1)
     host.server.tick()
-    assert _merged(host) == [8], 'the skipped PR does not count toward max_merges'
+    assert _merged(host) == [8], 'a skipped PR does not count toward max_merges'
+    assert f'labelled {LABEL}: it touches a boundary key and lands only by its own consent' in capsys.readouterr().err
+
+
+def test_a_held_back_pr_is_logged_once_per_wave_not_every_tick(tmp_path, capsys) -> None:
+    host = _consent_host(tmp_path, labelled={7: (LABEL,), 8: (LABEL,)})
+    host.open(max_merges=5)
+    host.server.tick()
+    host.server.tick()
+    assert _merged(host) == []
     err = capsys.readouterr().err
-    assert err.count('#7 skipped') == 1
-    assert 'touches a boundary key: lands only by its own consent' in err
+    assert (err.count('#7 skipped'), err.count('#8 skipped')) == (1, 1)
 
 
 def test_a_label_the_forge_cannot_read_is_a_skip_not_a_merge(tmp_path, capsys) -> None:  # PLANTED CONTROL
