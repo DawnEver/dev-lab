@@ -26,6 +26,7 @@ from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORA
 from dev_lab.dev.forgebacklog import alarms as late_reviews
 from dev_lab.dev.forgebacklog import declared_wait
 from dev_lab.dev.forgeclaim import forge_now
+from dev_lab.dev.forgedataruns import serve_step as data_runs
 from dev_lab.dev.forgedraft import alarms as idle_drafts
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
@@ -291,6 +292,7 @@ def repo_wide(
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
     relock(root, repo, client(root), say=say, alarm=alarm)
+    data_runs(root, say=say, alarm=alarm)  # a data PR this checkout consumes runs its tests here
     try:
         drift_step(root, repo, say=say, alarm=alarm, now=clock())
     except (OSError, ValueError) as why:
