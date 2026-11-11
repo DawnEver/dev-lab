@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import reclaimrun
-from dev_lab.dev.agent_guard import RECLAIM_COMMAND, WIRING
+from dev_lab.dev.agent_wiring import RECLAIM_COMMAND, WIRING
 from dev_lab.dev.famtests.visibility import plant_checkout
 from dev_lab.dev.reclaim import blockers, orphan_reason, repository_at
 from dev_lab.dev.reclaimrun import LOCK_NAME, held, main, main_checkout, run
