@@ -22,6 +22,7 @@ from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.lockcheck import LOCK, UNRESOLVED
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import SHORT, RelockFailed, floated
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 __all__ = ['LAG_LIMIT', 'floating_lag', 'within_window']
 
@@ -37,7 +38,7 @@ def _commits_behind(url: str, branch: str, sha: str) -> int:
     A treeless fetch into a throwaway bare repository: the commit graph alone, never a checkout. A *sha* the line
     does not contain (a rewritten line) cannot be counted, and raises.
     """
-    with tempfile.TemporaryDirectory(prefix='lock-lag-') as bare:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}lock-lag-') as bare:
 
         def git(*argv: str) -> subprocess.CompletedProcess[str]:
             return _door.run(

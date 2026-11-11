@@ -31,6 +31,7 @@ import lab_commons.launch as _door
 from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.writeroots import TEMP_PREFIX
 from dev_lab.ops import configdoor
 from dev_lab.ops.config import OpsConfig
 
@@ -77,7 +78,7 @@ def locked_family(lock: str) -> list[str]:
 
 def fetch_lock(source: str, ref: str) -> tuple[str, str]:
     """The commit *ref* names in *source* and dev-lab's ``uv.lock`` there: a shallow fetch into a scratch repo."""
-    with tempfile.TemporaryDirectory(prefix='dev-lab-upgrade-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}upgrade-') as scratch:
         git = ['git', '-C', scratch]
         env = unlocated()
         _door.run([*git, 'init', '-q'], check=True, capture_output=True, env=env)
@@ -195,7 +196,7 @@ def _candidate_loads(config: OpsConfig, probe: Runner, candidate: Callable[[OpsC
         return f'unread ({refused})'
     if text is None:
         return 'none'
-    with tempfile.TemporaryDirectory(prefix='dev-lab-candidate-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}candidate-') as scratch:
         file = Path(scratch) / config.path.name
         file.write_text(text, encoding='utf-8')
         return failed_check(config, probe, file)
@@ -207,7 +208,7 @@ def _install_locked(config: OpsConfig, ref: str, install: Runner, fetch: Fetcher
         msg = f'{config.path} enables no [ops.upgrade]'
         raise ValueError(msg)
     sha, lock = fetch(config.upgrade.source, ref)
-    with tempfile.TemporaryDirectory(prefix='dev-lab-overrides-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}overrides-') as scratch:
         override = Path(scratch) / 'family.txt'
         override.write_text(''.join(f'{line}\n' for line in locked_family(lock)), encoding='utf-8')
         return install(command(config, sha, override))

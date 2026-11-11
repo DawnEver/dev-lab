@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 import lab_commons.launch as _door
 
 from dev_lab.dev.reviewgitauth import git_env
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.dev._forge_records import PullRequest
@@ -429,7 +430,7 @@ def judge(
     if BUNDLE_FIELD not in command:
         msg = f'the judge command {list(command)} names no {BUNDLE_FIELD}: it would read no bundle'
         raise BundleRefused(msg)
-    with tempfile.TemporaryDirectory(prefix='review-bundle-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-bundle-') as scratch:
         tree = Path(scratch) / 'bundle'
         tree.mkdir()
         _materialize(bundle, diff, tree)

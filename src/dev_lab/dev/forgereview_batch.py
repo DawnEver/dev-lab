@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.units import Q_
 
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -147,7 +148,7 @@ def held_state(client: Client, number: int, head: str, trusted: Iterable[str]) -
     before = _stored(client, number, head, trusted)
     if before:
         json.loads(before)  # a stored state that is not JSON is refused here, never handed to a command
-    with tempfile.TemporaryDirectory(prefix='review-batch-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-batch-') as scratch:
         path = Path(scratch) / 'batch-state.json'
         if before:
             path.write_text(before + '\n', encoding='utf-8')

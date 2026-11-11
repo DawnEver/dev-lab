@@ -25,6 +25,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.forgerecords import Attachment, attach, listing, records_issue
 from dev_lab.dev.forgework import GITHUB, Client
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 __all__ = [
     'ARCHIVE',
@@ -247,7 +248,7 @@ def sorted_refs(refs: Sequence[Ref], older_than: datetime | None) -> tuple[Ref, 
 
 def scratch_dir(near: Path | None = None) -> Path:
     """A fresh private scratch directory, beside *near* when given."""
-    return Path(tempfile.mkdtemp(prefix='artefact-', dir=near))
+    return Path(tempfile.mkdtemp(prefix=f'{TEMP_PREFIX}artefact-', dir=near))
 
 
 # --- folder ---------------------------------------------------------------------------------------

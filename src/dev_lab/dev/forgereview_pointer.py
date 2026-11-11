@@ -74,6 +74,7 @@ from dev_lab.dev.forgereview_declared import JUDGE, Review, base_manifest, revie
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, RunsUnread, review_runs
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -201,7 +202,7 @@ def prepare(
         written.parent.mkdir(parents=True, exist_ok=True)
         written.write_bytes(data)
         return f'{said} written to {written} for the upload step to attach as artifact {ARTIFACT}'
-    with tempfile.TemporaryDirectory(prefix='review-bundle-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-bundle-') as scratch:
         tree = Path(scratch) / 'tree'
         tree.mkdir()
         (tree / BUNDLE_FILE).write_bytes(data)
