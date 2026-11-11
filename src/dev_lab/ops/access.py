@@ -25,7 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from dev_lab.ops.config import Access, OpsConfig
+from dev_lab.ops.config import OpsConfig
+from dev_lab.ops.consentrole import Access
 from dev_lab.ops.totp import DIGITS, STEP, TotpRefused, uri, write_private
 from dev_lab.ops.totp import adopt as adopt_secret
 from dev_lab.ops.totp import enrol as enrol_secret

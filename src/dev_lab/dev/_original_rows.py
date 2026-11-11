@@ -237,6 +237,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'servetask',
     # ORIGINAL: one TOTP-authenticated ssh connection held for a work session (user ruling 2026-11-09).
     'sshhold',
+    # ORIGINAL: sshhold's state file and audit split from its client (MODULE-SIZE-ALARM, 2026-11-11).
+    'sshholdstate',
     'workstation',
     'workstationfile',
     'workstationprobe',

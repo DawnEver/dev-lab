@@ -17,7 +17,7 @@ from typing import Final, Protocol
 import lab_commons.launch as _door
 
 from dev_lab.dev import remote as ssh_remote
-from dev_lab.dev import sshhold
+from dev_lab.dev import sshhold, sshholdstate
 
 __all__ = ['HeldRemote', 'Remote', 'SshRemote', 'remote_for']
 
@@ -49,7 +49,7 @@ class HeldRemote:
 
     def put(self, path: str, text: str) -> None:
         """Write *text* through the held channel as heredoc DATA; audited as the path and a sha256 prefix only."""
-        session = sshhold.read_session(self.dest)
+        session = sshholdstate.read_session(self.dest)
         if session is None:
             msg = f'no held session for {self.dest}'
             raise sshhold.HoldRefused(msg)
@@ -61,7 +61,7 @@ class HeldRemote:
             msg = f'the holder of {self.dest} is gone ({gone}); open a new session'
             raise sshhold.HoldRefused(msg) from gone
         digest = hashlib.sha256(text.encode()).hexdigest()[:12]
-        sshhold.audit('put', self.dest, command=path, status=reply.get('status'), sha256=digest)
+        sshholdstate.audit('put', self.dest, command=path, status=reply.get('status'), sha256=digest)
         if 'error' in reply or reply.get('status'):
             msg = f'{self.dest}: could not write {path}: {reply.get("error") or reply.get("output", "").strip()}'
             raise sshhold.HoldRefused(msg)
@@ -97,4 +97,4 @@ def _put_command(path: str) -> str:
 
 def remote_for(dest: str) -> Remote:
     """*dest*'s held session when one is recorded, else plain key-only ssh."""
-    return HeldRemote(dest) if sshhold.read_session(dest) is not None else SshRemote(dest)
+    return HeldRemote(dest) if sshholdstate.read_session(dest) is not None else SshRemote(dest)
