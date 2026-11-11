@@ -221,13 +221,13 @@ def _answers(call: Callable[[], object]) -> bool:
 
 
 def _refusal(failed: ForgeCallFailed) -> bool:
-    """An ANSWERED refusal: measured, final, or a 401/403 every attempt was answered with (a missing scope).
+    """An ANSWERED refusal: measured, a missing grant, final, or a 401/403 held on every attempt (a scope).
 
     Gitea's transient "Failed to authenticate user" clears on the next attempt, so a 401/403 that held on every
     one of the bounded attempts is the forge's answer; one that came with a dropped connection, a 5xx or a rate
     limit on any attempt is not.
     """
-    if failed.credential_refused or failed.final is not None:
+    if failed.credential_refused or failed.permission or failed.final is not None:
         return True
     attempts = failed.report.attempts
     held = all(a.returncode in AUTH_REFUSED and a.diagnosis is not Diagnosis.RATE_LIMITED for a in attempts)

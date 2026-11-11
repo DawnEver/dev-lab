@@ -21,6 +21,7 @@ that wait is past :data:`RATE_WAIT_CAP_S` -- an attempt before the reset is refu
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ __all__ = [
     'ForgeCallFailed',
     'diagnose',
     'pause',
+    'permission_refused',
     'rate_limited',
     'retried',
 ]
@@ -55,6 +57,32 @@ UNAUTHENTICATED: Final = 401
 
 #: The status a forge answers a rate limit with when it does not answer 429 (GitHub's primary limit).
 _FORBIDDEN: Final = 403
+
+#: How a forge words a CREDENTIAL fault in a 401/403 body; a 403 without one, from an account ``GET /user``
+#: authenticates, is the account lacking the right (2026-11-10: a push-only account read ``branch_protections``).
+_CREDENTIAL_WORDS: Final = ('invalid username', 'password or token', 'failed to authenticate', 'bad credentials')
+
+#: The remedy of a permission refusal: the account answered, so only another account or a grant changes it.
+_PERMISSION_REMEDY: Final = (
+    'the stored credential authenticates (GET /user answered), but this account lacks the right to this call -- '
+    'retrying cannot change it; run it as an admin account, or grant this account that permission'
+)
+
+
+def _reason(output: str) -> str:
+    """The forge's own ``message`` from an answered body, else the body as it came (already cut to 300)."""
+    try:
+        body = json.loads(output)
+    except ValueError:
+        return output.strip()
+    return str(body.get('message', output)).strip() if isinstance(body, dict) else output.strip()
+
+
+def permission_refused(status: int, text: str) -> bool:
+    """A 403 that names no credential fault -- asked only once ``GET /user`` has authenticated the credential."""
+    lowered = text.lower()
+    return status == _FORBIDDEN and not any(word in lowered for word in _CREDENTIAL_WORDS)
+
 
 #: The status that is a rate limit whatever else the answer says.
 _TOO_MANY: Final = 429
@@ -98,9 +126,12 @@ class ForgeCallFailed(OSError):
         *credential_kept*: the store cannot refresh, so the refused credential was kept -- retried and measured.
         A rate limit says nothing about the credential, so its message adds nothing.
         """
-        last = report.attempts[-1].returncode if report.attempts else 0
+        attempt = report.attempts[-1] if report.attempts else None
+        last = attempt.returncode if attempt else 0
         said = _forge.AUTH_TRANSIENT
-        if _credential_refused(report):
+        if attempt is not None and attempt.diagnosis is Diagnosis.PERMISSION_REFUSED:
+            said = f'{_PERMISSION_REMEDY}; the forge said: {_reason(attempt.output)}'
+        elif _credential_refused(report):
             said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_KEPT if credential_kept else _forge.AUTH_REMEDY
         auth = last in _forge.AUTH_REFUSED and report.diagnosis is not Diagnosis.RATE_LIMITED
         super().__init__(f'{report.remedy}. {said}' if auth else report.remedy)
@@ -112,11 +143,19 @@ class ForgeCallFailed(OSError):
         return _credential_refused(self.report)
 
     @property
+    def permission(self) -> bool:
+        """Whether the forge answered that this ACCOUNT lacks a grant (:attr:`Diagnosis.PERMISSION_REFUSED`)."""
+        last = self.report.attempts[-1] if self.report.attempts else None
+        return last is not None and last.diagnosis is Diagnosis.PERMISSION_REFUSED
+
+    @property
     def final(self) -> int | None:
         """The HTTP status when the forge refused THIS CALL for good, else ``None`` (a later attempt may land).
 
         Final is an answered refusal (:attr:`~dev_lab.dev.netverb.Diagnosis.FORGE_REFUSED`, e.g. a 405 on
         merging a merged PR) that is not a refused CREDENTIAL: that one is the box's fault, not the call's.
+        A PERMISSION refusal is not final either: the account lacks a grant, and the same call lands once it is
+        granted, so a queued post stays queued for it (never dropped).
         """
         last = self.report.attempts[-1] if self.report.attempts else None
         if last is None or last.diagnosis is not Diagnosis.FORGE_REFUSED or self.credential_refused:

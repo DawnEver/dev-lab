@@ -12,11 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.ops.config import _BREAKGLASS_MOVED, load
+from dev_lab.ops.config import load
+from dev_lab.ops.configupgrade import BREAKGLASS_MOVED
 
 #: The host's values for the keys #311 moved; the keys themselves are named once, by the loader that upgrades them.
 _MOVED_VALUES = ('"/etc/breakglass/totp"', '24.0', '20', '5', '15.0')
-_MOVED = ''.join(f'{key} = {value}\n' for key, value in zip(_BREAKGLASS_MOVED, _MOVED_VALUES, strict=True))
+_MOVED = ''.join(f'{key} = {value}\n' for key, value in zip(BREAKGLASS_MOVED, _MOVED_VALUES, strict=True))
 
 _OLD = """
 [ops]

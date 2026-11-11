@@ -80,6 +80,7 @@ from dev_lab.dev.forgefailure import (
     Answer,
     ForgeCallFailed,
     diagnose,
+    permission_refused,
     rate_limited,
     retried,
 )
@@ -191,7 +192,7 @@ class Client:
             except OSError:
                 return Diagnosis.TRANSIENT
         if status not in _forge.AUTH_REFUSED:
-            return Diagnosis.TRANSIENT
+            return Diagnosis.PERMISSION_REFUSED if permission_refused(answer.status, text) else Diagnosis.TRANSIENT
         return Diagnosis.TRANSIENT if status == UNAUTHENTICATED and self._refresh() else Diagnosis.FORGE_REFUSED
 
     def _refresh(self) -> bool:
