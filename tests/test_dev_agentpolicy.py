@@ -132,11 +132,11 @@ def test_the_user_gives_the_code_and_the_main_session_runs_the_grant() -> None:
     assert grant.intent in INTENTS
 
 
-def test_a_break_glass_merge_waits_for_the_heads_three_test_statuses() -> None:
-    """Integrator ruling 2026-11-08: a wave merge follows a green head, never an unverified push."""
+def test_a_break_glass_merge_waives_the_tests_and_names_their_state() -> None:
+    """User ruling 2026-11-11: a wave merge needs no green test; what it waived is named, never hidden."""
     merge = _door(('python', '-m', 'dev_lab.dev.forge', 'pr', 'breakglass'))
-    assert 'only after' in merge.intent
-    assert all(word in merge.intent for word in ('base', 'windows', 'security'))
+    assert 'only after' not in merge.intent
+    assert all(phrase in merge.intent for phrase in ('AND its tests', 'test state at merge time', 'audit'))
 
 
 @pytest.mark.parametrize(

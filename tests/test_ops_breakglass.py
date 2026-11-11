@@ -684,22 +684,49 @@ def test_a_wave_written_before_summaries_reads_as_already_summarized(host: Host)
     assert _titles(host) == [_summary(host)]  # the close's try only: an old wave is never re-alerted
 
 
-def test_a_head_with_no_test_status_is_refused_naming_what_is_missing(host: Host) -> None:
-    # PLANTED: a Gitea head with no test part posted, only a lock failure
+def _merged_lines(host: Host) -> list[dict[str, object]]:
+    assert host.config.breakglass is not None
+    lines = Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()
+    return [json.loads(line) for line in lines if json.loads(line)['outcome'] == 'merged']
+
+
+def _comments(host: Host) -> list[str]:
+    return [str(call[2]) for call in host.forge.calls if call[0] == 'comment']
+
+
+def test_an_untested_head_merges_in_an_open_wave_and_says_untested(host: Host) -> None:
+    # User ruling 2026-11-11: break-glass bypasses the tests too -- and the audit says so.
     host.forge.posted = [CommitStatus('pr-current', 'failure', 'stale lock', '')]
     host.open()
-    with pytest.raises(BreakglassRefused, match=r'(?s)bypasses only the review.*tests/security.*not yet judged'):
+    said = host.merge()
+    assert 'merged untested' in said
+    assert [call for call in host.forge.calls if call[0] == 'merge']
+    (line,) = _merged_lines(host)
+    assert str(line['tests']).startswith('untested: ')
+    assert 'tests/security is not yet judged' in str(line['tests'])
+    assert any('merged untested' in body for body in _comments(host))
+
+
+def test_planted_control_the_same_untested_head_without_a_wave_is_refused(host: Host) -> None:
+    host.forge.posted = [CommitStatus('pr-current', 'failure', 'stale lock', '')]
+    with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):
         host.merge()
     assert not [call for call in host.forge.calls if call[0] == 'merge']
+    assert not _merged_lines(host)
 
 
-def test_a_red_test_part_is_refused(host: Host) -> None:
+def test_a_red_head_merges_with_its_reds_named(host: Host) -> None:
     host.forge.posted = [GREEN[1], CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
     host.open()
-    with pytest.raises(BreakglassRefused, match=r'never the tests.*tests/base is failure'):
-        host.merge()
+    assert 'merged red (tests/base)' in host.merge()
+    (line,) = _merged_lines(host)
+    assert str(line['tests']).startswith('red: tests/base; ')
+    assert any('merged red (tests/base)' in body for body in _comments(host))
+    host.ask('close')
+    assert 'red: tests/base' in host.alerts[-1][1]  # the wave's one summary names it too
 
 
-def test_every_declared_test_green_merges(host: Host) -> None:
+def test_every_declared_test_green_merges_as_passed(host: Host) -> None:
     host.open()
     assert 'merged' in host.merge()
+    assert [line['tests'] for line in _merged_lines(host)] == ['passed']
