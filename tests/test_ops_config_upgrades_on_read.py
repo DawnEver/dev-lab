@@ -1,4 +1,4 @@
-"""A pre-#311 ``[ops.breakglass]`` is UPGRADED ON READ (FORMATS-UPGRADE-ON-READ), never refused.
+"""A pre-#311 ``[ops.breakglass]`` is UPGRADED ON READ (owed a migration: FORMATS-MIGRATE-ONCE), never refused.
 
 forge-a1, 2026-11-08: ``ops upgrade`` self-checks the host's CURRENT config with the NEW code. #311 moved the wave
 window, the merge cap and the code lockout out of ``[ops.breakglass]`` into the consent credential and the issuer, so

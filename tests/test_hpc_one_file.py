@@ -184,7 +184,10 @@ def _ok(index: int, value: object) -> dict:
 
 
 def test_gather_derives_every_returned_shard_from_the_one_file() -> None:
-    """FORMATS-UPGRADE-ON-READ: these are a pre-Cell worker's ``item`` lines, still read as OK items."""
+    """An old shape lab-commons still reads, owed under FORMATS-MIGRATE-ONCE.
+
+    These are a pre-Cell worker's ``item`` lines, still read as OK items.
+    """
     text = _lines(
         _item(0, 0, 'a'),
         _item(1, 0, 'b'),
@@ -208,7 +211,10 @@ def test_gather_derives_every_returned_shard_from_the_one_file() -> None:
 
 
 def test_a_run_an_earlier_worker_wrote_still_gathers() -> None:
-    """FORMATS-UPGRADE-ON-READ: jobs on the cluster across the change wrote one ``results/<shard>.json`` each."""
+    """An old shape lab-commons still reads, owed under FORMATS-MIGRATE-ONCE.
+
+    Jobs on the cluster across the change wrote one ``results/<shard>.json`` each.
+    """
     old = NL.join(
         json.dumps({'shard': shard, 'results': [{'index': shard, 'ok': True, 'value': shard * 10}]}) for shard in (0, 1)
     )

@@ -1,4 +1,4 @@
-"""A pre-#402 ``[ops.forge] read_only`` is UPGRADED ON READ (FORMATS-UPGRADE-ON-READ), never refused.
+"""A pre-#402 ``[ops.forge] read_only`` is UPGRADED ON READ (owed a migration: FORMATS-MIGRATE-ONCE), never refused.
 
 forge-a1, 2026-11-10: ``ops upgrade`` to the tip carrying #402 self-checked the host's CURRENT file, which still says
 ``read_only = ["server-reader"]``; the new reader refused it and the old reader refuses the new

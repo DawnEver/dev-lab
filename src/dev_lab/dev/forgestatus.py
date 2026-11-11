@@ -67,7 +67,7 @@ __all__ = [
 STATES: Final = ('success', 'failure', 'error', 'pending')
 
 #: A carried status ends ``carried from <sha12>: docs-only`` -- DOCS-ONLY-CARRIES (dev_lab.dev.forgecarry);
-#: a part posted under the retired ``every outcome carried by footprint`` still READS (FORMATS-UPGRADE-ON-READ).
+#: a part posted under the retired ``every outcome carried by footprint`` still READS (OLD-SHAPE-READER).
 CARRIED_FROM: Final = 'carried from'
 DOCS_ONLY: Final = 'docs-only'
 

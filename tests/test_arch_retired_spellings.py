@@ -108,6 +108,13 @@ RETIRED_SPELLINGS: Final = {
         )
         for table in MOVED_TABLES
     },
+    **dict.fromkeys(
+        ('FORMATS-UPGRADE-ON-READ', 'test_arch_formats_upgrade_on_read'),
+        (
+            'FORMATS-MIGRATE-ONCE (tests/test_arch_formats_migrate_once.py)',
+            'user ruling 2026-11-11 (consumer-a D51/D52): migrate stored records once, refuse the rest',
+        ),
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

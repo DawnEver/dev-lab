@@ -1,4 +1,4 @@
-"""A retired standing GitHub token (#403) is DROPPED ON READ (FORMATS-UPGRADE-ON-READ), never refused at load.
+"""A retired standing GitHub token (#403) is DROPPED ON READ (owed a migration: FORMATS-MIGRATE-ONCE), not refused.
 
 forge-a1, 2026-11-11: its old code ran the upgrade, whose self-check loads the LIVE file under the tip; the tip refused
 ``[ops.breakglass.tokens] "github.com"``, so no upgrade could land while the old code refused the new ``apps`` key.

@@ -75,7 +75,7 @@ def held(state: Path) -> list[Wave]:
     for path in sorted(_dir(state).glob('*.json')):
         data: dict[str, Any] = json.loads(path.read_text(encoding='utf-8'))
         data['merges'] = [Merge(**merge) for merge in data.get('merges', [])]
-        if 'reminded' in data:  # upgrade on read: that format alerted on close, so a closed wave was summarized
+        if 'reminded' in data:  # OLD-SHAPE-READER: that format alerted on close, so a closed wave was summarized
             del data['reminded']
             data['summarized'] = data.get('closed')
         found.append(Wave(**data))
