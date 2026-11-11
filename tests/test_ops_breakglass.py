@@ -21,10 +21,13 @@ from _forge_fake import Loopback, Recorder, answer, serve
 from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 
 from dev_lab.dev.breakglass import reason
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.netverb import Report
 from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.ops.breakglass import BreakglassRefused, ClientForge, Server, merge_message
 from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.issuer import Issuer
 from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.totp import STEP
@@ -48,6 +51,14 @@ class FakeForge:
     posted: list[CommitStatus] = field(default_factory=lambda: list(GREEN))
     #: The repo's ``pyproject.toml`` at its default branch; ``None`` plants one the forge cannot serve.
     manifest: str | None = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+    #: Each PR's labels (none by default); a PR in ``unreadable`` plants a forge that cannot answer for them.
+    labelled: dict[int, tuple[str, ...]] = field(default_factory=dict)
+    unreadable: frozenset[int] = frozenset()
+
+    def labels(self, number: int) -> tuple[str, ...]:
+        if number in self.unreadable:
+            raise ForgeCallFailed(Report(f'GET /pulls/{number}', (), 1))
+        return self.labelled.get(number, ())
 
     def declaration(self) -> str:
         if self.manifest is None:
@@ -194,6 +205,24 @@ def test_a_second_open_wave_is_refused(host: Host) -> None:
 
 def test_a_merge_outside_a_wave_is_refused(host: Host) -> None:
     with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):
+        host.merge()
+    assert host.forge.calls == []
+
+
+def test_a_manual_merge_of_a_needs_consent_pr_is_refused(host: Host) -> None:
+    host.open()
+    host.forge.labelled[7] = (LABEL,)
+    with pytest.raises(BreakglassRefused, match=f'labelled {LABEL}: .* lands only by its own consent'):
+        host.merge()
+    assert host.forge.calls == []
+    host.forge.labelled[7] = ()  # PLANTED CONTROL: the same PR without the label merges
+    assert 'merged' in host.merge()
+
+
+def test_a_manual_merge_whose_labels_cannot_be_read_is_refused(host: Host) -> None:  # PLANTED CONTROL
+    host.open()
+    host.forge.unreadable = frozenset({7})
+    with pytest.raises(BreakglassRefused, match='labels cannot be read'):
         host.merge()
     assert host.forge.calls == []
 
@@ -463,16 +492,19 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     loopback: Loopback, url: str, api: str, *, prefix: str, auth: str, merge: str
 ) -> None:
     pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
-            'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'}}  # fmt: skip
+            'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'},
+            'labels': [{'name': 'needs-consent'}]}  # fmt: skip
     manifest = base64.b64encode(b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n').decode()
     answer('GET', prefix, (200, {'default_branch': 'main'}))
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
+    answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('POST', f'{prefix}/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}))
     answer(merge, f'{prefix}/pulls/7/merge', (200, {'merged': True}))
     forge = ClientForge(url, 'secret', transport=loopback)
     assert 'integrate/main' in forge.declaration()
     assert forge.pull(7) == ('open', 'integrate/main', HEAD)
+    assert forge.labels(7) == ('needs-consent',)
     forge.comment(7, 'BREAK-GLASS')
     forge.merge(7, head=HEAD, message=merge_message(7, 'integrate/main', 'review-bot is down', 'w'))
     assert set(loopback.asked) == {api}

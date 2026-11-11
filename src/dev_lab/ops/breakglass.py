@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from lab_commons.log import emit
 
 from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.forge import forge_of_url
@@ -66,19 +67,36 @@ from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.wavesweep import Pull, sweep
 
-__all__ = ['BreakglassRefused', 'ClientForge', 'Forge', 'Server', 'merge_message']
+__all__ = ['BreakglassRefused', 'ClientForge', 'ConsentWanted', 'Forge', 'Server', 'merge_message']
 
 _HOUR = 3600.0
 
 
 class BreakglassRefused(RuntimeError):
     """The request was refused; the message is what the client prints."""
+
+
+class ConsentWanted(BreakglassRefused):
+    """The PR touches a boundary key (or its labels cannot be read): it lands only by its own consent."""
+
+
+def _consent_stands(forge: Forge, pr: int) -> None:
+    """Refuse PR *pr* while it carries :data:`LABEL`, or when its labels cannot be read (fail closed)."""
+    try:
+        carried = forge.labels(pr)
+    except (ForgeCallFailed, KeyError, TypeError, ValueError) as unread:
+        msg = f'#{pr} labels cannot be read, so it may touch a boundary key: {str(unread).splitlines()[0]}'
+        raise ConsentWanted(msg) from unread
+    if LABEL in carried:
+        msg = f'#{pr} is labelled {LABEL}: it touches a boundary key and lands only by its own consent'
+        raise ConsentWanted(msg)
 
 
 class Forge(Protocol):
@@ -98,6 +116,10 @@ class Forge(Protocol):
 
     def open_pulls(self) -> Sequence[Pull]:
         """Every open PR (:mod:`dev_lab.ops.wavesweep` lands the green ones of an open wave)."""
+        ...
+
+    def labels(self, number: int) -> tuple[str, ...]:
+        """The labels PR *number* carries now."""
         ...
 
     def comment(self, number: int, body: str) -> None:
@@ -137,6 +159,10 @@ class ClientForge:
     def open_pulls(self) -> Sequence[Pull]:
         """Every open PR (:func:`dev_lab.dev.forgepulls.pr_list`)."""
         return [Pull(one.number, one.base, one.head_sha, one.draft) for one in pr_list(self._client)]
+
+    def labels(self, number: int) -> tuple[str, ...]:
+        """The labels PR *number* carries, read fresh (both backends' pull JSON lists them by name)."""
+        return self._client.pr_view(number).labels
 
     def comment(self, number: int, body: str) -> None:
         """Comment on PR *number*."""
@@ -371,6 +397,7 @@ class Server:
         if found != asked.head:
             msg = f'#{asked.pr} head is {found[:12]}, not the {asked.head[:12]} you were shown: re-run the verb'
             raise BreakglassRefused(msg)
+        _consent_stands(forge, asked.pr)
         _tests_stand(forge, asked)
         return forge, integration
 
@@ -401,12 +428,25 @@ class Server:
         An open wave lands each green, non-draft PR it serves (:mod:`dev_lab.ops.wavesweep`) through :meth:`_merge`.
         """
         with exclusive(self.state):
-            landed = sweep(self.role.repos, self.forge_for, wave=self._open_id, land=self._merge,
+            landed = sweep(self.role.repos, self.forge_for, wave=self._open_id, land=self._sweep_land,
                            refused=BreakglassRefused)  # fmt: skip
             for wave in waves.held(self.state):
                 if wave.closed is not None:
                     self._summarize(wave)
             return '\n'.join([*landed, self._status(None)])
+
+    def _sweep_land(self, asked: requests.Merge) -> str | None:
+        """:meth:`_merge` for the sweep; a PR held for its own consent is ``None``, logged once per wave."""
+        try:
+            return self._merge(asked)
+        except ConsentWanted as wanted:
+            held = self._current()
+            if held is not None and (seen := f'{asked.repo}#{asked.pr}') not in held.held_back:
+                held.held_back.append(seen)
+                waves.save(self.state, held)
+                emit(f'[breakglass] wave {held.id}: {seen} skipped: {wanted}', err=True)
+                self._audit({'wave': held.id, 'outcome': f'skipped: {wanted}', 'repo': asked.repo, 'pr': asked.pr})
+            return None
 
     def _open_id(self) -> str | None:
         held = self._current()
