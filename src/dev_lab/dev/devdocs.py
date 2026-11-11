@@ -79,6 +79,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'Start here if you used to run the gate before a push: what to stop, and the five commands that replace it',
     ),
     Page(
+        'topology',
+        'Development architecture and topology',
+        'The map: repo family, branch flow, forges and identities, hosts, consent, config files, setup and rotation',
+    ),
+    Page(
         'the-three-participants',
         'The three participants',
         'Who does what: the human, the authors, the producers, the forge and the integrator',
