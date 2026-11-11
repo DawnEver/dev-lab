@@ -109,6 +109,8 @@ class Diagnosis(StrEnum):
     HOOK_REFUSED = 'hook-refused'
     REF_REJECTED = 'ref-rejected'
     FORGE_REFUSED = 'forge-refused'
+    #: The credential authenticates and the forge answered "this account lacks the right": no retry changes it.
+    PERMISSION_REFUSED = 'permission-refused'
     REMOTE_ABSENT = 'remote-absent'
     TRANSPORT_REFUSED = 'transport-refused'
     STOPPED_BY_CALLER = 'stopped-by-caller'
