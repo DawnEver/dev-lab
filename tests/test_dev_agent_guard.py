@@ -27,6 +27,10 @@ from dev_lab.dev.hooks import DENY_RULES, Remedy, UnremediedRule
 from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.plugin_settings import DISABLED_PLUGINS, live_disabled_plugins
 
+_ENGINE = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+#: TRACKED-CITES-NO-EPHEMERAL at the door (dev-lab#419): beside the engine, before every shell call.
+_JOURNALDOOR = {'type': 'command', 'command': agent_guard.JOURNALDOOR_COMMAND}
+
 # THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
 
 #: A minimal but REAL declaration: one rule with an exit that exists as a command.
@@ -139,7 +143,7 @@ def test_unrelated_settings_survive_the_install(repo: Path) -> None:
     pre = after['hooks']['PreToolUse']
     assert pre[0] == planted['hooks']['PreToolUse'][0], 'an unrelated matcher was rewritten'
     assert pre[1] == planted['hooks']['PreToolUse'][1], "another agent's Bash hook was moved or widened"
-    assert pre[2] == {'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': agent_guard.HOOK_COMMAND}]}
+    assert pre[2] == {'matcher': 'Bash|PowerShell', 'hooks': [_ENGINE, _JOURNALDOOR]}
 
 
 def test_wiring_that_runs_the_engine_with_other_arguments_is_stale(repo: Path) -> None:
@@ -283,7 +287,10 @@ def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: P
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.STALE
     agent_guard.install_guard(repo)
     pre = json.loads(settings.read_text(encoding='utf-8'))['hooks']['PreToolUse']
-    assert pre == [{'matcher': 'Bash', 'hooks': [theirs]}, {'matcher': 'Bash|PowerShell', 'hooks': [ours]}]
+    assert pre == [
+        {'matcher': 'Bash', 'hooks': [theirs]},
+        {'matcher': 'Bash|PowerShell', 'hooks': [ours, _JOURNALDOOR]},
+    ]
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
 
 

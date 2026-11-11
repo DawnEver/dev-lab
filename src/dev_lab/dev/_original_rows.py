@@ -229,6 +229,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'stoprun',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
+    # ORIGINAL: the PreToolUse door judging a rem task-journal append before it is written (dev-lab#419).
+    'journaldoor',
     'servelanes',
     'servelock',
     'servetask',

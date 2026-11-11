@@ -158,6 +158,10 @@ AUTOMODE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab
 #: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
 PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
 
+#: TRACKED-CITES-NO-EPHEMERAL AT THE DOOR (:mod:`dev_lab.dev.journaldoor`, dev-lab#419): a ``task.js`` journal append
+#: whose text cites an ignored path is denied before the append-only line is written.
+JOURNALDOOR_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.journaldoor'
+
 
 @dataclass(frozen=True, slots=True)
 class Wire:
@@ -173,13 +177,15 @@ class Wire:
 
 
 #: THE WIRING, ONE TABLE: what :func:`wire_settings` writes is what :func:`guard_installation` reads.
-#: The engine before every shell call; the pushed-head reminder, the landed sweep and the host-pressure reminder
-#: after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at stop -- a stray is the
-#: state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a census after every
-#: shell call repeated the same block (2026-11-03 audit); the hand-back check at every stop, the main session's and
-#: each subagent's; the pushed-head gate at the main session's stop; the background reclaim at session start.
+#: The engine and the journal door before every shell call; the pushed-head reminder, the landed sweep and the
+#: host-pressure reminder after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at
+#: stop -- a stray is the state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a
+#: census after every shell call repeated the same block (2026-11-03 audit); the hand-back check at every stop, the
+#: main session's and each subagent's; the pushed-head gate at the main session's stop; the background reclaim at
+#: session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
+    Wire('PreToolUse', JOURNALDOOR_COMMAND, 'dev_lab.dev.journaldoor', on_shells=True),
     Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True),
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
     Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
