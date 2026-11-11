@@ -21,6 +21,7 @@ from _forge_fake import Loopback, Recorder, answer, serve
 from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 
 from dev_lab.dev.breakglass import reason
+from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.ops.breakglass import BreakglassRefused, ClientForge, Server, merge_message
 from dev_lab.ops.config import Breakglass, OpsConfig
@@ -31,6 +32,10 @@ from dev_lab.ops.totp import STEP
 HEAD = 'a' * 40
 KEY = 'SHA256:agentkey'
 HOUR = 3600.0
+GREEN = (
+    CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=-', ''),
+    CommitStatus('tests/security', 'success', 'nothing found', ''),
+)
 
 
 @dataclass
@@ -39,6 +44,8 @@ class FakeForge:
     base: str = 'integrate/main'
     head: str = HEAD
     calls: list[tuple[str, int, str]] = field(default_factory=list)
+    #: The head's statuses; green tests by default, as every break-glass merge needs.
+    posted: list[CommitStatus] = field(default_factory=lambda: list(GREEN))
     #: The repo's ``pyproject.toml`` at its default branch; ``None`` plants one the forge cannot serve.
     manifest: str | None = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
 
@@ -51,6 +58,10 @@ class FakeForge:
     def pull(self, number: int) -> tuple[str, str, str]:
         del number
         return self.state, self.base, self.head
+
+    def statuses(self, head: str) -> list[CommitStatus]:
+        del head
+        return list(self.posted)
 
     def comment(self, number: int, body: str) -> None:
         self.calls.append(('comment', number, body))
@@ -639,3 +650,24 @@ def test_a_wave_written_before_summaries_reads_as_already_summarized(host: Host)
     host.delivers = True
     host.server.tick()
     assert _titles(host) == [_summary(host)]  # the close's try only: an old wave is never re-alerted
+
+
+def test_a_head_with_no_test_status_is_refused_naming_what_is_missing(host: Host) -> None:
+    # PLANTED: a Gitea head with no test part posted, only a lock failure
+    host.forge.posted = [CommitStatus('pr-current', 'failure', 'stale lock', '')]
+    host.open()
+    with pytest.raises(BreakglassRefused, match=r'(?s)bypasses only the review.*tests/security.*not yet judged'):
+        host.merge()
+    assert not [call for call in host.forge.calls if call[0] == 'merge']
+
+
+def test_a_red_test_part_is_refused(host: Host) -> None:
+    host.forge.posted = [GREEN[1], CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
+    host.open()
+    with pytest.raises(BreakglassRefused, match=r'never the tests.*tests/base is failure'):
+        host.merge()
+
+
+def test_every_declared_test_green_merges(host: Host) -> None:
+    host.open()
+    assert 'merged' in host.merge()
