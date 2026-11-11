@@ -158,6 +158,7 @@ HINT: the hazard is minutes, not harm.
   - a research batch: `python -m lab_commons.hpc submit -c <job.toml>`, then `python -m lab_commons.hpc gather -c <job.toml> --wait` (`plan`, `status`, `retry` alike); a tested commit: `python -m lab_commons.hpc run submit|gather|build --sha <sha>`;
   - clean finished output: `python -m lab_commons.hpc clean --root <abs remote dir> [--dry-run] [--timeout <s>, default 3600] --at <user@host> <name>...` (or `--grant <user>` from the machine file); a timed-out delete is idempotent, re-run it.
   - These `lab_commons.hpc` doors ride key-based `BatchMode` ssh: a KEY-ONLY host (Ada; user ruling 2026-11-11) never needs a code or a held session, so every agent publishes, gathers and cleans through them. `sshhold` is for a key+TOTP host only.
+  - They SHARE and are RATE-LIMITED (user ruling 2026-11-11; `lab_commons.hpc.sshgate`): on POSIX every call rides one OpenSSH ControlMaster per host (`ControlPath` under the machine home's `state/hpc-ssh`, `ControlPersist 10m`); on Windows, whose OpenSSH cannot multiplex, a machine-wide per-host lock keeps at most one live ssh per host. Each door invocation takes one machine-wide slot per host: at least 5 s apart, at most 30 per 10 min (`[hpc.ssh] min_interval_s`, `max_per_window`, `window_s` in the machine file). Over it the door refuses with the wait -- never sleep-loop: read `forge queue`, or let ONE `gather -c <job> --wait` poll (its `poll_seconds` floor is 60 s).
 
 ## REMOTE-WRITE-THROUGH-A-DOOR
 
