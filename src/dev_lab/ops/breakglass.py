@@ -2,7 +2,7 @@
 
 User rulings 2026-11-03: a local agent session may run it, only under the user's authorization. Since 2026-11-07 that
 authorization is a ``breakglass.wave`` CONSENT CREDENTIAL (:mod:`dev_lab.ops.consent`) the user granted with their
-Authenticator code at the issuer: it opens a WAVE (:mod:`dev_lab.ops.wave`) bounded by its signed params; merges
+cluster code at the issuer: it opens a WAVE (:mod:`dev_lab.ops.wave`) bounded by its signed params; merges
 inside it need none, and this server -- never the client -- sends the wave's summary through the configuration's
 ``[alerts]`` when it ends.
 The client is ``forge pr breakglass`` / ``forge breakglass open|close|ack|status``
