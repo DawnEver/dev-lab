@@ -91,13 +91,16 @@ def test_they_are_forge_verbs() -> None:
 
 def test_ssh_send_goes_through_the_one_remote_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     """One transport: the consent/breakglass JSON line rides :func:`dev_lab.dev.remote.piped`, never its own ssh."""
-    seen: list[tuple[str, str, str | None]] = []
+    seen: list[tuple[str, str, str | None, str | None]] = []
 
-    def piped(target: str, line: str, *, identity: str | None, timeout_s: float) -> tuple[int, str]:
-        seen.append((target, line, identity))
+    def piped(
+        target: str, line: str, *, identity: str | None, known_hosts: str | None, timeout_s: float
+    ) -> tuple[int, str]:
+        seen.append((target, line, identity, known_hosts))
         assert timeout_s > 0
         return 0, 'ok'
 
     monkeypatch.setattr(remote, 'piped', piped)
     assert ssh_send({'endpoint': 'c@h', 'identity': 'k'}, {'a': 1}) == (0, 'ok')
-    assert seen == [('c@h', '{"a": 1}\n', 'k')]
+    assert ssh_send({'endpoint': 'c@h', 'known_hosts': 'kh'}, {'a': 1}) == (0, 'ok')
+    assert seen == [('c@h', '{"a": 1}\n', 'k', None), ('c@h', '{"a": 1}\n', None, 'kh')]

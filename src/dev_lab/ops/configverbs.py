@@ -41,9 +41,17 @@ def apply(
     *,
     alert: Alert,
     redeemer: Callable[[], Callable[[str], Redeem]],
+    subject: bool = False,
 ) -> int:
-    """``config apply [--from <file>] [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
+    """``config apply [--from <file>] [--credential <file>] [--subject]``: the one config door (:mod:`.configdoor`).
+
+    ``--subject`` prints the digest an ``ops.config`` credential must name for this candidate, and applies nothing:
+    what a preflight compares with the plan's grant before any code is spent.
+    """
     try:
+        if subject:
+            emit(configdoor.digest(source_text(config, candidate)))
+            return 0
         redeem_ = redeemer()(configdoor.ACTION) if credential else None
         granted = json.loads(Path(credential).read_text(encoding='utf-8')) if credential else None
         done = configdoor.apply(

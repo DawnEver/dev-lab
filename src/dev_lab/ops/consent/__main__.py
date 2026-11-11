@@ -1,4 +1,7 @@
-"""``python -m dev_lab.ops.consent grant <request.json> [--code CODE]`` | ``plan <plan.json>``: the user's consent.
+"""``python -m dev_lab.ops.consent grant <request.json> [--code CODE]`` | ``plan`` | ``recover``: the user's consent.
+
+``recover <plan.json> --digest D`` fetches again the plan's credentials the issuer granted and never registered (a
+lost or deleted one), with no code: re-delivery, never a new grant (:meth:`.issuer.Issuer.unspent`).
 
 ``grant`` grants one credential. ``plan`` prints what a plan's ONE code would open and consent to, and the digest to
 name; the code itself is given to ``python -m dev_lab.dev.sshhold open <dest> --plan <plan.json> --digest <D>``.
@@ -17,7 +20,7 @@ from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.ops.consent.client import grant
+from dev_lab.ops.consent.client import grant, recover
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.plan import show
 
@@ -32,10 +35,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     granting.add_argument('request', type=Path, help='the request JSON an agent prepared')
     granting.add_argument('--code', default=None, help='the Authenticator code the USER gave (else stdin or a prompt)')
     verbs.add_parser('plan', help='show a plan and the digest its one code consents to').add_argument('plan', type=Path)
+    fetching = verbs.add_parser('recover', help="fetch again a plan's granted, never-used credentials; no code")
+    fetching.add_argument('plan', type=Path)
+    fetching.add_argument('--digest', required=True, help="the plan's digest, as shown to the user")
     args = parser.parse_args(argv)
     try:
         if args.verb == 'plan':
             emit(show(args.plan))
+            return 0
+        if args.verb == 'recover':
+            written = recover(args.plan, args.digest)
+            said = '\n'.join(f'[consent] recovered: {path}' for path in written)
+            emit(said or '[consent] nothing unspent to recover')
             return 0
         written = grant(args.request, code=args.code)
     except (ConsentRefused, OSError, ValueError) as refused:

@@ -39,3 +39,20 @@ def test_a_refusal_still_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
     status, said = remote.piped('consent@forge', '{}\n', identity=None, timeout_s=5)
     assert status == 2
     assert 'the code is wrong' in said
+
+
+def test_a_declared_known_hosts_file_is_the_one_ssh_checks_strictly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A root door on a host whose root has no ``~/.ssh`` checks the issuer against the DECLARED file, strictly."""
+    seen: list[list[str]] = []
+
+    def run(argv: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 0, 'ok', '')
+
+    monkeypatch.setattr(remote._door, 'run', run)
+    remote.piped('consent@forge', '{}\n', identity=None, known_hosts='/srv/ops/ssh/kh', timeout_s=5)
+    remote.piped('consent@forge', '{}\n', identity=None, timeout_s=5)  # the control: ssh's own default
+    declared, default = (' '.join(argv) for argv in seen)
+    assert '-o UserKnownHostsFile=/srv/ops/ssh/kh -o StrictHostKeyChecking=yes' in declared
+    assert 'BatchMode=yes' in declared
+    assert 'UserKnownHostsFile' not in default

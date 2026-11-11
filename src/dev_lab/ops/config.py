@@ -42,6 +42,7 @@ __all__ = [
     'Breakglass',
     'ConfigSource',
     'Consent',
+    'ConsentClient',
     'Forge',
     'Judge',
     'OpsConfig',
@@ -230,6 +231,32 @@ class Consent:
 
 
 @dataclass(frozen=True)
+class ConsentClient:
+    """Where a host that is NOT the issuer verifies and registers a consent (:mod:`dev_lab.ops.consent.client`).
+
+    ``endpoint`` is the issuer's ``<account>@<host>`` (its ForceCommand ``consent serve``), ``identity`` the ssh key
+    this host's root signs in with (empty: ssh's default), ``known_hosts`` the file the issuer's host key is checked
+    against strictly (empty: ssh's default) -- both may live in the ops user's home, made by that user and readable
+    by root, since root keeps no ``~/.ssh`` -- and ``public_key`` the issuer's (empty: the packaged ``issuer.pub``).
+    Read from THIS file, never root's machine file: an ops verb runs as root under ``sudo``.
+    """
+
+    endpoint: str
+    public_key: str = ''
+    identity: str = ''
+    known_hosts: str = ''
+
+    def table(self) -> dict[str, str]:
+        """The client table :func:`~dev_lab.ops.consent.client.public_key` and ``remote_register`` read."""
+        return {
+            'endpoint': self.endpoint,
+            'public_key': self.public_key,
+            'identity': self.identity,
+            'known_hosts': self.known_hosts,
+        }
+
+
+@dataclass(frozen=True)
 class Probe(Placement):
     """The forge probe (:mod:`dev_lab.ops.probe`): the repos it reads, a READ-ONLY token per forge, when, as whom.
 
@@ -298,6 +325,7 @@ class OpsConfig:
     breakglass: Breakglass | None
     merged: dict[str, Any]
     consent: Consent | None = None
+    consent_client: ConsentClient | None = None
     backup: Backup | None = None
     access: Access | None = None
     supervise: Supervise | None = None
@@ -324,6 +352,7 @@ def _role[
         Promote,
         Breakglass,
         Consent,
+        ConsentClient,
         Backup,
         Offsite,
         Access,
@@ -435,6 +464,7 @@ def load(
         breakglass=_role(Breakglass, ops.get('breakglass'), '[ops.breakglass]'),
         merged=merged,
         consent=_role(Consent, ops.get('consent'), '[ops.consent]'),
+        consent_client=_role(ConsentClient, ops.get('consent_client'), '[ops.consent_client]'),
         backup=_backup(ops.get('backup')),
         access=_role(Access, ops.get('access'), '[ops.access]'),
         caddy=_role(Caddy, ops.get('caddy'), '[ops.caddy]'),

@@ -359,6 +359,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgestuck',
     'forgewatch',
     'jobparts',
+    'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'pushwatch',
     'pushstop',
     'venvfollow',

@@ -119,11 +119,14 @@ def place(
 
 
 def add_parser(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """``secret place --path P --credential C``: the content is read from stdin, never an argument."""
+    """``secret place --path P (--credential C | --subject)``: the content is read from stdin, never an argument."""
     placing = verbs.add_parser('secret', help='write one declared secret file (content on stdin) under consent')
     placing.add_argument('action', choices=('place',))
     placing.add_argument('--path', required=True, help='a secret file this host config declares')
-    placing.add_argument('--credential', required=True, help='an ops.secret.place consent credential file')
+    placing.add_argument('--credential', default='', help='an ops.secret.place consent credential file')
+    placing.add_argument(
+        '--subject', action='store_true', help='print the subject the consent must name; place nothing'
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
