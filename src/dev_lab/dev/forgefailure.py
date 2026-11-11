@@ -69,13 +69,32 @@ _PERMISSION_REMEDY: Final = (
 )
 
 
+#: How much of a failed answer's body an :class:`~dev_lab.dev.netverb.Attempt` keeps: enough for GitHub's
+#: ``errors`` list after its ``message`` (a 422's cause), so the JSON still parses and :func:`_reason` can read it.
+_BODY_KEPT: Final = 2000
+
+
+def _error(one: object) -> str:
+    """One entry of a body's ``errors``: GitHub writes a string, or an object with a ``message`` or a ``code``."""
+    if isinstance(one, dict):
+        return str(one.get('message') or ' '.join(str(one[k]) for k in ('resource', 'field', 'code') if k in one))
+    return str(one)
+
+
 def _reason(output: str) -> str:
-    """The forge's own ``message`` from an answered body, else the body as it came (already cut to 300)."""
+    """The forge's own ``message`` and every entry of its ``errors`` from an answered body, else the body as it came.
+
+    The body is the forge's answer, never the request: no header or credential reaches it.
+    """
     try:
         body = json.loads(output)
     except ValueError:
         return output.strip()
-    return str(body.get('message', output)).strip() if isinstance(body, dict) else output.strip()
+    if not isinstance(body, dict):
+        return output.strip()
+    errors = body.get('errors') or ()
+    named = [_error(one) for one in (errors if isinstance(errors, list) else [errors])]
+    return '; '.join([str(body.get('message', output)).strip(), *named])
 
 
 def permission_refused(status: int, text: str) -> bool:
@@ -134,7 +153,10 @@ class ForgeCallFailed(OSError):
         elif _credential_refused(report):
             said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_KEPT if credential_kept else _forge.AUTH_REMEDY
         auth = last in _forge.AUTH_REFUSED and report.diagnosis is not Diagnosis.RATE_LIMITED
-        super().__init__(f'{report.remedy}. {said}' if auth else report.remedy)
+        message = f'{report.remedy}. {said}' if auth else report.remedy
+        if attempt is not None and attempt.diagnosis is Diagnosis.FORGE_REFUSED and not auth:
+            message += f'; the forge answered {last}: {_reason(attempt.output)}'
+        super().__init__(message)
         self.report = report
 
     @property
@@ -248,7 +270,7 @@ def retried(
             answer = Answer(0, str(exc).encode())
         if answer.ok:
             return answer
-        text = answer.payload.decode(errors='replace')[:300]
+        text = answer.payload.decode(errors='replace')[:_BODY_KEPT]
         made.append(Attempt(index, answer.status or 1, text, read(answer, text)))
         wait = pause(made[-1].diagnosis, answer.headers, now())
         if not made[-1].retryable or wait is None or index == DEFAULT_ATTEMPTS:
