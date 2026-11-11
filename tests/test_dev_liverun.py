@@ -233,10 +233,10 @@ def test_the_row_binds_only_while_a_run_is_live() -> None:
     """The registry's own text half: refused live, free idle; a read-only near-miss is free either way."""
     rule = rules_by_id(DENY_RULES)[liverun.RULE_ID]
     for command in rule.refuses:
-        assert denies((rule,), command, conditions=frozenset({'live-run'})) == rule.id, command
+        assert denies((rule,), command, live=True) == rule.id, command
         assert denies((rule,), command) is None, command
     for command in rule.permits:
-        assert denies((rule,), command, conditions=frozenset({'live-run'})) is None, command
+        assert denies((rule,), command, live=True) is None, command
 
 
 # --------------------------------------------------------------------------------- dep refuses a venv in use

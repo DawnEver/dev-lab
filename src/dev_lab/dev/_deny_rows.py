@@ -57,7 +57,6 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
-from dev_lab.dev._deny_ephemeral_row import JOURNAL_CITES_EPHEMERAL
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
@@ -375,7 +374,6 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     RECURSIVE_GREP,
     RECURSIVE_DELETE,
     REPORTS_LIVE_IN_MEMORY,
-    JOURNAL_CITES_EPHEMERAL,
     WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
     HPC_THROUGH_THE_DOOR,

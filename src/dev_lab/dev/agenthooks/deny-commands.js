@@ -482,36 +482,6 @@ function liveRunRefusal(target, sessionRoot) {
     `${remedyPython(sessionRoot)} -m dev_lab.dev.liverun --tree ${target} answers.`;
 }
 
-/* ================================ A ROW THAT BINDS ONLY WHEN THE LINE CITES AN EPHEMERAL PATH ================================
- *
- * `when: 'cites-ephemeral'` (TRACKED-CITES-NO-EPHEMERAL, issue #419): the pattern names a command that appends a
- * line to a tracked, append-only journal, and it is refused only when that line cites a path git does not keep.
- * Which paths those are is the checkout's ignore rules, which this engine cannot read: it asks `python -m
- * dev_lab.dev.ephemeralrefs --door` (the command on stdin) in the checkout the command targets, only AFTER the
- * pattern matched. Exit 0 admits, exit 1 prints the refusal. No interpreter or no kit is no refusal; a crash or a
- * timeout REFUSES, as for a live run, because a line once written cannot be repaired.
- */
-function ephemeralCiteRefusal(target, cmd, sessionRoot) {
-  const where = target ? repoRoot(target) : null;
-  if (!where || !sessionRoot) return '';
-  const python = venvPython(sessionRoot);
-  if (!python) return '';
-  const done = spawnSync(python, ['-m', 'dev_lab.dev.ephemeralrefs', '--door'], {
-    cwd: where,
-    input: cmd,
-    encoding: 'utf8',
-    timeout: 15000,
-    windowsHide: true,
-  });
-  if (done.status === 0) return '';
-  const said = String(done.stdout || '').trim();
-  if (done.status === 1 && said) return said;
-  if (/No module named '?dev_lab/.test(String(done.stderr || ''))) return '';
-  const why = done.error ? done.error.message : `exit ${done.status}${said ? '' : ', no answer'}`;
-  return `TRACKED-CITES-NO-EPHEMERAL: could not judge the journal line (${why}); re-run when ` +
-    `${remedyPython(sessionRoot)} -m dev_lab.dev.ephemeralrefs --door answers.`;
-}
-
 /* ================================ A ROW THAT STILL ADMITS A FAMILY SIBLING CLONE ================================
  *
  * `admits: 'family-sibling-clone'` (WORKTREES-STAY-INSIDE): every family checkout lives BESIDE its siblings, so
@@ -645,18 +615,15 @@ for (const rule of rules) {
     continue; // one malformed rule never blocks the session
   }
   if (hit && rule.admits === 'family-sibling-clone' && familySiblingClone(cmd, input.cwd)) continue;
-  let delegatedReason = '';
+  let liveReason = '';
   if (hit && rule.when === 'live-run') {
     // A PROBE judging which rule owns a shape sets this (run_engine(live_run=False)): its own suite is a
     // run in the checkout it probes. The tool never sends the key, so no agent command can set it.
     if (input.dev_lab_live_run_absent === true) continue;
     // The DIRECTORY, never its repoRoot: a worktree the line is about to create does not exist yet, and walking up
     // from it lands on the checkout holding it -- whose run is not this command's (2026-11-07). liverun resolves it.
-    delegatedReason = liveRunRefusal(input.cwd ? ruleTarget(rule, cmd, input.cwd) : null, sessionRoot);
-    hit = delegatedReason !== '';
-  } else if (hit && rule.when === 'cites-ephemeral') {
-    delegatedReason = ephemeralCiteRefusal(input.cwd ? ruleTarget(rule, cmd, input.cwd) : null, cmd, sessionRoot);
-    hit = delegatedReason !== '';
+    liveReason = liveRunRefusal(input.cwd ? ruleTarget(rule, cmd, input.cwd) : null, sessionRoot);
+    hit = liveReason !== '';
   }
   if (hit && rule.severity === 'hint') {
     hints.push(expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)));
@@ -671,7 +638,7 @@ for (const rule of rules) {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
           permissionDecisionReason:
-            delegatedReason ||
+            liveReason ||
             reasonFor(rule, expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)), cmd, input.cwd || '', sessionRoot),
         },
       })
