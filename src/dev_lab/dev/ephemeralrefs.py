@@ -38,6 +38,11 @@ ESCAPES ARE ONE DECLARED SET, in the consumer's ``pyproject.toml``::
 
 The count must EQUAL the ceiling, so removing an escape forces the ceiling down in the same diff and
 raising it is a visible edit, never a switch. Keyed by ``(file, token)`` -- a line number drifts.
+
+AT THE DOOR (issue #419): a line an agent appends to a tracked, append-only journal (rem's ``task.js``) is
+judged BEFORE it is written -- :func:`door`, asked by the deny engine's ``when: 'cites-ephemeral'`` row
+(:mod:`dev_lab.dev._deny_ephemeral_row`) -- because once written such a line can be neither committed nor
+repaired. No escape applies there: an escape is keyed by the file it sits in, and the line has none yet.
 """
 
 from __future__ import annotations
@@ -56,6 +61,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import venvpath
+from dev_lab.dev._deny_ephemeral_row import JOURNAL_CITES_EPHEMERAL, JOURNAL_VERBS
 from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS, PlacementNotDeclared, declared_placement, is_archived
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.rules import tracked_files
@@ -71,6 +77,7 @@ __all__ = [
     'Citation',
     'Escapes',
     'citations_in',
+    'door',
     'forced_under_ignored',
     'judge',
     'load_escapes',
@@ -400,9 +407,44 @@ def scan(root: Path, names: Iterable[str] | None = None) -> tuple[list[str], int
     return problems, read
 
 
+def door(root: Path, command: str) -> str | None:
+    """The refusal for a journal *command* whose line cites an ephemeral path in *root*, or ``None``.
+
+    Only the text AFTER the journal verb is the line: the script's own path is the command, never content.
+    """
+    verb = re.search(JOURNAL_VERBS, command)
+    if verb is None:
+        return None
+    line = command[verb.end() :]
+    refused = judge(root, set(_candidates(line)))
+    if not refused:
+        return None
+    cited = '; '.join(f'{why} {token!r}' for token, why in sorted(refused.items()))
+    row = JOURNAL_CITES_EPHEMERAL
+    return f'{RULE}: the journal line cites {cited}: {row["hazard"]} {row["remedy"]}'
+
+
+def _door_main() -> int:
+    """``--door``: the command on stdin, judged in the checkout holding the cwd; 1 prints the refusal."""
+    top = _door.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True, check=False, timeout=60)
+    if top.returncode != 0:
+        return 0
+    said = door(Path(top.stdout.strip()), sys.stdin.read())
+    if said is None:
+        return 0
+    emit(said)
+    return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Pre-commit entry: ``python -m dev_lab.dev.ephemeralrefs <staged path>...``; 1 on a finding."""
-    names = [Path(a).as_posix() for a in (sys.argv[1:] if argv is None else argv)]
+    """Pre-commit entry: ``python -m dev_lab.dev.ephemeralrefs <staged path>...``; 1 on a finding.
+
+    ``--door`` is the deny engine's question instead (:func:`door`).
+    """
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args == ['--door']:
+        return _door_main()
+    names = [Path(a).as_posix() for a in args]
     root = Path.cwd()
     problems, _ = scan(root, [n for n in names if (root / n).is_file()])
     for problem in problems:
