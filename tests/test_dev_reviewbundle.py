@@ -208,6 +208,26 @@ def test_the_judge_reads_the_forges_diff_on_plain_files_with_no_repository(tmp_p
     assert len(seen) == 1
 
 
+def test_the_materialized_bundle_json_carries_the_judges_binary_verdict(tmp_path: Path) -> None:
+    """The reviewer (ai-lab ``BundleSource``) reads each file's ``binary`` from ``bundle.json``: the judge's verdict.
+
+    PLANTED CONTROL: crlf.bin holds a NUL and says ``binary: true``; kept.py, which the head's attributes call
+    binary, says ``false``. The document is the bundle's own :data:`~reviewbundle.VERSION`.
+    """
+    bundle, _, _, _ = _built(tmp_path)
+    seen: dict[str, object] = {}
+
+    def run(argv: tuple[str, ...], _env: dict[str, str]) -> str:
+        seen.update(json.loads((Path(argv[-1]) / 'bundle.json').read_bytes()))
+        return ''
+
+    reviewbundle.judge(bundle, ('reviewer', reviewbundle.BUNDLE_FIELD), diff='', run=run)
+    rows = {row['path']: row for row in seen['files']}
+    assert seen['version'] == reviewbundle.VERSION
+    assert rows['crlf.bin']['binary'] is True
+    assert rows['kept.py']['binary'] is False
+
+
 def test_a_git_started_under_the_judges_environment_finds_no_repository(tmp_path: Path) -> None:
     """PLANTED CONTROL: the same git in the same directory, without the overrides, finds the repository."""
     root, _, _ = _repo(tmp_path)
