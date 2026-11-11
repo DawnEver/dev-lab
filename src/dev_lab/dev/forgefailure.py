@@ -143,6 +143,12 @@ class ForgeCallFailed(OSError):
         return _credential_refused(self.report)
 
     @property
+    def permission(self) -> bool:
+        """Whether the forge answered that this ACCOUNT lacks a grant (:attr:`Diagnosis.PERMISSION_REFUSED`)."""
+        last = self.report.attempts[-1] if self.report.attempts else None
+        return last is not None and last.diagnosis is Diagnosis.PERMISSION_REFUSED
+
+    @property
     def final(self) -> int | None:
         """The HTTP status when the forge refused THIS CALL for good, else ``None`` (a later attempt may land).
 
