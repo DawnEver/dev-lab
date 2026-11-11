@@ -9,7 +9,8 @@ another forge's base workflow, or declares one of its own. The layers are
 deep-merged (tables key by key; anything else replaces) and each workflow is written to
 ``.github/workflows/<file>.yml`` as JSON -- JSON is YAML, so the stdlib renders it and no YAML library
 is needed. Nothing ever parses a workflow back: the drift check compares RENDERED BYTES to the file,
-and a workflow file the table does not declare is refused as hand-written.
+and a workflow file the table does not declare is refused as hand-written. ``render`` removes a file an
+earlier render stamped (:data:`RENDERED_BY`) that nothing declares now, and never a file without the stamp.
 
 A WORKFLOW NAMES ITS FORGE. A table's ``forge`` key (:data:`FORGE_KEY`, ``github`` when omitted) places it in that
 forge's directory (:data:`WORKFLOW_DIRS`) and is never rendered: Gitea Actions runs ``.gitea/workflows`` and, once
@@ -77,6 +78,7 @@ __all__ = [
     'NIGHTLY_KEY',
     'PREPARE',
     'PR_EVENTS',
+    'RENDERED_BY',
     'RENDER_COMMAND',
     'RUNNERS',
     'SHARED',
@@ -132,9 +134,11 @@ def runner_labels() -> dict[str, str]:
     return dict(tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS])
 
 
+#: How every rendered workflow's first line starts, whatever its stamp said then: the proof a file was rendered.
+RENDERED_BY: Final = '# Rendered by dev_lab.dev.ciworkflows '
 #: The first line of every rendered workflow -- a YAML comment, so the JSON body below stays valid YAML.
 STAMP: Final = (
-    f'# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + '
+    f'{RENDERED_BY}from TOML (dev_lab/dev/ci_base.toml + '
     f'[tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `{RENDER_COMMAND}`.'
 )
 
@@ -344,14 +348,30 @@ def drift(root: Path) -> list[str]:
     return out
 
 
+def _rendered_here(path: Path) -> bool:
+    """Whether *path*'s first line is a render's stamp (:data:`RENDERED_BY`) -- never true of a hand-written file."""
+    with path.open(encoding='utf-8') as text:
+        return text.readline().startswith(RENDERED_BY)
+
+
 def write(root: Path) -> list[Path]:
-    """Render every declared workflow of *root* to its forge's directory; returns the paths written."""
+    """Render every declared workflow of *root* to its forge's directory; returns the paths written.
+
+    A workflow file an earlier render wrote (its stamp says so) and no table declares now is removed and named: left
+    behind, :func:`drift` would call it hand-written. A file without the stamp is never touched.
+    """
     written = []
     for name, (directory, workflow) in _placed(root).items():
         path = root / directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(render(workflow), encoding='utf-8', newline='\n')
         written.append(path)
+    for directory in WORKFLOW_DIRS.values():
+        if (root / directory).is_dir():
+            for path in sorted((root / directory).iterdir()):
+                if path.suffix in {'.yml', '.yaml'} and path not in written and _rendered_here(path):
+                    path.unlink()
+                    emit(f'[ciworkflows] removed {path}: rendered before, declared no longer')
     return written
 
 
