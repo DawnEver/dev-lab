@@ -136,7 +136,7 @@ pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKE
 # ruleset cannot name a user, so on this personal repository break-glass bypasses as the admin role, in pull_request
 # mode only (it may merge a PR past the rules, never push). `python -m dev_lab.dev.forge protect plan|check|apply`.
 [tool.dev_lab.protection.forges."github.com"]
-breakglass = "role:admin"
+breakglass = ["app:5704921", "role:admin"]  # the ops App (motronics-ops) merges break-glass; admin stays
 
 # This repo's layer over the family hook base (dev_lab/dev/githooks/base.toml); run by
 # `python -m dev_lab.dev.githooks run <stage>`, installed by `python -m dev_lab.dev.hook_install --install`.
