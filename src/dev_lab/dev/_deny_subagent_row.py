@@ -69,7 +69,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
     'scope': 'subagent',
     'hazard': 'publishing is the main session`s, and a skipped hook publishes what nobody checked.',
     'remedy': 'Commit on your lane and hand the commit SHA back to the main session, which merges and pushes; '
-    'a targeted measure of the tests you touched is yours.',
+    'measure the tests you touched: {python} -m dev_lab.dev.verify -- <paths>.',
     'needs': None,
     'refuses': (
         'git push origin HEAD',

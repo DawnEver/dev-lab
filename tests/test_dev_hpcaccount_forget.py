@@ -103,20 +103,18 @@ def test_forget_is_an_exit_of_hpc_through_the_door() -> None:
     assert 'forget' in exits_of('HPC-THROUGH-THE-DOOR', 'dev_lab.dev.hpcaccount')
 
 
-def test_the_hpc_refusal_names_the_forget_command_with_its_flags() -> None:
-    """User ruling 2026-11-10: a refusal names, per need, the exact unified door command."""
+def test_the_hpc_refusal_names_forget_among_the_deploy_doors() -> None:
+    """User ruling 2026-11-11: per purpose the door's shape; forget's flags live in refusals.md."""
     text = str(HPC_THROUGH_THE_DOOR['remedy'])
-    assert 'forget a learned row `hpcaccount forget --repo <url> --row <key> --fleet|--account <u> [--dry-run]`' in text
+    assert 'deploy `hpcaccount deploy-fleet|forget|deploy`' in text
     assert '-m dev_lab.dev.<door>' in text
-    assert '`forge queue`' in text
-    assert '`hpcaccount deploy-fleet' in text
 
 
 def test_a_verb_removed_from_the_exits_leaves_the_refusal() -> None:
-    """PLANTED CONTROL: without forget among the exits, the rendered refusal no longer names it."""
-    kept = [argv for argv in exits() if argv != ('dev_lab.dev.hpcaccount', 'forget')]
-    assert len(kept) == len(exits()) - 1
-    assert 'hpcaccount forget' not in remedy(kept)
+    """PLANTED CONTROL: without the hpcaccount exits, the rendered refusal drops the deploy purpose."""
+    kept = [argv for argv in exits() if argv[0] != 'dev_lab.dev.hpcaccount']
+    assert len(kept) == len(exits()) - 3
+    assert 'hpcaccount' not in remedy(kept)
 
 
 def test_an_exit_with_no_usage_line_is_refused() -> None:
