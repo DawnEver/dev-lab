@@ -57,7 +57,8 @@ import tomllib
 from typing import TYPE_CHECKING
 
 from dev_lab.dev._deny_rows import retired_row
-from dev_lab.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_installation
+from dev_lab.dev.agent_guard import GUARDED, guard_installation
+from dev_lab.dev.agent_wiring import ENGINE_REL, RULES_REL
 from dev_lab.dev.agenthooks import run_engine
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.hook_adoption import DENY_RULES, assert_shippable, render

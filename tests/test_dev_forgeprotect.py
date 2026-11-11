@@ -6,6 +6,7 @@ planted control is a declaration or a live rule that must NOT read as clean.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeprotect import INTEGRATION, TRUNK, apply, declaration_from, plan, required_contexts, targets
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 GITHUB = Forge('github.com', 'owner', 'alpha')
 GITEA = Forge('gitea.example', 'owner', 'alpha')
@@ -336,3 +338,54 @@ def test_gitea_refuses_more_than_one_bypass_login() -> None:
     text = INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = ["a-bot", "b-bot"]\n'
     with pytest.raises(ValueError, match='one login'):
         plan(FakeGitea(), GITEA, targets(text, 'p', GITEA))
+
+
+# -- a refused write says why ------------------------------------------------------------------------------------------
+
+#: GitHub's answer to a ruleset requiring a check from an App not installed on the repository (2026-11-11).
+INVALID_APP = (
+    '{"message":"Validation Failed","errors":["Invalid rule \'required_status_checks\': Invalid parameter '
+    'required_status_checks: Invalid integration ids"],'
+    '"documentation_url":"https://docs.github.com/rest/repos/rules#create-a-repository-ruleset","status":"422"}'
+)
+
+
+class _RefusingGitHub(FakeGitHub):
+    """PLANTED: a forge that answers every ruleset write with the 422 an uninstalled judge App draws."""
+
+    def answer(self, method: str, path: str, body: dict[str, Any] | None) -> object:
+        if method != 'GET' and path.endswith('/rulesets'):
+            raise ForgeCallFailed(Report(('POST', path), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
+        return super().answer(method, path, body)
+
+
+def test_a_refused_apply_prints_the_forge_s_status_its_errors_and_the_app_to_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / 'pyproject.toml').write_text(GITHUB_TEXT + APP_JUDGED, encoding='utf-8')
+    forge = _RefusingGitHub()
+    forge.forge = GITHUB
+    monkeypatch.setattr(forgeprotect, 'client_for', lambda *_, **__: forge)
+    assert forgeprotect.main(['apply', '--root', str(tmp_path)]) != 0
+    out = capsys.readouterr()
+    text = out.out + out.err
+    assert '422' in text
+    assert 'Invalid integration ids' in text
+    assert '5619495' in text
+    assert 'install' in text
+    assert 'read the output' not in text
+
+
+def test_a_refusal_without_an_app_fault_names_no_app() -> None:
+    failed = ForgeCallFailed(
+        Report(('POST', 'x'), (Attempt(1, 422, '{"message":"nope"}', Diagnosis.FORGE_REFUSED),), 3)
+    )
+    lines = forgeprotect.refusal(failed, targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB))
+    assert 'nope' in '\n'.join(lines)
+    assert 'install' not in '\n'.join(lines)
+
+
+def test_a_final_refusal_s_message_carries_the_status_and_every_error_the_forge_named() -> None:
+    failed = ForgeCallFailed(Report(('POST', 'x'), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
+    assert 'the forge answered 422: Validation Failed' in str(failed)
+    assert 'Invalid integration ids' in str(failed)

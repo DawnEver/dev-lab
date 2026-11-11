@@ -38,7 +38,8 @@ from lab_commons.proc import kill_process_tree
 
 from dev_lab.dev import liverun
 from dev_lab.dev._deny_rows import RETIRED_ROW_KEY
-from dev_lab.dev.agent_guard import ENGINE_REL, RULES_REL, install_guard
+from dev_lab.dev.agent_guard import install_guard
+from dev_lab.dev.agent_wiring import ENGINE_REL, RULES_REL
 from dev_lab.dev.agenthooks import run_engine
 from dev_lab.dev.famtests.agentguard import (
     GuardNotLive,

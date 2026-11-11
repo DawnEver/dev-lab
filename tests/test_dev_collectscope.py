@@ -36,7 +36,7 @@ from dev_lab.dev.collectscope import (
     read_imports,
     resolve,
 )
-from dev_lab.dev.syncscope import Selection
+from dev_lab.dev.syncscope import Selection, extras
 
 #: A manifest with the two shapes the join needs: a distribution whose import name matches it, and
 #: two whose names do not. `dev` is the selection every control below makes.
@@ -350,3 +350,39 @@ def test_the_hard_half_of_a_reading_is_the_unguarded_half() -> None:
     reading = read_imports('tests/test_h.py', 'import cv2\ntry:\n    import ezdxf\nexcept ImportError:\n    pass\n')
     assert [use.name for use in reading.uses] == ['cv2', 'ezdxf']
     assert [use.name for use in reading.hard] == ['cv2']
+
+
+#: A project whose ONLY route to its test tool is a foreign kit's extra -- the family's shape since
+#: the user ruling of 2026-11-05 (`dev = ['dev-lab[test]']`). The planted `kit` is an INSTALLED
+#: distribution whose `test` extra names `hypo-dist`, and `hypo-dist`'s import name is its own.
+_KIT_METADATA: Final = (
+    'Metadata-Version: 2.1\nName: kit\nVersion: 1.0\n'
+    'Provides-Extra: test\nRequires-Dist: kit[deep] ; extra == "test"\n'
+    'Provides-Extra: deep\nRequires-Dist: hypo-dist>=1 ; extra == "deep"\n'
+)
+
+
+def _through_kit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spec: str) -> frozenset[str]:
+    """What `import hypo_dist` leaves unresolved when `dev` declares *spec* and `dev` is selected."""
+    info = tmp_path / 'kit-1.0.dist-info'
+    info.mkdir()
+    (info / 'METADATA').write_text(_KIT_METADATA, encoding='utf-8')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    manifest = f"[project]\nname = 'planted'\n[project.optional-dependencies]\ndev = ['{spec}']\n"
+    declared = frozenset({'planted'}).union(*extras(manifest).values())
+    readings = {'tests/test_k.py': read_imports('tests/test_k.py', 'import hypo_dist\n')}
+    found = reach(readings, DEV, manifest, declared, frozenset())
+    assert not found.errors, found.errors
+    return found.unresolved
+
+
+def test_an_import_resolves_through_a_declared_kits_extras_transitively(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`kit[test]` supplies what kit's `test` extra declares, read from the installed metadata."""
+    assert _through_kit(tmp_path, monkeypatch, 'kit[test]') == frozenset()
+
+
+def test_the_bare_kit_supplies_none_of_its_extras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """THE PLANTED CONTROL: without `[test]` the same import stays unresolved."""
+    assert _through_kit(tmp_path, monkeypatch, 'kit') == frozenset({'hypo_dist'})

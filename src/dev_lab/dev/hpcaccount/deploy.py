@@ -95,6 +95,7 @@ from dev_lab.dev.hpcaccount.spec import (
     ticked,
 )
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, update
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 __all__ = ['deploy', 'main']
 
@@ -211,7 +212,7 @@ def _serve_git(step: Step, home: Path, path: Path, slurm: Sequence[str], setup: 
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     loaded = grant_setup(path, user)
     environment = tick_environment(home, slurm, loaded)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         why = _proves([*step.tools.sh, f'{environment}; exec git "$@"', 'git'], Path(scratch))
     if not why:
         emit(f'  git in `{environment}`: merge-tree --write-tree runs')

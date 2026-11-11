@@ -15,6 +15,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 |---|---|
 | [Onboarding a repo](./onboarding.md) | Every declaration a new repo supplies, in one call and one table |
 | [Migrating a workstation](./migrate.md) | Start here if you used to run the gate before a push: what to stop, and the five commands that replace it |
+| [Development architecture and topology](./topology.md) | The map: repo family, branch flow, forges and identities, hosts, consent, config files, setup and rotation |
 | [The three participants](./the-three-participants.md) | Who does what: the human, the authors, the producers, the forge and the integrator |
 | [The verdict model](./verdict-model.md) | What a verdict is, the tiers, and which destination needs which forge parts |
 | [Testing discipline](./testing-discipline.md) | The lightweight/heavy partition, xfail never skip, one test session per box |

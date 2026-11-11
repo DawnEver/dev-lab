@@ -10,15 +10,14 @@ from __future__ import annotations
 
 import re
 
-from lab_commons.home import home as machine_home
-
 from dev_lab.dev.consentguard import HAZARD, REMEDY, RULE_ID, STATE_PARTS
 
 __all__ = ['CONSENT_CODE_FROM_THE_USER']
 
-#: The machine home's directory name, read from its one declaration (``lab_commons.home``), never spelled here.
-_HOME = machine_home().name
-_STATE = r'[\\/]+'.join(re.escape(part) for part in (_HOME, *STATE_PARTS))
+#: HOME-AGNOSTIC: this row renders into every family repo's deny table, where a machine home's name is a private
+#: marker, so the pattern names no home -- any ``/state/consent`` segment pair refuses, the real home under every
+#: override included.
+_STATE = ''.join(r'[\\/]+' + re.escape(part) for part in STATE_PARTS) + r'(?![^\s\\/"\';&|])'
 _WRITERS = (
     r'(?:>|\btee\b|\bcp\b|\bmv\b|\bmkdir\b|\btouch\b'
     r'|Set-Content|Out-File|Add-Content|New-Item|Copy-Item|Move-Item)'
@@ -32,9 +31,9 @@ CONSENT_CODE_FROM_THE_USER: dict[str, object] = {
     'remedy': REMEDY,
     'needs': None,
     'refuses': (
-        f'echo {{}} > ~/{_HOME}/state/consent/x.json',
-        f'cp cred.json C:/Users/<user>/{_HOME}/state/consent/',
-        f'Set-Content -Path $HOME\\{_HOME}\\state\\consent\\x.json -Value x',
+        'echo {} > ~/{home}/state/consent/x.json',
+        'cp cred.json C:/Users/<user>/{home}/state/consent/',
+        'Set-Content -Path $HOME\\{home}\\state\\consent\\x.json -Value x',
     ),
     'permits': (
         'python -m dev_lab.ops.consent grant output/req.json',
@@ -42,6 +41,6 @@ CONSENT_CODE_FROM_THE_USER: dict[str, object] = {
         'echo 123456 | python -m dev_lab.ops.consent grant output/req.json',
         'python -m dev_lab.dev.forge breakglass open --credential 0b1c2d3e-aaaa-bbbb-cccc-1234567890ab',
         'python -m dev_lab.dev.forge pr breakglass 123456 --reason "review bot is down"',
-        f'cat ~/{_HOME}/state/consent/x.json',
+        'cat ~/{home}/state/consent/x.json',
     ),
 }
