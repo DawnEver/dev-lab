@@ -44,7 +44,7 @@ from dev_lab.ops import (
     upgrade,
 )
 from dev_lab.ops.config import Consent, OpsConfig, load
-from dev_lab.ops.consent.client import public_key, redeem
+from dev_lab.ops.consent.client import redeem
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.issuer import Issuer
 from dev_lab.supervise.alert import Notifier
@@ -170,19 +170,13 @@ def _issuer(config: OpsConfig, role: Consent) -> Issuer:
     return consentverbs.issuer(role, alert=lambda title, detail: _alert(config, title, detail))
 
 
-def _unreachable(_credential: object, _amount: int) -> object:
-    msg = 'this host enables no [ops.consent] issuer'
-    raise ConnectionError(msg)
-
-
 def _breakglass(config: OpsConfig, verb: str) -> int:
     role = config.breakglass
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
         return 2
-    issuer = _issuer(config, config.consent) if config.consent is not None else None
     try:
-        verifier = issuer.public() if issuer is not None else public_key()
+        verifier, register = consentverbs.ends(config, alert=lambda title, detail: _alert(config, title, detail))
     except ConsentRefused as refused:
         emit(f'refused: {refused}', err=True)
         return 2
@@ -192,7 +186,7 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
         alert=lambda title, detail: _alert(config, title, detail),
         now=time.time,
         consent_key=verifier,
-        register=issuer.register if issuer is not None else _unreachable,
+        register=register,
         key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
     )
     try:
@@ -211,9 +205,7 @@ def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
         ConsentRefused: no verifier key is reachable.
 
     """
-    issuer = _issuer(config, config.consent) if config.consent is not None else None
-    key = issuer.public() if issuer is not None else public_key()
-    register = issuer.register if issuer is not None else _unreachable
+    key, register = consentverbs.ends(config, alert=lambda title, detail: _alert(config, title, detail))
     return lambda action: (
         lambda found, subject: redeem(found, action=action, subject=subject, key=key, register=register,
                                       now=time.time())

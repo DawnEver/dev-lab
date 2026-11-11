@@ -41,7 +41,9 @@ Send = Callable[[Mapping[str, Any], dict[str, Any]], tuple[int, str]]
 def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
     """Send *request* as one JSON line to *table*'s ``endpoint`` over ``ssh -T``; ``(exit status, its output)``."""
     identity = str(table['identity']) if table.get('identity') else None
-    return remote.piped(str(table['endpoint']), json.dumps(request) + '\n', identity=identity, timeout_s=180)
+    known_hosts = str(table['known_hosts']) if table.get('known_hosts') else None
+    line = json.dumps(request) + '\n'
+    return remote.piped(str(table['endpoint']), line, identity=identity, known_hosts=known_hosts, timeout_s=180)
 
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any] | None:

@@ -14,12 +14,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
 from dev_lab.ops import totp
 from dev_lab.ops.config import Consent, OpsConfig
 from dev_lab.ops.consent import serve
-from dev_lab.ops.consent.client import public_key
+from dev_lab.ops.consent.client import Register, public_key, remote_register
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
 
@@ -43,18 +44,35 @@ def issuer(role: Consent, *, alert: Alert) -> Issuer:
                   role.lockout_after, role.lockout_minutes, locked)  # fmt: skip
 
 
+def ends(config: OpsConfig, *, alert: Alert) -> tuple[Ed25519PublicKey, Register]:
+    """The verifier key and the register: the local issuer's, else the issuer's over ssh per ``[ops.consent_client]``.
+
+    Raises:
+        ConsentRefused: neither ``[ops.consent]`` nor ``[ops.consent_client]`` is declared, or no key is reachable.
+
+    """
+    if config.consent is not None:
+        found = issuer(config.consent, alert=alert)
+        return found.public(), found.register
+    if config.consent_client is None:
+        msg = (
+            f'{config.path} declares neither [ops.consent] (the issuer) nor [ops.consent_client] '
+            'endpoint = "<account>@<issuer host>" (with public_key, identity): no consent can be verified here'
+        )
+        raise ConsentRefused(msg)  # fmt: skip
+    table = config.consent_client.table()
+    return public_key(table), remote_register(table)
+
+
 def ready(config: OpsConfig, *, alert: Alert) -> int:
     """``consent ready``: 0 when a consented verb here could verify AND register; 2 names the blocker."""
-    role = config.consent
     try:
-        key = public_text(issuer(role, alert=alert).public() if role is not None else public_key())
+        key, _ = ends(config, alert=alert)
     except ConsentRefused as refused:
         emit(f'refused: {refused}', err=True)
         return 2
-    if role is None:
-        emit(f'refused: {config.path} enables no [ops.consent] issuer: a consented use here cannot register', err=True)
-        return 2
-    emit(f'[ops consent] ready: key {key[:12]}, uses register at the local issuer')
+    where = 'the local issuer' if config.consent is not None else f'{config.consent_client.endpoint} over ssh'
+    emit(f'[ops consent] ready: key {public_text(key)[:12]}, uses register at {where}')
     return 0
 
 
