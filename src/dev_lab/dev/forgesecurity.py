@@ -79,6 +79,7 @@ from dev_lab.dev.security import (
     secret_findings,
     vulnerable,
 )
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -237,7 +238,10 @@ def _judge_head(root: Path, head: str, declaration: Declaration) -> Judgement:
         archive = _git(root, 'archive', '--format=tar', head)
     except (OSError, subprocess.CalledProcessError) as unread:
         return Judgement('error', f'no answer, judged again next tick: git could not read {head[:12]}: {unread}')
-    with tempfile.TemporaryDirectory(prefix='security-') as scratch, tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+    with (
+        tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}security-') as scratch,
+        tarfile.open(fileobj=io.BytesIO(archive)) as tar,
+    ):
         tar.extractall(scratch, filter='data')
         return judge(Path(scratch), tracked, declaration)
 

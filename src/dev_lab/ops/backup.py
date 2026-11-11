@@ -35,6 +35,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.writeroots import TEMP_PREFIX
 from dev_lab.ops.backuprole import Backup
 from dev_lab.ops.mirrors import mirror_host, mirror_name
 
@@ -173,7 +174,7 @@ def export(role: Backup, out: BinaryIO, *, dumpers: Mapping[str, Dumper] = DUMPE
     if unknown := [name for name in role.dumpers if name not in dumpers]:
         msg = f'unknown dumper(s) {unknown}; known: {sorted(dumpers)}'
         raise BackupRefused(msg)
-    with tempfile.TemporaryDirectory(dir=role.tmp or None, prefix='ops-export-') as work:
+    with tempfile.TemporaryDirectory(dir=role.tmp or None, prefix=f'{TEMP_PREFIX}ops-export-') as work:
         files = [path for name in role.dumpers for path in dumpers[name](role, Path(work))]
         if empty := [path.name for path in files if not path.is_file() or path.stat().st_size == 0]:
             msg = f'empty dump(s) {empty}: nothing is exported'

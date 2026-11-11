@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource
@@ -137,7 +138,7 @@ def fetch(source: ConfigSource, *, run: EnvRunner) -> str:
         'GIT_CONFIG_VALUE_0': f'Authorization: token {token}',
         'GIT_TERMINAL_PROMPT': '0',
     }
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         target = Path(scratch) / 'config-source'
         argv = ['git', 'clone', '--quiet', '--depth', '1', '--branch', source.ref, source.source, str(target)]
         status, _said = run(argv, env)
@@ -191,7 +192,9 @@ def apply(
             msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
             raise ConfigRefused(msg)
         redeem(credential, digest(candidate))
-    with tempfile.TemporaryDirectory() as scratch:  # loaded by the current code BEFORE the live file is touched
+    with tempfile.TemporaryDirectory(
+        prefix=TEMP_PREFIX
+    ) as scratch:  # loaded by the current code BEFORE the live file is touched
         probe = Path(scratch) / live.name
         probe.write_text(candidate, encoding='utf-8')
         try:

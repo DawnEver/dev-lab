@@ -29,6 +29,7 @@ import lab_commons.launch as _door
 from lab_commons.box import Refused, command, read_ended
 from lab_commons.compute.model import Demand
 
+from dev_lab.dev.writeroots import TEMP_PREFIX
 from dev_lab.supervise.notify import NOTIFY_SOCKET
 from dev_lab.supervise.process.base import Ran
 
@@ -284,7 +285,7 @@ class SystemdProcessManager:
         queue = CAPPED_QUEUE_S if within is None else max(0, within - timeout - _GRACE)
         demand = Demand(cpu=CAPPED_CPU, mem_gb=ceiling_gb(memory_max))
         what = f'supervise: {" ".join(argv)}'[:120]
-        with tempfile.TemporaryDirectory(prefix='lab-supervise-box-') as scratch:
+        with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}lab-supervise-box-') as scratch:
             record = Path(scratch) / 'outcome.json'
             boxed = command(argv, demand, timeout, queue, key=f'supervise:{argv[0]}', what=what, outcome=record)
             return judged(self.runner(boxed, timeout + queue + _GRACE, cwd), record)

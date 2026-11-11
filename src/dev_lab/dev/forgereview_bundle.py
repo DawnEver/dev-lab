@@ -81,6 +81,7 @@ from dev_lab.dev.reviewgate import (
     standing_verdicts,
 )
 from dev_lab.dev.reviewruntime import review_runtimes
+from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -199,7 +200,7 @@ def judge_one(
 ) -> Verdict | str | None:  # fmt: skip
     """The verdict on *pull*'s head, a line when nothing can be posted yet (retried), ``None`` with no pointer."""
     said = f'#{pull.number} {pull.head_sha[:12]}'
-    with tempfile.TemporaryDirectory(prefix='review-judge-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-judge-') as scratch:
         where = Path(scratch)
         try:
             bundle = trusted_bundle(client, review, pull, where)

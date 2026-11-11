@@ -8,6 +8,7 @@ into a checkout outside every root are admitted; a checkout INSIDE a root is no 
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 from pathlib import Path
@@ -17,7 +18,14 @@ import pytest
 from dev_lab.dev import agenthooks
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.hook_adoption import HookAdoption, render
-from dev_lab.dev.writeroots import Root, excluded_paths, refuse_outside_tree, write_prone_roots
+from dev_lab.dev.writeroots import (
+    TEMP_PREFIX,
+    Root,
+    excluded_paths,
+    owned_globs,
+    refuse_outside_tree,
+    write_prone_roots,
+)
 
 
 @pytest.fixture
@@ -185,3 +193,56 @@ def test_a_shell_write_into_a_root_is_refused(rules: Path, command: str) -> None
 def test_reads_the_harness_dir_and_the_checkout_are_unaffected(rules: Path, command: str) -> None:
     reason = agenthooks.decide(command, rules)
     assert reason is None or 'WRITES-STAY-IN-THE-TREE' not in reason, (command, reason)
+
+
+_TEMP_CALLS = frozenset({'mkdtemp', 'mkstemp', 'TemporaryDirectory', 'NamedTemporaryFile'})
+
+
+def _unowned_temp_calls(root: Path) -> list[str]:
+    """``tempfile`` calls under *root* that land in the shared temp dir without :data:`TEMP_PREFIX`."""
+    found = []
+    for path in sorted(root.rglob('*.py')):
+        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+            func = node.func if isinstance(node, ast.Call) else None
+            if not (isinstance(func, ast.Attribute) and func.attr in _TEMP_CALLS):
+                continue
+            words = {kw.arg: kw.value for kw in node.keywords}
+            where = words.get('dir')
+            if where is not None and not (isinstance(where, ast.Constant) and where.value is None):
+                continue  # beside a declared path: not the shared temp dir
+            prefix = words.get('prefix')
+            head = prefix.values[0] if isinstance(prefix, ast.JoinedStr) and prefix.values else prefix
+            named = isinstance(head, ast.FormattedValue) and ast.unparse(head.value) == 'TEMP_PREFIX'
+            if not (named or (isinstance(head, ast.Name) and head.id == 'TEMP_PREFIX')):
+                found.append(f'{path.relative_to(root).as_posix()}:{node.lineno}')
+    return found
+
+
+def test_every_temp_entry_the_family_creates_carries_the_one_prefix() -> None:
+    """ONLY OUR OWN IS SWEPT, so every temp entry we make must be recognisable as ours.
+
+    ``prefix=TEMP_PREFIX`` (or an f-string led by it), or a ``dir=`` beside a declared path.
+    """
+    src = Path(__file__).resolve().parents[1] / 'src'
+    assert _unowned_temp_calls(src) == []
+
+
+def test_an_unprefixed_temp_call_is_found(tmp_path: Path) -> None:
+    """The planted control of the scan above."""
+    (tmp_path / 'a.py').write_text(
+        'import tempfile\n'
+        'tempfile.TemporaryDirectory()\n'
+        "tempfile.mkdtemp(prefix='x-')\n"
+        'tempfile.mkdtemp(prefix=TEMP_PREFIX)\n'
+        "tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}y-')\n"
+        'tempfile.mkstemp(dir=here)\n',
+        encoding='utf-8',
+    )
+    assert _unowned_temp_calls(tmp_path) == ['a.py:2', 'a.py:3']
+
+
+def test_owned_globs_are_the_prefix_plus_the_declared_ones() -> None:
+    assert owned_globs({}) == (f'{TEMP_PREFIX}*',)
+    assert owned_globs({'owned': ['pytest-of-*']}) == (f'{TEMP_PREFIX}*', 'pytest-of-*')
+    with pytest.raises(ValueError, match='owned'):
+        owned_globs({'owned': 'pytest-of-*'})
