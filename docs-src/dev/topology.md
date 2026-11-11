@@ -96,11 +96,15 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
 - `[tool.dev_lab.protection]` in each repo's `pyproject.toml` declares, per forge host, the ONE bypass identity
   (`breakglass`: on GitHub a list of `app:<id>`/`role:<r>`/`team:<id>`, on Gitea a login) and who may push the trunk
   (`promote`, Gitea). Branches come from `[tool.dev_lab.integrator]`, required contexts from the rendered workflows
-  (`required_contexts`), the approver from `[tool.dev_lab.review]` (`judge_login` on Gitea, `judge_app` on GitHub).
+  (`required_contexts`); no approval is ever required (the judge is advisory).
 - `python -m dev_lab.dev.forge protect plan|check|apply` renders it onto the forge (`dev_lab.dev.forgeprotect`).
   `apply` is an administrator's verb, run from a workstation after reading `plan`; CI never runs it.
-- Review: `[tool.dev_lab.review] where = "judge"` sends every PR to the judge host; the merge decision
-  (`tests/merge-ready`) waits on the judge's verdict ([review](forge.md#a-review-judged-on-its-own-host-forge-review-prepare--judge)).
+- Who produces is the forge's data (`_forgebackends.Backend.producers`, user rulings 2026-11-11): a GitHub repo is
+  tested and gated by its Actions jobs alone -- no forge serve host, cluster, workstation or judge host; a part no
+  hosted runner produces (a heavy test) is kept and off its gate (`jobparts.off_gate`). Gitea wires every producer.
+- Review: `[tool.dev_lab.review] where = "judge"` (Gitea only) sends every PR to the judge host, whose verdict is
+  ADVISORY (`_forgebackends.ADVISORY`): posted as information, never waited on by `tests/merge-ready`
+  ([review](forge.md#a-review-judged-on-its-own-host-forge-review-prepare--judge)).
 
 ## 4. Hosts and their roles
 
