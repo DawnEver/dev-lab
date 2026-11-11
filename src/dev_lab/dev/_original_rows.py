@@ -432,6 +432,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'gitenv',
     # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.
     'datadeps',
+    # ORIGINAL: a data PR's consumer runs (2026-11-10); no consumer judged a data PR before.
+    'dataconsumers',
     # ORIGINAL: split out of `hpcaccount.fleet` inside the kit (2026-11-10); the judge's machine file reads it too.
     'machinehome',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
