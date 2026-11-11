@@ -17,7 +17,7 @@ import pytest
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
-from dev_lab.dev.agent_guard import AUTOMODE_COMMAND, WIRING
+from dev_lab.dev.agent_wiring import AUTOMODE_COMMAND, WIRING
 from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import claude_rows, codex_rules, doors
 from dev_lab.dev.automode import (

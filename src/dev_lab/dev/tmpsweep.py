@@ -8,7 +8,8 @@ entries), read by three callers --
   it never deletes -- one Stop hook, two placement questions, so no second wiring;
 * the command (``python -m dev_lab.dev.tmpsweep``) prints the census; ``--apply`` removes what :func:`sweep`
   admits, for a person or a scheduled task to run;
-* :func:`sweep` itself, which removes an entry only when its root is a ``temp`` root, it is older than the age in
+* :func:`sweep` itself, which removes an entry only when its root is a ``temp`` root, its name is OURS
+  (:func:`dev_lab.dev.writeroots.owned_globs` -- another program's file is never touched), it is older than the age in
   EVERY file it holds (a fresh file is a live writer), it is no link or junction (never followed out of the root),
   it holds no ``.git`` (a checkout is somebody's work), and the filesystem lets go of it (an open file is kept).
 
@@ -32,7 +33,15 @@ from typing import Final
 from lab_commons.log import emit
 
 from dev_lab.dev.disclosure import details_for
-from dev_lab.dev.writeroots import EXCLUDED_GLOBS_IN_TEMP, REMEDY, RULE_ID, Root, excluded_paths, write_prone_roots
+from dev_lab.dev.writeroots import (
+    EXCLUDED_GLOBS_IN_TEMP,
+    REMEDY,
+    RULE_ID,
+    Root,
+    excluded_paths,
+    owned_globs,
+    write_prone_roots,
+)
 
 __all__ = ['MAX_AGE_DAYS', 'REPORT_WINDOW_S', 'Entry', 'census', 'declared', 'main', 'session_report', 'sweep']
 
@@ -96,9 +105,15 @@ def _newest(path: Path) -> float:
     return newest
 
 
-def _why_kept(entry: Entry, cutoff: float, linked: Callable[[Path], bool]) -> str | None:
+def _ours(name: str, owned: Sequence[str]) -> bool:
+    return any(fnmatch.fnmatchcase(name, glob) for glob in owned)
+
+
+def _why_kept(entry: Entry, cutoff: float, linked: Callable[[Path], bool], owned: Sequence[str]) -> str | None:
     if entry.root.kind != 'temp':
         return f'a {entry.root.kind} root is reported, never swept'
+    if not _ours(entry.path.name, owned):
+        return "not ours: another program's entry is never swept"
     if linked(entry.path):
         return 'a link or junction is never followed'
     if (entry.path / '.git').exists():
@@ -121,18 +136,20 @@ def sweep(
     max_age_days: float = MAX_AGE_DAYS,
     now: float | None = None,
     linked: Callable[[Path], bool] = _linked,
+    owned: Sequence[str] | None = None,
 ) -> tuple[list[Path], list[tuple[Path, str]]]:
     """Remove each entry the module docstring admits; return ``(removed, [(kept, why)])``.
 
     *linked* says whether a path is a link or junction; a test injects it, because creating either needs a
-    privilege or a platform the suite cannot assume.
+    privilege or a platform the suite cannot assume. *owned* (default :func:`owned_globs`) names what is ours.
     """
+    globs = owned_globs() if owned is None else tuple(owned)
     cutoff = (time.time() if now is None else now) - max_age_days * _DAY
     removed: list[Path] = []
     kept: list[tuple[Path, str]] = []
     for entry in entries:
         try:
-            why = _why_kept(entry, cutoff, linked)
+            why = _why_kept(entry, cutoff, linked, globs)
             if why is None:
                 _remove(entry.path)
                 removed.append(entry.path)

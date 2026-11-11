@@ -157,4 +157,6 @@ REMEDIES: Final[dict[str, str]] = {
         '`git -c protocol.file.allow=always ...` on that one command -- '
         'dev_lab.dev._dep_network.init_submodules passes it'
     ),
+    # A forge refusal's answer is a JSON body no reader sees unless it is quoted: ForgeCallFailed appends it.
+    'forge-refused': 'the forge answered and refused this call -- fix what its answer names',
 }

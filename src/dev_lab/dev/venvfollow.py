@@ -6,7 +6,7 @@ home, :func:`stale`: the key of :data:`ENV_INPUTS` against the stamp the last su
 unchanged checkout costs one hash. Its callers:
 
 * :func:`dev_lab.dev.hostrefresh.sync_venv` -- a served checkout, every host tick;
-* ``--session-start``, the ``SessionStart`` hook (:data:`dev_lab.dev.agent_guard.WIRING`) -- a stale venv detaches
+* ``--session-start``, the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`) -- a stale venv detaches
   a background :func:`follow` and the hook returns at once;
 * the ``post-merge`` and ``post-checkout`` git hooks (``githooks/base.toml``, advisory) -- ``--background``.
 

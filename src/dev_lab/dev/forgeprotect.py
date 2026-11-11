@@ -58,6 +58,7 @@ from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT, SECURITY_CONTEXT
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.jobparts import rows
@@ -227,6 +228,26 @@ def apply(api: Api, forge: Forge, wanted: Sequence[Target]) -> list[Step]:
     return plan(api, forge, wanted)
 
 
+#: How GitHub words a required check bound to an App it cannot bind: the App is not installed on the repository.
+_UNKNOWN_APP: Final = 'invalid integration ids'
+
+
+def refusal(failed: ForgeCallFailed, wanted: Sequence[Target]) -> list[str]:
+    """The lines a refused write is reported with: the forge's status and errors, and for an App it cannot bind, which.
+
+    ``str(failed)`` carries the status and the forge's own message and errors (never a header or credential);
+    an ``Invalid integration ids`` answer adds the App ids the declaration requires a check from and the remedy.
+    """
+    lines = [f'[protect] {failed}']
+    apps = sorted({target.judge_app for target in wanted if target.judge_app})
+    if _UNKNOWN_APP in str(failed).lower():
+        lines.append(
+            f'[protect] the declaration requires a check from GitHub App id(s) {apps} (judge_app) that the forge '
+            'cannot bind -- most likely that App is not installed on this repository: install it, then apply again'
+        )
+    return lines
+
+
 def render(steps: Sequence[Step]) -> list[str]:
     """The lines a reader acts on: each subject, then its differences."""
     return [line for step in steps for line in (step.subject, *(f'    {said}' for said in step.lines))]
@@ -247,7 +268,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as refused:
         emit(f'[protect] {refused}', err=True)
         return 2
-    steps = apply(client, client.forge, wanted) if args.verb == 'apply' else plan(client, client.forge, wanted)
+    try:
+        steps = apply(client, client.forge, wanted) if args.verb == 'apply' else plan(client, client.forge, wanted)
+    except ForgeCallFailed as failed:
+        for line in refusal(failed, wanted):
+            emit(line, err=True)
+        return 1
     emit(f'[protect] {client.forge.identity}: ' + (f'{len(steps)} difference(s)' if steps else 'as declared'))
     for line in render(steps):
         emit(f'  {line}')
