@@ -151,7 +151,11 @@ HINT: the hazard is minutes, not harm.
 ## HPC-THROUGH-THE-DOOR
 
 - **Why it is refused.** User ruling 2026-11-06: an agent never reaches an HPC login host or Slurm directly. The night before, agents opened dozens of ssh connections per diagnosis to the login nodes (six accounts, two hosts, poll loops with `sleep`) and the cluster stopped answering ssh. Refused: `ssh`, `scp`, `sftp` or `rsync` to a login host, and `sbatch`, `srun`, `salloc` or `scancel` as a command or after `ssh`. A login host is recognised by SHAPE -- a first DNS label carrying `login`, which every declared `[[hpc.grant]] hosts` entry has -- because the committed `deny-rules.json` cannot read the machine file and fleet names stay out of git (user ruling 2026-10-23). A human in a terminal is unaffected.
-- **The exit.** Read-only status: the forge host card, `python -m dev_lab.dev.forge queue`, `forge run show <sha>`. Deploy or maintenance: `python -m dev_lab.dev.hpcaccount deploy`, run by the user on the account. Tests: push, and the forge's HPC parts run them.
+- **The exits, by purpose** (user ruling 2026-11-11; the refusal prints each shape, `_deny_hpc_row.USAGES`):
+  - a command on an account: `python -m dev_lab.dev.sshhold open <user>@<login host> --hours N --code <the code the user gave>`, then `sshhold run <dest> '<cmd>'` (main session only; `--jump <bastion>`, `--plan`/`--digest` for consents);
+  - deploy: `python -m dev_lab.dev.hpcaccount deploy-fleet [--account <u>]... [--dry-run]`; forget a learned row: `hpcaccount forget --repo <url> --row <key> --fleet|--account <u> [--dry-run]`; `hpcaccount deploy` is run by the user on the account;
+  - verify work: push, and the forge's HPC parts run it; read it with `python -m dev_lab.dev.forge queue` and `forge run show <sha>`;
+  - a research batch: `python -m lab_commons.hpc submit -c <job.toml>`, then `python -m lab_commons.hpc gather -c <job.toml> --wait` (`status`, `retry` alike).
 
 ## REMOTE-WRITE-THROUGH-A-DOOR
 
