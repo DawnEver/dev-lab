@@ -33,6 +33,7 @@ from lab_commons.log import emit
 
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.served import credential_files
 
 __all__ = ['ACTION', 'SecretRefused', 'add_parser', 'declared', 'place', 'request', 'subject']
 
@@ -67,6 +68,8 @@ def declared(config: OpsConfig) -> dict[str, str]:
     if (judge := config.judge) is not None:
         owners |= dict.fromkeys(judge.secrets, judge.user)
         owners |= dict.fromkeys(filter(None, (judge.keys_file, judge.environment_file)), 'root')
+    if (glass := config.breakglass) is not None:
+        owners |= dict.fromkeys(credential_files(glass.tokens, glass.apps), glass.account)
     if (probe := config.probe) is not None:
         owners |= dict.fromkeys(probe.tokens.values(), probe.user)
     if config.environment_file:

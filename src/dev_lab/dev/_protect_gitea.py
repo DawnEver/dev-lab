@@ -27,8 +27,12 @@ _LISTS: Final = ('_usernames', '_contexts', '_username')
 
 def body(target: Target) -> dict[str, Any]:
     """The protection that makes *target* true. Pure, so ``plan`` can say it before ``apply`` sends it."""
-    if ':' in target.bypass:
-        msg = f'Gitea breakglass = {target.bypass!r}: a Gitea bypass allowlist names a login'
+    if len(target.bypass) != 1:
+        msg = f'Gitea breakglass = {list(target.bypass)!r}: a Gitea forge names one login, its one bypass identity'
+        raise ValueError(msg)
+    (login,) = target.bypass
+    if ':' in login:
+        msg = f'Gitea breakglass = {login!r}: a Gitea bypass allowlist names a login'
         raise ValueError(msg)
     if target.judge_app:
         msg = f'judge_app = {target.judge_app}: a Gitea forge has no GitHub App; declare judge_login'
@@ -50,7 +54,7 @@ def body(target: Target) -> dict[str, Any]:
         'dismiss_stale_approvals': True,
         'block_on_rejected_reviews': True,
         'enable_bypass_allowlist': True,
-        'bypass_allowlist_usernames': [target.bypass],
+        'bypass_allowlist_usernames': [login],
         'block_admin_merge_override': True,
     }
 
