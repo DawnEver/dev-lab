@@ -1,7 +1,7 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
-``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
+``consent serve|enrol|keygen|ready``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
 (:mod:`dev_lab.ops.disk`), ``config apply|tick`` (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and
 ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`).
 
@@ -175,7 +175,26 @@ def _issuer(config: OpsConfig, role: Consent) -> Issuer:
                   role.lockout_after, role.lockout_minutes, locked)  # fmt: skip
 
 
+def _ready(config: OpsConfig) -> int:
+    """``consent ready``: could a consented verb here verify a credential AND register its use; 0 yes, 2 the blocker.
+
+    Asked before a code is spent (:mod:`dev_lab.dev.planrun`).
+    """
+    try:
+        key = public_text(_issuer(config, config.consent).public() if config.consent is not None else public_key())
+    except ConsentRefused as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    if config.consent is None:
+        emit(f'refused: {config.path} enables no [ops.consent] issuer: a consented use here cannot register', err=True)
+        return 2
+    emit(f'[ops consent] ready: key {key[:12]}, uses register at the local issuer')
+    return 0
+
+
 def _consent(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) -> int:
+    if verb == 'ready':
+        return _ready(config)
     role = config.consent
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.consent]', err=True)
@@ -259,6 +278,12 @@ def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
 
 def _secret_place(config: OpsConfig, args: argparse.Namespace) -> int:
     """``secret place`` (:mod:`dev_lab.ops.secretplace`): the content on stdin, the consent redeemed here."""
+    if args.subject:  # what a preflight compares with the plan's grant; nothing is placed
+        emit(secretplace.subject(args.path, sys.stdin.buffer.read()))
+        return 0
+    if not args.credential:
+        emit('refused: secret place needs --credential (or --subject)', err=True)
+        return 2
     try:
         granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
         said = secretplace.place(config, args.path, sys.stdin.buffer.read(), redeem=_redeemer(config)(
@@ -297,7 +322,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'tick'))
     issuing = verbs.add_parser('consent')
-    issuing.add_argument('action', choices=('serve', 'enrol', 'keygen'))
+    issuing.add_argument('action', choices=('serve', 'enrol', 'keygen', 'ready'))
     issuing.add_argument('--force', action='store_true', help='enrol / keygen: replace an existing secret / key')
     issuing.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
     verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
@@ -312,6 +337,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         '--from', dest='candidate', type=Path, default=None, help='a local candidate file'
     )  # default: the [ops.config] source
     configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
+    configured.add_argument('--subject', action='store_true', help="apply: print the candidate's consent subject only")
     forgeaccounts.add_parser(verbs)
     secretplace.add_parser(verbs)
     githubwho.add_parser(verbs)
@@ -352,6 +378,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.credential,
                 alert=lambda title, detail: _alert(config, title, detail),
                 redeemer=lambda: _redeemer(config),
+                subject=args.subject,
             )
         ),
         'forge': lambda: _forge(config, args),

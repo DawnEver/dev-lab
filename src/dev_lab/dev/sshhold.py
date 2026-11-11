@@ -42,6 +42,7 @@ import hashlib
 import json
 import re
 import secrets
+import shlex
 import socket
 import subprocess
 import sys
@@ -79,6 +80,7 @@ __all__ = [
     'main',
     'open_planned',
     'open_session',
+    'put_private',
     'read_session',
     'request',
     'run_command',
@@ -347,6 +349,25 @@ def store_credential(dest: str, url: str, login: str, token: str, timeout_s: flo
         msg = f'{dest}: git credential approve exited {status}'
         raise HoldRefused(msg)
     return f'{dest}: credential stored for {login}@{host} (sha256 {digest})'
+
+
+def put_private(dest: str, path: str, text: str, timeout_s: float = 60) -> None:
+    """Write *text* at *path* on *dest* through the held channel under umask 077 (a carried consent credential).
+
+    The text is heredoc DATA ending on a random marker, never a command word; the audit records the path and a
+    sha256 prefix, never the text.
+    """
+    started = time.monotonic()
+    end = f'__SSHHOLD_PUT_{secrets.token_hex(8)}'
+    quoted = shlex.quote(path)
+    body = text.rstrip('\n')
+    script = f'umask 077 && mkdir -p "$(dirname {quoted})" && cat > {quoted} <<\'{end}\'\n{body}\n{end}'
+    reply = _exchange(dest, script, timeout_s)
+    digest = hashlib.sha256(text.encode()).hexdigest()[:12]
+    audit('put', dest, command=path, status=reply.get('status'), duration_s=time.monotonic() - started, sha256=digest)
+    if 'error' in reply or reply.get('status'):
+        msg = f'{dest}: could not write {path}: {reply.get("error") or reply.get("output", "").strip()}'
+        raise HoldRefused(msg)
 
 
 def close_session(dest: str) -> str:
