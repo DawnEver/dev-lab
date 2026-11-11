@@ -16,14 +16,19 @@ here, through the client verb of :data:`LOCAL_VERBS` (a ``breakglass.wave`` open
      "steps": [{"argv": ["config", "apply", "--from", "/srv/plan/candidate.toml"]},
                {"argv": ["config", "apply", "--from", "/srv/plan/judge.toml"], "dest": "ops@judge",
                 "config": "/etc/dev-lab/judge.toml"},
-               {"argv": ["secret", "place", "--path", "/etc/x"], "stdin": "/srv/plan/x.secret"},
+               {"argv": ["secret", "place", "--path", "/etc/x"], "stdin_local": "secrets/x.secret"},
                {"local": true}]}
 
 each host step running ``sudo -n <python> -m dev_lab.ops --config <config> <argv...> --credential <file>`` on its
-host (``stdin`` a file ON THAT HOST, so a secret never rides a command line or the hold's audit).
+host. ``stdin_local`` is a file HERE, on the operator's machine: its bytes are streamed through the session into the
+verb's stdin (:meth:`.planremote.Remote.run`), so a secret is never staged on the host's disk -- where the agent's
+login could read it (ruling 2026-11-04: after lockdown no one reads a bot token on a host) -- nor rides a command
+line or the hold's audit (a sha256 prefix only).
 
-:func:`preflight` spends no code. Per host it asks ``consent ready`` (the verifier key resolves, a use can register);
-per host step, that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
+:func:`preflight` spends no code. Per host it asks ``consent ready`` WITHOUT sudo
+(it reads only the config and the public key, so no sudoers row: the verifier key resolves, a use can register);
+per host step, that its ``stdin_local`` file exists here (never its content
+checked), that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
 ``--subject``) equals the grant's; per local step, that the machine file names the client's endpoint. A door a host
 gains only from an earlier ``ops.config`` step ON THAT HOST (``config apply`` installs sudoers) is ``after step N``,
 never a failure. A remote is the held session when one is open, else key-only ssh (:mod:`.planremote`).
@@ -102,7 +107,7 @@ class Step:
     dest: str = ''
     config: str = ''
     python: str = ''
-    stdin: str | None = None
+    stdin_local: str | None = None
     local: bool = False
 
 
@@ -113,7 +118,7 @@ class Steps:
     steps: tuple[Step, ...]
 
 
-_HOST_KEYS: Final = {'argv', 'stdin', 'dest', 'config', 'python'}
+_HOST_KEYS: Final = {'argv', 'stdin_local', 'dest', 'config', 'python'}
 
 
 def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str) -> Step:
@@ -127,7 +132,7 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     if not (isinstance(argv, list) and argv and all(isinstance(word, str) for word in argv)) or (
         set(step) - _HOST_KEYS or not all(isinstance(step.get(key, ''), str) for key in _HOST_KEYS - {'argv'})
     ):
-        msg = (f'{name} is {{"argv": [ops verb words...], "stdin"?, "dest"?, "config"?, "python"?: "<str>"}} '
+        msg = (f'{name} is {{"argv": [ops verb words...], "stdin_local"?, "dest"?, "config"?, "python"?: "<str>"}} '
                'or {"local": true}')  # fmt: skip
         raise ConsentRefused(msg)
     if action in LOCAL_VERBS:
@@ -138,7 +143,7 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
         raise ConsentRefused(msg)
     return Step(
         tuple(argv), step.get('dest', dest), step.get('config', str(data['config'])),
-        step.get('python', str(data['python'])), step.get('stdin'),
+        step.get('python', str(data['python'])), step.get('stdin_local'),
     )  # fmt: skip
 
 
@@ -169,8 +174,9 @@ def run_local(words: Sequence[str]) -> tuple[str, int]:
     return done.stdout + done.stderr, done.returncode
 
 
-def _with_stdin(command: str, stdin: str | None) -> str:
-    return command if stdin is None else f'{command} < {shlex.quote(stdin)}'
+def _stdin(step: Step) -> bytes | None:
+    """The bytes of *step*'s ``stdin_local`` file, read here; ``None`` when it has none."""
+    return None if step.stdin_local is None else Path(step.stdin_local).read_bytes()
 
 
 def _last_line(output: str) -> str:
@@ -179,18 +185,18 @@ def _last_line(output: str) -> str:
 
 
 def _ready(step: Step, remote: Remote) -> str | None:
-    """``None`` when *step*'s host can verify and register a use, else the blocker."""
-    ready = ['consent', 'ready']
-    said, status = remote.run(ops_command(step, ready, sudo='sudo -n -l'))
-    if status:
-        return f'no sudo door for `{shlex.join(ready)}` ({_last_line(said)})'
-    said, status = remote.run(ops_command(step, ready))
-    return _last_line(said) if status else None
+    """``None`` when *step*'s host can verify and register a use, else the blocker; asked unprivileged."""
+    said, status = remote.run(
+        shlex.join([step.python, '-m', 'dev_lab.ops', '--config', step.config, 'consent', 'ready'])
+    )
+    return (_last_line(said) or f'consent ready exited {status}') if status else None
 
 
 def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote) -> tuple[str, bool]:
     """``(verdict, blocked)`` of host step *index*: its door, else an earlier config step on its host, then subject."""
     grant, step = plan.grants[index], steps.steps[index]
+    if step.stdin_local is not None and not Path(step.stdin_local).is_file():
+        return f'BLOCKED -- no stdin_local file here: {step.stdin_local}', True
     placeholder = f'{REMOTE_DIR}/preflight.json'
     said, status = remote.run(ops_command(step, [*step.argv, '--credential', placeholder], sudo='sudo -n -l'))
     if status:
@@ -199,7 +205,7 @@ def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote) -> tuple[s
         if installers:
             return f'after step {installers[-1] + 1} (its door is installed by that config apply)', False
         return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({_last_line(said)})', True
-    said, status = remote.run(_with_stdin(ops_command(step, [*step.argv, '--subject']), step.stdin))
+    said, status = remote.run(ops_command(step, [*step.argv, '--subject']), _stdin(step))
     derived = _last_line(said)
     if status:
         return f'BLOCKED -- the host could not derive the subject ({derived})', True
@@ -274,7 +280,7 @@ def _redeem(step: Step, ident: str, text: str, remotes: Remotes, local: Local) -
     carried = f'{REMOTE_DIR}/{ident}.json'
     remote.put(carried, text)
     try:
-        return remote.run(_with_stdin(ops_command(step, [*step.argv, '--credential', carried]), step.stdin))
+        return remote.run(ops_command(step, [*step.argv, '--credential', carried]), _stdin(step))
     finally:
         remote.run(f'rm -f {shlex.quote(carried)}')
 
