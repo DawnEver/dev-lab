@@ -12,7 +12,8 @@ import pytest
 
 from dev_lab.ops.__main__ import main
 from dev_lab.ops.access import adopt, enrol, ensure_include, oath_users, secret_file
-from dev_lab.ops.config import Access, load
+from dev_lab.ops.config import load
+from dev_lab.ops.consentrole import Access
 from dev_lab.ops.install import files, install
 from dev_lab.ops.totp import TotpRefused, write_private
 

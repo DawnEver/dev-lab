@@ -185,7 +185,7 @@ def reviewed_candidate(config: OpsConfig) -> str | None:
     """The text of the reviewed config the host will run next (``[ops.config]``'s source), else ``None``."""
     if config.config_source is None:
         return None
-    return configdoor.fetch(config.config_source, run=configdoor.git_with_env)
+    return configdoor.fetch(config.config_source, run=configdoor.git_with_env).host
 
 
 def _candidate_loads(config: OpsConfig, probe: Runner, candidate: Callable[[OpsConfig], str | None]) -> str:
