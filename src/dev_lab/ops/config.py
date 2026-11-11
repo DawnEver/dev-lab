@@ -427,13 +427,13 @@ def _is_root() -> bool:
 
 
 def load(
-    path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None, structure_only: bool = False
-) -> OpsConfig:
+    path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None, structure_only: bool = False,
+    alerts: bool = True,
+) -> OpsConfig:  # fmt: skip
     """Read *path*'s ``[ops]`` table and its environment (see the module docstring).
 
-    *structure_only* checks the file OFF its host (a config-source repository's CI): the declared environment
-    file and secret files are named but never read, so only the shape is judged.
-
+    *structure_only* checks the file OFF its host (a config-source repository's CI): only the shape is judged.
+    ``alerts=False`` is a verb that sends none (:mod:`dev_lab.ops.alertless`): no ``SUPERVISE_*`` is required.
     *as_root* defaults to the process's own euid. Refuses a missing table, a declared environment that did not
     arrive (root: the file unreadable; non-root: no ``SUPERVISE_*`` variable), a duplicate repo name, a bad role.
     """
@@ -455,7 +455,7 @@ def load(
         process = dict(os.environ if environ is None else environ)
         if root:
             merged = load_config(path, environ=process | _environment(Path(environment_file)))
-        elif not any(name.startswith(ENV_PREFIX) for name in process):
+        elif alerts and not any(name.startswith(ENV_PREFIX) for name in process):
             msg = (
                 f'[ops] environment_file {environment_file} is declared but no {ENV_PREFIX}* variable reached this '
                 'non-root process (its unit must carry EnvironmentFile=); refusing, alerts would be off'

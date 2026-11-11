@@ -26,6 +26,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgework import Client
 from dev_lab.ops import (
     access,
+    alertless,
     backup,
     breakglass,
     configverbs,
@@ -296,11 +297,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         sized.add_argument('--journal-max-mb', type=int, default=disk.DEFAULT_JOURNAL_MAX_MB)
     args = parser.parse_args(argv)
     if args.verb in {'disk', 'clean'}:  # read only the disk: no role config is needed to measure or free it
-        return (
-            disk.measure(args.gitea_data) if args.verb == 'disk' else disk.clean(args.gitea_data, args.journal_max_mb)
-        )
+        sized = disk.measure(args.gitea_data) if args.verb == 'disk' else None
+        return sized if sized is not None else disk.clean(args.gitea_data, args.journal_max_mb)
     try:
-        config = load(args.config)
+        config = load(args.config, alerts=not alertless.sends_no_alert(args))
     except (ValueError, TypeError) as bad:
         emit(f'[ops] {bad}', err=True)
         return 2
