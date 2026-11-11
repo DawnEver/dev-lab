@@ -5,7 +5,7 @@ installed only by a later ``config apply``, an issuer it could not reach; and a 
 UNSPENT credential). Two verbs, one steps file::
 
     python -m dev_lab.dev.planrun preflight <dest> --plan <plan.json> --steps <steps.json>
-    python -m dev_lab.dev.planrun run <dest> --plan <plan.json> --digest <D> --steps <steps.json>
+    python -m dev_lab.dev.planrun run <dest> --plan <plan.json> --digest <D> --steps <steps.json>   # after the code
 
 The STEPS FILE says what each grant of the plan runs on the host, in the plan's order (one step per grant)::
 
@@ -21,6 +21,13 @@ per step, that the ops verb is a sudo door (``sudo -n -l``) and that the subject
 ``--subject``) equals the grant's. A door a host gains only from an earlier ``ops.config`` step (``config apply``
 installs sudoers) is ``after step N``, never a failure. The remote is the held session (:mod:`.sshhold`) when one
 is open, else plain key-only ssh.
+
+:func:`run_plan` runs the GRANTED plan's steps in order: it carries each step's credential (found in
+:func:`dev_lab.dev.consentguard.state_dir` by its action and subject) to the host under umask 077, runs the verb,
+removes the host's copy, and asks the issuer whether the use was REGISTERED. A local credential is deleted only when
+the issuer says it was spent -- never on a bare exit status, never when the issuer cannot be asked. It stops at the
+first refusal and keeps every unspent credential; a step done is recorded per plan digest, so a second run resumes
+where the first stopped.
 """
 
 from __future__ import annotations
@@ -29,7 +36,8 @@ import argparse
 import json
 import shlex
 import sys
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Protocol
@@ -39,8 +47,12 @@ from lab_commons.log import emit
 
 from dev_lab.dev import remote as ssh_remote
 from dev_lab.dev import sshhold
-from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.dev.consentguard import state_dir
+from dev_lab.ops.consent.client import spent_ids
+from dev_lab.ops.consent.credential import SKEW_S, ConsentRefused
 from dev_lab.ops.consent.plan import Plan, parsed
+from dev_lab.ops.consent.plan import load as load_plan
+from dev_lab.ops.totp import write_private
 
 __all__ = [
     'CONFIG_ACTION',
@@ -54,7 +66,11 @@ __all__ = [
     'ops_command',
     'preflight',
     'remote_for',
+    'run_plan',
 ]
+
+#: Which of these credential ids the issuer's ledger records a use of; raises when it cannot say.
+type Spent = Callable[[list[str]], set[str]]
 
 #: The action whose step changes the host's config -- and so may install the sudo doors of the steps after it.
 CONFIG_ACTION: Final = 'ops.config'
@@ -218,6 +234,79 @@ def preflight(plan: Plan, steps: Steps, remote: Remote) -> tuple[bool, list[str]
     return not blocked, lines
 
 
+def _local(plan: Plan, index: int, home: Path | None, now: float) -> Path | None:
+    """The newest unexpired local credential for grant *index*: matched by its action and subject."""
+    grant, found = plan.grants[index], []
+    folder = state_dir(home)
+    for path in sorted(folder.glob('*.json')) if folder.is_dir() else ():
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if (
+            isinstance(data, dict)
+            and (data.get('action'), data.get('subject')) == (grant['action'], grant['subject'])
+            and isinstance(data.get('expires'), int | float)
+            and now <= data['expires'] + SKEW_S
+        ):
+            found.append((data.get('issued', 0), path))
+    return max(found)[1] if found else None
+
+
+def _progress(plan: Plan, home: Path | None) -> Path:
+    return state_dir(home) / 'runs' / f'{plan.digest}.json'
+
+
+def _done(plan: Plan, home: Path | None) -> set[int]:
+    path = _progress(plan, home)
+    return set(json.loads(path.read_text(encoding='utf-8'))['done']) if path.is_file() else set()
+
+
+def run_plan(
+    plan: Plan, steps: Steps, remote: Remote, *, spent: Spent, home: Path | None = None,
+    now: Callable[[], float] = time.time,
+) -> tuple[bool, list[str]]:  # fmt: skip
+    """``(finished, lines)``: the plan's steps run in order on *remote*; see the module docstring."""
+    lines: list[str] = []
+    done = _done(plan, home)
+    for index, grant in enumerate(plan.grants):
+        name = f'step {index + 1} {grant["action"]}'
+        if index in done:
+            lines.append(f'{name}: done earlier')
+            continue
+        local = _local(plan, index, home, now())
+        if local is None:
+            lines.append(f'{name}: STOPPED -- no unexpired credential for it here; one the issuer granted and never '
+                         'registered can be fetched again, else the plan needs a new code')  # fmt: skip
+            return False, lines
+        text = local.read_text(encoding='utf-8')
+        ident = str(json.loads(text)['id'])
+        carried = f'{REMOTE_DIR}/{ident}.json'
+        remote.put(carried, text)
+        try:
+            said, status = remote.run(
+                _with_stdin(ops_command(steps, [*steps.argv[index], '--credential', carried]), steps.stdin[index])
+            )
+        finally:
+            remote.run(f'rm -f {shlex.quote(carried)}')
+        try:
+            used = ident in spent([ident])
+        except (ConsentRefused, OSError) as unknown:
+            lines.append(f'{name}: STOPPED -- exit {status}; the issuer could not say whether the credential was '
+                         f'spent ({unknown}), so it is kept: {local}')  # fmt: skip
+            return False, lines
+        if used:
+            local.unlink()
+        kept = 'spent, deleted' if used else f'NOT spent, kept: {local}'
+        if status:
+            lines.append(f'{name}: STOPPED -- refused (exit {status}): {_last_line(said)}; credential {kept}')
+            return False, lines
+        done.add(index)
+        write_private(_progress(plan, home), json.dumps({'done': sorted(done)}) + '\n')
+        lines.append(f'{name}: ran ({_last_line(said)}); credential {kept}')
+    return True, [*lines, 'plan: every step ran']
+
+
 def _plan(path: Path, dest: str) -> Plan:
     plan = parsed(json.loads(path.read_text(encoding='utf-8')))
     if plan.host != dest:
@@ -233,16 +322,26 @@ def _parser() -> argparse.ArgumentParser:
     checking.add_argument('dest')
     checking.add_argument('--plan', type=Path, required=True)
     checking.add_argument('--steps', type=Path, required=True)
+    running = verbs.add_parser('run', help="run a granted plan's steps in order; resumes where it stopped")
+    running.add_argument('dest')
+    running.add_argument('--plan', type=Path, required=True)
+    running.add_argument('--digest', required=True, help="the plan's digest, as shown to the user")
+    running.add_argument('--steps', type=Path, required=True)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """The CLI; 0 green, 2 a named blocker or a refusal."""
+    """The CLI; 0 green / every step ran, 2 a named blocker, a stop or a refusal."""
     args = _parser().parse_args(argv)
     try:
         plan = _plan(args.plan, args.dest)
+        if args.verb == 'run':
+            load_plan(args.plan, args.digest)  # the plan the user was shown, or none
         steps = load_steps(args.steps, plan)
-        green, lines = preflight(plan, steps, remote_for(args.dest))
+        if args.verb == 'run':
+            green, lines = run_plan(plan, steps, remote_for(args.dest), spent=spent_ids)
+        else:
+            green, lines = preflight(plan, steps, remote_for(args.dest))
     except (ConsentRefused, sshhold.HoldRefused, OSError, ValueError) as refused:
         emit(f'planrun: refused: {refused}', err=True)
         return 2

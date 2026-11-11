@@ -183,6 +183,16 @@ class Issuer:
                 issued.append(credential)
             return issued
 
+    def spent(self, ids: object) -> list[str]:
+        """Which of *ids* the ledger records a use of: what a runner asks before it deletes a local credential."""
+        if not isinstance(ids, list) or not all(isinstance(ident, str) for ident in ids):
+            msg = 'spent asks about a list of credential ids'
+            raise ConsentRefused(msg)
+        with exclusive(self.state):
+            lines = self.ledger.read_text(encoding='utf-8').splitlines() if self.ledger.is_file() else []
+            used = {event.get('id') for event in map(json.loads, filter(None, lines)) if event.get('event') == 'used'}
+        return [ident for ident in ids if ident in used]
+
     def register(self, credential: object, amount: int = 1) -> int | None:
         """Record one irreversible use of *credential*; the campaign's remaining cap, ``None`` for a single one.
 

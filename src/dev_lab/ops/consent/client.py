@@ -35,7 +35,17 @@ from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.totp import write_private
 
-__all__ = ['TABLE', 'Register', 'given_code', 'grant', 'grant_plan', 'public_key', 'redeem', 'remote_register']
+__all__ = [
+    'TABLE',
+    'Register',
+    'given_code',
+    'grant',
+    'grant_plan',
+    'public_key',
+    'redeem',
+    'remote_register',
+    'spent_ids',
+]
 
 #: The machine-file table.
 TABLE: Final = 'consent'
@@ -109,6 +119,16 @@ def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_
         return said
 
     return register
+
+
+def spent_ids(ids: list[str], table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> set[str]:
+    """Which of *ids* the issuer's ledger says were used; raises when it cannot say (the caller then keeps them)."""
+    status, said = send(_endpoint(table), {'verb': 'spent', 'ids': list(ids)})
+    answers = [found for line in said.splitlines() if isinstance(found := _json_line(line), list)]
+    if status != 0 or len(answers) != 1:
+        msg = f'the consent issuer could not say which credentials were spent ({status}): {said[:300]!r}'
+        raise ConsentRefused(msg)
+    return {ident for ident in answers[0] if ident in ids}
 
 
 def given_code(
