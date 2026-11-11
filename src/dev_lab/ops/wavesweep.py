@@ -6,13 +6,16 @@ the sweep runs there and nowhere else -- never on an agent. It needs no credenti
 
 Each candidate goes through the SAME admission as ``forge pr breakglass`` (:meth:`Server._merge`): the repo is one the
 host serves, the PR targets its integration branch at the head it was judged at, and its security check and test
-parts stand green (``_tests_stand``). The sweep only decides WHICH PRs to ask for:
+parts stand green (merge-ready's own reading, ``_waits_for_the_wave``) -- checked HERE, since the admission no
+longer refuses on tests (user ruling 2026-11-11: an explicit break-glass merge waives them; the sweep never does).
+The sweep only decides WHICH PRs to ask for:
 
 - a draft is left alone (a draft runs nothing, so it is never judged);
 - a PR whose ``tests/merge-ready`` already stands ``success`` lands by the normal path, which wins;
 - a PR whose head is not current (``pr-current`` does not stand ``success``: it lacks the integration branch or its
   lock is stale) is left alone -- a wave lands only what is current, never a stale green head;
-- a PR whose admission or merge is refused (red, pending, off the integration branch, the forge's own refusal) is
+- a PR whose security check or test parts do not stand green (red, pending, unrun) is left alone;
+- a PR whose admission or merge is refused (off the integration branch, the forge's own refusal) is
   skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick;
 - a PR the admission holds back for its own consent (``needs-consent``, :meth:`Server._admit`) is skipped and
   logged once per wave by the server; *land* answers ``None`` for it. A skip spends none of the cap.
@@ -32,6 +35,8 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
+from dev_lab.dev.forgemerge import parts_wait
+from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.ops import request as requests
@@ -70,6 +75,13 @@ def reason_of(wave: str) -> str:
     return f'wave {wave} lands what is green: the review is waived, its security and test parts stand green'
 
 
+def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str) -> bool:
+    """Whether *head* is current and green -- security check and test parts PASS -- yet not already merge-ready."""
+    if _stands(posted, MERGE_READY_CONTEXT) or not _stands(posted, PR_CURRENT_CONTEXT):
+        return False
+    return security_wait(posted) is None and parts_wait(head, posted) is None
+
+
 def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
     return any(one.context == context and one.state == 'success' for one in posted)
 
@@ -96,8 +108,7 @@ def sweep(
         for pull in forge.open_pulls():
             if pull.draft or pull.base != integration:
                 continue
-            posted = forge.statuses(pull.head)
-            if _stands(posted, MERGE_READY_CONTEXT) or not _stands(posted, PR_CURRENT_CONTEXT):
+            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head):
                 continue
             try:
                 landed = land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held)))
