@@ -160,7 +160,9 @@ def judge(
     results, cells, flaky, lines = [], {}, set(), []
     for consumer in consumers:
         try:
-            outcome, mine, unsure, line = _one(root, head, consumer, url, members, make, execute)
+            outcome, mine, unsure, line = _one(
+                root, head, consumer, url=url, members=members, make=make, execute=execute
+            )
         except (VerifyByRefused, datadeps.DataRefused, ValueError, OSError) as why:
             outcome, mine, unsure, line = Conclusion.INCONCLUSIVE, {}, frozenset(), f'{consumer.repo}: {why}'
         results.append(outcome)
@@ -174,10 +176,11 @@ def judge(
     return Judged(result, cells, frozenset(flaky), tuple(lines))
 
 
-def _one(  # noqa: PLR0917 -- judge's loop body, its seams passed through
+def _one(
     root: Path,
     head: str,
     consumer: Consumer,
+    *,
     url: str,
     members: Mapping[str, Path],
     make: Callable[[str, Path, Path], Path],

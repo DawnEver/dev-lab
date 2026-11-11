@@ -15,8 +15,10 @@ from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.test_outcomes import CellRecorder, outcomes_dir
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
+
+    Execute = Callable[[Path, Sequence[str], Mapping[str, str]], tuple[int, Path | None]]
 
 _GIT_EXE = shutil.which('git') or 'git'
 APP = 'https://forge.example.org/team/app.git'
@@ -60,7 +62,7 @@ def world(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(data=data, url=data.as_posix(), good=good, bad=bad, app=app)
 
 
-def _consumer_suite(monkeypatch: pytest.MonkeyPatch, seen: list[Sequence[str]]) -> Any:  # noqa: ANN401 -- the execute seam
+def _consumer_suite(monkeypatch: pytest.MonkeyPatch, seen: list[Sequence[str]]) -> Execute:
     """The consumer's connection test, for real: sync the data copy under the run's env, judge the recipe it reads."""
 
     def execute(tree: Path, argv: Sequence[str], env: Mapping[str, str]) -> tuple[int, Path | None]:
@@ -82,7 +84,7 @@ def _consumer_suite(monkeypatch: pytest.MonkeyPatch, seen: list[Sequence[str]]) 
     return execute
 
 
-def _judge(world: SimpleNamespace, head: str, execute: Any) -> verifiedby.Judged:  # noqa: ANN401
+def _judge(world: SimpleNamespace, head: str, execute: Execute) -> verifiedby.Judged:
     return verifiedby.judge(
         world.data, head, (verifiedby.Consumer(APP, 'connection'),), url=world.url,
         members={'app': world.app}, make=lambda _member, checkout, _root: checkout, execute=execute,
