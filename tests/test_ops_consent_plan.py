@@ -164,3 +164,34 @@ def test_sshhold_spends_the_plan_before_the_session_and_only_for_its_host(
     assert order == [f'grant 123456 {HOST}', 'session']
     assert said[-1] == f'{HOST}: open'
     assert STEP == 30  # one code: both verifiers accept it inside the same step
+
+
+def test_a_notice_around_the_issuers_answer_does_not_lose_the_credentials(
+    tmp_path: Path, issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A notice beside the issuer's JSON answer never costs a spent code's credentials.
+
+    2026-11-11 forge-a1: the host printed an upgrade-on-read notice beside the answer, the client parsed the whole
+    output and lost thirteen credentials. The answer is its one JSON line.
+    """
+    monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
+    table = {'endpoint': 'consent@forge', 'public_key': public_text(issuer.public())}
+    path, shown = _plan(tmp_path)
+
+    def send(_table: object, payload: dict[str, Any]) -> tuple[int, str]:
+        notice = '[ops] upgraded [ops.forge] read_only on read'
+        return 0, f'{notice}\n{serve.handle(issuer, json.dumps(payload))}\n{notice}\n'
+
+    written = grant_plan(path, shown, code(0), HOST, table=table, send=send, home=tmp_path / 'home', now=lambda: NOW)
+    assert len(written) == len(PLAN['grants'])
+
+
+def test_two_json_answers_are_refused_rather_than_guessed(
+    tmp_path: Path, issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
+    table = {'endpoint': 'consent@forge', 'public_key': public_text(issuer.public())}
+    path, shown = _plan(tmp_path)
+    with pytest.raises(ConsentRefused, match='2 JSON lines'):
+        grant_plan(path, shown, code(0), HOST, table=table, send=lambda _t, _p: (0, '[]\n[]\n'),
+                   home=tmp_path / 'home', now=lambda: NOW)  # fmt: skip

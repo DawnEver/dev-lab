@@ -138,6 +138,13 @@ def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any]:
     return found
 
 
+def _json_line(line: str) -> object:
+    try:
+        return json.loads(line)
+    except ValueError:
+        return None
+
+
 def _issued(
     found: Mapping[str, Any], payload: dict[str, Any], *, send: Send, home: Path | None, now: float
 ) -> list[Path]:  # fmt: skip
@@ -146,7 +153,13 @@ def _issued(
     status, said = send(found, payload)
     if status != 0:
         raise ConsentRefused(said)
-    answered = json.loads(said)
+    # The issuer's host may print notices (an upgrade-on-read warning) around its one JSON answer: the answer is
+    # the one line that parses as JSON, never the whole output.
+    answers = [parsed for line in said.splitlines() if isinstance(parsed := _json_line(line), (list, dict))]
+    if len(answers) != 1:
+        msg = f'the issuer answered {len(answers)} JSON lines, not one: {said[:300]!r}'
+        raise ConsentRefused(msg)
+    answered = answers[0]
     written = []
     for credential in answered if isinstance(answered, list) else [answered]:
         issued = verify(credential, key, now=now)
