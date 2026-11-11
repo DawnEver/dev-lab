@@ -19,6 +19,6 @@ ALERTLESS: Final = frozenset({('consent', 'ready', False), ('config', 'apply', T
 
 def sends_no_alert(args: argparse.Namespace) -> bool:
     """True when the parsed *args* name a verb form of :data:`ALERTLESS`."""
-    action = getattr(args, 'action', None)
-    subject = bool(getattr(args, 'subject', False))
-    return any((args.verb, action) == (verb, act) and (subject or not needs) for verb, act, needs in ALERTLESS)
+    return any(
+        (args.verb, args.action) == (verb, act) and (args.subject or not needs) for verb, act, needs in ALERTLESS
+    )

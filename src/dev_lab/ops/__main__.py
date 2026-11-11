@@ -264,6 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Route one verb; see the module docstring."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops', description=__doc__.splitlines()[0])
     parser.add_argument('--config', type=Path, required=True)
+    parser.set_defaults(action=None, subject=False)  # every verb form reads both (alertless.sends_no_alert)
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('install').add_argument('--root', type=Path, default=Path('/'))
     verbs.add_parser('promote')
