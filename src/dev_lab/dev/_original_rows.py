@@ -22,6 +22,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'verifybox',
     'verifysteps',
     'agent_guard',
+    'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
     # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.
@@ -229,6 +230,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'stoprun',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
+    # ORIGINAL: the PreToolUse door judging a rem task-journal append before it is written (dev-lab#419).
+    'journaldoor',
     'servelanes',
     'servelock',
     'servetask',
