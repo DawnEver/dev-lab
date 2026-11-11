@@ -14,6 +14,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
+from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.wavesweep import Pull
 
 #: A head a wave may land: green tests AND current (it holds the integration branch, its lock is fresh).
@@ -153,3 +154,46 @@ def test_a_green_pr_that_is_not_current_is_not_merged(tmp_path) -> None:  # PLAN
     host.open(max_merges=5)
     host.server.tick()
     assert _merged(host) == [8]
+
+
+# User ruling 2026-11-11: a hosts-config PR touching a boundary key (configcheck labels it) lands only by its own
+# consent, never by a wave -- and a label the forge cannot read is a skip, never a merge (fail closed).
+
+
+def _consent_host(tmp_path, **forge: object) -> Fleet:
+    pulls = [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)]
+    return Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=GLASS),
+                 forge=ListingForge(pulls=pulls, **forge))  # fmt: skip
+
+
+def test_the_same_pr_without_the_label_is_landed(tmp_path) -> None:  # PLANTED CONTROL
+    host = _consent_host(tmp_path, labelled={7: ('enhancement',)})
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [7, 8]
+
+
+def test_a_needs_consent_pr_is_skipped_and_spends_no_merge(tmp_path, capsys) -> None:
+    host = _consent_host(tmp_path, labelled={7: (LABEL,)})
+    host.open(max_merges=1)
+    host.server.tick()
+    assert _merged(host) == [8], 'a skipped PR does not count toward max_merges'
+    assert f'labelled {LABEL}: it touches a boundary key and lands only by its own consent' in capsys.readouterr().err
+
+
+def test_a_held_back_pr_is_logged_once_per_wave_not_every_tick(tmp_path, capsys) -> None:
+    host = _consent_host(tmp_path, labelled={7: (LABEL,), 8: (LABEL,)})
+    host.open(max_merges=5)
+    host.server.tick()
+    host.server.tick()
+    assert _merged(host) == []
+    err = capsys.readouterr().err
+    assert (err.count('#7 skipped'), err.count('#8 skipped')) == (1, 1)
+
+
+def test_a_label_the_forge_cannot_read_is_a_skip_not_a_merge(tmp_path, capsys) -> None:  # PLANTED CONTROL
+    host = _consent_host(tmp_path, unreadable=frozenset({7}))
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [8]
+    assert '#7 skipped' in capsys.readouterr().err

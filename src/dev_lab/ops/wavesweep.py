@@ -13,7 +13,9 @@ parts stand green (``_tests_stand``). The sweep only decides WHICH PRs to ask fo
 - a PR whose head is not current (``pr-current`` does not stand ``success``: it lacks the integration branch or its
   lock is stale) is left alone -- a wave lands only what is current, never a stale green head;
 - a PR whose admission or merge is refused (red, pending, off the integration branch, the forge's own refusal) is
-  skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick.
+  skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick;
+- a PR the admission holds back for its own consent (``needs-consent``, :meth:`Server._admit`) is skipped and
+  logged once per wave by the server; *land* answers ``None`` for it. A skip spends none of the cap.
 
 Every merge counts against the wave's cap; the merge that reaches it closes the wave, whose ONE summary is the alert.
 """
@@ -74,12 +76,12 @@ def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
 
 def sweep(
     repos: Iterable[str], forge_for: Callable[[str], Listing], *, wave: Callable[[], str | None],
-    land: Callable[[requests.Merge], str], refused: type[Exception],
+    land: Callable[[requests.Merge], str | None], refused: type[Exception],
 ) -> list[str]:  # fmt: skip
     """Ask *land* for every green, non-draft PR of each of *repos* while *wave* names an open wave; what each said.
 
-    *land* is the server's one admission and merge; a PR it refuses with *refused*, or the forge refuses
-    (:class:`ForgeCallFailed`), is skipped and logged, never forced. The
+    *land* is the server's one admission and merge (``None``: held back, logged by it); a PR it refuses
+    with *refused*, or the forge refuses (:class:`ForgeCallFailed`), is skipped and logged, never forced. The
     caller holds the role lock. No open wave: nothing is read and nothing merges.
     """
     said: list[str] = []
@@ -98,10 +100,13 @@ def sweep(
             if _stands(posted, MERGE_READY_CONTEXT) or not _stands(posted, PR_CURRENT_CONTEXT):
                 continue
             try:
-                said.append(land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held))))
+                landed = land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held)))
             except (refused, ForgeCallFailed) as why:
                 emit(f'[breakglass] wave {held}: {url} #{pull.number} skipped: {str(why).splitlines()[0]}', err=True)
                 continue
+            if landed is None:
+                continue
+            said.append(landed)
             if wave() is None:  # the cap closed the wave
                 return said
     return said
