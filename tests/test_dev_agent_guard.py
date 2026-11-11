@@ -498,7 +498,7 @@ def test_a_declared_adoption_modules_local_rules_survive_the_render(repo: Path) 
     """A module's ``LOCAL_RULES`` -- rows the family registry cannot hold -- render after the family rows.
 
     PLANTED CONTROL: the planted row is absent from the family render, so a pass is the local half and not a
-    re-render of the registry alone, which would delete it (the motronics 2026-11-10 forge-sync refusal).
+    re-render of the registry alone, which would delete it (a downstream repo's 2026-11-10 forge-sync refusal).
     """
     waived = frozenset({'BARE-TEST-INVOCATION', 'NETWORK-VERB', 'PUSH-NO-VERIFY', 'RAW-PROCESS-KILL'})
     module = repo / 'scripts' / 'deny_rules.py'
