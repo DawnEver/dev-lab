@@ -42,6 +42,7 @@ __all__ = [
     'grant',
     'grant_plan',
     'public_key',
+    'recover',
     'redeem',
     'remote_register',
     'spent_ids',
@@ -166,9 +167,13 @@ def _json_line(line: str) -> object:
 
 
 def _issued(
-    found: Mapping[str, Any], payload: dict[str, Any], *, send: Send, home: Path | None, now: float
+    found: Mapping[str, Any], payload: dict[str, Any], *, send: Send, home: Path | None, now: float,
+    within: set[tuple[str, str]] | None = None,
 ) -> list[Path]:  # fmt: skip
-    """Send *payload* to the issuer; each credential it answered, verified and written private, by path."""
+    """Send *payload* to the issuer; each credential it answered, verified and written private, by path.
+
+    *within*, when given, is the closed set of ``(action, subject)`` pairs an answer may hold, each at most once.
+    """
     key = public_key(found)
     status, said = send(found, payload)
     if status != 0:
@@ -181,8 +186,14 @@ def _issued(
         raise ConsentRefused(msg)
     answered = answers[0]
     written = []
+    seen: set[tuple[str, str]] = set()
     for credential in answered if isinstance(answered, list) else [answered]:
         issued = verify(credential, key, now=now)
+        pair = (issued.action, issued.subject)
+        if within is not None and (pair not in within or pair in seen):
+            msg = f'the issuer answered a credential the plan does not grant once: {pair[0]} {pair[1][:12]}'
+            raise ConsentRefused(msg)
+        seen.add(pair)
         target = state_dir(home) / f'{issued.id}.json'
         write_private(target, json.dumps(credential, indent=1, sort_keys=True) + '\n')
         written.append(target)
@@ -244,3 +255,24 @@ def grant_plan(
     payload = {'verb': 'issue-plan', 'plan': {'host': plan.host, 'grants': list(plan.grants)},
                'code': _six_digits(code)}  # fmt: skip
     return _issued(found, payload, send=send, home=home, now=now())
+
+
+def recover(
+    plan_file: Path,
+    shown: str,
+    *,
+    table: Mapping[str, Any] | None = None,
+    send: Send = ssh_send,
+    home: Path | None = None,
+    now: Callable[[], float] = time.time,
+) -> list[Path]:
+    """Fetch AGAIN the plan's granted, never-used credentials (:meth:`.issuer.Issuer.unspent`); no code is asked.
+
+    Re-delivery, never a grant: the issuer answers the signed credentials it issued for this plan's digest, and each
+    is refused here unless it verifies and names a grant of the plan the user was *shown*, at most once.
+    """
+    found = _endpoint(table)
+    plan = load_plan(plan_file, shown)
+    within = {(grant_['action'], grant_['subject']) for grant_ in plan.grants}
+    payload = {'verb': 'fetch-unspent', 'plan': plan.digest}
+    return _issued(found, payload, send=send, home=home, now=now(), within=within)

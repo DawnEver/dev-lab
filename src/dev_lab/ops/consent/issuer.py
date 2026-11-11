@@ -11,6 +11,9 @@ code is checked, so a refused request spends no step.
 
 THE LEDGER (``<state>/ledger.jsonl``) is append-only and records ``event``, ``id``, ``action``, ``subject`` and, for
 a use, its ``amount`` -- never a code, a param, a signature or a key.
+
+A PLAN's credentials are also kept as issued, one private file each under ``<state>/issued/``, so
+:meth:`Issuer.unspent` can deliver one AGAIN when the client lost it before its use (see there for the boundary).
 """
 
 from __future__ import annotations
@@ -35,6 +38,8 @@ from dev_lab.ops.totp import TotpRefused, accept, write_private
 
 __all__ = ['Issuer', 'keygen', 'requested']
 
+#: Hex characters of a full plan digest.
+_DIGEST_HEX = 64
 #: One checked request: ``(row, subject, params, cap, ttl)``.
 type _Row = tuple[Action, str, dict[str, Any], int | None, float]
 
@@ -180,8 +185,45 @@ class Issuer:
                           'expires': now + ttl, 'issuer': self.name}  # fmt: skip
                 credential = sign(fields, key)
                 self._record('granted', verify(credential, key.public_key(), now=now), plan=plan)
+                if plan is not None:
+                    write_private(self._kept(credential['id']), json.dumps(credential, sort_keys=True) + '\n')
                 issued.append(credential)
             return issued
+
+    def _kept(self, ident: str) -> Path:
+        return self.state / 'issued' / f'{ident}.json'
+
+    def unspent(self, plan: object) -> list[dict[str, Any]]:
+        """The credentials granted for the plan whose digest is *plan* and never used: delivered AGAIN, as issued.
+
+        THE BOUNDARY. The user's code already authorized exactly these credentials for exactly this plan; fetching
+        re-delivers the same signed bytes and never mints, extends or widens a grant -- so no code is asked, and the
+        caller is authenticated by the consent account's ForceCommand key, the same door ``register`` rides. It
+        returns at most one credential per grant of the plan (the newest live one); none for a grant any of whose
+        credentials was USED (the step happened); none that no longer verifies (expired); none of another plan.
+        """
+        if not isinstance(plan, str) or len(plan) != _DIGEST_HEX or set(plan) - set('0123456789abcdef'):
+            msg = 'fetch-unspent names a plan by its full SHA-256 digest'
+            raise ConsentRefused(msg)
+        with exclusive(self.state):
+            lines = self.ledger.read_text(encoding='utf-8').splitlines() if self.ledger.is_file() else []
+            events = [json.loads(line) for line in lines if line]
+            used = {event.get('id') for event in events if event.get('event') == 'used'}
+            granted = [event for event in events if event.get('event') == 'granted' and event.get('plan') == plan]
+            done = {(event['action'], event['subject']) for event in granted if event['id'] in used}
+            public, newest = self.public(), {}
+            for event in granted:
+                pair, kept = (event['action'], event['subject']), self._kept(event['id'])
+                if pair in done or not kept.is_file():
+                    continue
+                credential = json.loads(kept.read_text(encoding='utf-8'))
+                try:
+                    verify(credential, public, now=self.now())
+                except ConsentRefused:
+                    continue  # expired: never revived
+                if pair not in newest or credential['issued'] >= newest[pair]['issued']:
+                    newest[pair] = credential
+            return list(newest.values())
 
     def spent(self, ids: object) -> list[str]:
         """Which of *ids* the ledger records a use of: what a runner asks before it deletes a local credential."""
