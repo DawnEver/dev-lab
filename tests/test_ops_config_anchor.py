@@ -97,7 +97,7 @@ def _config(live: Path) -> OpsConfig:
 
 @pytest.fixture
 def offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(configdoor, 'fetch', lambda _source, run: MAIN)  # noqa: ARG005 -- the reviewed main
+    monkeypatch.setattr(configdoor, 'fetch', lambda _source, **_: MAIN)
     monkeypatch.setattr(configverbs, 'load', _ok)
     monkeypatch.setattr(upgrade, 'checks', lambda _config: {})
 
