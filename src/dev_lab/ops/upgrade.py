@@ -33,7 +33,7 @@ from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops.config import OpsConfig
 
-__all__ = ['checks', 'command', 'commit', 'fetch_lock', 'locked_family', 'run', 'run_check']
+__all__ = ['checks', 'command', 'commit', 'failed_check', 'fetch_lock', 'locked_family', 'run', 'run_check']
 
 #: Runs a command line; its exit code and stdout.
 type Runner = Callable[[Sequence[str]], tuple[int, str]]
@@ -137,7 +137,8 @@ def run_check(argv: Sequence[str]) -> tuple[int, str]:
         )
     except subprocess.TimeoutExpired:
         return 124, f'timed out after {CHECK_TIMEOUT} s'
-    return done.returncode, done.stdout
+    said = done.stdout if done.returncode == 0 else f'{done.stdout}{done.stderr}'  # a failure names its cause
+    return done.returncode, said
 
 
 def _install(argv: Sequence[str]) -> tuple[int, str]:
@@ -168,9 +169,14 @@ def commit(config: OpsConfig, probe: Runner = run_check) -> str:
     return out.strip() if code == 0 else ''
 
 
-def _failed_check(config: OpsConfig, probe: Runner) -> str:
-    """The first self-check that fails, else empty."""
-    return next((name for name, argv in checks(config).items() if probe(argv)[0] != 0), '')
+def failed_check(config: OpsConfig, probe: Runner) -> str:
+    """The first self-check that fails, with the last line it said (the key a load refused), else empty."""
+    for name, argv in checks(config).items():
+        code, said = probe(argv)
+        if code != 0:
+            last = said.strip().splitlines()[-1:] if said.strip() else []
+            return f'{name} ({last[0][:300]})' if last else name
+    return ''
 
 
 def _install_locked(config: OpsConfig, ref: str, install: Runner, fetch: Fetcher) -> tuple[int, str]:
@@ -204,12 +210,12 @@ def run(
     if code != 0:
         return code, out.strip()
     new = commit(config, probe) or 'unknown'
-    failed = _failed_check(config, probe)
+    failed = failed_check(config, probe)
     if not failed:
         lagging = (follow or follow_uv)(config, probe)
         return 0, f'dev-lab {old} -> {new}' + (f'; {lagging}' if lagging else '')
     code, out = _install_locked(config, old, install, fetch)
-    again = _failed_check(config, probe) if code == 0 else 'reinstall'
+    again = failed_check(config, probe) if code == 0 else 'reinstall'
     if again:
         return 1, f'self-check {failed} FAILED on tip {new}; rollback to {old} ALSO FAILED ({again}): {out.strip()}'
     return 1, f'self-check {failed} FAILED on tip {new}; restored {old}'
