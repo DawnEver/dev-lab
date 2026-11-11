@@ -412,7 +412,19 @@ def _materialize(bundle: Bundle, diff: str, tree: Path) -> None:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(data)
     (tree / 'diff.patch').write_bytes(diff.encode('utf-8'))
-    (tree / 'bundle.json').write_bytes(dump(bundle)[0])
+    (tree / 'bundle.json').write_bytes(_reviewer_doc(bundle))
+
+
+def _reviewer_doc(bundle: Bundle) -> bytes:
+    """The ``bundle.json`` the reviewer reads: the bundle, each file row carrying the judge's ``binary`` verdict.
+
+    The reviewer (ai-lab's ``BundleSource``, which reads this :data:`VERSION`) never re-derives binary: it skips the
+    file the judge did not write, by this flag, so the NUL probe (:func:`is_binary`) stays this module's alone.
+    """
+    doc = asdict(bundle)
+    for row, one in zip(doc['files'], bundle.files, strict=True):
+        row['binary'] = one.binary
+    return json.dumps(doc, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
 
 
 def judge(
