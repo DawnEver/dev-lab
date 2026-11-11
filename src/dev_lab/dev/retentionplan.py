@@ -92,6 +92,7 @@ __all__ = [
     'Policy',
     'carry_sources',
     'cluster_plan',
+    'idle_for',
     'in_flight',
     'load_policy',
     'occupied_shas',
@@ -137,6 +138,7 @@ class Doomed:
     rule: str
     rotate: bool = False
     keep: tuple[tuple[Path, Path], ...] = ()  # (round stream, kept file): kept before the path goes
+    idle_hours: float | None = None  # re-checked at removal: touched within it, the path is kept (became active)
 
 
 @dataclass(frozen=True)
@@ -180,7 +182,7 @@ def runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
     return out
 
 
-def _active(tree: Path, now: datetime) -> timedelta:
+def idle_for(tree: Path, now: datetime) -> timedelta:
     """How long since *tree* was last touched: itself, its ``.lab-ci``, or any stream directory in it."""
     lab = tree / '.lab-ci'
     return min(_age(path, now) for path in [tree, *([lab, *_entries(lab)] if lab.is_dir() else [])])
@@ -191,7 +193,7 @@ def in_flight(ci: Path, policy: Policy, *, now: datetime, live: Iterable[str], o
     young = timedelta(hours=policy.min_age_hours)
     shas = set(live) | set(occupied) | {path.name for path, _, when in runs(ci) if now - when < young}
     shas |= {art.name.split('.')[0] for art in _entries(ci / 'artifacts') if _age(art, now) < young}
-    return shas | {tree.name for tree in _entries(ci / 'trees') if _active(tree, now) < young}
+    return shas | {tree.name for tree in _entries(ci / 'trees') if idle_for(tree, now) < young}
 
 
 def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[str]:
@@ -266,7 +268,12 @@ def cluster_plan(
     if occupied is not None:
         unrecorded = {path.name: state for path, state, _ in states if 'record' not in state}
         doomed += [
-            Doomed(tree, 'tree-not-in-flight', keep=_kept_streams(ci, tree.name, unrecorded.get(tree.name)))
+            Doomed(
+                tree,
+                'tree-not-in-flight',
+                keep=_kept_streams(ci, tree.name, unrecorded.get(tree.name)),
+                idle_hours=policy.min_age_hours,
+            )
             for tree in _entries(ci / 'trees')
             if tree.name not in flying
         ]
