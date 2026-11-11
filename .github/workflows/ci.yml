@@ -245,76 +245,6 @@
         "pull-requests": "read"
       }
     },
-    "review": {
-      "needs": [
-        "merge-ready"
-      ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && (github.event_name == 'pull_request' || inputs.pr != '') && needs.merge-ready.outputs.due == 'true') }}",
-      "runs-on": "ubuntu-latest",
-      "steps": [
-        {
-          "uses": "actions/checkout@v4",
-          "with": {
-            "ref": "${{ env.HEAD_SHA }}",
-            "fetch-depth": 0
-          }
-        },
-        {
-          "name": "Install uv",
-          "uses": "astral-sh/setup-uv@v5",
-          "with": {
-            "enable-cache": false
-          }
-        },
-        {
-          "name": "Name the integration tip",
-          "if": "${{ !github.event.pull_request }}",
-          "run": "echo \"INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/integrate/main)\" >> \"$GITHUB_ENV\""
-        },
-        {
-          "name": "Install the review door",
-          "run": "cd \"$RUNNER_TEMP\"\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\n[ -n \"$DOOR_SHA\" ] || { echo \"no commit names the door: no pull request base and no INTEGRATION_SHA\"; exit 1; }\n# A repo that locks no Python (a data repo) pins no door: the family's integration line is the door it runs.\nif ! git -C \"$GITHUB_WORKSPACE\" cat-file -e \"$DOOR_SHA:uv.lock\" 2>/dev/null; then DEV_LAB_REF=integrate/main; else\nDEV_LAB_REF=$(git -C \"$GITHUB_WORKSPACE\" show \"$DOOR_SHA:uv.lock\" | python3 -I -c 'import sys, tomllib\nlock = tomllib.loads(sys.stdin.read())\n(source,) = [p[\"source\"] for p in lock.get(\"package\", []) if p[\"name\"] == \"dev-lab\"] or sys.exit(\"the base lock pins no dev-lab\")\nif \"git\" in source:\n    print(source[\"git\"].rpartition(\"#\")[2])\nelif source.get(\"editable\") == \".\":\n    print(sys.argv[1])\nelse:\n    sys.exit(f\"dev-lab is locked from {source}, not a git revision\")' \"$DOOR_SHA\") || exit 1\nfi\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${FAMILY_SOURCE}dev-lab.git\" \"$RUNNER_TEMP/dev-lab\"\ngit -C \"$RUNNER_TEMP/dev-lab\" fetch -q --no-tags origin \"$DEV_LAB_REF\"\ngit -C \"$RUNNER_TEMP/dev-lab\" checkout -q --detach FETCH_HEAD\npython3 -I -m venv \"$RUNNER_TEMP/review\" && \"$RUNNER_TEMP/review/bin/python\" -I -m pip install -q uv\n\"$RUNNER_TEMP/review/bin/uv\" export --no-config --project \"$RUNNER_TEMP/dev-lab\" --frozen --no-hashes --no-header --no-annotate --no-emit-project > \"$RUNNER_TEMP/review.txt\"\nif [ -n \"$DOOR_ONLY\" ]; then\ngrep -E \"^($DOOR_ONLY)( @ |==)\" \"$RUNNER_TEMP/review.txt\" > \"$RUNNER_TEMP/only.txt\" && [ \"$(wc -l < \"$RUNNER_TEMP/only.txt\")\" -eq \"$(echo \"$DOOR_ONLY\" | awk -F'|' '{print NF}')\" ] || { echo \"DOOR_ONLY=$DOOR_ONLY names a package the door's lock does not pin\"; exit 1; }\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --no-deps --python \"$RUNNER_TEMP/review/bin/python\" -r \"$RUNNER_TEMP/only.txt\"\nelse\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" -r \"$RUNNER_TEMP/review.txt\"\nfi\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" --no-deps \"$RUNNER_TEMP/dev-lab\"\necho \"REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python\" >> \"$GITHUB_ENV\"\n",
-          "env": {
-            "DOOR_SHA": "${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}",
-            "FAMILY_READ_TOKEN": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}",
-            "GITHUB_TOKEN": "${{ github.token }}"
-          }
-        },
-        {
-          "name": "Install the review method",
-          "run": "cd \"$RUNNER_TEMP\"\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\npython3 -I -m venv \"$RUNNER_TEMP/ai-lab\" && \"$RUNNER_TEMP/ai-lab/bin/python\" -I -m pip install -q uv\nAI_LAB_REV=$(python3 -I -c 'import sys, tomllib\nlock = tomllib.loads(sys.stdin.read())\n(source,) = [p[\"source\"] for p in lock.get(\"package\", []) if p[\"name\"] == \"ai-lab\"] or sys.exit(\"the door lock pins no ai-lab\")\n\"git\" in source or sys.exit(f\"ai-lab is locked from {source}, not a git revision\")\nprint(source[\"git\"].rpartition(\"#\")[2])' < \"$RUNNER_TEMP/dev-lab/uv.lock\") || exit 1\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${FAMILY_SOURCE}ai-lab.git\" \"$RUNNER_TEMP/ai-lab-src\"\ngit -C \"$RUNNER_TEMP/ai-lab-src\" fetch -q --no-tags origin \"$AI_LAB_REV\"\ngit -C \"$RUNNER_TEMP/ai-lab-src\" checkout -q --detach \"$AI_LAB_REV\"\n\"$RUNNER_TEMP/ai-lab/bin/uv\" export --no-config --project \"$RUNNER_TEMP/ai-lab-src\" --frozen --no-hashes --no-header --no-annotate --no-emit-project > \"$RUNNER_TEMP/ai-lab.txt\"\n\"$RUNNER_TEMP/ai-lab/bin/uv\" pip install --no-config --no-deps --python \"$RUNNER_TEMP/ai-lab/bin/python\" -r \"$RUNNER_TEMP/ai-lab.txt\"\n\"$RUNNER_TEMP/ai-lab/bin/uv\" pip install --no-config --no-deps --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"$RUNNER_TEMP/ai-lab-src\"\n",
-          "env": {
-            "FAMILY_READ_TOKEN": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}",
-            "GITHUB_TOKEN": "${{ github.token }}"
-          }
-        },
-        {
-          "name": "Keep the review keys in memory",
-          "run": "git config --global credential.helper \"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket\""
-        },
-        {
-          "name": "Hand the forge tokens to the door",
-          "run": "umask 077\nmkdir -p \"$RUNNER_TEMP/forge-secrets\"\nprintf '%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" > \"$RUNNER_TEMP/forge-secrets/read\"\nprintf '%s' \"$GITHUB_TOKEN\" > \"$RUNNER_TEMP/forge-secrets/api\"\n",
-          "env": {
-            "FAMILY_READ_TOKEN": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}",
-            "GITHUB_TOKEN": "${{ github.token }}"
-          }
-        },
-        {
-          "name": "tests/review",
-          "run": "trap 'git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit; rm -rf \"$RUNNER_TEMP/forge-secrets\"' EXIT\n\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review run --pr ${{ github.event.pull_request.number || inputs.pr }} --keys-env AI_LAB_KEYS_PR_REVIEW --git-token-file \"$RUNNER_TEMP/forge-secrets/read\" --api-token-file \"$RUNNER_TEMP/forge-secrets/api\" --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"\n",
-          "env": {
-            "AI_LAB_KEYS_PR_REVIEW": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.AI_LAB_KEYS_PR_REVIEW || '' }}"
-          }
-        }
-      ],
-      "permissions": {
-        "contents": "read",
-        "statuses": "write",
-        "pull-requests": "write",
-        "issues": "write"
-      }
-    },
     "merge-ready": {
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
@@ -330,55 +260,6 @@
       "outputs": {
         "due": "${{ steps.ready.outputs.due }}"
       },
-      "steps": [
-        {
-          "uses": "actions/checkout@v4",
-          "with": {
-            "ref": "${{ env.HEAD_SHA }}",
-            "fetch-depth": 0
-          }
-        },
-        {
-          "name": "Install uv",
-          "uses": "astral-sh/setup-uv@v5",
-          "with": {
-            "enable-cache": true
-          }
-        },
-        {
-          "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
-        },
-        {
-          "id": "ready",
-          "name": "tests/merge-ready",
-          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr \"$PR_NUMBER\")\"; echo \"$said\"; case \"$said\" in *\"; merged\") echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
-        },
-        {
-          "name": "Run CI on the merged integration",
-          "if": "${{ steps.ready.outputs.merged == 'true' }}",
-          "run": "gh workflow run ci.yml --repo \"$GITHUB_REPOSITORY\" --ref integrate/main -f smoke=true",
-          "env": {
-            "GH_TOKEN": "${{ github.token }}"
-          }
-        }
-      ],
-      "permissions": {
-        "contents": "write",
-        "statuses": "write",
-        "pull-requests": "write",
-        "actions": "write"
-      }
-    },
-    "merge-rejudge": {
-      "env": {
-        "GITHUB_TOKEN": "${{ github.token }}"
-      },
-      "needs": [
-        "review"
-      ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && needs.review.result != 'skipped' && needs.review.result != 'cancelled') }}",
-      "runs-on": "ubuntu-latest",
       "steps": [
         {
           "uses": "actions/checkout@v4",
