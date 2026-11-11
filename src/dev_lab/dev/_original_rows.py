@@ -360,6 +360,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgewatch',
     'jobparts',
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
+    'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
     'pushwatch',
     'pushstop',
     'venvfollow',
