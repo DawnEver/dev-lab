@@ -77,7 +77,7 @@ def ruleset(target: Target) -> dict[str, Any]:
         'target': 'branch',
         'enforcement': 'active',
         'conditions': {'ref_name': {'include': [f'refs/heads/{target.branch}'], 'exclude': []}},
-        'bypass_actors': [actor(target.bypass)],
+        'bypass_actors': [actor(spec) for spec in target.bypass],
         'rules': rules,
     }
 

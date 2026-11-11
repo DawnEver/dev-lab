@@ -127,7 +127,7 @@ def test_a_judge_host_installs_its_reviewer_at_the_locked_revision(tmp_path: Pat
     """
     judge = (
         f'[ops.judge]\nuser = "judge"\nschedule = "*:0/5"\nrepos = ["https://github.com/o/r"]\n'
-        f'[ops.judge.tokens]\n"github.com" = "{(tmp_path / "tok").as_posix()}"\n'
+        f'[ops.judge.apps]\n"github.com" = {{app_id = 7, key_file = "{(tmp_path / "app.pem").as_posix()}"}}\n'
     )
     line = upgrade.command(_config(tmp_path, judge), TIP, tmp_path / 'family.txt')
     assert 'ai-lab' in line, line

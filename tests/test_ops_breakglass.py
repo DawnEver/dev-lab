@@ -26,6 +26,7 @@ from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.ops.breakglass import BreakglassRefused, ClientForge, Server, merge_message
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.consent.issuer import Issuer
+from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.totp import STEP
 
 HEAD = 'a' * 40
@@ -408,8 +409,8 @@ def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) 
 @pytest.mark.parametrize(
     ('bad', 'why'),
     [
-        ({'tokens': {'gitea.example': 't'}}, 'github.com names no token'),  # planted: a forge with no token
-        ({'tokens': {'gitea.example': 't', 'github.com': 'g', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
+        ({'apps': {}}, 'github.com names no token'),  # planted: a forge with no credential
+        ({'tokens': {'gitea.example': 't', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
         ({'repos': (*GLASS, 'https://gitea.example/owner/alpha')}, 'twice'),  # the exact same identity again
         ({'repos': ()}, 'serves no repo'),
         ({'wave_hours_max': 0.0}, 'must be positive'),
@@ -423,7 +424,8 @@ def test_a_break_glass_declaration_that_lies_is_refused_at_load(
     built = config(tmp_path, [])
     assert built.breakglass is not None
     table: dict[str, Any] = {'account': 'b', 'state': 's', 'log': 'l', 'repos': GLASS,
-             'tokens': {'gitea.example': 't', 'github.com': 'g'}, **bad}  # fmt: skip
+             'tokens': {'gitea.example': 't'}, 'apps': {'github.com': {'app_id': 1, 'key_file': 'k'}},
+             **bad}  # fmt: skip
     with pytest.raises(ValueError, match=why):
         Breakglass(**table)
 
@@ -436,12 +438,12 @@ def test_one_name_on_two_forges_or_owners_is_two_repos(tmp_path: Path) -> None:
     assert built.breakglass.repo('alpha') is None
 
 
-def test_each_forge_names_its_token_once(host: Host) -> None:
+def test_each_forge_names_its_credential_once(host: Host) -> None:
     role = host.config.breakglass
     assert role is not None
-    assert role.token_file(GLASS[1]) == role.tokens['github.com']
+    assert app_of_forge(role.apps, GLASS[1]) == (4242, Path(role.apps['github.com']['key_file']))
     assert role.token_file(GLASS[0]) == role.tokens['gitea.example']
-    assert role.token_file(GLASS[0]) != role.token_file(GLASS[1])
+    assert app_of_forge(role.apps, GLASS[0]) is None
 
 
 @pytest.fixture

@@ -27,11 +27,12 @@ def _config(tmp: Path, body: str) -> OpsConfig:
 
 
 def _judge_table(tmp: Path) -> str:
-    gitea, github = (tmp / 'judge-gitea').as_posix(), (tmp / 'judge-github').as_posix()
+    gitea, github = (tmp / 'judge-gitea').as_posix(), (tmp / 'judge-github.pem').as_posix()
     return (
         f'[ops.judge]\nuser = "judge"\nschedule = "*:0/5"\nrepos = ["{ALPHA}", "{BETA}"]\n'
         f'environment_file = "{(tmp / "judge.env").as_posix()}"\nmemory_max = "3G"\n'
-        f'[ops.judge.tokens]\n"gitea.example" = "{gitea}"\n"github.com" = "{github}"\n'
+        f'[ops.judge.tokens]\n"gitea.example" = "{gitea}"\n'
+        f'[ops.judge.apps]\n"github.com" = {{app_id = 7, key_file = "{github}"}}\n'
     )
 
 
@@ -84,7 +85,7 @@ def test_the_judge_runs_one_pass_and_a_failing_repo_does_not_stop_the_next(tmp_p
     assert [o.state for o in outcomes] == ['failed', 'judged']
     assert ran[1] == [
         '/opt/ops/bin/python', '-m', 'dev_lab.dev.forge', 'review', 'judge', '--url', BETA,
-        '--token-file', (tmp_path / 'judge-github').as_posix(),
+        '--app-id', '7', '--app-key-file', (tmp_path / 'judge-github.pem').as_posix(),
     ]  # fmt: skip
 
 

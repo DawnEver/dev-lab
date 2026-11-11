@@ -54,6 +54,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemerge import merge, parts_wait
 from dev_lab.dev.forgesecurity import security_wait
@@ -66,6 +67,7 @@ from dev_lab.ops import wave as waves
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.statelock import exclusive
 
 __all__ = ['BreakglassRefused', 'ClientForge', 'Forge', 'Server', 'merge_message']
@@ -148,6 +150,24 @@ def _tests_stand(forge: Forge, asked: requests.Merge) -> None:
         said = '; '.join(red)
         msg = f'break-glass bypasses only the review, never the tests: #{asked.pr} at {asked.head[:12]}: {said}'
         raise BreakglassRefused(msg)
+
+
+def _installation_token(url: str, app_id: int, key_file: Path) -> str:
+    return installation(forge_of_url(url), app_id, key_file)[1]
+
+
+def credential(
+    role: Breakglass, url: str, *, secret: Callable[[str], str],
+    mint: Callable[[str, int, Path], str] = _installation_token,
+) -> str:  # fmt: skip
+    """The token break-glass presents on *url*'s forge: *mint* its App's installation token, else *secret* its file.
+
+    On a forge with an App (GitHub) the token is minted per wave by :func:`dev_lab.dev.forgeapp.installation`, the
+    ONE minting code; a token forge (Gitea) reads its declared file.
+    """
+    if (app := app_of_forge(role.apps, url)) is not None:
+        return mint(url, *app)
+    return secret(role.token_file(url))
 
 
 def merge_message(pr: int, integration: str, reason: str, wave: str) -> str:
