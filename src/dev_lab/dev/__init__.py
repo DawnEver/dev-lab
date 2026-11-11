@@ -519,6 +519,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.gitenv` -- the environment a git call against another repository runs in: no locator inherited.
 * :mod:`dev_lab.dev.datadeps` -- a DATA dependency is pinned: declared once, synced to its rev, a stale copy refused.
 * :mod:`dev_lab.dev.dataconsumers` -- a data repo's PR is judged by its consumers' tests at its head.
+* :mod:`dev_lab.dev.verifiedby` -- a data repo's ``tests/base`` is its declared consumers' tests at its head.
 * :mod:`dev_lab.dev.forgedataruns` -- the serve runs a consumed data PR's consumer tests here and posts them there.
 * :mod:`dev_lab.dev.doorrows` -- how one door argv is spelled as allow rows: one literal interpreter per layout.
 * :mod:`dev_lab.dev.forgelabel` -- `forge label create`: one repository label through the door, idempotent by name.

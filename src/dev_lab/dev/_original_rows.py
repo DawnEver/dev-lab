@@ -441,6 +441,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'dataconsumers',
     # ORIGINAL: the serve step that carries out a data PR's consumer runs (2026-11-11); no consumer held it.
     'forgedataruns',
+    # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
+    'verifiedby',
     # ORIGINAL: split out of `hpcaccount.fleet` inside the kit (2026-11-10); the judge's machine file reads it too.
     'machinehome',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
