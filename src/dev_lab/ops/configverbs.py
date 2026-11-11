@@ -8,13 +8,11 @@ and reports what the door did.
 from __future__ import annotations
 
 import json
-import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops import configdoor, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.consent.credential import ConsentRefused
@@ -26,11 +24,6 @@ __all__ = ['apply', 'source_text', 'tick']
 type Alert = Callable[[str, str], object]
 
 
-def _git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
-    report = run_network_verb(argv, env=os.environ | dict(env), timeout=300)  # the one retry door
-    return report.returncode, ''  # git's output may echo the header: never returned
-
-
 def source_text(config: OpsConfig, candidate: Path | None) -> str:
     """``--from <file>`` when given, else ``[ops.config]``'s reviewed file (:func:`configdoor.fetch`)."""
     if candidate is not None:
@@ -38,7 +31,7 @@ def source_text(config: OpsConfig, candidate: Path | None) -> str:
     if config.config_source is None:
         msg = f'{config.path} declares no [ops.config] source and no --from <file> was given'
         raise configdoor.ConfigRefused(msg)
-    return configdoor.fetch(config.config_source, run=_git_with_env)
+    return configdoor.fetch(config.config_source, run=configdoor.git_with_env)
 
 
 def apply(
