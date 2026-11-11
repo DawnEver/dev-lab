@@ -8,6 +8,8 @@ keyboard-interactive answer through ``SSH_ASKPASS``), so no network and no bash 
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -190,3 +192,21 @@ def test_the_cli_jump_rides_both_the_plain_and_the_planned_open(monkeypatch: pyt
     assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion', *plan]) == 0
     assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE]) == 0
     assert seen == [('ssh', '-J', 'ops@bastion'), ('ssh', '-J', 'ops@bastion'), ('ssh',)]
+
+
+def test_a_runs_stdin_rides_heredoc_data_and_the_audit_keeps_only_its_digest(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = b'bot-token-PLANTED-9c1e\nno trailing newline'
+    sent: list[str] = []
+    monkeypatch.setattr(
+        sshhold, '_exchange', lambda _d, command, _t: sent.append(command) or {'output': '', 'status': 0}
+    )
+    assert sshhold.run_command('ops@fake', 'sudo -n place', stdin=secret) == ('', 0)
+    script = sent[0]
+    head, data, end = script.split('\n', 2)[0], script.split('\n')[1:-1], script.split('\n')[-1]
+    assert head == f"base64 -d <<'{end}' | sudo -n place"  # the data is heredoc DATA, never the command line
+    assert base64.b64decode(''.join(data)) == secret  # exact bytes, no added newline
+    line = json.loads(sshhold.audit_path().read_text(encoding='utf-8').splitlines()[-1])
+    assert line['command'] == 'sudo -n place'
+    assert line['stdin_sha256'] == hashlib.sha256(secret).hexdigest()[:12]
+    assert b'PLANTED' not in sshhold.audit_path().read_bytes()
+    assert 'PLANTED' not in script  # base64: not even the plain text rides the stream

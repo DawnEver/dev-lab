@@ -37,6 +37,7 @@ module is the client and the CLI::
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import hashlib
 import json
@@ -292,14 +293,25 @@ def _exchange(dest: str, command: str, timeout_s: float) -> dict[str, Any]:
     return reply
 
 
-def run_command(dest: str, command: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> tuple[str, int]:
+def stdin_script(command: str, stdin: bytes, end: str) -> str:
+    """*command* reading *stdin* exactly: base64 heredoc DATA in the held shell's stream, never a file or an argv."""
+    data = base64.encodebytes(stdin).decode('ascii').rstrip('\n')
+    return f"base64 -d <<'{end}' | {command}\n{data}\n{end}"
+
+
+def run_command(
+    dest: str, command: str, timeout_s: float = DEFAULT_TIMEOUT_S, *, stdin: bytes | None = None
+) -> tuple[str, int]:
     """Run *command* on *dest*'s held connection: ``(merged output, remote status)``.
 
-    The audit records *command* VERBATIM, so a secret never travels here: it goes through :func:`store_credential`.
+    The audit records *command* VERBATIM, so a secret never rides *command*: it is *stdin*, sent by
+    :func:`stdin_script` and audited as a sha256 prefix only (a forge token goes through :func:`store_credential`).
     """
     started = time.monotonic()
-    reply = _exchange(dest, command, timeout_s)
-    audit('run', dest, command=command, status=reply.get('status'), duration_s=time.monotonic() - started)
+    sent = command if stdin is None else stdin_script(command, stdin, f'__SSHHOLD_IN_{secrets.token_hex(8)}')
+    reply = _exchange(dest, sent, timeout_s)
+    fields = {} if stdin is None else {'stdin_sha256': hashlib.sha256(stdin).hexdigest()[:12]}
+    audit('run', dest, command=command, status=reply.get('status'), duration_s=time.monotonic() - started, **fields)
     if 'error' in reply:
         msg = f'{dest}: {reply["error"]}'
         raise HoldRefused(msg)

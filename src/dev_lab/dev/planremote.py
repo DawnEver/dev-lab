@@ -1,8 +1,9 @@
 """The hosts a consent plan runs on (:mod:`.planrun`): one shell command at a time, and one private file put.
 
 :func:`remote_for` is a host's held session (:mod:`.sshhold`) when one is open -- no new authentication, no code --
-else plain key-only ssh that never prompts. A put's content rides heredoc DATA or ssh's stdin, never an argv or an
-audit (the audit names the path and a sha256 prefix only).
+else plain key-only ssh that never prompts. A put's content and a run's stdin ride heredoc DATA or ssh's stdin --
+never the host's disk (a run's stdin), an argv or an audit (the audit names the command or path and a sha256
+prefix only).
 """
 
 from __future__ import annotations
@@ -27,8 +28,8 @@ _PUT_S: Final = 60.0
 class Remote(Protocol):
     """A host a plan runs on: one shell command at a time, and one private file put."""
 
-    def run(self, command: str) -> tuple[str, int]:
-        """``(merged output, exit status)`` of *command* (a POSIX shell line)."""
+    def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
+        """``(merged output, exit status)`` of *command* (a POSIX shell line); *stdin* never on disk, argv or audit."""
         ...
 
     def put(self, path: str, text: str) -> None:
@@ -42,9 +43,9 @@ class HeldRemote:
 
     dest: str
 
-    def run(self, command: str) -> tuple[str, int]:
-        """Run *command* on the held connection."""
-        return sshhold.run_command(self.dest, command)
+    def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
+        """Run *command* on the held connection; *stdin* rides it as heredoc DATA (:func:`.sshhold.stdin_script`)."""
+        return sshhold.run_command(self.dest, command, stdin=stdin)
 
     def put(self, path: str, text: str) -> None:
         """Write *text* through the held channel as heredoc DATA; audited as the path and a sha256 prefix only."""
@@ -72,20 +73,18 @@ class SshRemote:
 
     dest: str
 
-    def _ssh(self, command: str, data: str | None) -> tuple[str, int]:
+    def _ssh(self, command: str, data: bytes | None) -> tuple[str, int]:
         argv = ssh_remote.ssh_argv(self.dest, command, batch=True)
-        done = _door.run(
-            argv, input=data, capture_output=True, text=True, encoding='utf-8', check=False, timeout=_TIMEOUT_S
-        )
-        return done.stdout + done.stderr, done.returncode
+        done = _door.run(argv, input=data, capture_output=True, check=False, timeout=_TIMEOUT_S)
+        return (done.stdout + done.stderr).decode('utf-8', 'replace'), done.returncode
 
-    def run(self, command: str) -> tuple[str, int]:
-        """Run *command* over a fresh key-only connection."""
-        return self._ssh(command, None)
+    def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
+        """Run *command* over a fresh key-only connection, *stdin* on ssh's stdin."""
+        return self._ssh(command, stdin)
 
     def put(self, path: str, text: str) -> None:
         """Write *text* at *path*: the content on ssh's stdin, never its argv."""
-        output, status = self._ssh(_put_command(path), text)
+        output, status = self._ssh(_put_command(path), text.encode('utf-8'))
         if status:
             msg = f'{self.dest}: could not write {path} ({status}): {output.strip()}'
             raise sshhold.HoldRefused(msg)
