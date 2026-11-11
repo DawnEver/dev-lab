@@ -432,3 +432,59 @@ def test_a_steps_file_names_each_steps_host_and_a_local_wave(tmp_path: Path) -> 
         planrun.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE, HOST)
     with pytest.raises(ConsentRefused, match='redeemed on a host'):
         planrun.load_steps(_steps_file(tmp_path, [{'local': True}, *good[1:]]), WIDE, HOST)
+
+
+BUNDLE = 'OPENAI_API_KEY=sk-PLANTED-9c1e\n'
+TASK_STEPS = planrun.Steps((
+    STEPS.steps[0],
+    dataclasses.replace(STEPS.steps[1], stdin_local=None, stdin_task='judge'),
+))  # fmt: skip
+
+
+@pytest.fixture
+def stored(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """The forge-secrets store of this machine, as task -> bundle."""
+    bundles = {'judge': BUNDLE}
+    monkeypatch.setattr(planrun.forgesecrets, 'stored_bundle', lambda task: bundles.get(task, ''))
+    return bundles
+
+
+@pytest.mark.usefixtures('stored')
+def test_a_task_bundle_streams_as_the_steps_stdin_and_never_rides_a_command() -> None:
+    host = FakeHost()
+    green, lines = planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)
+    assert green, lines
+    assert any(given == BUNDLE.encode() and '--subject' in command for command, given in host.stdins)
+    assert not any('sk-PLANTED' in command for command in host.commands)
+    assert not any('sk-PLANTED' in line for line in lines)
+
+
+def test_a_task_with_no_stored_bundle_is_blocked_before_any_code(stored: dict[str, str]) -> None:
+    host = FakeHost()
+    assert planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)[0]  # the control: the bundle is stored
+    stored.clear()
+    green, lines = planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)
+    assert not green
+    assert 'BLOCKED -- no stored bundle for task judge here' in lines[2]
+
+
+@pytest.mark.usefixtures('stored')
+def test_a_granted_task_step_streams_its_bundle_and_writes_no_file(tmp_path: Path) -> None:
+    host, _ = FakeHost(), _granted(tmp_path)
+    before = set(tmp_path.rglob('*'))
+    finished, lines = planrun.run_plan(PLAN, TASK_STEPS, lambda _dest: host, spent=lambda ids: set(ids) & host.ledger,
+                                       home=tmp_path, now=lambda: NOW)  # fmt: skip
+    assert finished, lines
+    secret = next(command for command in host.commands if '--credential' in command and 'secret' in command)
+    assert dict(host.stdins)[secret] == BUNDLE.encode()
+    assert not any('sk-PLANTED' in path.read_text(errors='ignore') for path in set(tmp_path.rglob('*')) - before
+                   if path.is_file())  # fmt: skip
+    assert host.files == {}
+
+
+def test_a_step_names_exactly_one_stdin_source(tmp_path: Path) -> None:
+    one = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_task': 'judge'}]
+    assert planrun.load_steps(_steps_file(tmp_path, one), PLAN, HOST).steps[1].stdin_task == 'judge'  # the control
+    both = [one[0], {**one[1], 'stdin_local': 'x.secret'}]
+    with pytest.raises(ConsentRefused, match='exactly one source'):
+        planrun.load_steps(_steps_file(tmp_path, both), PLAN, HOST)

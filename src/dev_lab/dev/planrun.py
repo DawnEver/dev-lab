@@ -23,12 +23,14 @@ each host step running ``sudo -n <python> -m dev_lab.ops --config <config> <argv
 host. ``stdin_local`` is a file HERE, on the operator's machine: its bytes are streamed through the session into the
 verb's stdin (:meth:`.planremote.Remote.run`), so a secret is never staged on the host's disk -- where the agent's
 login could read it (ruling 2026-11-04: after lockdown no one reads a bot token on a host) -- nor rides a command
-line or the hold's audit (a sha256 prefix only).
+line or the hold's audit (a sha256 prefix only). ``stdin_task`` (instead: exactly one of the two) is a task's key
+bundle from THIS machine's forge-secrets store (:func:`.forgesecrets.stored_bundle`), streamed the same way -- no
+file is written anywhere, and the bytes are never printed.
 
 :func:`preflight` spends no code. Per host it asks ``consent ready`` WITHOUT sudo
 (it reads only the config and the public key, so no sudoers row: the verifier key resolves, a use can register);
-per host step, that its ``stdin_local`` file exists here (never its content
-checked), that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
+per host step, that its ``stdin_local`` file exists here or its ``stdin_task`` bundle is stored here (never its
+content shown), that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
 ``--subject``) equals the grant's; per local step, that the machine file names the client's endpoint. A door a host
 gains only from an earlier ``ops.config`` step ON THAT HOST (``config apply`` installs sudoers) is ``after step N``,
 never a failure. A remote is the held session when one is open, else key-only ssh (:mod:`.planremote`).
@@ -57,7 +59,7 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import sshhold
+from dev_lab.dev import forgesecrets, sshhold
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.planremote import Remote, remote_for
 from dev_lab.ops.consent.client import spent_ids
@@ -108,6 +110,7 @@ class Step:
     config: str = ''
     python: str = ''
     stdin_local: str | None = None
+    stdin_task: str | None = None
     local: bool = False
 
 
@@ -118,7 +121,7 @@ class Steps:
     steps: tuple[Step, ...]
 
 
-_HOST_KEYS: Final = {'argv', 'stdin_local', 'dest', 'config', 'python'}
+_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'dest', 'config', 'python'}
 
 
 def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str) -> Step:
@@ -132,8 +135,11 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     if not (isinstance(argv, list) and argv and all(isinstance(word, str) for word in argv)) or (
         set(step) - _HOST_KEYS or not all(isinstance(step.get(key, ''), str) for key in _HOST_KEYS - {'argv'})
     ):
-        msg = (f'{name} is {{"argv": [ops verb words...], "stdin_local"?, "dest"?, "config"?, "python"?: "<str>"}} '
-               'or {"local": true}')  # fmt: skip
+        msg = (f'{name} is {{"argv": [ops verb words...], "stdin_local"? | "stdin_task"?, "dest"?, "config"?, '
+               '"python"?: "<str>"} or {"local": true}')  # fmt: skip
+        raise ConsentRefused(msg)
+    if {'stdin_local', 'stdin_task'} <= set(step):
+        msg = f'{name} names both stdin_local and stdin_task: exactly one source feeds its stdin'
         raise ConsentRefused(msg)
     if action in LOCAL_VERBS:
         msg = f'{name} grants {action}, which is redeemed here: {{"local": true}}'
@@ -143,7 +149,7 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
         raise ConsentRefused(msg)
     return Step(
         tuple(argv), step.get('dest', dest), step.get('config', str(data['config'])),
-        step.get('python', str(data['python'])), step.get('stdin_local'),
+        step.get('python', str(data['python'])), step.get('stdin_local'), step.get('stdin_task'),
     )  # fmt: skip
 
 
@@ -175,7 +181,9 @@ def run_local(words: Sequence[str]) -> tuple[str, int]:
 
 
 def _stdin(step: Step) -> bytes | None:
-    """The bytes of *step*'s ``stdin_local`` file, read here; ``None`` when it has none."""
+    """The bytes of *step*'s ``stdin_local`` file or ``stdin_task`` bundle, read here; ``None`` when it has neither."""
+    if step.stdin_task is not None:
+        return forgesecrets.stored_bundle(step.stdin_task).encode('utf-8')
     return None if step.stdin_local is None else Path(step.stdin_local).read_bytes()
 
 
@@ -192,11 +200,20 @@ def _ready(step: Step, remote: Remote) -> str | None:
     return (_last_line(said) or f'consent ready exited {status}') if status else None
 
 
+def _no_stdin(step: Step) -> str | None:
+    """Why *step*'s stdin source is not here (its content never read into a message); ``None`` when it is."""
+    if step.stdin_local is not None and not Path(step.stdin_local).is_file():
+        return f'no stdin_local file here: {step.stdin_local}'
+    if step.stdin_task is not None and not forgesecrets.stored_bundle(step.stdin_task):
+        return f'no stored bundle for task {step.stdin_task} here: `forge secrets store --task {step.stdin_task}`'
+    return None
+
+
 def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote) -> tuple[str, bool]:
     """``(verdict, blocked)`` of host step *index*: its door, else an earlier config step on its host, then subject."""
     grant, step = plan.grants[index], steps.steps[index]
-    if step.stdin_local is not None and not Path(step.stdin_local).is_file():
-        return f'BLOCKED -- no stdin_local file here: {step.stdin_local}', True
+    if missing := _no_stdin(step):
+        return f'BLOCKED -- {missing}', True
     placeholder = f'{REMOTE_DIR}/preflight.json'
     said, status = remote.run(ops_command(step, [*step.argv, '--credential', placeholder], sudo='sudo -n -l'))
     if status:
