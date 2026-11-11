@@ -2,7 +2,8 @@
 
 The one map of the family's development system: which repositories exist and how they depend, how a change
 travels, which forges and identities carry it, which hosts do what, and how each piece is configured. Every
-section states the shape and points at the page or module that owns the detail; nothing here restates a rule.
+section states the shape and points at the page or module that owns the detail; nothing here restates a rule. The normative design this map serves is
+[the family architecture](architecture.md).
 
 The concrete instance -- host names, addresses, account logins, App ids, cluster names -- is never written in
 this public repo. A family keeps it in its PRIVATE host-configuration repo (the role below), beside the reviewed
