@@ -14,12 +14,18 @@ and interpreters and the probe commands, so a free hand on it is a free hand on 
 An accepted candidate is loaded by the CURRENT code before anything is written, the live file is backed up beside
 itself, the candidate replaces it atomically, and the install self-check (:func:`dev_lab.ops.upgrade.checks`) runs;
 a failed check restores the backup. The printed diff names keys, never values.
+
+FIRST CONTACT (:func:`anchor`): a host whose live file has neither ``[ops.consent]`` nor ``[ops.consent_client]``
+can verify no credential, so the table that would let it verify one could never pass the boundary. Exactly that one
+table -- nothing else -- is then taken from the REVIEWED source (``[ops.config]``'s merged file, the trust root the
+routine tick already uses), never from a local ``--from`` file. Once it exists, changing it is a boundary change.
 """
 
 from __future__ import annotations
 
 import fnmatch
 import hashlib
+import json
 import os
 import tempfile
 import tomllib
@@ -36,12 +42,15 @@ if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource
 
 __all__ = [
-    'ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest', 'fetch', 'git_with_env',
-    'tick',
+    'ACTION', 'ANCHOR', 'ROUTINE', 'Applied', 'ConfigRefused', 'anchor', 'apply', 'boundary', 'changes', 'digest',
+    'fetch', 'git_with_env', 'tick',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
 ACTION: Final = 'ops.config'
+
+#: The ``[ops.*]`` table a host that verifies nothing yet takes from the reviewed source with no credential.
+ANCHOR: Final = 'consent_client'
 
 #: Dotted key patterns (fnmatch) a change may touch WITHOUT consent. Everything else is the security boundary.
 ROUTINE: Final[tuple[str, ...]] = (
@@ -192,9 +201,15 @@ def apply(
             msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
             raise ConfigRefused(msg)
         redeem(credential, digest(candidate))
-    with tempfile.TemporaryDirectory(
-        prefix=TEMP_PREFIX
-    ) as scratch:  # loaded by the current code BEFORE the live file is touched
+    return Applied(changed, guarded, _land(live, candidate, loads=loads, checks=checks, run=run, now=now))
+
+
+def _land(
+    live: Path, candidate: str, *, loads: Callable[[Path], object], checks: Checks, run: Runner,
+    now: Callable[[], datetime],
+) -> Path:  # fmt: skip
+    # loaded by the current code BEFORE the live file is touched
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         probe = Path(scratch) / live.name
         probe.write_text(candidate, encoding='utf-8')
         try:
@@ -212,7 +227,37 @@ def apply(
             _write(live, previous)
             msg = f'self-check {name} failed ({status}) on the applied file; restored the previous one: {said[-400:]}'
             raise ConfigRefused(msg)
-    return Applied(changed, guarded, backup)
+    return backup
+
+
+def anchor(
+    live: Path, reviewed: str, *, loads: Callable[[Path], object], checks: Checks, run: Runner,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> tuple[dict[str, str], Path] | None:  # fmt: skip
+    """FIRST CONTACT: add *reviewed*'s ``[ops.consent_client]`` to *live*; the table and backup, else ``None``.
+
+    ``None`` -- nothing written -- when *live* already declares ``[ops.consent]`` (an issuer) or the client table,
+    or *reviewed* declares none. *reviewed* must be the fetched ``[ops.config]`` file, never a local candidate.
+
+    Raises:
+        ConfigRefused: the reviewed table holds a non-string value, does not load, or failed the self-check.
+
+    """
+    text = live.read_text(encoding='utf-8')
+    held = tomllib.loads(text).get('ops', {})
+    found = tomllib.loads(reviewed).get('ops', {}).get(ANCHOR)
+    if 'consent' in held or ANCHOR in held or not isinstance(found, Mapping):
+        return None
+    if not all(isinstance(value, str) for value in found.values()):
+        msg = f'[ops.{ANCHOR}] in the reviewed source holds a non-string value'
+        raise ConfigRefused(msg)
+    rows = ''.join(f'{key} = {json.dumps(value)}\n' for key, value in found.items())  # a JSON string is TOML
+    candidate = f'{text.rstrip()}\n\n[ops.{ANCHOR}]\n{rows}'
+    taken = dict(found)
+    if tomllib.loads(candidate)['ops'][ANCHOR] != taken:
+        msg = f'[ops.{ANCHOR}] did not round-trip'
+        raise ConfigRefused(msg)
+    return taken, _land(live, candidate, loads=loads, checks=checks, run=run, now=now)
 
 
 def tick(
