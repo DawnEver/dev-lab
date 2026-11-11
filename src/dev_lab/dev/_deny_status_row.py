@@ -28,8 +28,8 @@ STATUS_VIA_DOORS: dict[str, object] = {
     'matches': 'argument',
     'hazard': 'a raw post on tests/review-hold, tests/review or tests/security releases a head with no review or '
     'reason behind it.',
-    'remedy': "Use the door that records why: re-run the forge's review of the head; "
-    'forge review again <pr>; forge security release <pr> --why "<reason>".',
+    'remedy': "Use the door that records why: re-run the forge's review of the head, "
+    '{python} -m dev_lab.dev.forge review again <pr>; or forge security release <pr> --why "<reason>".',
     'needs': None,
     'refuses': (
         'python -m dev_lab.dev.forge status post abc123 --context tests/review-hold --state success',
