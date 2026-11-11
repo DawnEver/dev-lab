@@ -33,7 +33,9 @@ per host step, that its ``stdin_local`` file exists here or its ``stdin_task`` b
 content shown), that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
 ``--subject``) equals the grant's; per local step, that the machine file names the client's endpoint. A door a host
 gains only from an earlier ``ops.config`` step ON THAT HOST (``config apply`` installs sudoers) is ``after step N``,
-never a failure. A remote is the held session when one is open, else key-only ssh (:mod:`.planremote`).
+never a failure; so is a subject that differs after such a step (the apply changes the live config the subject is
+derived from), and :func:`run_plan` checks it for real at that point. A remote is the held session when one is
+open, else key-only ssh (:mod:`.planremote`).
 
 :func:`run_plan` runs the GRANTED plan's steps in order: it carries each host step's credential (found in
 :func:`dev_lab.dev.consentguard.state_dir` by its action and subject) to its host under umask 077, runs the verb,
@@ -216,18 +218,20 @@ def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote) -> tuple[s
         return f'BLOCKED -- {missing}', True
     placeholder = f'{REMOTE_DIR}/preflight.json'
     said, status = remote.run(ops_command(step, [*step.argv, '--credential', placeholder], sudo='sudo -n -l'))
+    here = [i for i in range(index) if not steps.steps[i].local and steps.steps[i].dest == step.dest]
+    after = next((i + 1 for i in reversed(here) if plan.grants[i]['action'] == CONFIG_ACTION), None)
     if status:
-        here = [i for i in range(index) if not steps.steps[i].local and steps.steps[i].dest == step.dest]
-        installers = [i for i in here if plan.grants[i]['action'] == CONFIG_ACTION]
-        if installers:
-            return f'after step {installers[-1] + 1} (its door is installed by that config apply)', False
+        if after:
+            return f'after step {after} (its door is installed by that config apply)', False
         return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({_last_line(said)})', True
     said, status = remote.run(ops_command(step, [*step.argv, '--subject']), _stdin(step))
     derived = _last_line(said)
-    if status:
-        return f'BLOCKED -- the host could not derive the subject ({derived})', True
-    if derived != grant['subject']:
-        return f'BLOCKED -- the host derives subject {derived[:12]}, the plan grants {grant["subject"][:12]}', True
+    if not status and derived != grant['subject'] and after:
+        return f'after step {after} (subject derived once step {after} applied)', False
+    if status or derived != grant['subject']:
+        why = (f'the host could not derive the subject ({derived})' if status else
+               f'the host derives subject {derived[:12]}, the plan grants {grant["subject"][:12]}')  # fmt: skip
+        return f'BLOCKED -- {why}', True
     return 'green', False
 
 

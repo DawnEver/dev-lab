@@ -138,6 +138,15 @@ def test_a_door_installed_by_an_earlier_config_apply_is_after_that_step_not_a_fa
     assert lines[2].startswith('step 2 ops.secret.place: after step 1')
 
 
+def test_a_subject_after_an_earlier_config_apply_on_its_host_is_derived_after_that_step() -> None:
+    """The earlier apply changes the live config the subject is derived from (a family file fetched once declared)."""
+    host = FakeHost()
+    host.subjects['secret'] = 'd' * 64
+    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    assert green, lines
+    assert lines[2].startswith('step 2 ops.secret.place: after step 1 (subject derived once step 1 applied) on ')
+
+
 def test_a_subject_the_host_derives_differently_is_blocked() -> None:
     host = FakeHost()
     host.subjects['config'] = 'c' * 64
