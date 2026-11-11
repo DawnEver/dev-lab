@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev._forgebackends import GITHUB
@@ -81,7 +82,6 @@ from dev_lab.dev.reviewgate import (
     standing_verdicts,
 )
 from dev_lab.dev.reviewruntime import review_runtimes
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest

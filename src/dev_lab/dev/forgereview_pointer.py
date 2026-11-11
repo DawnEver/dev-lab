@@ -51,6 +51,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev.actionsartifact import ArtifactRefused, run_member, upload
@@ -74,7 +75,6 @@ from dev_lab.dev.forgereview_declared import JUDGE, Review, base_manifest, revie
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, RunsUnread, review_runs
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus

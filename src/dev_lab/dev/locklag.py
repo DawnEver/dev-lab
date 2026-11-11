@@ -16,13 +16,13 @@ from collections.abc import Callable
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.lockcheck import LOCK, UNRESOLVED
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import SHORT, RelockFailed, floated
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 __all__ = ['LAG_LIMIT', 'floating_lag', 'within_window']
 

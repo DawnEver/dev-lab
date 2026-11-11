@@ -36,8 +36,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.temp import TEMP_PREFIX
+
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource

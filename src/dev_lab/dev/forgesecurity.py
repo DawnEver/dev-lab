@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
@@ -79,7 +80,6 @@ from dev_lab.dev.security import (
     secret_findings,
     vulnerable,
 )
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
