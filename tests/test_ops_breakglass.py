@@ -463,16 +463,19 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     loopback: Loopback, url: str, api: str, *, prefix: str, auth: str, merge: str
 ) -> None:
     pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
-            'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'}}  # fmt: skip
+            'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'},
+            'labels': [{'name': 'needs-consent'}]}  # fmt: skip
     manifest = base64.b64encode(b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n').decode()
     answer('GET', prefix, (200, {'default_branch': 'main'}))
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
+    answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('POST', f'{prefix}/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}))
     answer(merge, f'{prefix}/pulls/7/merge', (200, {'merged': True}))
     forge = ClientForge(url, 'secret', transport=loopback)
     assert 'integrate/main' in forge.declaration()
     assert forge.pull(7) == ('open', 'integrate/main', HEAD)
+    assert forge.labels(7) == ('needs-consent',)
     forge.comment(7, 'BREAK-GLASS')
     forge.merge(7, head=HEAD, message=merge_message(7, 'integrate/main', 'review-bot is down', 'w'))
     assert set(loopback.asked) == {api}

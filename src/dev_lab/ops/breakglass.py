@@ -100,6 +100,10 @@ class Forge(Protocol):
         """Every open PR (:mod:`dev_lab.ops.wavesweep` lands the green ones of an open wave)."""
         ...
 
+    def labels(self, number: int) -> tuple[str, ...]:
+        """The labels PR *number* carries now."""
+        ...
+
     def comment(self, number: int, body: str) -> None:
         """Comment on PR *number*."""
         ...
@@ -137,6 +141,10 @@ class ClientForge:
     def open_pulls(self) -> Sequence[Pull]:
         """Every open PR (:func:`dev_lab.dev.forgepulls.pr_list`)."""
         return [Pull(one.number, one.base, one.head_sha, one.draft) for one in pr_list(self._client)]
+
+    def labels(self, number: int) -> tuple[str, ...]:
+        """The labels PR *number* carries, read fresh (both backends' pull JSON lists them by name)."""
+        return self._client.pr_view(number).labels
 
     def comment(self, number: int, body: str) -> None:
         """Comment on PR *number*."""
