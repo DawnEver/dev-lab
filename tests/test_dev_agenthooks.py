@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 import pytest
+from lab_commons.home import home as machine_home
 
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 
@@ -532,3 +533,16 @@ def test_a_user_code_passes_and_a_planted_credential_is_refused_through_the_real
     planted = agenthooks.decide(str(CONSENT_CODE_FROM_THE_USER['refuses'][0]), rules)  # the row's own example
     assert planted is not None
     assert planted.startswith('CONSENT-CODE-FROM-THE-USER:')
+
+
+def test_the_consent_row_names_no_home_and_still_refuses_a_write_under_the_real_one(rules: Path) -> None:
+    """The row renders into every family repo, where a home's name is a private marker: it spells none, yet guards."""
+    real = machine_home()
+    assert real.name not in json.dumps(CONSENT_CODE_FROM_THE_USER), 'the rendered row spells the machine home'
+    credential = real / 'state' / 'consent' / 'x.json'
+    for spelled in (credential.as_posix(), str(credential)):
+        verdict = agenthooks.decide(f'echo {{}} > "{spelled}"', rules)
+        assert verdict is not None, spelled
+        assert verdict.startswith('CONSENT-CODE-FROM-THE-USER:'), spelled
+    assert agenthooks.decide(f'cat "{credential.as_posix()}"', rules) is None  # reading stays the read guard's
+    assert agenthooks.decide('echo x > state/consentfoo/x.json', rules) is None  # planted near-miss
