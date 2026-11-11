@@ -41,8 +41,8 @@ A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of a workflow a PR even
 AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`ready_only`) -- never typed per job.
 
 WHO PRODUCES IS THE FORGE'S DATA (:attr:`~dev_lab.dev._forgebackends.Backend.producers`, user ruling 2026-11-11):
-a repo whose review is a producer its forge does not wire -- ``where = "judge"`` on GitHub, which Actions alone
-gates -- is refused at render (:func:`placed`), so neither its prepare workflow nor its judge-only shape is written.
+a repo whose review is a producer its forge does not wire is refused at render (:func:`placed`). The judge host is
+wired on both forges, and ADVISORY: its verdict never gates a merge (:data:`~dev_lab.dev._forgebackends.ADVISORY`).
 
 A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
 the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.

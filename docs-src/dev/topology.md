@@ -100,9 +100,9 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
 - `python -m dev_lab.dev.forge protect plan|check|apply` renders it onto the forge (`dev_lab.dev.forgeprotect`).
   `apply` is an administrator's verb, run from a workstation after reading `plan`; CI never runs it.
 - Who produces is the forge's data (`_forgebackends.Backend.producers`, user rulings 2026-11-11): a GitHub repo is
-  tested and gated by its Actions jobs alone -- no forge serve host, cluster, workstation or judge host; a part no
+  gated and promoted by its Actions jobs alone -- no forge serve host, cluster or workstation; a part no
   hosted runner produces (a heavy test) is kept and off its gate (`jobparts.off_gate`). Gitea wires every producer.
-- Review: `[tool.dev_lab.review] where = "judge"` (Gitea only) sends every PR to the judge host, whose verdict is
+- Review: `[tool.dev_lab.review] where = "judge"` (either forge) sends every PR to the judge host, whose verdict is
   ADVISORY (`_forgebackends.ADVISORY`): posted as information, never waited on by `tests/merge-ready`
   ([review](forge.md#a-review-judged-on-its-own-host-forge-review-prepare--judge)).
 

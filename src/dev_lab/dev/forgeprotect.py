@@ -201,7 +201,7 @@ def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
     approver = review.judge_login if declared.approvals else ''
     return (
         Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),
-               declared.approvals, approver, review.judge_app),
+               declared.approvals, approver),
         Target(TRUNK, policy.trunk, contexts[TRUNK], ours.breakglass, ours.promote),
     )  # fmt: skip
 

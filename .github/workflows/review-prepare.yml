@@ -1,49 +1,40 @@
 # Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
 {
-  "name": "Review again",
+  "name": "Review prepare",
   "on": {
-    "issue_comment": {
+    "pull_request_target": {
       "types": [
-        "created",
-        "edited"
+        "opened",
+        "synchronize",
+        "reopened",
+        "ready_for_review"
       ]
     }
   },
   "concurrency": {
-    "group": "review-again-${{ github.event.issue.number }}",
-    "cancel-in-progress": false
-  },
-  "permissions": {
-    "contents": "read"
+    "group": "review-prepare-${{ github.event.pull_request.number }}",
+    "cancel-in-progress": true
   },
   "env": {
-    "HEAD_SHA": "${{ github.sha }}",
-    "INTEGRATION_SHA": "${{ github.sha }}",
-    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
-    "GITHUB_TOKEN": "${{ github.token }}"
+    "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/"
   },
   "jobs": {
-    "again": {
-      "if": "${{ github.event.issue.pull_request && (contains(github.event.comment.body, '<!-- lab-commons:review-again:') || contains(github.event.comment.body, '<!-- lab-commons:review-carry:')) }}",
+    "prepare": {
+      "permissions": {
+        "contents": "read",
+        "pull-requests": "read"
+      },
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event.pull_request.head.repo.full_name == github.repository) }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
           "uses": "actions/checkout@v4",
           "with": {
             "ref": "${{ env.HEAD_SHA }}",
-            "fetch-depth": 0
+            "fetch-depth": 0,
+            "persist-credentials": false
           }
-        },
-        {
-          "name": "Install uv",
-          "uses": "astral-sh/setup-uv@v5",
-          "with": {
-            "enable-cache": true
-          }
-        },
-        {
-          "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
         },
         {
           "name": "Install the review door",
@@ -55,31 +46,23 @@
           }
         },
         {
-          "name": "Install the review method",
-          "run": "cd \"$RUNNER_TEMP\"\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\npython3 -I -m venv \"$RUNNER_TEMP/ai-lab\" && \"$RUNNER_TEMP/ai-lab/bin/python\" -I -m pip install -q uv\nAI_LAB_REV=$(python3 -I -c 'import sys, tomllib\nlock = tomllib.loads(sys.stdin.read())\n(source,) = [p[\"source\"] for p in lock.get(\"package\", []) if p[\"name\"] == \"ai-lab\"] or sys.exit(\"the door lock pins no ai-lab\")\n\"git\" in source or sys.exit(f\"ai-lab is locked from {source}, not a git revision\")\nprint(source[\"git\"].rpartition(\"#\")[2])' < \"$RUNNER_TEMP/dev-lab/uv.lock\") || exit 1\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${FAMILY_SOURCE}ai-lab.git\" \"$RUNNER_TEMP/ai-lab-src\"\ngit -C \"$RUNNER_TEMP/ai-lab-src\" fetch -q --no-tags origin \"$AI_LAB_REV\"\ngit -C \"$RUNNER_TEMP/ai-lab-src\" checkout -q --detach \"$AI_LAB_REV\"\n\"$RUNNER_TEMP/ai-lab/bin/uv\" export --no-config --project \"$RUNNER_TEMP/ai-lab-src\" --frozen --no-hashes --no-header --no-annotate --no-emit-project > \"$RUNNER_TEMP/ai-lab.txt\"\n\"$RUNNER_TEMP/ai-lab/bin/uv\" pip install --no-config --no-deps --python \"$RUNNER_TEMP/ai-lab/bin/python\" -r \"$RUNNER_TEMP/ai-lab.txt\"\n\"$RUNNER_TEMP/ai-lab/bin/uv\" pip install --no-config --no-deps --python \"$RUNNER_TEMP/ai-lab/bin/python\" \"$RUNNER_TEMP/ai-lab-src\"\n",
+          "name": "Prepare the review bundle",
+          "run": "\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }} --repo \"$GITHUB_WORKSPACE\"",
           "env": {
-            "FAMILY_READ_TOKEN": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}",
             "GITHUB_TOKEN": "${{ github.token }}"
           }
         },
         {
-          "name": "Keep the review keys in memory",
-          "run": "git config --global credential.helper \"cache --timeout=1800 --socket=$RUNNER_TEMP/git-credential-cache/socket\""
-        },
-        {
-          "name": "Review the PR again",
-          "run": "trap \"git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit\" EXIT; uv run --no-sync python -m dev_lab.dev.forge review run --pr ${{ github.event.issue.number }} --keys-env AI_LAB_KEYS_PR_REVIEW --runtime \"ai_lab.python=$RUNNER_TEMP/ai-lab/bin/python\"",
-          "env": {
-            "AI_LAB_KEYS_PR_REVIEW": "${{ secrets.AI_LAB_KEYS_PR_REVIEW }}"
+          "name": "Attach the review bundle to this run",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "review-bundle",
+            "path": "${{ runner.temp }}/review-bundle/bundle.json",
+            "if-no-files-found": "error",
+            "overwrite": true
           }
         }
-      ],
-      "permissions": {
-        "contents": "read",
-        "statuses": "write",
-        "pull-requests": "write",
-        "issues": "write"
-      }
+      ]
     }
   }
 }

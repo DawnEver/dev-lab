@@ -13,7 +13,6 @@ import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, FakeGitea, FakeGitHub, refused
 
 from dev_lab.dev import forgeprotect
-from dev_lab.dev._forgebackends import NotWired
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -291,21 +290,15 @@ def test_the_door_is_the_forge_noun() -> None:
 APP_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_app = 5619495\n'
 
 
-def test_an_app_judged_github_repo_is_refused_since_actions_alone_gate_it() -> None:
-    """User ruling 2026-11-11: GitHub wires no judge host, and on Gitea the judge is advisory: no approval required."""
-    with pytest.raises(NotWired, match='judge-host'):
-        targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
-    integration, _ = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
-    assert (integration.approvals, integration.approver) == (0, '')
-    with pytest.raises(ValueError, match='the judge is advisory'):
-        declaration_from(GITEA_TEXT + JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
-
-
-def test_an_app_judge_takes_no_approval_and_never_renders_on_gitea() -> None:
-    with pytest.raises(ValueError, match='the judge is advisory'):
-        declaration_from(GITHUB_TEXT + APP_JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
-    with pytest.raises(ValueError, match='no GitHub App'):
-        plan(FakeGitea(), GITEA, targets(GITEA_TEXT + APP_JUDGED, 'p', GITEA))
+def test_a_judged_repo_requires_no_judge_check_and_no_approval_on_either_forge() -> None:
+    """User ruling 2026-11-11: the judge is advisory on both forges -- it reviews, and no rule waits on it."""
+    hub, _ = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
+    assert (hub.judge_app, hub.approvals, hub.approver) == (0, 0, '')
+    tea, _ = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
+    assert (tea.judge_app, tea.approvals, tea.approver) == (0, 0, '')
+    for text in (GITEA_TEXT + JUDGED, GITHUB_TEXT + APP_JUDGED):
+        with pytest.raises(ValueError, match='the judge is advisory'):
+            declaration_from(text + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
 
 
 def test_github_bypasses_every_declared_actor_an_app_beside_the_admin_role() -> None:

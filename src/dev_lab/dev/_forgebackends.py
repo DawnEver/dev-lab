@@ -95,7 +95,8 @@ class Backend:
     #: ``pulls/{n}.diff``, GitHub's ``pulls/{n}`` as ``application/vnd.github.diff``.
     diff_at: tuple[str, str] = ('.diff', 'text/plain')
     #: Who may produce a check this forge's merge and promotion read. Gitea, the family's private forge, wires
-    #: every producer; GitHub, whose repos are the toolchain, wires its Actions alone (user ruling 2026-11-11).
+    #: every producer; GitHub, whose repos are the toolchain, wires its Actions and the advisory judge host -- no forge
+    #: serve host, cluster or workstation (user ruling 2026-11-11).
     producers: frozenset[str] = frozenset({ACTIONS, FORGE_SERVE, JUDGE_HOST})
 
     def host(self, forge: Forge) -> str:
@@ -137,7 +138,7 @@ GITHUB: Final = Backend(
     issues_only=(),
     run_path='.github/workflows/{workflow}',
     run_pulls_listed=True,
-    producers=frozenset({ACTIONS}),
+    producers=frozenset({ACTIONS, JUDGE_HOST}),
     diff_at=('', 'application/vnd.github.diff'),
     headers=(
         ('Accept', 'application/vnd.github+json'),

@@ -41,8 +41,8 @@
 #                 then `branchprune sweep` deletes every branch integration now contains
 #
 # ACTIONS ALONE (user rulings 2026-11-11): a GitHub repo is a toolchain repo, tested and gated by these jobs on
-# GitHub-hosted runners and nothing else -- no forge serve host, cluster, workstation or judge host posts a check
-# its merge or promotion reads (_forgebackends.Backend.producers). A heavy part no hosted runner produces is KEPT
+# GitHub-hosted runners and nothing else -- no forge serve host, cluster or workstation posts a check its merge or
+# promotion reads; the judge host's review is advisory (_forgebackends.Backend.producers). A heavy part no hosted runner produces is KEPT
 # (a consumer's unified run selects it) and OFF this gate: no row, nothing waits on it (jobparts.off_gate).
 # Gitea keeps those producers.
 #
