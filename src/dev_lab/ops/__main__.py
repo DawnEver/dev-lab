@@ -44,10 +44,11 @@ from dev_lab.ops import (
     totp,
     upgrade,
 )
-from dev_lab.ops.config import Consent, OpsConfig, load
+from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.consent.client import redeem
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.issuer import Issuer
+from dev_lab.ops.consentrole import Consent
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
 
