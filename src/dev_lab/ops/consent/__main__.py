@@ -33,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs = parser.add_subparsers(dest='verb', required=True)
     granting = verbs.add_parser('grant')
     granting.add_argument('request', type=Path, help='the request JSON an agent prepared')
-    granting.add_argument('--code', default=None, help='the Authenticator code the USER gave (else stdin or a prompt)')
+    granting.add_argument('--code', default=None, help='the cluster code the USER gave (else stdin or a prompt)')
     verbs.add_parser('plan', help='show a plan and the digest its one code consents to').add_argument('plan', type=Path)
     fetching = verbs.add_parser('recover', help="fetch again a plan's granted, never-used credentials; no code")
     fetching.add_argument('plan', type=Path)
