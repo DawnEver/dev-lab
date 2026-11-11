@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import forge_of_url
@@ -44,7 +45,7 @@ from dev_lab.ops import (
 )
 from dev_lab.ops.config import Consent, OpsConfig, load
 from dev_lab.ops.consent import serve as consent_serve
-from dev_lab.ops.consent.client import public_key, redeem
+from dev_lab.ops.consent.client import Register, public_key, redeem, remote_register
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.supervise.alert import Notifier
@@ -194,9 +195,24 @@ def _consent(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) -> in
     return 0
 
 
-def _unreachable(_credential: object, _amount: int) -> object:
-    msg = 'this host enables no [ops.consent] issuer'
-    raise ConnectionError(msg)
+def _consent_ends(config: OpsConfig) -> tuple[Ed25519PublicKey, Register]:
+    """The verifier key and the register: the local issuer's, else the issuer's over ssh per ``[ops.consent_client]``.
+
+    Raises:
+        ConsentRefused: neither ``[ops.consent]`` nor ``[ops.consent_client]`` is declared, or no key is reachable.
+
+    """
+    if config.consent is not None:
+        issuer = _issuer(config, config.consent)
+        return issuer.public(), issuer.register
+    if config.consent_client is None:
+        msg = (
+            f'{config.path} declares neither [ops.consent] (the issuer) nor [ops.consent_client] '
+            'endpoint = "<account>@<issuer host>" (with public_key, identity): no consent can be verified here'
+        )
+        raise ConsentRefused(msg)  # fmt: skip
+    table = config.consent_client.table()
+    return public_key(table), remote_register(table)
 
 
 def _breakglass(config: OpsConfig, verb: str) -> int:
@@ -204,9 +220,8 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
         return 2
-    issuer = _issuer(config, config.consent) if config.consent is not None else None
     try:
-        verifier = issuer.public() if issuer is not None else public_key()
+        verifier, register = _consent_ends(config)
     except ConsentRefused as refused:
         emit(f'refused: {refused}', err=True)
         return 2
@@ -216,7 +231,7 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
         alert=lambda title, detail: _alert(config, title, detail),
         now=time.time,
         consent_key=verifier,
-        register=issuer.register if issuer is not None else _unreachable,
+        register=register,
         key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
     )
     try:
@@ -235,9 +250,7 @@ def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
         ConsentRefused: no verifier key is reachable.
 
     """
-    issuer = _issuer(config, config.consent) if config.consent is not None else None
-    key = issuer.public() if issuer is not None else public_key()
-    register = issuer.register if issuer is not None else _unreachable
+    key, register = _consent_ends(config)
     return lambda action: (
         lambda found, subject: redeem(found, action=action, subject=subject, key=key, register=register,
                                       now=time.time())
