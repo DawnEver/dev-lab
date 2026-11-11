@@ -55,9 +55,14 @@ def run(argv: Sequence[str], *, timeout_s: float) -> int:
 def piped(target: str, line: str, *, identity: str | None, timeout_s: float) -> tuple[int, str]:
     """Send *line* on stdin to *target*'s forced command over ``ssh -T`` (key-only, never prompts).
 
-    ``(exit status, its output)``; the remote account's forced command decides what runs, never the caller.
+    ``(exit status, its answer)``; the remote account's forced command decides what runs, never the caller.
+    A success answers its stdout ALONE: the remote's notices go to stderr and never ride into the answer (2026-11-11,
+    an upgrade-on-read notice beside the consent issuer's JSON lost a spent code's credentials). A failure keeps
+    stderr too, because its reason (``refused: ...``) is written there.
     """
     key = ['-i', identity] if identity else []
     argv = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}', *key, target]
     done = _door.run(argv, input=line, capture_output=True, text=True, encoding='utf-8', check=False, timeout=timeout_s)
+    if done.returncode == 0:
+        return 0, done.stdout.strip()
     return done.returncode, (done.stdout + done.stderr).strip()
