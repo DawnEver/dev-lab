@@ -27,12 +27,11 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.log import emit
-
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy
+from dev_lab.ops.configupgrade import upgraded
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.served import served, served_by
@@ -356,63 +355,6 @@ def _role[
         raise ValueError(msg) from missing
 
 
-#: The keys #311 moved out of ``[ops.breakglass]`` (FORMATS-UPGRADE-ON-READ): the TOTP seed and the code lockout went
-#: to the consent issuer; a wave's window and cap became the params of its ``breakglass.wave`` credential.
-_BREAKGLASS_MOVED: Final = ('totp', 'wave_hours', 'max_merges', 'lockout_after', 'lockout_minutes')
-#: Where a derived issuer keeps its key and ledger when a pre-#311 host declared none.
-_CONSENT_DEFAULTS: Final = {
-    'account': 'consent',
-    'key': '/etc/dev-lab/consent/issuer.key',
-    'state': '/var/lib/dev-lab-ops/consent',
-}
-
-
-def _forge_accounts(ops: dict[str, Any]) -> dict[str, Any]:
-    """A pre-#402 ``[ops.forge] read_only`` upgraded on read to ``accounts`` with role ``read``; both is refused.
-
-    The old list named no repositories (``account ensure --read`` took them as arguments), so each upgraded reader
-    reads the host's own served repositories on its forge (``[ops] repos`` not on github.com).
-    """
-    forge = ops.get('forge')
-    if not isinstance(forge, dict) or 'read_only' not in forge:
-        return ops
-    if 'accounts' in forge:
-        msg = '[ops.forge] holds both read_only (retired by #402) and accounts; keep accounts only'
-        raise ValueError(msg)
-    urls = [url for url in ops.get('repos', ()) if 'github.com' not in url]
-    served = sorted('/'.join(url.removesuffix('.git').split('/')[-2:]) for url in urls)
-    accounts = {login: {'role': 'read', 'repos': served} for login in forge['read_only']}
-    emit(f'[ops] upgraded [ops.forge] read_only on read: {sorted(accounts)} -> accounts role read', err=True)
-    return dict(ops, forge={**{k: v for k, v in forge.items() if k != 'read_only'}, 'accounts': accounts})
-
-
-def _upgraded(ops: dict[str, Any]) -> dict[str, Any]:
-    """*ops* with every retired shape upgraded on read: the ONE place an old shape is read.
-
-    ``[ops.upgrade] overrides`` (a hand-written uv override file, 2026-11-08) is dropped: the family's revisions come
-    from dev-lab's own lock at the installed commit. A pre-#311 ``[ops.breakglass]``: the moved keys leave the
-    break-glass table. Its ``totp`` and lockout seed the consent issuer when the file declares none (keys =
-    break-glass's); a declared ``[ops.consent]`` wins. ``wave_hours``/``max_merges`` are dropped: a wave's window and
-    cap are its credential's params now, and the ceilings stay where they were. A pre-#402 ``[ops.forge] read_only``
-    becomes ``accounts`` (:func:`_forge_accounts`).
-    """
-    ops = _forge_accounts(ops)
-    lifted = ops.get('upgrade')
-    if isinstance(lifted, dict) and 'overrides' in lifted:
-        ops = dict(ops, upgrade={key: value for key, value in lifted.items() if key != 'overrides'})
-        emit('[ops] upgraded [ops.upgrade] on read: dropped overrides (the lock pins the family)', err=True)
-    glass = ops.get('breakglass')
-    if not isinstance(glass, dict) or not (moved := {key: glass[key] for key in _BREAKGLASS_MOVED if key in glass}):
-        return ops
-    upgraded = dict(ops, breakglass={key: value for key, value in glass.items() if key not in moved})
-    if 'consent' not in ops and 'totp' in moved:
-        lockout = {key: moved[key] for key in ('lockout_after', 'lockout_minutes') if key in moved}
-        keys = list(glass.get('keys', ()))
-        upgraded['consent'] = {**_CONSENT_DEFAULTS, 'totp': moved['totp'], 'keys': keys, **lockout}
-    emit(f'[ops] upgraded a pre-consent [ops.breakglass] on read: moved {sorted(moved)}', err=True)
-    return upgraded
-
-
 def _root_secret(path: Path, label: str, why: str) -> str:
     """The text of a declared root-only host secret: the ONE read every such file takes; refuse one unreadable."""
     try:
@@ -461,7 +403,7 @@ def load(
     if not isinstance(ops, dict):
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
-    ops = _upgraded(ops)
+    ops = upgraded(ops)
     root = (_is_root() if as_root is None else as_root) and not structure_only
     judge_table = ops.get('judge')
     if root and isinstance(judge_table, dict) and (keys_file := str(judge_table.get('keys_file', ''))):
