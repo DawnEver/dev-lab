@@ -32,7 +32,7 @@ from lab_commons.config import FAMILY_TABLE
 
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
-from dev_lab.ops import forcecommand
+from dev_lab.ops import forcecommand, forgerunner
 from dev_lab.ops.access import Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.backuprole import Backup
@@ -245,6 +245,7 @@ def files(config: OpsConfig) -> dict[str, str]:
         **_config_tick(config),
         **access,
         **_supervise(config),
+        **forgerunner.files(config),
     }
 
 
@@ -291,6 +292,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
             )
     if config.supervise is not None:
         steps += ['systemctl daemon-reload', f'systemctl enable --now {_SUPERVISE}.service']
+    steps += forgerunner.steps(config)
     return tuple(steps)
 
 

@@ -74,6 +74,7 @@ def declared(config: OpsConfig) -> dict[str, str]:
         owners |= dict.fromkeys(probe.tokens.values(), probe.user)
     if config.environment_file:
         owners[config.environment_file] = 'root'
+    owners |= dict.fromkeys((runner.token_file for runner in config.runners), 'root')
     return owners
 
 

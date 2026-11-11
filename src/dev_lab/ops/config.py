@@ -32,6 +32,7 @@ from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy
 from dev_lab.ops.configupgrade import upgraded
+from dev_lab.ops.forgerunner import ForgeRunner, runners
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.served import app_of_forge, credential_files, served, served_by
@@ -308,6 +309,7 @@ class OpsConfig:
     forge: Forge | None = None
     environment_file: str = ''
     caddy: Caddy | None = None
+    runners: tuple[ForgeRunner, ...] = ()
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -445,6 +447,7 @@ def load(
         config_source=_role(ConfigSource, ops.get('config'), '[ops.config]'),
         forge=_role(Forge, ops.get('forge'), '[ops.forge]'),
         environment_file=environment_file,
+        runners=runners(ops.get('runner')),
     )
 
 
