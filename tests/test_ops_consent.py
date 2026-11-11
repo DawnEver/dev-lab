@@ -275,7 +275,10 @@ def _judge_host(tmp: Path, client: str) -> OpsConfig:
 
 def _client(host: Host) -> str:
     key = public_text(host.issuer.public()).strip()
-    return f'[ops.consent_client]\nendpoint = "consent@issuer"\npublic_key = "{key}"\n'
+    return (
+        f'[ops.consent_client]\nendpoint = "consent@issuer"\npublic_key = "{key}"\n'
+        'known_hosts = "/srv/ops/ssh/consent_known_hosts"\n'
+    )
 
 
 def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
@@ -284,7 +287,7 @@ def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
     sent: list[Any] = []
 
     def send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
-        sent.append(table['endpoint'])
+        sent.append((table['endpoint'], table['known_hosts']))
         try:
             return 0, serve.handle(host.issuer, json.dumps(request))
         except ConsentRefused as refused:
@@ -297,7 +300,7 @@ def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
     credential = host.issue(WAVE)
     redeem_wave = ops_main._redeemer(judge)('breakglass.wave')
     assert redeem_wave(credential, None).action == 'breakglass.wave'
-    assert sent == ['consent@issuer']
+    assert sent == [('consent@issuer', '/srv/ops/ssh/consent_known_hosts')]
     with pytest.raises(ConsentRefused, match='already used'):  # registered AT the issuer: its ledger refuses a reuse
         redeem_wave(credential, None)
 

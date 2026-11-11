@@ -235,17 +235,25 @@ class ConsentClient:
     """Where a host that is NOT the issuer verifies and registers a consent (:mod:`dev_lab.ops.consent.client`).
 
     ``endpoint`` is the issuer's ``<account>@<host>`` (its ForceCommand ``consent serve``), ``identity`` the ssh key
-    this host's root signs in with (empty: ssh's default), ``public_key`` the issuer's (empty: the packaged
-    ``issuer.pub``). Read from THIS file, never root's machine file: an ops verb runs as root under ``sudo``.
+    this host's root signs in with (empty: ssh's default), ``known_hosts`` the file the issuer's host key is checked
+    against strictly (empty: ssh's default) -- both may live in the ops user's home, made by that user and readable
+    by root, since root keeps no ``~/.ssh`` -- and ``public_key`` the issuer's (empty: the packaged ``issuer.pub``).
+    Read from THIS file, never root's machine file: an ops verb runs as root under ``sudo``.
     """
 
     endpoint: str
     public_key: str = ''
     identity: str = ''
+    known_hosts: str = ''
 
     def table(self) -> dict[str, str]:
         """The client table :func:`~dev_lab.ops.consent.client.public_key` and ``remote_register`` read."""
-        return {'endpoint': self.endpoint, 'public_key': self.public_key, 'identity': self.identity}
+        return {
+            'endpoint': self.endpoint,
+            'public_key': self.public_key,
+            'identity': self.identity,
+            'known_hosts': self.known_hosts,
+        }
 
 
 @dataclass(frozen=True)
