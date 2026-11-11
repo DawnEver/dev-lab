@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.agent_guard import SHELL_TOOLS
+from dev_lab.dev.agent_wiring import SHELL_TOOLS
 from dev_lab.dev.ephemeralrefs import RULE, cited_in_text
 
 if TYPE_CHECKING:
@@ -79,7 +79,13 @@ def appended_texts(command: str) -> list[str]:
 
 def _toplevel(cwd: str) -> Path | None:
     answer = _door.run(
-        ['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True, cwd=cwd, check=False, timeout=60
+        ['git', 'rev-parse', '--show-toplevel'],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        cwd=cwd,
+        check=False,
+        timeout=60,
     )
     return Path(answer.stdout.strip()) if answer.returncode == 0 and answer.stdout.strip() else None
 

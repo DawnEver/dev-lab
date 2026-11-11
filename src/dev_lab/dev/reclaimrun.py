@@ -6,7 +6,7 @@ automation REPORTED debris and ``branchset --apply`` -- the owner of the deletab
 being too slow to run inline. So this module decides nothing; it RUNS that owner
 (:func:`dev_lab.dev.branchset.apply_local`, which reclaims through :func:`dev_lab.dev.reclaim.reclaim`):
 
-* ``--session-start`` is the ``SessionStart`` hook (:data:`dev_lab.dev.agent_guard.WIRING`): it reads the
+* ``--session-start`` is the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`): it reads the
   payload's ``cwd``, does nothing unless that is a MAIN checkout (a linked tree is somebody's lease), detaches
   a background run and returns at once;
 * a background run has no console, survives its parent, and holds a PER-REPO lock in the git common dir, so a

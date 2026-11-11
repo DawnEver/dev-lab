@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import agent_guard, ephemeralrefs, journaldoor
+from dev_lab.dev import agent_wiring, ephemeralrefs, journaldoor
 
 _TASK_JS = 'node "C:/x/rem/scripts/task.js"'
 
@@ -88,6 +88,6 @@ def test_the_commit_time_refusal_names_the_door_and_a_human_remedy_for_a_journal
 
 
 def test_the_door_is_wired_before_every_shell_call() -> None:
-    wired = [w for w in agent_guard.WIRING if w.marker == journaldoor.__name__]
+    wired = [w for w in agent_wiring.WIRING if w.marker == journaldoor.__name__]
     assert [(w.event, w.on_shells) for w in wired] == [('PreToolUse', True)]
     assert f'-m {journaldoor.__name__}' in wired[0].command

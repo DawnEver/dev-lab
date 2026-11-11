@@ -34,7 +34,8 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import agenthooks
-from dev_lab.dev.agent_guard import ENGINE_REL, RULES_REL, SETTINGS_REL, engine_beside, install_guard
+from dev_lab.dev.agent_guard import engine_beside, install_guard
+from dev_lab.dev.agent_wiring import ENGINE_REL, RULES_REL, SETTINGS_REL
 from dev_lab.dev.famtests.allowguard import (
     GLOB_CASES,
     Scan,
