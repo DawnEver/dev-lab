@@ -106,7 +106,7 @@ def test_forget_is_an_exit_of_hpc_through_the_door() -> None:
 def test_the_hpc_refusal_names_forget_among_the_deploy_doors() -> None:
     """User ruling 2026-11-11: per purpose the door's shape; forget's flags live in refusals.md."""
     text = str(HPC_THROUGH_THE_DOOR['remedy'])
-    assert 'deploy `hpcaccount deploy-fleet|forget|deploy`' in text
+    assert 'deploy `hpcaccount deploy*|forget`' in text
     assert '-m dev_lab.dev.<door>' in text
 
 

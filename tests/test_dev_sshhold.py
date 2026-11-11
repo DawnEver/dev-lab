@@ -210,3 +210,15 @@ def test_a_runs_stdin_rides_heredoc_data_and_the_audit_keeps_only_its_digest(mon
     assert line['stdin_sha256'] == hashlib.sha256(secret).hexdigest()[:12]
     assert b'PLANTED' not in sshholdstate.audit_path().read_bytes()
     assert 'PLANTED' not in script  # base64: not even the plain text rides the stream
+
+
+def test_no_held_session_names_the_door_for_each_host_kind(monkeypatch: pytest.MonkeyPatch) -> None:
+    """User ruling 2026-11-11: a key-only host never needs a code, so the refusal names both doors."""
+    monkeypatch.setattr(sshhold, 'read_session', lambda _dest: None)
+    with pytest.raises(HoldRefused) as refused:
+        sshhold.close_session('alice@hpclogin01.example.org')
+    text = str(refused.value)
+    assert 'key-only' in text
+    assert 'python -m lab_commons.hpc' in text
+    assert 'sshhold open alice@hpclogin01.example.org --hours N --code <code>' in text
+    assert 'the code the user gives' not in text
