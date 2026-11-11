@@ -131,8 +131,8 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     if role is None:
         return {}
     tick_service = _service(
-        config, role, 'End expired break-glass waves, resend undelivered wave summaries (dev_lab.ops)',
-        ['Type=oneshot', f'ExecStart={_door(config, "breakglass", "tick")}'], network=False,
+        config, role, 'Land the green PRs of an open wave, end expired waves, resend wave summaries (dev_lab.ops)',
+        ['Type=oneshot', f'ExecStart={_door(config, "breakglass", "tick")}'], network=True,
     )  # fmt: skip
     tick_timer = (
         '[Unit]\nDescription=Break-glass wave tick (dev_lab.ops)\n'
