@@ -36,6 +36,8 @@ class Merge:
     at: float
     #: The fingerprint of the ssh key that asked for it (:mod:`dev_lab.ops.sshkey`).
     key: str = ''
+    #: The head's test state at merge time (:func:`dev_lab.ops.breakglass.tests_at`): passed, red or untested.
+    tests: str = ''
 
 
 @dataclass
@@ -101,7 +103,11 @@ def report(state: Path, wave: Wave) -> str:
         f'- opened {_iso(wave.opened)} by key {wave.key or "unknown"}, ended {_iso(wave.closed or wave.expires)}, '
         f'{len(wave.merges)} merge(s)' + ('' if wave.merges else ': no merge'),
         '',
-        *(f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head} by key {m.key or "unknown"}: {m.reason}' for m in wave.merges),
+        *(
+            f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head} by key {m.key or "unknown"}: {m.reason} '
+            f'(tests: {m.tests or "unrecorded"})'
+            for m in wave.merges
+        ),
         '',
         f'Acknowledge: `python -m dev_lab.dev.forge breakglass ack {wave.id}`.',
     ]

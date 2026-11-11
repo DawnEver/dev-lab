@@ -143,8 +143,10 @@ declares (`dev_lab.ops.config.load`).
 
 ## 6. Break-glass waves
 
-- Break-glass merges a PR past the review, never past its tests: the server refuses a head whose security check or
-  test parts do not stand PASS (`_tests_stand`, `dev_lab.ops.breakglass`).
+- Break-glass merges a PR past the review AND its tests (user ruling 2026-11-11): unrun, pending or red, it merges
+  inside an open wave, and its test state at merge time -- `passed`, `red: <contexts>` or `untested` -- is named in
+  the PR comment, the audit line and the wave's summary (`tests_at`, `dev_lab.ops.breakglass`). The host's own
+  sweep still lands only green PRs (`dev_lab.ops.wavesweep`); an untested merge is always an explicit request.
 - It runs only inside a WAVE the user opened with a `breakglass.wave` credential whose params are the window
   (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_hours_max` / `max_merges_max`
   -- above a ceiling it is refused, never clamped. The merge that reaches the cap ends the wave.
