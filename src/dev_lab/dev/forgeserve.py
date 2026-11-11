@@ -132,6 +132,7 @@ from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerun, forgerunstate, forgesubmit, metrics, retention
+from dev_lab.dev._forgebackends import FORGE_SERVE, NotWired, require_producer
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgeaffinity import declared
 from dev_lab.dev.forgealarm import (
@@ -403,7 +404,9 @@ def main(
         os.chdir(work_root(root))  # the serve reads its venv, never this tree (work_root)
 
     def build(here: Path) -> Client:
-        return client_for(here, env=env, transport=transport) if env is not None else unprompted_client(here)
+        built = client_for(here, env=env, transport=transport) if env is not None else unprompted_client(here)
+        require_producer(built.backend, FORGE_SERVE, f'forge serve of {here}')  # GitHub: Actions alone (2026-11-11)
+        return built
 
     seat = seat_of()
     machine = this_machine()
@@ -427,7 +430,7 @@ def main(
         sound(Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)))
         emit(f'[serve] {missing}', err=True)
         return 1
-    except (ForgeCallFailed, PostFailed, forgerunstate.ForeignSchema, OSError) as failed:
+    except (ForgeCallFailed, PostFailed, NotWired, forgerunstate.ForeignSchema, OSError) as failed:
         _host_failure(root, failed)
         emit(f'[serve] {failed}', err=True)
         return 1

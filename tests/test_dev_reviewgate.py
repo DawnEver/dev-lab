@@ -202,58 +202,36 @@ _JUDGE_LOGIN = 'review-bot'
 _JUDGED = f'[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "{_JUDGE_LOGIN}"\n'
 
 
-def _judge_repo(*, github: bool = False) -> tuple[StateForge, str, int]:
-    forge = StateForge(Forge('github.com', 'o', 'r')) if github else StateForge()
+def _judge_repo() -> tuple[StateForge, str, int]:
+    forge = StateForge()
     forge.pyproject_at[_BASE] = _JUDGED
     head = 'd' * 40
     return forge, head, forge.add_pull('pr/x', _BASE, sha=head)
 
 
 def _gate(forge: StateForge, head: str) -> str | None:
-    return review_gate(forge, head, base=_BASE)(status_list(forge, head))
-
-
-@pytest.mark.parametrize('github', [False, True])
-def test_a_judge_repo_is_reviewed_by_its_declared_judge_approving_this_head(*, github: bool) -> None:
-    """PLANTED CONTROL for the waits below: the declared judge's APPROVED at this head passes, on either forge."""
-    forge, head, number = _judge_repo(github=github)
-    assert _gate(forge, head) is not None  # no review yet: waits
-    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
-    assert _gate(forge, head) is None
-    assert breakglass.unreviewed(forge, head, base=_BASE) is None
+    return review_gate(forge, base=_BASE)(status_list(forge, head))
 
 
 @pytest.mark.parametrize(
-    ('login', 'commit', 'later'),
+    'verdicts',
     [
-        (_JUDGE_LOGIN, 'e' * 40, None),  # approved an older head
-        ('someone-else', 'd' * 40, None),  # approved by a login that is not the declared judge
-        (_JUDGE_LOGIN, 'd' * 40, 'REQUEST_CHANGES'),  # the judge changed its mind after approving
+        (),  # no review yet
+        (('someone-else', 'APPROVED'),),  # approved by a login that is not the declared judge
+        (('review-bot', 'APPROVED'), ('review-bot', 'REQUEST_CHANGES')),  # the judge changed its mind
     ],
 )
-def test_a_judge_repo_waits_on_any_approval_but_the_declared_judge_s_latest_at_this_head(
-    login: str, commit: str, later: str | None
-) -> None:
+def test_a_judge_repo_s_merge_never_waits_on_the_judge(verdicts: tuple[tuple[str, str], ...]) -> None:
+    """User ruling 2026-11-11: the judge is ADVISORY on Gitea -- posted as information, never a merge condition.
+
+    PLANTED CONTROL: test_a_serve_repo_is_unaffected_by_a_judge_approval, below, still waits.
+    """
     forge, head, number = _judge_repo()
-    forge.add_review(number, login=login, state='APPROVED', commit=commit)
-    if later:
-        forge.add_review(number, login=_JUDGE_LOGIN, state=later, commit=head)
-    assert _gate(forge, head) is not None
-    assert breakglass.unreviewed(forge, head, base=_BASE) is not None
-
-
-def test_a_judge_repo_ignores_a_forged_tests_review_success() -> None:
-    """A tests/review success, even the forge's own, is no review where the judge reviews."""
-    forge, head, _ = _judge_repo()
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='clean')
-    assert _gate(forge, head) is not None
-
-
-def test_a_pending_hold_still_blocks_a_judge_approved_head() -> None:
-    forge, head, number = _judge_repo()
-    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
+    for login, state in verdicts:
+        forge.add_review(number, login=login, state=state, commit=head)
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='held')
-    assert 'held' in _gate(forge, head)
+    assert _gate(forge, head) is None
+    assert breakglass.unreviewed(forge, head, base=_BASE) is None
 
 
 def test_a_serve_repo_is_unaffected_by_a_judge_approval() -> None:
@@ -274,15 +252,6 @@ def test_a_judge_declaration_without_a_judge_login_is_refused() -> None:
         _gate(forge, head)
     with pytest.raises(ValueError, match='judge_login'):  # Break-Glass's forge_unreviewed names it as a reason
         breakglass.unreviewed(forge, head, base=_BASE)
-
-
-@pytest.mark.parametrize('flag', ['dismissed', 'stale'])
-def test_a_dismissed_or_stale_approval_does_not_pass_the_judge_gate(flag: str) -> None:
-    """PLANTED CONTROL: the same approval, standing, passes (above)."""
-    forge, head, number = _judge_repo()
-    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
-    forge.reviews[number][-1][flag] = True
-    assert _gate(forge, head) is not None
 
 
 def test_a_judge_base_without_a_login_is_the_merge_s_wait_never_its_crash(tmp_path: Path) -> None:

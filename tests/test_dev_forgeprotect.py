@@ -6,7 +6,7 @@ planted control is a declaration or a live rule that must NOT read as clean.
 
 from __future__ import annotations
 
-from pathlib import Path
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -34,7 +34,7 @@ JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
         (GITEA_TEXT + '[tool.dev_lab.protection]\nextra = 1\n', 'unknown key'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\npromote = ["p"]\n', 'names no breakglass'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\nwho = 1\n', 'unknown'),
-        (GITEA_TEXT + '[tool.dev_lab.protection]\napprovals = 1\n', 'nobody posts an approving review'),
+        (GITEA_TEXT + '[tool.dev_lab.protection]\napprovals = 1\n', 'the judge is advisory'),
         (GITEA_TEXT + JUDGED + '[tool.dev_lab.protection]\napprovals = -1\n', 'below zero'),
     ],
 )
@@ -44,9 +44,9 @@ def test_a_declaration_that_cannot_mean_anything_is_refused(text: str, said: str
         declaration_from(text, 'pyproject.toml')
 
 
-def test_the_approver_is_the_declared_judge_and_one_approval_its_default() -> None:
+def test_a_judge_reviewed_repo_requires_no_approval_since_the_judge_is_advisory() -> None:
     integration, trunk = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
-    assert (integration.approvals, integration.approver) == (1, 'review-bot')
+    assert (integration.approvals, integration.approver) == (0, '')
     assert (trunk.approvals, trunk.approver) == (0, '')
 
 
@@ -265,7 +265,7 @@ def test_gitea_creates_an_absent_rule_and_reads_its_nulls_as_empty_lists() -> No
     assert len(plan(forge, GITEA, wanted)) == 2  # FLOOR: an empty forge is never clean
     assert apply(forge, GITEA, wanted) == []
     integration = forge.protections['integrate/main']
-    assert (integration['enable_push'], integration['approvals_whitelist_username']) == (False, ['review-bot'])
+    assert (integration['enable_push'], integration['approvals_whitelist_username']) == (False, [])
     assert forge.protections['main']['merge_whitelist_usernames'] == []
 
 
@@ -290,38 +290,15 @@ def test_the_door_is_the_forge_noun() -> None:
 APP_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_app = 5619495\n'
 
 
-def test_an_app_judged_integration_requires_the_apps_check_from_that_app_and_no_approval() -> None:
-    forge = FakeGitHub()
-    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
-    integration, trunk = wanted
-    assert (integration.judge_app, integration.approvals, integration.approver, trunk.judge_app) == (5619495, 0, '', 0)
-    assert apply(forge, GITHUB, wanted) == []
-    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
-    (checks,) = [rule['parameters']['required_status_checks'] for rule in ruleset['rules']
-                 if rule['type'] == 'required_status_checks']  # fmt: skip
-    assert {'context': 'review/judge', 'integration_id': 5619495} in checks
-    assert plan(forge, GITHUB, wanted) == []
-
-
-def test_the_judge_check_required_from_another_app_is_drift() -> None:
-    """PLANTED: the same context name, required from any other App, is not the declared judge."""
-    forge = FakeGitHub()
-    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
-    apply(forge, GITHUB, wanted)
-    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
-    for rule in ruleset['rules']:
-        for check in rule.get('parameters', {}).get('required_status_checks', ()):
-            if check['context'] == 'review/judge':
-                check['integration_id'] = 1
-    (step,) = plan(forge, GITHUB, wanted)
-    assert 'review/judge@5619495' in ' '.join(step.lines)
-
-
-def test_an_app_judge_takes_no_approval_and_never_renders_on_gitea() -> None:
-    with pytest.raises(ValueError, match='the App posts a check'):
-        declaration_from(GITHUB_TEXT + APP_JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
-    with pytest.raises(ValueError, match='no GitHub App'):
-        plan(FakeGitea(), GITEA, targets(GITEA_TEXT + APP_JUDGED, 'p', GITEA))
+def test_a_judged_repo_requires_no_judge_check_and_no_approval_on_either_forge() -> None:
+    """User ruling 2026-11-11: the judge is advisory on both forges -- it reviews, and no rule waits on it."""
+    hub, _ = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
+    assert (hub.judge_app, hub.approvals, hub.approver) == (0, 0, '')
+    tea, _ = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
+    assert (tea.judge_app, tea.approvals, tea.approver) == (0, 0, '')
+    for text in (GITEA_TEXT + JUDGED, GITHUB_TEXT + APP_JUDGED):
+        with pytest.raises(ValueError, match='the judge is advisory'):
+            declaration_from(text + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
 
 
 def test_github_bypasses_every_declared_actor_an_app_beside_the_admin_role() -> None:
@@ -350,37 +327,21 @@ INVALID_APP = (
 )
 
 
-class _RefusingGitHub(FakeGitHub):
-    """PLANTED: a forge that answers every ruleset write with the 422 an uninstalled judge App draws."""
-
-    def answer(self, method: str, path: str, body: dict[str, Any] | None) -> object:
-        if method != 'GET' and path.endswith('/rulesets'):
-            raise ForgeCallFailed(Report(('POST', path), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
-        return super().answer(method, path, body)
-
-
-def test_a_refused_apply_prints_the_forge_s_status_its_errors_and_the_app_to_install(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (tmp_path / 'pyproject.toml').write_text(GITHUB_TEXT + APP_JUDGED, encoding='utf-8')
-    forge = _RefusingGitHub()
-    forge.forge = GITHUB
-    monkeypatch.setattr(forgeprotect, 'client_for', lambda *_, **__: forge)
-    assert forgeprotect.main(['apply', '--root', str(tmp_path)]) != 0
-    out = capsys.readouterr()
-    text = out.out + out.err
+def test_a_refused_write_names_the_app_a_target_requires_a_check_from() -> None:
+    failed = ForgeCallFailed(Report(('POST', 'x'), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
+    wanted = [replace(one, judge_app=5619495) for one in targets(GITHUB_TEXT, 'p', GITHUB)]
+    text = ' '.join(forgeprotect.refusal(failed, wanted))
     assert '422' in text
     assert 'Invalid integration ids' in text
     assert '5619495' in text
     assert 'install' in text
-    assert 'read the output' not in text
 
 
 def test_a_refusal_without_an_app_fault_names_no_app() -> None:
     failed = ForgeCallFailed(
         Report(('POST', 'x'), (Attempt(1, 422, '{"message":"nope"}', Diagnosis.FORGE_REFUSED),), 3)
     )
-    lines = forgeprotect.refusal(failed, targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB))
+    lines = forgeprotect.refusal(failed, targets(GITHUB_TEXT, 'p', GITHUB))
     assert 'nope' in '\n'.join(lines)
     assert 'install' not in '\n'.join(lines)
 

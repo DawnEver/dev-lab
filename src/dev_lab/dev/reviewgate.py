@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Any, Final
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, JUDGE_CHECK, REVIEW_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgestatus import status_post
 
 if TYPE_CHECKING:
@@ -48,13 +47,10 @@ __all__ = [
     'VERDICT_STATES',
     'DeclarationUnread',
     'RunsUnread',
-    'app_missing',
     'app_verdicts',
     'forge_posted',
     'github_posted',
-    'head_reviews',
     'job_run_url',
-    'judge_missing',
     'manifest_at',
     'post_review',
     'posted_verdicts',
@@ -221,24 +217,6 @@ def _hold_missing(statuses: Sequence[CommitStatus]) -> str | None:
     return None
 
 
-def head_reviews(client: Client, head: str) -> list[dict[str, Any]]:
-    """Every PR review on every pull request whose head the forge says *head* is, as the forge lists them.
-
-    Gitea answers ONE pull (``commits/{sha}/pull``, 404 when none), GitHub a list (``commits/{sha}/pulls``).
-    """
-    if client.backend is GITHUB:
-        listed: Any = client.call('GET', f'{client.repo}/commits/{head}/pulls')
-    else:
-        try:
-            listed = [client.call('GET', f'{client.repo}/commits/{head}/pull')]
-        except ForgeCallFailed as failed:
-            if failed.final != _NOT_FOUND:
-                raise
-            listed = []
-    numbers = [int(pull['number']) for pull in listed or [] if isinstance(pull, dict) and pull.get('number')]
-    return [row for number in numbers for row in pages(client, f'{client.repo}/pulls/{number}/reviews', {})]
-
-
 def standing_verdicts(reviews: Sequence[Mapping[str, Any]], *, login: str, head: str) -> list[Mapping[str, Any]]:
     """*login*'s verdict reviews (:data:`VERDICT_STATES`) at *head* that stand: neither dismissed nor stale.
 
@@ -252,24 +230,6 @@ def standing_verdicts(reviews: Sequence[Mapping[str, Any]], *, login: str, head:
     ]  # fmt: skip
 
 
-def judge_missing(
-    statuses: Sequence[CommitStatus], reviews: Sequence[Mapping[str, Any]], *, head: str, judge: str
-) -> str | None:
-    """The judge-mode gate: why *head* is not reviewed by the DECLARED *judge* login, or ``None`` when it is.
-
-    Reviewed when the latest standing verdict review (:func:`standing_verdicts`) *judge* left AT *head* is
-    :data:`APPROVED` and no hold is pending. Another login's approval, one at an older head, a dismissed or stale
-    one, or a later ``REQUEST_CHANGES`` waits.
-    """
-    verdicts = standing_verdicts(reviews, login=judge, head=head)
-    latest = max(verdicts, key=lambda row: int(row.get('id') or 0), default=None)
-    if latest is None:
-        return f'no verdict review by the judge {judge!r} at {head[:12]}: the judge reviews a prepared bundle'
-    if latest.get('state') != APPROVED:
-        return f'the judge {judge!r} requested changes at {head[:12]}'
-    return _hold_missing(statuses)
-
-
 def app_verdicts(client: Client, head: str) -> list[dict[str, Any]]:
     """Every :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` check run GitHub lists at *head*, whoever posted it."""
     if client.backend is not GITHUB:
@@ -278,30 +238,6 @@ def app_verdicts(client: Client, head: str) -> list[dict[str, Any]]:
     listed: Any = client.call('GET', f'{client.repo}/commits/{head}/check-runs?check_name={JUDGE_CHECK}&per_page=100')
     runs = listed.get('check_runs') if isinstance(listed, dict) else None
     return [row for row in runs or [] if isinstance(row, dict)]
-
-
-def app_missing(
-    statuses: Sequence[CommitStatus], runs: Sequence[Mapping[str, Any]], *, head: str, app_id: int
-) -> str | None:
-    """The App-judge gate: why *head* carries no approving check run FROM App *app_id*, or ``None`` when it does.
-
-    Only a run whose ``app.id`` IS the declared App counts: a same-named run from another App or from Actions is no
-    verdict. Its latest completed run at *head* decides: ``success`` approves (then the hold is read), anything else
-    waits; a run still in progress is no verdict yet.
-    """
-    own = [
-        row for row in runs
-        if row.get('name') == JUDGE_CHECK and row.get('head_sha') == head and row.get('status') == 'completed'
-        and (row.get('app') or {}).get('id') == app_id
-    ]  # fmt: skip
-    latest = max(own, key=lambda row: int(row.get('id') or 0), default=None)
-    if latest is None:
-        others = sorted({str((row.get('app') or {}).get('slug') or '?') for row in runs if row not in own})
-        foreign = f' (ignored: {JUDGE_CHECK} from {", ".join(others)})' if others else ''
-        return f'no {JUDGE_CHECK} verdict by the judge App {app_id} at {head[:12]}{foreign}'
-    if latest.get('conclusion') != 'success':
-        return f'the judge App {app_id} concluded {latest.get("conclusion")!r} at {head[:12]}: changes requested'
-    return _hold_missing(statuses)
 
 
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:

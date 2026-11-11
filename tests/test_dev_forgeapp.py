@@ -24,9 +24,8 @@ from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgereview_declared import review_from
-from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.reviewgate import DeclarationUnread, app_missing, app_verdicts
+from dev_lab.dev.reviewgate import DeclarationUnread, app_verdicts
 
 APP = 5619495
 HEAD = 'a' * 40
@@ -138,33 +137,6 @@ def _run(*, app: int | None = APP, head: str = HEAD, status: str = 'completed', 
     owner = {'id': app, 'slug': slug} if app is not None else None
     return {'id': ident, 'name': JUDGE_CHECK, 'head_sha': head, 'status': status, 'conclusion': conclusion,
             'app': owner}  # fmt: skip
-
-
-def test_the_declared_apps_success_at_the_head_passes() -> None:
-    assert app_missing([], [_run()], head=HEAD, app_id=APP) is None
-
-
-@pytest.mark.parametrize(
-    ('runs', 'why'),
-    [
-        ([], 'no review/judge verdict'),
-        ([_run(app=15368, slug='github-actions')], 'ignored: review/judge from github-actions'),
-        ([_run(app=1, slug='impostor')], 'ignored: review/judge from impostor'),
-        ([_run(app=None)], 'no review/judge verdict'),
-        ([_run(head='b' * 40)], 'no review/judge verdict'),
-        ([_run(status='in_progress', conclusion='')], 'no review/judge verdict'),
-        ([_run(conclusion='failure')], 'changes requested'),
-        ([_run(ident=2, conclusion='failure'), _run(ident=1)], 'changes requested'),
-    ],
-    ids=['none', 'actions', 'another-app', 'no-app', 'other-head', 'in-progress', 'failure', 'later-failure'],
-)
-def test_only_the_declared_apps_latest_completed_success_is_the_verdict(runs: list[dict[str, Any]], why: str) -> None:
-    assert why in (app_missing([], runs, head=HEAD, app_id=APP) or 'passed')
-
-
-def test_a_pending_hold_still_blocks_an_app_approval() -> None:
-    hold = CommitStatus('tests/review-hold', 'pending', 'held', '', None)
-    assert 'review-hold' in (app_missing([hold], [_run()], head=HEAD, app_id=APP) or '')
 
 
 def test_an_app_judge_on_gitea_is_refused() -> None:

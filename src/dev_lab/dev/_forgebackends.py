@@ -13,14 +13,21 @@ from typing import Final
 from dev_lab.dev.forge import Forge
 
 __all__ = [
+    'ACTIONS',
     'ACTIONS_BOT',
+    'ADVISORY',
+    'BACKENDS',
+    'FORGE_SERVE',
     'GITEA',
     'GITEA_ACTIONS_LOGIN',
     'GITHUB',
     'GITHUB_HOST',
+    'JUDGE_HOST',
     'Backend',
+    'NotWired',
     'actions_token',
     'backend_for',
+    'require_producer',
 ]
 
 #: The one host that is GitHub. Every other host is treated as the Gitea-shaped forge.
@@ -34,6 +41,23 @@ ACTIONS_BOT: Final = 'github-actions[bot]'
 #: because Gitea RESERVES it: ``reservedUsernames`` holds ``"gitea-actions", // gitea builtin user (id: -2)`` and
 #: ``IsUsableUsername`` refuses it, so no account can register it (Gitea main, models/user/user.go).
 GITEA_ACTIONS_LOGIN: Final = 'gitea-actions'
+
+
+#: THE PRODUCERS a forge may wire -- who posts a check its merge or promotion reads (user ruling 2026-11-11):
+#: the forge's own Actions jobs; a ``forge serve`` host (a cluster account, a workstation) claiming parts and
+#: reviewing; the isolated judge host (a Gitea login or a GitHub App) posting the review verdict.
+ACTIONS: Final = 'actions'
+FORGE_SERVE: Final = 'forge-serve'
+JUDGE_HOST: Final = 'judge-host'
+
+
+#: The producers whose verdict is INFORMATION, never a merge condition, on every forge (user ruling 2026-11-11): the
+#: judge host's review is posted, and no merge gate, required context or approval count waits on it.
+ADVISORY: Final = frozenset({JUDGE_HOST})
+
+
+class NotWired(ValueError):
+    """A declaration asks for a producer its forge does not wire (:attr:`Backend.producers`)."""
 
 
 @dataclass(frozen=True)
@@ -70,6 +94,10 @@ class Backend:
     #: A pull request's unified diff: the suffix on ``pulls/{n}`` and the ``Accept`` it is asked with -- Gitea's
     #: ``pulls/{n}.diff``, GitHub's ``pulls/{n}`` as ``application/vnd.github.diff``.
     diff_at: tuple[str, str] = ('.diff', 'text/plain')
+    #: Who may produce a check this forge's merge and promotion read. Gitea, the family's private forge, wires
+    #: every producer; GitHub, whose repos are the toolchain, wires its Actions and the advisory judge host -- no forge
+    #: serve host, cluster or workstation (user ruling 2026-11-11).
+    producers: frozenset[str] = frozenset({ACTIONS, FORGE_SERVE, JUDGE_HOST})
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -110,6 +138,7 @@ GITHUB: Final = Backend(
     issues_only=(),
     run_path='.github/workflows/{workflow}',
     run_pulls_listed=True,
+    producers=frozenset({ACTIONS, JUDGE_HOST}),
     diff_at=('', 'application/vnd.github.diff'),
     headers=(
         ('Accept', 'application/vnd.github+json'),
@@ -136,3 +165,22 @@ def actions_token(forge: Forge, env: Mapping[str, str]) -> str:
     if (env.get('GITEA_ACTIONS') == 'true') != (backend_for(forge) is GITEA):
         return ''
     return env.get('GITHUB_TOKEN', '')
+
+
+#: Every backend by its name (``github``, ``gitea``): what a rendered workflow's ``forge`` key names.
+BACKENDS: Final = {backend.name: backend for backend in (GITEA, GITHUB)}
+
+
+def require_producer(backend: Backend, producer: str, what: str) -> None:
+    """Refuse *what* when *backend* does not wire *producer* (:attr:`Backend.producers`).
+
+    Raises:
+        NotWired: naming *what*, the producer and the forge.
+
+    """
+    if producer not in backend.producers:
+        msg = (
+            f'{what} needs the {producer} producer, which {backend.name} does not wire: its repos are tested and gated '
+            f'by {", ".join(sorted(backend.producers))} alone (user ruling 2026-11-11)'
+        )
+        raise NotWired(msg)

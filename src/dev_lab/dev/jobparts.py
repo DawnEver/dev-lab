@@ -18,8 +18,12 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
   checkout derives that no job settled is posted ``pending`` saying :data:`ABSENT` and since when, so every reader
   sees its age; a row already absent keeps its first time.
   It is never a settled part (:func:`dev_lab.dev.platformparts.parts_of`), so merge-ready and promote still
-  refuse until every row stands PASS -- and any producer, a declared workstation included
-  (:mod:`dev_lab.dev.workstationverdict`), may still settle it.
+  refuse until every row stands PASS; a re-run job settles it.
+
+ACTIONS ALONE (user ruling 2026-11-11): a GitHub repo's parts are produced by these jobs on GitHub-hosted runners and
+nothing else -- no self-hosted runner, workstation or cluster. A part no hosted runner produces (a heavy test) is
+KEPT, for a consumer's unified run to select, and is OFF THE GATE (:func:`off_gate`): it has no row, so nothing posts
+it absent, and ``integrate promote`` on GitHub waives it.
 
 A PART FED BY A SECRET (user decision 2026-10-30). A part whose resource no hosted runner has can still run
 hosted when repository secrets supply it: the ai-lab TASKS whose key bundles it needs (:mod:`dev_lab.dev.taskkeys`,
@@ -59,14 +63,14 @@ from lab_commons.log import emit
 from dev_lab.dev.family import declared_in
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row
+from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
 from dev_lab.dev.platformparts import UndeclaredPart, part_context, producer_argv
 from dev_lab.dev.producer import producing
 from dev_lab.dev.taskkeys import loader, secret_name
 from dev_lab.dev.unproduced import unproduced, unproduced_parts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from dev_lab.dev.forgework import Client
 
@@ -79,6 +83,7 @@ __all__ = [
     'hosted_parts',
     'main',
     'matrix',
+    'off_gate',
     'produce',
     'pytest_collector',
     'rows',
@@ -208,17 +213,23 @@ def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str
     return collect
 
 
-def runner_for(part: str) -> str | list[str]:
-    """*part*'s ``runs-on``: a hosted runner when it needs at most one OS, else a self-hosted runner's labels.
+def runner_for(part: str) -> str | None:
+    """*part*'s GitHub-hosted ``runs-on`` when it needs at most one OS; ``None``: no Actions job produces it.
 
-    A need-set naming a resource no hosted runner has (``femm``) runs on a self-hosted runner labelled with every
-    resource it needs, so a workstation registered under those labels produces it.
+    A need-set naming a resource no hosted runner has (``femm``, a heavy part) is OFF THE GITHUB GATE (user ruling
+    2026-11-11): GitHub wires no self-hosted runner, workstation or cluster, so it has no row and nothing waits on
+    it -- the test stays, for a consumer's unified run to select (:func:`off_gate`).
     """
     needs = needs_of_row(part)
     systems = needs & set(OS_NAMES.values())
     if needs == systems and len(systems) <= 1:
         return HOSTED_RUNNERS[next(iter(systems), 'linux')]
-    return ['self-hosted', *sorted(needs)]
+    return None
+
+
+def off_gate(parts: Iterable[str], declared: Mapping[str, Hosted]) -> frozenset[str]:
+    """The *parts* no Actions job produces: neither *declared* secret-hosted nor with a hosted runner."""
+    return frozenset(part for part in parts if part not in declared and runner_for(row_part(part)) is None)
 
 
 def systems_for(event: str) -> tuple[str, ...]:
@@ -235,7 +246,9 @@ def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str
         row = {'part': part, 'runs-on': HOSTED_RUNNERS['linux'], 'secrets': list(declared[part].secrets)}
         return [] if event == 'pull_request' else [row]
     home = runner_for(part)
-    if not isinstance(home, str) or needs_of_row(part) & set(OS_NAMES.values()):
+    if home is None:
+        return []
+    if needs_of_row(part) & set(OS_NAMES.values()):
         return [{'part': part, 'runs-on': home}]
     runners = {system: HOSTED_RUNNERS[system] for system in systems_for(event)}
     return [
@@ -263,7 +276,7 @@ def matrix(
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     declared = hosted_parts(text)
     every = [row for name in names for row in rows(name, event, declared)]
-    generic = [row for row in every if isinstance(row['runs-on'], str) and 'secrets' not in row]
+    generic = [row for row in every if 'secrets' not in row]
     return {'include': generic if hosted else every}
 
 
