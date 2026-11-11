@@ -58,7 +58,7 @@ def test_the_branches_and_identities_come_from_their_one_declaration() -> None:
     assert (integration.role, integration.branch, integration.bypass, integration.pushers) == (
         INTEGRATION,
         'next',
-        'breakglass-bot',
+        ('breakglass-bot',),
         (),
     )
     assert (trunk.role, trunk.branch, trunk.pushers) == (TRUNK, 'main', ('promote-bot',))  # fmt: skip
@@ -320,3 +320,19 @@ def test_an_app_judge_takes_no_approval_and_never_renders_on_gitea() -> None:
         declaration_from(GITHUB_TEXT + APP_JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
     with pytest.raises(ValueError, match='no GitHub App'):
         plan(FakeGitea(), GITEA, targets(GITEA_TEXT + APP_JUDGED, 'p', GITEA))
+
+
+def test_github_bypasses_every_declared_actor_an_app_beside_the_admin_role() -> None:
+    """The ops App and the admin role are both bypass actors: ``breakglass`` may be a list, rendered in order."""
+    text = INTEGRATOR + '[tool.dev_lab.protection.forges."github.com"]\nbreakglass = ["app:4242", "role:admin"]\n'
+    forge = FakeGitHub()
+    apply(forge, GITHUB, targets(text, 'p', GITHUB))
+    actors = [(one['actor_type'], one['actor_id']) for one in next(iter(forge.rulesets.values()))['bypass_actors']]
+    assert actors == [('Integration', 4242), ('RepositoryRole', 5)]
+    assert plan(forge, GITHUB, targets(text, 'p', GITHUB)) == []
+
+
+def test_gitea_refuses_more_than_one_bypass_login() -> None:
+    text = INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = ["a-bot", "b-bot"]\n'
+    with pytest.raises(ValueError, match='one login'):
+        plan(FakeGitea(), GITEA, targets(text, 'p', GITEA))

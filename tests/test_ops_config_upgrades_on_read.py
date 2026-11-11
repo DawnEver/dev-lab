@@ -27,13 +27,13 @@ repos = []
 [ops.breakglass]
 account = "breakglass"
 keys = ["ssh-ed25519 AAAA agent"]
-repos = ["https://github.com/owner/alpha.git"]
+repos = ["https://gitea.example/owner/alpha.git"]
 state = "/var/lib/forge-breakglass"
 log = "/var/log/forge-breakglass/audit.log"
 {moved}wave_hours_max = 24.0
 max_merges_max = 100
 [ops.breakglass.tokens]
-"github.com" = "/etc/forge-breakglass/github-token"
+"gitea.example" = "/etc/forge-breakglass/gitea-token"
 """
 
 

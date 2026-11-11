@@ -34,7 +34,7 @@ from dev_lab.ops.caddy import Caddy
 from dev_lab.ops.configupgrade import upgraded
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.placement import Placement
-from dev_lab.ops.served import served, served_by
+from dev_lab.ops.served import app_of_forge, credential_files, served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
@@ -105,10 +105,9 @@ class Judge(Placement):
 
     def credential(self, url: str) -> list[str]:
         """The ``forge review judge`` arguments naming the judge's credential on *url*'s forge: App, else token."""
-        host = forge_of_url(url).host
-        if (app := self.apps.get(host)) is not None:
-            return ['--app-id', str(app['app_id']), '--app-key-file', str(app['key_file'])]
-        return ['--token-file', self.tokens[host]]
+        if (app := app_of_forge(self.apps, url)) is not None:
+            return ['--app-id', str(app[0]), '--app-key-file', app[1].as_posix()]
+        return ['--token-file', self.tokens[forge_of_url(url).host]]
 
     @property
     def home_dir(self) -> str:
@@ -118,7 +117,7 @@ class Judge(Placement):
     @property
     def secrets(self) -> tuple[str, ...]:
         """Every file the judge reads a credential from (token files and App keys): each 0600, owned by ``user``."""
-        return tuple(sorted({*self.tokens.values(), *(str(app['key_file']) for app in self.apps.values())}))
+        return credential_files(self.tokens, self.apps)
 
 
 #: The ref every host installs and releases from (user ruling 2026-11-06: every repo tracks integrate/main; nothing
@@ -183,6 +182,7 @@ class Breakglass(Placement):
     log: str
     repos: tuple[str, ...] = ()
     tokens: Mapping[str, str] = field(default_factory=dict)
+    apps: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     keys: tuple[str, ...] = ()
     min_reason: int = 10
     wave_hours_max: float = 24.0
@@ -191,7 +191,7 @@ class Breakglass(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
-        served(self.repos, self.tokens, '[ops.breakglass]')
+        served_by(self.repos, self.tokens, self.apps, '[ops.breakglass]')
         if not self.wave_hours_max > 0:  # NaN fails too
             msg = f'[ops.breakglass] wave_hours_max ({self.wave_hours_max}) must be positive'
             raise ValueError(msg)
@@ -204,7 +204,7 @@ class Breakglass(Placement):
         return next((url for url in self.repos if forge_of_url(url).identity == identity), None)
 
     def token_file(self, url: str) -> str:
-        """The file holding the break-glass token of *url*'s forge."""
+        """The file holding the break-glass token of *url*'s forge (a forge with no App: Gitea)."""
         return self.tokens[forge_of_url(url).host]
 
 

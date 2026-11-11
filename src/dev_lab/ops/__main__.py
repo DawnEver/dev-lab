@@ -31,6 +31,7 @@ from dev_lab.ops import (
     configverbs,
     disk,
     forgeaccounts,
+    githubwho,
     install,
     judge,
     offsite,
@@ -211,7 +212,7 @@ def _breakglass(config: OpsConfig, verb: str) -> int:
         return 2
     server = breakglass.Server(
         config,
-        forge_for=lambda url: breakglass.ClientForge(url, _secret(role.token_file(url))),
+        forge_for=lambda url: breakglass.ClientForge(url, breakglass.credential(role, url, secret=_secret)),
         alert=lambda title, detail: _alert(config, title, detail),
         now=time.time,
         consent_key=verifier,
@@ -313,6 +314,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
     forgeaccounts.add_parser(verbs)
     secretplace.add_parser(verbs)
+    githubwho.add_parser(verbs)
     for name in ('disk', 'clean'):
         sized = verbs.add_parser(name)
         sized.add_argument('--gitea-data', default=disk.DEFAULT_GITEA_DATA)
@@ -354,6 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         'forge': lambda: _forge(config, args),
         'secret': lambda: _secret_place(config, args),
+        'github': lambda: githubwho.run(config, args),
     }
     return verbs_of[args.verb]()
 
