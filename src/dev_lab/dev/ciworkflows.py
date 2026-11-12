@@ -21,6 +21,9 @@ share -- the review itself -- has one source. A workflow either forge may run ke
 THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
 rendered) schedules that workflow at it. Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
 
+THE BRANCHES ARE THE REPO'S DECLARATION: :data:`INTEGRATION_PLACEHOLDER` in any string renders as the repo's
+``[tool.dev_lab.integrator] integration`` (user ruling 2026-11-12: a one-branch repo merges into ``main``).
+
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
 so the setup every job repeats has one source. ``_steps`` is never a workflow and never rendered.
@@ -61,7 +64,7 @@ import argparse
 import json
 import tomllib
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from lab_commons.log import emit
 
@@ -71,12 +74,15 @@ from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
+from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
     'BASE_PATH',
     'BY_FORGE',
+    'FAMILY_INTEGRATION',
     'FORGE_KEY',
+    'INTEGRATION_PLACEHOLDER',
     'LIGHT',
     'NIGHTLY_CRON',
     'NIGHTLY_KEY',
@@ -115,6 +121,11 @@ PREPARE: Final = '_prepare'
 RUNNERS: Final = '_runners'
 #: The label of the small-memory runner every job that holds no review method nor key runs on.
 LIGHT: Final = 'light'
+
+#: In any base or layer string, the repo's declared integration branch (``[tool.dev_lab.integrator]``), at render.
+INTEGRATION_PLACEHOLDER: Final = '@integration@'
+#: The integration branch a pyproject declaring no ``[tool.dev_lab.integrator]`` renders: the family's.
+FAMILY_INTEGRATION: Final = 'integrate/main'
 
 #: The key of a step that stands for a named list of :data:`SHARED`.
 USE_STEPS: Final = 'use-steps'
@@ -316,6 +327,7 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         msg = f'[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]: rendered only for [tool.dev_lab.review] where = "{JUDGE}"'
         raise ValueError(msg)
     hosted = hosted_parts(text)
+    integration = _integration(text, origin)
     out = {}
     for name, layer in sorted(declared.items()):
         merged = merge(base.get(name, {}), layer)
@@ -329,8 +341,26 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         if forge not in WORKFLOW_DIRS:
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)
-        out[name] = (WORKFLOW_DIRS[forge], workflow)
+        out[name] = (WORKFLOW_DIRS[forge], cast('dict[str, Any]', _named(workflow, integration)))
     return out
+
+
+def _integration(text: str, origin: str) -> str:
+    """The integration branch pyproject *text* declares; :data:`FAMILY_INTEGRATION` when it declares no table."""
+    if not declared_table(tomllib.loads(text), 'integrator', {}):
+        return FAMILY_INTEGRATION
+    return policy_from(text, origin).integration
+
+
+def _named(value: object, integration: str) -> object:
+    """*value* with :data:`INTEGRATION_PLACEHOLDER` in every string replaced by *integration*. PURE."""
+    if isinstance(value, str):
+        return value.replace(INTEGRATION_PLACEHOLDER, integration)
+    if isinstance(value, dict):
+        return {key: _named(item, integration) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_named(item, integration) for item in value]
+    return value
 
 
 def workflows(root: Path) -> dict[str, dict[str, Any]]:

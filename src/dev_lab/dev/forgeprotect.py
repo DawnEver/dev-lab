@@ -10,7 +10,8 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
 * the REQUIRED CONTEXTS are derived from the rendered workflows (:mod:`dev_lab.dev.ciworkflows`,
   :func:`required_contexts`): a forge whose workflows post the merge decision requires
   :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT` on integration; a forge whose serve host merges requires
-  NO context there (user ruling 2026-11-12, RED-INTEGRATION-MERGES: integration may be red, so a required part would
+  NO context there, save the checks a repo declares as its merge gate (``[tool.dev_lab.integrator] merge_checks``)
+  (user ruling 2026-11-12, RED-INTEGRATION-MERGES: integration may be red, so a required part would
   let the forge refuse a red-on-record merge the serve host decided). The trunk requires the
   base part's rows the promotion event runs (``tests/base`` and, where workflows fan
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and NO other part: a part a
@@ -178,6 +179,7 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
     jobs = [job for flow in flows for job in flow.get('jobs', {}).values()]
     steps = {step.get('name') for job in jobs for step in job.get('steps', ())}
     integration = (MERGE_READY_CONTEXT,) if MERGE_READY_CONTEXT in steps else ()
+    integration += policy_from(text, origin).merge_checks  # the repo's declared merge checks (2026-11-12)
     if any(job.get('name') == _PART_JOB for job in jobs):
         trunk = tuple(sorted(f'{CONTEXT_PREFIX}{row["part"]}' for row in rows(BASE, _PROMOTION_EVENT, {})))
     else:

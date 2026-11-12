@@ -118,6 +118,19 @@ def test_a_served_forge_requires_nothing_on_integration_and_its_base_on_the_trun
     }
 
 
+def test_a_repo_declaring_its_merge_checks_requires_them_on_integration() -> None:
+    """User ruling 2026-11-12: the declared merge check is the forge's own refusal too, so no web-UI merge skips it.
+
+    PLANTED CONTROL: a repo declaring none requires nothing there (the served rule above).
+    """
+    check = 'check / check (pull_request)'
+    declared = GITEA_TEXT.replace(
+        'integration = "integrate/main"', f'integration = "integrate/main"\nmerge_checks = ["{check}"]'
+    )
+    assert required_contexts(declared, 'p', GITEA)[INTEGRATION] == (check,)
+    assert required_contexts(GITEA_TEXT, 'p', GITEA)[INTEGRATION] == ()
+
+
 def test_a_judged_repo_requires_no_review_status() -> None:
     """The judge's verdict is a PR review, never a ``tests/review`` status: requiring one would hold every merge."""
     assert 'tests/review' not in required_contexts(GITEA_TEXT + JUDGED, 'p', GITEA)[INTEGRATION]
