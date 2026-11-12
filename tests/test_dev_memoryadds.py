@@ -125,6 +125,16 @@ def test_manual_filename_never_allows_task_content_rewrites_or_memory_injection(
     assert memoryadds.problems_between(repo, base, 'HEAD')
 
 
+def test_an_entry_that_already_lists_tasks_may_be_updated(repo: Path) -> None:
+    """A consolidated entry already holding task rows is not BECOMING a task list: its update passes."""
+    rel = '.claude/memory/2026/07/31/tasks-2026-07.md'
+    _write(repo, rel, '---\nname: t\ndescription: d\n---\n\n' + MANUAL_FIRST)
+    _commit(repo, 'consolidated tasks', rel)
+    _write(repo, rel, '---\nname: t\ndescription: d\n---\n\nUpdated.\n\n' + MANUAL_FIRST)
+    _git(repo, 'add', '--', rel)
+    assert memoryadds.pending(repo) == ()
+
+
 @pytest.mark.parametrize('path', [MANUAL, ENTRY, 'src/x/' + MANUAL])
 def test_ordinary_memory_cannot_turn_into_a_mutable_manual_list(repo: Path, path: str) -> None:
     _write(repo, path, '---\nname: manual-2026-11-05\n---\n\nImmutable prose.\n')

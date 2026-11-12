@@ -209,7 +209,7 @@ def _task_list_problems(root: Path, old_rev: str, new_rev: str, old: str, new: s
                 'without changing existing task text, module or order'
             ),
         )
-    if _MANUAL_ROW.search(_lf(after)):
+    if _MANUAL_ROW.search(_lf(after)) and not _MANUAL_ROW.search(_lf(_git(root, 'show', f'{old_rev}:{old}'))):
         return (f'{old}: an ordinary memory entry never becomes a task list (rem 2.2.0 rows belong in manual.md)',)
     return ()
 
