@@ -11,8 +11,8 @@ integration branch and the trunk aside -- the newest PR of that head into the in
 (so no newer OPEN PR of that pair exists) the push is refused, the refusal naming the remedy -- a new PR from the
 branch, or a new branch name. A deletion and a tag are not judged.
 
-A forge that cannot be read refuses, as :func:`dev_lab.dev.breakglass.forge_unreviewed` does: a push needs the
-forge, so a forge down for reads is down for the push too, and an unread answer is never a pass.
+A forge that cannot be read refuses: a push needs the forge, so a forge down for reads is down for the push too,
+and an unread answer is never a pass.
 """
 
 from __future__ import annotations

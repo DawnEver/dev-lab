@@ -27,13 +27,11 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
 * its head's HOSTED test parts all stand PASS (:func:`parts_wait`); a hand part is named, never waited on
   (:func:`hand_parts`, user ruling 2026-11-10);
-* its head is REVIEWED (:func:`dev_lab.dev.forgereview_gate.review_gate`, user ruling 2026-10-31): the
-  latest ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold``
-  is pending -- or, where the base declares ``where = "judge"``, the declared judge login's latest verdict review
-  at the head is APPROVED. The review is a one-shot acceptance with advice: it is ``success`` once it has run, and
-  ``failure`` only on a security finding. A review that DID NOT RUN never holds the merge (user rulings 2026-11-05,
-  2026-11-06): its recorded cause (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`, read from trusted comments)
-  waives it, and the merge proceeds WARNED, its commit message and decision carrying ``Unreviewed: ...``;
+* its review is ADVISORY and never a condition (user rulings 2026-11-11/12, both forges): the review still runs at
+  the PR's first merge-ready head (:mod:`dev_lab.dev.reviewturn`) and posts its comment and ``tests/review``; a head
+  whose review is not a forge-posted ``success`` (:func:`dev_lab.dev.forgereview_gate.review_gate`) merges WARNED --
+  the decision names why, and the merged PR gets a comment saying so. A review that did not run and left its
+  recorded cause (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`) carries ``Unreviewed: ...`` into the commit message;
 * it is an INTERNAL PR (:func:`external`, user ruling 2026-11-05): a fork's, or a non-writer's, is never merged by
   the forge -- ``tests/merge-ready`` stays ``pending`` :data:`EXTERNAL`;
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
@@ -153,17 +151,17 @@ _AUTO_MERGE: Final = (
 class Decision:
     """Whether one PR may be merged now: what is missing (nothing, when it may), and the message it merges with."""
 
-    others: tuple[str, ...]  # every missing condition but the review
+    others: tuple[str, ...]  # every missing condition; the review is never one (advisory)
     message: str
-    review: str | None = None  # why the head is not reviewed; ``None``: it is (the last gate, reviewturn)
+    review: str | None = None  # why the head is not reviewed, REPORTED; ``None``: it is (reviewturn asks for it)
     unreviewed: str = ''  # the unreviewed warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
     notes: tuple[str, ...] = ()
     waiting: bool = False  # every missing condition is a check not yet terminal: posted ``pending``, not ``failure``
 
     @property
     def missing(self) -> tuple[str, ...]:
-        """Every missing condition, the review first."""
-        return (*((f'its review: {self.review}',) if self.review is not None else ()), *self.others)
+        """Every missing condition: never the review, which is advisory (user rulings 2026-11-11/12)."""
+        return self.others
 
     @property
     def ready(self) -> bool:
@@ -359,6 +357,8 @@ def ready(root: Path, client: Client, number: int) -> str:
     state, why = (held, 'waits on: ' + '; '.join(missing) + suffix) if missing else ('success', READY + suffix)
     if decision.unreviewed and not missing:
         why = f'{READY}{suffix}, WARNED -- {decision.unreviewed}'
+    elif decision.review is not None and not missing:
+        why = f'{READY}{suffix}, WARNED -- its advisory review: {decision.review}'
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
     turn = review_turn(client, number, pull.head_sha, decision)  # the review is the last gate: asked here
     said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}{turn}'
@@ -369,8 +369,8 @@ def ready(root: Path, client: Client, number: int) -> str:
         merge(client, number, head=pull.head_sha, message=decision.message, delete_branch=ephemeral)
     except ForgeCallFailed as refused:
         return f'{said}; NOT merged -- {refused}'
-    if decision.unreviewed:
-        client.issue_comment(number, f'Merged WITHOUT a passing review -- {decision.unreviewed}')
+    if unpassed := decision.unreviewed or decision.review:
+        client.issue_comment(number, f'Merged WITHOUT a passing review (advisory) -- {unpassed}')
     return f'{said}; merged'
 
 

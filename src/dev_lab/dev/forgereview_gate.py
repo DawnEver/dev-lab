@@ -1,6 +1,7 @@
-"""THE REVIEW GATE: whether a head is reviewed, read as the trusted declaration says -- for every merge door.
+"""THE REVIEW READING: whether a head is reviewed, read as the trusted declaration says -- REPORTED, never waited on.
 
-dev-lab's merge, merge-ready and Break-Glass ask this one function; the declaration it reads is the base's
+The review is ADVISORY on both forges (user rulings 2026-11-11/12): merge-ready names this function's answer as a
+warning and merges anyway; nothing blocks on it. the declaration it reads is the base's
 ``[tool.dev_lab.review]`` (:func:`~dev_lab.dev.forgereview_declared.forge_review`), the verdicts are the forge's
 (:mod:`~dev_lab.dev.reviewgate`).
 """
@@ -24,7 +25,7 @@ __all__ = ['review_gate']
 
 
 def review_gate(client: Client, *, base: str) -> Reviewed:
-    """THE ONE GATE of whether a head is reviewed, for the merge, merge-ready and Break-Glass alike.
+    """THE ONE READING of whether a head is reviewed, which merge-ready reports and never waits on.
 
     The mode is the TRUSTED declaration at *base* (:func:`forge_review`): a ``serve`` repo is reviewed when the forge
     posted a ``tests/review`` success (:func:`~dev_lab.dev.reviewgate.review_missing`). A ``judge`` repo's verdict is

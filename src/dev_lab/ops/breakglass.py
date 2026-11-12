@@ -32,7 +32,8 @@ One request is one JSON line with an ``action``:
   wave waives them too): unrun, pending or red, it merges, and its test state at merge time (:func:`tests_at`) is
   named in the comment, the audit line and the wave's summary; then comment, merge at that head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
-  owes), audit; the merge that reaches the cap ends the wave;
+  owes), audit ``(repo, pr, head, reason)`` under the id of the consent credential that opened the wave -- the
+  wave's one grant has no subject, so each use is tied to it here; the merge that reaches the cap ends the wave;
 * ``close`` -- end the open wave; ``ack {id?, by}`` -- record who acknowledged an audit (the oldest unacknowledged
   when no id), no code;
 * ``status`` -- every wave's state; :meth:`Server.tick` (a timer) ends an expired wave and resends a summary no
@@ -355,7 +356,7 @@ class Server:
             raise BreakglassRefused(str(refused)) from refused
         now = self.now()
         stamp = datetime.fromtimestamp(now, UTC).strftime('%Y%m%dT%H%M%SZ')
-        opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key)
+        opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key, consent=granted.id)
         waves.save(self.state, opened)
         said = f'wave {opened.id} open for {hours:g} h' + (f', at most {cap} merge(s)' if cap else '')
         self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap,
@@ -376,8 +377,8 @@ class Server:
         held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key, tests))
         waves.save(self.state, held)
         said = f'{_merged(tests)} {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
-        self._audit({'wave': held.id, 'outcome': 'merged', 'repo': repo, 'pr': pr, 'head': head, 'reason': reason,
-                     'tests': tests})  # fmt: skip
+        self._audit({'wave': held.id, 'outcome': 'merged', 'consent': held.consent, 'repo': repo, 'pr': pr,
+                     'head': head, 'reason': reason, 'tests': tests})  # fmt: skip
         if held.full():
             self._close(held)
             said += f'; the cap of {held.max_merges} ended the wave'

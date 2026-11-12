@@ -168,11 +168,12 @@ def _json_line(line: str) -> object:
 
 def _issued(
     found: Mapping[str, Any], payload: dict[str, Any], *, send: Send, home: Path | None, now: float,
-    within: set[tuple[str, str]] | None = None,
+    within: set[tuple[str, str]] | None = None, plan: str | None = None,
 ) -> list[Path]:  # fmt: skip
     """Send *payload* to the issuer; each credential it answered, verified and written private, by path.
 
     *within*, when given, is the closed set of ``(action, subject)`` pairs an answer may hold, each at most once.
+    Every answer signs *plan*, the digest of the plan asked for (``None``: a lone request), or it is refused.
     """
     key = public_key(found)
     status, said = send(found, payload)
@@ -192,6 +193,9 @@ def _issued(
         pair = (issued.action, issued.subject)
         if within is not None and (pair not in within or pair in seen):
             msg = f'the issuer answered a credential the plan does not grant once: {pair[0]} {pair[1][:12]}'
+            raise ConsentRefused(msg)
+        if issued.plan != plan:
+            msg = f'the issuer answered a credential of plan {issued.plan}, not of {plan}: {pair[0]} {pair[1][:12]}'
             raise ConsentRefused(msg)
         seen.add(pair)
         target = state_dir(home) / f'{issued.id}.json'
@@ -254,7 +258,7 @@ def grant_plan(
         requested(grant_)  # refused here, before the user spends a code
     payload = {'verb': 'issue-plan', 'plan': {'host': plan.host, 'grants': list(plan.grants)},
                'code': _six_digits(code)}  # fmt: skip
-    return _issued(found, payload, send=send, home=home, now=now())
+    return _issued(found, payload, send=send, home=home, now=now(), plan=plan.digest)
 
 
 def recover(
@@ -275,4 +279,4 @@ def recover(
     plan = load_plan(plan_file, shown)
     within = {(grant_['action'], grant_['subject']) for grant_ in plan.grants}
     payload = {'verb': 'fetch-unspent', 'plan': plan.digest}
-    return _issued(found, payload, send=send, home=home, now=now(), within=within)
+    return _issued(found, payload, send=send, home=home, now=now(), within=within, plan=plan.digest)

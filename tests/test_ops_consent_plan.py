@@ -72,6 +72,32 @@ def test_one_code_grants_one_credential_per_listed_grant(
     assert {line['plan'] for line in granted if line['event'] == 'granted'} == {digest}
 
 
+def test_each_credential_signs_the_digest_of_its_plan_and_a_lone_one_none(issuer: Issuer) -> None:
+    digest = parsed(PLAN).digest
+    assert {credential['plan'] for credential in issuer.issue_plan(PLAN, code(-1))} == {digest}
+    assert issuer.issue(APPLY, code(0))['plan'] is None
+    forged = issuer.issue_plan(PLAN, code(1))[0] | {'plan': parsed({**PLAN, 'host': 'ops@other'}).digest}
+    with pytest.raises(ConsentRefused, match='signature'):
+        redeem(forged, action='ops.config', subject=APPLY['subject'], key=issuer.public(), register=issuer.register,
+               now=NOW)  # fmt: skip
+
+
+def test_a_credential_issued_from_plan_a_is_refused_for_plan_b(
+    tmp_path: Path, issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plan B grants the same pairs as plan A; an issuer answering B's credentials for A is refused by the digest."""
+    monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
+    answered = json.dumps(issuer.issue_plan({**PLAN, 'host': 'ops@other.example.org'}, code(0)))
+    path, shown = _plan(tmp_path)
+    table = {'endpoint': 'consent@forge', 'public_key': public_text(issuer.public())}
+    with pytest.raises(ConsentRefused, match='not of'):
+        grant_plan(path, shown, code(0), HOST, table=table, send=lambda _t, _p: (0, answered),
+                   home=tmp_path / 'home', now=lambda: NOW)  # fmt: skip
+    mine = json.dumps(issuer.issue_plan(PLAN, code(1)))  # the control: the plan's own credentials are accepted
+    assert len(grant_plan(path, shown, code(0), HOST, table=table, send=lambda _t, _p: (0, mine),
+                          home=tmp_path / 'home', now=lambda: NOW)) == 2  # fmt: skip
+
+
 def test_the_one_code_is_spent_once_at_the_issuer(
     tmp_path: Path, issuer: Issuer, monkeypatch: pytest.MonkeyPatch
 ) -> None:

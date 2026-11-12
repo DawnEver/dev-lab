@@ -233,7 +233,8 @@ def _granted(home: Path, plan: object = PLAN) -> list[Path]:
     written = []
     for index, grant in enumerate(plan.grants):
         path = folder / f'id-{index}.json'
-        path.write_text(json.dumps({**grant, 'id': f'id-{index}', 'issued': NOW, 'expires': NOW + 900}), 'utf-8')
+        fields = {**grant, 'id': f'id-{index}', 'plan': plan.digest, 'issued': NOW, 'expires': NOW + 900}
+        path.write_text(json.dumps(fields), 'utf-8')
         written.append(path)
     return written
 
@@ -313,11 +314,24 @@ def test_a_second_run_resumes_where_the_first_stopped(tmp_path: Path) -> None:
 
 def test_a_step_with_no_live_credential_stops_before_running(tmp_path: Path) -> None:
     host, written = FakeHost(), _granted(tmp_path)
-    written[1].write_text(json.dumps({**PLACE, 'id': 'id-1', 'issued': NOW - 7200, 'expires': NOW - 3600}), 'utf-8')
+    stale = {**PLACE, 'id': 'id-1', 'plan': PLAN.digest, 'issued': NOW - 7200, 'expires': NOW - 3600}
+    written[1].write_text(json.dumps(stale), 'utf-8')
     finished, lines = _run(host, tmp_path)
     assert not finished
     assert lines[-1].startswith(f'step 2 ops.secret.place on {HOST}: STOPPED -- no unexpired credential')
     assert len(host.carried) == 1
+
+
+def test_a_credential_issued_from_another_plan_is_never_carried(tmp_path: Path) -> None:
+    """Same grants, another plan (another host): its signed ``plan`` digest is not this run's, so it is not used."""
+    host = FakeHost()
+    _granted(tmp_path, parsed({'host': 'ops@other.example.org', 'grants': [APPLY, PLACE]}))
+    finished, lines = _run(host, tmp_path)
+    assert not finished
+    assert 'STOPPED -- no unexpired credential' in lines[-1]
+    assert host.carried == []
+    _granted(tmp_path)  # the control: this plan's credentials run
+    assert _run(host, tmp_path)[0]
 
 
 def test_the_issuer_answers_which_ids_were_spent(tmp_path: Path) -> None:

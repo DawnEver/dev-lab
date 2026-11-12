@@ -23,13 +23,13 @@ __all__ = [
 CONTEXT_PREFIX: Final = 'tests/'
 
 #: The review's context (:mod:`dev_lab.dev.forgereview`): under the prefix so it reads beside the parts, and never a
-#: part -- :data:`NOT_PARTS` holds it, so no promotion waits on it; every merge requires it ``success``
-#: (:func:`dev_lab.dev.reviewgate.review_missing`).
+#: part -- :data:`NOT_PARTS` holds it, so no promotion waits on it; ADVISORY (user rulings 2026-11-11/12): no merge
+#: requires it, the merge decision reports it (:func:`dev_lab.dev.reviewgate.review_missing`).
 REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
 #: The review HOLD's context: posted ``pending`` on a head whose review could not run, released by a ``success`` a
-#: session posts once it reviewed the head. Never a part; the merge reads it together with :data:`REVIEW_CONTEXT`
-#: (:func:`dev_lab.dev.reviewgate.review_missing`), so an unreviewable head is never skipped into an auto-merge.
+#: session posts once it reviewed the head. Never a part; the merge decision reports it with :data:`REVIEW_CONTEXT`
+#: (:func:`dev_lab.dev.reviewgate.review_missing`) and never waits on it.
 HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
 
 #: The SECURITY check's context (:mod:`dev_lab.dev.forgesecurity`): one status per head posted by a serve step,
