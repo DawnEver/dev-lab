@@ -389,9 +389,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'NO-CJK-IN-TRACKED-SOURCE',
         (
-            'No tracked content may contain a CJK character, except under `.claude/memory/`, `attic/`, the '
-            'repo-root `archived/`, and a `<stem>.zh.md` beside its English `<stem>.md` (an orphaned translation '
-            'is refused by name), and a population too large for one commit is a RATCHET, not a loosened rule: a '
+            'No tracked content -- memory and task journals included -- may contain a CJK character, except '
+            'under the repo-root `attic/` and in a DESIGNATED Chinese document, a `<stem>.zh.md` beside its '
+            'English `<stem>.md` (an orphaned translation is refused by name); a quoted user ruling is recorded '
+            'as a faithful English translation marked as translated, and a population too large for one commit '
+            'is a RATCHET, not a loosened rule: a '
             'repo declares its files still carrying CJK as a NAMED SET that may only shrink, where a declared file '
             'with no CJK left is an ORPHANED waiver, refused like an undeclared one.'
         ),

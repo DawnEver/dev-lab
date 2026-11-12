@@ -1,7 +1,7 @@
 """NO CJK IN TRACKED SOURCE -- the VERDICTS over :mod:`dev_lab.dev.cjk`'s readings, and the control.
 
 WHAT THE CONSUMER'S FILE ASSERTS. Across every repo in this family, no content git tracks may contain
-CJK characters, outside the three exempt prefixes :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES` names.
+CJK characters, outside the exempt prefixes :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES` names.
 The scan, the ranges, the exemption match and the two-sided ratchet are all
 :mod:`dev_lab.dev.cjk`'s and are not restated here; what was missing was everything a consumer
 still had to write around them, and the three copies of it measure as near-twins.
@@ -206,11 +206,10 @@ def assert_the_declaration_is_the_shape_the_ratchet_keys_on(declared: Collection
 def assert_the_exemptions_match_a_path_segment(exempt_prefixes: Collection[str]) -> None:
     """Nested exempt dirs match, a ROOT-ANCHORED one matches only at the root, a lookalike never.
 
-    The measured reason is in :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`: one repo's memory tree is
-    scoped per module and a root-only prefix reported 47,521 CJK characters where the true answer is
-    zero. The opposite error is as fatal and is planted beside it -- a substring match would exempt
-    ``notattic/`` and open an island nobody declared. An ANCHORED prefix (leading ``/``, e.g.
-    ``/archived/``) is planted both ways: ``archived/f.py`` exempt and ``x/archived/f.py`` NOT.
+    A bare prefix must match nested as well as at the root; the opposite error is as fatal and is
+    planted beside it -- a substring match would exempt ``notattic/`` and open an island nobody
+    declared. An ANCHORED prefix (leading ``/``, e.g. ``/attic/``) is planted both ways: ``attic/f.py``
+    exempt and ``x/attic/f.py`` NOT.
 
     Raises:
         AssertionError: a prefix fails to match where it must, or matches where it must not.

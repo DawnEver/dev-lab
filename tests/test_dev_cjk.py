@@ -63,72 +63,51 @@ def test_an_escape_sequence_is_ascii_source_and_passes(tmp_path: Path) -> None:
     assert scan.files_read == 1
 
 
-def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
-    assert exempted('.claude/memory/2026/09/16/x.md')
+def test_only_the_repo_root_attic_is_exempt_by_path() -> None:
+    """User rulings 2026-11-12: the root `attic/` is the one path exemption; memory, tasks, archived/ are not."""
+    assert EXEMPT_PREFIXES == ('/attic/',)
     assert exempted('attic/motor_solver/old.py')
-    assert exempted('archived/thing.py')
-    assert exempted('.claude/tasks/some-task/JOURNAL.md')
+    assert exempted('attic/motor_solver/archived/old.py')
+    assert not exempted('src/pkg/attic/old.py')
+    assert not exempted('notattic/x.py')
+    assert not exempted('archived/thing.py')
+    assert not exempted('.claude/memory/2026/09/16/x.md')
+    assert not exempted('.claude/tasks/some-task/JOURNAL.md')
+    assert not exempted('src/pkg/.claude/memory/x.md')
     assert not exempted('src/dev_lab/dev/cjk.py')
-    assert EXEMPT_PREFIXES == ('.claude/memory/', '.claude/tasks/', 'attic/', '/archived/')
-
-
-def test_exempted_matches_a_nested_directory_and_not_a_nested_lookalike() -> None:
-    assert exempted('src/consumer_a/hamilton/.claude/memory/x.md')
-    assert exempted('src/pkg/attic/old.py')
-    assert exempted('rust/.claude/memory/note.md')
-    assert exempted('src/pkg/.claude/tasks/t/JOURNAL.md')
-    assert not exempted('src/pkg/.claude/notasks/t/JOURNAL.md')
-    assert not exempted('src/pkg/notattic/x.py')
-    assert not exempted('src/lab_commons/attic_style/x.py')
 
 
 def test_a_planted_violation_and_a_planted_clean_file_are_told_apart(tmp_path: Path) -> None:
-    """THE PLANTED CONTROL, both directions, through the REAL scanner."""
-    dirty = tmp_path / 'dirty.py'
-    dirty.write_text('x = 1  # ' + chr(0x4E2D) + chr(0x6587) + '\n', encoding='utf-8')
+    """THE PLANTED CONTROL, both directions, through the REAL scanner and the family's own prefixes.
+
+    CJK in memory, in a task journal, in a nested `attic/` and in `archived/` is refused; CJK in the
+    repo-root `attic/` passes; an ASCII file is clean.
+    """
+    han = chr(0x4E2D) + chr(0x6587)
+    refused = ('.claude/memory/2026/11/12/note.md', '.claude/tasks/t/JOURNAL.md', 'x/attic/old.py', 'archived/f.py')
+    for name in (*refused, 'attic/old.py'):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'x = 1  # {han}\n', encoding='utf-8')
     clean = tmp_path / 'clean.py'
     clean.write_text('x = 1  # ascii only, an em dash -- and nothing else\n', encoding='utf-8')
-    memory = tmp_path / '.claude' / 'memory' / 'note.md'
-    memory.parent.mkdir(parents=True)
-    memory.write_text(chr(0x4E2D) + chr(0x6587) + ' lives here and is exempt\n', encoding='utf-8')
 
-    scan = scan_files(
-        (dirty, clean, tmp_path / '.claude/memory/note.md'),
-        exempt_prefixes=('.claude/memory/',),
-        root=tmp_path,
-    )
-    assert [o.path for o in scan.occurrences] == ['dirty.py', 'dirty.py']
-    assert scan.exempted == ('.claude/memory/note.md',)
-    assert scan.files_read == 2, 'the exempt file must not count towards files_read'
+    scan = scan_files([tmp_path / name for name in (*refused, 'attic/old.py', 'clean.py')], root=tmp_path)
+    assert sorted({o.path for o in scan.occurrences}) == sorted(refused)
+    assert scan.exempted == ('attic/old.py',)
+    assert scan.files_read == len(refused) + 1, 'the exempt file must not count towards files_read'
 
 
-def test_a_nested_exemption_directory_is_recognised_and_a_nested_lookalike_is_not(tmp_path: Path) -> None:
-    """MEASURED on consumer-a: `.claude/memory/` and `attic/` are not only root directories.
-
-    A root-prefix-only match reported 47,521 CJK characters under `src/consumer_a/**` that were all
-    inside NESTED memory files (`src/consumer_a/hamilton/.claude/memory/x.md`). Both directions are
-    planted here: a nested memory file and a nested `attic/` file are exempt, while a nested file
-    that merely starts with the same letters (`notattic/`) is still caught.
-    """
-    nested_memory = tmp_path / 'src' / 'consumer_a' / 'hamilton' / '.claude' / 'memory' / 'note.md'
-    nested_memory.parent.mkdir(parents=True)
-    nested_memory.write_text(chr(0x4E2D) + chr(0x6587) + ' nested and exempt\n', encoding='utf-8')
-
-    nested_attic = tmp_path / 'src' / 'pkg' / 'attic' / 'old.py'
-    nested_attic.parent.mkdir(parents=True)
-    nested_attic.write_text('x = 1  # ' + chr(0x4E2D) + '\n', encoding='utf-8')
-
-    lookalike = tmp_path / 'src' / 'pkg' / 'notattic' / 'x.py'
-    lookalike.parent.mkdir(parents=True)
-    lookalike.write_text('x = 1  # ' + chr(0x6587) + '\n', encoding='utf-8')
-
-    scan = scan_files((nested_memory, nested_attic, lookalike), root=tmp_path)
-    assert scan.exempted == (
-        'src/consumer_a/hamilton/.claude/memory/note.md',
-        'src/pkg/attic/old.py',
-    )
-    assert [o.path for o in scan.occurrences] == ['src/pkg/notattic/x.py']
-    assert scan.files_read == 1, 'only the lookalike is real source; both exemptions must not be read'
+def test_a_bare_prefix_still_matches_as_a_segment_when_a_caller_passes_one(tmp_path: Path) -> None:
+    """The segment shape is kept for a caller's own prefixes: nested matches, a lookalike does not."""
+    nested = tmp_path / 'src' / 'pkg' / 'vendor' / 'x.py'
+    lookalike = tmp_path / 'src' / 'pkg' / 'notvendor' / 'x.py'
+    for path in (nested, lookalike):
+        path.parent.mkdir(parents=True)
+        path.write_text('x = 1  # ' + chr(0x4E2D) + '\n', encoding='utf-8')
+    scan = scan_files((nested, lookalike), exempt_prefixes=('vendor/',), root=tmp_path)
+    assert scan.exempted == ('src/pkg/vendor/x.py',)
+    assert [o.path for o in scan.occurrences] == ['src/pkg/notvendor/x.py']
 
 
 def test_a_binary_file_is_named_undecodable_not_silently_clean(tmp_path: Path) -> None:
@@ -258,23 +237,17 @@ def test_a_custom_range_set_still_drives_the_derived_pattern() -> None:
     assert find_cjk(text, [(0x3040, 0x309F)]) == ((1, 2, hiragana),)
 
 
-def test_archived_is_exempt_only_at_the_repo_root(tmp_path: Path) -> None:
-    """THE PLANTED CONTROL for the 2026-09-23 anchoring: `archived/f.py` is exempt, `x/archived/f.py` NOT.
-
-    Driven through the REAL scanner over a real tree, both directions at once, so a regression to the
-    old segment match (which exempted both) reds here rather than opening an island nobody declared.
-    """
+def test_attic_is_exempt_only_at_the_repo_root(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the 2026-11-12 anchoring: `attic/f.py` is exempt, `x/attic/f.py` NOT."""
     han = chr(0x4E2D)
-    root_archived = tmp_path / 'archived' / 'f.py'
-    nested_archived = tmp_path / 'x' / 'archived' / 'f.py'
-    for path in (root_archived, nested_archived):
+    root_attic = tmp_path / 'attic' / 'f.py'
+    nested_attic = tmp_path / 'x' / 'attic' / 'f.py'
+    for path in (root_attic, nested_attic):
         path.parent.mkdir(parents=True)
         path.write_text(f'x = 1  # {han}\n', encoding='utf-8')
-    assert exempted('archived/f.py')
-    assert not exempted('x/archived/f.py')
-    scan = scan_files((root_archived, nested_archived), root=tmp_path)
-    assert scan.exempted == ('archived/f.py',)
-    assert [o.path for o in scan.occurrences] == ['x/archived/f.py']
+    scan = scan_files((root_attic, nested_attic), root=tmp_path)
+    assert scan.exempted == ('attic/f.py',)
+    assert [o.path for o in scan.occurrences] == ['x/attic/f.py']
 
 
 def test_a_translation_is_exempt_only_beside_its_english_source(tmp_path: Path) -> None:

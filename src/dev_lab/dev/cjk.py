@@ -2,9 +2,11 @@
 
 THE USER DIRECTIVE, 2026-09-16, translated rather than quoted: across every repo in this family,
 no content that git tracks may contain CJK (Chinese/Japanese/Korean) characters -- only English
-letters, digits and symbols. Exempt: ``.claude/memory/``, ``.claude/tasks/``, ``attic/``, ``archived/`` (the
-last at the repo root only, since 2026-09-23), and a ``<stem>.zh.md`` translation beside its English
-``<stem>.md`` (:data:`TRANSLATION_SUFFIXES`). It is not kept
+letters, digits and symbols. Exempt: the repo-root ``attic/`` alone by path, and the DESIGNATED
+Chinese documents, each a ``<stem>.zh.md`` translation beside its English ``<stem>.md``
+(:data:`TRANSLATION_SUFFIXES`). Memory, task journals and ``archived/`` are NOT exempt (user rulings
+2026-11-12, translated: the whole repository, except certain designated Chinese
+documents, must be English only). It is not kept
 here in the source language on purpose: this module is itself tracked, and a literal quotation would
 be the one violation its own guard could never let through.
 
@@ -46,8 +48,8 @@ FLOORS BEFORE ANY VERDICT. :func:`assert_floor` refuses a scan that read fewer f
 declares as a floor, for the reason every scan-style guard in this family gives: a clean tree and an
 unread one produce the same empty result, and only a floor tells them apart.
 
-THERE IS NO CONTENT-BASED EXEMPTION, ONLY THE PATH PREFIXES AND THE TRANSLATION NAME ABOVE, and this was a real design
-question rather than an oversight: ``consumer-b`` has a test that PASSES a CJK literal on purpose, to
+THERE IS NO CONTENT-BASED EXEMPTION, ONLY THE ROOT ``attic/`` AND THE TRANSLATION NAME ABOVE, and this was a real
+design question rather than an oversight: ``consumer-b`` has a test that PASSES a CJK literal on purpose, to
 assert a naming guard rejects non-ASCII input (``naming.assert_ascii(...)``, called with the CJK
 character itself). Translating that literal would test a different string and stop testing the
 rejection; waiving the file would open a permanent CJK island. Asked directly, the user's answer was
@@ -118,20 +120,21 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 #: SEGMENT ANYWHERE in the path; a prefix spelled with a leading ``/`` is ANCHORED AT THE REPO ROOT
 #: and matches nowhere else. See :func:`exempted` for the match itself.
 #:
-#: ``.claude/memory/`` AND ``attic/`` MATCH AT ANY DEPTH, and this is measured rather than a stylistic
-#: choice: consumer-a's memory tree is SCOPED per module (``src/consumer_a/hamilton/.claude/memory/``,
-#: ``rust/.claude/memory/``) and its ``attic/`` holds one subtree per migrated repo. A root-prefix-only
-#: match on that tree reported 47,521 CJK characters under ``src/consumer_a/**`` when the real answer
-#: is zero -- every one of them a nested memory file the prefix test could not see.
+#: THE ONE PATH EXEMPTION IS THE REPO-ROOT ``attic/`` (user rulings 2026-11-12, translated: "the whole
+#: repository, except certain designated Chinese documents, must be English only"; ``attic/`` stays exempt,
+#: only at the repo root). ``attic/`` is code archived from migrated repos and kept read-only: rewriting it
+#: falsifies the copy it exists to preserve. It is ANCHORED: a nested ``x/attic/`` is ordinary source,
+#: and a segment match would let any directory of that name open a CJK island nobody designated.
 #:
-#: ``.claude/tasks/`` MATCHES AT ANY DEPTH for the same reason as memory (2026-11-12): a task journal is a dated,
-#: append-only record of verbatim user rulings -- the same kind of record as ``.claude/memory/`` -- and a
-#: ruling quoted in its source language cannot be translated without ceasing to be the ruling.
-#:
-#: ``archived/`` IS ROOT-ONLY (user directive, 2026-09-23). It names ONE repo-root directory in every
-#: family repo that has it, and a segment match made ``x/archived/f.py`` exempt too -- a directory of
-#: that name created anywhere in a source tree would have opened a CJK island nobody declared.
-EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('.claude/memory/', '.claude/tasks/', 'attic/', '/archived/')
+#: WHAT IS NO LONGER EXEMPT, AND WHY. ``.claude/memory/`` (since 2026-09-16) and ``.claude/tasks/``
+#: (briefly, 2026-11-12) were exempt on the theory that a verbatim user ruling cannot be translated; the
+#: user ruled that theory an upstream mistake. A ruling is recorded as a faithful English translation marked as
+#: translated, and an existing memory entry is translated in place through the one sanctioned shape
+#: :func:`dev_lab.dev.memoryadds.only_translated` admits. The repo-root ``archived/`` (2026-09-23) was
+#: dropped the same day: a family repo keeps archived material under ``attic/``, so a second archive
+#: prefix was a second door for the same thing. The only route for Chinese prose is a designated
+#: translation document (:data:`TRANSLATION_SUFFIXES`).
+EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('/attic/',)
 
 #: THE TRANSLATION MECHANISM (``TRANSLATION-HAS-ITS-SOURCE``, user directive 2026-09-23). A tracked
 #: document named ``<stem>.zh.md`` is a TRANSLATION, and it is exempt from this guard ONLY while its
@@ -230,12 +233,12 @@ def find_cjk(text: str, ranges: Collection[tuple[int, int]] = CJK_RANGES) -> tup
 def exempted(name: str, prefixes: Collection[str] = EXEMPT_PREFIXES) -> bool:
     """Whether *name* (a repo-relative POSIX path) sits under one of *prefixes*.
 
-    A prefix with a leading ``/`` is ANCHORED: it matches only at the repo root, so ``/archived/``
-    exempts ``archived/f.py`` and not ``x/archived/f.py``. Any other prefix is checked both at the
+    A prefix with a leading ``/`` is ANCHORED: it matches only at the repo root, so ``/attic/``
+    exempts ``attic/f.py`` and not ``x/attic/f.py``. Any other prefix is checked both at the
     ROOT (``name.startswith(prefix)``) and as a SEGMENT nested deeper (``f'/{prefix}'`` appearing in
-    *name*) -- see :data:`EXEMPT_PREFIXES` for the measured tree that made a root-only match wrong for
-    those. The leading ``/`` in the nested check is what keeps ``notattic/x`` from matching
-    ``attic/``: the prefix must start a path SEGMENT, not merely appear as a substring.
+    *name*); the leading ``/`` in the nested check is what keeps ``notx/f`` from matching ``x/``: the
+    prefix must start a path SEGMENT, not merely appear as a substring. The family's own data uses
+    only the anchored shape; the segment shape stays for a caller passing its own *prefixes*.
     """
     for prefix in prefixes:
         if prefix.startswith('/'):
@@ -369,9 +372,9 @@ def remedy(occurrence: Occurrence) -> str:
         f'than by deleting the information. If the character must survive verbatim -- for example a test '
         f'asserting that a guard REJECTS non-ASCII input -- write it as a \\uXXXX escape sequence instead: the '
         f'source becomes plain ASCII while the runtime value stays byte-identical, so the test still tests '
-        f'what it tested. Otherwise, if it belongs to an exemption this family already grants, move the '
-        f'content under .claude/memory/, .claude/tasks/, attic/ or the repo-root archived/ instead of declaring it '
-        f'here; a translated document is named <stem>.zh.md beside its English <stem>.md.'
+        f'what it tested. A user ruling quoted in memory or a task journal is recorded as a faithful English '
+        f'translation marked as translated. The only home for Chinese prose is a designated translation '
+        f'document, named <stem>.zh.md beside its English <stem>.md.'
     )
 
 

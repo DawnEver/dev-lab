@@ -10,6 +10,11 @@ Three shapes are not narrative edits:
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
   (:data:`VOLATILE_FIELDS`) a reader used to rewrite on every read. A change whose ONLY difference is
   those lines is that migration and nothing else;
+* the one-time TRANSLATION of CJK an entry holds (user ruling 2026-11-12: the whole repository, except
+  designated Chinese documents, is English, memory included). :func:`only_translated` admits a change that
+  adds :data:`TRANSLATION_NOTE` and rewrites ONLY lines that held CJK, leaving none behind; every line with
+  no CJK stays byte-identical, so no narrative edit rides along. Rewriting into a ``-corrected`` entry
+  was not chosen: it would leave the CJK in the original, which ``NO-CJK-IN-TRACKED-SOURCE`` refuses;
 * rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
   rewrite task text or turn narrative memory into a task list. Both versions must match the format.
 
@@ -43,12 +48,22 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.cjk import find_cjk
 from dev_lab.dev.lanepolicy import policy_at
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-__all__ = ['VOLATILE_FIELDS', 'MemoryAddsError', 'main', 'merged_entry_problems', 'pending', 'problems_between']
+__all__ = [
+    'TRANSLATION_NOTE',
+    'VOLATILE_FIELDS',
+    'MemoryAddsError',
+    'main',
+    'merged_entry_problems',
+    'only_translated',
+    'pending',
+    'problems_between',
+]
 
 #: Frontmatter fields the migration strips: per-read bookkeeping, never content.
 VOLATILE_FIELDS = ('accessed', 'tier', 'count')
@@ -78,6 +93,8 @@ REDACTION_ROLES: Final = (
 )
 _PLACEHOLDER = re.compile('|'.join([r'<[a-z][a-z0-9-]*>', *(re.escape(role) for role in REDACTION_ROLES)]))
 _NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
+TRANSLATION_NOTE: Final = 'Translated {day}: CJK rendered as faithful English (NO-CJK-IN-TRACKED-SOURCE).'
+_TRANSLATION_LINE = re.compile(r'> ' + re.escape(TRANSLATION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
 _MANUAL = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
 _MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
@@ -172,6 +189,18 @@ def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
     return rows
 
 
+def only_translated(old: str, new: str) -> bool:
+    """The one-time CJK translation: the note is added, only CJK-bearing lines change, and no CJK remains."""
+    after_lines = _lf(new).splitlines()
+    if find_cjk(new) or not find_cjk(old) or not any(_TRANSLATION_LINE.fullmatch(line) for line in after_lines):
+        return False
+    before = [line for line in _lf(old).splitlines() if line.strip()]
+    after = [line for line in after_lines if line.strip() and not _TRANSLATION_LINE.fullmatch(line)]
+    if len(before) != len(after):
+        return False
+    return all(was == now or find_cjk(was) for was, now in zip(before, after, strict=True))
+
+
 def _only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
     before, after = _manual_rows(path, old), _manual_rows(path, new)
     if before is None or after is None or len(after) < len(before):
@@ -241,6 +270,7 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                 _only_volatile_stripped(before, after)
                 or _only_manual_tasks_updated(old, before, after)
                 or _only_redacted(before, after)
+                or only_translated(before, after)
             ):
                 remedy = 'a memory entry is immutable -- write a new entry with `corrects:` instead'
                 if _MANUAL.search(old):
