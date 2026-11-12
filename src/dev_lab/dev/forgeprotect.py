@@ -186,7 +186,11 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
 
 
 def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
-    """The integration branch's and the trunk's :class:`Target` on *forge*, from pyproject *text* alone."""
+    """The integration branch's and the trunk's :class:`Target` on *forge*, from pyproject *text* alone.
+
+    A ONE-BRANCH repo (``trunk`` IS ``integration``) takes every change by a merged pull request, so its one branch
+    holds the integration rule alone: a trunk rule on the same branch would forbid the very merge it takes.
+    """
     policy = policy_from(text, origin)
     declared = declaration_from(text, origin)
     ours = declared.forges.get(forge.host)
@@ -196,11 +200,11 @@ def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
     contexts = required_contexts(text, origin, forge)
     review = review_from(text, origin)
     approver = review.judge_login if declared.approvals else ''
-    return (
-        Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),
-               declared.approvals, approver),
-        Target(TRUNK, policy.trunk, contexts[TRUNK], ours.breakglass, ours.promote),
-    )  # fmt: skip
+    integration = Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),
+                         declared.approvals, approver)  # fmt: skip
+    if policy.trunk == policy.integration:
+        return (integration,)
+    return (integration, Target(TRUNK, policy.trunk, contexts[TRUNK], ours.breakglass, ours.promote))
 
 
 def plan(api: Api, forge: Forge, wanted: Sequence[Target]) -> list[Step]:
