@@ -33,6 +33,7 @@ from dev_lab.ops import (
     consentverbs,
     disk,
     forgeaccounts,
+    forgewho,
     githubwho,
     install,
     judge,
@@ -216,6 +217,8 @@ def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
 
 def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
     """``forge account ensure`` / ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`), consented here."""
+    if args.kind == 'token' and args.action == 'whoami':
+        return forgewho.run(config, args)
     if config.forge is None:
         emit(f'[ops] {config.path} enables no [ops.forge]', err=True)
         return 2
