@@ -214,7 +214,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/hpcaccount/__init__.py',
         'PLC0415',
-        'from dev_lab.dev.hpcaccount import allocate, deploy, fleet, forget, tick',
+        'from dev_lab.dev.hpcaccount import allocate, credential, deploy, fleet, forget, tick',
     ): 'the package imports no verb: each verb imports the package, so a top-level import would be a cycle',
     (
         'src/dev_lab/dev/servelock.py',

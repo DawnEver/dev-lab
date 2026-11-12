@@ -35,8 +35,9 @@ _CREDENTIAL_REMEDY: Final = (
 )
 
 _READER_REMEDY: Final = (
-    "the USER replaces this account's forge line in ~/.git-credentials with a read-only forge account's token "
-    "(the role's reader when [hpc.roles.<role>] reader names one); an agent never handles the token. Then re-run"
+    "place a read-only forge login's minted token (the role's reader when [hpc.roles.<role>] reader names one) "
+    'from the workstation: `python -m dev_lab.dev.hpcaccount credential <user>@<login host> --login <reader>` '
+    "with the token on stdin; it replaces only this account's forge line. Then re-run"
 )
 
 #: The lead of an :data:`ApiCheck` answer saying the forge did not answer, which is no verdict on the token.
