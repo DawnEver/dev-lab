@@ -51,6 +51,7 @@ from dev_lab.ops.forgerequests import (
     TokenRequest,
     declared_request,
 )
+from dev_lab.ops.forgewho import ROLES
 from dev_lab.ops.giteaadmin import ROLE_GRANTS, Forge, ForgeRefused, GiteaCli, local_api, run_argv
 
 if TYPE_CHECKING:
@@ -317,6 +318,9 @@ def add_parser(verbs: argparse._SubParsersAction) -> None:
     revoking.add_argument('--name', required=True)
     listing = tokens.add_parser('list', help="the names of one login's tokens; read-only, no consent")
     listing.add_argument('--login', required=True)
+    who = tokens.add_parser('whoami', help="the login a role's configured token file is; read-only, no consent")
+    who.add_argument('--role', required=True, choices=ROLES, help='the ops table whose tokens file to read')
+    who.add_argument('--forge', default=None, help='the forge host (needed when the role holds several)')
     for one in (account, minting, batch, revoking):
         one.add_argument('--credential', default='', help='a single-use consent credential for exactly this request')
         one.add_argument('--subject', action='store_true', help="print the request's digest the consent must name")
