@@ -143,7 +143,7 @@ def test_clear_with_no_session_snapshot_refuses_without_names(tmp_path, monkeypa
     assert 'name' in capsys.readouterr().out
 
 
-@pytest.mark.skipif(sys.platform != 'win32', reason='hidden and read-only attributes are Windows file attributes')
+@pytest.mark.windows
 def test_clear_strips_windows_attributes_so_a_nested_git_deletes(tmp_path) -> None:
     _repo(tmp_path)
     _nested_repo(tmp_path)

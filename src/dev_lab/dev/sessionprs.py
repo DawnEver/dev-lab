@@ -12,12 +12,16 @@ output was piped away, and a push after ``cd`` into another repository -- all si
 * the one door that OPENS a PR (``forgework.Client.pr_create``) records it with the number the forge returned
   (:func:`record_opened`);
 * a push records itself where it RAN: the family ``pre-push`` row ``session-prs`` reads git's own ref lines in
-  the repository git is pushing (:func:`record_pushed`);
+  the repository git is pushing (:func:`record_pushed`); a push to the declared integration or trunk branch is
+  no PR and records nothing;
 * the session is :data:`SESSION_ENV`; absent or invalid, nothing is recorded;
 * the ``PostToolUse`` hook (:func:`main`) only tells the agent to arm the watch, or WARNS when a push or a create
   left the session no open PR on record (:func:`said_after`);
 * ``forge watch --session <id> --stream`` (:mod:`dev_lab.dev.forgewatch`) reads it, and marks a PR
-  ``merged``/``closed`` once it has said so (:func:`close`), so a merge is reported once;
+  ``merged``/``closed`` once it has said so (:func:`close`), so a merge is reported once; a branch row it
+  resolves to its PR, open or not, or closes with a reason when no PR can come (a protected or a gone branch);
+* :func:`is_open` is the ONE predicate the watch and the ``Stop`` gate read: a PR is open when the forge named
+  its number and no end was heard -- a branch row with no PR yet is pending, and holds nothing;
 * ``forge watch --session <id> --ack <key> --reason <why>`` records why a red head may stand (:func:`ack`);
   a newer head is not covered by an older head's reason.
 """
@@ -39,6 +43,7 @@ from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.refspec import pushed_refs
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -51,9 +56,11 @@ __all__ = [
     'Row',
     'ack',
     'close',
+    'is_open',
     'main',
     'noted',
     'open_rows',
+    'pending_rows',
     'record_opened',
     'record_pr',
     'record_push',
@@ -95,6 +102,8 @@ class Row:
     done: str = ''
     #: ``{head sha: reason}``: a red on that head the session recorded as standing on purpose.
     acks: dict[str, str] = field(default_factory=dict)
+    #: Why a row closed with no PR (a protected or a gone branch); ``''`` otherwise.
+    reason: str = ''
 
     @property
     def key(self) -> str:
@@ -127,7 +136,8 @@ def _row(raw: dict) -> Row | None:
         forge = Forge(str(raw['host']), str(raw['owner']), str(raw['repo']))
         acks = {str(sha): str(why) for sha, why in dict(raw.get('acks') or {}).items()}
         return Row(forge, str(raw.get('branch') or ''), int(raw.get('number') or 0), str(raw.get('sha') or ''),
-                   float(raw.get('at') or 0.0), str(raw.get('done') or ''), acks)  # fmt: skip
+                   float(raw.get('at') or 0.0), str(raw.get('done') or ''), acks,
+                   str(raw.get('reason') or ''))  # fmt: skip
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -143,9 +153,19 @@ def rows(session: str) -> dict[str, Row]:
     return {row.key: row for row in found if row is not None}
 
 
+def is_open(row: Row) -> bool:
+    """Whether *row* is an open PR: the forge named its number and no merge or close was heard."""
+    return bool(row.number) and not row.done
+
+
 def open_rows(session: str) -> tuple[Row, ...]:
-    """The session's PRs not yet reported merged or closed, by key."""
-    return tuple(row for _, row in sorted(rows(session).items()) if not row.done)
+    """The session's open PRs (:func:`is_open`), by key."""
+    return tuple(row for _, row in sorted(rows(session).items()) if is_open(row))
+
+
+def pending_rows(session: str) -> tuple[Row, ...]:
+    """The session's pushed branches no PR is known for yet and no end was heard, by key."""
+    return tuple(row for _, row in sorted(rows(session).items()) if not row.number and not row.done)
 
 
 def _save(session: str, table: dict[str, Row]) -> None:
@@ -154,7 +174,8 @@ def _save(session: str, table: dict[str, Row]) -> None:
         return
     data = {
         key: {'host': row.forge.host, 'owner': row.forge.owner, 'repo': row.forge.repo, 'branch': row.branch,
-              'number': row.number, 'sha': row.sha, 'at': row.at, 'done': row.done, 'acks': row.acks}
+              'number': row.number, 'sha': row.sha, 'at': row.at, 'done': row.done, 'acks': row.acks,
+              'reason': row.reason}
         for key, row in table.items()
     }  # fmt: skip
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,9 +220,9 @@ def resolve(session: str, row: Row, number: int) -> Row:
     return _put(session, Row(row.forge, row.branch, number, row.sha, row.at, row.done, row.acks), drop=row.key)
 
 
-def close(session: str, row: Row, done: str) -> Row:
-    """Mark *row* ``merged`` or ``closed``: it is reported once, and no longer watched or blocked on."""
-    return _put(session, Row(row.forge, row.branch, row.number, row.sha, row.at, done, row.acks))
+def close(session: str, row: Row, done: str, *, reason: str = '') -> Row:
+    """Mark *row* ``merged`` or ``closed`` (*reason*: why, when no PR closed it); never watched or blocked on again."""
+    return _put(session, Row(row.forge, row.branch, row.number, row.sha, row.at, done, row.acks, reason))
 
 
 def ack(session: str, row: Row, sha: str, reason: str) -> Row:
@@ -250,10 +271,16 @@ def record_pushed(
 ) -> tuple[Row, ...]:
     """Record every branch git's pre-push *lines* update on *root*'s *remote*, as the session's in *env*.
 
-    A deletion records nothing, nor does a run outside a session. Inside one, a remote that names no forge or a
-    record that fails is SAID on stderr and never raised: the push goes through either way.
+    A deletion records nothing, nor does a run outside a session, nor a push to the integration or trunk branch
+    *root* declares (:mod:`dev_lab.dev.lanepolicy`): no PR ever has it as its head. Inside a session, a remote
+    that names no forge or a record that fails is SAID on stderr and never raised: the push goes through.
     """
-    refs = [ref for ref in pushed_refs(lines) if ref.branch and not ref.deleted]
+    try:
+        policy = load_policy(root)
+        targets = {policy.integration, policy.trunk}
+    except (OSError, ValueError):  # no declaration: no branch is known to be a target, so every one is recorded
+        targets = set()
+    refs = [ref for ref in pushed_refs(lines) if ref.branch and not ref.deleted and str(ref.branch) not in targets]
     what = 'push of ' + ' '.join(str(ref.branch) for ref in refs)
     if not refs or not (session := _loud(what, env)):
         return ()
