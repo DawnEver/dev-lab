@@ -1,0 +1,2 @@
+# Goldens are compared byte for byte: git must never rewrite their line endings.
+*.golden -text

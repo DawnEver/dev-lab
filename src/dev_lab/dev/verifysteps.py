@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import functools
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +27,7 @@ from typing import IO, Final
 import lab_commons.launch as _door
 from lab_commons.box import POLL_S
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
@@ -338,32 +341,41 @@ def run_verify(
     path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
     seat = EnvironmentSeat(sys.prefix, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
-    with seat.held(), path.open('w', encoding='utf-8') as handle:
-        if hooks:
-            reports.append(read_hooks(root, handle=handle))
-        for name, arguments in RUFF_STEPS:
-            reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-        handle.write(_PYTEST_BANNER)
-        stamp = {
-            durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
-            durations.LEDGER_ENV_VAR: verdict_env(root),
-            OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
-            **coverage_env(root, path),
-        }
-        head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
-        pytest = [*head, *pytest_args]
-        covered = [*head, *coverage_args(root, path), *pytest_args]
-        seen = path.with_suffix('.serial-seen')
-        argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
-        codes = [_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'parallel', SEEN_ENV: str(seen)})]
-        learn_ended(root, pytest, record)
-        cut = ended_in_the_box(record)
-        if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
-            handle.write(SERIAL_BANNER)
-            appended = [*covered, '--cov-append', *serial_width()]
-            argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
-            codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
-            cut += ended_in_the_box(record)
+    # THE CELLS ARE WRITTEN OUTSIDE THE CHECKOUT WHILE THE SESSION RUNS and land beside the log once it ends: a
+    # consumer's session may guard its live output tree against every write it makes, and verify's own evidence
+    # is not that session's litter. Moved in a `finally`, so a cut run's cells still land.
+    live = Path(tempfile.mkdtemp(prefix=f'{TEMP_PREFIX}{path.stem}-cells-'))
+    try:
+        with seat.held(), path.open('w', encoding='utf-8') as handle:
+            if hooks:
+                reports.append(read_hooks(root, handle=handle))
+            for name, arguments in RUFF_STEPS:
+                reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
+            handle.write(_PYTEST_BANNER)
+            stamp = {
+                durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
+                durations.LEDGER_ENV_VAR: verdict_env(root),
+                OUTCOMES_DIR_VAR: str(live),
+                **coverage_env(root, path),
+            }
+            head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
+            pytest = [*head, *pytest_args]
+            covered = [*head, *coverage_args(root, path), *pytest_args]
+            seen = path.with_suffix('.serial-seen')
+            argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
+            codes = [
+                _tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'parallel', SEEN_ENV: str(seen)})
+            ]
+            learn_ended(root, pytest, record)
+            cut = ended_in_the_box(record)
+            if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
+                handle.write(SERIAL_BANNER)
+                appended = [*covered, '--cov-append', *serial_width()]
+                argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
+                codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
+                cut += ended_in_the_box(record)
+    finally:
+        shutil.move(live, outcomes_dir(path))
     report = coverage_report(root, path)
     emit(f'coverage: {coverage_total(report) or "not measured"} -- {report.relative_to(root).as_posix()} (a report)')
     stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]

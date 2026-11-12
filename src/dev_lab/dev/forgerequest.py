@@ -78,7 +78,7 @@ from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelabels import add_label
 from dev_lab.dev.platformparts import origin_url
-from dev_lab.dev.producer import ProducerExit, release_reason
+from dev_lab.dev.producer import Owner, ProducerExit, release_reason
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
@@ -423,13 +423,13 @@ def remind(client: Client, queue: Sequence[Ranked], *, hours: float, host: str) 
     return said
 
 
-def result(code: int, host: str, *, outage: bool) -> tuple[str, str]:
-    """The ``(state, description)`` a request's producer exiting *code* on *host* settles it with."""
+def result(code: int, host: str, *, outage: Owner | None, detail: str = '') -> tuple[str, str]:
+    """The ``(state, description)`` a request's producer exiting *code* on *host* settles it with; *detail* ends it."""
     if code == ProducerExit.PASS:
-        return 'success', f'request done: exit 0 on {host}'
+        return 'success', f'request done: exit 0 on {host}{detail}'
     if code == ProducerExit.FAIL:
-        return 'failure', f'request failed: exit 1 on {host}'
-    return 'error', release_reason(code, outage=outage)
+        return 'failure', f'request failed: exit 1 on {host}{detail}'
+    return 'error', release_reason(code, outage=outage, detail=detail)
 
 
 #: The label a request whose producer exited 0 gets: done, awaiting its requester's sign-off.

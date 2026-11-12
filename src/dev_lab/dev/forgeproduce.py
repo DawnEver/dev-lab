@@ -70,7 +70,7 @@ from lab_commons.proccpu import TreeCpu
 from dev_lab.dev import producer
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
-from dev_lab.dev.forgeclaim import Work, forge_now
+from dev_lab.dev.forgeclaim import Claim, Work, forge_now, publish
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeintent import Intent, forget, journal
 from dev_lab.dev.forgelabels import LabelMissing
@@ -80,7 +80,7 @@ from dev_lab.dev.forgewait import claim_vector
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import origin_url, parts_of, run_tag
-from dev_lab.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
+from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, box_release_reason, owned, producing, release_reason
 from dev_lab.dev.servelock import was_stopped
 from dev_lab.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
 
@@ -196,7 +196,8 @@ def produce(
         except TreeFailed as failed:  # a box with no room yet is no verdict: released RETRYABLE, claimed next tick
             waits = not_admitted(str(failed))
             why = f'{RETRYABLE} -- the box did not admit its tree yet' if waits else 'released: no tree'
-            _post(client(root), item, 'error', f'{why} at {item.sha[:12]} -- {failed}', say)
+            owner = Owner.SCHEDULING if waits else Owner.ENVIRONMENT
+            _post(client(root), item, 'error', owned(owner, f'{why} at {item.sha[:12]} -- {failed}'), say)
             say(f'{run_tag(item.platform, item.sha)} {close_tree(root, item.sha, item.context)}')
             forget(root, item.sha, item.context)
             code = ProducerExit.UNREACHABLE if waits else ProducerExit.INCONCLUSIVE
@@ -277,8 +278,8 @@ def _run(
             usage.wake(sample(proc.pid) if proc.pid is not None else None)
             wakes += 1
             beat(clock() - started)
-            if wakes % renew_every == 0:
-                _renew(client(root), item, lease, say)
+            if wakes % renew_every == 0 and item.holder is not None:  # an unheld item has no heartbeat
+                _renew(client(root), item, item.holder, lease, say)
     pump.join(timeout=5)
     say(f'{run_tag(item.platform, item.sha)} exit={returncode}')
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
@@ -301,13 +302,13 @@ def _run(
         )  # a request: its producer posts nothing
     elif posts and posts[-1].state == 'pending':
         manifest = record_manifest(root, item.sha, item.context)
-        released = release_reason(returncode, outage=said)
-        reason = 'stopped' if stopped else boxed_out or _named(released, returncode, manifest)
+        released = release_reason(returncode, outage=said, detail=_named(returncode, manifest))
+        reason = owned(Owner.SCHEDULING, 'stopped') if stopped else boxed_out or released
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
         fetch(root)
         _carry(root, client(root), item, posts[-1], say)
-    return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped, outage=said)
+    return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped, outage=said is not None)
 
 
 def _measured(ended: ProcessEnd | object, usage: _Usage, declared_gb: float, wall_s: float) -> Run | None:
@@ -340,12 +341,10 @@ class _Usage:
         self.cpu_s = max(self.cpu_s, self._cpu() or 0.0)
 
 
-def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], None]) -> None:
-    """The heartbeat: the same claim, until the FORGE's time plus the lease; an unheld item has none."""
-    if item.holder is None:
-        return
+def _renew(client: Client, item: Work, held: Claim, lease: timedelta, say: Callable[[str], None]) -> None:
+    """The heartbeat: the same claim *held*, until the FORGE's time plus the lease."""
     try:
-        renewed = dataclasses.replace(item.holder, until=forge_now(client) + lease)
+        renewed = dataclasses.replace(held, until=forge_now(client) + lease)
     except (ForgeCallFailed, OSError) as failed:
         say(f'{run_tag(item.platform, item.sha)} could not read the forge clock to renew: {failed}')
         return
@@ -369,21 +368,21 @@ def _carry(root: Path, client: Client, item: Work, verdict: CommitStatus, say: C
         say(f'{tag} carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
-def _named(description: str, returncode: int, record: tuple[str, tuple[tuple[str, str], ...]]) -> str:
-    """*description*, naming the missing record when an inconclusive run ended without writing one.
+def _named(returncode: int, record: tuple[str, tuple[tuple[str, str], ...]]) -> str:
+    """The detail naming the missing record when an inconclusive run ended without writing one, else ``''``.
 
     W1.4: "inconclusive (exit 3) -- no part" left an author with nothing to act on; the missing record is
     the fact and it belongs in the status. *record* is :func:`record_manifest`'s, ``('', ())`` when none.
     """
     if record[0] or returncode != ProducerExit.INCONCLUSIVE:
-        return description
-    return f'{description}; the run wrote no record, so nothing about its tree was judged'
+        return ''
+    return '; the run wrote no record, so nothing about its tree was judged'
 
 
 def _settle(
     client: Client,
     item: Work,
-    ended: tuple[int, str | None, bool],
+    ended: tuple[int, str | None, Owner | None],
     made: tuple[str, tuple[str, tuple[tuple[str, str], ...]]],
     say: Callable[[str], None],
 ) -> None:
@@ -391,8 +390,8 @@ def _settle(
     returncode, boxed_out, said = ended
     log, record = made  # the run's log, and its record (shatree.record_manifest)
     host = (item.holder.machine or item.holder.login) if item.holder else '-'
-    state, description = ('error', boxed_out) if boxed_out else result(returncode, host, outage=said)
-    description = _named(description, returncode, record)
+    named = _named(returncode, record)
+    state, description = ('error', boxed_out) if boxed_out else result(returncode, host, outage=said, detail=named)
     try:
         number = int(item.context.removeprefix(CONTEXT_PREFIX))
         settle(client, number, state, description, log=log, host=host, record=record)
@@ -402,8 +401,12 @@ def _settle(
 
 
 def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:
+    """Post a heartbeat, or a RESULT through :func:`~dev_lab.dev.forgeclaim.publish` while the item's claim holds."""
     try:
-        status_post(client, item.sha, context=item.context, state=state, description=description)
+        if state == 'pending' or item.holder is None:
+            status_post(client, item.sha, context=item.context, state=state, description=description)
+        elif not publish(client, item, item.holder, state=state, description=description):  # a result: once, held
+            state = f'withdrew its {state}'
     except ForgeCallFailed as failed:  # a missed heartbeat is not a dead producer; say so and keep going
         say(f'{run_tag(item.platform, item.sha)} could not post {state}: {failed}')
     else:

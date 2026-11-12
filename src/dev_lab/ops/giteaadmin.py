@@ -10,7 +10,9 @@ from __future__ import annotations
 import configparser
 import json
 import re
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Callable, Mapping
@@ -21,6 +23,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import launch
+
+from dev_lab.dev.forgefailure import RATE_HEADERS, UNAUTHENTICATED, Answer, ForgeCallFailed, diagnose, retried
+from dev_lab.dev.netverb import Diagnosis
 
 __all__ = [
     'BREAKGLASS_SCOPES',
@@ -287,17 +292,57 @@ def run_argv(argv: list[str]) -> tuple[int, str]:
     return done.returncode, done.stdout
 
 
-def local_api(method: str, url: str, token: str, body: Mapping[str, Any] | None) -> tuple[int, Any]:
-    """One call to the host's own Gitea API (``[ops.forge] api``); its status and parsed body, ``None`` if none."""
+def _exchange(method: str, url: str, token: str, body: Mapping[str, Any] | None) -> Answer:
+    """One HTTP exchange with the host's Gitea, a refusal included; a dropped connection raises :class:`OSError`."""
     headers = {'Authorization': f'token {token}', 'Content-Type': 'application/json'}
     data = None if body is None else json.dumps(body).encode('utf-8')
     request = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310
     try:
         with urllib.request.urlopen(request, timeout=30) as answer:  # noqa: S310
-            status, raw = answer.status, answer.read()
+            return Answer(answer.status, answer.read())
     except urllib.error.HTTPError as refused:
-        status, raw = refused.code, b''
+        rate = {name: value for name in RATE_HEADERS if refused.headers and (value := refused.headers.get(name))}
+        return Answer(refused.code, b'', rate)
+
+
+def _read(answer: Answer, text: str) -> Diagnosis:
+    """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401 is final: the admin token was minted for this use."""
+    if answer.status == UNAUTHENTICATED:
+        return Diagnosis.FORGE_REFUSED
+    return diagnose(answer.status, text, answer.headers)
+
+
+def local_api(
+    method: str,
+    url: str,
+    token: str,
+    body: Mapping[str, Any] | None,
+    *,
+    exchange: Callable[[str, str, str, Mapping[str, Any] | None], Answer] = _exchange,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[int, Any]:
+    """One call to the host's own Gitea API (``[ops.forge] api``); its status and parsed body, ``None`` if none.
+
+    Through the family's one forge loop (:func:`~dev_lab.dev.forgefailure.retried`): a 5xx or a dropped connection
+    is retried, a rate limit waits, an answered refusal (a 401 included: the admin token is minted per use, so no
+    retry can clear it) is returned at once as its status for the caller to refuse by name. A forge never reached
+    reads status ``0``.
+    """
+    seen: list[Answer] = []
+
+    def once() -> Answer:
+        try:
+            seen.append(exchange(method, url, token, body))
+        except OSError as dropped:
+            seen.append(Answer(0, str(dropped).encode()))
+        return seen[-1]
+
     try:
-        return status, json.loads(raw) if raw else None
+        retried((method, urllib.parse.urlsplit(url).path), once, diagnosis=_read, sleep=sleep)
+    except ForgeCallFailed:
+        return seen[-1].status, None
+    raw = seen[-1].payload
+    try:
+        return seen[-1].status, json.loads(raw) if raw else None
     except ValueError:
-        return status, None
+        return seen[-1].status, None

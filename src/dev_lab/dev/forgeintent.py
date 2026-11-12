@@ -36,7 +36,7 @@ from dev_lab.dev.forgeclaim import Claim, forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.producer import RETRYABLE
+from dev_lab.dev.producer import RETRYABLE, Owner, owned
 from dev_lab.dev.shatree import close_tree
 from dev_lab.dev.worktreeplace import main_checkout
 
@@ -114,7 +114,10 @@ def reattach(
                 continue
             posts = [one for one in status_history(client, intent.sha) if one.context == intent.context]
             if posts and posts[-1].state == 'pending':
-                why = f'{RETRYABLE} -- this host restarted and its run died (pid {intent.pid or "never spawned"})'
+                why = owned(
+                    Owner.ENVIRONMENT,
+                    f'{RETRYABLE} -- this host restarted and its run died (pid {intent.pid or "never spawned"})',
+                )
                 status_post(client, intent.sha, context=intent.context, state='error', description=why)
                 lines.append(f'{tag}: released as claimable -- its producer died with the host')
             else:

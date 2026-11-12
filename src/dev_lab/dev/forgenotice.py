@@ -37,6 +37,8 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.log import emit
 from lab_commons.units import Q_
 
+from dev_lab.dev.producer import Owner, owner_of
+
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client, Comment
@@ -147,7 +149,9 @@ def kinds(
 ) -> dict[str, tuple[str, tuple[str, ...], str]]:
     """``{kind: (reason, failing test ids, record link)}`` for a head with *statuses*; empty when it is fine."""
     found: dict[str, tuple[str, tuple[str, ...], str]] = {}
-    red = [s for s in statuses if s.context.startswith('tests/') and s.state in {'failure', 'error'}]
+    red = [
+        s for s in statuses if s.context.startswith('tests/') and owner_of(s.state, s.description) is Owner.CODE
+    ]  # contract 6
     sync = next((s for s in statuses if s.context == _SYNC and s.state in {'failure', 'error'}), None)
     if red:
         reason = '; '.join(f'{s.context} {s.state}: {s.description}' for s in red)

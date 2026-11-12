@@ -77,6 +77,7 @@ __all__ = [
     'UnenforceableRule',
     'assert_adopted',
     'assert_enforceable',
+    'enforced_ids',
     'guard',
     'lint',
     'tracked_files',
@@ -449,6 +450,25 @@ def waived(rules: Sequence[Rule], adoption: Adoption) -> tuple[str, ...]:
     made and on record, the other is a rule nobody has looked at yet.
     """
     return tuple(sorted(set(rules_by_id(rules)) & set(adoption.declared_absent)))
+
+
+def enforced_ids(declared_absent: Iterable[str], rules: Sequence[Rule] = RULES) -> frozenset[str]:
+    """Every rule ID an adopter enforces once it declares *declared_absent*: the registry less those and always-on.
+
+    The list an adopting repo would otherwise type out by hand, read from the registry instead. A new rule is
+    still a decision the adopter must make: it arrives here, and :func:`assert_adopted` reds until its
+    mechanism is live in that tree or the rule joins *declared_absent*.
+
+    Raises:
+        ValueError: a declared-absent ID names no rule (a typo waives nothing).
+
+    """
+    known = set(rules_by_id(rules))
+    absent = frozenset(declared_absent)
+    if unknown := sorted(absent - known):
+        msg = f'declared-absent IDs name no rule: {unknown}'
+        raise ValueError(msg)
+    return frozenset(known - absent - ALWAYS_ON)
 
 
 def rules_by_id(rules: Sequence[Rule]) -> dict[str, Rule]:

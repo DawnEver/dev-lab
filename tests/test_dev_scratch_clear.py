@@ -143,11 +143,14 @@ def test_clear_with_no_session_snapshot_refuses_without_names(tmp_path, monkeypa
     assert 'name' in capsys.readouterr().out
 
 
-@pytest.mark.windows
-def test_clear_strips_windows_attributes_so_a_nested_git_deletes(tmp_path) -> None:
+def test_clear_deletes_a_nested_git_whose_files_are_read_only(tmp_path) -> None:
+    """Git marks its object files read-only; on Windows that alone stops a tree delete until the hook clears it."""
     _repo(tmp_path)
     _nested_repo(tmp_path)
-    launch.run(['attrib', '+H', '+R', str(tmp_path / 'scratch' / 'clone' / '.git')], check=True)
+    git_dir = tmp_path / 'scratch' / 'clone' / '.git'
+    locked = git_dir / 'locked-object'
+    locked.write_text('x', encoding='utf-8')
+    locked.chmod(stat.S_IREAD)
     assert clear_scratch(tmp_path, ['clone']) == ['scratch/clone']
     assert not (tmp_path / 'scratch' / 'clone').exists()
 

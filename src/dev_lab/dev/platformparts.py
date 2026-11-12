@@ -100,7 +100,7 @@ from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, R
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
-from dev_lab.dev.producer import unreachable
+from dev_lab.dev.producer import AUTHORS_RED, Owner, unreachable, whose
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -363,6 +363,7 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
 
     A ``tests/<part>`` status that is not a settled part -- a claim still ``pending``, an
     ``error``, or a description this module did not write -- is a problem naming itself, never a part.
+    An ``error`` problem names its owner (:func:`~dev_lab.dev.producer.whose`): only ``class=code`` is its author's.
     """
     parts: dict[str, Part] = {}
     problems: list[str] = []
@@ -372,7 +373,8 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
         name = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)
         if status.state not in _RESULT or found is None or not is_row(name):
-            problems.append(f'{status.context} is {status.state} ({status.description!r}) -- not a settled part')
+            said = f'{status.context} is {status.state} ({status.description!r}) -- not a settled part'
+            problems.append(said + whose(status.state, status.description))
             continue
         hands = {} if found['hands'] == '-' else dict(item.split(':') for item in found['hands'].split(','))
         parts[name] = Part(
@@ -450,8 +452,9 @@ class Standing:
     """A commit's result as its parts on the forge say it: PASS, FAIL, or INCONCLUSIVE while unsettled.
 
     THE ONE READING of a commit's parts, shared by push admission and the integrator's queue: a FAIL
-    part is ``FAIL`` whatever else is missing; otherwise any problem (a part missing, unsettled, or of
-    the wrong scope) leaves it INCONCLUSIVE; else PASS.
+    part, or an ``error`` naming ``class=code`` (the commit's own defect), is ``FAIL`` whatever else is missing;
+    an ``error`` of another owner is not the author's (:func:`~dev_lab.dev.producer.whose`). Else any problem (a part
+    missing, unsettled, or of the wrong scope) leaves it INCONCLUSIVE -- never PASS; else PASS.
     """
 
     result: Conclusion
@@ -483,7 +486,8 @@ def standing(
             for part in composed.parts
             if part.result is not Conclusion.PASS or part.scope != scope
         ]
-    failed = any(part.result is Conclusion.FAIL for part in composed.parts)
+    refused = any(one.endswith(AUTHORS_RED) for one in unsettled)  # the commit's own defect, though no part
+    failed = refused or any(part.result is Conclusion.FAIL for part in composed.parts)
     result = _settled(failed=failed, problems=problems)
     reading = UNCLAIMED if result is Conclusion.INCONCLUSIVE and not (parts or unsettled) else result.name
     return Standing(result=result, parts=composed.parts, problems=tuple(problems), reading=reading)
@@ -526,7 +530,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(post(args.root, args.record))
     except PostFailed as why:
         emit(f'[platformparts] unreachable: {why}', err=True)
-        return unreachable(str(why))
+        return unreachable(str(why), Owner.STATUS_PUBLISHING)
     except PartRefusal as why:
         emit(f'[platformparts] refused: {why}', err=True)
         return 1
