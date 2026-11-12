@@ -22,6 +22,7 @@ from dev_lab.dev._forgebackends import (
     NotWired,
     require_producer,
 )
+from dev_lab.dev._protect_gitea import body as gitea_body
 from dev_lab.dev.ciworkflows import placed
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import JUDGE_CHECK, MERGE_READY_CONTEXT, REVIEW_CONTEXT
@@ -60,9 +61,19 @@ def test_a_github_repo_s_gate_names_only_actions_produced_contexts_judge_or_not(
     assert (integration.judge_app, integration.approvals, integration.approver) == (0, 0, '')
 
 
-def test_a_gitea_repo_s_gate_still_reads_its_serve_host_s_contexts() -> None:
-    """PLANTED CONTROL: Gitea's serve host merges, so its integration requires the part and security it posts."""
-    assert required_contexts(GITEA_TEXT, 'p', TEA)[INTEGRATION] == ('tests/base', 'tests/security')
+def test_a_serve_host_s_integration_requires_no_context_and_its_trunk_still_requires_base() -> None:
+    """User ruling 2026-11-12 (RED-INTEGRATION-MERGES): the serve host decides a red-on-record merge, so no context.
+
+    PLANTED CONTROL: the trunk on the same forge still requires ``tests/base``, and the rendered rule disables
+    status checks only where the context list is empty.
+    """
+    contexts = required_contexts(GITEA_TEXT, 'p', TEA)
+    assert contexts[INTEGRATION] == ()
+    assert 'tests/base' in contexts[TRUNK]
+    integration, trunk = (gitea_body(one) for one in targets(GITEA_TEXT, 'p', TEA))
+    assert (integration['enable_status_check'], integration['status_check_contexts']) == (False, [])
+    assert trunk['enable_status_check'] is True
+    assert 'tests/base' in trunk['status_check_contexts']
 
 
 @pytest.mark.parametrize('backend', [GITHUB, GITEA])
