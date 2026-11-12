@@ -140,13 +140,28 @@ def _origin(shell: Runner, target: Target) -> str:
     return shell(f'git -C {PurePosixPath("~", target.root, KIT)} remote get-url origin', None).strip()
 
 
+def parser() -> argparse.ArgumentParser:
+    """The ``credential`` command line: the one source of its usage (:func:`usage`)."""
+    made = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount credential', description=__doc__.splitlines()[0])
+    made.add_argument('account', metavar='<user>@<login host>', help='a declared [[hpc.grant]] account')
+    made.add_argument(
+        '--login', required=True, metavar='<forge login>', help='the declared forge login the token belongs to'
+    )
+    made.add_argument(
+        '--url', default='', metavar='<repo url>', help="a repository url on the forge (default: the kit's origin)"
+    )
+    return made
+
+
+def usage() -> str:
+    """The command's shape as :func:`parser` renders it, ``hpcaccount credential ...``, the help flag left out."""
+    said = ' '.join(parser().format_usage().split())
+    return said.removeprefix('usage: dev_lab.dev.').replace(' [-h]', '')
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``credential``, read the token from stdin and place it."""
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount credential', description=__doc__.splitlines()[0])
-    parser.add_argument('account', help='<user>@<login host> of a declared [[hpc.grant]]')
-    parser.add_argument('--login', required=True, help='the declared forge login the token belongs to')
-    parser.add_argument('--url', default='', help="a repository url on the forge (default: the account's kit origin)")
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    args = parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     table, division = split_hpc(section('hpc'))
     return place_credential(
         args.account,

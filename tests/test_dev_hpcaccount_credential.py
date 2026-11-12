@@ -15,7 +15,7 @@ from lab_commons.hpc.grants import Grant
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.hpcaccount.account import _READER_REMEDY
-from dev_lab.dev.hpcaccount.credential import declared_logins, digest, place_command, place_credential
+from dev_lab.dev.hpcaccount.credential import declared_logins, digest, place_command, place_credential, usage
 from dev_lab.dev.hpcaccount.division import Division
 
 _HOSTS = ('login1.example', 'login2.example')
@@ -194,3 +194,13 @@ def test_an_empty_stdin_places_nothing() -> None:
     )
     assert code == 2
     assert 'no token' in said[0]
+
+
+def test_the_refusals_page_shows_the_credential_usage_its_argparse_renders() -> None:
+    """The HPC exits on the refusals page are rendered from the door's own parser, never retyped."""
+    shown = usage()
+    assert shown.startswith('hpcaccount credential ')
+    assert '--login <forge login>' in shown
+    assert '[-h]' not in shown, 'PLANTED CONTROL: the help flag is no part of the shape'
+    page = (Path(__file__).resolve().parents[1] / 'docs-src' / 'dev' / 'refusals.md').read_text(encoding='utf-8')
+    assert f'`{shown}`' in page
