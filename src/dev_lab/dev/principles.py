@@ -43,10 +43,13 @@ PRINCIPLES: Final = (
     Principle(
         'no-historical-baggage',
         'Discard historical baggage',
-        'Remove obsolete structures and dead paths no current need uses.',
+        'Remove obsolete structures, duplicates and dead paths no current need uses -- never a capability.',
     ),
     Principle(
-        'occams-razor', "Occam's razor", 'Simplest design that fully meets the need; nothing for hypothetical needs.'
+        'occams-razor',
+        "Occam's razor",
+        'Simplest design that fully meets the need; nothing for hypothetical needs; it removes dead paths and '
+        'duplicates, never a capability.',
     ),
     Principle(
         'single-source-of-truth',
@@ -72,8 +75,11 @@ PRINCIPLES: Final = (
     Principle(
         'keep-valuable-options',
         'Keep every valuable parameter and option',
-        'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs; '
-        'Occam and no-baggage remove dead paths, never capability.',
+        'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs. '
+        'Matching a reference or vendor ADDS a selectable option, declared by the case or config that needs '
+        'it; it never replaces or deletes the alternative. Numerical method choices (quadrature, time scheme, '
+        'averaging window, coefficient evaluation) are options, and "no current caller" is not grounds to '
+        'delete a numerically meaningful one.',
     ),
 )
 

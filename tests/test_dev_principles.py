@@ -28,6 +28,21 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
     assert kept.statement.startswith('Generality is a requirement: keep every parameter and option')
 
 
+def test_a_reference_match_adds_an_option_and_the_razors_never_remove_capability() -> None:
+    """User ruling 2026-11-12: a vendor match is ADDED as a choice, never substituted for the native one."""
+    by_id = {one.id: one.statement for one in PRINCIPLES}
+    kept = by_id['keep-valuable-options']
+    for clause in (
+        'ADDS a selectable option, declared by the case or config that needs it',
+        'never replaces or deletes the alternative',
+        'quadrature, time scheme, averaging window, coefficient evaluation',
+        '"no current caller" is not grounds to delete',
+    ):
+        assert clause in kept
+    assert by_id['occams-razor'].endswith('never a capability.')
+    assert by_id['no-historical-baggage'].endswith('never a capability.')
+
+
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:
     """``--json`` prints exactly ``{"principles": [{id, name, statement}...]}``."""
     assert principles.main(['--json']) == 0
