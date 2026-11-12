@@ -67,14 +67,17 @@ def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
     assert exempted('.claude/memory/2026/09/16/x.md')
     assert exempted('attic/motor_solver/old.py')
     assert exempted('archived/thing.py')
+    assert exempted('.claude/tasks/some-task/JOURNAL.md')
     assert not exempted('src/dev_lab/dev/cjk.py')
-    assert EXEMPT_PREFIXES == ('.claude/memory/', 'attic/', '/archived/')
+    assert EXEMPT_PREFIXES == ('.claude/memory/', '.claude/tasks/', 'attic/', '/archived/')
 
 
 def test_exempted_matches_a_nested_directory_and_not_a_nested_lookalike() -> None:
     assert exempted('src/consumer_a/hamilton/.claude/memory/x.md')
     assert exempted('src/pkg/attic/old.py')
     assert exempted('rust/.claude/memory/note.md')
+    assert exempted('src/pkg/.claude/tasks/t/JOURNAL.md')
+    assert not exempted('src/pkg/.claude/notasks/t/JOURNAL.md')
     assert not exempted('src/pkg/notattic/x.py')
     assert not exempted('src/lab_commons/attic_style/x.py')
 

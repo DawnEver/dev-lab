@@ -1,4 +1,4 @@
-"""Every retired ``[ops]`` shape upgraded on read (FORMATS-UPGRADE-ON-READ): the ONE place an old shape is read.
+"""Every retired ``[ops]`` shape still read: the ONE place one is (OLD-SHAPE-READER, FORMATS-MIGRATE-ONCE).
 
 :func:`dev_lab.ops.config.load` hands the raw ``[ops]`` table here before it builds the typed config, so a host whose
 file predates a change still loads, and the next ``config apply`` writes the new shape.
@@ -16,7 +16,7 @@ from dev_lab.dev.forge import forge_of_url
 __all__ = ['BREAKGLASS_MOVED', 'upgraded']
 
 
-#: The keys #311 moved out of ``[ops.breakglass]`` (FORMATS-UPGRADE-ON-READ): the TOTP seed and the code lockout went
+#: The keys #311 moved out of ``[ops.breakglass]``: the TOTP seed and the code lockout went
 #: to the consent issuer; a wave's window and cap became the params of its ``breakglass.wave`` credential.
 BREAKGLASS_MOVED: Final = ('totp', 'wave_hours', 'max_merges', 'lockout_after', 'lockout_minutes')
 #: Where a derived issuer keeps its key and ledger when a pre-#311 host declared none.

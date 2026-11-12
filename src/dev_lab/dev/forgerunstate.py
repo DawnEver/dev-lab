@@ -6,11 +6,10 @@ protocol, and the one-file-per-run store under ``forge-runs/`` beside the machin
 (:func:`directory`) -- keyed by repo + sha + platform + scope, in the account's home, so any login
 host of that account sees it.
 
-THE FILE IS SCHEMA-VERSIONED (:data:`SCHEMA`). A tool redeployed under a live run ADOPTS it: :func:`live`
-upgrades a file of an older schema it knows (:data:`_UPGRADES`) on read -- every field carried, the new
-ones derived -- and writes it back at this schema, atomically. Only a schema it does not know is refused
-(:class:`ForeignSchema`), and a tick hears that refusal for the one file and reads the rest (Ada,
-2026-10-17: a redeploy from schema 1 to 2 under 17 live runs stopped every tick of four accounts).
+THE FILE IS SCHEMA-VERSIONED (:data:`SCHEMA`). A file of any other schema is refused by name with its
+remedy (:class:`ForeignSchema`) -- finish the run with the tool that started it, or delete the file once its
+jobs are gone -- and a tick hears that refusal for the one file and reads the rest (Ada, 2026-10-17: one
+refused file stopped every tick of four accounts). No older schema is read: FORMATS-MIGRATE-ONCE.
 """
 
 from __future__ import annotations
@@ -215,7 +214,7 @@ class Run:
     #: The progress last posted on the claim; a change is posted, a repeat is not.
     progress: str = ''
     #: Slurm job names this run's jobs may bear besides :func:`lab_commons.hpc.run.job_name` -- an
-    #: upgraded run's, sbatched by a tool that named jobs otherwise (:data:`_UPGRADES`).
+    #: schema-1 run's, sbatched by a tool that named jobs otherwise; empty for every run this tool starts.
     job_aliases: tuple[str, ...] = ()
     #: When the run was first found superseded, on the cluster's clock; ``0.0`` while it is not.
     superseded_at: float = 0.0
@@ -288,41 +287,27 @@ def drop(run: Run) -> None:
     _path(run).unlink(missing_ok=True)
 
 
-def _from_1(raw: dict[str, object]) -> dict[str, object]:
-    """Schema 1 -> 2: same fields and phases; its jobs were sbatched as ``run-<sha12>``, before the part was named."""
-    return {**raw, 'schema': 2, 'job_aliases': [f'run-{str(raw["sha"])[:12]}']}
-
-
-#: Each older schema this tool adopts, and the step that takes it one schema on.
-_UPGRADES: Final[dict[int, Callable[[dict[str, object]], dict[str, object]]]] = {1: _from_1}
-
-
 def _read(path: Path) -> Run:
-    """*path*'s run, upgraded to :data:`SCHEMA` and written back when older; :class:`ForeignSchema` if unknown."""
+    """*path*'s run at :data:`SCHEMA`; :class:`ForeignSchema` for any other."""
     raw = json.loads(path.read_text(encoding='utf-8'))
     stored = raw.get('schema')
-    while raw.get('schema') in _UPGRADES:
-        raw = _UPGRADES[raw['schema']](raw)
-    if raw.get('schema') != SCHEMA:
+    if stored != SCHEMA:
         msg = (
             f'{path} is a live run of state schema {stored!r}; this tool reads schema {SCHEMA}. '
             'Finish it with the tool version that started it, or -- once `squeue --me` shows none of '
             'its jobs -- delete the file; the next tick claims the commit afresh'
         )
         raise ForeignSchema(msg)
-    run = Run(**{
+    return Run(**{
         **raw,
         'job_ids': tuple(raw['job_ids']),
         'outputs': tuple(raw.get('outputs', ())),
         'job_aliases': tuple(raw.get('job_aliases', ())),
     })  # fmt: skip
-    if stored != SCHEMA:
-        save(run)
-    return run
 
 
 def live(repo_url: str, *, refused: Callable[[str], None] | None = None) -> tuple[Run, ...]:
-    """Every run of *repo_url* in flight here, least recently advanced first (:func:`touch`), older schemas adopted.
+    """Every run of *repo_url* in flight here, least recently advanced first (:func:`touch`); any other schema refused.
 
     A file of an unknown schema raises :class:`ForeignSchema` -- or, given *refused*, is skipped and its
     refusal handed to it, so one bad file never stops the other runs.

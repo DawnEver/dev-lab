@@ -444,18 +444,13 @@ def _plant_schema_1() -> dict[str, Any]:
 
 
 @pytest.mark.usefixtures('home')
-def test_a_live_schema_1_run_is_adopted_losslessly_and_written_back_at_this_schema() -> None:
-    """A tool redeployed under a live run adopts it: every field carried, the old job name kept as an alias."""
+def test_a_live_schema_1_run_is_refused_by_name_with_the_remedy_and_left_in_place() -> None:
+    """FORMATS-MIGRATE-ONCE: an older schema is never read; the file is named, its remedy given, and kept."""
     raw = _plant_schema_1()
-    (run,) = forgerunstate.live(raw['repo_url'])
-    carried = {key: value for key, value in dataclasses.asdict(run).items() if key in raw and key != 'schema'}
-    as_read = {k: tuple(v) if isinstance(v, list) else v for k, v in raw.items() if k != 'schema'}
-    assert carried == as_read
-    assert run.schema == forgerunstate.SCHEMA
-    assert run.job_aliases == (f'run-{raw["sha"][:12]}',), 'jobs sbatched under schema 1 bear the sha-only name'
     (path,) = forgerunstate.directory().glob('*.json')
-    assert json.loads(path.read_text(encoding='utf-8'))['schema'] == forgerunstate.SCHEMA, 'written back'
-    assert forgerunstate.live(raw['repo_url']) == (run,), 'deterministic: a second read of the upgraded file agrees'
+    with pytest.raises(forgerunstate.ForeignSchema, match=r'schema 1.*squeue --me'):
+        forgerunstate.live(raw['repo_url'])
+    assert json.loads(path.read_text(encoding='utf-8')) == raw, 'a refused file is not rewritten'
 
 
 def test_a_new_run_has_no_job_alias(home: Path) -> None:
