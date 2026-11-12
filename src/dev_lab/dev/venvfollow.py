@@ -10,6 +10,13 @@ unchanged checkout costs one hash. Its callers:
   a background :func:`follow` and the hook returns at once;
 * the ``post-merge`` and ``post-checkout`` git hooks (``githooks/base.toml``, advisory) -- ``--background``.
 
+THE TOOLCHAIN FOLLOWS AS ONE (user ruling 2026-11-12: no human approval keeps a checkout current). The venv is one
+of three things a checkout can be left behind on, and the follow takes them in dependency order: the CHECKOUT first
+(:func:`dev_lab.dev.checkoutfollow.advance` -- a clean primary checkout fast-forwards onto integration, which may
+move the lock), then the VENV, then the HOOKS (:func:`dev_lab.dev.hook_install.rewire` -- a stale or predecessor
+shim never reaches the current table, so only something outside a git hook can replace it). ``--background``
+detaches when any of the three is due.
+
 :func:`follow` skips while a run lives in the checkout or executes from its venv (TREE-HAS-A-LIVE-RUN,
 :mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start, merge or checkout.
 
@@ -30,7 +37,7 @@ import lab_commons.launch as _door
 from lab_commons.census import processes
 from lab_commons.log import emit
 
-from dev_lab.dev import liverun
+from dev_lab.dev import checkoutfollow, hook_install, liverun
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.reclaimrun import detach_argv
 from dev_lab.dev.venvpath import venv_interpreter
@@ -49,6 +56,7 @@ __all__ = [
     'SKIPPED',
     'busy',
     'detach_argv',
+    'due',
     'env_key',
     'follow',
     'main',
@@ -138,6 +146,11 @@ def toplevel(cwd: Path) -> Path | None:
     return Path(out) if out else None
 
 
+def due(checkout: Path) -> bool:
+    """*checkout*'s venv is :func:`stale`, the checkout is behind integration, or a declared hook is not live."""
+    return stale(checkout) is not None or checkoutfollow.behind(checkout) or hook_install.unwired(checkout)
+
+
 def _session_root(stdin: TextIO) -> Path | None:
     try:
         payload = json.load(stdin)
@@ -148,7 +161,7 @@ def _session_root(stdin: TextIO) -> Path | None:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """Follow the lock: inline, ``--background``, or as the ``--session-start`` hook. Always 0."""
+    """Follow integration, the lock and the hooks: inline, ``--background``, or as the ``--session-start`` hook. Always 0."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.venvfollow', description=main.__doc__)
     parser.add_argument('--root', type=Path, default=None, help='the checkout (default: the one cwd lies in)')
     mode = parser.add_mutually_exclusive_group()
@@ -160,10 +173,14 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if root is None:
             return 0
         if args.background or args.session_start:
-            if stale(root) is not None:
+            if due(root):
                 detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
             return 0
+        if moved := checkoutfollow.advance(root):
+            emit(moved)
         emit(f'venv {root}: {follow(root)}')
+        if rewired := hook_install.rewire(root):
+            emit(rewired)
     except OSError as exc:  # a hook never blocks the session or the git verb it serves
         emit(f'venv follow did not run: {exc}')
     return 0
