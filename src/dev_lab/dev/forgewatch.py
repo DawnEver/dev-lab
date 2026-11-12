@@ -32,10 +32,12 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import sessionprs
+from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, PullRequest, client_for, stored_client
+from dev_lab.dev.platformparts import BASE
 from dev_lab.dev.pushwatch import record_deadline
 
 if TYPE_CHECKING:
@@ -142,8 +144,14 @@ def _reds(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
     return [status for status in statuses if status.state in RED]
 
 
+#: The contexts a head is never green without: the base test part, whatever else has already ended.
+REQUIRED: Final = (f'{CONTEXT_PREFIX}{BASE}',)
+
+
 def _green(statuses: Sequence[CommitStatus]) -> bool:
-    return settled(statuses) and all(s.state == 'success' for s in statuses if s.context.startswith(TESTS))
+    """Every required context and every posted test status ended in ``success``."""
+    latest = {s.context: s.state for s in statuses if s.context.startswith(TESTS)}
+    return all(c in latest for c in REQUIRED) and all(state == 'success' for state in latest.values())
 
 
 def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str], None], seen: set[str]) -> bool:
@@ -154,17 +162,23 @@ def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str]
     if pr.merged or pr.state == 'closed':
         done = 'merged' if pr.merged else 'closed'
         sessionprs.close(session, row, done)
-        say(f'{row.key} {done}')
+        _say_once(session, f'{row.key} {done}', say, seen)
         return False
     statuses = status_list(client, pr.head_sha) if pr.head_sha else ()
     lines = [f'{row.key} {pr.head_sha[:12]} {s.context} {s.state} {s.description}'.rstrip() for s in _reds(statuses)]
     if _green(statuses):
         lines.append(f'{row.key} {pr.head_sha[:12]} green')
     for line in lines:
-        if line not in seen:
-            seen.add(line)
-            say(line)
+        _say_once(session, line, say, seen)
     return True
+
+
+def _say_once(session: str, line: str, say: Callable[[str], None], seen: set[str]) -> None:
+    """Say *line* unless this session already heard it (persisted: a re-armed watch repeats nothing)."""
+    if line not in seen:
+        seen.add(line)
+        sessionprs.hear(session, line)
+        say(line)
 
 
 def watch_session(
@@ -201,7 +215,7 @@ def _session_loop(
     clock: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> int:
-    seen: set[str] = set()
+    seen = sessionprs.heard(session)
     while True:
         live = 0
         for row in sessionprs.open_rows(session):
@@ -209,9 +223,7 @@ def _session_loop(
                 live += _poll(session, row, clients(row.forge), say, seen)
             except (ForgeCallFailed, ValueError) as failed:
                 live += 1  # an unreadable PR is still open: read again next poll
-                if (line := f'{row.key} unreadable: {failed}'.splitlines()[0]) not in seen:
-                    seen.add(line)
-                    say(line)
+                _say_once(session, f'{row.key} unreadable: {failed}'.splitlines()[0], say, seen)
         if not live:
             say(f'session {session}: no open PR left')
             return 0

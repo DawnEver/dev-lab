@@ -205,3 +205,47 @@ def test_a_url_of_another_repository_names_no_session_pr(capsys: pytest.CaptureF
     args = ['--session', 's1', '--ack', f'https://{FORGE.host}/o/other/pulls/{number}', '--reason', 'x']
     assert forgewatch.session_main(args, clients=lambda _f: forge) == 2
     capsys.readouterr()
+
+
+def _watch_until_deadline(forge: StateForge, session: str = 's1', *, posts: list | None = None) -> list[str]:
+    """One watch whose clock passes its deadline once *posts* are spent: a re-armable run that ends."""
+    said: list[str] = []
+    script, now = list(posts or []), [0.0]
+
+    def sleep(_s: float) -> None:
+        if script:
+            script.pop(0)()
+        else:
+            now[0] = 120.0
+
+    forgewatch.watch_session(
+        session, clients=lambda _f: forge, say=said.append, every_s=0, deadline_s=60, clock=lambda: now[0], sleep=sleep
+    )
+    return said
+
+
+def test_a_re_armed_watch_never_re_reports_a_state_the_session_already_heard(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    forge = StateForge()
+    number = _opened(forge, capsys)
+    key = f'{FORGE.identity}#{number}'
+    _post(forge, SHA, 'tests/base', 'failure')
+    first = _watch_until_deadline(forge)
+    assert f'{key} {SHA[:12]} tests/base failure tests/base failure' in first
+    assert _watch_until_deadline(forge) == ['session s1: deadline, 1 PR(s) still open'], 'heard once per session'
+    _post(forge, SHA, 'tests/base', 'success')
+    assert f'{key} {SHA[:12]} green' in _watch_until_deadline(forge), 'PLANTED CONTROL: a new state is heard'
+
+
+def test_green_waits_for_every_required_context_to_end_in_success(capsys: pytest.CaptureFixture[str]) -> None:
+    """A head whose only posted test status is green is not green while the required tests/base is absent/pending."""
+    forge = StateForge()
+    number = _opened(forge, capsys)
+    green = f'{FORGE.identity}#{number} {SHA[:12]} green'
+    _post(forge, SHA, 'tests/security', 'success')
+    assert green not in _watch_until_deadline(forge), 'tests/base not posted yet'
+    _post(forge, SHA, 'tests/base', 'pending')
+    assert green not in _watch_until_deadline(forge), 'tests/base still running'
+    _post(forge, SHA, 'tests/base', 'success')
+    assert green in _watch_until_deadline(forge), 'PLANTED CONTROL: every required context ended in success'
