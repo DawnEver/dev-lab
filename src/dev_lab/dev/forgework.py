@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 from dev_lab.dev import forge as _forge
+from dev_lab.dev import sessionprs
 from dev_lab.dev._forge_journal import (
     LOOKBACK,
     Durable,
@@ -385,7 +386,9 @@ class Client:
     def pr_create(self, title: str, body: str, *, head: str, base: str, draft: bool) -> PullRequest:
         """A new pull request from *head* into *base*; a *draft* in the forge's own way (:mod:`dev_lab.dev.forgedraft`).
 
-        GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one.
+        GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one. Every
+        door that opens a PR comes through here, so here it is recorded as the running agent session's
+        (SESSION-HEARS-ITS-PRS, :func:`~dev_lab.dev.sessionprs.record_opened`), whatever a shell line printed.
         """
         if draft and self.backend is not GITHUB:
             title = draft_title(title)
@@ -393,7 +396,9 @@ class Client:
         if draft and self.backend is GITHUB:
             payload['draft'] = True
         probe = Probe(self._recent('pulls'), {'title': title, 'body': payload['body']})
-        return pull_of(self.call('POST', f'{self.repo}/pulls', payload, Durable(probe=probe)))
+        opened = pull_of(self.call('POST', f'{self.repo}/pulls', payload, Durable(probe=probe)))
+        sessionprs.record_opened(self.forge, opened.number, branch=head, sha=opened.head_sha)
+        return opened
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""

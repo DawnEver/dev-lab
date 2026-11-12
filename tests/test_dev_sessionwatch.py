@@ -30,14 +30,14 @@ def _post(forge: StateForge, sha: str, context: str, state: str) -> None:
 
 
 def _opened(forge: StateForge, capsys: pytest.CaptureFixture[str], session: str = 's1', *, sha: str = SHA) -> int:
-    """A PR the session opened through ``forge pr create``, recorded by the PostToolUse hook from its output."""
+    """A PR the session opened: the door records it, and the PostToolUse hook names the watch to arm."""
     number = forge.add_pull('pr/x', 'main', sha=sha)
-    url = forge.pulls[number]['html_url']
+    assert sessionprs.record_opened(FORGE, number, branch='pr/x', sha=sha, env={sessionprs.SESSION_ENV: session})
     payload = {
         'hook_event_name': 'PostToolUse',
         'session_id': session,
-        'tool_input': {'command': 'py -m dev_lab.dev.forge pr create --title t --head pr/x --base main'},
-        'tool_response': {'stdout': f'#{number} [open] t  {url}\n', 'stderr': ''},
+        'tool_input': {'command': 'py -m dev_lab.dev.forge pr create --title t --head pr/x --base main | tail -1'},
+        'tool_response': {'stdout': 'opened, no url here\n', 'stderr': ''},
     }
     capsys.readouterr()
     assert sessionprs.main([], stdin=io.StringIO(json.dumps(payload))) == 0
@@ -60,7 +60,13 @@ def _watch(forge: StateForge, session: str = 's1', *, posts: list | None = None)
     return code, said
 
 
-def _stop(forge: StateForge, tmp_path: Path, *, session: str = 's1', again: bool = False) -> dict | None:
+def _stop(
+    forge: StateForge, tmp_path: Path, *, session: str = 's1', again: bool = False, watched: bool = True
+) -> dict | None:
+    if watched:
+        sessionprs.watch(session)  # a live watch is armed (this process): only reds are judged
+    else:
+        sessionprs.unwatch(session)
     payload = {'hook_event_name': 'Stop', 'cwd': str(tmp_path), 'session_id': session, 'stop_hook_active': again}
     out = io.StringIO()
     code = pushstop.main(

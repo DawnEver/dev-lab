@@ -88,8 +88,9 @@ JOURNALDOOR_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_
 #: no live ``forge watch <sha>`` watches the pushed head -- never a block.
 PUSHWATCH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushwatch'
 
-#: SESSION-HEARS-ITS-PRS (:mod:`dev_lab.dev.sessionprs`, ruling 2026-11-11): after a shell call that pushed or ran
-#: ``forge pr create``, the PR is recorded as the session's, in any repository; an opened PR names the watch to arm.
+#: SESSION-HEARS-ITS-PRS (:mod:`dev_lab.dev.sessionprs`, ruling 2026-11-11): the doors record a session's PRs (the
+#: create door, the pre-push row); after a shell call that pushed or ran ``forge pr create`` this hook names the watch
+#: to arm, or warns when the session has no open PR on record.
 SESSIONPRS_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.sessionprs'
 
 #: PUSHED-HEAD-IS-WATCHED, the ``Stop`` half (:mod:`dev_lab.dev.pushstop`, ruling 2026-11-04): a turn does not end
