@@ -232,6 +232,11 @@ Its review model keys and the family spend cap arrive as ONE consent plan of thr
    `forge secrets` store into the verb's stdin -- no file anywhere, never on a command line or the audit.
 3. `install` -- it refuses while the keys_file is declared but not placed, and names step 2.
 
+A step whose OUTPUT is the secret (a `forge token mint`) declares `"stdout_local": "<relative name>"` (no `..`): the
+output goes owner-only to `outputs/<name>` under this machine's private consent state (`planrun.stdout_path`, never a
+checkout) and the run prints only `wrote <path> (sha256 <12 hex>, <n> bytes)`; a failed step prints its exit status
+and `output withheld`, and writes nothing.
+
 ### A CI verify account (HPC)
 
 1. Add its `[[hpc.grant]]` to `family.toml` (user, login hosts, scheduler account, partitions, setup).
