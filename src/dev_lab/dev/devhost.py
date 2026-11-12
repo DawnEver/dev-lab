@@ -26,7 +26,7 @@ dev-lab`` checkout's branch with ``ref``; the ``SessionStart`` notice (:func:`no
 
 ``python -m dev_lab.dev.devhost drift`` -- read only, exit 1 on drift;
 ``python -m dev_lab.dev.devhost render --host NAME --from CLONE [--write]`` -- prints the render; ``--write``
-backs the live file up under the output tree, then replaces it.
+refuses a render that does not parse, else backs the live file up under the output tree and replaces it.
 """
 
 from __future__ import annotations
@@ -243,6 +243,11 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     if not args.write:
         emit(text)
         return 0
+    try:
+        tomllib.loads(text)
+    except tomllib.TOMLDecodeError as broken:
+        emit(f'refused: the render of {host} is not TOML ({broken}); {path} is unchanged', err=True)
+        return 2
     backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
     emit(f'rendered {path}; the previous file is {_replace(path, text, backups)}')
     return 0
