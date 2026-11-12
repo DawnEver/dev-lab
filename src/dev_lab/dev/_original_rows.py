@@ -344,6 +344,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'runner',
     'filechecks',
     'ciworkflows',
+    'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
     # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
     'account',
