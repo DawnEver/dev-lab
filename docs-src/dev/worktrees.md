@@ -40,15 +40,16 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 A worktree is a lease on a branch for one task. It ends when the branch's content is landed (on the trunk or a
 declared session) and no TRACKED file is changed. What git does not track -- scratch one-offs, untracked files,
 ignored `.venv`, caches, builds -- is not the work (the work is committed; a finding belongs in memory) and goes
-with the tree (user ruling 2026-10-25). The one exception is run output (user ruling 2026-11-09): runs write to
-the MAIN checkout's `output/`, so a tree whose `archive-outputs` hold a file is a writer defect -- it is kept and
-the line names it ("wrote run outputs inside the worktree: <top paths>; fix the writer"), nothing copied. A
-deliberate keep is `--prune --home-outputs NAME`: that tree's outputs are moved home and verified, and only then
-does it go; an archive that cannot be verified keeps it and prints why. An orphan directory under the worktree
+with the tree (user rulings 2026-10-25 and 2026-11-12). Run output is moved first (user ruling 2026-11-12:
+reclaiming useless trees is a required part of the workflow): a reclaimable tree's `archive-outputs` are moved
+into the MAIN checkout's `output/` and verified, and only then does it go; a move that cannot be verified keeps it
+and prints why. Each run ends with a summary line counting every kept tree by reason. An orphan directory under the worktree
 home is judged the same way. What blocks reclaim: a tracked change (staged or not), commits not landed (`git cherry`), a
 live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
-and the session debris hook runs the former, so a finished tree no longer pins its branch forever. The exact
+and the session debris hook runs the former; a session start, and every merge, checkout and push
+(`githooks/base.toml`, `reclaimrun --background`), detach a background run of the latter, so a finished tree no
+longer pins its branch forever. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
 
 ## Archiving a tree before removing it
