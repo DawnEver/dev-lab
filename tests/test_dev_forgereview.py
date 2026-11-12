@@ -282,6 +282,10 @@ def _can(_argv: Sequence[str], _root: Path) -> str | None:
     return None  # every fake command can start
 
 
+def _no_spend(*_: object) -> None:
+    """No spend report: a fake runtime's interpreter (``py``) may be a real one on this host, never run it."""
+
+
 def test_a_host_without_the_commands_interpreter_or_module_says_why_and_posts_nothing(tmp_path: Path) -> None:
     """Checked BEFORE the claim: the line names why, nothing is posted on the head, and the command never ran."""
     interpreter = sys.executable
@@ -329,7 +333,7 @@ def test_a_host_value_this_host_does_not_declare_is_skipped_unposted(tmp_path: P
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = FakeCommand()
-    kw = {'base': 'integrate/main', 'run': command, 'ready': _can, 'host': 'box'}
+    kw = {'base': 'integrate/main', 'run': command, 'ready': _can, 'host': 'box', 'spend': _no_spend}
     lines = review_tick(work, forge, declared, runtimes=host, **kw)
     assert '[runtimes.ai_lab] python' in lines[0]
     assert command.ran == []
@@ -364,7 +368,7 @@ def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp
     forge, number = _forge(head)
     declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
     command = FakeCommand()
-    kw = {'base': 'integrate/main', 'run': command}
+    kw = {'base': 'integrate/main', 'run': command, 'spend': _no_spend}
     review_tick(work, forge, declared, ready=_can, host='A', **kw)
     assert _posted(forge, head) == []
     review_tick(work, forge, declared, ready=_can, host='B', runtimes={'ai_lab': {'python': 'py'}}, **kw)

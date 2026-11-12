@@ -13,7 +13,7 @@ from pathlib import Path
 import lab_commons.launch as _door
 import pytest
 
-from dev_lab.dev import privatemarkers
+from dev_lab.dev import forgecli, privatemarkers
 from dev_lab.dev.forgecli import issue_and_pr
 from dev_lab.dev.privatemarkers import load_markers, scan_text, scan_tree
 
@@ -207,3 +207,91 @@ def test_a_pr_body_with_a_marker_is_refused_by_the_create_door(
     assert 'PRIVATE-MARKERS' in err
     assert 'secrethost' not in err.lower()
     assert privatemarkers.text_refusal('a clean body', 'PR body') is None, 'PLANTED CONTROL'
+
+
+class _Repo:
+    """The forge's answer for one repository: its ``private`` flag, or a read that fails."""
+
+    repo = '/repos/o/r'
+
+    def __init__(self, *, private: bool | None) -> None:
+        self.private = private
+
+    def call(self, method: str, path: str) -> dict[str, bool]:
+        assert (method, path) == ('GET', self.repo)
+        if self.private is None:
+            msg = 'forge unreachable'
+            raise OSError(msg)
+        return {'private': self.private}
+
+
+def _visible_as(monkeypatch: pytest.MonkeyPatch, *, private: bool | None) -> None:
+    monkeypatch.setattr(privatemarkers, '_VISIBILITY', {})
+    monkeypatch.setattr(privatemarkers, 'client_for', lambda *_a, **_k: _Repo(private=private))
+
+
+#: Each visibility the forge can answer, and whether a marker is then refused: public refused, private allowed
+#: (that is what a private repo is for), unreadable scanned -- fail closed.
+_VISIBILITIES = pytest.mark.parametrize(('private', 'refused'), [(False, True), (True, False), (None, True)])
+
+
+@_VISIBILITIES
+def test_a_pushed_message_is_scanned_unless_the_pushed_to_repo_is_private(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    private: bool | None,
+    refused: bool,
+) -> None:
+    _visible_as(monkeypatch, private=private)
+    base, head = _committed_repo(tmp_path, 'fix: reached secrethost today')
+    denylist = tmp_path / 'private-markers'
+    denylist.write_text('SecretHost\n', encoding='utf-8')
+    argv = ['--root', str(tmp_path), '--markers', str(denylist), '--push', '--url', 'https://example.com/o/r.git']
+    assert privatemarkers.main(argv, stdin=io.StringIO(f'refs/heads/x {head} refs/heads/x {base}\n')) == int(refused)
+    assert ('unreadable' in capsys.readouterr().err) is (private is None)
+
+
+def test_the_visibility_is_read_once_per_repository(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[bool] = []
+
+    def client(*_a: object, **_k: object) -> _Repo:
+        calls.append(True)
+        return _Repo(private=True)
+
+    monkeypatch.setattr(privatemarkers, '_VISIBILITY', {})
+    monkeypatch.setattr(privatemarkers, 'client_for', client)
+    url = 'https://example.com/o/r.git'
+    assert privatemarkers.repo_is_private(tmp_path, url=url) == (True, '')
+    assert privatemarkers.repo_is_private(tmp_path, url=url) == (True, '')
+    assert calls == [True]
+
+
+@_VISIBILITIES
+def test_a_pr_body_with_a_marker_is_refused_only_for_a_public_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    private: bool | None,
+    refused: bool,
+) -> None:
+    """The create door asks the forge first; a private repo's PR may name its private host."""
+    _door.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
+    _door.run(['git', 'remote', 'add', 'origin', 'https://example.com/o/r.git'], cwd=tmp_path, check=True)
+    denylist = tmp_path / 'private-markers'
+    denylist.write_text('SecretHost\n', encoding='utf-8')
+    monkeypatch.setattr(privatemarkers, 'MARKERS_FILE', denylist)
+    _visible_as(monkeypatch, private=private)
+    if refused:
+        argv = ['pr', 'create', '--title', 't', '--body', 'ran on secrethost', '--head', 'x', '--base', 'y']
+        assert issue_and_pr(argv, cwd=tmp_path, env={}) == 1
+    else:  # past the scan the door opens the PR: stop at the first forge write
+        monkeypatch.setattr(forgecli, 'client_for', lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError('opened')))
+        argv = ['pr', 'create', '--title', 't', '--body', 'ran on secrethost', '--head', 'x', '--base', 'y']
+        with pytest.raises(RuntimeError, match='opened'):
+            issue_and_pr(argv, cwd=tmp_path, env={})
+    err = capsys.readouterr().err
+    assert ('PRIVATE-MARKERS' in err) is refused
+    assert ('unreadable' in err) is (private is None)

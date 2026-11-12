@@ -177,7 +177,7 @@ declares (`dev_lab.ops.config.load`).
   on the operator's word, every other key with an `ops.config` credential bound to the candidate's sha256. A host
   whose `[ops.config]` declares a `schedule` runs `config tick`: routine changes merged in the host-configuration
   repo apply by themselves; a boundary change is parked until consented ([forge](forge.md#changing-a-forge-hosts-configuration)).
-- A retired `[ops]` shape is upgraded on read in ONE place, `dev_lab.ops.configupgrade` (`FORMATS-UPGRADE-ON-READ`);
+- A retired `[ops]` shape is upgraded on read in ONE place, `dev_lab.ops.configupgrade` (an `OLD-SHAPE-READER` owed its one-time migration under `FORMATS-MIGRATE-ONCE`);
   the next `config apply` writes the new shape. A file holding both the old and the new shape is refused.
 - No secret value enters any of these files: they name paths only. `python -m dev_lab.ops.configcheck` enforces it
   on every PR of the host-configuration repo and labels a boundary change `needs-consent`.

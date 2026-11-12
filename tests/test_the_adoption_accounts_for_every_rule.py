@@ -171,9 +171,8 @@ _ENFORCED = {
     'MERGE-RESOLUTION-DECLARED': (guard('tests/test_dev_mergeresolution.py'),),
     'AUTO-MODE-RUNS-THE-DOORS': (guard('tests/test_dev_autodoors.py'),),
     'MAIN-SESSION-PUBLISHES': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
-    # Incident 2026-10-17 (Ada): a redeploy from journal schema 1 to 2 under 17 live schema-1 runs, refused
-    # by the reader, stopped every serve tick of four accounts.
-    'FORMATS-UPGRADE-ON-READ': (guard('tests/test_arch_formats_upgrade_on_read.py'),),
+    # User ruling 2026-11-11 (consumer-a D51/D52): no reader keeps an old schema alive.
+    'FORMATS-MIGRATE-ONCE': (guard('tests/test_arch_formats_migrate_once.py'),),
     # Incident 2026-10-21: 28 open consumer-a PRs, one session spread over several, one stalled base holding a dozen.
     'ONE-SESSION-ONE-PR': (guard('tests/test_dev_labsession.py'), guard('tests/test_dev_pradmit.py')),
     'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),

@@ -213,16 +213,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_forgereview.py', 'tests/test_dev_forgeserve.py'),
     ),
     (
-        'FORMATS-UPGRADE-ON-READ',
+        'FORMATS-MIGRATE-ONCE',
         (
-            # Why the steps are DATA: a missing step is visible without running anything.
-            'A persisted format a tool writes -- a run journal, a record, a state file, a ledger -- READS every '
-            'older schema of itself by upgrading it, one step per schema declared as DATA beside the version, and '
-            'writes it back at the current one, refusing only a schema the reader does not know (newer, or never '
-            'issued), because a tool is redeployed under its own live data as a matter of course and refusing an '
-            'older file stalls whatever reads it.'
+            'A change to a persisted format a tool writes -- a run journal, a record, a state file, a ledger, a '
+            'config -- migrates the stored records ONCE and deletes the old reader in the same change, and a '
+            'record still at an older schema is refused by name with the instruction that migrates it, because '
+            'a reader that upgrades on read keeps every old shape a supported input forever '
+            '(no-backward-compatibility).'
         ),
-        ('tests/test_arch_formats_upgrade_on_read.py',),
+        ('tests/test_arch_formats_migrate_once.py',),
     ),
 )
 

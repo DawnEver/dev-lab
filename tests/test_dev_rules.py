@@ -81,7 +81,7 @@ _IDS = frozenset(
         'NO-REFLECTION',
         'VERDICTS-FROM-THE-FORGE',
         'ONE-BOX-ONE-LOCK',
-        'FORMATS-UPGRADE-ON-READ',
+        'FORMATS-MIGRATE-ONCE',
         'ONE-SESSION-ONE-PR',
         'NO-STACKED-PRS',
         'DRAFT-UNTIL-READY',
