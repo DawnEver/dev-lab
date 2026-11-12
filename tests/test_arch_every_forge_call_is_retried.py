@@ -19,7 +19,7 @@ import ast
 from typing import Final
 
 import pytest
-from _arch_corpus import ROOT, parse, rel, source_modules
+from _arch_corpus import ROOT, assert_floor, parse, rel, source_modules
 
 #: Who opens an HTTP connection itself, and why that is not a forge call bypassing the loop.
 OPENS_A_CONNECTION: Final[dict[str, str]] = {
@@ -37,6 +37,9 @@ OPENS_A_CONNECTION: Final[dict[str, str]] = {
     'src/dev_lab/dev/security.py': 'the OSV database, not a forge',
     'src/dev_lab/supervise/transport.py': 'alert webhooks, not a forge',
 }
+
+#: The openers the scan finds: MEASURED 2026-11-12 at 8 (every row above); a floor refuses an unread corpus.
+OPENER_FLOOR: Final = 8
 
 _CONNECTIONS: Final = frozenset({'HTTPConnection', 'HTTPSConnection'})
 
@@ -69,7 +72,7 @@ def _toml_openers() -> dict[str, list[int]]:
 def test_no_forge_call_opens_outside_the_retrying_loop() -> None:
     found = {rel(path): lines for path in source_modules() if (lines := opens(parse(path)))}
     found |= _toml_openers()
-    assert 'src/dev_lab/dev/forge.py' in found, 'FLOOR: the scan reads the transport the client opens'
+    assert_floor(len(found), OPENER_FLOOR, 'modules opening an HTTP connection')
     raw = {path: lines for path, lines in found.items() if path not in OPENS_A_CONNECTION}
     assert raw == {}, f'route these through forgework.Client or forgefailure.retried, or name why not: {raw}'
     stale = sorted(path for path in OPENS_A_CONNECTION if path not in found)
@@ -98,6 +101,6 @@ def forge_call(token):
         ('X: type = http.client.HTTPConnection\n', False),
     ],
 )
-def test_the_scan_flags_a_raw_call_and_passes_one_through_the_loop(body: str, *, flagged: bool) -> None:
+def test_a_planted_raw_forge_call_is_flagged_and_one_through_the_loop_passes(body: str, *, flagged: bool) -> None:
     """PLANTED CONTROL: reviewcode's old raw call is caught; a call through the client or the loop is not."""
     assert bool(opens(ast.parse(body))) is flagged

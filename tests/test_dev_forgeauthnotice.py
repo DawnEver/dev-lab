@@ -14,6 +14,7 @@ import pytest
 from _forge_fake import Loopback, Recorder, answer, credential_env, make_repo, run_git, serve
 
 from dev_lab.dev import agent_wiring, forgeauthnotice
+from dev_lab.dev.forge import Transport
 from dev_lab.dev.forgeauthnotice import BUDGET_S, declared_forges, notices
 
 URL: Final = 'https://forge.example.org/o/r.git'
@@ -24,8 +25,8 @@ def server() -> Iterator[ThreadingHTTPServer]:
     yield from serve()
 
 
-def _said(repo: Path, tmp_path: Path, transport: object) -> tuple[str, ...]:
-    return notices(repo, env=credential_env(tmp_path), transport=transport)  # type: ignore[arg-type]
+def _said(repo: Path, tmp_path: Path, transport: Transport) -> tuple[str, ...]:
+    return notices(repo, env=credential_env(tmp_path), transport=transport)
 
 
 def test_a_token_the_forge_answers_is_silent_and_asks_get_user_once(server, tmp_path: Path) -> None:
