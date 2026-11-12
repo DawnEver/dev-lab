@@ -70,7 +70,7 @@ from lab_commons.proccpu import TreeCpu
 from dev_lab.dev import producer
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
-from dev_lab.dev.forgeclaim import Work, forge_now, publish
+from dev_lab.dev.forgeclaim import Claim, Work, forge_now, publish
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeintent import Intent, forget, journal
 from dev_lab.dev.forgelabels import LabelMissing
@@ -277,8 +277,8 @@ def _run(
             usage.wake(sample(proc.pid) if proc.pid is not None else None)
             wakes += 1
             beat(clock() - started)
-            if wakes % renew_every == 0:
-                _renew(client(root), item, lease, say)
+            if wakes % renew_every == 0 and item.holder is not None:  # an unheld item has no heartbeat
+                _renew(client(root), item, item.holder, lease, say)
     pump.join(timeout=5)
     say(f'{run_tag(item.platform, item.sha)} exit={returncode}')
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
@@ -340,12 +340,10 @@ class _Usage:
         self.cpu_s = max(self.cpu_s, self._cpu() or 0.0)
 
 
-def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], None]) -> None:
-    """The heartbeat: the same claim, until the FORGE's time plus the lease; an unheld item has none."""
-    if item.holder is None:
-        return
+def _renew(client: Client, item: Work, held: Claim, lease: timedelta, say: Callable[[str], None]) -> None:
+    """The heartbeat: the same claim *held*, until the FORGE's time plus the lease."""
     try:
-        renewed = dataclasses.replace(item.holder, until=forge_now(client) + lease)
+        renewed = dataclasses.replace(held, until=forge_now(client) + lease)
     except (ForgeCallFailed, OSError) as failed:
         say(f'{run_tag(item.platform, item.sha)} could not read the forge clock to renew: {failed}')
         return
@@ -406,9 +404,8 @@ def _post(client: Client, item: Work, state: str, description: str, say: Callabl
     try:
         if state == 'pending' or item.holder is None:
             status_post(client, item.sha, context=item.context, state=state, description=description)
-        elif not publish(client, item, item.holder, state=state, description=description):
-            say(f'{run_tag(item.platform, item.sha)} posted no {state}: settled already, or its claim no longer holds')
-            return
+        elif not publish(client, item, item.holder, state=state, description=description):  # a result: once, held
+            state = f'withdrew its {state}'
     except ForgeCallFailed as failed:  # a missed heartbeat is not a dead producer; say so and keep going
         say(f'{run_tag(item.platform, item.sha)} could not post {state}: {failed}')
     else:
