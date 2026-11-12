@@ -25,6 +25,7 @@ import argparse
 import re
 import sys
 import time
+import urllib.parse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -34,7 +35,7 @@ from lab_commons.log import emit
 from dev_lab.dev import sessionprs
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgepulls import pr_list
+from dev_lab.dev.forgepulls import pr_by_head, pr_list
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, PullRequest, client_for, stored_client
 from dev_lab.dev.platformparts import BASE
@@ -57,6 +58,7 @@ __all__ = [
     'watch_session',
 ]
 
+_NOT_FOUND: Final = 404
 #: The context prefix a part's verdict is posted under.
 TESTS: Final = 'tests/'
 _DEADLINE: Final = 3
@@ -129,15 +131,37 @@ def clients_at(root: Path) -> Callable[[Forge], Client]:
     return client
 
 
+def _branch(client: Client, name: str) -> dict | None:
+    """The forge's record of branch *name*; ``None`` when it is gone."""
+    try:
+        return client.call('GET', f'{client.repo}/branches/{urllib.parse.quote(name, safe="/")}')
+    except ForgeCallFailed as failed:
+        if failed.report.attempts and failed.report.attempts[-1].returncode == _NOT_FOUND:
+            return None
+        raise
+
+
 def _pull(session: str, row: sessionprs.Row, client: Client) -> tuple[sessionprs.Row, PullRequest | None]:
-    """*row*'s PR as the forge holds it; a branch row is resolved to its OPEN PR, ``None`` when it has none."""
+    """*row*'s PR as the forge holds it, ``None`` when it has none.
+
+    A branch row is resolved to its open PR, else to its newest PR into the default branch in any state (a
+    merge no watch saw); with none, a protected or gone branch can never have one and the row is closed with
+    the reason, while a live lane branch stays pending (:func:`~dev_lab.dev.sessionprs.pending_rows`).
+    """
     if row.number:
         return row, client.pr_view(row.number)
     found = [pr for pr in pr_list(client) if pr.head == row.branch]
-    if not found:
-        return row, None
-    pr = max(found, key=lambda one: one.number)
-    return sessionprs.resolve(session, row, pr.number), pr
+    pr = max(found, key=lambda one: one.number) if found else None
+    if pr is None:
+        pr = pr_by_head(client, row.branch, str(client.call('GET', client.repo)['default_branch']))
+    if pr is not None:
+        return sessionprs.resolve(session, row, pr.number), pr
+    branch = _branch(client, row.branch)
+    if branch is None:
+        return sessionprs.close(session, row, 'closed', reason='the branch is gone and no PR had it as head'), None
+    if branch.get('protected'):
+        return sessionprs.close(session, row, 'closed', reason='a protected branch, never a PR head'), None
+    return row, None
 
 
 def _reds(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
@@ -158,6 +182,8 @@ def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str]
     """Say each new change on *row*; whether it is still open."""
     row, pr = _pull(session, row, client)
     if pr is None:
+        if row.done:
+            _say_once(session, f'{row.key} {row.done}: {row.reason}', say, seen)
         return False
     if pr.merged or pr.state == 'closed':
         done = 'merged' if pr.merged else 'closed'
@@ -218,7 +244,7 @@ def _session_loop(
     seen = sessionprs.heard(session)
     while True:
         live = 0
-        for row in sessionprs.open_rows(session):
+        for row in (*sessionprs.open_rows(session), *sessionprs.pending_rows(session)):
             try:
                 live += _poll(session, row, clients(row.forge), say, seen)
             except (ForgeCallFailed, ValueError) as failed:
@@ -265,7 +291,7 @@ def _ack(session: str, key: str, reason: str, clients: Callable[[Forge], Client]
         emit(f'watch: {key!r} names {len(found)} PR(s) of session {session}; give the key it prints', err=True)
         return 2
     row, pr = _pull(session, found[0], clients(found[0].forge))
-    if pr is None or not pr.head_sha:
+    if pr is None or not pr.head_sha or row.done:
         emit(f'watch: {row.key} has no open PR head to acknowledge', err=True)
         return 2
     sessionprs.ack(session, row, pr.head_sha, reason)
