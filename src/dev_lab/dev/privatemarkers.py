@@ -13,18 +13,29 @@ Two layers:
   literal or ``/regex/`` per line, ``#`` comments. It names the private values themselves, so it is
   never committed; absent, the layer is silent. A denylist hit is reported by KIND only, never by
   value, so a log of the check cannot leak what it guards.
+
+The TEXT scans (a PR title or body, a pushed commit message) guard PUBLIC repositories only: a private repo
+is where private names belong. Visibility is the forge's ``private`` flag (:func:`repo_is_private`); when it
+cannot be read, the text is scanned and the reason said -- fail closed.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final, TextIO
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+
+from dev_lab.dev.forge import NoCredential, Transport, forge_from_remote, forge_of_url, forge_transport
+from dev_lab.dev.forgehosts import is_private
+from dev_lab.dev.forgework import client_for
+from dev_lab.dev.githooks.runner import PUSH_URL_ENV
 
 __all__ = [
     'AUTHORSHIP',
@@ -33,6 +44,7 @@ __all__ = [
     'PUBLIC_MASK',
     'load_markers',
     'pushed_messages',
+    'repo_is_private',
     'scan_text',
     'scan_tree',
     'staged_added_lines',
@@ -194,6 +206,31 @@ def pushed_messages(root: Path, ref_lines: str) -> list[tuple[str, str]]:
     return list(found.items())
 
 
+#: Each repository's answer, read once per process: ``(host, owner, repo) -> (private, why unread)``.
+_VISIBILITY: dict[tuple[str, str, str], tuple[bool, str]] = {}
+
+
+def repo_is_private(
+    root: Path, *, url: str = '', env: Mapping[str, str] | None = None, transport: Transport = forge_transport
+) -> tuple[bool, str]:
+    """``(private, why)``: whether the forge says *root*'s ``origin`` (or *url*) is private (the retrying client).
+
+    ``why`` is empty when the flag was read; otherwise it says why it was not, and ``private`` is ``False`` so the
+    caller scans -- an unreadable visibility fails closed. Cached per process by repository.
+    """
+    try:
+        forge = forge_of_url(url) if url else forge_from_remote(root)
+    except OSError as unread:
+        return False, f'repository unknown ({unread})'
+    key = (forge.host, forge.owner, forge.repo)
+    if key not in _VISIBILITY:
+        try:
+            _VISIBILITY[key] = is_private(client_for(root, env=env, transport=transport, url=url)), ''
+        except (OSError, NoCredential) as unread:
+            _VISIBILITY[key] = False, f'visibility of {forge.owner}/{forge.repo} unreadable ({unread})'
+    return _VISIBILITY[key]
+
+
 def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | None = None) -> str | None:
     """The PRIVATE-MARKERS refusal for *what* (a PR body...) when *text* holds a marker, else ``None``.
 
@@ -217,10 +254,16 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--markers', type=Path, default=MARKERS_FILE)
     parser.add_argument('--push', action='store_true', help="pre-push: judge the pushed commits' messages (stdin)")
+    parser.add_argument('--url', default='', help=f'--push: the pushed-to URL (default ${PUSH_URL_ENV}, else origin)')
     parser.add_argument('paths', nargs='*')
     args = parser.parse_args(argv)
     markers = load_markers(args.markers)
     if args.push:
+        private, why = repo_is_private(args.root, url=args.url or os.environ.get(PUSH_URL_ENV, ''))
+        if private:
+            return 0
+        if why:
+            emit(f'[private-markers] scanning this push: {why}', err=True)
         said = [
             f'{sha[:12]} message line {n}: {kind}'
             for sha, message in pushed_messages(args.root, (sys.stdin if stdin is None else stdin).read())
