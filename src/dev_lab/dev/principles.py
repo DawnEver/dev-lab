@@ -43,15 +43,17 @@ PRINCIPLES: Final = (
     Principle(
         'no-historical-baggage',
         'Discard historical baggage',
-        'Remove obsolete structures and dead paths no current need uses.',
+        'Remove obsolete structures, duplicates and dead paths no current need uses -- never a capability.',
     ),
     Principle(
-        'occams-razor', "Occam's razor", 'Simplest design that fully meets the need; nothing for hypothetical needs.'
+        'occams-razor',
+        "Occam's razor",
+        'Simplest design meeting the need; nothing hypothetical; never a capability.',
     ),
     Principle(
         'single-source-of-truth',
         'Single source of truth',
-        'Each fact lives in one place; everything else is derived from it.',
+        'Each fact lives in one place; all else derives from it.',
     ),
     Principle(
         'layered-decoupling',
@@ -72,8 +74,9 @@ PRINCIPLES: Final = (
     Principle(
         'keep-valuable-options',
         'Keep every valuable parameter and option',
-        'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs; '
-        'Occam and no-baggage remove dead paths, never capability.',
+        'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs. A '
+        'reference match ADDS a selectable option and never replaces or deletes the alternative; numerical '
+        'method choices are options even with no current caller.',
     ),
 )
 
