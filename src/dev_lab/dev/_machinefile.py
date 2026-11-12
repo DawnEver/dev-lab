@@ -15,7 +15,7 @@ import tomllib
 from collections.abc import Mapping
 from typing import Final
 
-__all__ = ['diff', 'merged', 'renamed']
+__all__ = ['diff', 'merged', 'renamed', 'render_value']
 
 #: A ``[table]`` or ``[[array]]`` header line.
 _HEADER: Final = re.compile(r'^\s*(\[\[?)\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
@@ -23,13 +23,16 @@ _HEADER: Final = re.compile(r'^\s*(\[\[?)\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
 Value = str | int | float | list[str] | dict[str, 'Value']
 
 
-def _render(value: Value) -> str:
+def render_value(value: Value) -> str:
+    """*value* as a TOML value."""
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
     if isinstance(value, str):
         return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
     if isinstance(value, list):
-        return '[' + ', '.join(_render(v) for v in value) + ']'
+        return '[' + ', '.join(render_value(v) for v in value) + ']'
     if isinstance(value, dict):
-        return '{ ' + ', '.join(f'{k} = {_render(v)}' for k, v in value.items()) + ' }'
+        return '{ ' + ', '.join(f'{k} = {render_value(v)}' for k, v in value.items()) + ' }'
     return repr(value)
 
 
@@ -60,7 +63,7 @@ def _set(lines: list[str], table: str, values: Mapping[str, Value | None]) -> No
     if span is None:
         if lines and lines[-1].strip():
             lines.append('')
-        rows = (f'{key} = {_render(value)}' for key, value in values.items() if value is not None)
+        rows = (f'{key} = {render_value(value)}' for key, value in values.items() if value is not None)
         lines.extend([f'[{table}]', *rows])
         return
     start, end = span
@@ -72,7 +75,7 @@ def _set(lines: list[str], table: str, values: Mapping[str, Value | None]) -> No
                 del lines[hit]
                 end -= 1
             continue
-        row = f'{key} = {_render(value)}'
+        row = f'{key} = {render_value(value)}'
         if hit is None:
             last = max((j for j in range(start, end) if lines[j].strip()), default=start)
             lines.insert(last + 1, row)

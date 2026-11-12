@@ -504,6 +504,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
   while a PR of the session is red and unacknowledged.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
+* :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
   after the checkout follows integration and before stale hooks are reinstalled.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.

@@ -19,7 +19,8 @@ detaches when any of the three is due.
 
 THE BEHIND NOTICE (``--session-start`` too, :func:`behind_notice`): one line when the trunk checkout's HEAD is
 behind its LAST-FETCHED ``origin/<trunk>``, or the venv's git-installed dev-lab is not the commit that ref's
-``uv.lock`` pins -- naming the update door. No network, no install, no prune: a few local git reads.
+``uv.lock`` pins -- naming the update door. No network, no install, no prune: a few local git reads. Beside it,
+:func:`dev_lab.dev.devhost.notice`: one line when the machine file disagrees with its declared host file.
 
 :func:`follow` skips while a run lives in the checkout or executes from its venv (TREE-HAS-A-LIVE-RUN,
 :mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start, merge or checkout.
@@ -42,7 +43,7 @@ import lab_commons.launch as _door
 from lab_commons.census import processes
 from lab_commons.log import emit
 
-from dev_lab.dev import checkoutfollow, hook_install, liverun
+from dev_lab.dev import checkoutfollow, devhost, hook_install, liverun
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
 from dev_lab.dev.reclaimrun import detach_argv
@@ -225,6 +226,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
                 detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
             if args.session_start and (notice := behind_notice(root)):
                 emit(notice)
+            if args.session_start and (declared := devhost.notice()):
+                emit(declared)
             return 0
         if moved := checkoutfollow.advance(root):
             emit(moved)
