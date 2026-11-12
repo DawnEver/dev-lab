@@ -124,3 +124,13 @@ def test_the_refusal_is_progressive_and_universal() -> None:
     assert 'recursive-delete' in disclosure.anchors((root / disclosure.REFUSALS_DOC).read_text(encoding='utf-8'))
     assert rule.needs is None
     assert rule.rendered().get('severity', 'deny') != 'hint'
+
+
+def test_the_refusal_names_the_scratch_door_and_what_follows_an_approval() -> None:
+    """A scratch/ pile has a door; anything else needs the user, and the row says who acts once they approve."""
+    rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
+    section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
+    section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
+    for text in (rule.remedy, section):
+        assert 'dev_lab.dev.scratch clear' in text
+        assert 'approv' in text
