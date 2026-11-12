@@ -11,6 +11,8 @@ forge for each one's checks (:func:`stop_refusal`):
   :func:`dev_lab.dev.forgewatch.unacknowledged_reds`, ruling 2026-11-11), and EVERY time until the session
   pushes a newer head or records why the red stands (``forge watch --session <id> --ack <key> --reason <why>``);
   a red head that is no session PR's -- an integration head the session merely pushed -- is not blocked on;
+* an open PR of the session with no live ``forge watch --session`` (:func:`dev_lab.dev.sessionprs.watching`)
+  refuses it EVERY time, naming the Monitor command to arm (:func:`unwatched_refusal`, 2026-11-12);
 * a head with no ``tests/*`` status :data:`GRACE_S` after its push has nothing to watch (review F-05c3ae4cb27f);
 * a pending head whose ``forge watch`` ran to its deadline is released on a repeated stop, with a note;
 * a green head, a session that pushed nothing, or a forge that cannot answer ends the turn. Always exits 0.
@@ -41,7 +43,7 @@ if TYPE_CHECKING:
 
     from dev_lab.dev.forge import Forge
 
-__all__ = ['GRACE_S', 'Stop', 'main', 'red_refusal', 'stop_refusal']
+__all__ = ['GRACE_S', 'Stop', 'main', 'red_refusal', 'stop_refusal', 'unwatched_refusal']
 
 
 #: How long after its push a head with NO ``tests/*`` status is still awaited: time for CI to post its first
@@ -113,6 +115,18 @@ def red_refusal(session: str, *, clients: Callable[[Forge], Client]) -> Stop:
     )
 
 
+def unwatched_refusal(session: str) -> Stop:
+    """Refuse the stop while the session has an open PR on record and no live session watch."""
+    prs = sessionprs.open_rows(session)
+    if not prs or sessionprs.watching(session):
+        return Stop()
+    return Stop(
+        block=f'{sessionprs.RULE}: this session has open PRs ({", ".join(row.key for row in prs)}) and nothing '
+        'watches them, so no merge or red check would reach you. Arm ONE persistent Monitor running: '
+        f'{sessionprs.watch_session_command(session)}'
+    )
+
+
 def _gate(
     payload: dict,
     processes: Callable[[], Iterable[str]],
@@ -139,6 +153,8 @@ def _gate(
         )
         if said.block is None and prs and (red := red_refusal(session, clients=clients or clients_at(root))).block:
             said = red
+        if said.block is None and prs:
+            said = unwatched_refusal(session)
     except (ForgeCallFailed, OSError, ValueError):
         return 0
     if said.block is not None:

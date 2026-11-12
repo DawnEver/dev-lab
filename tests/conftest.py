@@ -33,6 +33,7 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'lab-commons-home'))
     monkeypatch.delenv(INSIDE_ENV, raising=False)  # the verify running these tests is boxed; a test is not
     monkeypatch.delenv(CPU_ENV, raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)  # a test plants the session it means
 
 
 #: What a CI job's environment carries that no test may inherit: the run id (every simulated review host would
