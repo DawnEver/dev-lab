@@ -550,3 +550,12 @@ def test_a_local_rule_shadowing_a_family_rule_is_refused() -> None:
     """A local row reusing a family id is the fork the split exists to prevent; the render refuses it."""
     with pytest.raises(UnremediedRule, match=DENY_RULES[0].id):
         render(HookAdoption(app_name='planted'), local=(DENY_RULES[0],))
+
+
+def test_the_scratch_baseline_is_taken_at_session_start_and_judged_at_stop() -> None:
+    """The stop judges only what a session left, so its start must record what predates it."""
+    after = agent_guard.wire_settings({})
+    snap = {'type': 'command', 'command': agent_wiring.SCRATCHSNAP_COMMAND}
+    assert any(snap in entry['hooks'] for entry in after['hooks']['SessionStart'])
+    assert any(_SCRATCHSTOP in entry['hooks'] for entry in after['hooks']['Stop'])
+    assert all(_SCRATCHSTOP not in entry['hooks'] for entry in after['hooks']['SubagentStop'])

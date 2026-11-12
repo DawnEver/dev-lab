@@ -26,15 +26,18 @@ declares it as a row of its own, naming both exits through :func:`staged_scratch
 
 THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked top-level entry, its size
 and age, oldest first), ``discard <paths>`` (delete one-off files; anything outside scratch, or its README,
-is refused and nothing is deleted) and ``clear [--keep NAME ...] --yes`` -- THE door for emptying scratch,
-named by RECURSIVE-DELETE: it deletes every UNTRACKED top-level entry but the kept ones, never a tracked
-file and never outside scratch, refuses the whole clear when a link or junction inside an entry points out
-of scratch, and clears the read-only/hidden attributes Windows sets so a nested ``.git`` deletes. It works
-on a main checkout: git decides what is deletable, not the kind of checkout.
+is refused and nothing is deleted) and ``clear [NAME ...] [--keep NAME ...] --yes`` -- THE door for emptying
+scratch, named by RECURSIVE-DELETE: it deletes the named UNTRACKED top-level entries (this session's when none
+is named), never a tracked file and never outside scratch, refuses the whole clear when a link or junction
+inside an entry points out of scratch, and clears the read-only/hidden attributes Windows sets so a nested
+``.git`` deletes. It works on a main checkout: git decides what is deletable, not the kind of checkout.
 
-THE STOP (``stop``, wired by :mod:`dev_lab.dev.agent_wiring`): a session does not end while its checkout's
-scratch holds an untracked entry -- nothing else ever clears one, so they piled up across sessions. It
-blocks once (``stop_hook_active`` lets a deliberately kept entry through), naming ``clear`` and ``--keep``.
+THIS SESSION'S LEFTOVERS ONLY (``snapshot`` at SessionStart, ``stop`` at Stop, both wired by
+:mod:`dev_lab.dev.agent_wiring`): the start records the checkout's untracked entries under the machine-local
+state, keyed by session id; the stop blocks once on an entry new since then -- nothing else ever cleared one,
+so they piled up across sessions -- and never on one that predates the session or another session made.
+``clear --keep NAME`` acknowledges one; ``clear`` with no names takes this session's entries
+(``CLAUDE_CODE_SESSION_ID``), anything else only by name.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TextIO
 
+from lab_commons import home as _home
 from lab_commons import launch
 from lab_commons.log import emit
 
@@ -58,9 +62,11 @@ from dev_lab.dev.codeplace import (
     checkout_root,
     declared_placement,
 )
+from dev_lab.dev.sessionprs import SESSION_ENV, session_of, valid
 
 __all__ = [
     'SCRATCH_README',
+    'SESSION_DIR',
     'ScratchCommitted',
     'ScratchEscape',
     'assert_scratch_never_committed',
@@ -71,6 +77,8 @@ __all__ = [
     'overdue_scratch',
     'pending_scratch',
     'scratch_reminder',
+    'session_entries',
+    'snapshot',
     'staged_scratch',
     'untracked_scratch',
 ]
@@ -78,7 +86,9 @@ __all__ = [
 _SECONDS_PER_DAY = 86400.0
 #: How many one-offs the notice names before it elides the rest.
 _SHOWN = 20
-_VERBS = frozenset({'list', 'discard', 'clear', 'remind', 'check', 'stop'})
+_VERBS = frozenset({'list', 'discard', 'clear', 'remind', 'check', 'snapshot', 'stop'})
+#: The directory, under the machine-local state, holding each session's scratch baseline.
+SESSION_DIR = 'scratch-sessions'
 
 #: The ONE tracked file under scratch: it anchors the directory and states the two exits.
 SCRATCH_README = 'README.md'
@@ -253,26 +263,31 @@ def _writable(func, path, _exc) -> None:  # noqa: ANN001 -- shutil's onexc signa
     func(path)
 
 
-def _kept(keep: Iterable[str]) -> set[str]:
-    return {name.strip('/\\').replace('\\', '/').split('/')[-1] for name in keep}
+def _name(entry: str) -> str:
+    """A top-level entry's name from *entry*, given bare, as ``scratch/<name>`` or with a trailing slash."""
+    return entry.strip('/\\').replace('\\', '/').split('/')[-1]
 
 
-def clear_scratch(root: Path, *, keep: Iterable[str]) -> list[str]:
-    """Delete every untracked top-level scratch entry of *root* not named in *keep*; return them root-relative.
+def clear_scratch(root: Path, names: Iterable[str]) -> list[str]:
+    """Delete the untracked top-level scratch entries of *root* named in *names*; return them root-relative.
 
-    A link or junction entry is unlinked, never followed; nothing is deleted when one inside an entry escapes.
+    A link or junction entry is unlinked, never followed. Nothing is deleted when a link inside an entry
+    escapes scratch, or when a name is no untracked entry (a tracked file never is one).
 
     Raises:
-        ScratchEscape: a link or junction inside an entry points outside scratch.
+        ScratchEscape: a name is no untracked entry, or a link inside an entry points outside scratch.
 
     """
     scratch = (root / declared_placement(root).scratch).resolve()
-    kept = _kept(keep)
-    doomed = [(rel, root / rel) for rel, _, _ in untracked_scratch(root) if rel.rsplit('/', 1)[-1] not in kept]
-    escaping = [link for _, path in doomed for link in _escapes(path, scratch)]
-    if escaping:
-        names = ', '.join(link.relative_to(root).as_posix() for link in escaping)
-        msg = f'{names}: a link inside scratch points outside it; nothing cleared. Ask the user before removing it.'
+    entries = {_name(rel): rel for rel, _, _ in untracked_scratch(root)}
+    wanted = list(dict.fromkeys(_name(name) for name in names))
+    if missing := [name for name in wanted if name not in entries]:
+        msg = f'{missing}: not an untracked entry of scratch (tracked, or absent); nothing cleared'
+        raise ScratchEscape(msg)
+    doomed = [(entries[name], root / entries[name]) for name in wanted]
+    if escaping := [link for _, path in doomed for link in _escapes(path, scratch)]:
+        shown = ', '.join(link.relative_to(root).as_posix() for link in escaping)
+        msg = f'{shown}: a link inside scratch points outside it; nothing cleared. Ask the user before removing it.'
         raise ScratchEscape(msg)
     for _, path in doomed:
         if path.is_junction():
@@ -287,40 +302,99 @@ def clear_scratch(root: Path, *, keep: Iterable[str]) -> list[str]:
     return [rel for rel, _ in doomed]
 
 
+def _session_file(session: str) -> Path | None:
+    """Where *session*'s scratch baselines live, under the machine-local state; ``None`` for an invalid id."""
+    return _home.part('state') / SESSION_DIR / f'{session}.json' if valid(session) else None
+
+
+def _read(session: str) -> dict:
+    path = _session_file(session)
+    try:
+        data = json.loads(path.read_text(encoding='utf-8')) if path else {}
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write(session: str, data: dict) -> None:
+    path = _session_file(session)
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=1, sort_keys=True), encoding='utf-8')
+
+
+def snapshot(root: Path, session: str) -> None:
+    """Record *root*'s untracked scratch entries as *session*'s baseline, once; a later call keeps the first."""
+    data = _read(session)
+    if str(root) not in data:
+        data[str(root)] = {'before': sorted(_name(rel) for rel, _, _ in untracked_scratch(root)), 'kept': []}
+        _write(session, data)
+
+
+def session_entries(root: Path, session: str) -> list[str] | None:
+    """The untracked entries *session* left in *root*'s scratch and did not keep; ``None`` with no baseline."""
+    seen = _read(session).get(str(root))
+    if not isinstance(seen, dict):
+        return None
+    old = set(seen.get('before', ())) | set(seen.get('kept', ()))
+    return [rel for rel, _, _ in untracked_scratch(root) if _name(rel) not in old]
+
+
+def _keep(root: Path, session: str, names: Iterable[str]) -> None:
+    """Acknowledge *names* as entries *session* leaves in *root*'s scratch on purpose."""
+    data = _read(session)
+    seen = data.setdefault(str(root), {'before': [], 'kept': []})
+    seen['kept'] = sorted({*seen.get('kept', ()), *(_name(name) for name in names)})
+    _write(session, data)
+
+
 def _clear_hint(rels: list[str]) -> str:
-    """The ``Stop`` block naming every untracked entry and the door that empties scratch."""
+    """The ``Stop`` block naming this session's untracked entries and the door that empties them."""
     shown = ', '.join(rels[:_SHOWN]) + (' ...' if len(rels) > _SHOWN else '')
     return (
-        f'SCRATCH-IS-NEVER-COMMITTED: {len(rels)} untracked entr{"y" if len(rels) == 1 else "ies"} in scratch: '
-        f'{shown}.\nPromote what is useful into src/ with tests (a finding into memory), then '
-        'python -m dev_lab.dev.scratch clear [--keep NAME ...] --yes'
+        f'SCRATCH-IS-NEVER-COMMITTED: this session left {len(rels)} untracked scratch entr'
+        f'{"y" if len(rels) == 1 else "ies"}: {shown}.\nPromote what is useful into src/ with tests (a finding '
+        'into memory), then python -m dev_lab.dev.scratch clear [--keep NAME ...] --yes'
     )
 
 
-def _stop(stdin: TextIO | None) -> int:
-    """The ``Stop`` check: block once while the checkout's scratch holds an untracked entry."""
+def _hooked(stdin: TextIO | None) -> tuple[Path, str] | None:
+    """The checkout and session a hook payload names; ``None`` when it names neither or declares no placement."""
     try:
         payload = json.load(stdin or sys.stdin)
     except ValueError:
-        payload = {}
-    if not isinstance(payload, dict) or payload.get('stop_hook_active'):
-        return 0
+        return None
+    if not isinstance(payload, dict) or payload.get('stop_hook_active') or not valid(str(payload.get('session_id'))):
+        return None
     cwd = Path(payload.get('cwd') or Path.cwd()).resolve()
     root = cwd if (cwd / '.git').exists() else checkout_root(cwd)
     if root is None:
-        return 0
+        return None
     try:
-        rels = [rel for rel, _, _ in untracked_scratch(root)]
+        declared_placement(root)
     except PlacementNotDeclared:
+        return None
+    return root, str(payload['session_id'])
+
+
+def _hook(mode: str, stdin: TextIO | None) -> int:
+    """``snapshot`` (SessionStart) records the baseline; ``stop`` blocks once on what this session left."""
+    hooked = _hooked(stdin)
+    if hooked is None:
         return 0
-    if rels:
-        emit(json.dumps({'decision': 'block', 'reason': _clear_hint(rels)}))
+    root, session = hooked
+    left = session_entries(root, session) if mode == 'stop' else None
+    if left is None:
+        snapshot(root, session)  # a session with no baseline yet is judged from now on
+    elif left:
+        emit(json.dumps({'decision': 'block', 'reason': _clear_hint(left)}))
     return 0
 
 
 def _clear(rest: list[str], root: Path) -> int:
-    """``clear [--keep NAME ...] [--yes]``: without ``--yes`` it only names what would go."""
+    """``clear [NAME ...] [--keep NAME ...] [--yes]``: the names, else this session's entries; ``--yes`` deletes."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.scratch clear', exit_on_error=False)
+    parser.add_argument('names', nargs='*', metavar='NAME')
     parser.add_argument('--keep', nargs='+', action='extend', default=[], metavar='NAME')
     parser.add_argument('--yes', action='store_true')
     try:
@@ -328,13 +402,20 @@ def _clear(rest: list[str], root: Path) -> int:
     except argparse.ArgumentError as exc:
         emit(str(exc))
         return 2
-    if not args.yes:
-        kept = _kept(args.keep)
-        rels = [rel for rel, _, _ in untracked_scratch(root) if rel.rsplit('/', 1)[-1] not in kept]
-        emit(f'would clear: {", ".join(rels) or "(nothing)"}; re-run with --yes to delete them')
+    session = session_of()
+    if args.keep and session:
+        _keep(root, session, args.keep)
+    left = args.names or (session_entries(root, session) if session else None)
+    if left is None:
+        emit(f'no scratch snapshot for this session ({SESSION_ENV}): name the entries to clear')
+        return 2
+    kept = {_name(name) for name in args.keep}
+    names = [name for name in left if _name(name) not in kept]
+    if names and not args.yes:
+        emit(f'would clear: {", ".join(names)}; re-run with --yes to delete them')
         return 2
     try:
-        for rel in clear_scratch(root, keep=args.keep):
+        for rel in clear_scratch(root, names):
             emit(f'cleared {rel}')
     except ScratchEscape as exc:
         emit(str(exc))
@@ -394,8 +475,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     if mode not in _VERBS:
         emit(f'usage: python -m dev_lab.dev.scratch {{{" | ".join(sorted(_VERBS))}}} [args]')
         return 2
-    if mode == 'stop':
-        return _stop(stdin)
+    if mode in {'snapshot', 'stop'}:
+        return _hook(mode, stdin)
     return _remind(stdin) if mode == 'remind' else _verb(mode, rest, Path.cwd())
 
 

@@ -10,4 +10,4 @@ Every one-off leaves by one of two exits:
 2. **Delete** it, when it is not: `python -m dev_lab.dev.scratch discard <path>`.
 
 A finding it produced goes to memory as numbers. `scripts/` is not an exit: it holds dev mechanisms
-only. `python -m dev_lab.dev.scratch list` lists what is here, oldest first; `python -m dev_lab.dev.scratch clear [--keep NAME ...] --yes` deletes every untracked entry but the kept ones.
+only. `python -m dev_lab.dev.scratch list` lists what is here, oldest first; `python -m dev_lab.dev.scratch clear [NAME ...] [--keep NAME ...] --yes` deletes the named untracked entries, or those this session left.

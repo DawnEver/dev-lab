@@ -98,8 +98,11 @@ SESSIONPRS_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_l
 PUSHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushstop'
 
 #: SCRATCH-IS-NEVER-COMMITTED, the ``Stop`` half (:mod:`dev_lab.dev.scratch` ``stop``): a session does not end while
-#: its checkout's scratch holds an untracked entry (blocked once), naming ``scratch clear [--keep NAME ...] --yes``.
+#: its checkout's scratch holds an untracked entry the session left (blocked once), naming ``scratch clear``.
 SCRATCHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.scratch stop'
+
+#: Its baseline: every session start records the scratch entries that predate it, so the stop judges only its own.
+SCRATCHSNAP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.scratch snapshot'
 
 #: LANDED-BRANCHES-SWEPT (:mod:`dev_lab.dev.branchprune`, ruling 2026-10-29): after a shell call that pushed
 #: integration, a detached ``sweep --local`` deletes every branch and clean worktree integration now contains.
@@ -159,6 +162,7 @@ WIRING: Final = (
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
     Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
+    Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False),
     Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False),
 )
 
