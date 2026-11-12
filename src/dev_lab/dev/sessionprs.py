@@ -266,6 +266,30 @@ def record_pushed(
     return tuple(row for row in found if row is not None)
 
 
+def _heard_path(session: str) -> Path | None:
+    path = _path(session)
+    return path.with_suffix('.heard') if path is not None else None
+
+
+def heard(session: str) -> set[str]:
+    """Every line *session*'s watches already reported: a re-armed watch says none of them again."""
+    path = _heard_path(session)
+    try:
+        found = json.loads(path.read_text(encoding='utf-8')) if path is not None else []
+    except (OSError, ValueError):
+        return set()
+    return {str(line) for line in found} if isinstance(found, list) else set()
+
+
+def hear(session: str, line: str) -> None:
+    """Record that *session* heard *line* (:func:`heard`)."""
+    path = _heard_path(session)
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(sorted({*heard(session), line}), indent=1), encoding='utf-8')
+
+
 def _marker(session: str) -> Path | None:
     path = _path(session)
     return path.with_suffix('.watch') if path is not None else None

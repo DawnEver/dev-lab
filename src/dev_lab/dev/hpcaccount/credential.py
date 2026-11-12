@@ -295,22 +295,38 @@ def drop_host(
     return 0
 
 
+def parser() -> argparse.ArgumentParser:
+    """The ``credential`` command line: the one source of its usage (:func:`usage`)."""
+    made = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount credential', description=__doc__.splitlines()[0])
+    made.add_argument('account', metavar='<user>@<login host>', help='a declared [[hpc.grant]] account')
+    verb = made.add_mutually_exclusive_group(required=True)
+    verb.add_argument('--login', metavar='<forge login>', help='the declared forge login the token on stdin belongs to')
+    verb.add_argument('--drop-host', metavar='<host>', help="remove exactly this host's line (after a backup)")
+    made.add_argument(
+        '--host-config', type=Path, metavar='<host config>', help="the forge host's reviewed config (with --login)"
+    )
+    made.add_argument(
+        '--url', default='', metavar='<repo url>', help="a repository url on the host config's forge (with --login)"
+    )
+    return made
+
+
+def usage() -> str:
+    """The command's shape as :func:`parser` renders it, ``hpcaccount credential ...``, the help flag left out."""
+    said = ' '.join(parser().format_usage().split())
+    return said.removeprefix('usage: dev_lab.dev.').replace(' [-h]', '')
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``credential``; place the token on stdin, or drop a host's line."""
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount credential', description=__doc__.splitlines()[0])
-    parser.add_argument('account', help='<user>@<login host> of a declared [[hpc.grant]]')
-    verb = parser.add_mutually_exclusive_group(required=True)
-    verb.add_argument('--login', help='the declared forge login the token on stdin belongs to')
-    verb.add_argument('--drop-host', help="remove exactly this host's line (after a backup)")
-    parser.add_argument('--host-config', type=Path, help="the forge host's reviewed config (with --login)")
-    parser.add_argument('--url', default='', help="a repository url on the host config's forge (with --login)")
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    made = parser()
+    args = made.parse_args(list(sys.argv[1:] if argv is None else argv))
     if args.drop_host:
         return drop_host(
             args.account, host=args.drop_host, grants=load_grants(split_hpc(section('hpc'))[0]).grants, say=emit
         )
     if args.host_config is None:
-        parser.error('--login needs --host-config')
+        made.error('--login needs --host-config')
     try:
         forge = read_forge(args.host_config)
     except CredentialRefused as refused:

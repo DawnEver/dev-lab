@@ -159,6 +159,12 @@ id = "private-markers"
 run = ["python", "-m", "dev_lab.dev.privatemarkers"]
 pass_files = true
 
+# PRIVATE-MARKERS at push time: a commit message is published with the push, and no file scan reads it.
+[[tool.dev_lab.hooks.pre-push]]
+id = "private-markers-messages"
+run = ["python", "-m", "dev_lab.dev.privatemarkers", "--push"]
+always_run = true
+
 [[tool.dev_lab.hooks.pre-push]]
 id = "pushgate"
 run = ["python", "-m", "dev_lab.dev.pushgate", "--trunk-ref", "refs/heads/main"]

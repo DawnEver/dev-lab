@@ -17,6 +17,10 @@ move the lock), then the VENV, then the HOOKS (:func:`dev_lab.dev.hook_install.r
 shim never reaches the current table, so only something outside a git hook can replace it). ``--background``
 detaches when any of the three is due.
 
+THE BEHIND NOTICE (``--session-start`` too, :func:`behind_notice`): one line when the trunk checkout's HEAD is
+behind its LAST-FETCHED ``origin/<trunk>``, or the venv's git-installed dev-lab is not the commit that ref's
+``uv.lock`` pins -- naming the update door. No network, no install, no prune: a few local git reads.
+
 :func:`follow` skips while a run lives in the checkout or executes from its venv (TREE-HAS-A-LIVE-RUN,
 :mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start, merge or checkout.
 
@@ -30,6 +34,7 @@ import hashlib
 import json
 import os
 import sys
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
@@ -38,7 +43,8 @@ from lab_commons.census import processes
 from lab_commons.log import emit
 
 from dev_lab.dev import checkoutfollow, hook_install, liverun
-from dev_lab.dev.checkout import git_out
+from dev_lab.dev.checkout import authority_for, git_out, worktrees
+from dev_lab.dev.lockpins import Installed, installed_git, sync_door
 from dev_lab.dev.reclaimrun import detach_argv
 from dev_lab.dev.venvpath import venv_interpreter
 
@@ -53,7 +59,9 @@ __all__ = [
     'ENV_INPUTS',
     'ENV_STAMP',
     'FAILED',
+    'FAMILY_KIT',
     'SKIPPED',
+    'behind_notice',
     'busy',
     'detach_argv',
     'due',
@@ -76,6 +84,8 @@ CURRENT: Final = 'current'
 BOOTSTRAPPED: Final = 'bootstrapped'
 FAILED: Final = 'bootstrap failed'
 SKIPPED: Final = 'skipped: a live run'
+#: The distribution whose installed commit the behind notice compares with the integration lock's pin.
+FAMILY_KIT: Final = 'dev-lab'
 
 
 def venv_python(checkout: Path) -> Path:
@@ -140,6 +150,44 @@ def follow(
     return BOOTSTRAPPED
 
 
+def _pin(lock: str) -> str | None:
+    """The commit *lock* (``uv.lock`` text) pins :data:`FAMILY_KIT` at, or ``None``."""
+    for package in tomllib.loads(lock).get('package', []):
+        git = package.get('source', {}).get('git')
+        if package.get('name') == FAMILY_KIT and isinstance(git, str) and '#' in git:
+            return git.rpartition('#')[2]
+    return None
+
+
+def behind_notice(root: Path, *, installed: Iterable[Installed] | None = None) -> str | None:
+    """One line when *root* or its venv lags the last-fetched integration, naming the update door; else ``None``.
+
+    Integration is ``origin/<trunk>``, the trunk the main checkout's branch. HEAD is judged only on the trunk (a lane
+    behind it is normal); the venv's :data:`FAMILY_KIT` against the pin in that ref's ``uv.lock`` everywhere.
+    """
+    trees = worktrees(root)
+    if not trees:
+        return None
+    trunk = trees[0][1]
+    authority = authority_for(root, trunk)
+    if authority == trunk:
+        return None  # no fetched origin: nothing to compare with offline
+    lags = []
+    branch = (git_out(root, 'rev-parse', '--abbrev-ref', 'HEAD') or '').strip()
+    behind = int((git_out(root, 'rev-list', '--count', f'HEAD..{authority}') or '0').strip() or 0)
+    if branch == trunk and behind:
+        lags.append(f'HEAD is {behind} commit(s) behind {authority} (last fetch)')
+    pinned = _pin(git_out(root, 'show', f'{authority}:uv.lock') or '')
+    kit = next((one.commit for one in (installed_git() if installed is None else installed) if one.name == FAMILY_KIT),
+               None)  # fmt: skip
+    if pinned and kit and kit != pinned:
+        lags.append(f'venv {FAMILY_KIT} {kit[:10]} is not {pinned[:10]}, the pin in {authority}')
+    if not lags:
+        return None
+    door = sync_door(root).replace('<venv python>', str(venv_python(root)))
+    return f'BEHIND: {"; ".join(lags)}. Update: git pull --ff-only, then {door} {root}'
+
+
 def toplevel(cwd: Path) -> Path | None:
     """The checkout *cwd* lies in, or ``None`` outside git."""
     out = (git_out(cwd, 'rev-parse', '--show-toplevel') or '').strip()
@@ -175,6 +223,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if args.background or args.session_start:
             if due(root):
                 detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
+            if args.session_start and (notice := behind_notice(root)):
+                emit(notice)
             return 0
         if moved := checkoutfollow.advance(root):
             emit(moved)

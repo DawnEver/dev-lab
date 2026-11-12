@@ -22,6 +22,7 @@ the ``Stop`` hook (:mod:`dev_lab.dev.pushstop`) refuses on, until a newer head i
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -31,10 +32,12 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import sessionprs
+from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, PullRequest, client_for, stored_client
+from dev_lab.dev.platformparts import BASE
 from dev_lab.dev.pushwatch import record_deadline
 
 if TYPE_CHECKING:
@@ -141,8 +144,14 @@ def _reds(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
     return [status for status in statuses if status.state in RED]
 
 
+#: The contexts a head is never green without: the base test part, whatever else has already ended.
+REQUIRED: Final = (f'{CONTEXT_PREFIX}{BASE}',)
+
+
 def _green(statuses: Sequence[CommitStatus]) -> bool:
-    return settled(statuses) and all(s.state == 'success' for s in statuses if s.context.startswith(TESTS))
+    """Every required context and every posted test status ended in ``success``."""
+    latest = {s.context: s.state for s in statuses if s.context.startswith(TESTS)}
+    return all(c in latest for c in REQUIRED) and all(state == 'success' for state in latest.values())
 
 
 def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str], None], seen: set[str]) -> bool:
@@ -153,17 +162,23 @@ def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str]
     if pr.merged or pr.state == 'closed':
         done = 'merged' if pr.merged else 'closed'
         sessionprs.close(session, row, done)
-        say(f'{row.key} {done}')
+        _say_once(session, f'{row.key} {done}', say, seen)
         return False
     statuses = status_list(client, pr.head_sha) if pr.head_sha else ()
     lines = [f'{row.key} {pr.head_sha[:12]} {s.context} {s.state} {s.description}'.rstrip() for s in _reds(statuses)]
     if _green(statuses):
         lines.append(f'{row.key} {pr.head_sha[:12]} green')
     for line in lines:
-        if line not in seen:
-            seen.add(line)
-            say(line)
+        _say_once(session, line, say, seen)
     return True
+
+
+def _say_once(session: str, line: str, say: Callable[[str], None], seen: set[str]) -> None:
+    """Say *line* unless this session already heard it (persisted: a re-armed watch repeats nothing)."""
+    if line not in seen:
+        seen.add(line)
+        sessionprs.hear(session, line)
+        say(line)
 
 
 def watch_session(
@@ -200,7 +215,7 @@ def _session_loop(
     clock: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> int:
-    seen: set[str] = set()
+    seen = sessionprs.heard(session)
     while True:
         live = 0
         for row in sessionprs.open_rows(session):
@@ -208,9 +223,7 @@ def _session_loop(
                 live += _poll(session, row, clients(row.forge), say, seen)
             except (ForgeCallFailed, ValueError) as failed:
                 live += 1  # an unreadable PR is still open: read again next poll
-                if (line := f'{row.key} unreadable: {failed}'.splitlines()[0]) not in seen:
-                    seen.add(line)
-                    say(line)
+                _say_once(session, f'{row.key} unreadable: {failed}'.splitlines()[0], say, seen)
         if not live:
             say(f'session {session}: no open PR left')
             return 0
@@ -235,7 +248,18 @@ def unacknowledged_reds(session: str, *, clients: Callable[[Forge], Client]) -> 
     return said
 
 
+#: A PR's web URL: ``https://<host>/<owner>/<repo>/pull[s]/<number>`` (GitHub, Gitea).
+_PR_URL: Final = re.compile(r'^https?://([^/]+)/([^/]+)/([^/]+)/pulls?/(\d+)/?$')
+
+
+def pr_key(named: str) -> str:
+    """*named* as a session PR key: a PR URL becomes ``<host>/<owner>/<repo>#<number>``; anything else is kept."""
+    found = _PR_URL.match(named.strip())
+    return f'{found[1]}/{found[2]}/{found[3]}#{found[4]}' if found else named.strip()
+
+
 def _ack(session: str, key: str, reason: str, clients: Callable[[Forge], Client]) -> int:
+    key = pr_key(key)
     found = [row for row in sessionprs.rows(session).values() if key in {row.key, f'#{row.number}', str(row.number)}]
     if len(found) != 1:
         emit(f'watch: {key!r} names {len(found)} PR(s) of session {session}; give the key it prints', err=True)
@@ -258,7 +282,9 @@ def session_main(argv: Sequence[str] | None = None, *, clients: Callable[[Forge]
         '--every-seconds', type=float, default=SESSION_EVERY_S, help=f'poll period (floor {SESSION_FLOOR_S:g})'
     )
     parser.add_argument('--deadline-minutes', type=float, default=240.0)
-    parser.add_argument('--ack', default='', help="a PR's key or number: let the red on its current head stand")
+    parser.add_argument(
+        '--ack', default='', help="a PR's key (host/owner/repo#N), URL or number: let the red on its current head stand"
+    )
     parser.add_argument('--reason', default='', help='why the red stands (required with --ack)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     if not sessionprs.valid(args.session):

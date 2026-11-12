@@ -596,3 +596,15 @@ def test_stdout_local_is_a_relative_name_without_dotdot(tmp_path: Path, name: st
     bad = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdout_local': name}]
     with pytest.raises(ConsentRefused, match='stdout_local'):
         planrun.load_steps(_steps_file(tmp_path, bad), PLAN, HOST)
+
+
+def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_update() -> None:
+    """A plan written against a newer registry is BLOCKED here, before a code -- not refused after the user gave one."""
+    newer = parsed({'host': HOST, 'grants': [APPLY, {'action': 'ops.not.yet.known', 'subject': 'c' * 64}]})
+    steps = planrun.Steps((*STEPS.steps[:1], planrun.Step(('not', 'known'), HOST, CONF, PY)))
+    green, lines = planrun.preflight(newer, steps, lambda _dest: FakeHost())
+    assert not green
+    blocked = [line for line in lines if 'ops.not.yet.known' in line and 'BLOCKED' in line]
+    assert blocked, lines
+    assert 'local dev-lab is older than the plan; update it' in blocked[0]
+    assert planrun.preflight(PLAN, STEPS, lambda _dest: FakeHost())[0]  # the control: every action known

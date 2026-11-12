@@ -49,12 +49,12 @@ def test_the_hpc_refusal_names_every_door_by_purpose() -> None:
     for door in (
         '`sshhold open|run --code`',
         '`hpcaccount deploy*|forget|credential`',
-        '`forge queue|run show`',
+        '`forge queue|run show <sha>`',
         '`lab_commons.hpc plan|submit|status|gather|retry|run`',
         '`lab_commons.hpc clean`',
     ):
         assert door in text
-    assert 'key-only' in text  # user ruling 2026-11-11: Ada is key-only and never needs a code
+    assert 'TOTP host `sshhold open|run --code` (key-only: no code)' in text  # user ruling 2026-11-11: no code
 
 
 def test_the_key_only_hpc_doors_are_admitted() -> None:

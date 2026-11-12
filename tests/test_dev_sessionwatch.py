@@ -178,3 +178,74 @@ def test_forge_watch_with_session_routes_to_the_session_watch(monkeypatch: pytes
     monkeypatch.setattr(forgewatch, 'session_main', lambda argv: seen.append(argv) or 0)
     assert forgewatch.main(['--session', 's1', '--stream']) == 0
     assert seen == [['--session', 's1', '--stream']]
+
+
+@pytest.mark.parametrize('named', ['url', 'key'])
+def test_a_red_is_acknowledged_by_its_pr_url_or_its_key_and_the_stop_names_the_key_form(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], named: str
+) -> None:
+    """The Stop hook's example is the accepted form; the URL a red line prints is normalised to that key."""
+    forge = StateForge()
+    number = _opened(forge, capsys)
+    _post(forge, SHA, 'tests/base', 'failure')
+    block = _stop(forge, tmp_path)
+    assert block is not None
+    assert '--ack <host>/<owner>/<repo>#<number>' in block['reason']
+    given = forge.pulls[number]['html_url'] if named == 'url' else f'{FORGE.identity}#{number}'
+    args = ['--session', 's1', '--ack', given, '--reason', 'stands on purpose']
+    assert forgewatch.session_main(args, clients=lambda _f: forge) == 0
+    assert _stop(forge, tmp_path) is None
+    capsys.readouterr()
+
+
+def test_a_url_of_another_repository_names_no_session_pr(capsys: pytest.CaptureFixture[str]) -> None:
+    """PLANTED CONTROL: the same PR number under another repository is not this session's PR."""
+    forge = StateForge()
+    number = _opened(forge, capsys)
+    args = ['--session', 's1', '--ack', f'https://{FORGE.host}/o/other/pulls/{number}', '--reason', 'x']
+    assert forgewatch.session_main(args, clients=lambda _f: forge) == 2
+    capsys.readouterr()
+
+
+def _watch_until_deadline(forge: StateForge, session: str = 's1', *, posts: list | None = None) -> list[str]:
+    """One watch whose clock passes its deadline once *posts* are spent: a re-armable run that ends."""
+    said: list[str] = []
+    script, now = list(posts or []), [0.0]
+
+    def sleep(_s: float) -> None:
+        if script:
+            script.pop(0)()
+        else:
+            now[0] = 120.0
+
+    forgewatch.watch_session(
+        session, clients=lambda _f: forge, say=said.append, every_s=0, deadline_s=60, clock=lambda: now[0], sleep=sleep
+    )
+    return said
+
+
+def test_a_re_armed_watch_never_re_reports_a_state_the_session_already_heard(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    forge = StateForge()
+    number = _opened(forge, capsys)
+    key = f'{FORGE.identity}#{number}'
+    _post(forge, SHA, 'tests/base', 'failure')
+    first = _watch_until_deadline(forge)
+    assert f'{key} {SHA[:12]} tests/base failure tests/base failure' in first
+    assert _watch_until_deadline(forge) == ['session s1: deadline, 1 PR(s) still open'], 'heard once per session'
+    _post(forge, SHA, 'tests/base', 'success')
+    assert f'{key} {SHA[:12]} green' in _watch_until_deadline(forge), 'PLANTED CONTROL: a new state is heard'
+
+
+def test_green_waits_for_every_required_context_to_end_in_success(capsys: pytest.CaptureFixture[str]) -> None:
+    """A head whose only posted test status is green is not green while the required tests/base is absent/pending."""
+    forge = StateForge()
+    number = _opened(forge, capsys)
+    green = f'{FORGE.identity}#{number} {SHA[:12]} green'
+    _post(forge, SHA, 'tests/security', 'success')
+    assert green not in _watch_until_deadline(forge), 'tests/base not posted yet'
+    _post(forge, SHA, 'tests/base', 'pending')
+    assert green not in _watch_until_deadline(forge), 'tests/base still running'
+    _post(forge, SHA, 'tests/base', 'success')
+    assert green in _watch_until_deadline(forge), 'PLANTED CONTROL: every required context ended in success'
