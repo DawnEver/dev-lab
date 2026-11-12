@@ -8,6 +8,9 @@ verb on this host could verify a credential and register its use.
 
 from __future__ import annotations
 
+import getpass
+import os
+import stat
 import sys
 import time
 from collections.abc import Callable
@@ -25,7 +28,7 @@ from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.ops.consentrole import Consent
 
-__all__ = ['VERBS', 'issuer', 'ready', 'run']
+__all__ = ['VERBS', 'issuer', 'ready', 'run', 'visible']
 
 #: Every ``ops consent`` verb.
 VERBS = ('serve', 'enrol', 'keygen', 'ready')
@@ -65,10 +68,44 @@ def ends(config: OpsConfig, *, alert: Alert) -> tuple[Ed25519PublicKey, Register
     return public_key(table), remote_register(table)
 
 
-def ready(config: OpsConfig, *, alert: Alert) -> int:
-    """``consent ready``: 0 when a consented verb here could verify AND register; 2 names the blocker."""
+def visible(key: Path) -> None:
+    """Prove the issuer's private *key* is in place by ``stat`` alone: present, a regular file, mode 600 on POSIX.
+
+    ``consent ready`` runs unprivileged (the ops user over ssh), and the key is root 600: OPENING it can only fail
+    there, so readiness never reads it -- ``stat`` needs search permission on its directory and nothing more.
+
+    Raises:
+        ConsentRefused: the key is missing, not a regular file, open to group/other, or its directory unsearchable.
+
+    """
     try:
-        key, _ = ends(config, alert=alert)
+        found = key.stat()
+    except FileNotFoundError as missing:
+        msg = f'issuer key missing: {key}; `ops consent keygen` (as root) makes it'
+        raise ConsentRefused(msg) from missing
+    except PermissionError as hidden:
+        msg = f'issuer key not visible to {getpass.getuser()}: {key}; grant search (o+x) on {key.parent}'
+        raise ConsentRefused(msg) from hidden
+    if not stat.S_ISREG(found.st_mode):
+        msg = f'issuer key is not a regular file: {key}'
+        raise ConsentRefused(msg)
+    if os.name == 'posix' and found.st_mode & 0o077:
+        msg = f'issuer key {key} is mode {stat.S_IMODE(found.st_mode):o}, not 600: chmod 600 it as root'
+        raise ConsentRefused(msg)
+
+
+def ready(config: OpsConfig, *, alert: Alert) -> int:
+    """``consent ready``: 0 when a consented verb here could verify AND register; 2 names the blocker.
+
+    At the issuer the private key is only STATTED (:func:`visible`) and the key shown is the PUBLISHED one a client
+    verifies against (``[ops.consent_client] public_key``, else the machine file's or the packaged one).
+    """
+    try:
+        if config.consent is None:
+            key, _ = ends(config, alert=alert)
+        else:
+            visible(Path(config.consent.key))
+            key = public_key(None if config.consent_client is None else config.consent_client.table())
     except ConsentRefused as refused:
         emit(f'refused: {refused}', err=True)
         return 2

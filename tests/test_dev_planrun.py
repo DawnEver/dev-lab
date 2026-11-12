@@ -6,6 +6,7 @@ Every blocker and every stop has its planted control: the green host below, with
 from __future__ import annotations
 
 import dataclasses
+import getpass
 import json
 import shlex
 from pathlib import Path
@@ -218,7 +219,7 @@ def test_consent_ready_is_green_at_the_issuer_and_blocked_where_no_use_can_regis
     host = config(tmp_path, [])
     assert consentverbs.ready(host, alert=lambda *_: None) == 0  # the control: the issuer's own host
     assert 'ready: key' in capsys.readouterr().out
-    assert consentverbs.ready(dataclasses.replace(host, consent=None), alert=lambda *_: None) == 2
+    assert consentverbs.ready(dataclasses.replace(host, consent=None, consent_client=None), alert=lambda *_: None) == 2
     assert 'refused' in capsys.readouterr().err
 
 
@@ -497,3 +498,32 @@ def test_a_step_names_exactly_one_stdin_source(tmp_path: Path) -> None:
     both = [one[0], {**one[1], 'stdin_local': 'x.secret'}]
     with pytest.raises(ConsentRefused, match='exactly one source'):
         planrun.load_steps(_steps_file(tmp_path, both), PLAN, HOST)
+
+
+def test_consent_ready_stats_the_issuer_key_and_never_reads_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = config(tmp_path, [])
+
+    def unreadable(*_: object, **__: object) -> bytes:
+        raise PermissionError(13, 'Permission denied', host.consent.key)
+
+    monkeypatch.setattr(Path, 'read_bytes', unreadable)  # present but root 600: opening it is refused
+    assert consentverbs.ready(host, alert=lambda *_: None) == 0
+    assert 'ready: key' in capsys.readouterr().out
+    Path(host.consent.key).unlink()  # planted control: a missing key reads not ready, by its path
+    assert consentverbs.ready(host, alert=lambda *_: None) == 2
+    assert f'issuer key missing: {Path(host.consent.key)}' in capsys.readouterr().err
+
+
+def test_an_unsearchable_issuer_key_directory_is_the_readiness_answer_not_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = config(tmp_path, [])
+
+    def hidden(*_: object, **__: object) -> object:
+        raise PermissionError(13, 'Permission denied', host.consent.key)
+
+    monkeypatch.setattr(Path, 'stat', hidden)
+    assert consentverbs.ready(host, alert=lambda *_: None) == 2
+    assert f'issuer key not visible to {getpass.getuser()}: {Path(host.consent.key)}' in capsys.readouterr().err
