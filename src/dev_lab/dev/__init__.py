@@ -107,6 +107,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   have" exactly and without a network call. Measured against the REMOTE and never a local pointer,
   and with ``git cherry`` rather than ancestry, because those are the two ways this audit has
   actually been observed to lie.
+* :mod:`dev_lab.dev.checkoutfollow` -- CHECKOUT-FOLLOWS-INTEGRATION: a clean primary checkout left behind
+  ``origin/<integration>`` fast-forwards onto it when that loses no commit; anything else is reported.
 * :mod:`dev_lab.dev.filechecks` -- the base pre-commit rows' per-file checks (stdlib, report and
   never rewrite).
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
@@ -502,7 +504,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
   while a PR of the session is red and unacknowledged.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
-* :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps.
+* :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
+  after the checkout follows integration and before stale hooks are reinstalled.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
 * :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.

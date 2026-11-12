@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,7 +77,9 @@ __all__ = [
     'hooks_dir',
     'install',
     'report_installation',
+    'rewire',
     'shim',
+    'unwired',
 ]
 
 #: The verdict for ONE stage.
@@ -334,6 +337,30 @@ def install(repo: Path) -> InstallReport:
         msg = f'the shims were written and {after.hooks_dir} is still unprotected: {listing}'
         raise HookInstallError(msg)
     return after
+
+
+def rewire(repo: Path) -> str:
+    """HOOKS-FOLLOW-THE-KIT: :func:`install` when a declared shim is absent or stale; what was done, ``''`` for nothing.
+
+    A stale or predecessor shim never reaches the current hook table, so no hook of the table can replace it:
+    the follow (:mod:`dev_lab.dev.venvfollow`) does, unprompted. It never raises -- a FOREIGN hook is reported,
+    never overwritten -- because it runs inside a session start or a git verb it must not block.
+    """
+    if not unwired(repo):
+        return ''
+    try:
+        done = install(repo)
+    except (HookInstallError, subprocess.SubprocessError, OSError, ValueError) as exc:
+        return f'hooks {repo}: not reinstalled -- {exc}'
+    return f'hooks {repo}: reinstalled ({done.verdict})'
+
+
+def unwired(repo: Path) -> bool:
+    """*repo* declares a hook stage whose shim is absent or stale; ``False`` where git or the table cannot answer."""
+    try:
+        return hook_installation(repo).verdict == UNPROTECTED
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return False
 
 
 def _retire(repo: Path, path: Path) -> None:

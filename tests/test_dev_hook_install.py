@@ -385,3 +385,25 @@ def test_a_shim_without_the_main_checkout_probe_is_stale_and_replaced(repo: Path
     assert {s.stage: s.status for s in hook_installation(repo).stages}['pre-commit'] == STALE
     install(repo)
     assert {s.status for s in hook_installation(repo).stages} == {INSTALLED}
+
+
+def test_rewire_reinstalls_a_retired_shim_unprompted_and_then_costs_nothing(repo: Path) -> None:
+    """HOOKS-FOLLOW-THE-KIT: a predecessor shim never reaches the current table, so the follow replaces it."""
+    directory = hooks_dir(repo)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / 'post-merge').write_text(
+        '#!/bin/sh\n# lab_commons.dev.githooks shim\nexec python -m lab_commons.dev.githooks run post-merge\n',
+        encoding='utf-8',
+    )
+    assert 'reinstalled' in hook_install.rewire(repo)
+    assert hook_installation(repo).verdict == PROTECTED
+    assert hook_install.rewire(repo) == '', 'PLANTED CONTROL: live shims are left alone and reported as nothing'
+
+
+def test_rewire_never_overwrites_a_foreign_hook_and_never_raises(repo: Path) -> None:
+    directory = hooks_dir(repo)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / 'pre-push').write_text('#!/bin/sh\necho mine\n', encoding='utf-8')
+    said = hook_install.rewire(repo)
+    assert 'not reinstalled' in said
+    assert (directory / 'pre-push').read_text(encoding='utf-8') == '#!/bin/sh\necho mine\n'
