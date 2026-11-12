@@ -176,8 +176,31 @@ def watch_session(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> int:
-    """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3)."""
-    end, seen = clock() + deadline_s, set()
+    """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3).
+
+    While it runs it holds the session's liveness marker (:func:`~dev_lab.dev.sessionprs.watch`): the Stop gate
+    reads it as "a watch is armed".
+    """
+    sessionprs.watch(session)
+    try:
+        return _session_loop(
+            session, clients=clients, say=say, every_s=every_s, end=clock() + deadline_s, clock=clock, sleep=sleep
+        )
+    finally:
+        sessionprs.unwatch(session)
+
+
+def _session_loop(
+    session: str,
+    *,
+    clients: Callable[[Forge], Client],
+    say: Callable[[str], None],
+    every_s: float,
+    end: float,
+    clock: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> int:
+    seen: set[str] = set()
     while True:
         live = 0
         for row in sessionprs.open_rows(session):
