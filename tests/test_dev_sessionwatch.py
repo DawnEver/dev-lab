@@ -164,6 +164,7 @@ def test_a_red_head_that_is_no_session_pr_is_not_blocked_on(tmp_path: Path, caps
 
 def test_a_pushed_branch_becomes_its_open_pr_and_is_watched() -> None:
     forge = StateForge()
+    forge.branches['pr/y'] = False
     sessionprs.record_push('s1', FORGE, 'pr/y', SHA)
     assert _watch(forge)[1] == ['session s1: no open PR left'], 'a branch with no PR has nothing to watch'
     number = forge.add_pull('pr/y', 'main', sha=SHA)
@@ -249,3 +250,58 @@ def test_green_waits_for_every_required_context_to_end_in_success(capsys: pytest
     assert green not in _watch_until_deadline(forge), 'tests/base still running'
     _post(forge, SHA, 'tests/base', 'success')
     assert green in _watch_until_deadline(forge), 'PLANTED CONTROL: every required context ended in success'
+
+
+# ------------------------------------------------- a branch row closes with its PR, or because none can come
+
+
+def _unwatched_stop(forge: StateForge, tmp_path: Path) -> dict | None:
+    return _stop(forge, tmp_path, watched=False)
+
+
+def test_a_branch_row_whose_pr_merged_unseen_closes_and_no_longer_holds_the_stop(tmp_path: Path) -> None:
+    """A break-glass merge closed the PR before any watch resolved the pushed branch to it."""
+    forge = StateForge()
+    sessionprs.record_push('s1', FORGE, 'pr/z', SHA)
+    number = forge.add_pull('pr/z', 'main', sha=SHA)
+    _merge(forge, number)
+    code, said = _watch(forge)
+    assert code == 0
+    assert said == [f'{FORGE.identity}#{number} merged', 'session s1: no open PR left']
+    assert not sessionprs.open_rows('s1')
+    assert _unwatched_stop(forge, tmp_path) is None
+    other = forge.add_pull('pr/w', 'main', sha=NEWER)
+    sessionprs.record_pr('s1', FORGE, other, branch='pr/w', sha=NEWER)
+    assert _unwatched_stop(forge, tmp_path) is not None, 'PLANTED CONTROL: an open PR with no watch still holds it'
+
+
+def test_a_branch_row_of_a_protected_branch_closes_with_its_reason(tmp_path: Path) -> None:
+    """A push to the integration branch itself, recorded before such a push stopped being recorded."""
+    forge = StateForge()
+    forge.branches['integrate/main'] = True
+    sessionprs.record_push('s1', FORGE, 'integrate/main', SHA)
+    code, said = _watch(forge)
+    assert code == 0
+    key = f'{FORGE.identity}@integrate/main'
+    assert said[0].startswith(f'{key} closed: ')
+    (row,) = sessionprs.rows('s1').values()
+    assert row.done == 'closed'
+    assert 'protected' in row.reason
+    assert _unwatched_stop(forge, tmp_path) is None
+
+
+def test_a_branch_row_whose_branch_is_gone_closes_and_a_live_one_waits_without_holding_the_stop(
+    tmp_path: Path,
+) -> None:
+    forge = StateForge()
+    forge.branches['pr/live'] = False
+    sessionprs.record_push('s1', FORGE, 'pr/gone', SHA)
+    sessionprs.record_push('s1', FORGE, 'pr/live', SHA)
+    code, said = _watch(forge)
+    assert code == 0
+    assert said[0].startswith(f'{FORGE.identity}@pr/gone closed: ')
+    table = sessionprs.rows('s1')
+    assert table[f'{FORGE.identity}@pr/gone'].done == 'closed'
+    assert table[f'{FORGE.identity}@pr/live'].done == '', 'PLANTED CONTROL: a live branch may still get its PR'
+    assert not sessionprs.open_rows('s1'), 'a branch with no PR is no open PR: the watch and the stop agree'
+    assert _unwatched_stop(forge, tmp_path) is None

@@ -202,3 +202,15 @@ def test_the_session_watch_holds_the_liveness_marker_while_it_runs_and_drops_it_
                              deadline_s=60, clock=lambda: 0.0, sleep=sleep)  # fmt: skip
     assert held == [True]
     assert not sessionprs.watching(in_session), 'an ended watch leaves no marker'
+
+
+def test_a_push_to_the_integration_or_trunk_branch_is_never_a_pr_row(tmp_path: Path, in_session: str) -> None:
+    other = _repo(tmp_path, 'other')
+    (other / 'pyproject.toml').write_text(
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\ntrunk = 'main'\n", encoding='utf-8'
+    )
+    for branch in ('integrate/main', 'main', 'pr/x'):
+        _pre_push(other, f'refs/heads/{branch} {SHA} refs/heads/{branch} {"0" * 40}')
+    assert [row.branch for row in sessionprs.rows(in_session).values()] == ['pr/x'], (
+        'PLANTED CONTROL: the lane branch is recorded beside the two refused'
+    )

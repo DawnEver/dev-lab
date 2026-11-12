@@ -44,6 +44,8 @@ class StateForge(Client):
         self.runs: list[dict[str, Any]] = []
         #: The repository's default branch, as ``GET /repos/{o}/{r}`` names it.
         self.default_branch = 'main'
+        #: Every branch the forge holds, by name: whether it is protected (``GET .../branches/<b>``).
+        self.branches: dict[str, bool] = {'main': True}
         self.fail_lists = False
         self.deny_delete = False
         #: Every branch the forge was asked to delete by ref (GitHub's ``DELETE .../git/refs/heads/<b>``).
@@ -121,6 +123,8 @@ class StateForge(Client):
         self, head: str, base: str, *, title: str = 't', body: str = '', sha: str = '', fork: bool = False
     ) -> int:
         number = self._number()
+        self.branches.setdefault(head, False)
+        self.branches.setdefault(base, False)
         self.pulls[number] = {
             'number': number,
             'title': title,
@@ -182,6 +186,7 @@ class StateForge(Client):
             (f'{api}/contents/', 'contents'),
             (f'{api}/statuses/', 'statuses'),
             (f'{api}/git/refs/heads/', 'ref'),
+            (f'{api}/branches/', 'branch'),
             (f'{api}/collaborators/', 'permission'),  # the key is ``<quoted login>/permission``
         ):
             if route.startswith(prefix):
@@ -255,6 +260,12 @@ class StateForge(Client):
         if not found:
             raise ForgeCallFailed(Report(('GET', 'pull'), (Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED),), 1))
         return found[-1]
+
+    def _branch(self, name: str) -> dict[str, Any]:
+        """``GET .../branches/<name>``: the branch and its protection, else 404."""
+        if name not in self.branches:
+            raise ForgeCallFailed(Report(('GET', 'branch'), (Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED),), 1))
+        return {'name': name, 'protected': self.branches[name], 'commit': {'id': ''}}
 
     def _create_pull(self, body: dict[str, Any]) -> dict[str, Any]:
         number = self.add_pull(body['head'], body['base'], title=body['title'], body=body['body'])
@@ -371,6 +382,7 @@ class StateForge(Client):
             ('POST', 'merge'): lambda: self._merge(number, sent),
             ('PUT', 'merge'): lambda: self._merge_github(number, sent),
             ('DELETE', 'ref'): lambda: self.deleted_refs.append(key),
+            ('GET', 'branch'): lambda: self._branch(urllib.parse.unquote(key)),
             ('GET', 'statuses'): lambda: self.statuses.get(key, []),
             ('POST', 'statuses'): lambda: self._post_status(key, sent),
             ('GET', 'labels'): lambda: list(self.labels),
