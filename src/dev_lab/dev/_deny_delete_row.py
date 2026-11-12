@@ -70,8 +70,8 @@ RECURSIVE_DELETE: dict[str, object] = {
     'hazard': 'a raw recursive delete judges deletability by hand; on 2026-10-27 one took a MAIN checkout.',
     'remedy': (
         'scratch/: <venv python> -m dev_lab.dev.scratch clear [--keep NAME ...] --yes. Worktrees, branches: '
-        '<venv python> -m dev_lab.dev.branchset --apply. Anything else: ask the user; once approved, the USER '
-        'deletes it (approval opens no rule). Temp, output/ not refused.'
+        '<venv python> -m dev_lab.dev.branchset --apply. Anything else: ask the user; once approved, the agent '
+        'moves it under output/ and deletes it there. Temp, output/ not refused.'
     ),
     'needs': None,
     'refuses': (
