@@ -8,6 +8,8 @@ change -- that diff is the reviewed edit:
 from __future__ import annotations
 
 import dataclasses
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -26,6 +28,22 @@ _FIXTURES = {'github_plain': 'github', 'github_overrides': 'github', 'gitea_revi
 def test_every_fixture_render_matches_its_golden() -> None:
     moved = rendergoldens.compare(rendergoldens.render_fixtures(FIXTURES), rendergoldens.read_goldens(GOLDENS))
     assert moved == [], f'renders moved; if intended, re-render the goldens (module docstring): {moved}'
+
+
+def test_every_golden_is_tracked_and_no_ignore_rule_reaches_one() -> None:
+    """A golden git ignores is never committed: every other checkout reads it as missing (the Linux red, 11-12)."""
+    files = sorted(path.relative_to(_TESTS.parent).as_posix() for path in GOLDENS.rglob(f'*{rendergoldens.SUFFIX}'))
+    done = subprocess.run(
+        [shutil.which('git') or 'git', 'check-ignore', '--no-index', '--stdin'],
+        input='\n'.join(files),
+        cwd=_TESTS.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert files
+    assert done.stdout.split() == [], f'goldens under an ignore rule: {done.stdout.split()}'
 
 
 def test_the_fixtures_are_the_named_set_and_cover_every_generator() -> None:
@@ -55,14 +73,15 @@ def test_compare_names_a_changed_a_new_and_a_gone_render() -> None:
 
 
 def test_update_writes_exactly_the_render_and_removes_a_stale_golden(tmp_path: Path) -> None:
-    stale = tmp_path / f'x/old{rendergoldens.SUFFIX}'
+    stale = tmp_path / f'x/a{rendergoldens.SEP}old{rendergoldens.SUFFIX}'
     stale.parent.mkdir()
     stale.write_text('old', encoding='utf-8')
-    assert rendergoldens.write({'x/.gitignore': 'a\n'}, tmp_path) == [
-        'x/.gitignore: new, no golden',
-        'x/old: gone, its golden is stale',
+    assert rendergoldens.write({'x/.claude/rem.json': 'a\n'}, tmp_path) == [
+        'x/.claude/rem.json: new, no golden',
+        'x/a/old: gone, its golden is stale',
     ]
-    assert rendergoldens.read_goldens(tmp_path) == {'x/.gitignore': 'a\n'}
+    assert rendergoldens.read_goldens(tmp_path) == {'x/.claude/rem.json': 'a\n'}
+    assert (tmp_path / f'x/.claude{rendergoldens.SEP}rem.json{rendergoldens.SUFFIX}').is_file()
     assert not stale.exists()
 
 

@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 __all__ = [
     'DELTAS_FILE',
     'MANIFEST',
+    'SEP',
     'SUFFIX',
     'compare',
     'main',
@@ -44,6 +45,20 @@ MANIFEST: Final = 'pyproject.toml'
 DELTAS_FILE: Final = 'deltas.py'
 #: The suffix of a golden file: a rendered ``.gitignore`` stored bare would be read by git as an ignore rule.
 SUFFIX: Final = '.golden'
+#: What a golden's file name spells a repo-relative ``/`` as. Goldens are FLAT under their fixture: a nested
+#: ``.claude/rem.json`` golden sat under the family's ``**/.claude/**`` ignore, was never committed, and every
+#: other checkout read it as missing.
+SEP: Final = '--'
+
+
+def _file(key: str) -> str:
+    fixture, rel = key.split('/', 1)
+    return f'{fixture}/{rel.replace("/", SEP)}{SUFFIX}'
+
+
+def _key(path: Path, goldens: Path) -> str:
+    fixture, name = path.relative_to(goldens).as_posix().split('/', 1)
+    return f'{fixture}/{name.removesuffix(SUFFIX).replace(SEP, "/")}'
 
 
 def render_fixture(text: str, deltas: Mapping[str, Delta], origin: str) -> dict[str, str]:
@@ -73,10 +88,7 @@ def render_fixtures(fixtures: Path) -> dict[str, str]:
 
 def read_goldens(goldens: Path) -> dict[str, str]:
     """Every golden under *goldens*, keyed by its path relative to it less :data:`SUFFIX`."""
-    return {
-        path.relative_to(goldens).as_posix().removesuffix(SUFFIX): path.read_bytes().decode('utf-8')
-        for path in sorted(goldens.rglob(f'*{SUFFIX}'))
-    }
+    return {_key(path, goldens): path.read_bytes().decode('utf-8') for path in sorted(goldens.rglob(f'*{SUFFIX}'))}
 
 
 def compare(rendered: Mapping[str, str], goldens: Mapping[str, str]) -> list[str]:
@@ -92,9 +104,9 @@ def write(rendered: Mapping[str, str], goldens: Path) -> list[str]:
     moved = compare(rendered, read_goldens(goldens) if goldens.is_dir() else {})
     for key in read_goldens(goldens) if goldens.is_dir() else {}:
         if key not in rendered:
-            (goldens / f'{key}{SUFFIX}').unlink()
+            (goldens / _file(key)).unlink()
     for key, text in rendered.items():
-        path = goldens / f'{key}{SUFFIX}'
+        path = goldens / _file(key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(text.encode('utf-8'))
     return moved
