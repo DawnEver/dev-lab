@@ -45,6 +45,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'serialpass',
     'lanepolicy',
     'platformparts',
+    # ORIGINAL: a part status read as a (part, env, policy) fact; split from platformparts (2026-11-12).
+    'partfacts',
     'partrefs',
     'plugin_settings',
     'cjk',

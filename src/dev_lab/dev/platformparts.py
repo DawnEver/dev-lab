@@ -11,7 +11,14 @@ A PART IS A COMMIT STATUS (forge plan, user ruling 2026-10-09): context :func:`p
 (``tests/<part>``), state ``success`` (PASS) or ``failure`` (FAIL), and a description every
 workstation can read without the record -- :meth:`Part.description`::
 
-    scope=full ran=1234 hands=femm+windows:12,jmag:3 kept=0123456789ab:900
+    scope=full ran=1234 hands=femm+windows:12,jmag:3 env=0123abcd policy=89abcdef kept=0123456789ab:900
+
+``env`` and ``policy`` name WHICH fact it is (contract 1, test identity): the run's env key
+(:func:`dev_lab.dev.verdictenv.verdict_env`) and the policy it was judged by
+(:func:`dev_lab.dev.verdictenv.verdict_policy`), each cut to
+:data:`~dev_lab.dev.verdictenv.POLICY_CHARS` hex digits. A forge keeps only the latest status per context, so
+:func:`parts_of` reads a commit's HISTORY: two posts of one part under another env or policy are two facts and
+neither overwrites the other. A part carried or cited keeps its SOURCE run's env and policy.
 
 ``kept`` (absent when none) counts, per sha12 they RAN at, the outcomes this part CARRIED from an earlier
 run of the same part because no changed path reaches them (:mod:`dev_lab.dev.forgecarry`); they are
@@ -39,9 +46,15 @@ is a CLAIM on the part (:mod:`dev_lab.dev.forgetick`), not a part.
 * Any other producer (a consumer's door, run as the declared ``produce``) calls :func:`select` with a
   collector over its own checkout, runs the ids of its part and writes a record of the same shape.
 
-COMPOSITION (:func:`compose`). The latest part per need-set for the commit. ``base`` must have a part,
+COMPOSITION (:func:`compose`). The latest part per need-set for the commit -- under a *policy*, the latest fact
+of that policy, and a FAIL of it in any env outranks a PASS in another. ``base`` must have a part,
 and so must every part some part hands ids to; any FAIL part makes it FAIL. "Every derived part green"
-is therefore what a PASS means, and what ``integrate promote`` requires.
+is therefore what a PASS means. ``integrate promote`` also requires every part the commit DECLARES required::
+
+    [tool.dev_lab.parts]
+    required = ["base", "jmag"]            # optional: parts promotion requires even if none was ever posted
+
+and every part of the commit's own policy, with an env named (:func:`standing`).
 
 HOW A PART IS PRODUCED IS DECLARED ONCE, in the consuming repo's pyproject. A LOCAL part is the ONE
 declared argv (:func:`producer_argv`, read at the claimed commit, ``{part}`` filled) run by the own venv
@@ -78,10 +91,9 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import re
 import sys
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -98,9 +110,10 @@ from dev_lab.dev.family import declared_in
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
-from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
+from dev_lab.dev.partfacts import Part, facts_of, latest, parsed
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
 from dev_lab.dev.producer import AUTHORS_RED, Owner, unreachable, whose
+from dev_lab.dev.verdictenv import POLICY_CHARS, verdict_policy_at
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -125,12 +138,14 @@ __all__ = [
     'declared_strings',
     'declared_tables',
     'derived',
+    'facts_of',
     'main',
     'origin_url',
     'part_context',
     'part_of',
     'parts_of',
     'producer_argv',
+    'required_at',
     'run_tag',
     'select',
     'split',
@@ -145,17 +160,6 @@ _TAG_SHA: Final = 8
 
 #: How many ids a refusal names before eliding; the count is always given.
 _NAMED: Final = 5
-
-#: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
-_RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
-
-_DESCRIPTION: Final = re.compile(
-    r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
-    r'hands=(?P<hands>-|[a-z0-9_+]+:\d+(?:,[a-z0-9_+]+:\d+)*)'
-    r'(?: kept=(?P<kept>[0-9a-f]{12}:\d+(?:,[0-9a-f]{12}:\d+)*))?'
-    r'(?: carried from (?P<carried>[0-9a-f]{12}): (?:docs-only|every outcome carried by footprint))?'
-    r'(?: cited from (?P<cited>[0-9a-f]{12}): same tree)?$'
-)
 
 #: The remedy a missing part names: a host whose resources admit it claims it and runs :func:`producer_argv`.
 _PRODUCE: Final = 'a `dev_lab.dev.forge serve` host having every resource it needs claims and produces it'
@@ -288,37 +292,10 @@ def _elided(ids: Sequence[str]) -> str:
     return ', '.join(ids[:_NAMED]) + (', ...' if len(ids) > _NAMED else '')
 
 
-@dataclass(frozen=True)
-class Part:
-    """One part's result for a commit, as the forge holds it; *platform* is the part's name (its need-set)."""
-
-    platform: str
-    scope: str
-    result: Conclusion
-    ran: int
-    hands: dict[str, int] = field(default_factory=dict)
-    carried: str = ''  # the sha12 this verdict was judged at, when it is carried (dev_lab.dev.forgecarry)
-    kept: dict[str, int] = field(default_factory=dict)  # outcomes carried in, per sha12 they ran at; never in ran
-    cited: str = ''  # the sha12 whose stored record of the SAME tree this verdict cites (dev_lab.dev.verdictstore)
-
-    @property
-    def state(self) -> str:
-        """The forge state its conclusion posts as (:func:`dev_lab.dev.forgestatus.state_for`)."""
-        return state_for(self.result)
-
-    def description(self) -> str:
-        """The status description: ``scope= ran= hands=`` (module docstring)."""
-        hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
-        kept = ' kept=' + ','.join(f'{sha}:{count}' for sha, count in sorted(self.kept.items())) if self.kept else ''
-        carried = f' {CARRIED_FROM} {self.carried}: {DOCS_ONLY}' if self.carried else ''
-        cited = f' {CITED_FROM} {self.cited}: {SAME_TREE}' if self.cited else ''
-        return f'scope={self.scope} ran={self.ran} hands={hands}{kept}{carried}{cited}'
-
-
 def part_of(record: Mapping[str, Any]) -> Part:
     """The part a run record proves, by the strict rule in the module docstring.
 
-    The part and scope are the record's own -- read, never re-declared. Its ``handed`` maps every id it
+    The part, scope, env key and policy are the record's own -- read, never re-declared. Its ``handed`` maps every id it
     did not cover to the part that id belongs to.
     """
     platform, scope, sha = str(record['platform']), str(record['scope']), str(record['sha'])
@@ -355,39 +332,33 @@ def part_of(record: Mapping[str, Any]) -> Part:
         ran=len(covered) - sum(kept.values()),
         hands=hands,
         kept=kept,
+        env=str(record.get('env', ''))[:POLICY_CHARS],
+        policy=str(record.get('policy', ''))[:POLICY_CHARS],
     )
 
 
-def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[str, ...]]:
-    """``(parts by name, problems)`` from a commit's LATEST status per context.
+def parts_of(statuses: Sequence[CommitStatus], *, policy: str | None = None) -> tuple[dict[str, Part], tuple[str, ...]]:
+    """``(parts by name, problems)`` from a commit's statuses -- its latest per context, or its whole history.
 
-    A ``tests/<part>`` status that is not a settled part -- a claim still ``pending``, an
-    ``error``, or a description this module did not write -- is a problem naming itself, never a part.
+    A ``tests/<part>`` context whose LATEST status is not a settled part -- a claim still ``pending``, an
+    ``error``, or a description this module did not write -- is a problem naming itself. Each part is its
+    latest fact; under a *policy*, its latest fact of that policy, a FAIL of it in any env outranking a PASS.
     An ``error`` problem names its owner (:func:`~dev_lab.dev.producer.whose`): only ``class=code`` is its author's.
     """
+    problems = [
+        f'{status.context} is {status.state} ({status.description!r}) -- not a settled part'
+        + whose(status.state, status.description)
+        for status in latest(statuses)
+        if status.context.startswith(CONTEXT_PREFIX) and status.context not in NOT_PARTS and parsed(status) is None
+    ]
     parts: dict[str, Part] = {}
-    problems: list[str] = []
-    for status in statuses:
-        if not status.context.startswith(CONTEXT_PREFIX) or status.context in NOT_PARTS:
+    for part in facts_of(statuses).values():
+        if policy is not None and part.policy != policy[:POLICY_CHARS]:
             continue
-        name = status.context.removeprefix(CONTEXT_PREFIX)
-        found = _DESCRIPTION.match(status.description)
-        if status.state not in _RESULT or found is None or not is_row(name):
-            said = f'{status.context} is {status.state} ({status.description!r}) -- not a settled part'
-            problems.append(said + whose(status.state, status.description))
-            continue
-        hands = {} if found['hands'] == '-' else dict(item.split(':') for item in found['hands'].split(','))
-        parts[name] = Part(
-            platform=name,
-            scope=found['scope'],
-            result=_RESULT[status.state],
-            ran=int(found['ran']),
-            hands={owner: int(count) for owner, count in hands.items()},
-            carried=found['carried'] or '',
-            cited=found['cited'] or '',
-            kept={sha: int(n) for sha, n in (one.split(':') for one in filter(None, (found['kept'] or '').split(',')))},
-        )
-    return parts, tuple(problems)
+        held = parts.get(part.platform)
+        if policy is None or held is None or held.result is not Conclusion.FAIL:
+            parts[part.platform] = part
+    return dict(sorted(parts.items())), tuple(problems)
 
 
 def derived(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
@@ -442,6 +413,21 @@ def compose(parts: Mapping[str, Part], *, head: str, waived: frozenset[str] = fr
     return Composition(parts=ordered, result=result, problems=tuple(problems))
 
 
+def required_at(root: Path, sha: str) -> frozenset[str]:
+    """The parts commit *sha* of *root* declares required: :data:`BASE` and ``[tool.dev_lab.parts] required``.
+
+    Raises:
+        UndeclaredPart: ``required`` is not an array of part names; the message names the key.
+
+    """
+    value = declared_tables(root, sha, 'parts').get('required')
+    names = declared_strings(value, 'tool.dev_lab.parts', 'required', '["base", "jmag"]', required=False)
+    if bad := sorted(name for name in names if not is_row(name)):
+        msg = f'[tool.dev_lab.parts] required names no part: {", ".join(bad)}'
+        raise UndeclaredPart(msg)
+    return frozenset({BASE, *names})
+
+
 #: The reading of a commit with NO ``tests/<part>`` status at all: no producer has claimed it. Distinct from
 #: INCONCLUSIVE, which says a producer posted something that does not settle (a claim, an ``error``, a part missing).
 UNCLAIMED: Final = 'UNCLAIMED'
@@ -469,17 +455,37 @@ class Standing:
 
 
 def standing(
-    statuses: Sequence[CommitStatus], *, head: str, scope: str | None = None, waived: frozenset[str] = frozenset()
+    statuses: Sequence[CommitStatus],
+    *,
+    head: str,
+    scope: str | None = None,
+    waived: frozenset[str] = frozenset(),
+    required: frozenset[str] = frozenset(),
+    policy: str | None = None,
 ) -> Standing:
-    """The :class:`Standing` of commit *head* from its latest statuses; *scope* requires every part at it.
+    """The :class:`Standing` of commit *head* from its statuses; *scope* requires every part at it.
 
     A *waived* part -- a scarce part a PR's diff does not reach (:mod:`dev_lab.dev.forgescarce`) -- is neither
-    read nor required, and an unsettled status of it is no problem.
+    read nor required, and an unsettled status of it is no problem. Every *required* part (the commit's
+    declaration, :func:`required_at`) must stand whether or not anything posted or handed to it. Under a
+    *policy* only facts of that policy are read (:func:`parts_of`), and each must name the env it ran in.
     """
-    parts, unsettled = parts_of(statuses)
+    parts, unsettled = parts_of(statuses, policy=policy)
     unsettled = tuple(one for one in unsettled if not any(one.startswith(part_context(n) + ' ') for n in waived))
     composed = compose(parts, head=head, waived=waived)
     problems = [*unsettled, *composed.problems]
+    problems += [
+        f'missing the required {name} part'
+        + (f' of policy {policy[:POLICY_CHARS]}' if policy is not None else '')
+        + f' (declared in [tool.dev_lab.parts] required); {_PRODUCE}'
+        for name in sorted(required - set(parts))
+    ]
+    if policy is not None:
+        problems += [
+            f'{part.platform} names no env: a part of policy {policy[:POLICY_CHARS]} must say which env judged it'
+            for part in composed.parts
+            if not part.env
+        ]
     if scope is not None:
         problems += [
             f'{part.platform} is {part.result.name} of scope {part.scope}; only a PASS of scope {scope} counts here'
@@ -507,6 +513,8 @@ def post(root: Path, path: Path, onto: str = '') -> str:
     """
     record = read_record(path)
     part = part_of(record)
+    if not part.policy:  # a record its producer did not stamp: the policy the judged commit declares
+        part = dataclasses.replace(part, policy=verdict_policy_at(root, str(record['sha'])))
     if onto:
         part = dataclasses.replace(part, carried=str(record['sha'])[:12])
     sha = onto or str(record['sha'])
