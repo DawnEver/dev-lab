@@ -33,10 +33,9 @@ def test_a_reference_match_adds_an_option_and_the_razors_never_remove_capability
     by_id = {one.id: one.statement for one in PRINCIPLES}
     kept = by_id['keep-valuable-options']
     for clause in (
-        'ADDS a selectable option, declared by the case or config that needs it',
+        'ADDS a selectable option',
         'never replaces or deletes the alternative',
-        'quadrature, time scheme, averaging window, coefficient evaluation',
-        '"no current caller" is not grounds to delete',
+        'numerical method choices are options even with no current caller',
     ):
         assert clause in kept
     assert by_id['occams-razor'].endswith('never a capability.')

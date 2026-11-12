@@ -48,13 +48,12 @@ PRINCIPLES: Final = (
     Principle(
         'occams-razor',
         "Occam's razor",
-        'Simplest design that fully meets the need; nothing for hypothetical needs; it removes dead paths and '
-        'duplicates, never a capability.',
+        'Simplest design meeting the need; nothing hypothetical; never a capability.',
     ),
     Principle(
         'single-source-of-truth',
         'Single source of truth',
-        'Each fact lives in one place; everything else is derived from it.',
+        'Each fact lives in one place; all else derives from it.',
     ),
     Principle(
         'layered-decoupling',
@@ -75,11 +74,9 @@ PRINCIPLES: Final = (
     Principle(
         'keep-valuable-options',
         'Keep every valuable parameter and option',
-        'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs. '
-        'Matching a reference or vendor ADDS a selectable option, declared by the case or config that needs '
-        'it; it never replaces or deletes the alternative. Numerical method choices (quadrature, time scheme, '
-        'averaging window, coefficient evaluation) are options, and "no current caller" is not grounds to '
-        'delete a numerically meaningful one.',
+        'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs. A '
+        'reference match ADDS a selectable option and never replaces or deletes the alternative; numerical '
+        'method choices are options even with no current caller.',
     ),
 )
 
