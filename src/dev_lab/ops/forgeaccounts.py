@@ -32,12 +32,12 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from lab_commons.log import emit
 
+from dev_lab.ops import forgeprotection
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.forgerequests import (
     ACCOUNT_ACTION,
@@ -53,7 +53,16 @@ from dev_lab.ops.forgerequests import (
     declared_request,
 )
 from dev_lab.ops.forgewho import ROLES
-from dev_lab.ops.giteaadmin import BREAKGLASS_SCOPES, ROLE_GRANTS, Forge, ForgeRefused, GiteaCli, local_api, run_argv
+from dev_lab.ops.giteaadmin import (
+    BREAKGLASS_SCOPES,
+    ROLE_GRANTS,
+    Forge,
+    ForgeRefused,
+    GiteaCli,
+    audit,
+    local_api,
+    run_argv,
+)
 
 if TYPE_CHECKING:
     import argparse
@@ -102,13 +111,6 @@ class GiteaAdmin(Protocol):
         """A new token of *login*."""
 
 
-def _audit(role: Forge, by: str, line: Mapping[str, Any]) -> None:
-    log = Path(role.log)
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open('a', encoding='utf-8') as out:
-        out.write(json.dumps({'at': datetime.now(UTC).isoformat(timespec='seconds'), 'by': by, **line}) + '\n')
-
-
 def ensure(
     role: Forge, gitea: GiteaAdmin, request: AccountRequest, *, redeem: Redeem, credential: Mapping[str, Any], by: str
 ) -> tuple[str, ...]:
@@ -139,7 +141,7 @@ def ensure(
             continue
         gitea.grant(repo, request.login, grant)
         said.append(f'{repo}: granted {grant}' if held in {None, 'none'} else f'{repo}: drift {held} -> {grant}')
-    _audit(role, by, {'action': ACCOUNT_ACTION, 'login': request.login, 'what': said})
+    audit(role.log, by, {'action': ACCOUNT_ACTION, 'login': request.login, 'what': said})
     return tuple(said)
 
 
@@ -160,7 +162,7 @@ def mint(
         _rotatable(request.login, request.name, rotate=request.rotate)
         gitea.delete_token(request.login, request.name)
     token = gitea.generate_token(request.login, request.name, ','.join(scopes))
-    _audit(role, by, {'action': MINT_ACTION, 'login': request.login, 'name': request.name,
+    audit(role.log, by, {'action': MINT_ACTION, 'login': request.login, 'name': request.name,
                       'scope': ','.join(scopes), 'rotated': request.rotate})  # fmt: skip
     return token
 
@@ -179,7 +181,7 @@ def revoke(
     held = request.name in gitea.token_names(request.login)
     if held:
         gitea.delete_token(request.login, request.name)
-    _audit(role, by, {'action': REVOKE_ACTION, 'login': request.login, 'name': request.name, 'revoked': held})
+    audit(role.log, by, {'action': REVOKE_ACTION, 'login': request.login, 'name': request.name, 'revoked': held})
     return (f'revoked {request.login} token {request.name}' if held
             else f'{request.login} token {request.name} already absent')  # fmt: skip
 
@@ -285,13 +287,13 @@ def mint_batch(
             token = gitea.generate_token(batch.login, item.name, ','.join(scope))
         except ForgeRefused as failed:
             rest = names[len(minted) :]
-            _audit(role, by, {'action': BATCH_ACTION, 'login': batch.login, 'failed': item.name, 'minted': minted,
+            audit(role.log, by, {'action': BATCH_ACTION, 'login': batch.login, 'failed': item.name, 'minted': minted,
                               'not_minted': rest})  # fmt: skip
             msg = f'{failed}; minted {minted}; not minted {rest}'
             raise ForgeRefused(msg) from failed
         place(item.name, token)
         minted.append(item.name)
-        _audit(role, by, {'action': BATCH_ACTION, 'login': batch.login, 'name': item.name,
+        audit(role.log, by, {'action': BATCH_ACTION, 'login': batch.login, 'name': item.name,
                           'scope': ','.join(scope), 'rotated': item.name in held})  # fmt: skip
 
 
@@ -301,9 +303,10 @@ def token_line(name: str, token: str) -> str:
 
 
 def add_parser(verbs: argparse._SubParsersAction) -> None:
-    """``forge account ensure`` and ``forge token mint`` on the ops parser."""
+    """``forge account ensure``, ``forge token mint`` and ``forge protect`` on the ops parser."""
     forged = verbs.add_parser('forge', help="the forge's machine accounts and their tokens, each use consented")
     kinds = forged.add_subparsers(dest='kind', required=True)
+    forgeprotection.add_parser(kinds)
     account = kinds.add_parser('account')
     account.add_argument('action', choices=('ensure',))
     account.add_argument('--login', required=True)

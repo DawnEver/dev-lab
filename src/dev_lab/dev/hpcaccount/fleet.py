@@ -45,7 +45,7 @@ from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.remote import detached, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
 
-__all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'main', 'remote_argv']
+__all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'in_checkout', 'main', 'remote_argv']
 
 #: The dated-log kind every account's log is written under.
 KIND: Final = 'deploy-fleet'
@@ -92,6 +92,12 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
     return Target(named[0], deploy.get('root', DEFAULT_ROOT), deploy.get('role', ''))
+
+
+def in_checkout(target: Target, argv: Sequence[str]) -> str:
+    """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
+    python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
+    return f'cd {PurePosixPath("~", target.root, KIT)} && {python} {shlex.join(argv)}'
 
 
 def remote_argv(user: str, target: Target, division: Division | None = None) -> list[str]:

@@ -19,11 +19,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
-from pathlib import PurePosixPath
 from typing import Final
 
 from lab_commons.config import section
@@ -32,9 +30,7 @@ from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.division import split_hpc
-from dev_lab.dev.hpcaccount.fleet import Target, declared_target
-from dev_lab.dev.hpcaccount.spec import KIT
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 
 __all__ = ['forget_command', 'forget_fleet', 'main', 'peek_command']
 
@@ -45,19 +41,14 @@ _PEEK: Final = (
 )
 
 
-def _in_checkout(target: Target, argv: Sequence[str]) -> str:
-    python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
-    return f'cd {PurePosixPath("~", target.root, KIT)} && {python} {shlex.join(argv)}'
-
-
 def peek_command(target: Target, repo: str, row: str) -> str:
     """The shell line that prints *row* of *repo*'s learned table on the account, read-only."""
-    return _in_checkout(target, ['-c', _PEEK, repo, row])
+    return in_checkout(target, ['-c', _PEEK, repo, row])
 
 
 def forget_command(target: Target, repo: str, row: str) -> str:
     """The shell line that runs lab-commons' ``learned forget`` of *row* on the account."""
-    return _in_checkout(target, ['-m', 'lab_commons.compute.learned', 'forget', '--repo', repo, '--row', row])
+    return in_checkout(target, ['-m', 'lab_commons.compute.learned', 'forget', '--repo', repo, '--row', row])
 
 
 def _one(grant: Grant, shell: Runner, repo: str, row: str, *, dry_run: bool) -> tuple[bool, str]:

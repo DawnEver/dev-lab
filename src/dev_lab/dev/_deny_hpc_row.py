@@ -41,21 +41,22 @@ CAMPAIGN: Final[tuple[tuple[str, ...], ...]] = (
 #: under one (:func:`remedy` raises otherwise), so the refusal names every door by purpose (user ruling 2026-11-11);
 #: the flags beyond the shape live in ``docs-src/dev/refusals.md#hpc-through-the-door``.
 USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
-    'TOTP host': (
+    'TOTP': (
         (('dev_lab.dev.sshhold', 'open'), ('dev_lab.dev.sshhold', 'run')),
-        '`sshhold open|run --code` (key-only: no code)',
+        '`sshhold open|run --code` (key-only: none)',
     ),
     'deploy': (
         (
             ('dev_lab.dev.hpcaccount', 'deploy-fleet'),
             ('dev_lab.dev.hpcaccount', 'forget'),
+            ('dev_lab.dev.hpcaccount', 'credential'),
             ('dev_lab.dev.hpcaccount', 'deploy'),
         ),
-        '`hpcaccount deploy*|forget`',
+        '`hpcaccount deploy*|forget|credential`',
     ),
     'verify: push,': (
         (('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'run', 'show')),
-        '`forge queue|run show <sha>`',
+        '`forge queue|run show`',
     ),
     'batch': (
         CAMPAIGN[: len(_BATCH) + len(_RUN)],

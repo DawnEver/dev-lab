@@ -48,8 +48,8 @@ def test_the_hpc_refusal_names_every_door_by_purpose() -> None:
     text = str(HPC_THROUGH_THE_DOOR['remedy'])
     for door in (
         '`sshhold open|run --code`',
-        '`hpcaccount deploy*|forget`',
-        '`forge queue|run show <sha>`',
+        '`hpcaccount deploy*|forget|credential`',
+        '`forge queue|run show`',
         '`lab_commons.hpc plan|submit|status|gather|retry|run`',
         '`lab_commons.hpc clean`',
     ):

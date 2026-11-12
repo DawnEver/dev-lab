@@ -97,10 +97,10 @@ def test_the_trunk_never_requires_a_hand_part() -> None:
     assert {'tests/base', 'tests/base@windows'} <= set(trunk), 'PLANTED CONTROL'
 
 
-def test_a_served_forge_requires_its_tests_and_never_the_review_status() -> None:
-    """User ruling 2026-11-05: the merge decision enforces the review itself; a capped review merges WARNED."""
+def test_a_served_forge_requires_nothing_on_integration_and_its_base_on_the_trunk() -> None:
+    """User ruling 2026-11-12 (RED-INTEGRATION-MERGES): the serve host decides integration; only the trunk is green."""
     assert required_contexts(GITEA_TEXT, 'p', GITEA) == {
-        INTEGRATION: ('tests/base', 'tests/security'),
+        INTEGRATION: (),
         TRUNK: ('tests/base',),
     }
 
@@ -113,7 +113,8 @@ def test_a_judged_repo_requires_no_review_status() -> None:
 def test_a_workflow_on_the_other_forge_is_not_this_forge_s_context() -> None:
     """GitHub's ci.yml posts ``tests/merge-ready`` on GitHub only; a Gitea mirror of the repo is served."""
     text = GITHUB_TEXT + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\n'
-    assert required_contexts(text, 'p', GITEA)[INTEGRATION] == ('tests/base', 'tests/security')
+    assert required_contexts(text, 'p', GITEA)[INTEGRATION] == ()
+    assert required_contexts(text, 'p', GITHUB)[INTEGRATION] == ('tests/merge-ready',)  # PLANTED CONTROL
 
 
 # -- GitHub: rulesets ------------------------------------------------------------------------------------------------

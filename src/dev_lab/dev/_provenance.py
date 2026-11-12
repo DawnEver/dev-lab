@@ -48,8 +48,9 @@ __all__ = [
 PROVENANCE_ROWS = '_provenance_rows.py'
 _ROWS_NAME = 'PROVENANCE'
 
-#: The bare names declared :data:`ORIGINAL`, beside the claims: a name claims nothing, so it is no row.
-ORIGINAL_ROWS = '_original_rows.py'
+#: The files of bare names declared :data:`ORIGINAL`, beside the claims: a name claims nothing, so it is no row.
+#: Split by responsibility (the remote doors apart) at the module-size band.
+ORIGINAL_ROWS = ('_original_rows.py', '_original_rows_remote.py')
 _ORIGINALS_NAME = 'ORIGINAL_MODULES'
 
 #: What a row may say, and only the first of them opens a provenance case. A consumer that DELEGATES
@@ -70,7 +71,11 @@ def provenance_rows(directory: Path) -> dict[str, tuple[str, ...]]:
     and that is :func:`undeclared_modules`. A module named in BOTH files is refused: one provenance each.
     """
     claims = cast('dict[str, tuple[str, ...]]', _literal(directory / PROVENANCE_ROWS, _ROWS_NAME, {}))
-    originals = cast('tuple[str, ...]', _literal(directory / ORIGINAL_ROWS, _ORIGINALS_NAME, ()))
+    originals = tuple(
+        name
+        for file in ORIGINAL_ROWS
+        for name in cast('tuple[str, ...]', _literal(directory / file, _ORIGINALS_NAME, ()))
+    )
     rows = {name: tuple(row) for name, row in claims.items()}
     if both := sorted(set(rows) & set(originals)):
         raise DeclaredTwice(both)
@@ -81,7 +86,9 @@ class DeclaredTwice(ValueError):
     """A module is declared ``original`` AND given a claiming row: one module has one provenance."""
 
     def __init__(self, names: list[str]) -> None:
-        super().__init__(f'declared {ORIGINAL} in {ORIGINAL_ROWS} and given a row in {PROVENANCE_ROWS}: {names}')
+        super().__init__(
+            f'declared {ORIGINAL} in {" / ".join(ORIGINAL_ROWS)} and given a row in {PROVENANCE_ROWS}: {names}'
+        )
 
 
 def _literal(path: Path, name: str, absent: object) -> object:
