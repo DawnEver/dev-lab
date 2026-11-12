@@ -66,25 +66,34 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
 
 - **Contract.** A result is keyed by (repo, commit, test id or part, env key, verification policy). Two results
   that differ in any field are two facts; neither may overwrite the other.
-- **Today.** A forge status is keyed by (commit, context `tests/<part>`) and the LATEST per context is read
-  (`dev_lab.dev.platformparts::parts_of`). The description carries scope, ran, hands and carried/cited
-  (`platformparts::_DESCRIPTION`); the env key lives in the attached run record and in the verdict store's
-  `ContentKey(tree, env, part)` (`dev_lab.dev.verdictstore`, `dev_lab.dev.verdictenv::verdict_env`).
-- **Gap.** The status carries no env key and no policy (test-definition) version, so a second post of the same
-  part on the same commit from another environment or another test version OVERWRITES the first, and the
-  promotion reads whichever came last.
+- **Today.** A part's status description carries `env=` (the run's env key) and `policy=` (the policy version:
+  a digest of the commit's `[tool.lab_commons.tests]`, `[tool.lab_commons.hpc]`, `[tool.dev_lab.parts]` and
+  `uv.lock`, `dev_lab.dev.verdictenv::verdict_policy`), 8 hex each, beside scope, ran, hands and carried/cited
+  (`platformparts::Part.description`). A local record stamps both; a cluster record the producer did not stamp
+  gets the policy of the judged commit at post. `platformparts::facts_of` keys a commit's status HISTORY by
+  (part, env, policy): a later post replaces only its own key, and `integrate promote` reads the history.
+- **Gap (narrowed).** The forge itself still keeps one LATEST status per (commit, `tests/<part>`): readers other
+  than promotion (queue, merge gate, push admission) read `status_list` and so still see only the latest post.
+  The env and policy are cut to 8 hex in the 140-char description. A status posted before this change carries
+  neither, so it is no fact of any policy and promotion refuses it until re-posted.
 
 ### 2. Promotion
 
 - **Contract.** `main` is promoted to exactly the commit that was verified: an integration commit, fast-forward,
   every REQUIRED part PASS at scope full, in a declared env and policy, with no failure inherited unseen.
 - **Today.** `dev_lab.dev.integrate::decide` refuses a sha not on `origin/<integration>`, a non-fast-forward, and
-  any part not PASS at scope `full` (`platformparts::standing`). A part cited from the same tree or carried from
-  an ancestor names its origin sha in the description (`dev_lab.dev.forgecarry`). A break-glass merge commit is
-  a commit like any other: it is promoted only on its own parts.
-- **Gap.** The required set is DERIVED from what was posted (`platformparts::derived`: the base part, every
-  posted part, every part one hands to), so a part never posted and never handed to is never required. No env
-  or policy match is checked. A carried PASS is accepted without re-reading the source run's env.
+  any part not PASS at scope `full` (`platformparts::standing`). The required set is the base part, every part
+  posted or handed to, AND every part the commit declares in `[tool.dev_lab.parts] required`
+  (`platformparts::required_at`), which no waiver (unproduced, off the gate) removes. Only facts of the policy the
+  promoted commit declares are read, a FAIL of it in any env outranks a PASS in another, and each must name its env.
+  A part cited from the same tree or carried from an ancestor names its origin sha and keeps its SOURCE run's env
+  and policy (`dev_lab.dev.forgecarry::DocsOnly.description`), so a carried PASS judged under another declared
+  env (`uv.lock`) or test declaration refuses. A break-glass merge commit is a commit like any other: it is
+  promoted only on its own parts.
+- **Gap (narrowed).** The "declared env" is the commit's `uv.lock`, folded into the policy: no env KEY is pinned
+  per part, so a PASS from any host whose env key differs under the same lock (another OS, another interpreter)
+  is accepted, and a carried PASS's env key is compared with nothing. A part no repo declares required and no
+  posted part hands to is still never required (only `base` is required by default).
 
 ### 3. Producer claim
 
