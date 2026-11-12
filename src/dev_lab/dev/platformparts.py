@@ -91,10 +91,9 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import re
 import sys
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -111,7 +110,7 @@ from dev_lab.dev.family import declared_in
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
-from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
+from dev_lab.dev.partfacts import Part, facts_of, latest, parsed
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
 from dev_lab.dev.producer import unreachable
 from dev_lab.dev.verdictenv import POLICY_CHARS, verdict_policy_at
@@ -161,18 +160,6 @@ _TAG_SHA: Final = 8
 
 #: How many ids a refusal names before eliding; the count is always given.
 _NAMED: Final = 5
-
-#: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
-_RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
-
-_DESCRIPTION: Final = re.compile(
-    r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
-    r'hands=(?P<hands>-|[a-z0-9_+]+:\d+(?:,[a-z0-9_+]+:\d+)*)'
-    r'(?: env=(?P<env>[0-9a-f]+))?(?: policy=(?P<policy>[0-9a-f]+))?'
-    r'(?: kept=(?P<kept>[0-9a-f]{12}:\d+(?:,[0-9a-f]{12}:\d+)*))?'
-    r'(?: carried from (?P<carried>[0-9a-f]{12}): (?:docs-only|every outcome carried by footprint))?'
-    r'(?: cited from (?P<cited>[0-9a-f]{12}): same tree)?$'
-)
 
 #: The remedy a missing part names: a host whose resources admit it claims it and runs :func:`producer_argv`.
 _PRODUCE: Final = 'a `dev_lab.dev.forge serve` host having every resource it needs claims and produces it'
@@ -305,42 +292,6 @@ def _elided(ids: Sequence[str]) -> str:
     return ', '.join(ids[:_NAMED]) + (', ...' if len(ids) > _NAMED else '')
 
 
-@dataclass(frozen=True)
-class Part:
-    """One part's result for a commit, as the forge holds it; *platform* is the part's name (its need-set)."""
-
-    platform: str
-    scope: str
-    result: Conclusion
-    ran: int
-    hands: dict[str, int] = field(default_factory=dict)
-    carried: str = ''  # the sha12 this verdict was judged at, when it is carried (dev_lab.dev.forgecarry)
-    kept: dict[str, int] = field(default_factory=dict)  # outcomes carried in, per sha12 they ran at; never in ran
-    cited: str = ''  # the sha12 whose stored record of the SAME tree this verdict cites (dev_lab.dev.verdictstore)
-    env: str = ''  # the env key (POLICY_CHARS hex) of the run that judged it -- the SOURCE run's when carried or cited
-    policy: str = ''  # the policy version (dev_lab.dev.verdictenv.verdict_policy) it was judged by
-
-    @property
-    def fact(self) -> tuple[str, str, str]:
-        """``(part, env, policy)`` -- what makes two posts of one commit two facts (module docstring)."""
-        return (self.platform, self.env, self.policy)
-
-    @property
-    def state(self) -> str:
-        """The forge state its conclusion posts as (:func:`dev_lab.dev.forgestatus.state_for`)."""
-        return state_for(self.result)
-
-    def description(self) -> str:
-        """The status description: ``scope= ran= hands=`` (module docstring)."""
-        hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
-        kept = ' kept=' + ','.join(f'{sha}:{count}' for sha, count in sorted(self.kept.items())) if self.kept else ''
-        carried = f' {CARRIED_FROM} {self.carried}: {DOCS_ONLY}' if self.carried else ''
-        cited = f' {CITED_FROM} {self.cited}: {SAME_TREE}' if self.cited else ''
-        env = f' env={self.env[:POLICY_CHARS]}' if self.env else ''
-        policy = f' policy={self.policy[:POLICY_CHARS]}' if self.policy else ''
-        return f'scope={self.scope} ran={self.ran} hands={hands}{env}{policy}{kept}{carried}{cited}'
-
-
 def part_of(record: Mapping[str, Any]) -> Part:
     """The part a run record proves, by the strict rule in the module docstring.
 
@@ -386,48 +337,6 @@ def part_of(record: Mapping[str, Any]) -> Part:
     )
 
 
-def _latest(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
-    """The latest status per context of *statuses* (a list or a history, oldest first)."""
-    latest: dict[str, CommitStatus] = {}
-    for status in statuses:
-        latest.pop(status.context, None)
-        latest[status.context] = status
-    return list(latest.values())
-
-
-def _parsed(status: CommitStatus) -> Part | None:
-    """The settled part *status* says; ``None`` when it says none (a claim, an ``error``, a foreign description)."""
-    if not status.context.startswith(CONTEXT_PREFIX) or status.context in NOT_PARTS:
-        return None
-    name = status.context.removeprefix(CONTEXT_PREFIX)
-    found = _DESCRIPTION.match(status.description)
-    if status.state not in _RESULT or found is None or not is_row(name):
-        return None
-    hands = {} if found['hands'] == '-' else dict(item.split(':') for item in found['hands'].split(','))
-    return Part(
-        platform=name,
-        scope=found['scope'],
-        result=_RESULT[status.state],
-        ran=int(found['ran']),
-        hands={owner: int(count) for owner, count in hands.items()},
-        carried=found['carried'] or '',
-        cited=found['cited'] or '',
-        kept={sha: int(n) for sha, n in (one.split(':') for one in filter(None, (found['kept'] or '').split(',')))},
-        env=found['env'] or '',
-        policy=found['policy'] or '',
-    )
-
-
-def facts_of(statuses: Sequence[CommitStatus]) -> dict[tuple[str, str, str], Part]:
-    """Every settled fact of *statuses*, keyed ``(part, env, policy)``: a later post replaces only its own key."""
-    facts: dict[tuple[str, str, str], Part] = {}
-    for status in statuses:
-        if (part := _parsed(status)) is not None:
-            facts.pop(part.fact, None)  # re-inserted: the order of facts is the order of their latest posts
-            facts[part.fact] = part
-    return facts
-
-
 def parts_of(statuses: Sequence[CommitStatus], *, policy: str | None = None) -> tuple[dict[str, Part], tuple[str, ...]]:
     """``(parts by name, problems)`` from a commit's statuses -- its latest per context, or its whole history.
 
@@ -437,8 +346,8 @@ def parts_of(statuses: Sequence[CommitStatus], *, policy: str | None = None) -> 
     """
     problems = [
         f'{status.context} is {status.state} ({status.description!r}) -- not a settled part'
-        for status in _latest(statuses)
-        if status.context.startswith(CONTEXT_PREFIX) and status.context not in NOT_PARTS and _parsed(status) is None
+        for status in latest(statuses)
+        if status.context.startswith(CONTEXT_PREFIX) and status.context not in NOT_PARTS and parsed(status) is None
     ]
     parts: dict[str, Part] = {}
     for part in facts_of(statuses).values():
