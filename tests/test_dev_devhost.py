@@ -20,15 +20,23 @@ forges = { "forge.example" = ["dev-user"] }
 [consent]
 endpoint = "consent@forge.example"
 
+[hpc]
+session_reach = { lead = ["verification"] }
+
+[hpc.clusters.c]
+hosts = ["login.example"]
+slurm_accounts = { a = { billed = false } }
+
 [[hpc.grant]]
 user = "u1"
-costed = true
-hosts = ["login.example"]
+cluster = "c"
+slurm_account = "a"
+role = "research"
 """
 
 HOST = """\
 [dev]
-role = "workstation"
+hpc = ["research"]
 os = "windows"
 
 [dev.resources]
@@ -83,7 +91,8 @@ def test_a_dev_host_file_passes_with_its_family(tmp_path: Path) -> None:
     ('host', 'named'),
     [
         (HOST.replace('cores = 16', 'cores = 16\nbogus = 1'), 'bogus'),
-        (HOST.replace('"workstation"', '"server"'), 'role'),
+        (HOST.replace('hpc = ["research"]', 'role = "integrator"'), 'role is retired'),
+        (HOST.replace('hpc = ["research"]', 'hpc = "research"'), 'hpc must list'),
         (HOST.replace('cores = 16', 'cores = "16"'), 'resources.cores'),
         (HOST.replace('version = "1.0"', 'licence = "x"'), 'licence'),
         (HOST.replace('[dev]\n', '[dev]\nref = "main"\n', 1), 'restates'),
@@ -118,7 +127,9 @@ def test_the_render_layers_family_host_and_local_and_drops_dev(tmp_path: Path) -
     assert text.startswith('# RENDERED')
     rendered = tomllib.loads(text)
     assert rendered['consent'] == {'endpoint': 'consent@forge.example'}
-    assert rendered['hpc'] == {'grant': [{'user': 'u1', 'costed': True, 'hosts': ['login.example']}]}
+    assert rendered['hpc']['grant'] == [{'user': 'u1', 'cluster': 'c', 'slurm_account': 'a', 'role': 'research'}]
+    assert rendered['hpc']['reach'] == ['research'], "the host's [dev] hpc renders as the machine's reach"
+    assert rendered['hpc']['session_reach'] == {'lead': ['verification']}, 'the family keeps the session rule'
     assert rendered['capabilities'] == {'solverx': {'in_use': {'process': ['solverx.exe']}, 'seats': 4}}
     assert rendered['user'] == {'text_editor_command': 'edit'}
     assert rendered['devhost'] == {'host': 'ws', 'source': clone.as_posix()}
@@ -244,3 +255,11 @@ def test_detect_finds_the_newest_matching_home_and_nothing_else(tmp_path: Path) 
 def test_a_detect_entry_that_is_not_a_pattern_list_is_refused(tmp_path: Path) -> None:
     family = FAMILY.replace('[dev]\n', '[dev]\ndetect = { solverx = "C:/x" }\n')
     assert any('detect.solverx' in line for line in check_family(_write(tmp_path, 'family.toml', family)))
+
+
+def test_a_host_declaring_no_hpc_renders_a_reach_of_none(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the reach render: a host with no [dev] hpc reaches nothing, never the family's accounts."""
+    rendered = tomllib.loads(
+        devhost.render(_clone(tmp_path, HOST.replace('hpc = ["research"]\n', '')), 'ws', tomllib.loads(LOCAL))
+    )
+    assert rendered['hpc']['reach'] == []

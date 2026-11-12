@@ -12,17 +12,23 @@ from typing import Any, Final
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'CPU_SHARES', 'DETECT_DOOR', 'HELPERS', 'MACHINE_TABLES', 'RESOURCES', 'ROLES', 'SCHEMA', 'UNFILLED', 'VENDOR',
-    'HomeUnfilled', 'check', 'check_family', 'fill_remedy', 'home_of', 'unfilled', 'usable',
+    'CPU_SHARES', 'DETECT_DOOR', 'HELPERS', 'MACHINE_TABLES', 'RESOURCES', 'RETIRED_KEYS', 'SCHEMA', 'UNFILLED',
+    'VENDOR', 'HomeUnfilled', 'check', 'check_family', 'fill_remedy', 'home_of', 'hpc_reach', 'unfilled', 'usable',
 ]  # fmt: skip
 
-#: What a development machine does.
-ROLES: Final = ('integrator', 'workstation')
+#: Retired ``[dev]`` keys, each with its remedy (refused by name, never read).
+RETIRED_KEYS: Final = {
+    'role': (
+        'retired (user correction 2026-11-12): the integrator is a SESSION identity, never a host one -- a host '
+        'declares only what the machine may reach, [dev] hpc; a session proves the integrator role with a consent '
+        'credential (dev_lab.dev.hpcaccount.session)'
+    ),
+}
 #: One vendor install's keys.
 VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': str, 'licence_feature': str}
 #: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
 SCHEMA: Final = {
-    'role': str, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
+    'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
     'helpers': dict,
 }  # fmt: skip
 #: The git credential helpers a ``[dev] helpers.<forge host>`` may declare: ``store`` -- that host reads ONLY
@@ -81,9 +87,11 @@ def _resources(table: Mapping[str, Any], where: str) -> list[str]:
 
 def _shape(table: Mapping[str, Any], where: str) -> list[str]:
     """Defects of one ``[dev]`` table (host or family) by itself."""
-    found = _typed(table, SCHEMA, where)
-    if 'role' in table and table['role'] not in ROLES:
-        found.append(f'{where}.role {table["role"]!r} is not one of {list(ROLES)}')
+    found = [f'{where}.{key} is {remedy}' for key, remedy in RETIRED_KEYS.items() if key in table]
+    found += _typed({k: v for k, v in table.items() if k not in RETIRED_KEYS}, SCHEMA, where)
+    hpc = table.get('hpc', [])
+    if not (isinstance(hpc, list) and all(isinstance(role, str) and role for role in hpc)):
+        found.append(f'{where}.hpc must list account role names (e.g. ["research"]), or be [] for none')
     found += _named_lists(table, 'forges', where, 'account names')
     helpers = table.get('helpers') if isinstance(table.get('helpers'), dict) else {}
     found += [
@@ -124,6 +132,11 @@ def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> l
 def check_family(family: Mapping[str, Any]) -> list[str]:
     """Defects of the family file's ``[dev]`` by itself."""
     return _shape(family.get('dev', {}), '[dev]')
+
+
+def hpc_reach(dev: Mapping[str, Any]) -> list[str]:
+    """The account roles this machine may reach -- rendered as the machine file's ``[hpc] reach``; none undeclared."""
+    return list(dev.get('hpc', []))
 
 
 def usable(dev: Mapping[str, Any]) -> tuple[int | None, float | None]:

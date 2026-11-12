@@ -10,8 +10,9 @@ layers, one way, each fact in one place:
    personal ``[user]`` preferences), preserved by the render, never invented. Credentials are in no layer: a path
    may be declared, a value never.
 
-A host file restating a family key is refused (:func:`check`). ``[dev]`` (:data:`SCHEMA`): ``role``
-(:data:`ROLES`), ``ref`` (the dev-lab ref followed), ``forges`` (forge host -> account names), ``os``,
+A host file restating a family key is refused (:func:`check`). ``[dev]`` (:data:`SCHEMA`): ``hpc``
+(the account roles the machine may reach, rendered as ``[hpc] reach``), ``ref`` (the dev-lab ref followed),
+``forges`` (forge host -> account names), ``os``,
 ``resources`` (:data:`RESOURCES`; :func:`usable` is the part this user holds), ``vendors.<name>`` (:data:`VENDOR`),
 ``detect`` (vendor -> install-home glob patterns, family-wide). ``[dev]`` is not rendered itself; a vendor's
 ``seats > 0`` renders as ``[capabilities.<vendor>] seats``, its one consumer-facing copy.
@@ -46,7 +47,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._machinefile import dumps, render_value
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.devschema import fill_remedy, unfilled
+from dev_lab.dev.devschema import fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = ['OWN_TABLE', 'RENDER_DOOR', 'declared', 'detect', 'drift', 'main', 'notice', 'render', 'stop_block']
@@ -89,6 +90,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     vendors = declared.get('dev', {}).get('vendors', {})
     seats = {name: {'seats': vendor['seats']} for name, vendor in vendors.items() if vendor.get('seats')}
     layered = _merge(layered, {'capabilities': seats} if seats else {})
+    layered = _merge(layered, {'hpc': {'reach': hpc_reach(declared.get('dev', {}))}} if 'hpc' in layered else {})
     local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}
     own = {OWN_TABLE: {'host': host, 'source': clone.as_posix()}}
     header = (

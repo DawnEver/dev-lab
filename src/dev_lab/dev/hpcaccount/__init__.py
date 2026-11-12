@@ -21,6 +21,11 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
   and confirms the forge answers as that login.
 
+WHICH ACCOUNTS A SESSION MAY TOUCH (HPC-ACCESS-BY-ROLE, user correction 2026-11-12): every verb loads through
+:func:`~dev_lab.dev.hpcaccount.division.reached_machine` -- the grants this machine's ``[hpc] reach`` holds, plus the
+verification accounts when THIS SESSION holds the integrator role (:mod:`~dev_lab.dev.hpcaccount.session`, a consent
+credential); any other account is refused by name.
+
 EVERY ACCOUNT DECLARES ITS ROLE (user ruling 2026-11-06), ``[deploy] role`` in its own machine file
 (:mod:`~dev_lab.dev.hpcaccount.spec`): only a ``verification`` account (a Forge Verification account) runs the serve
 cron; a ``research`` account is deployed for research and never carries one. Undeclared, ``deploy`` refuses.

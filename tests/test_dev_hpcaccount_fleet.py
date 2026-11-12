@@ -80,10 +80,10 @@ def test_an_undeclared_account_is_refused_and_nothing_starts(tmp_path: Path) -> 
 def test_the_workstations_role_and_table_are_passed_to_each_deploy() -> None:
     """User rulings 2026-11-09: the workstation is the source of the division."""
     division = load_division({'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob'}]})
-    argv = remote_argv('alice', Target('login02.example', 'src'), division)
+    argv = remote_argv(_FLEET[0], Target('login02.example', 'src'), division)
     assert '--fleet-role research --role-table ' in argv[-1]
     assert '{"read_only": true, "serves": false}' in argv[-1]
-    assert '--fleet-role' not in remote_argv('bob', Target('login01.example', 'work'), division)[-1]
+    assert '--fleet-role' not in remote_argv(_FLEET[1], Target('login01.example', 'work'), division)[-1]
 
 
 def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path: Path) -> None:
@@ -109,9 +109,10 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
 
 
 def test_the_remote_runs_the_accounts_own_deploy_never_prompting() -> None:
-    argv = remote_argv('alice', Target('login02.example', 'src'))
+    argv = remote_argv(_FLEET[0], Target('login02.example', 'src'))
     assert argv[:3] == ['ssh', '-o', 'BatchMode=yes']
     assert 'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount deploy' in argv[-1]
+    assert '--grant-table' in argv[-1], 'the declared slice is the one source of the grant the deploy writes'
 
 
 def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp_path: Path) -> None:

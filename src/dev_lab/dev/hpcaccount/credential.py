@@ -34,9 +34,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from lab_commons.config import section
 from lab_commons.hpc.cluster import Runner, runner_for
-from lab_commons.hpc.grants import Grant, load_grants
+from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.credstore import (
@@ -50,7 +49,7 @@ from dev_lab.dev.credstore import (
     stamp_now,
     valid_host,
 )
-from dev_lab.dev.hpcaccount.division import Division, split_hpc
+from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import declared_target, in_checkout
 
 __all__ = [
@@ -186,21 +185,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``credential``; place the token on stdin, or drop a host's line."""
     made = parser()
     args = made.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if args.drop_host:
-        return drop_host(
-            args.account, host=args.drop_host, grants=load_grants(split_hpc(section('hpc'))[0]).grants, say=emit
-        )
-    if args.host_config is None:
+    if not args.drop_host and args.host_config is None:
         made.error('--login needs --host-config')
     try:
-        forge = read_forge(args.host_config)
-    except CredentialRefused as refused:
+        forge = None if args.drop_host else read_forge(args.host_config)
+        machine = reached_machine([args.account.split('@', 1)[0]])
+    except (CredentialRefused, PermissionError, LookupError, ValueError) as refused:
         emit(f'credential: refused -- {refused}')
         return 2
-    table, division = split_hpc(section('hpc'))
-    grants = load_grants(table).grants
+    if forge is None:
+        return drop_host(args.account, host=args.drop_host, grants=machine.grants, say=emit)
     token = sys.stdin.read().strip()
     return place_credential(
-        args.account, login=args.login, token=token, url=args.url, forge=forge, grants=grants, division=division,
+        args.account, login=args.login, token=token, url=args.url, forge=forge, grants=machine.grants,
+        division=division_of(machine),
         say=emit,
     )  # fmt: skip

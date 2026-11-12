@@ -68,5 +68,8 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         Action('ops.forge.protect', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
         # One `ops secret place` (one declared secret file written); subject = path + the content's SHA-256.
         Action('ops.secret.place', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        # One session holds the integrator role (verification HPC accounts) until expiry; subject = the session id,
+        # verified offline on every load (dev_lab.dev.hpcaccount.session); a day at most, never a standing grant.
+        Action('session.integrator', {}, SINGLE, 12 * _HOUR, 24 * _HOUR),
     )
 })  # fmt: skip

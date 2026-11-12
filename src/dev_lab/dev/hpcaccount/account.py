@@ -22,7 +22,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
-from dev_lab.dev.hpcaccount.checks import grant_of, store_problem
+from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
 from dev_lab.dev.hpcaccount.spec import Deployment, has_grant, render_grant
 from dev_lab.dev.hpcaccount.steps import Step
 
@@ -167,24 +167,39 @@ def reader(spec: Deployment, home: Path, role: RoleCheck, *, semantics: Mapping[
     return 2
 
 
-def grant(step: Step, spec: Deployment, path: Path, hostname: str) -> int:
-    """Write this account's own ``[[hpc.grant]]`` when the machine file has none for it."""
-    emit("[grant] this account's own [[hpc.grant]]")
+def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
+    """Write this account's own ``[hpc]`` slice -- the one ``deploy-fleet`` passed -- when its file holds no grant.
+
+    The declaration is the family's (its cluster, its account, its role as this machine's reach); a hand-run deploy
+    has none to write and is refused, never a grant derived here. The declared Slurm account must be one of the
+    user's associations (``sacctmgr``).
+    """
+    emit("[grant] this account's own [hpc] slice")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     if has_grant(path, user):
         emit(f'  {user} already holds a grant in {path}')
         return 0
-    sacct = step.read([*step.tools.sacctmgr, '-nP', 'show', 'assoc', f'user={user}', 'format=account,grptres'])
-    grant = grant_of(user, sacct.stdout, spec=spec, host=hostname)
-    if isinstance(grant, str):
-        emit(f'deploy refused: {grant}', err=True)
+    if table is None:
+        emit(
+            f'deploy refused: {path} holds no grant for {user} and none was passed: deploy it through deploy-fleet '
+            '(the family declaration is the one source of a grant)',
+            err=True,
+        )
         return 2
-    text = render_grant(grant)
+    rows = [row for row in table.get('grant', []) if row.get('user') == user]
+    if len(rows) != 1:
+        emit(f'deploy refused: the passed [hpc] slice declares {len(rows)} grants for {user}, not one', err=True)
+        return 2
+    sacct = step.read([*step.tools.sacctmgr, '-nP', 'show', 'assoc', f'user={user}', 'format=account,grptres'])
+    if why := association_refusal(user, sacct.stdout, rows[0]['slurm_account']):
+        emit(f'deploy refused: {why}', err=True)
+        return 2
+    text = render_grant(table)
     if step.dry:
         emit(f'  [dry-run] write to {path}:{text}')
         return 0
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('a', encoding='utf-8') as out:
         out.write(text)
-    emit(f'  wrote the grant of {user} ({grant["slurm_account"]}) to {path}')
+    emit(f'  wrote the grant of {user} ({rows[0]["slurm_account"]}) to {path}')
     return 0

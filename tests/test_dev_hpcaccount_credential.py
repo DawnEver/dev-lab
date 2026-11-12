@@ -203,7 +203,7 @@ def test_no_url_and_no_declared_repo_is_refused() -> None:
 def test_main_refuses_an_unreadable_host_config_before_any_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(credential, 'section', lambda name: {'grant': []} if name == 'hpc' else {})
+    monkeypatch.setattr(credential, 'reached_machine', lambda _accounts: pytest.fail('loaded before the forge'))
     monkeypatch.setattr(credential, 'place_credential', lambda *_a, **_k: pytest.fail('placed without a forge'))
     monkeypatch.setattr('sys.stdin', io.StringIO(_MINTED))
     code = credential.main(['alice@login1.example', '--login', 'forge-ci', '--host-config', str(tmp_path / 'no.toml')])
