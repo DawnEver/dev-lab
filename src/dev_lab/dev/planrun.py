@@ -301,7 +301,10 @@ def preflight(
 
 
 def _local(plan: Plan, index: int, home: Path | None, now: float) -> Path | None:
-    """The newest unexpired local credential for grant *index*: matched by its action and subject."""
+    """The newest unexpired local credential for grant *index*: matched by its action, subject and signed plan digest.
+
+    A credential issued from another plan is never this plan's, whatever grant it names: its ``plan`` is signed.
+    """
     grant, found = plan.grants[index], []
     folder = state_dir(home)
     for path in sorted(folder.glob('*.json')) if folder.is_dir() else ():
@@ -312,6 +315,7 @@ def _local(plan: Plan, index: int, home: Path | None, now: float) -> Path | None
         if (
             isinstance(data, dict)
             and (data.get('action'), data.get('subject')) == (grant['action'], grant['subject'])
+            and data.get('plan') == plan.digest
             and isinstance(data.get('expires'), int | float)
             and now <= data['expires'] + SKEW_S
         ):
