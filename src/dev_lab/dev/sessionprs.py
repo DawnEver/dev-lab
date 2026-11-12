@@ -32,7 +32,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TextIO
+from typing import TYPE_CHECKING, Final, Protocol, TextIO
 
 from lab_commons import home as _home
 from lab_commons.liveness import creation_stamp, still_the_same_process
@@ -52,6 +52,7 @@ __all__ = [
     'ack',
     'close',
     'main',
+    'noted',
     'open_rows',
     'record_opened',
     'record_pr',
@@ -231,6 +232,17 @@ def record_opened(
     except OSError as failed:
         emit(f'[{RULE}] {what} NOT recorded for session {session}: {failed}', err=True)
         return None
+
+
+class _Opened(Protocol):
+    number: int
+    head_sha: str
+
+
+def noted[P: _Opened](forge: Forge, pull: P, *, branch: str = '') -> P:
+    """*pull*, just opened on *forge*, after :func:`record_opened` recorded it: the door returns what it opened."""
+    record_opened(forge, pull.number, branch=branch, sha=pull.head_sha)
+    return pull
 
 
 def record_pushed(

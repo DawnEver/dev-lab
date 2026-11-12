@@ -9,6 +9,9 @@ being too slow to run inline. So this module decides nothing; it RUNS that owner
 * ``--session-start`` is the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`): it reads the
   payload's ``cwd``, does nothing unless that is a MAIN checkout (a linked tree is somebody's lease), detaches
   a background run and returns at once;
+* ``--background`` is the git hooks' door (``githooks/base.toml``: ``post-merge``, ``post-checkout`` and
+  ``pre-push``, user ruling 2026-11-12): from ANY tree of the repo it detaches a run of the MAIN checkout and
+  returns at once, exit 0 whatever happens, so it never delays or fails the merge, checkout or push;
 * a background run has no console, survives its parent, and holds a PER-REPO lock in the git common dir, so a
   second session's run is a no-op; a lock older than :data:`STALE_LOCK_S` is a crashed run's and is taken over;
 * each run removes at most :data:`BATCH` trees and writes every line -- removed, kept with its reason (a real
@@ -35,10 +38,21 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset
-from dev_lab.dev.checkout import git_out
+from dev_lab.dev.checkout import git_out, worktrees
 from dev_lab.dev.reclaim import QUIET_S
 
-__all__ = ['BATCH', 'LOCK_NAME', 'STALE_LOCK_S', 'detach', 'detach_argv', 'held', 'main', 'main_checkout', 'run']
+__all__ = [
+    'BATCH',
+    'LOCK_NAME',
+    'STALE_LOCK_S',
+    'detach',
+    'detach_argv',
+    'held',
+    'main',
+    'main_checkout',
+    'repo_main',
+    'run',
+]
 
 #: Trees removed per run at most: a run stays minutes, and the next session start takes the next batch.
 BATCH: Final = 10
@@ -59,6 +73,12 @@ def main_checkout(cwd: Path) -> Path | None:
             return Path(top).resolve()
         case _:
             return None
+
+
+def repo_main(cwd: Path) -> Path | None:
+    """The MAIN checkout of the repository *cwd* lies in, from any of its trees; ``None`` outside git."""
+    trees = worktrees(cwd) if cwd.is_dir() else None
+    return trees[0][0].resolve() if trees else None
 
 
 def _common_dir(root: Path) -> Path:
@@ -150,11 +170,13 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     mode.add_argument('--session-start', action='store_true', help='the SessionStart hook: main checkout only')
     args = parser.parse_args(argv)
     try:
-        root = _session_root(stdin or sys.stdin) if args.session_start else main_checkout(args.root)
-        if root is None:
+        if args.session_start or args.background:
+            root = _session_root(stdin or sys.stdin) if args.session_start else repo_main(args.root)
+            if root is not None:
+                detach(root, batch=args.batch)
             return 0
-        if args.background or args.session_start:
-            detach(root, batch=args.batch)
+        root = main_checkout(args.root)
+        if root is None:
             return 0
         log = run(root, batch=args.batch)
     except OSError as exc:  # a hook never blocks the session it serves

@@ -395,10 +395,9 @@ class Client:
         payload: dict[str, Any] = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
         if draft and self.backend is GITHUB:
             payload['draft'] = True
-        probe = Probe(self._recent('pulls'), {'title': title, 'body': payload['body']})
-        opened = pull_of(self.call('POST', f'{self.repo}/pulls', payload, Durable(probe=probe)))
-        sessionprs.record_opened(self.forge, opened.number, branch=head, sha=opened.head_sha)
-        return opened
+        durable = Durable(probe=Probe(self._recent('pulls'), {'title': title, 'body': payload['body']}))
+        made = self.call('POST', f'{self.repo}/pulls', payload, durable)
+        return sessionprs.noted(self.forge, pull_of(made), branch=head)
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""

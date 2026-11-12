@@ -299,7 +299,6 @@ def apply_local(
     occupied: Callable[[Path], bool] | None = None,
     limit: int | None = None,
     quiet_s: float = QUIET_S,
-    move_home: frozenset[str] = frozenset(),
 ) -> tuple[str, ...] | None:
     """THE LOCAL CLEANUP DOOR: delete every deletable LOCAL candidate; one line per branch. ``None``: unread.
 
@@ -311,11 +310,11 @@ def apply_local(
     a tree is committed or cleared first) are never touched -- so every RECLAIMABLE worktree goes FIRST
     (:func:`dev_lab.dev.reclaim.reclaim`: clean, landed on a holder, unlocked, unoccupied), which is what
     frees its branch for the delete below; every kept tree is listed with its reason. *limit* bounds the trees
-    removed per run, *quiet_s* how long a tree's index must be still, and *move_home* the trees whose run outputs
-    are moved home before they go (:func:`dev_lab.dev.reclaim.reclaim`).
+    removed per run and *quiet_s* how long a tree's index must be still; a tree's run outputs move home, verified,
+    before it goes (:func:`dev_lab.dev.reclaim.reclaim`).
     """
     held_by = holders(root, branchset)
-    trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s, move_home=move_home)
+    trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s)
     rows = merge_candidates(root, branchset)
     if rows is None or trees is None:
         return None

@@ -67,6 +67,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'pr-current',
         'pr-notices',
         'session-prs',
+        'reclaim',
     }
     assert {hook.id for hook in table['commit-msg']} == {
         'conventional-commit',
@@ -140,6 +141,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         'pr-current',
         'pr-notices',
         'session-prs',
+        'reclaim',
         'pushgate',
     ]
 

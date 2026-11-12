@@ -180,6 +180,14 @@ run = ["python", "-m", "dev_lab.dev.sessionprs", "--push"]
 always_run = true
 refs = '^refs/heads/'
 
+# RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12: clearing useless worktrees is REQUIRED): every push, from
+# any tree, detaches a background reclaim of the main checkout (dev_lab.dev.reclaimrun --background: per-repo lock,
+# bounded batch, exit 0 always), so it never delays or fails the push. Merge and checkout run it below.
+[[pre-push]]
+id = "reclaim"
+run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
+always_run = true
+
 # post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
 
 # STRAY-FILE-REFUSED as a HINT: an untracked, non-ignored file outside the declared stray roots
@@ -213,4 +221,16 @@ always_run = true
 [[post-checkout]]
 id = "venv-follows-lock"
 run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
+always_run = true
+
+# RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12): a merge or checkout that lands detaches the same background
+# reclaim as a push (the pre-push row above); ADVISORY, and reclaimrun exits 0 always.
+[[post-merge]]
+id = "reclaim"
+run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
+always_run = true
+
+[[post-checkout]]
+id = "reclaim"
+run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
 always_run = true
