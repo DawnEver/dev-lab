@@ -24,14 +24,25 @@ declares it as a row of its own, naming both exits through :func:`staged_scratch
 * the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age_days`` and prints
   NOTHING when there are none -- a reminder that never blocks and costs no tokens when clean.
 
-THE CLI, so a consumer needs no ``scripts/`` adopter: ``pending`` (every one-off, oldest first) and
-``discard <paths>`` (delete one-offs; anything outside scratch, or its README, is refused and nothing
-is deleted).
+THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked top-level entry, its size
+and age, oldest first), ``discard <paths>`` (delete one-off files; anything outside scratch, or its README,
+is refused and nothing is deleted) and ``clear [--keep NAME ...] --yes`` -- THE door for emptying scratch,
+named by RECURSIVE-DELETE: it deletes every UNTRACKED top-level entry but the kept ones, never a tracked
+file and never outside scratch, refuses the whole clear when a link or junction inside an entry points out
+of scratch, and clears the read-only/hidden attributes Windows sets so a nested ``.git`` deletes. It works
+on a main checkout: git decides what is deletable, not the kind of checkout.
+
+THE STOP (``stop``, wired by :mod:`dev_lab.dev.agent_wiring`): a session does not end while its checkout's
+scratch holds an untracked entry -- nothing else ever clears one, so they piled up across sessions. It
+blocks once (``stop_hook_active`` lets a deliberately kept entry through), naming ``clear`` and ``--keep``.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
+import stat
 import sys
 import time
 from collections.abc import Iterable
@@ -51,7 +62,9 @@ from dev_lab.dev.codeplace import (
 __all__ = [
     'SCRATCH_README',
     'ScratchCommitted',
+    'ScratchEscape',
     'assert_scratch_never_committed',
+    'clear_scratch',
     'discard_scratch',
     'main',
     'overdue_declared',
@@ -59,12 +72,13 @@ __all__ = [
     'pending_scratch',
     'scratch_reminder',
     'staged_scratch',
+    'untracked_scratch',
 ]
 
 _SECONDS_PER_DAY = 86400.0
 #: How many one-offs the notice names before it elides the rest.
 _SHOWN = 20
-_VERBS = frozenset({'pending', 'discard', 'remind', 'check'})
+_VERBS = frozenset({'list', 'discard', 'clear', 'remind', 'check', 'stop'})
 
 #: The ONE tracked file under scratch: it anchors the directory and states the two exits.
 SCRATCH_README = 'README.md'
@@ -175,6 +189,159 @@ def discard_scratch(paths: Iterable[str], *, root: Path) -> list[str]:
     return [path.relative_to(root.resolve()).as_posix() for path in targets]
 
 
+class ScratchEscape(ValueError):
+    """A link or junction inside a scratch entry points outside scratch: nothing is cleared."""
+
+
+def _is_link(path: Path) -> bool:
+    return path.is_symlink() or path.is_junction()
+
+
+def _size(path: Path) -> int:
+    """The bytes at or under *path*, never following a link."""
+    if _is_link(path) or not path.is_dir():
+        return path.lstat().st_size
+    return sum(p.lstat().st_size for p in path.rglob('*') if not _is_link(p) and p.is_file())
+
+
+def untracked_scratch(root: Path) -> list[tuple[str, int, float]]:
+    """``[(root-relative path, bytes, age in days), ...]`` of every UNTRACKED top-level scratch entry, oldest first.
+
+    An entry holding any tracked file is tracked, and the README anchor is never an entry. Git decides, so a
+    main checkout and a linked worktree are judged alike.
+    """
+    rel = declared_placement(root).scratch.strip('/')
+    scratch = root / rel
+    if not scratch.is_dir():
+        return []
+    done = launch.run(
+        ['git', '-C', str(root), 'ls-files', '-z', '--', rel],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=True,
+    )
+    tracked = {path[len(rel) + 1 :].split('/')[0] for path in filter(None, done.stdout.split('\0'))}
+    now = time.time()
+    rows = [
+        (f'{rel}/{entry.name}', _size(entry), (now - entry.lstat().st_mtime) / _SECONDS_PER_DAY)
+        for entry in scratch.iterdir()
+        if entry.name not in tracked and entry.name != SCRATCH_README
+    ]
+    return sorted(rows, key=lambda row: -row[2])
+
+
+def _escapes(entry: Path, scratch: Path) -> list[Path]:
+    """Every link or junction under the directory *entry* whose target lies outside *scratch*."""
+    found = []
+    stack = list(entry.iterdir()) if entry.is_dir() and not _is_link(entry) else []
+    while stack:
+        path = stack.pop()
+        if _is_link(path):
+            if not path.resolve().is_relative_to(scratch):
+                found.append(path)
+        elif path.is_dir():
+            stack.extend(path.iterdir())
+    return found
+
+
+def _writable(func, path, _exc) -> None:  # noqa: ANN001 -- shutil's onexc signature
+    """The tree delete's error hook: clear read-only (and Windows hidden/system) attributes, then retry once."""
+    if sys.platform == 'win32':
+        launch.run(['attrib', '-R', '-H', '-S', str(path)], check=False, capture_output=True)
+    Path(path).chmod(stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+    func(path)
+
+
+def _kept(keep: Iterable[str]) -> set[str]:
+    return {name.strip('/\\').replace('\\', '/').split('/')[-1] for name in keep}
+
+
+def clear_scratch(root: Path, *, keep: Iterable[str]) -> list[str]:
+    """Delete every untracked top-level scratch entry of *root* not named in *keep*; return them root-relative.
+
+    A link or junction entry is unlinked, never followed; nothing is deleted when one inside an entry escapes.
+
+    Raises:
+        ScratchEscape: a link or junction inside an entry points outside scratch.
+
+    """
+    scratch = (root / declared_placement(root).scratch).resolve()
+    kept = _kept(keep)
+    doomed = [(rel, root / rel) for rel, _, _ in untracked_scratch(root) if rel.rsplit('/', 1)[-1] not in kept]
+    escaping = [link for _, path in doomed for link in _escapes(path, scratch)]
+    if escaping:
+        names = ', '.join(link.relative_to(root).as_posix() for link in escaping)
+        msg = f'{names}: a link inside scratch points outside it; nothing cleared. Ask the user before removing it.'
+        raise ScratchEscape(msg)
+    for _, path in doomed:
+        if path.is_junction():
+            path.rmdir()
+        elif path.is_symlink():
+            path.unlink()
+        elif not path.is_dir():
+            path.chmod(stat.S_IWRITE | stat.S_IREAD)
+            path.unlink()
+        else:
+            shutil.rmtree(path, onexc=_writable)
+    return [rel for rel, _ in doomed]
+
+
+def _clear_hint(rels: list[str]) -> str:
+    """The ``Stop`` block naming every untracked entry and the door that empties scratch."""
+    shown = ', '.join(rels[:_SHOWN]) + (' ...' if len(rels) > _SHOWN else '')
+    return (
+        f'SCRATCH-IS-NEVER-COMMITTED: {len(rels)} untracked entr{"y" if len(rels) == 1 else "ies"} in scratch: '
+        f'{shown}.\nPromote what is useful into src/ with tests (a finding into memory), then '
+        'python -m dev_lab.dev.scratch clear [--keep NAME ...] --yes'
+    )
+
+
+def _stop(stdin: TextIO | None) -> int:
+    """The ``Stop`` check: block once while the checkout's scratch holds an untracked entry."""
+    try:
+        payload = json.load(stdin or sys.stdin)
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict) or payload.get('stop_hook_active'):
+        return 0
+    cwd = Path(payload.get('cwd') or Path.cwd()).resolve()
+    root = cwd if (cwd / '.git').exists() else checkout_root(cwd)
+    if root is None:
+        return 0
+    try:
+        rels = [rel for rel, _, _ in untracked_scratch(root)]
+    except PlacementNotDeclared:
+        return 0
+    if rels:
+        emit(json.dumps({'decision': 'block', 'reason': _clear_hint(rels)}))
+    return 0
+
+
+def _clear(rest: list[str], root: Path) -> int:
+    """``clear [--keep NAME ...] [--yes]``: without ``--yes`` it only names what would go."""
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.scratch clear', exit_on_error=False)
+    parser.add_argument('--keep', nargs='+', action='extend', default=[], metavar='NAME')
+    parser.add_argument('--yes', action='store_true')
+    try:
+        args = parser.parse_args(rest)
+    except argparse.ArgumentError as exc:
+        emit(str(exc))
+        return 2
+    if not args.yes:
+        kept = _kept(args.keep)
+        rels = [rel for rel, _, _ in untracked_scratch(root) if rel.rsplit('/', 1)[-1] not in kept]
+        emit(f'would clear: {", ".join(rels) or "(nothing)"}; re-run with --yes to delete them')
+        return 2
+    try:
+        for rel in clear_scratch(root, keep=args.keep):
+            emit(f'cleared {rel}')
+    except ScratchEscape as exc:
+        emit(str(exc))
+        return 2
+    return 0
+
+
 def _remind(stdin: TextIO | None) -> int:
     """The ``SessionStart`` notice for the checkout the payload's ``cwd`` is in; silent when nothing is overdue."""
     try:
@@ -190,7 +357,7 @@ def _remind(stdin: TextIO | None) -> int:
 
 
 def _verb(mode: str, rest: list[str], root: Path) -> int:
-    """``pending``, ``discard <paths>`` and ``check <paths>`` over the checkout *root*."""
+    """``list``, ``discard <paths>``, ``clear`` and ``check <paths>`` over the checkout *root*."""
     try:
         placement = declared_placement(root)
     except PlacementNotDeclared as exc:
@@ -203,10 +370,11 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
         if found:
             emit(f'SCRATCH-IS-NEVER-COMMITTED: {", ".join(found)} staged; unstage (git restore --staged). {_EXITS}')
         return 1 if found else 0
-    if mode == 'pending':
-        for rel, age in pending_scratch(root / placement.scratch, root=root):
-            emit(f'{age:7.1f}d  {rel}')
-        return 0
+    if mode == 'list':
+        for rel, size, age in untracked_scratch(root):
+            emit(f'{size:>14,}  {age:7.1f}d  {rel}')
+    if mode in {'list', 'clear'}:
+        return _clear(rest, root) if mode == 'clear' else 0
     try:
         for rel in discard_scratch(rest, root=root):
             emit(f'discarded {rel}')
@@ -217,15 +385,17 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``python -m dev_lab.dev.scratch {pending | discard <paths> | remind | check <paths>}``.
+    """``python -m dev_lab.dev.scratch {list | discard | clear | remind | check | stop}``.
 
-    Exit 0 on success and from ``remind`` always; 1 from ``check`` on a staged one-off; 2 on a usage
-    error or a refused ``discard``.
+    Exit 0 on success and from ``remind`` and ``stop`` always; 1 from ``check`` on a staged one-off; 2 on a
+    usage error, a refused ``discard`` or ``clear``, or a ``clear`` without ``--yes``.
     """
     mode, *rest = argv or [None]
     if mode not in _VERBS:
-        emit(f'usage: python -m dev_lab.dev.scratch {{{" | ".join(sorted(_VERBS))}}} [paths]')
+        emit(f'usage: python -m dev_lab.dev.scratch {{{" | ".join(sorted(_VERBS))}}} [args]')
         return 2
+    if mode == 'stop':
+        return _stop(stdin)
     return _remind(stdin) if mode == 'remind' else _verb(mode, rest, Path.cwd())
 
 
