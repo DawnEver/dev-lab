@@ -644,6 +644,11 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
 THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 401 points here.
 
 - The 2026-10-21 observation was a refused first attempt followed by success and an `OAUTH_USER` username.
+- Its cause, measured 2026-11-12: Git Credential Manager's generic provider stores a Gitea OAuth ACCESS token
+  (username `OAUTH_USER`, plus a `refresh_token.<host>` entry). Gitea expires it after `[oauth2]
+  ACCESS_TOKEN_EXPIRATION_TIME` (default 1 h); git presents it, gets 401, rejects it, and GCM mints a new one
+  from the refresh token for the retry. The cure is one non-expiring personal access token per Gitea host
+  (`auth login`); `auth status` exits 1 while a Gitea host holds an `OAUTH_USER` credential.
   Its former explanation as proven expiry/refresh was an inference, not evidence of the credential store's
   capabilities. A 401 or that username cannot authorize erasing a secret.
 - The API client never issues `git credential reject`. Generic, unknown, opaque or ambiguous helper/provider

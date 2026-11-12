@@ -13,6 +13,7 @@ from typing import Final
 __all__ = [
     'AUTOMODE_COMMAND',
     'ENGINE_REL',
+    'FORGEAUTH_COMMAND',
     'HANDBACK_COMMAND',
     'HOOK_COMMAND',
     'JOURNALDOOR_COMMAND',
@@ -116,6 +117,10 @@ RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.
 #: lock moved since its venv was stamped detaches a re-bootstrap, and returns at once.
 VENVFOLLOW_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.venvfollow --session-start'
 
+#: A REFUSED TOKEN IS HEARD AT SESSION START (:mod:`dev_lab.dev.forgeauthnotice`): one bounded ``GET /user`` per forge
+#: the checkout's remotes declare; one line naming the host and the remedy door when the forge refuses, else silent.
+FORGEAUTH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.forgeauthnotice --session-start'
+
 #: THE CLASSIFIER PROSE FOLLOWS THE CHECKOUT (:mod:`dev_lab.dev.automode`, 2026-11-09): every session start renders
 #: the classifier's intents file from the policy table and the repo's own intents, so a door added to the table
 #: reaches the classifier on the next session, not on the next dependency sync (a ten-day-old render withheld one).
@@ -162,6 +167,7 @@ WIRING: Final = (
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
     Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
+    Wire('SessionStart', FORGEAUTH_COMMAND, 'dev_lab.dev.forgeauthnotice', on_shells=False),
     Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False),
     Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False),
 )

@@ -344,6 +344,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'runner',
     'filechecks',
     'ciworkflows',
+    'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
     # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
     'account',
@@ -411,6 +412,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'blobfetch',
     'forgebreakglass',
     'reviewcode',
+    'forgeauthnotice',  # the session-start token check: a refused forge token heard before an agent complains
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
     'forgereview_bundle',

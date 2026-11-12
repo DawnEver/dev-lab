@@ -90,6 +90,7 @@ __all__ = [
     'USE_STEPS',
     'WORKFLOW_DIRS',
     'base_names',
+    'declared_forge',
     'drift',
     'expand',
     'merge',
@@ -252,15 +253,25 @@ def repo_forge(root: Path) -> str:
         return backend_for(forge_from_remote(root)).name
     except UnreadableRemote:
         pass
+    return declared_forge(_declared(root)[0], str(root))
+
+
+def declared_forge(text: str, origin: str) -> str:
+    """The one forge every workflow pyproject *text* declares is placed on (its own ``forge`` key, else the base's).
+
+    Raises:
+        ValueError: the declarations name no single forge; *origin* names the text in the refusal.
+
+    """
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     forges = {
         layer.get(FORGE_KEY, base.get(name, {}).get(FORGE_KEY, 'github'))
-        for name, layer in _declared(root)[1].items()
+        for name, layer in declared_table(tomllib.loads(text), 'ci', {}).items()
         if name != SHARED
     }
     if len(forges) != 1:
         msg = (
-            f'{root}: no `origin` remote and its [tool.dev_lab.ci] tables name {sorted(forges) or "no"} forge(s) -- '
+            f'{origin}: no `origin` remote and its [tool.dev_lab.ci] tables name {sorted(forges) or "no"} forge(s) -- '
             f'add the `origin` remote, or declare a workflow placed on the one forge it is hosted on'
         )
         raise ValueError(msg)

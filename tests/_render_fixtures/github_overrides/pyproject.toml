@@ -1,0 +1,6 @@
+# A GitHub repo layering its own job permissions over the base CI, and its own ignore lines.
+[project]
+name = "overrides"
+
+[tool.dev_lab.ci."ci.yml".jobs.review.permissions]
+issues = "read"

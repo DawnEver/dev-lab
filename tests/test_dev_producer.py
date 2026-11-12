@@ -12,11 +12,15 @@ from dev_lab.dev import verify
 from dev_lab.dev.producer import (
     PRODUCING_VAR,
     RETRYABLE,
+    Owner,
     ProducerExit,
     box_release_reason,
     declared_outage,
     full_suite_refusal,
+    licence_outage,
     outage_env,
+    owned,
+    owner_of,
     producing,
     release_reason,
     unreachable,
@@ -47,14 +51,14 @@ def test_verify_exits_by_the_contract() -> None:
 
 
 def test_only_a_declared_unreachable_is_released_as_retryable() -> None:
-    reasons = {code: release_reason(code, outage=True) for code in (*ProducerExit, -9, 137)}
+    reasons = {code: release_reason(code, outage=Owner.NETWORK) for code in (*ProducerExit, -9, 137)}
     retryable = {code for code, reason in reasons.items() if reason.startswith(RETRYABLE)}
     assert retryable == {ProducerExit.UNREACHABLE}
-    assert not release_reason(ProducerExit.UNREACHABLE, outage=False).startswith(RETRYABLE), (
+    assert not release_reason(ProducerExit.UNREACHABLE, outage=None).startswith(RETRYABLE), (
         'a command exiting 4 on its own is not an outage: it would be re-claimed every tick'
     )
     assert len(set(reasons.values())) == len(reasons), 'every exit is released with a reason naming it'
-    assert release_reason(-9, outage=False) == 'released: producer crashed (exit -9)'
+    assert release_reason(-9, outage=None) == 'released: producer crashed (exit -9) class=environment'
 
 
 def test_the_box_record_decides_the_release_never_the_exit_code() -> None:
@@ -86,10 +90,63 @@ def test_a_claim_for_another_platform_does_not_open_this_one() -> None:
 def test_an_outage_is_declared_in_the_outcome_record_never_read_from_the_exit_code(tmp_path, monkeypatch) -> None:
     """The producer SAYS unreachable where serve named; exit 4 alone says nothing (sharp-review 10-15 #2)."""
     record = tmp_path / 'run.outcome.json'
-    assert not declared_outage(record), 'PLANTED CONTROL: nothing declared, no outage'
+    assert declared_outage(record) is None, 'PLANTED CONTROL: nothing declared, no outage'
     monkeypatch.setenv(*next(iter(outage_env(record).items())))
     assert unreachable('npm missing') == ProducerExit.UNREACHABLE
-    assert declared_outage(record)
-    assert not declared_outage(record), 'the declaration is consumed: a later run of the tree starts clean'
+    assert declared_outage(record) is Owner.NETWORK
+    assert declared_outage(record) is None, 'the declaration is consumed: a later run of the tree starts clean'
     monkeypatch.delenv(next(iter(outage_env(record))))
     assert unreachable('outside serve') == ProducerExit.UNREACHABLE, 'outside serve it only exits 4'
+
+
+def test_every_owner_class_of_contract_6_is_one_enum() -> None:
+    assert {str(one) for one in Owner} == {
+        'code',
+        'environment',
+        'scheduling',
+        'vendor-licence',
+        'network',
+        'status-publishing',
+    }
+
+
+def test_a_licence_outage_is_class_vendor_licence_and_retried_not_a_fail(tmp_path, monkeypatch) -> None:
+    """PLANTED: the producer declares the licence outage; serve releases it RETRYABLE under its own class."""
+    record = tmp_path / 'run.outcome.json'
+    monkeypatch.setenv(*next(iter(outage_env(record).items())))
+    assert licence_outage('JMAG: no seat free') == ProducerExit.UNREACHABLE
+    said = declared_outage(record)
+    assert said is Owner.VENDOR_LICENCE
+    released = release_reason(ProducerExit.UNREACHABLE, outage=said)
+    assert released.startswith(RETRYABLE), 'retried next tick, never settled'
+    assert owner_of('error', released) is Owner.VENDOR_LICENCE
+    assert owner_of('error', released) is not Owner.CODE, 'not the author red'
+    control = release_reason(ProducerExit.UNREACHABLE, outage=Owner.NETWORK)
+    assert owner_of('error', control) is Owner.NETWORK, 'CONTROL: a network outage keeps its own class'
+
+
+def test_a_producer_cannot_declare_the_code_its_outage() -> None:
+    with pytest.raises(ValueError, match='never code'):
+        unreachable('blame the author', Owner.CODE)
+
+
+def test_every_release_names_a_class_and_none_is_the_code() -> None:
+    """A producer ending without a part, or the box ending it, is never the author's red."""
+    releases = [release_reason(code, outage=None) for code in (*ProducerExit, -9)]
+    releases += [box_release_reason(Refused('cpu')), box_release_reason(ended(-9, 'wall')), box_release_reason(None)]
+    owners = {owner_of('error', one) for one in releases}
+    assert None not in owners, releases
+    assert Owner.CODE not in owners
+    assert owner_of('error', box_release_reason(Refused('cpu'))) is Owner.SCHEDULING
+
+
+def test_the_class_field_is_read_tolerantly_and_survives_the_cut() -> None:
+    assert owner_of('failure', 'scope=full ran=3 hands=-') is Owner.CODE, 'a judged FAIL is the code'
+    assert owner_of('success', 'class=code') is None
+    assert owner_of('error', 'env=abc class=network policy=p') is Owner.NETWORK, 'other fields around it'
+    assert owner_of('error', 'released: something') is None, 'PLANTED: no class is unowned, not code'
+    assert owner_of('error', 'class=bogus') is None
+    assert owner_of('error', 'subclass=code') is None, 'PLANTED: a longer key is not the field'
+    long = owned(Owner.ENVIRONMENT, 'x' * 500)
+    assert len(long) == 140
+    assert owner_of('error', long) is Owner.ENVIRONMENT

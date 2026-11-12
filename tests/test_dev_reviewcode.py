@@ -5,14 +5,17 @@ from __future__ import annotations
 import ast
 import io
 import sys
+import urllib.error
+from email.message import Message
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from dev_lab.dev import forgereview_scope, reviewcode
+from dev_lab.dev import forgefailure, forgereview_scope, reviewcode
 from dev_lab.dev.forgecontexts import REVIEW_CONTEXT
-from dev_lab.dev.reviewcode import ONLY_GENERATED, main, nothing_to_review, settle
+from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Diagnosis, is_retryable
+from dev_lab.dev.reviewcode import ONLY_GENERATED, forge_call, main, nothing_to_review, settle
 
 API = 'http://forge/api/v1/repos/o/r'
 HEAD = 'a' * 40
@@ -129,3 +132,100 @@ def test_a_stdout_with_no_buffer_still_returns_0_and_writes_the_output(
     assert main(_env(tmp_path / 'out'), _refused) == 0
     assert text.getvalue() == '', 'a text write is what ONE-WRITER-OWNS-THE-CONSOLE refuses'
     assert (tmp_path / 'out').read_text(encoding='utf-8') == 'settled=false\n'
+
+
+def _message(headers: dict[str, str]) -> Message:
+    out = Message()
+    for name, value in headers.items():
+        out[name] = value
+    return out
+
+
+class _Opener:
+    """``urlopen`` answering a scripted sequence: an int is that HTTP status refused, bytes the answer."""
+
+    def __init__(self, *script: object, headers: dict[str, str] | None = None) -> None:
+        self.script, self.headers, self.opened = list(script), headers or {}, 0
+
+    def __call__(self, request: object, **_: object) -> io.BytesIO:
+        self.opened += 1
+        step = self.script.pop(0)
+        if isinstance(step, OSError):
+            raise step
+        if isinstance(step, int):
+            msg = 'http://forge/x'
+            raise urllib.error.HTTPError(msg, step, 'no', _message(self.headers), io.BytesIO(b'{}'))
+        return io.BytesIO(bytes(step))  # a scripted answer
+
+
+def _call(opener: _Opener, sleeps: list[float]) -> reviewcode.Call:
+    return forge_call('t', opener=opener, sleep=sleeps.append)
+
+
+def test_a_transient_failure_is_retried_with_backoff_then_answers() -> None:
+    sleeps: list[float] = []
+    opener = _Opener(503, OSError('reset'), b'{"a": 1}')
+    assert _call(opener, sleeps)('GET', 'http://forge/api/v1/x', None) == {'a': 1}
+    assert sleeps == [reviewcode.BACKOFF_S, reviewcode.BACKOFF_S]
+
+
+def test_a_refusal_is_not_retried_and_the_attempts_are_bounded() -> None:
+    """PLANTED CONTROL: a 404 is final after one attempt; a forge down for good stops at ATTEMPTS."""
+    sleeps: list[float] = []
+    with pytest.raises(OSError, match='404'):
+        _call(_Opener(404), sleeps)('GET', 'http://forge/api/v1/x', None)
+    assert sleeps == []
+    down = _Opener(*[502] * 5)
+    with pytest.raises(OSError, match='502'):
+        _call(down, sleeps)('GET', 'http://forge/api/v1/x', None)
+    assert down.opened == reviewcode.ATTEMPTS
+
+
+def test_a_rate_limit_waits_what_the_forge_names_and_past_the_cap_is_reported() -> None:
+    sleeps: list[float] = []
+    limited = _Opener(429, b'[]', headers={'Retry-After': '7'})
+    assert _call(limited, sleeps)('GET', 'http://forge/api/v1/x', None) == []
+    assert sleeps == [7.0]
+    with pytest.raises(OSError, match='rate limit'):
+        _call(_Opener(429, headers={'Retry-After': '3600'}), sleeps)('GET', 'http://forge/api/v1/x', None)
+
+
+def test_a_refused_credential_stops_and_is_reported_not_swallowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The settle never fails the job, but a refused job token is a loud annotation naming the forge host."""
+    sleeps: list[float] = []
+    opener = _Opener(401, 401)
+    with pytest.raises(reviewcode.CredentialRefused, match=r'forge\.example'):
+        forge_call('t', opener=opener, sleep=sleeps.append)('GET', 'https://forge.example/api/v1/x', None)
+    assert (opener.opened, sleeps) == (1, [])
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, 'stdout', io.TextIOWrapper(raw, encoding='utf-8'))
+
+    def refused(*_: object) -> object:
+        msg = 'https://forge.example/api/v1/x'
+        raise reviewcode.CredentialRefused(msg)
+
+    assert main(_env(tmp_path / 'out'), refused) == 0
+    said = raw.getvalue().decode()
+    assert said.startswith('::error'), said
+    assert 'forge.example' in said
+    assert (tmp_path / 'out').read_text(encoding='utf-8') == 'settled=false\n'
+
+
+@pytest.mark.parametrize(
+    ('status', 'text', 'headers'),
+    [(0, 'reset', {}), (404, '', {}), (408, '', {}), (422, '', {}), (429, '', {}), (403, 'API rate limit exceeded', {}),
+     (403, '', {'X-RateLimit-Remaining': '0'}), (403, 'forbidden', {}), (500, '', {}), (502, '', {}), (503, '', {})],
+)  # fmt: skip
+def test_the_bare_loop_decides_as_the_family_loop_does(status: int, text: str, headers: dict[str, str]) -> None:
+    """Reviewcode runs before any install, so it cannot import forgefailure: this pins its decision to that one."""
+    family = forgefailure.diagnose(status, text, headers)
+    mine = reviewcode.verdict(status, text, headers)
+    if family is Diagnosis.RATE_LIMITED:
+        assert mine == 'wait'
+    else:
+        assert (mine == 'retry') is is_retryable(family), (mine, family)
+    assert (reviewcode.ATTEMPTS, reviewcode.BACKOFF_S) == (DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S)
+    assert reviewcode.RATE_WAIT_CAP_S == forgefailure.RATE_WAIT_CAP_S
+    assert reviewcode.verdict(401, '', {}) == 'credential'
