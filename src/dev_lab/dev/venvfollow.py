@@ -161,7 +161,7 @@ def _session_root(stdin: TextIO) -> Path | None:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """Follow integration, the lock and the hooks: inline, ``--background``, or as the ``--session-start`` hook. Always 0."""
+    """Follow integration, the lock and the hooks: inline, ``--background`` or ``--session-start``. Always 0."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.venvfollow', description=main.__doc__)
     parser.add_argument('--root', type=Path, default=None, help='the checkout (default: the one cwd lies in)')
     mode = parser.add_mutually_exclusive_group()

@@ -25,7 +25,7 @@ _DECLARED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
         [_GIT, '-C', str(root), '-c', 'user.name=t', '-c', 'user.email=t@t', *args],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, encoding='utf-8',
     ).stdout.strip()  # fmt: skip
 
 
@@ -84,7 +84,7 @@ def test_a_dirty_checkout_is_never_moved_and_says_why(repo) -> None:
     assert _git(root, 'rev-parse', 'HEAD') == old
 
 
-def test_a_detached_head_that_is_not_an_ancestor_is_left_where_it_is(repo) -> None:
+def test_a_detached_head_neither_an_ancestor_nor_on_origin_is_left_where_it_is(repo) -> None:
     root, _old, _tip = repo
     _git(root, 'checkout', '-q', '--orphan', 'elsewhere')
     _commit(root, _DECLARED + '# elsewhere\n')
@@ -92,6 +92,9 @@ def test_a_detached_head_that_is_not_an_ancestor_is_left_where_it_is(repo) -> No
     here = _git(root, 'rev-parse', 'HEAD')
     assert 'not an ancestor' in checkoutfollow.advance(root, fetch=_no_fetch)
     assert _git(root, 'rev-parse', 'HEAD') == here
+    _git(root, 'update-ref', 'refs/remotes/origin/feat/elsewhere', here)
+    assert 'integrate/main' in checkoutfollow.advance(root, fetch=_no_fetch), 'held upstream: leaving it is lossless'
+    assert _git(root, 'symbolic-ref', '--short', 'HEAD') == 'integrate/main'
 
 
 def test_a_linked_worktree_or_another_branch_is_not_the_follows_business(repo, tmp_path: Path) -> None:

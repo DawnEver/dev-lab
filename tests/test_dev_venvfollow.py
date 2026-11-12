@@ -100,9 +100,9 @@ def test_a_merge_and_a_checkout_run_the_follow_as_advisory_git_hooks() -> None:
 def test_the_follow_moves_the_checkout_then_the_venv_then_the_hooks_unprompted(tmp_path: Path, monkeypatch) -> None:
     """User ruling 2026-11-12: a checkout, its venv and its hooks follow integration with no person asked."""
     root, done = _checkout(tmp_path), []
-    monkeypatch.setattr(venvfollow.checkoutfollow, 'advance', lambda r: done.append('checkout') or 'moved')
-    monkeypatch.setattr(venvfollow, 'follow', lambda r: done.append('venv') or venvfollow.CURRENT)
-    monkeypatch.setattr(venvfollow.hook_install, 'rewire', lambda r: done.append('hooks') or '')
+    monkeypatch.setattr(venvfollow.checkoutfollow, 'advance', lambda _r: done.append('checkout') or 'moved')
+    monkeypatch.setattr(venvfollow, 'follow', lambda _r: done.append('venv') or venvfollow.CURRENT)
+    monkeypatch.setattr(venvfollow.hook_install, 'rewire', lambda _r: done.append('hooks') or '')
     assert venvfollow.main(['--root', str(root)]) == 0
     assert done == ['checkout', 'venv', 'hooks'], 'the checkout moves first: the venv follows the moved lock'
 
@@ -110,9 +110,9 @@ def test_the_follow_moves_the_checkout_then_the_venv_then_the_hooks_unprompted(t
 def test_the_background_follow_detaches_for_a_behind_checkout_or_unwired_hooks(tmp_path: Path, monkeypatch) -> None:
     root, started = _checkout(tmp_path), []
     venvfollow.stamp(root, venvfollow.env_key(root))
-    monkeypatch.setattr(venvfollow, 'detach_argv', lambda r, args: started.append(args))
+    monkeypatch.setattr(venvfollow, 'detach_argv', lambda _r, args: started.append(args))
     for behind, unwired in ((True, False), (False, True), (False, False)):
-        monkeypatch.setattr(venvfollow.checkoutfollow, 'behind', lambda r, b=behind: b)
-        monkeypatch.setattr(venvfollow.hook_install, 'unwired', lambda r, u=unwired: u)
+        monkeypatch.setattr(venvfollow.checkoutfollow, 'behind', lambda _r, b=behind: b)
+        monkeypatch.setattr(venvfollow.hook_install, 'unwired', lambda _r, u=unwired: u)
         venvfollow.main(['--root', str(root), '--background'])
     assert len(started) == 2, 'PLANTED CONTROL: a current venv, checkout and hooks detach nothing'
