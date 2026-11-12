@@ -1,10 +1,10 @@
 """``forge account ensure`` / ``forge token mint``: the forge's machine accounts, made only through this door.
 
 After the lockdown no agent holds root or a Gitea admin token (user rulings 2026-11-09). A machine account -- one
-declared role, ``[ops.forge.accounts] <login> = {role, repos}`` with role ``read``, ``write`` or ``review`` -- and
-each of its per-host tokens are made here, run by the ``ops`` account through its fixed sudo line, each use
-authorised by a SINGLE-USE consent credential the user granted with their code, whose ``subject`` is the request's
-digest (:mod:`dev_lab.ops.forgerequests`): it consents to exactly that request.
+declared role, ``[ops.forge.accounts] <login> = {role, repos}`` with role ``read``, ``write``, ``review`` or
+``breakglass`` -- and each of its per-host tokens are made here, run by the ``ops`` account through its fixed sudo
+line, each use authorised by a SINGLE-USE consent credential the user granted with their code, whose ``subject``
+is the request's digest (:mod:`dev_lab.ops.forgerequests`): it consents to exactly that request.
 
 ``account ensure --login L`` reads L's role and repositories from the declaration (one source), makes the login if
 absent -- restricted, random password, no password change -- and grants EXACTLY its role's permission
@@ -15,7 +15,8 @@ after it was granted is refused.
 mints a closed, ordered batch of one login's tokens (at most :data:`BATCH_CAP`) under ONE :data:`BATCH_ACTION`
 credential whose subject is the whole batch's digest (:meth:`TokenBatch.subject`); each item is validated as a single
 mint is, all of them before the consent is spent, and each token is printed as one JSON line ``{"name", "token"}``.
-A login whose declared role is ``read`` is refused any scope that is not ``read:*``; an existing token
+A login whose declared role is ``read`` is refused any scope that is not ``read:*``, a ``breakglass`` login any
+outside :data:`~dev_lab.ops.giteaadmin.BREAKGLASS_SCOPES`; an existing token
 name is refused unless ``--rotate``, which deletes the old token first. Every use is audited -- who, what --
 never a token. ``token revoke`` deletes one named token of one login under ONE :data:`REVOKE_ACTION` credential
 whose subject is the login and name's digest (:meth:`RevokeRequest.subject`); a name the login does not hold is
@@ -52,7 +53,7 @@ from dev_lab.ops.forgerequests import (
     declared_request,
 )
 from dev_lab.ops.forgewho import ROLES
-from dev_lab.ops.giteaadmin import ROLE_GRANTS, Forge, ForgeRefused, GiteaCli, local_api, run_argv
+from dev_lab.ops.giteaadmin import BREAKGLASS_SCOPES, ROLE_GRANTS, Forge, ForgeRefused, GiteaCli, local_api, run_argv
 
 if TYPE_CHECKING:
     import argparse
@@ -210,9 +211,12 @@ def _scopes(role: Forge, login: str, name: str, scope: str) -> list[str]:
     if not scopes:
         msg = f'token {name} needs a scope'
         raise ForgeRefused(msg)
-    reader = role.accounts.get(login, {}).get('role') == 'read'
-    if reader and (wide := [s for s in scopes if not s.startswith('read:')]):
+    declared = role.accounts.get(login, {}).get('role')
+    if declared == 'read' and (wide := [s for s in scopes if not s.startswith('read:')]):
         msg = f'{login} is declared read-only ([ops.forge.accounts] role read): refused scopes {wide}'
+        raise ForgeRefused(msg)
+    if declared == 'breakglass' and (wide := [s for s in scopes if s not in BREAKGLASS_SCOPES]):
+        msg = f'{login} merges break-glass only ([ops.forge.accounts] role breakglass): refused scopes {wide}'
         raise ForgeRefused(msg)
     return scopes
 

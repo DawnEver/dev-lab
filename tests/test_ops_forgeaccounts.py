@@ -65,6 +65,7 @@ def _role(tmp_path: Path) -> Forge:
         'server-reader': {'role': 'read', 'repos': ['owner/b', 'owner/a']},
         'forge-ci': {'role': 'write', 'repos': ['owner/a']},
         'forge-judge': {'role': 'review', 'repos': ['owner/a']},
+        'forge-breakglass': {'role': 'breakglass', 'repos': ['owner/a']},
     })  # fmt: skip
 
 
@@ -143,12 +144,40 @@ def test_a_read_only_login_is_refused_a_write_scope(tmp_path: Path) -> None:
 
 def test_a_role_grants_its_narrowest_permission(tmp_path: Path) -> None:
     gitea = FakeGitea()
-    for login, role in (('forge-ci', 'write'), ('forge-judge', 'review')):
-        request = AccountRequest(login, role, ('owner/a',))
+    for login, role in (('server-reader', 'read'), ('forge-ci', 'write'), ('forge-judge', 'review'),
+                        ('forge-breakglass', 'breakglass')):  # fmt: skip
+        repos = ('owner/a', 'owner/b') if role == 'read' else ('owner/a',)
+        request = AccountRequest(login, role, repos)
         forgeaccounts.ensure(_role(tmp_path), gitea, request, redeem=_consent(request.subject()), credential={},
                              by='ops')  # fmt: skip
-    # a commit status needs code write on Gitea, so a reviewer is a write collaborator; its token scope is the limit
-    assert gitea.collaborators == {('owner/a', 'forge-ci'): 'write', ('owner/a', 'forge-judge'): 'write'}
+    # a commit status needs code write on Gitea, so a reviewer is a write collaborator; its token scope is the limit.
+    # A break-glass merger is a REPOSITORY admin on exactly its declared repos: only it may merge past protection.
+    assert gitea.collaborators == {
+        ('owner/a', 'server-reader'): 'read', ('owner/b', 'server-reader'): 'read', ('owner/a', 'forge-ci'): 'write',
+        ('owner/a', 'forge-judge'): 'write', ('owner/a', 'forge-breakglass'): 'admin',
+    }  # fmt: skip
+
+
+def test_an_unknown_role_is_refused_naming_the_declared_roles(tmp_path: Path) -> None:
+    accounts = {'root': {'role': 'owner', 'repos': ['o/a']}}
+    role = Forge(api='http://127.0.0.1:3000', admin='site-admin', accounts=accounts)
+    with pytest.raises(ForgeRefused, match=r"needs role one of \['breakglass', 'read', 'review', 'write'\]"):
+        forgerequests.declared_request(role, 'root')
+    # PLANTED CONTROL: the same table with a declared role is read
+    assert forgerequests.declared_request(_role(tmp_path), 'forge-breakglass').role == 'breakglass'
+
+
+@pytest.mark.parametrize('wide', ['write:admin', 'write:organization', 'write:user', 'write:issue', 'all'])
+def test_a_breakglass_token_holds_repository_and_read_user_scopes_only(tmp_path: Path, wide: str) -> None:
+    gitea = FakeGitea(users={'forge-breakglass'})
+    refused = TokenRequest('forge-breakglass', 'consent', f'write:repository,read:user,{wide}', rotate=False)
+    with pytest.raises(ForgeRefused, match=rf"role breakglass\): refused scopes \['{wide}'\]"):
+        forgeaccounts.mint(_role(tmp_path), gitea, refused, redeem=_consent(refused.subject()), credential={}, by='ops')
+    assert gitea.tokens == {}
+    # PLANTED CONTROL: the least scope that merges and answers GET /user is minted
+    request = TokenRequest('forge-breakglass', 'consent', 'write:repository,read:user', rotate=False)
+    forgeaccounts.mint(_role(tmp_path), gitea, request, redeem=_consent(request.subject()), credential={}, by='ops')
+    assert gitea.tokens == {'forge-breakglass': {'consent': 'write:repository,read:user'}}
 
 
 def test_an_undeclared_login_is_refused_before_the_consent_is_spent(tmp_path: Path) -> None:

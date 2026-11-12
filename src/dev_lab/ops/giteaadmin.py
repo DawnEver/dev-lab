@@ -22,6 +22,7 @@ from typing import Any, Final
 from lab_commons import launch
 
 __all__ = [
+    'BREAKGLASS_SCOPES',
     'READ',
     'ROLE_GRANTS',
     'Forge',
@@ -38,8 +39,11 @@ __all__ = [
 READ: Final = 'read'
 #: Each declared machine-account role and the narrowest Gitea collaborator permission that serves it. A review
 #: posts a pull review and a commit status; Gitea routes ``POST /repos/{o}/{r}/statuses/{sha}`` behind
-#: ``reqRepoWriter(unit.TypeCode)``, so a reviewer is a WRITE collaborator and its token's scopes are its limit.
-ROLE_GRANTS: Final = {'read': READ, 'write': 'write', 'review': 'write'}
+#: ``reqRepoWriter(unit.TypeCode)``, so a reviewer is a WRITE collaborator and its token's scopes are its limit. A
+#: break-glass merger merges past branch protection, which Gitea allows only a REPOSITORY admin -- never org or site.
+ROLE_GRANTS: Final = {'read': READ, 'write': 'write', 'review': 'write', 'breakglass': 'admin'}
+#: The only scopes a ``breakglass`` login's token may hold: merge (repository) and name itself (``GET /user``).
+BREAKGLASS_SCOPES: Final = frozenset({'read:repository', 'write:repository', 'read:user'})
 #: Runs one argv; its exit code and output.
 type Runner = Callable[[list[str]], tuple[int, str]]
 #: One local API call ``(method, path, token, body) -> (status, json)``.
@@ -53,7 +57,8 @@ class Forge:
     ``api`` is the local Gitea's base URL; ``admin`` the Gitea admin whose SHORT-LIVED token (minted by the CLI per
     use, deleted after it) grants a repository collaborator, which the Gitea CLI cannot. ``binary``, ``config`` and
     ``user`` run the Gitea CLI as the Gitea user. ``accounts`` declares each machine account,
-    ``{login: {role, repos}}`` with a role of :data:`ROLE_GRANTS`; a ``read`` login may hold ``read:*`` scopes only;
+    ``{login: {role, repos}}`` with a role of :data:`ROLE_GRANTS`; a ``read`` login may hold ``read:*`` scopes only, a
+    ``breakglass`` login :data:`BREAKGLASS_SCOPES` only;
     ``email_domain`` the address a made account gets; ``log`` the audit (who, what -- never a token).
     """
 
