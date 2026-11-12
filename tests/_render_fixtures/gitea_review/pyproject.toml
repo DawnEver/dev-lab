@@ -1,0 +1,6 @@
+# A Gitea repo rendering its forge's base workflows: the trusted review and the merge.
+[project]
+name = "gitea"
+
+[tool.dev_lab.ci."review.yml"]
+[tool.dev_lab.ci."merge.yml"]

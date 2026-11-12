@@ -417,6 +417,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgerunshow` -- ``forge run show`` (what a cluster run published), ``forge run supersede``.
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
+* :mod:`dev_lab.dev.rendergoldens` -- every family render of the declaration fixtures, pinned byte for byte as goldens.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
 * :mod:`dev_lab.dev.forgereview_scope` -- what a review reads: the own change, minus generated files, in lens slices.
