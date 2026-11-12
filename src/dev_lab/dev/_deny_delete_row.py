@@ -69,9 +69,9 @@ RECURSIVE_DELETE: dict[str, object] = {
     'matches': 'command',
     'hazard': 'a raw recursive delete judges deletability by hand; on 2026-10-27 one took a MAIN checkout.',
     'remedy': (
-        'Worktrees and branches: <venv python> -m dev_lab.dev.branchset --apply (reclaim refuses '
-        'a main checkout and keeps real work). Anything else: ask the user. Scratch under system temp or output/ '
-        'is not refused.'
+        'Worktrees and branches: <venv python> -m dev_lab.dev.branchset --apply (keeps real work). A throwaway '
+        'tree: <venv python> -m dev_lab.dev.worktrees --scratch <name> <sha>, later --discard <name>. Else ask the '
+        'user. Scratch under system temp or output/ is not refused.'
     ),
     'needs': None,
     'refuses': (

@@ -51,6 +51,23 @@ one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.d
 and the session debris hook runs the former, so a finished tree no longer pins its branch forever. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
 
+
+## A throwaway comparison tree
+
+A tree made only to compare against (a base sha to diff tests on) is never landed, so reclaim would keep it as
+`not landed` forever. Declare it disposable when you make it, and remove it yourself when done:
+
+```text
+<venv python> -m dev_lab.dev.worktrees --scratch <name> <sha>   # detached at <home>/<name>, declared disposable
+<venv python> -m dev_lab.dev.worktrees --discard <name>         # removes it now, submodule checkouts included
+```
+
+The declaration is a file in the tree's own git admin directory (`dev_lab.dev.reclaim.DISPOSABLE`, holding the
+sha it was made at), so it goes with git's registration. Disposable means its untracked and ignored content is
+scratch and it waits for no landing; `--prune` and `branchset --apply` also take it once quiet. `--discard`
+still refuses an undeclared tree, a main checkout, a lock, a tracked change, a HEAD no ref holds, a live process
+(the asker's own included) and run outputs inside it.
+
 ## Archiving a tree before removing it
 
 `python -m dev_lab.dev.worktrees --archive <name>` (`dev_lab.dev.worktree_archive`) is the step before
