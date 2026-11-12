@@ -79,7 +79,7 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
   commit status only for a code writer -- the reviewer's real bound is its token's scopes
   (`write:repository,write:issue,read:user`). `breakglass -> admin`: a repository admin on exactly its declared repos
   (never org or site), because only an admin merges past branch protection; its token may hold only
-  `read:repository`, `write:repository`, `read:user` (`BREAKGLASS_SCOPES`).
+  `read:repository`, `write:repository`, `read:issue`, `write:issue` (its reason comment), `read:user` (`BREAKGLASS_SCOPES`).
 - A `read` login is refused any scope outside `read:*`. A research host's deploy refuses a writer credential
   (`forge auth role`, `dev_lab.dev.hpcaccount`).
 

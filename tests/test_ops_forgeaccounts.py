@@ -167,17 +167,18 @@ def test_an_unknown_role_is_refused_naming_the_declared_roles(tmp_path: Path) ->
     assert forgerequests.declared_request(_role(tmp_path), 'forge-breakglass').role == 'breakglass'
 
 
-@pytest.mark.parametrize('wide', ['write:admin', 'write:organization', 'write:user', 'write:issue', 'all'])
-def test_a_breakglass_token_holds_repository_and_read_user_scopes_only(tmp_path: Path, wide: str) -> None:
+@pytest.mark.parametrize('wide', ['write:admin', 'write:organization', 'write:user', 'write:package', 'all'])
+def test_a_breakglass_token_holds_repository_issue_and_read_user_scopes_only(tmp_path: Path, wide: str) -> None:
     gitea = FakeGitea(users={'forge-breakglass'})
-    refused = TokenRequest('forge-breakglass', 'consent', f'write:repository,read:user,{wide}', rotate=False)
+    scopes = f'write:repository,write:issue,read:user,{wide}'
+    refused = TokenRequest('forge-breakglass', 'consent', scopes, rotate=False)
     with pytest.raises(ForgeRefused, match=rf"role breakglass\): refused scopes \['{wide}'\]"):
         forgeaccounts.mint(_role(tmp_path), gitea, refused, redeem=_consent(refused.subject()), credential={}, by='ops')
     assert gitea.tokens == {}
-    # PLANTED CONTROL: the least scope that merges and answers GET /user is minted
-    request = TokenRequest('forge-breakglass', 'consent', 'write:repository,read:user', rotate=False)
+    # PLANTED CONTROL: the least scope that merges, posts its reason comment and answers GET /user is minted
+    request = TokenRequest('forge-breakglass', 'consent', 'write:repository,write:issue,read:user', rotate=False)
     forgeaccounts.mint(_role(tmp_path), gitea, request, redeem=_consent(request.subject()), credential={}, by='ops')
-    assert gitea.tokens == {'forge-breakglass': {'consent': 'write:repository,read:user'}}
+    assert gitea.tokens == {'forge-breakglass': {'consent': 'write:repository,write:issue,read:user'}}
 
 
 def test_an_undeclared_login_is_refused_before_the_consent_is_spent(tmp_path: Path) -> None:
