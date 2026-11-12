@@ -11,10 +11,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Knowledge has four layers: rules (hard constraints), docs (mechanism), memory (dated entries) '
             'and tasks (`.claude/tasks/<slug>/TASK.md` + `JOURNAL.md`, user-opened). A memory entry sits '
-            'under a YYYY/MM/DD path with frontmatter (`name`, `description`) and is never edited, deleted or '
-            'moved once written -- a correction is a new entry naming it in `corrects:`, a consolidation one '
-            'naming its same-scope sources in `merged_from:`, citing a source file per paragraph -- so a '
-            'change under `**/.claude/memory/**` may only ADD a file, the one move being a task archived into '
+            'under a YYYY/MM/DD path with frontmatter (`name`, `description`) and is never deleted, but may be '
+            'updated in place or moved within memory (a package scope into the root included); a correction '
+            'may name what it corrects in `corrects:`, a consolidation names its same-scope sources in '
+            '`merged_from:`, citing a source file per paragraph -- so a change under `**/.claude/memory/**` '
+            'never deletes a file nor moves one out of memory, the one move in being a task archived into '
             'memory; no `accessed` field is kept, and the index `<scope>/.claude/memory-index.md` is derived, '
             'gitignored and never under `rules/`.'
         ),
