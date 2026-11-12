@@ -453,4 +453,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'remote',
     # ORIGINAL: hpcaccount's forget verb (2026-11-10), one learned row off a cluster account; no consumer held it.
     'forget',
+    # ORIGINAL: user ruling 2026-11-12, an agent places a minted forge token on a key-only account; no consumer held it.
+    'credential',
 )

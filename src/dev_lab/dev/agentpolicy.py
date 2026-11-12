@@ -312,6 +312,14 @@ POLICY: Final[tuple[Door, ...]] = (
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
+        _module('hpcaccount', 'credential'),
+        MAIN,
+        'Placing one minted forge token of a declared login on a trusted cluster account, the token on standard '
+        "input and replacing only that forge's stored line, through the grant's own login hosts, then confirming "
+        'the forge answers as that login (user ruling 2026-11-12).',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
         _module('opsserver'),
         MAIN,
         "Running one of the ops account's fixed verbs on a declared server the integrator deploys: install, a "
