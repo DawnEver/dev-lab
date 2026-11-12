@@ -15,6 +15,7 @@ import urllib.request
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Final
@@ -31,6 +32,7 @@ __all__ = [
     'Http',
     'Runner',
     'TokenStore',
+    'audit',
     'local_api',
     'run_argv',
 ]
@@ -218,7 +220,8 @@ class GiteaCli:
             raise ForgeRefused(msg)
         return said
 
-    def _api(self, method: str, path: str, *, body: Mapping[str, Any] | None = None) -> tuple[int, Any]:
+    def api(self, method: str, path: str, *, body: Mapping[str, Any] | None = None) -> tuple[int, Any]:
+        """One local API call (*path* under ``/api/v1``) as the site admin; its status and parsed body."""
         if self._admin is None:
             name = f'dev-lab-ops-{uuid.uuid4().hex[:12]}'
             self._admin = (name, self.generate_token(self.role.admin, name, 'write:repository,write:user,write:admin'))
@@ -243,7 +246,7 @@ class GiteaCli:
 
     def permission(self, repo: str, login: str) -> str | None:
         """*login*'s permission on *repo* (``none`` when it holds none)."""
-        status, found = self._api('GET', f'/repos/{repo}/collaborators/{login}/permission')
+        status, found = self.api('GET', f'/repos/{repo}/collaborators/{login}/permission')
         if status == HTTPStatus.NOT_FOUND:
             msg = f'no repository {repo} (or no login {login})'
             raise ForgeRefused(msg)
@@ -251,7 +254,7 @@ class GiteaCli:
 
     def grant(self, repo: str, login: str, permission: str) -> None:
         """Make *login* a collaborator of *repo* holding *permission*."""
-        status, _ = self._api('PUT', f'/repos/{repo}/collaborators/{login}', body={'permission': permission})
+        status, _ = self.api('PUT', f'/repos/{repo}/collaborators/{login}', body={'permission': permission})
         if status not in {HTTPStatus.OK, HTTPStatus.NO_CONTENT}:
             msg = f'granting {login} {permission} on {repo} failed (HTTP {status})'
             raise ForgeRefused(msg)
@@ -268,6 +271,14 @@ class GiteaCli:
         """A new token of *login* named *name* with *scopes* (the CLI's ``--raw``: the bare token)."""
         return self._cli('admin', 'user', 'generate-access-token', '--username', login, '--token-name', name,
                          '--scopes', scopes, '--raw').strip()  # fmt: skip
+
+
+def audit(log: str, by: str, line: Mapping[str, Any]) -> None:
+    """Append one audit *line* to *log* (``[ops.forge] log``): when, who, what -- never a token."""
+    path = Path(log)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a', encoding='utf-8') as out:
+        out.write(json.dumps({'at': datetime.now(UTC).isoformat(timespec='seconds'), 'by': by, **line}) + '\n')
 
 
 def run_argv(argv: list[str]) -> tuple[int, str]:

@@ -3,7 +3,8 @@
 Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
 ``consent serve|enrol|keygen|ready`` (:mod:`dev_lab.ops.consentverbs`), ``backup export|pull``,
 ``access enrol|adopt``, ``disk``, ``clean`` (:mod:`dev_lab.ops.disk`), ``config apply|tick``
-(:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`).
+(:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`),
+``forge protect plan|apply`` (:mod:`dev_lab.ops.forgeprotection`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -33,6 +34,7 @@ from dev_lab.ops import (
     consentverbs,
     disk,
     forgeaccounts,
+    forgeprotection,
     forgewho,
     githubwho,
     install,
@@ -222,6 +224,8 @@ def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
     if config.forge is None:
         emit(f'[ops] {config.path} enables no [ops.forge]', err=True)
         return 2
+    if args.kind == 'protect':  # plan reads no consent key; apply builds its redeemer when it spends
+        return forgeprotection.run(config.forge, args, lambda: _redeemer(config))
     try:
         redeem_for = _redeemer(config)
     except ConsentRefused as refused:

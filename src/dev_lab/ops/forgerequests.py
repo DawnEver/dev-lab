@@ -30,6 +30,7 @@ __all__ = [
     'TokenBatch',
     'TokenRequest',
     'declared_request',
+    'digest',
 ]
 
 #: The consent action of one ``account ensure`` (:mod:`dev_lab.ops.consent.actions`).
@@ -44,7 +45,8 @@ REVOKE_ACTION: Final = 'ops.forge.revoke'
 BATCH_CAP: Final = 16
 
 
-def _digest(action: str, fields: Mapping[str, str]) -> str:
+def digest(action: str, fields: Mapping[str, str]) -> str:
+    """The SHA-256 a credential of *action* names as its subject: the action, then each field, sorted."""
     text = '\n'.join([action, *(f'{key}={value}' for key, value in sorted(fields.items()))])
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
@@ -60,7 +62,7 @@ class AccountRequest:
     def subject(self) -> str:
         """The digest an ``ops.forge.account`` credential's subject must equal: login, role and repositories."""
         fields = {'login': self.login, 'role': self.role, 'repos': ','.join(sorted(set(self.repos)))}
-        return _digest(ACCOUNT_ACTION, fields)
+        return digest(ACCOUNT_ACTION, fields)
 
 
 def declared_request(role: Forge, login: str) -> AccountRequest:
@@ -93,7 +95,7 @@ class TokenRequest:
     def subject(self) -> str:
         """The digest an ``ops.forge.token`` credential's subject must equal."""
         fields = {'login': self.login, 'name': self.name, 'scope': self.scope, 'rotate': str(int(self.rotate))}
-        return _digest(MINT_ACTION, fields)
+        return digest(MINT_ACTION, fields)
 
 
 @dataclass(frozen=True)
@@ -105,7 +107,7 @@ class RevokeRequest:
 
     def subject(self) -> str:
         """The digest an ``ops.forge.revoke`` credential's subject must equal."""
-        return _digest(REVOKE_ACTION, {'login': self.login, 'name': self.name})
+        return digest(REVOKE_ACTION, {'login': self.login, 'name': self.name})
 
 
 @dataclass(frozen=True)
@@ -127,4 +129,4 @@ class TokenBatch:
     def subject(self) -> str:
         """The digest an ``ops.forge.tokens`` credential's subject must equal: the login and every item, in order."""
         listed = json.dumps([[item.name, item.scope, int(item.rotate)] for item in self.items], separators=(',', ':'))
-        return _digest(BATCH_ACTION, {'login': self.login, 'items': listed})
+        return digest(BATCH_ACTION, {'login': self.login, 'items': listed})

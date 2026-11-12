@@ -23,7 +23,7 @@ import base64
 import contextlib
 import os
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, JUDGE_CHECK, REVIEW_CONTEXT
@@ -93,7 +93,16 @@ class RunsUnread(ValueError):
     """The forge's runs at a head could not be read: whether its review run concluded success is undecided."""
 
 
-def manifest_at(client: Client, ref: str) -> str:
+class RepoReader(Protocol):
+    """What :func:`manifest_at` asks of a client: its repository path and one forge call."""
+
+    @property
+    def repo(self) -> str: ...
+
+    def call(self, method: str, path: str, /) -> object: ...
+
+
+def manifest_at(client: RepoReader, ref: str) -> str:
     """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree.
 
     Raises:
