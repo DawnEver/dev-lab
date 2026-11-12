@@ -61,13 +61,21 @@ def test_a_green_pr_is_posted_ready_once_and_a_stale_red_decision_is_never_read_
     assert MERGE_READY_CONTEXT in NOT_PARTS, 'the decision is never a part'
 
 
-def test_a_pr_missing_a_condition_is_posted_failure_naming_it(tmp_path: Path) -> None:
+def test_a_pr_only_waiting_on_a_check_is_posted_pending_naming_it(tmp_path: Path) -> None:
     """PLANTED CONTROL: the same PR with tests/security green is ready (the test above)."""
     work, forge, number, head = _pr(tmp_path, green=False)
     ready(work, forge, number)
     state, description = _merge_ready(forge, head)
-    assert state == 'failure'
+    assert state == 'pending'
     assert description.startswith('waits on: its security check: tests/security is not yet judged')
+
+
+def test_a_pr_whose_check_is_red_is_posted_failure(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the pending test above: a terminal red is no wait."""
+    work, forge, number, head = _pr(tmp_path, green=False)
+    status_post(forge, head, context='tests/security', state='failure', description='a finding')
+    ready(work, forge, number)
+    assert _merge_ready(forge, head)[0] == 'failure'
 
 
 def test_a_pr_into_another_branch_than_integration_is_never_ready(tmp_path: Path) -> None:
@@ -260,7 +268,7 @@ def test_on_gitea_a_review_that_did_not_run_is_ready_warned_never_waiting_on_pen
         assert state == 'success'
         assert 'WARNED -- Unreviewed: no reviewer returned findings (a unsupported)' in description
     else:
-        assert state == 'failure'
+        assert state == 'pending'
         assert description.startswith(f'waits on: its review: tests/review is pending: {UNREVIEWED_STATUS}')
 
 
@@ -285,7 +293,7 @@ def test_a_unreviewed_status_without_a_trusted_record_is_no_waiver(tmp_path: Pat
     forge.issue_comment(number, unreviewed_line('review budget reached: 11.00/10.00 USD'))
     forge.login = 'github-actions[bot]'
     ready(work, forge, number)
-    assert _merge_ready(forge, head)[0] == 'failure'
+    assert _merge_ready(forge, head)[0] == 'pending'
     assert forge.merges == []
 
 
