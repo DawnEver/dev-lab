@@ -18,9 +18,11 @@ from _forge_fake import Loopback, answer, client, git_out, run_git, serve
 from dev_lab.dev import integrate
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.integrate import promote
+from dev_lab.dev.verdictenv import verdict_policy_at
 
 GITEA = Forge('forge.example.org', 'o', 'r')
 GAPI = '/api/v1/repos/o/r'
+_INTEGRATOR = '[tool.dev_lab.integrator]\ntrunk = "main"\nintegration = "integrate/main"\n\n'
 _RETIRED = '[tool.dev_lab.integrator]\nhost = "G"\n'
 
 
@@ -29,8 +31,26 @@ def server() -> Iterator[ThreadingHTTPServer]:
     yield from serve()
 
 
-def _part(scope: str = 'full') -> dict[str, object]:
-    return {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': f'scope={scope} ran=3 hands=-'}
+_ENV = '0123abcd'
+
+
+def _part(
+    repo: Path,
+    sha: str,
+    scope: str = 'full',
+    *,
+    env: str = _ENV,
+    policy: str | None = None,
+    state: str = 'success',
+    part: str = 'base',
+    ident: int = 1,
+    tail: str = '',
+) -> dict[str, object]:
+    """A settled ``tests/<part>`` as the forge lists it; its policy is the one *sha* declares unless named."""
+    policy = verdict_policy_at(repo, sha) if policy is None else policy
+    named = (f' env={env}' if env else '') + (f' policy={policy}' if policy else '')
+    description = f'scope={scope} ran=3 hands=-{named}{tail}'
+    return {'id': ident, 'context': f'tests/{part}', 'status': state, 'description': description}
 
 
 def test_promote_moves_only_the_local_trunk_and_only_on_full_parts(server, tmp_path: Path) -> None:
@@ -40,9 +60,9 @@ def test_promote_moves_only_the_local_trunk_and_only_on_full_parts(server, tmp_p
     run_git(repo, 'checkout', '-q', '--detach')
     run_git(repo, 'branch', '-f', 'main', 'origin/main')
     built = client(GITEA, Loopback(server))
-    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part('incremental')]))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip, 'incremental')]))
     assert promote(repo, built, tip).action == 'refused'
-    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part()]))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip)]))
     assert promote(repo, built, tip).action == 'promote'
     assert git_out(repo, 'rev-parse', 'main') == tip
     assert git_out(bare, 'rev-parse', 'main') != tip, 'promote never pushes'
@@ -75,8 +95,8 @@ def test_promote_takes_a_full_pass_ancestor_of_integration_not_only_its_tip(serv
     run_git(repo, 'checkout', '-q', '--detach')
     run_git(repo, 'branch', '-f', 'main', 'origin/main')
     built = client(GITEA, Loopback(server))
-    answer('GET', f'{GAPI}/statuses/{passed}', (200, [_part()]))
-    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part('incremental')]))
+    answer('GET', f'{GAPI}/statuses/{passed}', (200, [_part(repo, passed)]))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip, 'incremental')]))
     assert promote(repo, built, tip).action == 'refused'
     assert promote(repo, built, passed).action == 'promote'
     assert git_out(repo, 'rev-parse', 'main') == passed
@@ -88,8 +108,69 @@ def test_promote_reads_the_promoted_sha_never_the_working_tree(server, tmp_path:
     run_git(repo, 'checkout', '-q', '--detach')
     run_git(repo, 'branch', '-f', 'main', 'origin/main')
     (repo / 'pyproject.toml').write_text('not [toml\n' + _RETIRED, encoding='utf-8')
-    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part()]))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip)]))
     assert promote(repo, client(GITEA, Loopback(server)), tip).action == 'promote'
+
+
+def _ready(tmp_path: Path, pyproject: str = '') -> tuple[Path, str]:
+    _, repo = clone_pair(tmp_path)
+    if pyproject:
+        advance(repo, 'integrate/main', 'pyproject.toml', pyproject)
+    tip = advance(repo, 'integrate/main', 'f.txt', 'f\n')
+    run_git(repo, 'checkout', '-q', '--detach')
+    run_git(repo, 'branch', '-f', 'main', 'origin/main')
+    return repo, tip
+
+
+def test_a_second_post_in_another_env_does_not_overwrite_the_first(server, tmp_path: Path) -> None:
+    """CONTRACT 1: (part, env, policy) is the fact. A FAIL in env A stays a fact after a PASS in env B lands.
+
+    PLANTED CONTROL: the same PASS re-posted in env A (replacing A's FAIL, its own key) promotes.
+    """
+    repo, tip = _ready(tmp_path)
+    built = client(GITEA, Loopback(server))
+    fail_a = _part(repo, tip, env='aaaaaaaa', state='failure', ident=1)
+    pass_b = _part(repo, tip, env='bbbbbbbb', ident=2)
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [fail_a, pass_b]))
+    found = promote(repo, built, tip)
+    assert found.action == 'refused', 'the later PASS in env B overwrote the FAIL in env A'
+    assert 'FAIL' in found.reasons[0]
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [fail_a, pass_b, _part(repo, tip, env='aaaaaaaa', ident=3)]))
+    assert promote(repo, built, tip).action == 'promote'
+
+
+def test_a_declared_required_part_never_posted_refuses_promotion(server, tmp_path: Path) -> None:
+    """CONTRACT 2: the required set is DECLARED, not derived from what was posted.
+
+    PLANTED CONTROL: posting the declared part promotes.
+    """
+    repo, tip = _ready(tmp_path, _INTEGRATOR + '[tool.dev_lab.parts]\nrequired = ["windows"]\n')
+    built = client(GITEA, Loopback(server))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip)]))
+    found = promote(repo, built, tip)
+    assert found.action == 'refused'
+    assert any('missing the required windows part' in reason for reason in found.reasons), found.reasons
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip), _part(repo, tip, part='windows', ident=2)]))
+    assert promote(repo, built, tip).action == 'promote'
+
+
+def test_a_part_of_another_policy_or_naming_no_env_refuses_promotion(server, tmp_path: Path) -> None:
+    """CONTRACT 2: a PASS counts only under the policy the promoted commit declares, and names its env.
+
+    A carried PASS keeps its SOURCE run's env and policy, so one judged in another declared env (another
+    lock, another policy) refuses. PLANTED CONTROL: the same carried PASS of this policy promotes.
+    """
+    repo, tip = _ready(tmp_path)
+    built = client(GITEA, Loopback(server))
+    carried = ' carried from 0123456789ab: docs-only'
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip, policy='ffffffff', tail=carried)]))
+    found = promote(repo, built, tip)
+    assert found.action == 'refused'
+    assert any('missing the required base part of policy' in reason for reason in found.reasons), found.reasons
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip, env='', tail=carried)]))
+    assert any('names no env' in reason for reason in promote(repo, built, tip).reasons)
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip, tail=carried)]))
+    assert promote(repo, built, tip).action == 'promote'
 
 
 def test_the_client_has_no_verb_that_moves_the_integration_branch(

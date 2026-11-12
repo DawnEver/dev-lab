@@ -24,4 +24,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forget',
     # ORIGINAL: user ruling 2026-11-12, an agent places a minted forge token on a key-only account.
     'credential',
+    # ORIGINAL: 2026-11-12, its stage-verify-replace core shared with a workstation's own placement door.
+    'credstore',
+    'devcredential',
 )

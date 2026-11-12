@@ -38,6 +38,7 @@ def test_every_golden_is_tracked_and_no_ignore_rule_reaches_one() -> None:
         input='\n'.join(files),
         cwd=_TESTS.parent,
         capture_output=True,
+        encoding='utf-8',
         text=True,
         check=False,
         timeout=60,

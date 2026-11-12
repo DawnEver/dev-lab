@@ -117,6 +117,10 @@ RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.
 #: lock moved since its venv was stamped detaches a re-bootstrap, and returns at once.
 VENVFOLLOW_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.venvfollow --session-start'
 
+#: AN UNFILLED INSTALL HOME IS FORCED-FIRST WORK (:mod:`dev_lab.dev.devhost`, ruling 2026-11-12): the stop blocks
+#: once per session while this machine's host file holds the placeholder, naming the detect door and the PR to open.
+DEVHOSTSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.devhost stop'
+
 #: A REFUSED TOKEN IS HEARD AT SESSION START (:mod:`dev_lab.dev.forgeauthnotice`): one bounded ``GET /user`` per forge
 #: the checkout's remotes declare; one line naming the host and the remedy door when the forge refuses, else silent.
 FORGEAUTH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.forgeauthnotice --session-start'
@@ -164,6 +168,7 @@ WIRING: Final = (
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),
     Wire('Stop', SCRATCHSTOP_COMMAND, 'dev_lab.dev.scratch stop', on_shells=False),
+    Wire('Stop', DEVHOSTSTOP_COMMAND, 'dev_lab.dev.devhost stop', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
     Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),

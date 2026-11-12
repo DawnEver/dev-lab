@@ -192,6 +192,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   ``[tool.dev_lab.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`dev_lab.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
   (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
+* :mod:`dev_lab.dev.partfacts` -- one ``tests/<part>`` status read as a (part, env, policy) fact; a later post
+  replaces only its own fact.
 * :mod:`dev_lab.dev.partrows` -- the name of an OS-qualified part row (``base@windows``): its part, its
   system, and this machine's platform.
 * :mod:`dev_lab.dev.partrefs` -- the refs a part is produced under, per resource and scope
@@ -506,6 +508,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
   while a PR of the session is red and unacknowledged.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
+* :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
+* :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
+* :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
+* :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
   after the checkout follows integration and before stale hooks are reinstalled.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.

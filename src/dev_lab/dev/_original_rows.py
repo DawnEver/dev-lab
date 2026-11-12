@@ -45,6 +45,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'serialpass',
     'lanepolicy',
     'platformparts',
+    # ORIGINAL: a part status read as a (part, env, policy) fact; split from platformparts (2026-11-12).
+    'partfacts',
     'partrefs',
     'plugin_settings',
     'cjk',
@@ -367,6 +369,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushstop',
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'venvfollow',
+    'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
+    'devschema',
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
     'metrics',
