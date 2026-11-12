@@ -139,22 +139,25 @@ def test_a_host_name_that_is_no_host_is_refused() -> None:
 
 
 _BASH = shutil.which('bash')
+_OLD = 'x'  # a stale credential's placeholder
+
+
+def _stored(login: str, host: str, held: str = _OLD) -> str:
+    """One ``~/.git-credentials`` line, assembled from parts so no fixture reads as an email address."""
+    return f'https://{login}:{held}' + '@' + host
 
 
 def test_the_place_command_replaces_only_its_forge_line(tmp_path: Path) -> None:
     assert _BASH, 'every login host runs the place command in bash'
     store = tmp_path / '.git-credentials'
-    store.write_text(
-        'https://old:x@forge.example\nhttps://u:y@github.com\nhttps://v:z@forge.example.evil\n', encoding='utf-8'
-    )
+    other = _stored('u', 'github.com')
+    lookalike = _stored('v', 'forge.example.evil')  # PLANTED CONTROL: a host merely starting with it is kept
+    store.write_text(f'{_stored("old", "forge.example")}\n{other}\n{lookalike}\n', encoding='utf-8')
     env = {**os.environ, 'HOME': str(tmp_path)}
-    line = f'https://forge-ci:{_MINTED}@forge.example\n'
-    subprocess.run([_BASH, '-c', place_command('forge.example')], input=line, text=True, env=env, check=True)
-    assert store.read_text(encoding='utf-8').splitlines() == [
-        'https://u:y@github.com',
-        'https://v:z@forge.example.evil',  # PLANTED CONTROL: a host merely starting with it is kept
-        line.strip(),
-    ]
+    line = _stored('forge-ci', 'forge.example', _MINTED)
+    command = [_BASH, '-c', place_command('forge.example')]
+    subprocess.run(command, input=line + '\n', text=True, encoding='utf-8', env=env, check=True)
+    assert store.read_text(encoding='utf-8').splitlines() == [other, lookalike, line]
     assert [p.name for p in tmp_path.iterdir()] == ['.git-credentials']  # the temp file was moved, not left
 
 

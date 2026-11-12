@@ -97,7 +97,8 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-10 AT 471 (CI's walk; the 11-09/11-10 waves: hpcaccount forget, configcheck): floor 445.
 #: RE-TAKEN 2026-11-11 AT 485 (the 11-10 night wave: datadeps, dataconsumers, forgedataruns, giteaadmin, secretplace):
 #: floor 460.
-FILE_FLOOR = 460
+#: RE-TAKEN 2026-11-12 AT 503 (the 11-11 waves and the hpcaccount credential door): floor 478.
+FILE_FLOOR = 478
 
 
 def _tree() -> dict[str, str]:
