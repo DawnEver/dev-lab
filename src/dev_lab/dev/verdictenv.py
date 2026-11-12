@@ -9,23 +9,48 @@ tree its PR head had just passed). The project's code is the tree's to name; its
 by its normalized ``[project] name`` from *root*'s ``pyproject.toml``. Every other line stays: a git
 dependency's commit rides in its version, and it does key the verdict.
 
+A verdict is ALSO a fact about the POLICY it was judged by (:func:`verdict_policy`): the commit's test
+declaration (``[tool.lab_commons.tests]``, ``[tool.lab_commons.hpc]``, ``[tool.dev_lab.parts]``) and its DECLARED
+environment, the ``uv.lock``. Two runs of one part under two policies are two facts, never one overwriting the other
+(:func:`dev_lab.dev.platformparts.parts_of`), and ``integrate promote`` requires the policy the promoted commit
+declares.
+
 One reading feeds the key and the record's ``resolved`` list (:func:`verdict_env_record`), so they cannot
 disagree; every producer, the run cache and the verdict line key by it.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import tomllib
 from typing import TYPE_CHECKING, Any
 
+import lab_commons.launch as _door
 from lab_commons.envkey import env_key, env_manifest
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
-__all__ = ['verdict_env', 'verdict_env_record', 'verdict_manifest']
+__all__ = [
+    'POLICY_CHARS',
+    'verdict_env',
+    'verdict_env_record',
+    'verdict_manifest',
+    'verdict_policy',
+    'verdict_policy_at',
+]
+
+#: How many hex digits of a policy (and of an env key) a part's status description carries.
+POLICY_CHARS = 8
+
+#: The declaration tables a test policy is a digest of, as ``(tool, table)``.
+_POLICY_TABLES = (('lab_commons', 'tests'), ('lab_commons', 'hpc'), ('dev_lab', 'parts'))
+
+#: The declared environment a policy is a digest of.
+_LOCK = 'uv.lock'
 
 
 def _normalized(name: str) -> str:
@@ -55,6 +80,47 @@ def verdict_env(root: Path) -> str:
 
 
 def verdict_env_record(root: Path, manifest: Iterable[str] | None = None) -> dict[str, Any]:
-    """``{'env': <key>, 'resolved': [<line>, ...]}`` of *root*'s verdict environment -- one reading for both."""
+    """``{'env': <key>, 'resolved': [<line>, ...], 'policy': <version>}`` of *root*'s verdict environment.
+
+    One reading for the key and the list; the policy is :func:`verdict_policy` of *root*'s working tree.
+    """
     lines = list(verdict_manifest(root, manifest))
-    return {'env': env_key(lines), 'resolved': lines}
+    return {'env': env_key(lines), 'resolved': lines, 'policy': _policy_here(root)}
+
+
+def _policy_here(root: Path) -> str:
+    def read(name: str) -> str:
+        path = root / name
+        return path.read_text(encoding='utf-8') if path.is_file() else ''
+
+    return verdict_policy(read('pyproject.toml'), read(_LOCK))
+
+
+def verdict_policy(pyproject: str, lock: str) -> str:
+    """The policy version of a commit whose ``pyproject.toml`` is *pyproject* and whose ``uv.lock`` is *lock*.
+
+    A digest of the test-declaration tables and the lock, and of nothing else: two commits declaring the same
+    tests in the same declared environment share it; any change to either is another policy.
+    """
+    tool = tomllib.loads(pyproject).get('tool', {}) if pyproject else {}
+    tables = {f'{kit}.{name}': tool.get(kit, {}).get(name, {}) for kit, name in _POLICY_TABLES}
+    canonical = json.dumps(tables, sort_keys=True, separators=(',', ':')) + '\n' + lock
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:POLICY_CHARS]
+
+
+def _shown(root: Path, sha: str, path: str) -> str:
+    done = _door.run(
+        ['git', '-C', str(root), 'show', f'{sha}:{path}'], capture_output=True, text=True, encoding='utf-8', check=False
+    )
+    return done.stdout if done.returncode == 0 else ''
+
+
+def verdict_policy_at(root: Path, sha: str) -> str:
+    """:func:`verdict_policy` of commit *sha* of *root*; ``''`` when *root* does not hold *sha*."""
+    done = _door.run(
+        ['git', '-C', str(root), 'cat-file', '-e', f'{sha}^{{commit}}'],
+        capture_output=True, text=True, encoding='utf-8', check=False,
+    )  # fmt: skip
+    if done.returncode != 0:
+        return ''
+    return verdict_policy(_shown(root, sha, 'pyproject.toml'), _shown(root, sha, _LOCK))

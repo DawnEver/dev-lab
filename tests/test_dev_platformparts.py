@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import NoReturn
 
@@ -99,6 +100,49 @@ def test_the_description_round_trips_through_a_status() -> None:
     assert problems == ()
     _, claimed = platformparts.parts_of([CommitStatus('tests/base', 'pending', 'claim machine=G', '')])
     assert 'not a settled part' in claimed[0]
+
+
+def _posted(*parts: platformparts.Part) -> list[CommitStatus]:
+    return [CommitStatus(platformparts.part_context(one.platform), one.state, one.description(), '') for one in parts]
+
+
+def test_the_env_and_policy_round_trip_and_key_the_fact() -> None:
+    """CONTRACT 1: (part, env, policy) is one fact: ANOTHER env keeps the first post, the SAME replaces it.
+
+    PLANTED CONTROL: were env not in the key, the later PASS would be the only fact and the FAIL lost.
+    """
+    fail_a = platformparts.Part(BASE, 'full', Conclusion.FAIL, ran=3, env='aaaaaaaa', policy='11111111')
+    pass_b = dataclasses.replace(fail_a, result=Conclusion.PASS, env='bbbbbbbb')
+    history = _posted(fail_a, pass_b)
+    assert platformparts.facts_of(history) == {fail_a.fact: fail_a, pass_b.fact: pass_b}
+    assert platformparts.parts_of(history)[0] == {BASE: pass_b}, 'unpinned: the latest post, as before'
+    assert platformparts.parts_of(history, policy='11111111')[0] == {BASE: fail_a}, 'a FAIL of the policy outranks'
+    assert platformparts.parts_of(history, policy='22222222')[0] == {}, 'another policy is no fact of this one'
+    again = [*history, *_posted(dataclasses.replace(pass_b, env='aaaaaaaa'))]
+    assert platformparts.parts_of(again, policy='11111111')[0][BASE].result is Conclusion.PASS
+
+
+def test_a_declared_required_part_stands_even_unposted_and_a_part_names_its_env() -> None:
+    """CONTRACT 2: *required* is the declaration's, not what was posted; under a policy a part names its env."""
+    passed = platformparts.Part(BASE, 'full', Conclusion.PASS, ran=3, env='aaaaaaaa', policy='11111111')
+    assert platformparts.standing(_posted(passed), head=SHA, policy='11111111').result is Conclusion.PASS
+    missing = platformparts.standing(_posted(passed), head=SHA, required=frozenset({'jmag'}), policy='11111111')
+    assert missing.result is Conclusion.INCONCLUSIVE
+    assert any('missing the required jmag part' in problem for problem in missing.problems)
+    nameless = _posted(dataclasses.replace(passed, env=''))
+    assert platformparts.standing(nameless, head=SHA, policy='11111111').result is Conclusion.INCONCLUSIVE
+
+
+def test_the_required_parts_are_read_from_the_commits_declaration(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    (repo / 'pyproject.toml').write_text('[tool.dev_lab.parts]\nrequired = ["jmag"]\n', encoding='utf-8')
+    run_git(repo, 'add', 'pyproject.toml')
+    run_git(repo, 'commit', '-q', '-m', 'declare')
+    assert platformparts.required_at(repo, git_out(repo, 'rev-parse', 'HEAD')) == {BASE, 'jmag'}
+    (repo / 'pyproject.toml').write_text('[tool.dev_lab.parts]\nrequired = ["No Part"]\n', encoding='utf-8')
+    run_git(repo, 'commit', '-q', '-am', 'bad')
+    with pytest.raises(platformparts.UndeclaredPart, match='required names no part'):
+        platformparts.required_at(repo, git_out(repo, 'rev-parse', 'HEAD'))
 
 
 def test_a_commits_parts_are_derived_from_what_its_parts_hand_to() -> None:
@@ -315,7 +359,7 @@ def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path:
 
     record = local(reported)
     assert record['cells'] == {node: one.to_plain() for node, one in reported.items()}
-    assert {key: record[key] for key in ('env', 'resolved')} == verdict_env_record(tmp_path), (
+    assert {key: record[key] for key in ('env', 'resolved', 'policy')} == verdict_env_record(tmp_path), (
         'it names what it ran against'
     )
     probed = localpart.local_record(

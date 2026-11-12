@@ -6,8 +6,9 @@ moved in. So the verb checks nothing out and pushes nothing -- the session publi
 ``git push origin <branch>``, which the pre-push guard judges.
 
 * ``promote <sha>`` -- fast-forward the LOCAL trunk ref to *sha*, an integration commit on origin whose
-  every derived ``tests/<part>`` stands PASS at scope full (:func:`decide`, the same standing push
-  admission reads). Never a merge onto the trunk.
+  every derived AND every declared-required ``tests/<part>`` (:func:`dev_lab.dev.platformparts.required_at`)
+  stands PASS at scope full under the policy *sha* declares, each naming its env (:func:`decide`, the
+  standing push admission reads, over the commit's whole status history). Never a merge onto the trunk.
 * ``pending <sha>`` -- print ``pending=true`` while the trunk does not hold *sha*, else ``pending=false`` (a
   ``$GITHUB_OUTPUT`` line): the nightly promotion run (D48-1A) tests and promotes integration's tip only while it is
   pending, so a tip already promoted runs nothing.
@@ -39,13 +40,14 @@ from dev_lab.dev._forgebackends import FORGE_SERVE
 from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.forgestatus import CommitStatus, status_history
 from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.jobparts import hosted_parts, off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
-from dev_lab.dev.platformparts import derived, standing
+from dev_lab.dev.platformparts import UndeclaredPart, derived, required_at, standing
 from dev_lab.dev.trialmerge import contains, rev
 from dev_lab.dev.unproduced import unproduced_waived
+from dev_lab.dev.verdictenv import verdict_policy_at
 
 __all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'pending', 'promote']
 
@@ -119,9 +121,15 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
     if trunk is not None and not contains(root, found, trunk):
         why = f'{policy.trunk} ({trunk[:12]}) is not an ancestor of {found[:12]}: it cannot fast-forward'
         return Promotion('refused', found, (why,))
-    statuses = status_list(client, found)
+    statuses = status_history(client, found)  # every fact: another env or policy never overwrote one
     off = _off_gate(root, client, found, statuses)
-    parts = standing(statuses, head=found, scope=FULL, waived=unproduced_waived(root, found, statuses) | off)
+    try:
+        required = required_at(root, found)
+    except UndeclaredPart as why:
+        return Promotion('refused', found, (str(why),))
+    waived = (unproduced_waived(root, found, statuses) | off) - required
+    policy = verdict_policy_at(root, found)
+    parts = standing(statuses, head=found, scope=FULL, waived=waived, required=required, policy=policy)
     if parts.result is not Conclusion.PASS:
         return Promotion('refused', found, (f'the parts of {found[:12]} stand {parts.result.name}', *parts.problems))
     return Promotion(
