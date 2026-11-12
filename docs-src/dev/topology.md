@@ -71,12 +71,15 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
 | `read` machine account | every server that pulls code, research hosts included; ONE token per host | `[ops.config] token_file` on each host; a research account's git credential store |
 | `write` machine account (CI) | posts test verdicts (`tests/<part>` statuses) from verify accounts | the verify account's git credential store |
 | `review` machine account | posts reviews from the judge host only | `[ops.judge.tokens]` file on the judge host |
+| `breakglass` machine account | merges break-glass waves past branch protection from the consent host only | `[ops.breakglass.tokens]` file on the consent host |
 
-- Machine accounts are DECLARED, `[ops.forge.accounts.<login>] role = "read"|"write"|"review", repos = [...]`, in the
+- Machine accounts are DECLARED, `[ops.forge.accounts.<login>] role = "read"|"write"|"review"|"breakglass", repos = [...]`, in the
   forge host's config, and made only by `forge account ensure` (`dev_lab.ops.forgeaccounts`). The granted permission
   is `ROLE_GRANTS` (`dev_lab.ops.giteaadmin`): `read -> read`; `write` and `review -> write`, because Gitea posts a
   commit status only for a code writer -- the reviewer's real bound is its token's scopes
-  (`write:repository,write:issue,read:user`).
+  (`write:repository,write:issue,read:user`). `breakglass -> admin`: a repository admin on exactly its declared repos
+  (never org or site), because only an admin merges past branch protection; its token may hold only
+  `read:repository`, `write:repository`, `read:user` (`BREAKGLASS_SCOPES`).
 - A `read` login is refused any scope outside `read:*`. A research host's deploy refuses a writer credential
   (`forge auth role`, `dev_lab.dev.hpcaccount`).
 
