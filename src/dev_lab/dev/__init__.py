@@ -442,6 +442,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`dev_lab.dev.forgecli` -- the ``python -m dev_lab.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`dev_lab.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
+* :mod:`dev_lab.dev.forgeauthnotice` -- at session start, one bounded ``GET /user`` per forge: a refused token named.
 * :mod:`dev_lab.dev.floors` -- a scan that read NOTHING is not a clean scan; both sides, no default.
 * :mod:`dev_lab.dev.foreign` -- the leaf's own tier-1 rule, made refusable: which string
   constants here name a SIBLING or a path this checkout cannot resolve. Three kinds, because they

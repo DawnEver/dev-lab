@@ -79,6 +79,7 @@ __all__ = [
     'UNREACHABLE',
     'UNREACHABLE_EXIT',
     'RepoRole',
+    'answered_refusal',
     'family_hosts',
     'login',
     'main',
@@ -214,13 +215,13 @@ def _answers(call: Callable[[], object]) -> bool:
     try:
         call()
     except ForgeCallFailed as failed:
-        if _refusal(failed):
+        if answered_refusal(failed):
             return False
         raise
     return True
 
 
-def _refusal(failed: ForgeCallFailed) -> bool:
+def answered_refusal(failed: ForgeCallFailed) -> bool:
     """An ANSWERED refusal: measured, a missing grant, final, or a 401/403 held on every attempt (a scope).
 
     Gitea's transient "Failed to authenticate user" clears on the next attempt, so a 401/403 that held on every
@@ -370,7 +371,7 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         emit(f'[forge] {forge.host}: no token. Run: {running_interpreter()} -m dev_lab.dev.forge auth login', err=True)
         return 1
     except ForgeCallFailed as failed:
-        if not _refusal(failed):
+        if not answered_refusal(failed):
             return _unreachable(forge.host, failed)
         _settle(forge.host, _digest_of(forge, root, env), 'GET /user refused')
         emit(f'[forge] {forge.host}: the forge refused the token. {failed}', err=True)

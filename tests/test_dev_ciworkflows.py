@@ -6,11 +6,17 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import re
+import runpy
 import shutil
 import subprocess
 import sys
 import tomllib
+import urllib.error
+import urllib.request
+from email.message import Message
 from pathlib import Path
 from typing import Any
 
@@ -1226,6 +1232,49 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     written = {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)}
     assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW)}
     assert drift(tmp_path) == []
+
+
+def test_the_settle_step_s_own_reads_retry_a_transient_and_report_a_refused_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The inline fetch runs before reviewcode exists on the runner, so it retries as reviewcode does.
+
+    PLANTED CONTROL: a 404 lock read is final after one attempt (the family line); a 401 is reported by host.
+    """
+    steps = _gitea_review(tmp_path)['jobs']['review']['steps']
+    (run,) = [step['run'] for step in steps if step.get('name') == 'Settle a PR with no code to review']
+    script = tmp_path / 'settle.py'
+    script.write_text(run.split("python3 -I -c '", 1)[1].rsplit("' ||", 1)[0], encoding='utf-8')
+    env = {'FORGE_URL': 'https://forge.example', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_TOKEN': 't', 'BASE_SHA': 'b',
+           'FAMILY_SOURCE': 'https://source.example/'}  # fmt: skip
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr('time.sleep', lambda _s: None)
+
+    def run_with(*answers: object) -> list[str]:
+        queue, opened = list(answers), []
+
+        def urlopen(request: urllib.request.Request, **_: object) -> io.BytesIO:
+            opened.append(request.full_url)
+            step = queue.pop(0)
+            if isinstance(step, int):
+                raise urllib.error.HTTPError(request.full_url, step, 'no', Message(), io.BytesIO(b''))
+            return io.BytesIO(bytes(step))  # a scripted answer
+
+        monkeypatch.setattr(urllib.request, 'urlopen', urlopen)
+        with contextlib.suppress(urllib.error.HTTPError, SystemExit):
+            runpy.run_path(str(script), run_name='__main__')
+        return opened
+
+    lock = b'[[package]]\nname = "dev-lab"\nsource = { editable = "." }\n'
+    opened = run_with(503, lock, b'reached = True\n')
+    assert len(opened) == 3, opened
+    assert opened[1] == opened[0], 'the transient lock read is retried'
+    assert len(run_with(404, b'reached = True\n')) == 2, 'an absent lock is final: the family line is fetched'
+    assert len(run_with(401)) == 1
+    said = capsys.readouterr().out
+    assert '::error' in said
+    assert 'forge.example refused' in said
 
 
 def test_a_pr_with_no_code_is_settled_before_any_clone_or_install(tmp_path: Path) -> None:
