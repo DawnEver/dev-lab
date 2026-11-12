@@ -27,6 +27,7 @@ from typing import IO, Final
 import lab_commons.launch as _door
 from lab_commons.box import POLL_S
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
@@ -343,7 +344,7 @@ def run_verify(
     # THE CELLS ARE WRITTEN OUTSIDE THE CHECKOUT WHILE THE SESSION RUNS and land beside the log once it ends: a
     # consumer's session may guard its live output tree against every write it makes, and verify's own evidence
     # is not that session's litter. Moved in a `finally`, so a cut run's cells still land.
-    live = Path(tempfile.mkdtemp(prefix=f'{path.stem}-cells-'))
+    live = Path(tempfile.mkdtemp(prefix=f'{TEMP_PREFIX}{path.stem}-cells-'))
     try:
         with seat.held(), path.open('w', encoding='utf-8') as handle:
             if hooks:
