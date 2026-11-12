@@ -62,6 +62,7 @@ from dev_lab.dev.reports import (
     stale_declarations,
 )
 from dev_lab.dev.runcache import CachedRun, record, runs
+from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verdict import Verdict
 from dev_lab.dev.verify import EXIT_CODES, project_root
@@ -1640,6 +1641,37 @@ def test_planted_a_verify_run_writes_nothing_under_dot_verify(tmp_path, monkeypa
     assert not (tmp_path / '.verify').exists()
     (log,) = (tmp_path / 'out/logs' / '/'.join(date_parts()) / 'verify').glob('verify-*.log')
     assert '1 passed' in log.read_text(encoding='utf-8')
+
+
+def test_per_test_cells_are_written_outside_the_tree_during_the_session_and_land_beside_the_log(
+    tmp_path, monkeypatch
+) -> None:
+    """A consumer's session may guard its live output tree against writes; verify's own cells must not trip it.
+
+    PLANTED: the pytest step writes a cell where the door points it; were that under the checkout, the first
+    assertion says so, and were it not moved after the run, the second does.
+    """
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
+    during: list[Path] = []
+
+    def step(command, *, handle, extra_env=None, **_where: object) -> int:
+        if 'pytest' in command and extra_env:
+            live = Path(extra_env[OUTCOMES_DIR_VAR])
+            during.append(live)
+            live.mkdir(parents=True, exist_ok=True)
+            (live / f'cells-gw{len(during)}.jsonl').write_text('{}\n', encoding='utf-8')
+        handle.write('1 passed in 0.1s\n')
+        return 0
+
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, '_tee', step)
+    verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
+    assert during
+    assert all(not live.resolve().is_relative_to(tmp_path.resolve()) for live in during), during
+    (log,) = (tmp_path / 'out/logs' / '/'.join(date_parts()) / 'verify').glob('verify-*.log')
+    assert sorted(p.name for p in outcomes_dir(log).iterdir()) == ['cells-gw1.jsonl']
+    assert not any(live.exists() for live in during)
 
 
 def test_the_coverage_total_is_read_from_the_markdown_report(tmp_path: Path) -> None:
