@@ -307,6 +307,8 @@ _PRESSURE = {'type': 'command', 'command': agent_wiring.PRESSURE_COMMAND}
 _PUSHSTOP = {'type': 'command', 'command': agent_wiring.PUSHSTOP_COMMAND}
 #: SCRATCH-IS-NEVER-COMMITTED, the Stop half: a session does not end with untracked entries in scratch.
 _SCRATCHSTOP = {'type': 'command', 'command': agent_wiring.SCRATCHSTOP_COMMAND}
+#: AN UNFILLED INSTALL HOME IS FORCED-FIRST WORK: the stop blocks once per session on the placeholder.
+_DEVHOSTSTOP = {'type': 'command', 'command': agent_wiring.DEVHOSTSTOP_COMMAND}
 
 
 def test_the_install_wires_the_stray_census_once_at_stop() -> None:
@@ -322,6 +324,7 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
         {'hooks': [handback]},
         {'hooks': [_PUSHSTOP]},
         {'hooks': [_SCRATCHSTOP]},
+        {'hooks': [_DEVHOSTSTOP]},
     ]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
     assert 'dev_lab.dev.codeplace stray' in agent_wiring.STRAY_COMMAND
@@ -353,6 +356,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
         {'hooks': [handback]},
         {'hooks': [_PUSHSTOP]},
         {'hooks': [_SCRATCHSTOP]},
+        {'hooks': [_DEVHOSTSTOP]},
     ]
     assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
 
@@ -372,6 +376,7 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
         {'hooks': [handback]},
         {'hooks': [_PUSHSTOP]},
         {'hooks': [_SCRATCHSTOP]},
+        {'hooks': [_DEVHOSTSTOP]},
     ]
 
 
