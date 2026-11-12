@@ -53,6 +53,28 @@ def test_check_host_reports_a_structural_defect(tmp_path: Path) -> None:
     assert any('twice' in found for found in check_host(_write(tmp_path, 'bad.toml', bad)))
 
 
+@pytest.mark.parametrize(
+    ('extra', 'named'),
+    [
+        ('[bogus_section]\nx = 1\n', 'bogus_section'),
+        ('[alerts]\ncooldwon = 600\n', 'alerts.cooldwon'),
+        ('[ops.bogus]\nx = 1\n', 'bogus'),
+        ('[ops.judge.bogus]\nx = 1\n', 'bogus'),
+    ],
+)
+def test_check_host_refuses_an_undeclared_table_or_key_by_name(tmp_path: Path, extra: str, named: str) -> None:
+    assert check_host(_write(tmp_path, 'ok.toml', HOST + '\n[components.anything]\nenabled = true\n')) == []
+    found = check_host(_write(tmp_path, 'bad.toml', HOST + '\n' + extra))
+    assert len(found) == 1
+    assert named in found[0]
+
+
+def test_a_misspelt_ops_scalar_is_refused_at_load(tmp_path: Path) -> None:
+    host = _write(tmp_path, 'h.toml', HOST.replace('[ops]\n', '[ops]\npyhton = "x"\n', 1))
+    with pytest.raises(ValueError, match='pyhton'):
+        opsconfig.load(host, environ={}, as_root=False, structure_only=True)
+
+
 @pytest.mark.parametrize('table', ['repos', 'writeroots', 'sync'])
 def test_the_family_file_refuses_a_local_only_table(tmp_path: Path, table: str) -> None:
     found = check_family(_write(tmp_path, 'family.toml', f'[{table}]\nx = "y"\n'))
