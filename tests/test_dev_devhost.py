@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tomllib
 from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import devhost
+from dev_lab.dev import devhost, devschema
 from dev_lab.ops.configcheck import check_family, check_host
 
 FAMILY = """\
@@ -152,7 +153,7 @@ def test_a_hand_edit_is_drift_named_by_table(tmp_path: Path) -> None:
 
 def test_a_dev_lab_checkout_off_the_declared_ref_is_drift(tmp_path: Path) -> None:
     kit = tmp_path / 'kit'
-    subprocess.run(['git', 'init', '-q', '-b', 'feature', str(kit)], check=True)  # noqa: S607
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', '-b', 'feature', str(kit)], check=True)
     live = _rendered_machine(tmp_path)
     live['repos'] = {'dev-lab': str(kit)}
     assert devhost.drift(live) == ["the dev-lab checkout is on 'feature', declared ref 'integrate/main'"]
@@ -174,11 +175,11 @@ def test_drift_writes_nothing_and_render_write_backs_up_first(tmp_path: Path) ->
 
 def test_a_shared_box_offers_its_allotment_never_its_total() -> None:
     whole = {'resources': {'cores': 20, 'memory_gb': 160}}
-    assert devhost.usable(whole) == (20, 160)
+    assert devschema.usable(whole) == (20, 160)
     shared = {'resources': {**whole['resources'], 'shared': True}}
-    assert devhost.usable(shared) == (None, None)
+    assert devschema.usable(shared) == (None, None)
     allotted = {'resources': {**shared['resources'], 'allotted_cores': 8, 'allotted_memory_gb': 48}}
-    assert devhost.usable(allotted) == (8, 48)
+    assert devschema.usable(allotted) == (8, 48)
 
 
 def test_a_resources_type_defect_is_refused(tmp_path: Path) -> None:
@@ -189,7 +190,47 @@ def test_a_resources_type_defect_is_refused(tmp_path: Path) -> None:
 def test_a_vendor_with_seats_and_no_home_is_named_with_the_detect_door(tmp_path: Path) -> None:
     clone = _clone(tmp_path, HOST.replace('home = "C:/Program Files/SolverX"\n', ''))
     live = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
-    assert devhost.drift(live) == [f'home not declared for solverx; run {devhost.DETECT_DOOR}']
+    assert devhost.drift(live) == [devschema.fill_remedy(['solverx'])]
+    line = devhost.notice(live)
+    assert line is not None
+    assert line.startswith('HOST-CONFIG FIRST:')
+    assert devschema.DETECT_DOOR in line
+
+
+def _unfilled_machine(tmp_path: Path) -> dict:
+    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
+    return tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+
+
+def test_the_placeholder_passes_configcheck_and_is_named_by_render_and_drift(tmp_path: Path) -> None:
+    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
+    assert devhost.drift(_unfilled_machine(tmp_path))[0] == devschema.fill_remedy(['solverx'])
+
+
+def test_the_stop_blocks_once_per_session_on_the_placeholder(tmp_path: Path) -> None:
+    live, marks = _unfilled_machine(tmp_path), tmp_path / 'marks'
+    reason = devhost.stop_block({'session_id': 's1'}, live, marks)
+    assert reason is not None
+    assert devschema.DETECT_DOOR in reason
+    assert devhost.stop_block({'session_id': 's1'}, live, marks) is None
+    assert devhost.stop_block({'session_id': 's2', 'stop_hook_active': True}, live, marks) is None
+    assert devhost.stop_block({'session_id': 's3'}, _rendered_machine(tmp_path), marks) is None
+
+
+def test_a_path_needing_an_unfilled_home_refuses_with_the_remedy() -> None:
+    with pytest.raises(devschema.HomeUnfilled, match='detect'):
+        devschema.home_of({'vendors': {'solverx': {'seats': 1, 'home': devschema.UNFILLED}}}, 'solverx')
+    with pytest.raises(devschema.HomeUnfilled):
+        devschema.home_of({'vendors': {'solverx': {'seats': 1}}}, 'solverx')
+    assert devschema.home_of({'vendors': {'solverx': {'home': 'C:/x'}}}, 'solverx') == Path('C:/x')
+
+
+def test_a_session_fair_box_is_sized_live_and_its_share_is_a_declared_enum(tmp_path: Path) -> None:
+    fair = {'resources': {'logical_cores': 20, 'memory_gb': 160, 'shared': True, 'cpu_share': 'session-fair'}}
+    assert devschema.usable(fair) == (None, None)
+    clone = _clone(tmp_path, HOST.replace('gpu = "gpu-x"', 'gpu = "gpu-x"\nshared = true\ncpu_share = "even"'))
+    assert any('cpu_share' in line for line in check_host(clone / 'hosts/ws.toml', clone / 'family.toml'))
 
 
 def test_detect_finds_the_newest_matching_home_and_nothing_else(tmp_path: Path) -> None:

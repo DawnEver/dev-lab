@@ -67,7 +67,10 @@ AUTH_GONE: Final = (
 AUTH_KEPT: Final = (
     f'the forge refused the stored credential; no verified new credential was obtained, so the original was kept '
     f'and no erase was requested -- {_MEASURE}; changing credentials requires explicit user authorization; '
-    f'do not re-login, report this output if it persists ({AUTH_DOC})'
+    f'do not re-login, report this output if it persists ({AUTH_DOC}). A development machine whose declared login '
+    'needs a NEW token: mint it through a one-code consent plan (a `forge token mint` step with stdout_local, '
+    'python -m dev_lab.dev.planrun), then place it: python -m dev_lab.dev.devcredential --login <login> '
+    '--forge-config <forge host file> < <minted file>'
 )
 
 #: What a 401/403 says when ``GET /user`` still authenticated the same credential: re-storing cannot help.

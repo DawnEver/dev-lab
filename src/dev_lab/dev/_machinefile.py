@@ -13,7 +13,7 @@ import difflib
 import re
 import tomllib
 from collections.abc import Mapping
-from typing import Final
+from typing import Any, Final
 
 __all__ = ['diff', 'merged', 'renamed', 'render_value']
 
@@ -133,3 +133,33 @@ def diff(before: str, after: str, path: str) -> str:
     """The unified diff of *before* -> *after*, labelled *path*; ``''`` when they are equal."""
     lines = difflib.unified_diff(before.splitlines(), after.splitlines(), path, path, lineterm='')
     return '\n'.join(lines)
+
+
+def _is_tables(value: object) -> bool:
+    return isinstance(value, list) and bool(value) and all(isinstance(v, Mapping) for v in value)
+
+
+def _key(key: str) -> str:
+    return key if key.replace('_', '').replace('-', '').isalnum() else render_value(key)
+
+
+def _table(lines: list[str], name: str, table: Mapping[str, Any]) -> None:
+    scalars = {k: v for k, v in table.items() if not isinstance(v, Mapping) and not _is_tables(v)}
+    if name and (scalars or not table):
+        lines += ['', f'[{name}]']
+    lines += [f'{_key(k)} = {render_value(v)}' for k, v in scalars.items()]
+    for key, value in table.items():
+        dotted = f'{name}.{_key(key)}' if name else _key(key)
+        if isinstance(value, Mapping):
+            _table(lines, dotted, value)
+        elif _is_tables(value):
+            for item in value:
+                lines += ['', f'[[{dotted}]]']
+                lines += [f'{_key(k)} = {render_value(v)}' for k, v in item.items()]
+
+
+def dumps(table: Mapping[str, Any]) -> str:
+    """*table* as TOML (the machine file's value shapes: scalars, lists, tables, arrays of tables)."""
+    lines: list[str] = []
+    _table(lines, '', table)
+    return '\n'.join(lines).lstrip('\n') + '\n'

@@ -224,10 +224,10 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if args.background or args.session_start:
             if due(root):
                 detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
+            if args.session_start and (declared := devhost.notice()):
+                emit(declared)  # first: an unfilled install home is this machine's first work
             if args.session_start and (notice := behind_notice(root)):
                 emit(notice)
-            if args.session_start and (declared := devhost.notice()):
-                emit(declared)
             return 0
         if moved := checkoutfollow.advance(root):
             emit(moved)

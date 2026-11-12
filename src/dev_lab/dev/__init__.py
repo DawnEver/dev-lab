@@ -505,6 +505,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   while a PR of the session is red and unacknowledged.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
+* :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
+* :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
+* :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
   after the checkout follows integration and before stale hooks are reinstalled.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.

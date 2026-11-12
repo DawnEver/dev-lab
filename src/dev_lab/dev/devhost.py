@@ -31,12 +31,12 @@ backs the live file up under the output tree, then replaces it.
 from __future__ import annotations
 
 import argparse
-import glob
 import hashlib
+import json
 import os
-import subprocess
+import sys
 import tomllib
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -44,30 +44,12 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev._machinefile import render_value
+from dev_lab.dev._machinefile import dumps, render_value
+from dev_lab.dev.checkout import git_out
+from dev_lab.dev.devschema import fill_remedy, unfilled
 
-__all__ = [
-    'MACHINE_TABLES', 'RESOURCES', 'ROLES', 'SCHEMA', 'VENDOR', 'check', 'check_family', 'detect', 'drift', 'dumps',
-    'main', 'notice', 'render', 'usable',
-]  # fmt: skip
+__all__ = ['OWN_TABLE', 'RENDER_DOOR', 'declared', 'detect', 'drift', 'main', 'notice', 'render', 'stop_block']
 
-#: What a development machine does.
-ROLES: Final = ('integrator', 'workstation')
-#: One vendor install's keys.
-VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': str, 'licence_feature': str}
-#: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
-SCHEMA: Final = {
-    'role': str, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
-}  # fmt: skip
-#: The box's hardware; a SHARED box also declares the part this user holds (``allotted_*``), read before the total.
-RESOURCES: Final = {
-    'cpu': str, 'cores': int, 'logical_cores': int, 'memory_gb': (int, float), 'gpu': str, 'shared': bool,
-    'allotted_cores': int, 'allotted_memory_gb': (int, float),
-}  # fmt: skip
-#: Keys the family and host ``[dev]`` must hold between them.
-REQUIRED: Final = ('ref',)
-#: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys).
-MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation')
 #: The render's own table: which host and clone it came from.
 OWN_TABLE: Final = 'devhost'
 
@@ -76,75 +58,10 @@ def _read(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding='utf-8'))
 
 
-def _typed(table: Mapping[str, Any], schema: Mapping[str, Any], where: str) -> list[str]:
-    found = []
-    for key, value in table.items():
-        if key not in schema:
-            found.append(f'{where}.{key} is not a declared key')
-        elif not isinstance(value, schema[key]) or (isinstance(value, bool) and schema[key] is not bool):
-            found.append(f'{where}.{key} must be {getattr(schema[key], "__name__", "a number")}')
-    return found
-
-
-def _shape(table: Mapping[str, Any], where: str) -> list[str]:
-    """Defects of one ``[dev]`` table (host or family) by itself."""
-    found = _typed(table, SCHEMA, where)
-    if 'role' in table and table['role'] not in ROLES:
-        found.append(f'{where}.role {table["role"]!r} is not one of {list(ROLES)}')
-    forges = table.get('forges') if isinstance(table.get('forges'), dict) else {}
-    for forge, accounts in forges.items():
-        if not (isinstance(accounts, list) and accounts and all(isinstance(a, str) for a in accounts)):
-            found.append(f'{where}.forges.{forge} must be a non-empty list of account names')
-    if isinstance(resources := table.get('resources'), dict):
-        found += _typed(resources, RESOURCES, f'{where}.resources')
-    elif 'resources' in table:
-        found.append(f'{where}.resources must be a table')
-    detects = table.get('detect') if isinstance(table.get('detect'), dict) else {}
-    for name, patterns in detects.items():
-        if not (isinstance(patterns, list) and patterns and all(isinstance(p, str) for p in patterns)):
-            found.append(f'{where}.detect.{name} must be a non-empty list of glob patterns')
-    vendors = table.get('vendors') if isinstance(table.get('vendors'), dict) else {}
-    for name, vendor in vendors.items():
-        if isinstance(vendor, dict):
-            found += _typed(vendor, VENDOR, f'{where}.vendors.{name}')
-        else:
-            found.append(f'{where}.vendors.{name} must be a table')
-    return found
-
-
-def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[str]:
-    for key, value in table.items():
-        if isinstance(value, Mapping):
-            yield from _leaves(value, f'{prefix}{key}.')
-        else:
-            yield f'{prefix}{key}'
-
-
-def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> list[str]:
-    """Defects of a development host file against the family: ``[dev]`` shape, a restated family key, a gap."""
-    shared = family or {}
-    found = _shape(host.get('dev', {}), '[dev]')
-    restated = sorted(set(_leaves(host)) & set(_leaves(shared)))
-    found += [f'{key} restates the family file; it lives there once' for key in restated]
-    merged = {**shared.get('dev', {}), **host.get('dev', {})}
-    found += [f'[dev].{key} is required (host or family file)' for key in REQUIRED if key not in merged]
-    return found
-
-
-def check_family(family: Mapping[str, Any]) -> list[str]:
-    """Defects of the family file's ``[dev]`` by itself."""
-    return _shape(family.get('dev', {}), '[dev]')
-
-
-def usable(dev: Mapping[str, Any]) -> tuple[int | None, float | None]:
-    """The cores and memory (GB) this user may use: a shared box's allotment, else the box's own; ``None`` unknown.
-
-    A shared box with no declared allotment is unknown, never its total.
-    """
-    resources = dev.get('resources', {})
-    if resources.get('shared'):
-        return resources.get('allotted_cores'), resources.get('allotted_memory_gb')
-    return resources.get('cores'), resources.get('memory_gb')
+def declared(host_file: Path, family_file: Path) -> dict[str, Any]:
+    """The effective ``[dev]``: the family's under the host's."""
+    shared = _read(family_file).get('dev', {}) if family_file.is_file() else {}
+    return _merge(shared, _read(host_file).get('dev', {}))
 
 
 def _merge(under: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
@@ -153,36 +70,6 @@ def _merge(under: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
         both = isinstance(value, Mapping) and isinstance(out.get(key), Mapping)
         out[key] = _merge(out[key], value) if both else value
     return out
-
-
-def _is_tables(value: object) -> bool:
-    return isinstance(value, list) and bool(value) and all(isinstance(v, Mapping) for v in value)
-
-
-def _key(key: str) -> str:
-    return key if key.replace('_', '').replace('-', '').isalnum() else render_value(key)
-
-
-def _table(lines: list[str], name: str, table: Mapping[str, Any]) -> None:
-    scalars = {k: v for k, v in table.items() if not isinstance(v, Mapping) and not _is_tables(v)}
-    if name and (scalars or not table):
-        lines += ['', f'[{name}]']
-    lines += [f'{_key(k)} = {render_value(v)}' for k, v in scalars.items()]
-    for key, value in table.items():
-        dotted = f'{name}.{_key(key)}' if name else _key(key)
-        if isinstance(value, Mapping):
-            _table(lines, dotted, value)
-        elif _is_tables(value):
-            for item in value:
-                lines += ['', f'[[{dotted}]]']
-                lines += [f'{_key(k)} = {render_value(v)}' for k, v in item.items()]
-
-
-def dumps(table: Mapping[str, Any]) -> str:
-    """*table* as TOML (the machine file's value shapes: scalars, lists, tables, arrays of tables)."""
-    lines: list[str] = []
-    _table(lines, '', table)
-    return '\n'.join(lines).lstrip('\n') + '\n'
 
 
 def _digest(path: Path) -> str:
@@ -212,11 +99,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
 
 
 def _branch(checkout: str) -> str | None:
-    done = subprocess.run(
-        ['git', '-C', checkout, 'symbolic-ref', '--short', 'HEAD'],  # noqa: S607
-        capture_output=True, text=True, encoding='utf-8', check=False,
-    )  # fmt: skip
-    return (done.stdout.strip() or None) if done.returncode == 0 else None
+    return (git_out(Path(checkout), 'symbolic-ref', '--short', 'HEAD') or '').strip() or None
 
 
 def drift(live: Mapping[str, Any]) -> list[str]:
@@ -232,12 +115,9 @@ def drift(live: Mapping[str, Any]) -> list[str]:
         if rendered.get(key) != live.get(key)
     ]
     family_file, host_file = _sources(clone, host)
-    dev = _merge(_read(family_file).get('dev', {}), _read(host_file).get('dev', {}))
-    found += [
-        f'home not declared for {name}; run {DETECT_DOOR}'
-        for name, vendor in dev.get('vendors', {}).items()
-        if vendor.get('seats') and not vendor.get('home')
-    ]
+    dev = declared(host_file, family_file)
+    if names := unfilled(dev):
+        found.insert(0, fill_remedy(names))
     checkout = live.get('repos', {}).get('dev-lab')
     if (want := dev.get('ref')) and checkout and (have := _branch(checkout)) not in {want, None}:
         found.append(f'the dev-lab checkout is on {have!r}, declared ref {want!r}')
@@ -250,22 +130,50 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
         found = drift(machineconfig.machine() if live is None else live)
     except (OSError, tomllib.TOMLDecodeError):
         return None
-    if not found:
+    first = [line for line in found if line.startswith('install home not filled')]
+    rest = [line for line in found if line not in first]
+    lines = [f'HOST-CONFIG FIRST: {line}' for line in first]
+    if rest:
+        drifted = '; '.join(rest)
+        lines.append(f'HOST-CONFIG: the machine file drifted from its render: {drifted}. Re-render: {RENDER_DOOR}')
+    return '\n'.join(lines) or None
+
+
+def _own_dev(live: Mapping[str, Any]) -> dict[str, Any]:
+    own = live.get(OWN_TABLE, {})
+    if not own.get('host') or not own.get('source'):
+        return {}
+    family_file, host_file = _sources(Path(own['source']), own['host'])
+    return declared(host_file, family_file)
+
+
+def stop_block(payload: Mapping[str, Any], live: Mapping[str, Any], marks: Path) -> str | None:
+    """The ``Stop`` hook's reason to block, ONCE per session, while this machine's host file holds an unfilled home."""
+    session = str(payload.get('session_id') or '')
+    try:
+        names = unfilled(_own_dev(live))
+    except (OSError, tomllib.TOMLDecodeError):
         return None
-    return f'HOST-CONFIG: the machine file drifted from its render: {"; ".join(found)}. Re-render: {RENDER_DOOR}'
+    mark = marks / session
+    if not names or not session or mark.exists() or payload.get('stop_hook_active'):
+        return None
+    marks.mkdir(parents=True, exist_ok=True)
+    mark.touch()
+    return f'Before you stop: {fill_remedy(names)}.'
 
 
-#: The door that finds this machine's vendor install homes.
-DETECT_DOOR: Final = 'python -m dev_lab.dev.devhost detect'
+def _matches(pattern: str) -> list[Path]:
+    anchored = Path(pattern)
+    return list(Path(anchored.anchor).glob(str(anchored.relative_to(anchored.anchor))))
 
 
 def detect(patterns: Mapping[str, list[str]]) -> dict[str, str]:
     """Each vendor's install home on THIS machine: the last (newest-named) directory its patterns match."""
     found = {}
     for name, globs in patterns.items():
-        hits = sorted({hit for pattern in globs for hit in glob.glob(pattern) if Path(hit).is_dir()})  # noqa: PTH207 -- absolute patterns
+        hits = sorted({hit for pattern in globs for hit in _matches(pattern) if hit.is_dir()})
         if hits:
-            found[name] = Path(hits[-1]).as_posix()
+            found[name] = hits[-1].as_posix()
     return found
 
 
@@ -284,15 +192,69 @@ def _replace(path: Path, text: str, backups: Path) -> Path:
     return backup
 
 
+def _source(clone: Path | None, own: Mapping[str, Any]) -> Path | None:
+    return clone or (Path(own['source']) if own.get('source') else None)
+
+
+def _stop(path: Path, live: Mapping[str, Any]) -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except ValueError:
+        return 0
+    marks = path.parent.parent / 'state' / 'devhost-stop'
+    if isinstance(payload, dict) and (reason := stop_block(payload, live, marks)):
+        emit(json.dumps({'decision': 'block', 'reason': reason}))
+    return 0
+
+
+def _drift(path: Path, live: Mapping[str, Any]) -> int:
+    found = drift(live)
+    for line in found:
+        emit(f'drift: {line}')
+    if not found:
+        emit(f'agrees: {path} is its render' if live.get(OWN_TABLE) else f'{path} is not a render')
+    return 1 if found else 0
+
+
+def _detect(source: Path | None) -> int:
+    if source is None:
+        emit('refused: detect needs --from (no [devhost] in the machine file)', err=True)
+        return 2
+    homes = detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
+    for name, home in homes.items():
+        emit(f'[dev.vendors.{name}]\nhome = {render_value(home)}\n')
+    if not homes:
+        emit('no declared vendor pattern matched on this machine')
+    return 0
+
+
+def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -> int:
+    own = live.get(OWN_TABLE, {})
+    host, clone = args.host or own.get('host'), _source(args.clone, own)
+    if not host or clone is None:
+        emit('refused: render needs --host and --from (no [devhost] in the machine file)', err=True)
+        return 2
+    text = render(clone, host, live)
+    if names := unfilled(declared(clone / 'hosts' / f'{host}.toml', clone / 'family.toml')):
+        emit(f'render: {fill_remedy(names)}', err=True)
+    if not args.write:
+        emit(text)
+        return 0
+    backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
+    emit(f'rendered {path}; the previous file is {_replace(path, text, backups)}')
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (read only; exit 1 on drift) or ``render`` (prints; ``--write`` backs up, then replaces)."""
+    """``drift`` (read only; exit 1 on drift), ``render`` (``--write`` backs up first), ``detect``, ``stop``."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('drift', help='report where the machine file departs from its render')
-    making = verbs.add_parser('render', help='render the machine file from the family and host files')
+    verbs.add_parser('stop', help='the Stop hook: block once per session while an install home is unfilled')
     finding = verbs.add_parser('detect', help="print the host-file lines for this machine's vendor install homes")
     finding.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
+    making = verbs.add_parser('render', help='render the machine file from the family and host files')
     making.add_argument('--host', default=None, help='the host name (default: the live [devhost] host)')
     making.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
@@ -300,36 +262,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     path = args.machine or machineconfig.config_path()
     live = _read(path) if path.is_file() else {}
+    if args.verb == 'stop':
+        return _stop(path, live)
     if args.verb == 'drift':
-        found = drift(live)
-        for line in found:
-            emit(f'drift: {line}')
-        if not found:
-            emit(f'agrees: {path} is its render' if live.get(OWN_TABLE) else f'{path} is not a render')
-        return 1 if found else 0
-    own = live.get(OWN_TABLE, {})
+        return _drift(path, live)
     if args.verb == 'detect':
-        source = args.clone or (Path(own['source']) if own.get('source') else None)
-        if source is None:
-            emit('refused: detect needs --from (no [devhost] in the machine file)', err=True)
-            return 2
-        homes = detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
-        for name, home in homes.items():
-            emit(f'[dev.vendors.{name}]\nhome = {render_value(home)}\n')
-        if not homes:
-            emit('no declared vendor pattern matched on this machine')
-        return 0
-    host, clone = args.host or own.get('host'), args.clone or (Path(own['source']) if own.get('source') else None)
-    if not host or clone is None:
-        emit('refused: render needs --host and --from (no [devhost] in the machine file)', err=True)
-        return 2
-    text = render(clone, host, live)
-    if not args.write:
-        emit(text)
-        return 0
-    backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
-    emit(f'rendered {path}; the previous file is {_replace(path, text, backups)}')
-    return 0
+        return _detect(_source(args.clone, live.get(OWN_TABLE, {})))
+    return _render_verb(args, path, live)
 
 
 if __name__ == '__main__':

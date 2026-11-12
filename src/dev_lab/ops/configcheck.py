@@ -28,7 +28,7 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import devhost
+from dev_lab.dev import devschema
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
 from dev_lab.supervise.config import DEFAULTS
@@ -65,7 +65,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
     found = []
     if 'dev' in parsed:
         shared = tomllib.loads(family.read_text(encoding='utf-8')) if family is not None else {}
-        found += [f'{path.name}: {line}' for line in devhost.check(parsed, shared)]
+        found += [f'{path.name}: {line}' for line in devschema.check(parsed, shared)]
     if 'ops' in parsed or 'dev' not in parsed:
         try:
             opsconfig.load(path, environ={}, as_root=False, structure_only=True)
@@ -75,7 +75,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         **DEFAULTS,
         'ops': {},
         'dev': {},
-        **({key: {} for key in devhost.MACHINE_TABLES} if 'dev' in parsed else {}),
+        **({key: {} for key in devschema.MACHINE_TABLES} if 'dev' in parsed else {}),
     }
     return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
 
@@ -101,7 +101,7 @@ def check_family(path: Path) -> list[str]:
         parsed = tomllib.loads(path.read_text(encoding='utf-8'))
     except tomllib.TOMLDecodeError as bad:
         return [f'{path.name}: not TOML: {bad}']
-    found = [f'{path.name}: {line}' for line in devhost.check_family(parsed)]
+    found = [f'{path.name}: {line}' for line in devschema.check_family(parsed)]
     found += [
         f'{path.name}: [{name}] is machine-local; it lives in each machine file'
         for name in LOCAL_ONLY
