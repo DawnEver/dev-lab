@@ -18,13 +18,13 @@ from dev_lab.dev.hpcaccount.account import _READER_REMEDY
 from dev_lab.dev.hpcaccount.credential import declared_logins, digest, place_command, place_credential
 from dev_lab.dev.hpcaccount.division import Division
 
-_HOSTS = ('hpclogin01.example', 'hpclogin02.example')
+_HOSTS = ('login1.example', 'login2.example')
 _FLEET = (Grant(user='alice', hosts=_HOSTS, slurm_account='acct'),)
 _DIVISION = Division(grant_roles={'alice': 'verification'})
 _LOGINS = frozenset({'forge-ci'})
 _MINTED = 'tok3n-SECRET-value'
 _REPO = 'https://forge.example/org/dev-lab.git'
-_DEPLOY = '[deploy]\nhost = "hpclogin01.example"\nroot = "src"\n'
+_DEPLOY = '[deploy]\nhost = "login1.example"\nroot = "src"\n'
 
 
 def _account(*, answers: str = 'forge-ci', seen: list[tuple[str, str | None]]) -> Runner:
@@ -42,7 +42,7 @@ def _account(*, answers: str = 'forge-ci', seen: list[tuple[str, str | None]]) -
 
 
 def _run(
-    account: str = 'alice@hpclogin02.example',
+    account: str = 'alice@login2.example',
     *,
     login: str = 'forge-ci',
     answers: str = 'forge-ci',
@@ -108,7 +108,7 @@ def test_an_undeclared_login_is_refused_before_any_connection() -> None:
 
 def test_an_undeclared_account_is_refused_before_any_connection() -> None:
     """PLANTED CONTROL: an account with no [[hpc.grant]]."""
-    code, said, _, connected = _run('mallory@hpclogin01.example')
+    code, said, _, connected = _run('mallory@login1.example')
     assert (code, connected) == (2, [])
     assert 'mallory' in said[0]
 
@@ -179,7 +179,7 @@ def test_an_empty_stdin_places_nothing() -> None:
     """PLANTED CONTROL: no token, no connection."""
     said: list[str] = []
     code = place_credential(
-        'alice@hpclogin01.example',
+        'alice@login1.example',
         login='forge-ci',
         token='',
         url='',
