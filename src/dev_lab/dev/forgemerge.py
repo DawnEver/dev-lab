@@ -158,6 +158,7 @@ class Decision:
     review: str | None = None  # why the head is not reviewed; ``None``: it is (the last gate, reviewturn)
     unreviewed: str = ''  # the unreviewed warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
     notes: tuple[str, ...] = ()
+    waiting: bool = False  # every missing condition is a check not yet terminal: posted ``pending``, not ``failure``
 
     @property
     def missing(self) -> tuple[str, ...]:
@@ -281,7 +282,16 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses))
+    waits = sum(found is not None for found in (unsafe, gated, red))  # the review is a check too, never in missing
+    waiting = len(missing) == waits and not red_checks(statuses)
+    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses), waiting)
+
+
+def red_checks(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
+    """The contexts in *statuses* standing terminal red (``failure``/``error``), every hand part excluded."""
+    hands = {part_context(name) for name in hand_parts(statuses)}
+    latest = {status.context: status for status in statuses}
+    return tuple(c for c, s in latest.items() if s.state in ('failure', 'error') and c not in hands)
 
 
 def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
@@ -319,13 +329,15 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         others = (EXTERNAL, *others)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         others = (WAITING.format(n=number), *others)
-    return Decision(others, found.message, found.review, found.unreviewed, found.notes)
+    waiting = found.waiting and len(others) == len(found.others)
+    return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting)
 
 
 def ready(root: Path, client: Client, number: int) -> str:
     """Post PR *number*'s :func:`judged` decision as ONE :data:`MERGE_READY_CONTEXT` status on its head; the line.
 
-    ``success`` when nothing is missing, else ``failure`` naming what is (cut to the forge's description limit; the
+    ``success`` when nothing is missing, ``pending`` naming what is when it only waits on a check not yet terminal
+    (:attr:`Decision.waiting`), else ``failure`` naming it (cut to the forge's description limit; the
     workflow log carries the whole line). A PR into another branch than the PR base is ``failure`` saying so.
     On GitHub, or where the repo :func:`ci_merges`, a ``success`` is followed by the merge of that judged head
     (:func:`merge`); a refusal -- the head
@@ -343,7 +355,8 @@ def ready(root: Path, client: Client, number: int) -> str:
         decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
     missing = decision.missing
     suffix = f' ({"; ".join(decision.notes)})' if decision.notes else ''
-    state, why = ('failure', 'waits on: ' + '; '.join(missing) + suffix) if missing else ('success', READY + suffix)
+    held = 'pending' if decision.waiting else 'failure'
+    state, why = (held, 'waits on: ' + '; '.join(missing) + suffix) if missing else ('success', READY + suffix)
     if decision.unreviewed and not missing:
         why = f'{READY}{suffix}, WARNED -- {decision.unreviewed}'
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)

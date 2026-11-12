@@ -7,12 +7,14 @@ values without committing them.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import lab_commons.launch as _door
 import pytest
 
 from dev_lab.dev import privatemarkers
+from dev_lab.dev.forgecli import issue_and_pr
 from dev_lab.dev.privatemarkers import load_markers, scan_text, scan_tree
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -153,3 +155,55 @@ def test_the_pre_commit_entry_passes_when_the_denylist_is_absent(tmp_path: Path)
     argv = _staged_repo(tmp_path, 'clean\n', 'reached secrethost today\n')
     argv[3] = str(tmp_path / 'missing')
     assert privatemarkers.main(argv) == 0
+
+
+def _committed_repo(root: Path, message: str) -> tuple[str, str]:
+    """A repo with a clean base commit and one commit carrying *message*; the two shas."""
+
+    def git(*args: str) -> str:
+        return _door.run(['git', *args], cwd=root, check=True, capture_output=True).stdout.decode().strip()
+
+    git('init', '-q')
+    git('config', 'user.email', 'a@example.com')
+    git('config', 'user.name', 'a')
+    git('commit', '-q', '--allow-empty', '-m', 'base')
+    base = git('rev-parse', 'HEAD')
+    git('commit', '-q', '--allow-empty', '-m', message)
+    return base, git('rev-parse', 'HEAD')
+
+
+@pytest.mark.parametrize(('message', 'refused'), [('fix: reached secrethost today', True), ('fix: clean', False)])
+def test_the_pre_push_entry_refuses_a_pushed_commit_message_with_a_marker(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], message: str, *, refused: bool
+) -> None:
+    """A commit message is published with the push: the clean message is the PLANTED CONTROL."""
+    base, head = _committed_repo(tmp_path, message)
+    denylist = tmp_path / 'private-markers'
+    denylist.write_text('SecretHost\n', encoding='utf-8')
+    lines = io.StringIO(f'refs/heads/x {head} refs/heads/x {base}\n')
+    argv = ['--root', str(tmp_path), '--markers', str(denylist), '--push']
+    assert privatemarkers.main(argv, stdin=lines) == (1 if refused else 0)
+    out = capsys.readouterr()
+    assert ('message' in out.err) is refused
+    assert 'secrethost' not in (out.err + out.out).lower()
+
+
+def test_a_new_branch_push_judges_only_the_commits_no_remote_holds(tmp_path: Path) -> None:
+    """A new ref's remote sha is all zeros: the range is the local head minus what any remote already has."""
+    _, head = _committed_repo(tmp_path, 'fix: reached secrethost today')
+    assert privatemarkers.pushed_messages(tmp_path, f'refs/heads/x {head} refs/heads/x {"0" * 40}\n')
+
+
+def test_a_pr_body_with_a_marker_is_refused_by_the_create_door(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The PR body is published the moment the door opens it; the forge call is never made."""
+    denylist = tmp_path / 'private-markers'
+    denylist.write_text('SecretHost\n', encoding='utf-8')
+    monkeypatch.setattr(privatemarkers, 'MARKERS_FILE', denylist)
+    argv = ['pr', 'create', '--title', 't', '--body', 'ran on secrethost', '--head', 'x', '--base', 'y']
+    assert issue_and_pr(argv, cwd=tmp_path, env={}) == 1
+    err = capsys.readouterr().err
+    assert 'PRIVATE-MARKERS' in err
+    assert 'secrethost' not in err.lower()
+    assert privatemarkers.text_refusal('a clean body', 'PR body') is None, 'PLANTED CONTROL'
