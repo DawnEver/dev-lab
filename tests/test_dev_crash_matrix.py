@@ -33,7 +33,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush, queued, replay
 from dev_lab.dev.forgestatus import CommitStatus, status_post
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.producer import ProducerExit, release_reason
+from dev_lab.dev.producer import Owner, ProducerExit, release_reason
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'
@@ -242,5 +242,12 @@ def test_a_capacity_release_is_claimable_and_a_posted_inconclusive_stays_settled
     genuine inconclusive would re-run it every tick. A head stuck that way (67d955f) is superseded by its
     ref's next push, or re-run by a human; from now on a capacity refusal never posts it.
     """
-    posts = [CommitStatus('tests/base', 'error', release_reason(code, outage=code == ProducerExit.UNREACHABLE), '')]
+    posts = [
+        CommitStatus(
+            'tests/base',
+            'error',
+            release_reason(code, outage=Owner.NETWORK if code == ProducerExit.UNREACHABLE else None),
+            '',
+        )
+    ]
     assert assess(posts, 'tests/base', me=Claim('G', 'alice', NOW + LEASE), now=NOW)[0] == state

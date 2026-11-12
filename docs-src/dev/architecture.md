@@ -131,15 +131,19 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
 
 - **Contract.** Every non-PASS names its owner class: code, environment, scheduling, vendor licence, network, or
   status publishing; only a code failure is the author's red.
-- **Today.** Code: a part `failure` (FAIL). Environment and outages: `error` with `released: unreachable`
-  (`producer.RETRYABLE`, re-claimed) or `released: inconclusive (exit 3) -- no part`
-  (`dev_lab.dev.producer::release_reason`). Scheduling: `released: the box killed it past its declared ...`
-  and a lapsed lease. A commit's own defect: `refused at this commit:` (`forgeclaim.REFUSED_AT_COMMIT`). Network
-  and rate limits: classified and retried (`dev_lab.dev.forgefailure::diagnose`). Status publishing: the
-  outbox holds and replays (`forgeoutbox`).
-- **Gap.** The class lives only in description prose: every non-code failure posts `error`, which both forges
-  render as the same red as a FAIL, and `parts_of` reads it as one unsettled problem. There is no vendor-licence
-  class at all; a licence outage reads as a FAIL or as `unreachable`, by what the producer chose to declare.
+- **Today.** One enum, `dev_lab.dev.producer::Owner` (`code`, `environment`, `scheduling`, `vendor-licence`,
+  `network`, `status-publishing`). The forge keeps its four states; the owner is the `class=<owner>` field of an
+  `error` description (`producer.owned`, read by `producer.owner_of`, tolerant of other `key=value` fields). A
+  `failure` part is `code`. Every release names its class: `release_reason` and `box_release_reason`
+  (environment, scheduling), a declared outage (`producer.unreachable` network / environment / scheduling /
+  status-publishing, `producer.licence_outage` vendor-licence -- released `RETRYABLE`, re-claimed), a commit's own
+  defect `refused at this commit:` (code), superseded and no-room releases (scheduling), a dead host's intent
+  (environment). `platformparts.standing` reads the class: an `error` naming `class=code` is FAIL, any other
+  class leaves the commit INCONCLUSIVE (never PASS, so it blocks promoting `main`) and its problem says
+  "not the author's (class=...)"; `forgenotice` tells the author only of `code` reds.
+- **Gap.** Contexts outside `tests/` (`forgeheadgate`, `forgemerge`, `forgereview`, `forgesecurity`) still post an
+  unclassed `error`, read as unowned (not the author's). Both forges still render every `error` red; the class is
+  readable in the description only.
 
 ## The constitution
 

@@ -37,6 +37,7 @@ from dev_lab.dev.forgerequest import (
 )
 from dev_lab.dev.forgeschedule import NOT_ADMITTED, labelled_issues
 from dev_lab.dev.platformparts import origin_url
+from dev_lab.dev.producer import Owner, owned
 
 server = test_dev_forgetick.server  # the loopback forge fixture, shared
 
@@ -258,7 +259,7 @@ def test_a_failed_request_is_a_failure_on_record_never_silent(monkeypatch, tmp_p
     assert forge.posts[-1][:2] == ('request/9', 'failure')
     assert [c[0] for c in comments] == ['comment'], 'a failed request stays open, its failure stated'
     crashed, _ = _produce(monkeypatch, tmp_path, -9)
-    assert crashed.posts[-1] == ('request/9', 'error', 'released: producer crashed (exit -9)')
+    assert crashed.posts[-1] == ('request/9', 'error', 'released: producer crashed (exit -9) class=environment')
 
 
 def test_a_run_that_wrote_no_record_names_the_missing_record(monkeypatch, tmp_path: Path) -> None:
@@ -335,7 +336,7 @@ def test_a_request_at_a_sha_origin_does_not_serve_is_refused_by_name(server, tmp
     report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
     assert report.claimed == ()
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
-    assert posted['body']['description'] == f'{REFUSED_AT_COMMIT} {unserved(repo, sha)}'
+    assert posted['body']['description'] == owned(Owner.CODE, f'{REFUSED_AT_COMMIT} {unserved(repo, sha)}')
     assert unserved(repo, tips['topic/a']) == ''
 
 
@@ -507,7 +508,8 @@ def test_a_host_pin_its_author_does_not_publish_is_refused_by_name(server, tmp_p
     report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core, owners={'H2': {'carol'}})
     assert report.claimed == ()
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
-    assert posted['body']['description'] == (
+    assert posted['body']['description'] == owned(
+        Owner.CODE,
         f'{REFUSED_AT_COMMIT} host = "H2" pins a host card bob does not publish (published by carol): '
-        'drop the pin, or ask its publisher'
+        'drop the pin, or ask its publisher',
     )

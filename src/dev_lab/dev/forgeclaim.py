@@ -58,7 +58,7 @@ from lab_commons.hpc.shell import FULL
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import ClusterPart, part_context
-from dev_lab.dev.producer import RETRYABLE
+from dev_lab.dev.producer import RETRYABLE, Owner, owned
 
 __all__ = [
     'CLAIMABLE',
@@ -255,6 +255,6 @@ def claim(client: Client, work: Work, me: Claim) -> Work:
 
 def refuse(client: Client, work: Work, why: str) -> Work:
     """Settle *work*'s part ``error`` on its own commit, naming *why*: the commit's owner reads it there, once."""
-    description = f'{REFUSED_AT_COMMIT} {why}'[:DESCRIPTION_LIMIT]
+    description = owned(Owner.CODE, f'{REFUSED_AT_COMMIT} {why}')
     status_post(client, work.sha, context=work.context, state='error', description=description)
     return dataclasses.replace(work, state=DONE)
