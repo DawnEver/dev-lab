@@ -9,6 +9,8 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from dev_lab.dev.venvpath import running_interpreter
+
 __all__ = [
     'CPU_SHARES', 'DETECT_DOOR', 'MACHINE_TABLES', 'RESOURCES', 'ROLES', 'SCHEMA', 'UNFILLED', 'VENDOR',
     'HomeUnfilled', 'check', 'check_family', 'fill_remedy', 'home_of', 'unfilled', 'usable',
@@ -37,7 +39,7 @@ REQUIRED: Final = ('ref',)
 #: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys).
 MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation')
 #: The door that finds this machine's vendor install homes.
-DETECT_DOOR: Final = 'python -m dev_lab.dev.devhost detect'
+DETECT_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost detect'
 
 
 def _typed(table: Mapping[str, Any], schema: Mapping[str, Any], where: str) -> list[str]:
@@ -46,7 +48,9 @@ def _typed(table: Mapping[str, Any], schema: Mapping[str, Any], where: str) -> l
         if key not in schema:
             found.append(f'{where}.{key} is not a declared key')
         elif not isinstance(value, schema[key]) or (isinstance(value, bool) and schema[key] is not bool):
-            found.append(f'{where}.{key} must be {getattr(schema[key], "__name__", "a number")}')
+            found.append(
+                f'{where}.{key} must be {schema[key].__name__ if isinstance(schema[key], type) else "a number"}'
+            )
     return found
 
 

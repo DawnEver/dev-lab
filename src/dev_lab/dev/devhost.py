@@ -47,6 +47,7 @@ from lab_commons.log import emit
 from dev_lab.dev._machinefile import dumps, render_value
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devschema import fill_remedy, unfilled
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = ['OWN_TABLE', 'RENDER_DOOR', 'declared', 'detect', 'drift', 'main', 'notice', 'render', 'stop_block']
 
@@ -178,7 +179,7 @@ def detect(patterns: Mapping[str, list[str]]) -> dict[str, str]:
 
 
 #: The door that re-renders this machine's file from its recorded host and clone.
-RENDER_DOOR: Final = 'python -m dev_lab.dev.devhost render --write'
+RENDER_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost render --write'
 
 
 def _replace(path: Path, text: str, backups: Path) -> Path:

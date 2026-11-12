@@ -33,12 +33,14 @@ from lab_commons.log import emit
 from dev_lab.dev import devhost
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.credstore import CredentialRefused, DeclaredForge, Shell, digest, place_verified, read_forge
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = ['DOOR', 'helpers', 'local_shell', 'main', 'place']
 
 #: This door, as a remedy names it.
 DOOR: Final = (
-    'python -m dev_lab.dev.devcredential --login <login> --forge-config <forge host file> < <minted token file>'
+    f'{running_interpreter()} -m dev_lab.dev.devcredential --login <login> '
+    '--forge-config <forge host file> < <minted token file>'
 )
 
 
