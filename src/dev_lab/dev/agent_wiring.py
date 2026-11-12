@@ -97,6 +97,13 @@ SESSIONPRS_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_l
 #: while a head the session pushed is pending with no live watcher, or red (refused once).
 PUSHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushstop'
 
+#: SCRATCH-IS-NEVER-COMMITTED, the ``Stop`` half (:mod:`dev_lab.dev.scratch` ``stop``): a session does not end while
+#: its checkout's scratch holds an untracked entry the session left (blocked once), naming ``scratch clear``.
+SCRATCHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.scratch stop'
+
+#: Its baseline: every session start records the scratch entries that predate it, so the stop judges only its own.
+SCRATCHSNAP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.scratch snapshot'
+
 #: LANDED-BRANCHES-SWEPT (:mod:`dev_lab.dev.branchprune`, ruling 2026-10-29): after a shell call that pushed
 #: integration, a detached ``sweep --local`` deletes every branch and clean worktree integration now contains.
 SWEEP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.branchprune post-push'
@@ -138,8 +145,8 @@ class Wire:
 #: host-pressure reminder after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at
 #: stop -- a stray is the state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a
 #: census after every shell call repeated the same block (2026-11-03 audit); the hand-back check at every stop, the
-#: main session's and each subagent's; the pushed-head gate at the main session's stop; the background reclaim at
-#: session start.
+#: main session's and each subagent's; the pushed-head gate and the scratch census at the main session's stop; the
+#: background reclaim at session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
     Wire('PreToolUse', JOURNALDOOR_COMMAND, 'dev_lab.dev.journaldoor', on_shells=True),
@@ -151,9 +158,11 @@ WIRING: Final = (
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),
+    Wire('Stop', SCRATCHSTOP_COMMAND, 'dev_lab.dev.scratch stop', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
     Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
+    Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False),
     Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False),
 )
 

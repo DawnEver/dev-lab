@@ -26,14 +26,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.credential import ConsentRefused, canonical
 
-__all__ = ['DIGEST_SHOWN', 'MAX_GRANTS', 'Plan', 'digest', 'load', 'parsed', 'show']
+__all__ = ['DIGEST_SHOWN', 'MAX_GRANTS', 'STALE_CLIENT', 'Plan', 'digest', 'load', 'parsed', 'show', 'stale_client']
 
 #: The most grants one code may buy (the same bound as a token batch).
 MAX_GRANTS: Final = 16
 #: Hex characters of the digest the user is shown and every grant command names.
 DIGEST_SHOWN: Final = 12
+
+
+#: What a plan naming an action this client's registry lacks means, and the one thing to do about it.
+STALE_CLIENT: Final = 'local dev-lab is older than the plan; update it'
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,15 @@ def parsed(data: object) -> Plan:
         msg = f'plan grants {twice} twice'
         raise ConsentRefused(msg)
     return Plan(host, tuple(grants), digest(data))
+
+
+def stale_client(plan: Plan) -> list[str]:
+    """The actions of *plan* THIS client's registry lacks, sorted; empty when it knows them all.
+
+    Checked before a code is asked for or sent: a plan written against a newer registry is refused locally by
+    the grant anyway, but only after the user has given the code (2026-11-12).
+    """
+    return sorted({grant['action'] for grant in plan.grants} - set(ACTIONS))
 
 
 def load(path: Path, shown: str) -> Plan:

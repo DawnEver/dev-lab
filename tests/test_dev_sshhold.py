@@ -222,3 +222,12 @@ def test_no_held_session_names_the_door_for_each_host_kind(monkeypatch: pytest.M
     assert 'python -m lab_commons.hpc' in text
     assert 'sshhold open alice@hpclogin01.example.org --hours N --code <code>' in text
     assert 'the code the user gives' not in text
+
+
+def test_a_plan_naming_an_action_this_client_lacks_is_refused_before_the_code_is_sent(tmp_path) -> None:
+    plan = tmp_path / 'plan.json'
+    plan.write_text(json.dumps({'host': 'ops@h', 'grants': [{'action': 'ops.not.yet.known', 'subject': 'c'}]}))
+    sent: list[str] = []
+    with pytest.raises(sshhold.HoldRefused, match='local dev-lab is older than the plan; update it'):
+        sshhold.open_planned('ops@h', 1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [])
+    assert sent == []
