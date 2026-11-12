@@ -411,6 +411,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'blobfetch',
     'forgebreakglass',
     'reviewcode',
+    'forgeauthnotice',  # the session-start token check: a refused forge token heard before an agent complains
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
     'forgereview_bundle',

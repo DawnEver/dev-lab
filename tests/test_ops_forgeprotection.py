@@ -16,11 +16,12 @@ from _protect_fakes import GITEA_TEXT, FakeGitea
 
 from dev_lab.dev import forgeprotect
 from dev_lab.dev.forge import Forge as Remote
+from dev_lab.dev.forgefailure import Answer
 from dev_lab.ops import forgeaccounts, forgeprotection
 from dev_lab.ops.config import Forge
 from dev_lab.ops.consent.actions import ACTIONS, SINGLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.giteaadmin import ForgeRefused
+from dev_lab.ops.giteaadmin import ForgeRefused, local_api
 
 REF = 'integrate/main'
 
@@ -169,3 +170,37 @@ def test_the_local_api_door_raises_on_a_refused_status() -> None:
     with pytest.raises(ForgeRefused, match='HTTP 403'):
         door.call('PATCH', f'{door.repo}/branch_protections/main', {})
     assert calls[0] == ('GET', '/repos/owner/alpha/branch_protections')
+
+
+def _scripted(*answers: Answer | OSError) -> tuple[Callable[..., Answer], list[float], list[int]]:
+    queue, sleeps, made = list(answers), [], []
+
+    def exchange(*_: object) -> Answer:
+        made.append(1)
+        step = queue.pop(0)
+        if isinstance(step, OSError):
+            raise step
+        return step
+
+    return exchange, sleeps, made
+
+
+def test_the_local_api_retries_a_transient_through_the_one_forge_loop() -> None:
+    exchange, sleeps, made = _scripted(Answer(502, b''), OSError('reset'), Answer(200, b'{"id": 3}'))
+    assert local_api('GET', 'http://g/api/v1/x', 't', None, exchange=exchange, sleep=sleeps.append) == (200, {'id': 3})
+    assert len(made) == 3
+    assert len(sleeps) == 2
+
+
+def test_the_local_api_returns_a_refusal_at_once_and_an_unreached_forge_as_0() -> None:
+    """PLANTED CONTROL: a 404 or a refused admin token is one attempt; a forge never reached reads 0 after the bound."""
+    for status in (401, 404):
+        exchange, sleeps, made = _scripted(Answer(status, b''))
+        assert local_api('GET', 'http://g/api/v1/x', 't', None, exchange=exchange, sleep=sleeps.append) == (
+            status,
+            None,
+        )
+        assert (len(made), sleeps) == (1, [])
+    exchange, sleeps, made = _scripted(*[OSError('down')] * 5)
+    assert local_api('GET', 'http://g/api/v1/x', 't', None, exchange=exchange, sleep=sleeps.append) == (0, None)
+    assert len(made) == 3

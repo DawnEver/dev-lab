@@ -142,11 +142,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'request = urllib.request.Request(url, data=data, method=method)',
     ): 'the URL is the FORGE_URL the job declares API, an https endpoint the workflow declares, never user input',
     (
-        'src/dev_lab/dev/reviewcode.py',
-        'S310',
-        'with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as reply:',
-    ): 'opens only the request built above from the FORGE_URL the job declares',
-    (
         'src/dev_lab/ops/giteaadmin.py',
         'S310',
         'request = urllib.request.Request(url, data=data, headers=headers, method=method)',
