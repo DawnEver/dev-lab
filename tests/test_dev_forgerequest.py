@@ -294,10 +294,18 @@ def test_a_request_run_is_learned_under_its_producer_name(tmp_path: Path) -> Non
     """S1: what a request's run measured sizes ITS next run, never the test part of its need-set."""
     item = Work('issue/9', 'a' * 40, 'femm+windows', MINE, ME, argv=ARGV, request='request/9', producer='femm_goldens')
     repo, _tips = _origin(tmp_path)
-    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=4.0, cpu_s=7200.0, wall_s=3600.0), killed=False)
+    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=4.0, cpu_s=7200.0, wall_s=3600.0), ended='exit')
     url = origin_url(repo)
     assert run_of(url, 'femm_goldens', {'femm', 'windows'}) == Run(4.0, 7200.0, 3600.0)
     assert run_of(url, LOCAL, {'femm', 'windows'}) is None
+
+
+def test_planted_a_request_run_the_wall_cut_is_never_learned(tmp_path: Path) -> None:
+    """O53: only a run that ended by itself (or a memory kill) is a price; a wall-cut run teaches nothing."""
+    item = Work('issue/9', 'a' * 40, 'femm+windows', MINE, ME, argv=ARGV, request='request/9', producer='femm_goldens')
+    repo, _tips = _origin(tmp_path)
+    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=40.0, cpu_s=7200.0, wall_s=3600.0), ended='wall')
+    assert run_of(origin_url(repo), 'femm_goldens', {'femm', 'windows'}) is None
 
 
 def test_a_request_at_a_sha_without_a_lock_is_refused_by_name(server, tmp_path: Path) -> None:
