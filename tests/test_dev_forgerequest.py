@@ -19,7 +19,7 @@ from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.hpc.declared import OutdatedKit
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
-from dev_lab.dev import forgeproduce, forgerequest
+from dev_lab.dev import forgeclaim, forgeproduce, forgerequest
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from dev_lab.dev.forgepublish import RequestRefused, publish
@@ -199,7 +199,7 @@ class _Forge:
         self.posts.append((context, state, description))
 
     def history(self, _client, _sha) -> tuple[SimpleNamespace, ...]:
-        return tuple(SimpleNamespace(context=c, state=s, description=d) for c, s, d in self.posts)
+        return tuple(SimpleNamespace(context=c, state=s, description=d, created=None) for c, s, d in self.posts)
 
 
 class _Proc:
@@ -220,8 +220,9 @@ def _produce(monkeypatch, tmp_path: Path, code: int, kept: tuple = ()) -> tuple[
     )  # fmt: skip
     sha = 'a' * 40
     forge.post(None, sha, context='request/9', state='pending', description=ME.description())
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    for module in (forgeproduce, forgeclaim):  # the producer's own seams, and the claim gate a result passes
+        monkeypatch.setattr(module, 'status_post', forge.post)
+        monkeypatch.setattr(module, 'status_history', forge.history)
     monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s, _c: SimpleNamespace(path=tmp_path, python='py'))
     monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, _c, **_kw: 'removed')
     monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s, _c: kept or (KEPT, (('goldens.csv', DIGEST),)))
