@@ -24,7 +24,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'when a declared branch holds its tip, else names it to merge; a worktree is a lease for one task, so '
             'a tree unlocked, unoccupied, with no TRACKED change and its content landed on the trunk or a declared '
             'session is reclaimed by `branchset --apply` and the session debris hook, each kept tree listed with '
-            'its reason: what git does not track goes with it; run outputs in it keep it as a writer defect.'
+            'its reason: what git does not track goes with it, its run outputs moved home and verified first.'
         ),
         ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
     ),

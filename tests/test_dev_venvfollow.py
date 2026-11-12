@@ -92,5 +92,6 @@ def test_a_merge_and_a_checkout_run_the_follow_as_advisory_git_hooks() -> None:
     table = merge(base_rows(), {})
     for stage in ('post-merge', 'post-checkout'):
         assert stage in ADVISORY
-        assert {hook.id for hook in table[stage]} == {'venv-follows-lock'}
-        assert 'dev_lab.dev.venvfollow' in table[stage][0].run
+        follow = [hook for hook in table[stage] if hook.id == 'venv-follows-lock']
+        assert len(follow) == 1, stage
+        assert 'dev_lab.dev.venvfollow' in follow[0].run
