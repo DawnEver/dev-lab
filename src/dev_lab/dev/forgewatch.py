@@ -22,6 +22,7 @@ the ``Stop`` hook (:mod:`dev_lab.dev.pushstop`) refuses on, until a newer head i
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -235,7 +236,18 @@ def unacknowledged_reds(session: str, *, clients: Callable[[Forge], Client]) -> 
     return said
 
 
+#: A PR's web URL: ``https://<host>/<owner>/<repo>/pull[s]/<number>`` (GitHub, Gitea).
+_PR_URL: Final = re.compile(r'^https?://([^/]+)/([^/]+)/([^/]+)/pulls?/(\d+)/?$')
+
+
+def pr_key(named: str) -> str:
+    """*named* as a session PR key: a PR URL becomes ``<host>/<owner>/<repo>#<number>``; anything else is kept."""
+    found = _PR_URL.match(named.strip())
+    return f'{found[1]}/{found[2]}/{found[3]}#{found[4]}' if found else named.strip()
+
+
 def _ack(session: str, key: str, reason: str, clients: Callable[[Forge], Client]) -> int:
+    key = pr_key(key)
     found = [row for row in sessionprs.rows(session).values() if key in {row.key, f'#{row.number}', str(row.number)}]
     if len(found) != 1:
         emit(f'watch: {key!r} names {len(found)} PR(s) of session {session}; give the key it prints', err=True)
@@ -258,7 +270,9 @@ def session_main(argv: Sequence[str] | None = None, *, clients: Callable[[Forge]
         '--every-seconds', type=float, default=SESSION_EVERY_S, help=f'poll period (floor {SESSION_FLOOR_S:g})'
     )
     parser.add_argument('--deadline-minutes', type=float, default=240.0)
-    parser.add_argument('--ack', default='', help="a PR's key or number: let the red on its current head stand")
+    parser.add_argument(
+        '--ack', default='', help="a PR's key (host/owner/repo#N), URL or number: let the red on its current head stand"
+    )
     parser.add_argument('--reason', default='', help='why the red stands (required with --ack)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     if not sessionprs.valid(args.session):

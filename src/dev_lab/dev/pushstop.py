@@ -111,7 +111,8 @@ def red_refusal(session: str, *, clients: Callable[[Forge], Client]) -> Stop:
         block=f'{sessionprs.RULE}: a PR of this session has a red check:\n'
         + ''.join(f'  {line}\n' for line in reds)
         + 'Read it, fix it and push a newer head -- or, when the red stands on purpose, record why: '
-        f'{running_interpreter()} -m dev_lab.dev.forge watch --session {session} --ack <pr url|key> --reason <why>'
+        f'{running_interpreter()} -m dev_lab.dev.forge watch --session {session} '
+        '--ack <host>/<owner>/<repo>#<number> --reason <why>'
     )
 
 
