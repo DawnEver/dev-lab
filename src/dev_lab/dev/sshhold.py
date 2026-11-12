@@ -60,6 +60,7 @@ from lab_commons.log import emit
 from dev_lab.dev.sshholdstate import Session, audit, forget, read_session, state_dir, state_path
 from dev_lab.ops.consent.client import given_code, grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.consent.plan import STALE_CLIENT, parsed, stale_client
 
 __all__ = [
     'DEFAULT_MAX_HOURS',
@@ -204,6 +205,9 @@ def open_planned(
     The plan's host must be *dest*: a code the user gave for one host's plan never opens another.
     """
     check_hours(hours, ceiling())  # before the code is spent on the grants
+    if stale := stale_client(parsed(json.loads(plan.read_text(encoding='utf-8')))):
+        msg = f'the plan was not granted, no code sent: {stale} unknown to this client: {STALE_CLIENT}'
+        raise HoldRefused(msg)
     try:
         written = grant(plan, shown, code, dest)
     except ConsentRefused as refused:

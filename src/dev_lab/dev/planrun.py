@@ -71,7 +71,7 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.planremote import Remote, remote_for
 from dev_lab.ops.consent.client import spent_ids
 from dev_lab.ops.consent.credential import SKEW_S, ConsentRefused
-from dev_lab.ops.consent.plan import Plan, parsed
+from dev_lab.ops.consent.plan import STALE_CLIENT, Plan, parsed, stale_client
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.totp import write_private
 
@@ -271,8 +271,9 @@ def preflight(
     plan: Plan, steps: Steps, remotes: Remotes, *, machine: Callable[[str], Mapping[str, Any]] = section
 ) -> tuple[bool, list[str]]:
     """``(green, lines)``: every check of the module docstring, BEFORE a code; the lines name each blocker."""
-    lines: list[str] = []
-    blocked = False
+    stale = stale_client(plan)
+    lines = [f'plan: BLOCKED -- {stale} unknown to this client: {STALE_CLIENT}'] if stale else []
+    blocked = bool(stale)
     hosts = {step.dest: step for step in reversed(steps.steps) if not step.local}
     for dest in dict.fromkeys(step.dest for step in steps.steps if not step.local):  # each host once, in order
         fault = _ready(hosts[dest], remotes(dest))
@@ -290,6 +291,8 @@ def preflight(
         else:
             verdict, fault = _host_check(plan, steps, index, remotes(step.dest))
             verdict = f'{verdict} on {step.dest}'
+        if grant['action'] in stale:
+            verdict, fault = f'BLOCKED -- unknown to this client: {STALE_CLIENT}', True
         lines.append(f'{name}: {verdict}')
         blocked = blocked or fault
     lines.append('preflight: BLOCKED (fix the named blocker before asking for a code)' if blocked else

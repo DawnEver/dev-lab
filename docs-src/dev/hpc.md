@@ -10,7 +10,7 @@ cluster is doing, run `forge queue` from anywhere; ssh is only a human's debuggi
 On the login host you chose, store your own forge token once (`git config --global credential.helper store`,
 `chmod 600 ~/.git-credentials`, then `python -m dev_lab.dev.forge auth login`; or, from the workstation, an agent
 places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount credential <user>@<login host> --login
-<forge login>` with the token on stdin), then paste:
+<forge login> --host-config <the forge host's reviewed config file>` with the token on stdin), then paste:
 
 ```
 [ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/dev-lab; { [ -d $D/.git ] || git clone -q -b integrate/main $F/dev-lab.git $D; } && git -C $D pull -q --ff-only && cd $D && ~/.local/bin/uv run --python 3.13 python -m dev_lab.dev.hpcaccount deploy --host <login host> --repo dev-lab=$F/dev-lab.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ... --role <verification|research>

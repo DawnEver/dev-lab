@@ -31,9 +31,8 @@ HAZARD: Final = (
     'a consent credential is written by the grant from a code the USER gave; a planted one forges the consent.'
 )
 REMEDY: Final = (
-    'Write the request JSON, ask the user for the cluster code, run '
-    '`{python} -m dev_lab.ops.consent grant <request.json> --code <the code they gave>`, '
-    'then read the credential it wrote.'
+    'Write the request JSON under output/logs/<yy>/<mm>/<dd>/consent/, ask the user for the cluster code; '
+    'once they approve, run `{python} -m dev_lab.ops.consent grant <request.json> --code <the code they gave>`.'
 )
 
 
