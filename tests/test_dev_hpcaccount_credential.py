@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
@@ -14,8 +15,15 @@ from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev.agentpolicy import exits_of
+from dev_lab.dev.hpcaccount import credential
 from dev_lab.dev.hpcaccount.account import _READER_REMEDY
-from dev_lab.dev.hpcaccount.credential import declared_logins, digest, place_command, place_credential
+from dev_lab.dev.hpcaccount.credential import (
+    CredentialRefused,
+    declared_logins,
+    digest,
+    place_command,
+    place_credential,
+)
 from dev_lab.dev.hpcaccount.division import Division
 
 _HOSTS = ('login1.example', 'login2.example')
@@ -126,11 +134,61 @@ def test_a_role_with_a_reader_takes_only_that_login() -> None:
     assert 'forge-ro' in said[0]
 
 
-def test_declared_logins_are_the_role_readers_and_the_ops_forge_accounts() -> None:
+_HOST_CONFIG = """[ops]
+home = "/srv/ops"
+python = "/usr/bin/python3"
+
+[ops.forge]
+api = "https://forge.example/api/v1"
+admin = "root"
+
+[ops.forge.accounts.forge-ci]
+role = "write"
+repos = ["org/dev-lab"]
+"""
+
+
+def _host_config(tmp_path: Path, text: str = _HOST_CONFIG) -> Path:
+    path = tmp_path / 'forge-a.toml'
+    path.write_text(text, encoding='utf-8')
+    return path
+
+
+def test_a_login_declared_only_in_the_host_config_is_declared(tmp_path: Path) -> None:
+    """The forge host's reviewed config is the one source of [ops.forge.accounts]; this machine holds no copy."""
     division = Division(grant_roles={}, roles={'research': {'reader': 'forge-ro'}, 'verification': {}})
-    ops = {'forge': {'accounts': {'forge-ci': {'role': 'read'}}}}
-    assert declared_logins(division, ops) == {'forge-ro', 'forge-ci'}
-    assert declared_logins(division, {}) == {'forge-ro'}
+    assert declared_logins(division, _host_config(tmp_path)) == {'forge-ro', 'forge-ci'}
+
+
+def test_a_login_the_host_config_does_not_declare_is_not_declared(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the set is read, not everything-goes."""
+    assert 'intruder' not in declared_logins(_DIVISION, _host_config(tmp_path))
+
+
+def test_an_unreadable_host_config_is_refused_naming_it(tmp_path: Path) -> None:
+    """PLANTED CONTROL: never an empty set that refuses every login silently."""
+    missing = tmp_path / 'absent.toml'
+    with pytest.raises(CredentialRefused, match=r'absent\.toml'):
+        declared_logins(_DIVISION, missing)
+
+
+def test_a_host_config_without_forge_accounts_is_refused_naming_it(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a host file that is not the forge's (no [ops.forge]) declares no login."""
+    text = _HOST_CONFIG.split('[ops.forge]', 1)[0]
+    with pytest.raises(CredentialRefused, match=r'forge-a\.toml.*\[ops\.forge\.accounts\]'):
+        declared_logins(_DIVISION, _host_config(tmp_path, text))
+
+
+def test_main_refuses_an_unreadable_host_config_before_any_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(credential, 'section', lambda name: {'grant': []} if name == 'hpc' else {})
+    monkeypatch.setattr(credential, 'place_credential', lambda *_a, **_k: pytest.fail('placed without logins'))
+    monkeypatch.setattr('sys.stdin', io.StringIO(_MINTED))
+    code = credential.main(['alice@login1.example', '--login', 'forge-ci', '--host-config', str(tmp_path / 'no.toml')])
+    assert code == 2
+    said = capsys.readouterr()
+    assert 'no.toml' in said.out + said.err
 
 
 def test_a_host_name_that_is_no_host_is_refused() -> None:

@@ -1,4 +1,4 @@
-"""``python -m dev_lab.dev.hpcaccount credential <user@host> --login <forge login> [--url <repo url>]`` < token.
+"""``python -m dev_lab.dev.hpcaccount credential <user@host> --login L --host-config F [--url U]`` < token.
 
 PLACES ONE MINTED FORGE TOKEN ON A KEY-ONLY CLUSTER ACCOUNT (user ruling 2026-11-12: agents place tokens
 themselves). The token is read from THIS process's stdin, never argv; everything printed names it only by a sha256
@@ -15,6 +15,11 @@ DECLARED ONLY: the account must hold a ``[[hpc.grant]]`` and the login must be d
 (:mod:`~dev_lab.dev.hpcaccount.division`) or an ``[ops.forge.accounts]`` login; when the account's role names a
 reader, the login must be that reader. Anything else is refused before any connection.
 
+The forge accounts have ONE source: the forge host's reviewed config (``--host-config``, a checkout of its config
+source), read by the loader ``config apply`` validates it with (:func:`dev_lab.ops.config.load`, structure only) --
+never a copy in this machine's file. A host config that cannot be read, or declares no ``[ops.forge.accounts]``, is
+refused naming it: never an empty set that refuses every login silently.
+
 ``--url`` is a repository url on the forge (``auth role`` reads permissions on a repository); without it, the
 account's own dev-lab checkout's ``origin``.
 """
@@ -29,7 +34,7 @@ import shlex
 import sys
 import tomllib
 from collections.abc import Callable, Collection, Sequence
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Final
 from urllib.parse import quote, urlsplit
 
@@ -41,8 +46,9 @@ from lab_commons.log import emit
 from dev_lab.dev.hpcaccount.division import Division, split_hpc
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.spec import KIT
+from dev_lab.ops.config import load as load_host_config
 
-__all__ = ['declared_logins', 'digest', 'main', 'place_command', 'place_credential']
+__all__ = ['CredentialRefused', 'declared_logins', 'digest', 'main', 'place_command', 'place_credential']
 
 _HOST: Final = re.compile(r'[A-Za-z0-9.-]+')
 
@@ -70,12 +76,27 @@ def place_command(forge_host: str) -> str:
     )
 
 
-def declared_logins(division: Division, ops: dict[str, object]) -> frozenset[str]:
-    """Every forge login declared on this machine: each role's ``reader`` and each ``[ops.forge.accounts]`` key."""
-    forge = ops.get('forge', {})
-    accounts = forge.get('accounts', {}) if isinstance(forge, dict) else {}
+class CredentialRefused(ValueError):
+    """The declared logins could not be read: what could not be, never a token."""
+
+
+def declared_logins(division: Division, host_config: Path) -> frozenset[str]:
+    """Every declared forge login: each role's ``reader`` and each ``[ops.forge.accounts]`` key of *host_config*.
+
+    Raises:
+        CredentialRefused: *host_config* cannot be read, or declares no ``[ops.forge.accounts]``.
+
+    """
+    try:
+        forge = load_host_config(host_config, structure_only=True, alerts=False).forge
+    except (OSError, ValueError, TypeError, tomllib.TOMLDecodeError) as failed:
+        msg = f'the host config {host_config} could not be read: {failed}'
+        raise CredentialRefused(msg) from failed
+    if forge is None or not forge.accounts:
+        msg = f"the host config {host_config} declares no [ops.forge.accounts]: it is not the forge host's file"
+        raise CredentialRefused(msg)
     readers = {str(table['reader']) for table in division.roles.values() if table.get('reader')}
-    return frozenset(readers | set(accounts))
+    return frozenset(readers | set(forge.accounts))
 
 
 def _refusal(grant: Grant | None, account: str, *, login: str, logins: Collection[str], division: Division) -> str:
@@ -86,9 +107,8 @@ def _refusal(grant: Grant | None, account: str, *, login: str, logins: Collectio
     if host not in grant.hosts and host not in {h.split('.', 1)[0] for h in grant.hosts}:
         return f'{host} is not a login host of {user} {list(grant.hosts)}'
     if login not in logins:
-        return (
-            f'the forge login {login!r} is not declared ([hpc.roles.*] reader, [ops.forge.accounts]): {sorted(logins)}'
-        )
+        declared = '[hpc.roles.*] reader, the host config [ops.forge.accounts]'
+        return f'the forge login {login!r} is not declared ({declared}): {sorted(logins)}'
     reader = str(division.roles.get(division.role_of(user), {}).get('reader', ''))
     if reader and login != reader:
         return f"{user}'s role {division.role_of(user)!r} reads as {reader!r}, not {login!r}"
@@ -145,9 +165,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount credential', description=__doc__.splitlines()[0])
     parser.add_argument('account', help='<user>@<login host> of a declared [[hpc.grant]]')
     parser.add_argument('--login', required=True, help='the declared forge login the token belongs to')
+    parser.add_argument(
+        '--host-config', required=True, type=Path,
+        help="the forge host's reviewed config (a checkout of its config source) declaring [ops.forge.accounts]",
+    )  # fmt: skip
     parser.add_argument('--url', default='', help="a repository url on the forge (default: the account's kit origin)")
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     table, division = split_hpc(section('hpc'))
+    try:
+        logins = declared_logins(division, args.host_config)
+    except CredentialRefused as refused:
+        emit(f'credential: refused -- {refused}')
+        return 2
     return place_credential(
         args.account,
         login=args.login,
@@ -155,6 +184,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         url=args.url,
         grants=load_grants(table).grants,
         division=division,
-        logins=declared_logins(division, section('ops')),
+        logins=logins,
         say=emit,
     )
