@@ -36,7 +36,8 @@ _CREDENTIAL_REMEDY: Final = (
 
 _READER_REMEDY: Final = (
     "place a read-only forge login's minted token (the role's reader when [hpc.roles.<role>] reader names one) "
-    'from the workstation: `python -m dev_lab.dev.hpcaccount credential <user>@<login host> --login <reader>` '
+    'from the workstation: `python -m dev_lab.dev.hpcaccount credential <user>@<login host> --login <reader> '
+    "--host-config <the forge host's config>` "
     "with the token on stdin; it replaces only this account's forge line. Then re-run"
 )
 
