@@ -105,13 +105,26 @@ def ready(config: OpsConfig, *, alert: Alert) -> int:
             key, _ = ends(config, alert=alert)
         else:
             visible(Path(config.consent.key))
-            key = public_key(None if config.consent_client is None else config.consent_client.table())
+            key = _published(config)
     except ConsentRefused as refused:
         emit(f'refused: {refused}', err=True)
         return 2
     where = 'the local issuer' if config.consent is not None else f'{config.consent_client.endpoint} over ssh'
-    emit(f'[ops consent] ready: key {public_text(key)[:12]}, uses register at {where}')
+    shown = 'no published key declared here' if key is None else f'key {public_text(key)[:12]}'
+    emit(f'[ops consent] ready: {shown}, uses register at {where}')
     return 0
+
+
+def _published(config: OpsConfig) -> Ed25519PublicKey | None:
+    """The issuer's PUBLISHED key, or None when this host declares none.
+
+    The issuer signs with its private key, so a host that declares no public key is still ready -- requiring it
+    deadlocked the config apply that would declare it (forge-a1, 2026-11-12).
+    """
+    try:
+        return public_key(None if config.consent_client is None else config.consent_client.table())
+    except ConsentRefused:
+        return None
 
 
 def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callable[[str], None]) -> int:

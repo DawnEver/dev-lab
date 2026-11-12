@@ -527,3 +527,20 @@ def test_an_unsearchable_issuer_key_directory_is_the_readiness_answer_not_a_trac
     monkeypatch.setattr(Path, 'stat', hidden)
     assert consentverbs.ready(host, alert=lambda *_: None) == 2
     assert f'issuer key not visible to {getpass.getuser()}: {Path(host.consent.key)}' in capsys.readouterr().err
+
+
+def test_the_issuer_is_ready_without_a_published_key_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-11-12 forge-a1: requiring the published key at the issuer deadlocked the config that would declare it."""
+    host = config(tmp_path, [])
+
+    def unpublished(_table: object) -> object:
+        msg = 'no consent public key: set [consent] public_key in the machine file'
+        raise consentverbs.ConsentRefused(msg)
+
+    monkeypatch.setattr(consentverbs, 'public_key', unpublished)
+    assert consentverbs.ready(host, alert=lambda *_: None) == 0
+    assert 'no published key declared here' in capsys.readouterr().out
+    Path(host.consent.key).unlink()  # planted control: the private key itself still decides
+    assert consentverbs.ready(host, alert=lambda *_: None) == 2
