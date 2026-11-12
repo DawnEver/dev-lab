@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
+import json
 import re
 import runpy
 import shutil
@@ -824,6 +825,25 @@ def test_the_door_reads_the_locked_git_revision_and_refuses_any_other_source(tmp
         done = _locked_ref(run, refused)
         assert done.returncode != 0, refused
         assert not done.stdout.strip(), refused
+
+
+def test_every_workflow_names_the_branches_the_repo_declares(tmp_path: Path) -> None:
+    """User ruling 2026-11-12: a one-branch repo (integration ``main``) runs the Gitea merge job against ``main``.
+
+    The integration and trunk names are read from ``[tool.dev_lab.integrator]``, never the family's spelled in the
+    base. PLANTED CONTROL: a repo declaring ``integrate/main`` renders it; the family's dev-lab door line
+    (``DEV_LAB_REF=integrate/main``) is dev-lab's own branch and stays in both.
+    """
+    one = '[tool.dev_lab.integrator]\ntrunk = "main"\nintegration = "main"\n[tool.dev_lab.ci."merge.yml"]\n'
+    (tmp_path / 'pyproject.toml').write_text(one, encoding='utf-8')
+    merge = json.dumps(workflows(tmp_path)['merge.yml'])
+    assert 'origin/main' in merge
+    assert 'origin/integrate/main' not in merge
+    assert 'DEV_LAB_REF=integrate/main' in merge
+    assert '@integration@' not in merge
+    family = one.replace('integration = "main"', 'integration = "integrate/main"')
+    (tmp_path / 'pyproject.toml').write_text(family, encoding='utf-8')
+    assert 'origin/integrate/main' in json.dumps(workflows(tmp_path)['merge.yml']), 'PLANTED CONTROL'
 
 
 def _gitea_review(tmp_path: Path) -> dict[str, Any]:

@@ -66,6 +66,19 @@ def test_the_branches_and_identities_come_from_their_one_declaration() -> None:
     assert (trunk.role, trunk.branch, trunk.pushers) == (TRUNK, 'main', ('promote-bot',))  # fmt: skip
 
 
+def test_a_one_branch_repo_has_one_rule_and_it_is_the_integration_rule() -> None:
+    """A repo whose trunk IS its integration branch takes its changes by pull request merge: that is its one rule.
+
+    PLANTED: rendering the trunk's rule too would write two rules for one branch, and the trunk's (no pull request
+    merge, the base part required) would refuse every merge the forge decided.
+    """
+    one = GITEA_TEXT.replace('integration = "integrate/main"', 'trunk = "main"\nintegration = "main"')
+    (rule,) = targets(one, 'p', GITEA)
+    assert (rule.role, rule.branch, rule.via_pull_request, rule.pushers) == (INTEGRATION, 'main', True, ())
+    assert rule.contexts == required_contexts(one, 'p', GITEA)[INTEGRATION]
+    assert len(targets(GITEA_TEXT, 'p', GITEA)) == 2, 'PLANTED CONTROL: two branches keep two rules'
+
+
 def test_a_forge_the_declaration_does_not_name_is_refused() -> None:
     """PLANTED: a repo mirrored onto a forge it declares nothing for has no bypass identity there."""
     with pytest.raises(ValueError, match=r'names no "github\.com"'):
@@ -103,6 +116,19 @@ def test_a_served_forge_requires_nothing_on_integration_and_its_base_on_the_trun
         INTEGRATION: (),
         TRUNK: ('tests/base',),
     }
+
+
+def test_a_repo_declaring_its_merge_checks_requires_them_on_integration() -> None:
+    """User ruling 2026-11-12: the declared merge check is the forge's own refusal too, so no web-UI merge skips it.
+
+    PLANTED CONTROL: a repo declaring none requires nothing there (the served rule above).
+    """
+    check = 'check / check (pull_request)'
+    declared = GITEA_TEXT.replace(
+        'integration = "integrate/main"', f'integration = "integrate/main"\nmerge_checks = ["{check}"]'
+    )
+    assert required_contexts(declared, 'p', GITEA)[INTEGRATION] == (check,)
+    assert required_contexts(GITEA_TEXT, 'p', GITEA)[INTEGRATION] == ()
 
 
 def test_a_judged_repo_requires_no_review_status() -> None:
