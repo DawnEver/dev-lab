@@ -15,22 +15,19 @@ from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev.agentpolicy import exits_of
-from dev_lab.dev.hpcaccount import credential
-from dev_lab.dev.hpcaccount.account import _READER_REMEDY
-from dev_lab.dev.hpcaccount.credential import (
+from dev_lab.dev.credstore import (
     CredentialRefused,
     DeclaredForge,
-    declared_logins,
     digest,
     discard_command,
-    drop_host,
-    place_credential,
     read_forge,
     rewrite_command,
     stage_command,
-    usage,
     verify_prefix,
 )
+from dev_lab.dev.hpcaccount import credential
+from dev_lab.dev.hpcaccount.account import _READER_REMEDY
+from dev_lab.dev.hpcaccount.credential import declared_logins, drop_host, place_credential, usage
 from dev_lab.dev.hpcaccount.division import Division
 
 _HOSTS = ('login1.example', 'login2.example')

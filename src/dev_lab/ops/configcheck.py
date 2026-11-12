@@ -2,9 +2,12 @@
 
 Three checks, each generic (the repository's own facts arrive as the files it holds):
 
-- a HOST file loads by structure (:func:`dev_lab.ops.config.load` with ``structure_only``): the shape the live
-  door will load, without the host's environment or secret files, which exist only on the host; and it holds no
-  key the schema does not declare -- ``[ops]`` as the loader declares it, every other table as the supervisor's
+- a HOST file is a server's (``[ops]``) or a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
+  checked with the family file: a restated family key is refused; the machine tables it renders are open); a
+  server's file loads by structure
+  (:func:`dev_lab.ops.config.load` with ``structure_only``): the shape the live door will load, without the host's
+  environment or secret files, which exist only on the host; and it holds no key the schema
+  does not declare -- ``[ops]`` as the loader declares it, every other table as the supervisor's
   :data:`~dev_lab.supervise.config.DEFAULTS` does (a table whose default is empty, ``components``, is open);
 - the FAMILY file shares no machine-local table (:data:`LOCAL_ONLY`) and no secret VALUE -- a secret is named by
   path (``*_file``, ``*_path``), never held; a refusal names the key, never repeats the value;
@@ -25,6 +28,7 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev import devschema
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
 from dev_lab.supervise.config import DEFAULTS
@@ -52,14 +56,28 @@ def _undeclared(table: Mapping[str, Any], schema: Mapping[str, Any], prefix: str
             yield from _undeclared(value, schema[key], f'{prefix}{key}.')
 
 
-def check_host(path: Path) -> list[str]:
+def check_host(path: Path, family: Path | None = None) -> list[str]:
     """Defects of a host file as the live door would load it, judged by structure alone, plus undeclared keys."""
     try:
-        opsconfig.load(path, environ={}, as_root=False, structure_only=True)
-    except (ValueError, TypeError, KeyError, tomllib.TOMLDecodeError) as bad:
+        parsed = tomllib.loads(path.read_text(encoding='utf-8'))
+    except tomllib.TOMLDecodeError as bad:
         return [f'{path.name}: {bad}']
-    parsed = tomllib.loads(path.read_text(encoding='utf-8'))
-    return [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, {**DEFAULTS, 'ops': {}})]
+    found = []
+    if 'dev' in parsed:
+        shared = tomllib.loads(family.read_text(encoding='utf-8')) if family is not None else {}
+        found += [f'{path.name}: {line}' for line in devschema.check(parsed, shared)]
+    if 'ops' in parsed or 'dev' not in parsed:
+        try:
+            opsconfig.load(path, environ={}, as_root=False, structure_only=True)
+        except (ValueError, TypeError, KeyError) as bad:
+            return [*found, f'{path.name}: {bad}']
+    schema = {
+        **DEFAULTS,
+        'ops': {},
+        'dev': {},
+        **({key: {} for key in devschema.MACHINE_TABLES} if 'dev' in parsed else {}),
+    }
+    return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
 
 
 def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[tuple[str, Any]]:
@@ -83,7 +101,8 @@ def check_family(path: Path) -> list[str]:
         parsed = tomllib.loads(path.read_text(encoding='utf-8'))
     except tomllib.TOMLDecodeError as bad:
         return [f'{path.name}: not TOML: {bad}']
-    found = [
+    found = [f'{path.name}: {line}' for line in devschema.check_family(parsed)]
+    found += [
         f'{path.name}: [{name}] is machine-local; it lives in each machine file'
         for name in LOCAL_ONLY
         if name in parsed
@@ -110,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--family', type=Path, default=None, help='the family file')
     parser.add_argument('--against', type=Path, default=None, help="a directory holding the base's host files")
     args = parser.parse_args(argv)
-    defects = [line for host in args.hosts for line in check_host(host)]
+    defects = [line for host in args.hosts for line in check_host(host, args.family)]
     if args.family is not None:
         defects += check_family(args.family)
     for line in defects:

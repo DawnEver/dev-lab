@@ -29,162 +29,36 @@ reader, the login must be that reader. Anything else is refused before any conne
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
-import re
-import shlex
 import sys
-import tomllib
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Final
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 from lab_commons.config import section
 from lab_commons.hpc.cluster import Runner, runner_for
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
+from dev_lab.dev.credstore import (
+    STORE,
+    CredentialRefused,
+    DeclaredForge,
+    digest,
+    place_verified,
+    read_forge,
+    rewrite_command,
+    stamp_now,
+    valid_host,
+)
 from dev_lab.dev.hpcaccount.division import Division, split_hpc
 from dev_lab.dev.hpcaccount.fleet import declared_target, in_checkout
-from dev_lab.ops.config import load as load_host_config
 
 __all__ = [
-    'CredentialRefused',
-    'DeclaredForge',
     'declared_logins',
-    'digest',
-    'discard_command',
     'drop_host',
     'main',
     'place_credential',
-    'read_forge',
-    'rewrite_command',
-    'stage_command',
-    'stamp_now',
-    'verify_prefix',
 ]
-
-#: The store git's ``credential.helper store`` reads, under ``$HOME``.
-STORE: Final = '.git-credentials'
-_HOST: Final = re.compile(r'[A-Za-z0-9.-]+')
-_STAMP: Final = re.compile(r'[0-9]{8}T[0-9]{6}Z')
-
-
-def digest(token: str) -> str:
-    """The only form of a token any output carries: ``sha256:<12 hex>``."""
-    return f'sha256:{hashlib.sha256(token.encode()).hexdigest()[:12]}'
-
-
-def stamp_now() -> str:
-    """The UTC timestamp a staged file and a backup are named by."""
-    return datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
-
-
-def _checked(host: str, stamp: str) -> None:
-    if not _HOST.fullmatch(host):
-        msg = f'not a forge host name: {host!r}'
-        raise ValueError(msg)
-    if not _STAMP.fullmatch(stamp):
-        msg = f'not a timestamp: {stamp!r}'
-        raise ValueError(msg)
-
-
-def _staged(stamp: str) -> str:
-    _checked('x', stamp)
-    return f'"$HOME/{STORE}.new-{stamp}"'
-
-
-def stage_command(stamp: str) -> str:
-    """The shell line that writes the one line on its stdin, alone, to ``~/.git-credentials.new-<stamp>`` (0600).
-
-    The line is read by the shell's ``read`` and written by its ``printf`` builtin, so it is in no process's argv.
-    """
-    return f'umask 077 && IFS= read -r line && printf \'%s\\n\' "$line" > {_staged(stamp)}'
-
-
-def verify_prefix(stamp: str) -> str:
-    """The exports that make git's credential helper read ONLY the staged file (an empty helper resets the list)."""
-    _checked('x', stamp)
-    return (
-        'export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= '
-        f'GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1="store --file=$HOME/{STORE}.new-{stamp}" && '
-    )
-
-
-def discard_command(stamp: str) -> str:
-    """The shell line that deletes the staged file; the store is untouched."""
-    return f'rm -f {_staged(stamp)}'
-
-
-def rewrite_command(host: str, stamp: str, *, staged: bool) -> str:
-    """The shell line that backs up ``~/.git-credentials`` and removes *host*'s line -- replaced by the staged one.
-
-    The backup ``~/.git-credentials.bak-<stamp>`` (0600) is taken when a store exists and its path echoed; every
-    other line is kept; the new file is written under ``umask 077``, ``chmod 600`` and moved into place atomically.
-    """
-    _checked(host, stamp)
-    own = r'^https?://[^@/]*@' + host.replace('.', r'\.') + r'(:[0-9]+)?/?$'
-    add, done = (f' && cat {_staged(stamp)}', f' && rm -f {_staged(stamp)}') if staged else ('', '')
-    return (
-        f'umask 077 && f="$HOME/{STORE}" && b="$f.bak-{stamp}" && '
-        '{ [ ! -e "$f" ] || { cp "$f" "$b" && chmod 600 "$b" && echo "backup $b"; }; } && t="$(mktemp "$f.XXXXXX")" '
-        f'&& {{ {{ grep -v -E {shlex.quote(own)} "$f" 2>/dev/null || true; }}{add}; }} > "$t" '
-        f'&& chmod 600 "$t" && mv -f "$t" "$f"{done}'
-    )
-
-
-class CredentialRefused(ValueError):
-    """The declared forge could not be read, or a url is not on it: what was refused, never a token."""
-
-
-@dataclass(frozen=True)
-class DeclaredForge:
-    """The forge a host config declares: the *sites* it serves and each login's repositories."""
-
-    path: Path
-    sites: tuple[str, ...]
-    accounts: Mapping[str, tuple[str, ...]]
-
-    def url_for(self, login: str, url: str) -> str:
-        """*url* when it is on this forge, else (empty) the login's first declared repository here.
-
-        Raises:
-            CredentialRefused: *url* is on another host, or there is no declared repository to default to.
-
-        """
-        if url:
-            if (urlsplit(url).hostname or '') not in self.sites:
-                msg = f'{url} is not on the forge {list(self.sites)} the host config {self.path} declares'
-                raise CredentialRefused(msg)
-            return url
-        repos = self.accounts.get(login, ())
-        if not repos or len(self.sites) != 1:
-            msg = f'{login} has no repository on one declared site {list(self.sites)} in {self.path}: give --url'
-            raise CredentialRefused(msg)
-        return f'https://{self.sites[0]}/{repos[0]}.git'
-
-
-def read_forge(host_config: Path) -> DeclaredForge:
-    """The forge *host_config* declares: ``[ops.caddy] sites`` and ``[ops.forge.accounts]``.
-
-    Raises:
-        CredentialRefused: *host_config* cannot be read, or declares no accounts or no site.
-
-    """
-    try:
-        config = load_host_config(host_config, structure_only=True, alerts=False)
-    except (OSError, ValueError, TypeError, tomllib.TOMLDecodeError) as failed:
-        msg = f'the host config {host_config} could not be read: {failed}'
-        raise CredentialRefused(msg) from failed
-    forge, caddy = config.forge, config.caddy
-    if forge is None or not forge.accounts or caddy is None or not caddy.sites:
-        msg = f'the host config {host_config} declares no [ops.forge.accounts] and [ops.caddy] sites: not a forge'
-        raise CredentialRefused(msg)
-    accounts = {login: tuple(row.get('repos', ())) for login, row in forge.accounts.items()}
-    return DeclaredForge(host_config, tuple(caddy.sites), accounts)
 
 
 def declared_logins(division: Division, forge: DeclaredForge) -> frozenset[str]:
@@ -242,30 +116,21 @@ def place_credential(
     if why or grant is None:
         say(f'credential: refused -- {why}')
         return 2
-    stamp, host = stamp or stamp_now(), urlsplit(repo).hostname or ''
     shell = connect(grant)
     try:
         target = declared_target(grant, shell)
         if isinstance(target, str):
             say(f'credential: {target}')
             return 2
-        shell(stage_command(stamp), f'https://{quote(login, safe="")}:{quote(token, safe="")}@{host}\n')
         role = in_checkout(target, ['-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', repo])
-        try:
-            answered = str(json.loads(shell(verify_prefix(stamp) + role, None)).get('login') or '')
-        except (RuntimeError, OSError, ValueError) as failed:
-            answered = f'an error ({failed})'
-        if answered != login:
-            shell(discard_command(stamp), None)
-            say(
-                f'credential: refused -- the forge answers {repo} as {answered or "anonymous"}, not {login}; '
-                f'~/{STORE} untouched'
-            )
-            return 2
-        backup = shell(rewrite_command(host, stamp, staged=True), None).strip()
+        refusal, backup = place_verified(shell, login=login, token=token, repo=repo, role=role, stamp=stamp)
     except (RuntimeError, OSError, ValueError) as failed:
         say(f'credential: refused -- {user}: {failed}')
         return 2
+    if refusal:
+        say(f'credential: refused -- {refusal}')
+        return 2
+    host = urlsplit(repo).hostname or ''
     say(f'{user}: the forge answers as {login} on {repo}; placed {digest(token)} for {host} (0600) {backup}'.strip())
     return 0
 
@@ -282,7 +147,7 @@ def drop_host(
     """Remove exactly *host*'s line of *account*'s ``~/.git-credentials``, after a backup; 2 on refusal."""
     user = account.partition('@')[0]
     grant = next((g for g in grants if g.user == user), None)
-    why = _grant_refusal(grant, account) or ('' if _HOST.fullmatch(host) else f'not a host name: {host!r}')
+    why = _grant_refusal(grant, account) or ('' if valid_host(host) else f'not a host name: {host!r}')
     if why or grant is None:
         say(f'credential: refused -- {why}')
         return 2
