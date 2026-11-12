@@ -40,6 +40,7 @@ from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
     'INTEGRATION_REF',
+    'OPS_KEYS',
     'Breakglass',
     'ConfigSource',
     'Forge',
@@ -284,6 +285,15 @@ class OpsConfig:
         return self.home / repo_name(url)
 
 
+#: Every key ``[ops]`` declares: its scalars and its role tables (``config`` is :class:`ConfigSource`). A key
+#: outside it is refused at load, as each role refuses a key outside its own fields.
+OPS_KEYS: Final = frozenset({
+    'home', 'python', 'repos', 'environment_file',
+    'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
+    'upgrade', 'probe', 'config', 'forge',
+})  # fmt: skip
+
+
 def repo_name(url: str) -> str:
     """The repository name a clone URL ends in (``.../owner/name.git`` -> ``name``)."""
     return url.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git')
@@ -375,6 +385,9 @@ def load(
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
     ops = upgraded(ops)
+    if unknown := sorted(set(ops) - OPS_KEYS):
+        msg = f'[ops] has unknown keys {unknown}; known: {sorted(OPS_KEYS)}'
+        raise ValueError(msg)
     root = (_is_root() if as_root is None else as_root) and not structure_only
     judge_table = ops.get('judge')
     # a declared keys_file ABSENT is "not yet placed" (`secret place` writes only a declared path, so `config apply`

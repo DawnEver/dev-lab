@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import functools
-import http.client
 import json
 import os
 import sys
@@ -44,7 +43,7 @@ from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_o
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from dev_lab.dev.forgecoalesce import behind
-from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed
+from dev_lab.dev.forgefailure import ForgeCallFailed, within
 from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgeprovides import supplied, unserved
 from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, request_context
@@ -283,19 +282,6 @@ def render(view_: Mapping[str, Any]) -> list[str]:
     return lines
 
 
-def _within(transport: Transport, deadline: float, budget_s: float) -> Transport:
-    """*transport*, each connection's wait cut to what is left before *deadline*, and none opened past it."""
-
-    def opened(host: str, timeout: float) -> http.client.HTTPConnection:
-        left = deadline - time.monotonic()
-        if left <= 0:
-            msg = f'the queue spent its {budget_s:g} s read budget before asking {host}'
-            raise BudgetSpent(msg)
-        return transport(host, min(timeout, left))
-
-    return opened
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -317,7 +303,7 @@ def main(
     root = Path.cwd() if cwd is None else cwd
     try:
         deadline = time.monotonic() + budget_s
-        bounded = _within(transport, deadline, budget_s)
+        bounded = within(transport, deadline, 'the queue', budget_s)
         built = client_for(root, env=dict(os.environ) if env is None else env, transport=bounded)
         seen = view(root, built, fetch=fetch or functools.partial(fetch_origin, deadline=deadline))
     except (ForgeCallFailed, NoCredential, UnreadableRemote, OSError, ValueError) as failed:

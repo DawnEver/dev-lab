@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import hashlib
 import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -68,7 +67,7 @@ from dev_lab.dev.forge import (
     store_credential,
 )
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgekeyfile import KeyLine, format_key_file, parse_key_file
+from dev_lab.dev.forgekeyfile import USAGE, digest, export_keys, import_keys
 from dev_lab.dev.forgework import Client, stored_client
 from dev_lab.dev.netverb import Diagnosis
 from dev_lab.dev.venvpath import running_interpreter
@@ -79,6 +78,7 @@ __all__ = [
     'UNREACHABLE',
     'UNREACHABLE_EXIT',
     'RepoRole',
+    'answered_refusal',
     'family_hosts',
     'login',
     'main',
@@ -88,7 +88,7 @@ __all__ = [
 ]
 
 #: The exit status for a usage error, as argparse uses it.
-_USAGE = 2
+_USAGE = USAGE
 
 #: The token scopes a tick needs, as the forge's token page names them.
 TICK_SCOPES: Final = 'repository (read and write), issue (read and write), user (read)'
@@ -214,13 +214,13 @@ def _answers(call: Callable[[], object]) -> bool:
     try:
         call()
     except ForgeCallFailed as failed:
-        if _refusal(failed):
+        if answered_refusal(failed):
             return False
         raise
     return True
 
 
-def _refusal(failed: ForgeCallFailed) -> bool:
+def answered_refusal(failed: ForgeCallFailed) -> bool:
     """An ANSWERED refusal: measured, a missing grant, final, or a 401/403 held on every attempt (a scope).
 
     Gitea's transient "Failed to authenticate user" clears on the next attempt, so a 401/403 that held on every
@@ -250,7 +250,7 @@ def _settle(host: str, digest: str, why: str) -> None:
 
 def _digest_of(forge: Forge, root: Path, env: Mapping[str, str] | None) -> str:
     try:
-        return _digest(credential_for(forge.host, cwd=root, env=env)[1])
+        return digest(credential_for(forge.host, cwd=root, env=env)[1])
     except NoCredential:
         return ''
 
@@ -327,10 +327,10 @@ def _without_prompt(
 ) -> int:
     """Every verb but an interactive ``login``: ``export``, ``login --from-file``, ``check``, ``status``."""
     if args.verb == 'export':
-        return _export(args.host or [*family_hosts(root), GITHUB_HOST], root, env, stdout)
+        return export_keys(args.host or [*family_hosts(root), GITHUB_HOST], root, env, stdout)
     if args.verb == 'login':
         text = stdin.read() if args.from_file == '-' else Path(args.from_file).read_text(encoding='utf-8')
-        return _import(text, root, env, transport)
+        return import_keys(text, root, env, transport)
     if args.verb == 'role':
         return _role(forge_of_url(args.url) if args.url else forge_from_remote(root), root, env, transport, stdout)
     if args.verb == 'check':
@@ -363,6 +363,18 @@ def _role(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Tr
     return 0
 
 
+#: The username Git Credential Manager stores an OAuth ACCESS token under. GitHub's never expires; Gitea's does, after
+#: ``[oauth2] ACCESS_TOKEN_EXPIRATION_TIME`` (default one hour), so the first git call after it fails with 401 and
+#: GCM re-mints it from its refresh token for the retry -- the "first call after idle is refused" of 2026-11-12.
+_OAUTH_USER: Final = 'OAUTH_USER'
+
+_EXPIRING: Final = (
+    '[forge] {host}: the stored credential is a Git Credential Manager OAuth access token (username OAUTH_USER), '
+    'which this forge expires within the hour -- so the first call after idle is refused and its retry succeeds. '
+    'Store a non-expiring personal access token instead: {login} -m dev_lab.dev.forge auth login'
+)
+
+
 def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Transport) -> int:
     try:
         who = status(forge, cwd=root, env=env, transport=transport)
@@ -370,7 +382,7 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         emit(f'[forge] {forge.host}: no token. Run: {running_interpreter()} -m dev_lab.dev.forge auth login', err=True)
         return 1
     except ForgeCallFailed as failed:
-        if not _refusal(failed):
+        if not answered_refusal(failed):
             return _unreachable(forge.host, failed)
         _settle(forge.host, _digest_of(forge, root, env), 'GET /user refused')
         emit(f'[forge] {forge.host}: the forge refused the token. {failed}', err=True)
@@ -378,56 +390,7 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         return 1
     _settle(forge.host, _digest_of(forge, root, env), '')
     emit(f'[forge] {forge.host}: token from git credential; authenticated as {who}')
-    return 0
-
-
-def _digest(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()[:8]
-
-
-def _export(hosts: Sequence[str], root: Path, env: Mapping[str, str] | None, out: TextIO) -> int:
-    if out.isatty():
-        emit('[forge] auth export writes secrets: pipe or redirect it, never to a terminal', err=True)
-        return _USAGE
-    keys, missing = [], []
-    for host in dict.fromkeys(hosts):
-        try:
-            username, token = credential_for(host, cwd=root, env=env)
-        except NoCredential:
-            missing.append(host)
-            continue
-        keys.append(KeyLine(host, username, token))
-    out.write(format_key_file(keys))
-    out.flush()
-    named = ', '.join(f'{k.username}@{k.host} sha256:{_digest(k.token)}' for k in keys)
-    emit(f'[forge] exported {len(keys)} credential(s): {named or "none"}', err=True)
-    if missing:
-        emit(f'[forge] no credential stored for: {", ".join(missing)}', err=True)
-    return 0 if keys else 1
-
-
-def _import(text: str, root: Path, env: Mapping[str, str] | None, transport: Transport) -> int:
-    try:
-        keys = parse_key_file(text)
-    except ValueError as malformed:
-        emit(f'[forge] {malformed}; nothing was stored', err=True)
-        return _USAGE
-    if not keys:
-        emit('[forge] the key file holds no credential; nothing was stored', err=True)
-        return _USAGE
-    for key in keys:
-        try:
-            Client(Forge(key.host, '', ''), key.token, transport=transport).whoami()
-        except ForgeCallFailed as failed:
-            emit(
-                f'[forge] {key.host} refused the token of {key.username}: NOT stored, nor any other. {failed}', err=True
-            )
-            return 1
-    try:
-        for key in keys:
-            store_credential(key.host, key.username, key.token, cwd=root, env=env)
-    except NoCredential as refused:
-        emit(f'[forge] {refused}', err=True)
+    if forge.host != GITHUB_HOST and credential_for(forge.host, cwd=root, env=env)[0] == _OAUTH_USER:
+        emit(_EXPIRING.format(host=forge.host, login=running_interpreter()), err=True)
         return 1
-    emit(f'[forge] stored {len(keys)} credential(s): {", ".join(f"{k.username}@{k.host}" for k in keys)}')
     return 0

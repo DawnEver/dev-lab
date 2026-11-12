@@ -60,6 +60,7 @@ __all__ = [
     'render_argv',
     'unaccounted',
     'undeclared_inputs',
+    'whole_files',
 ]
 
 #: The one command a repo re-renders every family file with (its own deltas module named).
@@ -295,8 +296,8 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     return tuple(out)
 
 
-#: The family files every repo carries whole, with no delta: (repo-relative path, its text).
-def _whole_files() -> tuple[tuple[str, str], ...]:
+def whole_files() -> tuple[tuple[str, str], ...]:
+    """The family files every repo carries whole, with no delta: (repo-relative path, its text)."""
     return ((principles.PAGE_REL, principles.render()), (remconfig.REL, remconfig.render()))
 
 
@@ -306,7 +307,7 @@ def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
     ``.claude/rem.json`` that differs is the repo's own choice and is reported, never overwritten.
     """
     out: list[str] = []
-    for rel, text in _whole_files():
+    for rel, text in whole_files():
         path = root / rel
         held = path.read_text(encoding='utf-8') if path.is_file() else None
         if held == text:

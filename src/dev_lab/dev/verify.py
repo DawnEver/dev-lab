@@ -61,7 +61,7 @@ from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.lockwait import lock_wait_arg
 from dev_lab.dev.logref import UnverifiableLog
 from dev_lab.dev.platformparts import part_context
-from dev_lab.dev.producer import ProducerExit, full_suite_refusal, unreachable
+from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
 from dev_lab.dev.reports import (
     MalformedAllowance,
 )
@@ -338,7 +338,7 @@ def _judge(
             f'--lock-wait "<duration>" raises or drops the {wait_s:.0f} s ceiling on the wait. '
             f'{offer_line(root, head, arguments)}'
         )
-        return (unreachable(f'the box is held: {exc}') if post is not None else code), lines
+        return (unreachable(f'the box is held: {exc}', Owner.SCHEDULING) if post is not None else code), lines
     except UnverifiableLog as exc:
         return _inconclusive(
             f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'

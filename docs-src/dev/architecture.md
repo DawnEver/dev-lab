@@ -99,14 +99,21 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
 
 - **Contract.** Exactly one producer runs a (commit, part); a claim is atomic, leased, recovered after a timeout,
   a retry keeps the result's identity, and publishing is idempotent across several verification accounts.
-- **Today.** A claim is a `pending` status; the EARLIEST live claim by forge order wins
-  (`dev_lab.dev.forgeclaim::assess`, `claim`); the lease is `DEFAULT_LEASE` (6 h) on the forge's clock
-  (`forge_now`) and a lapsed one is retaken. A released claim with `producer.RETRYABLE` is claimable again.
-  Every write is journaled and replayed until acknowledged, never double-posted (`dev_lab.dev.forgeoutbox`).
+- **Today.** A claim is a `pending` status naming its owner (machine, login, cluster account); the holder is a pure function of the
+  status history (`dev_lab.dev.forgeclaim::holder`, `assess`): replayed in forge order, the first claim takes
+  the job, another owner takes it only if the holder's lease had lapsed by the forge clock at that post's
+  `created_at`, and the holder's owner renews it. A loser posts nothing further; a stale retake while the
+  lease is live, or an old owner's renewal after a retake, counts for nothing. The lease is `DEFAULT_LEASE`
+  (6 h) on the forge's clock (`forge_now`). A result is posted only through `forgeclaim::publish`, which
+  re-reads the history first: a settled context is a no-op and a claim that no longer holds withdraws; the
+  outbox keeps the first result and drops an identical second (`dev_lab.dev.forgeoutbox`). A released claim
+  with `producer.RETRYABLE` is claimable again. Every write is journaled and replayed until acknowledged.
   A cluster run's file is keyed by repo + sha + platform + scope (`dev_lab.dev.forgerunstate`).
-- **Gap.** The claim is post-then-reread, not compare-and-swap: a loser may already have posted its `pending`,
-  and the winner's renewal and a stale retake race on one context. Two verification accounts finishing the same
-  part both publish; nothing makes the second a no-op beyond "latest wins" (contract 1).
+- **Gap.** Neither forge offers compare-and-swap, so `publish` is read-then-post: a retake landing between
+  its read and its post (possible only once the lease lapsed) lets both results reach the forge, and the
+  outbox's first-result rule then decides. A result queued in the outbox (`platformparts.post`) is checked
+  for duplicates there but not re-gated on the claim. A post the forge dates no `created_at` is judged at
+  the reader's `now`.
 
 ### 4. Authorization
 
@@ -131,24 +138,32 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
   them (`render_all`). Workflows are rendered from TOML and the drift check compares rendered bytes, refusing a
   hand-written one (`dev_lab.dev.ciworkflows`, stamp `RENDERED_BY`). The dev index table is
   `devdocs::pointer_table`. A lock left behind its dependencies alarms (`dev_lab.dev.drift`).
-- **Gap.** No check shows a generator change leaves unrelated repos' renders unchanged; each repo finds out at
-  its next render. Consumer tests hand-copy rendered lists: the motor product's
-  `test_the_locked_gitea_workflows_keep_the_trusted_review_door.py` pins `{'merge.yml', 'review.yml'}` and
-  its shared-registry adoption test pins a tuple of rule IDs, instead of reading them from dev-lab.
+- **Today, cross-repo.** `dev_lab.dev.rendergoldens` renders every famconfig base, whole family file and workflow
+  for the generic declaration fixtures in `tests/_render_fixtures/` and compares them byte for byte with
+  `tests/_render_goldens/`: a generator change names each render it moves, and moving a golden is a reviewed
+  `rendergoldens update`. Consumers read rendered lists from dev-lab -- `ciworkflows.base_names(forge)`, and
+  `rules.enforced_ids(declared_absent)` for a registry adoption -- instead of copying them.
+- **Gap.** The fixtures are representative, not the members' own declarations, and the agent-hook renderers
+  (`agent_guard`, `hook_adoption`, `autodoors`) are not in the golden set. The motor product reads the lists only
+  after it relocks onto the dev-lab commit that adds `enforced_ids`.
 
 ### 6. Failure ownership
 
 - **Contract.** Every non-PASS names its owner class: code, environment, scheduling, vendor licence, network, or
   status publishing; only a code failure is the author's red.
-- **Today.** Code: a part `failure` (FAIL). Environment and outages: `error` with `released: unreachable`
-  (`producer.RETRYABLE`, re-claimed) or `released: inconclusive (exit 3) -- no part`
-  (`dev_lab.dev.producer::release_reason`). Scheduling: `released: the box killed it past its declared ...`
-  and a lapsed lease. A commit's own defect: `refused at this commit:` (`forgeclaim.REFUSED_AT_COMMIT`). Network
-  and rate limits: classified and retried (`dev_lab.dev.forgefailure::diagnose`). Status publishing: the
-  outbox holds and replays (`forgeoutbox`).
-- **Gap.** The class lives only in description prose: every non-code failure posts `error`, which both forges
-  render as the same red as a FAIL, and `parts_of` reads it as one unsettled problem. There is no vendor-licence
-  class at all; a licence outage reads as a FAIL or as `unreachable`, by what the producer chose to declare.
+- **Today.** One enum, `dev_lab.dev.producer::Owner` (`code`, `environment`, `scheduling`, `vendor-licence`,
+  `network`, `status-publishing`). The forge keeps its four states; the owner is the `class=<owner>` field of an
+  `error` description (`producer.owned`, read by `producer.owner_of`, tolerant of other `key=value` fields). A
+  `failure` part is `code`. Every release names its class: `release_reason` and `box_release_reason`
+  (environment, scheduling), a declared outage (`producer.unreachable` network / environment / scheduling /
+  status-publishing, `producer.licence_outage` vendor-licence -- released `RETRYABLE`, re-claimed), a commit's own
+  defect `refused at this commit:` (code), superseded and no-room releases (scheduling), a dead host's intent
+  (environment). `platformparts.standing` reads the class: an `error` naming `class=code` is FAIL, any other
+  class leaves the commit INCONCLUSIVE (never PASS, so it blocks promoting `main`) and its problem says
+  "not the author's (class=...)"; `forgenotice` tells the author only of `code` reds.
+- **Gap.** Contexts outside `tests/` (`forgeheadgate`, `forgemerge`, `forgereview`, `forgesecurity`) still post an
+  unclassed `error`, read as unowned (not the author's). Both forges still render every `error` red; the class is
+  readable in the description only.
 
 ## The constitution
 
@@ -157,8 +172,8 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
 | 1 | Humans hold final authority over high-risk actions; an agent cannot widen its own permissions. | implemented: consent door, `CONSENT-CODE-FROM-THE-USER` |
 | 2 | dev-lab governs family development and carries no business or compute duty that is not its own. | implemented |
 | 3 | GitHub toolchain repos' merge gate does not depend on HPC, workstations or the judge being online. | target: a merge waits on `tests/review` (contract 4) |
-| 4 | Gitea business repos carry heavy verification and cross-repo integration; test definitions are not needlessly copied. | target: hand-copied lists (contract 5) |
-| 5 | Each fact has one authoritative source; derived artifacts are maintained by deterministic generation. | partly: no cross-repo render check (contract 5) |
+| 4 | Gitea business repos carry heavy verification and cross-repo integration; test definitions are not needlessly copied. | implemented in dev-lab: lists read from `ciworkflows` and `rules.enforced_ids`; the motor product adopts at its next relock (contract 5) |
+| 5 | Each fact has one authoritative source; derived artifacts are maintained by deterministic generation. | partly: `rendergoldens` pins every fixture render; the agent-hook renderers are outside it (contract 5) |
 | 6 | `integrate/main` may fail; a normal promotion of `main` requires a green verification of the exact commit. | partly: required set, env and policy unchecked (contract 2) |
 | 7 | Break-glass is an explicitly authorized, fully audited exception and does not change test facts. | target: test bypass in progress; wave not bound to subjects (contract 4) |
 | 8 | Every HPC operation follows the one door, rate limit, quota protection and cleanup rules. | implemented: `HPC-THROUGH-THE-DOOR` |

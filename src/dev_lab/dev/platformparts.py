@@ -112,7 +112,7 @@ from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, R
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from dev_lab.dev.partfacts import Part, facts_of, latest, parsed
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
-from dev_lab.dev.producer import unreachable
+from dev_lab.dev.producer import AUTHORS_RED, Owner, unreachable, whose
 from dev_lab.dev.verdictenv import POLICY_CHARS, verdict_policy_at
 
 if TYPE_CHECKING:
@@ -343,9 +343,11 @@ def parts_of(statuses: Sequence[CommitStatus], *, policy: str | None = None) -> 
     A ``tests/<part>`` context whose LATEST status is not a settled part -- a claim still ``pending``, an
     ``error``, or a description this module did not write -- is a problem naming itself. Each part is its
     latest fact; under a *policy*, its latest fact of that policy, a FAIL of it in any env outranking a PASS.
+    An ``error`` problem names its owner (:func:`~dev_lab.dev.producer.whose`): only ``class=code`` is its author's.
     """
     problems = [
         f'{status.context} is {status.state} ({status.description!r}) -- not a settled part'
+        + whose(status.state, status.description)
         for status in latest(statuses)
         if status.context.startswith(CONTEXT_PREFIX) and status.context not in NOT_PARTS and parsed(status) is None
     ]
@@ -436,8 +438,9 @@ class Standing:
     """A commit's result as its parts on the forge say it: PASS, FAIL, or INCONCLUSIVE while unsettled.
 
     THE ONE READING of a commit's parts, shared by push admission and the integrator's queue: a FAIL
-    part is ``FAIL`` whatever else is missing; otherwise any problem (a part missing, unsettled, or of
-    the wrong scope) leaves it INCONCLUSIVE; else PASS.
+    part, or an ``error`` naming ``class=code`` (the commit's own defect), is ``FAIL`` whatever else is missing;
+    an ``error`` of another owner is not the author's (:func:`~dev_lab.dev.producer.whose`). Else any problem (a part
+    missing, unsettled, or of the wrong scope) leaves it INCONCLUSIVE -- never PASS; else PASS.
     """
 
     result: Conclusion
@@ -489,7 +492,8 @@ def standing(
             for part in composed.parts
             if part.result is not Conclusion.PASS or part.scope != scope
         ]
-    failed = any(part.result is Conclusion.FAIL for part in composed.parts)
+    refused = any(one.endswith(AUTHORS_RED) for one in unsettled)  # the commit's own defect, though no part
+    failed = refused or any(part.result is Conclusion.FAIL for part in composed.parts)
     result = _settled(failed=failed, problems=problems)
     reading = UNCLAIMED if result is Conclusion.INCONCLUSIVE and not (parts or unsettled) else result.name
     return Standing(result=result, parts=composed.parts, problems=tuple(problems), reading=reading)
@@ -534,7 +538,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(post(args.root, args.record))
     except PostFailed as why:
         emit(f'[platformparts] unreachable: {why}', err=True)
-        return unreachable(str(why))
+        return unreachable(str(why), Owner.STATUS_PUBLISHING)
     except PartRefusal as why:
         emit(f'[platformparts] refused: {why}', err=True)
         return 1

@@ -3,7 +3,9 @@
 Three checks, each generic (the repository's own facts arrive as the files it holds):
 
 - a HOST file loads by structure (:func:`dev_lab.ops.config.load` with ``structure_only``): the shape the live
-  door will load, without the host's environment or secret files, which exist only on the host;
+  door will load, without the host's environment or secret files, which exist only on the host; and it holds no
+  key the schema does not declare -- ``[ops]`` as the loader declares it, every other table as the supervisor's
+  :data:`~dev_lab.supervise.config.DEFAULTS` does (a table whose default is empty, ``components``, is open);
 - the FAMILY file shares no machine-local table (:data:`LOCAL_ONLY`) and no secret VALUE -- a secret is named by
   path (``*_file``, ``*_path``), never held; a refusal names the key, never repeats the value;
 - a change NEEDS CONSENT when it touches a boundary key (:func:`dev_lab.ops.configdoor.boundary`): merging it
@@ -25,6 +27,7 @@ from lab_commons.log import emit
 
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
+from dev_lab.supervise.config import DEFAULTS
 
 __all__ = ['LABEL', 'LOCAL_ONLY', 'check_family', 'check_host', 'main', 'needs_consent']
 
@@ -40,13 +43,23 @@ _SECRET_SHAPE = re.compile(
 )
 
 
+def _undeclared(table: Mapping[str, Any], schema: Mapping[str, Any], prefix: str = '') -> Iterator[str]:
+    """The dotted keys of *table* that *schema* does not declare; an empty schema table is open."""
+    for key, value in table.items():
+        if key not in schema:
+            yield f'{prefix}{key}'
+        elif schema[key] and isinstance(schema[key], Mapping) and isinstance(value, Mapping):
+            yield from _undeclared(value, schema[key], f'{prefix}{key}.')
+
+
 def check_host(path: Path) -> list[str]:
-    """Defects of a host file as the live door would load it, judged by structure alone."""
+    """Defects of a host file as the live door would load it, judged by structure alone, plus undeclared keys."""
     try:
         opsconfig.load(path, environ={}, as_root=False, structure_only=True)
     except (ValueError, TypeError, KeyError, tomllib.TOMLDecodeError) as bad:
         return [f'{path.name}: {bad}']
-    return []
+    parsed = tomllib.loads(path.read_text(encoding='utf-8'))
+    return [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, {**DEFAULTS, 'ops': {}})]
 
 
 def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[tuple[str, Any]]:

@@ -27,6 +27,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import (
+    forgeclaim,
     forgehosts,
     forgepoller,
     forgeproduce,
@@ -51,7 +52,7 @@ from dev_lab.dev.forgetick import TickReport
 from dev_lab.dev.forgetidy import Hygiene
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart
-from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, outage_env, release_reason
+from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, outage_env, owner_of, release_reason
 from dev_lab.dev.shatree import Tree, TreeFailed
 
 _DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
@@ -112,11 +113,25 @@ class _Forge:
     def __init__(self) -> None:
         self.posts: list[tuple[str, str, str]] = []
 
-    def post(self, _client, _sha, *, context, state, description) -> None:
+    def post(self, _client, _sha, *, context, state, description, target_url='') -> None:
         self.posts.append((context, state, description))
 
     def history(self, _client, _sha) -> tuple[SimpleNamespace, ...]:
-        return tuple(SimpleNamespace(context=c, state=s, description=d) for c, s, d in self.posts)
+        return tuple(SimpleNamespace(context=c, state=s, description=d, created=None) for c, s, d in self.posts)
+
+    def claimed(self, client, sha) -> tuple[SimpleNamespace, ...]:
+        """The history as the claim gate reads it: ``ME``'s claim on each part heads it."""
+        head = [SimpleNamespace(context=f'tests/{part}', state='pending', description=ME.description(), created=None)
+                for part in ('windows', 'linux')]  # fmt: skip
+        return (*head, *self.history(client, sha))
+
+    def route(self, monkeypatch) -> None:
+        """Every forge seam the producer reaches -- its own, and the claim gate's -- onto this forge."""
+        monkeypatch.setattr(forgeproduce, 'status_post', self.post)
+        monkeypatch.setattr(forgeproduce, 'status_history', self.history)
+        monkeypatch.setattr(forgeclaim, 'status_post', self.post)
+        monkeypatch.setattr(forgeclaim, 'status_history', self.claimed)
+        monkeypatch.setattr(forgeclaim, 'forge_now', lambda _client: NOW)
 
 
 class _Trees:
@@ -229,8 +244,7 @@ def _serve(
     monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
     monkeypatch.setattr(forgeship, 'tidy', tidy)
     trees = trees or _Trees(tmp_path)
@@ -488,8 +502,7 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     """The card beats at the tick period; the claim is still renewed on its own, longer, cadence."""
     forge, beats = _Forge(), []
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
@@ -512,7 +525,7 @@ def test_a_crashed_producer_releases_its_claim(monkeypatch, tmp_path: Path) -> N
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(-9)}, forge)
-    assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9)')
+    assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9) class=environment')
 
 
 def test_a_local_part_is_judged_in_its_own_tree_at_the_claimed_sha(monkeypatch, tmp_path: Path) -> None:
@@ -548,7 +561,7 @@ def test_a_tree_that_cannot_be_built_spawns_nothing_and_names_the_step(monkeypat
     assert forge.posts[-1] == (
         'tests/windows',
         'error',
-        f'released: no tree at {SHA[:12]} -- dep --bootstrap exited 1: no lock',
+        f'released: no tree at {SHA[:12]} -- dep --bootstrap exited 1: no lock class=environment',
     )
     assert trees.closed == [SHA], 'a half-built tree is removed too'
 
@@ -571,7 +584,7 @@ def test_a_tree_the_box_did_not_admit_is_released_retryable_never_an_error_verdi
     context, _state, description = forge.posts[-1]
     assert context == 'tests/windows'
     assert description.startswith(RETRYABLE), 'the next tick claims it again (forgeclaim.assess: OPEN)'
-    assert "queued behind 'verify:p8'" in description
+    assert owner_of('error', description) is Owner.SCHEDULING, 'not the author red: the box had no room'
     assert trees.closed == [SHA]
 
 
@@ -586,7 +599,7 @@ def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Pa
 def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypatch, tmp_path: Path) -> None:
     """PLANTED (live 2026-10-11): a runner over its wall said INCONCLUSIVE; serve said "refused its argv"."""
     for proc, reason in (
-        (_Proc(ProducerExit.INCONCLUSIVE), release_reason(ProducerExit.INCONCLUSIVE, outage=False)),
+        (_Proc(ProducerExit.INCONCLUSIVE), 'released: inconclusive (exit 3) -- no part'),
         (_Proc(ProducerExit.UNREACHABLE, said='unreachable: npm is missing'), RETRYABLE),
         (_Proc(ProducerExit.UNREACHABLE), 'released: producer exited 4 without declaring an outage'),
         (_Proc(1, box=Refused('cpu: wants 4 of 3')), RETRYABLE),  # the box had no room in time: open, never red
@@ -616,7 +629,10 @@ def test_an_inconclusive_part_without_its_record_names_the_missing_record(
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(ProducerExit.INCONCLUSIVE)}, forge)
     assert forge.posts[-1][1] == 'error'
-    assert forge.posts[-1][2].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False))
+    assert forge.posts[-1][2].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    )
+    assert owner_of('error', forge.posts[-1][2]) is Owner.ENVIRONMENT
     assert ('the run wrote no record' in forge.posts[-1][2]) is not kept[0]
 
 
@@ -632,7 +648,7 @@ def test_a_producer_exiting_a_former_box_sentinel_on_its_own_is_judged_by_its_co
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(code)}, forge)
-    assert forge.posts[-1][1:] == ('error', release_reason(code, outage=False))
+    assert forge.posts[-1][1:] == ('error', release_reason(code, outage=None))
     assert not forge.posts[-1][2].startswith(RETRYABLE)
 
 
@@ -1151,15 +1167,14 @@ def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch
     proc = _Proc(1, pid=77)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda pid: pid == 77)
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': proc}, forge)
-    assert forge.posts[-1] == ('tests/windows', 'error', 'stopped')
+    assert forge.posts[-1] == ('tests/windows', 'error', 'stopped class=scheduling')
 
 
 def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> forgeproduce.Produced:
     """One local part through :func:`forgeproduce.produce`, every forge and tree seam faked."""
     forge = _Forge()
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
