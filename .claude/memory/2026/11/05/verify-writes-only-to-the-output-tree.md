@@ -7,7 +7,9 @@ created: 2026-11-05
 accessed: 2026-11-05
 ---
 
-# Verify writes only to the output tree; .verify/ is gone (user ruling 2026-11-05: "迁到 output，删掉 .verify/")
+> Translated 2026-11-12: CJK rendered as faithful English (NO-CJK-IN-TRACKED-SOURCE).
+
+# Verify writes only to the output tree; .verify/ is gone (user ruling 2026-11-05: "move it to output, delete .verify/", translated)
 
 - What `.verify/` held (inventory at retirement): `verify-<ts>.log` (the run log a VERDICT cites by content hash),
   `verify-<ts>.outcome.json` (the box's ended record), `verify-<ts>.outcomes/` (per-worker cell records),
