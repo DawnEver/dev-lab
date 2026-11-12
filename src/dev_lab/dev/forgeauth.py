@@ -363,6 +363,18 @@ def _role(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Tr
     return 0
 
 
+#: The username Git Credential Manager stores an OAuth ACCESS token under. GitHub's never expires; Gitea's does, after
+#: ``[oauth2] ACCESS_TOKEN_EXPIRATION_TIME`` (default one hour), so the first git call after it fails with 401 and
+#: GCM re-mints it from its refresh token for the retry -- the "first call after idle is refused" of 2026-11-12.
+_OAUTH_USER: Final = 'OAUTH_USER'
+
+_EXPIRING: Final = (
+    '[forge] {host}: the stored credential is a Git Credential Manager OAuth access token (username OAUTH_USER), '
+    'which this forge expires within the hour -- so the first call after idle is refused and its retry succeeds. '
+    'Store a non-expiring personal access token instead: {login} -m dev_lab.dev.forge auth login'
+)
+
+
 def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Transport) -> int:
     try:
         who = status(forge, cwd=root, env=env, transport=transport)
@@ -378,6 +390,9 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         return 1
     _settle(forge.host, _digest_of(forge, root, env), '')
     emit(f'[forge] {forge.host}: token from git credential; authenticated as {who}')
+    if forge.host != GITHUB_HOST and credential_for(forge.host, cwd=root, env=env)[0] == _OAUTH_USER:
+        emit(_EXPIRING.format(host=forge.host, login=running_interpreter()), err=True)
+        return 1
     return 0
 
 
