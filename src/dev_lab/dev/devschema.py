@@ -12,7 +12,7 @@ from typing import Any, Final
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'CPU_SHARES', 'DETECT_DOOR', 'MACHINE_TABLES', 'RESOURCES', 'ROLES', 'SCHEMA', 'UNFILLED', 'VENDOR',
+    'CPU_SHARES', 'DETECT_DOOR', 'HELPERS', 'MACHINE_TABLES', 'RESOURCES', 'ROLES', 'SCHEMA', 'UNFILLED', 'VENDOR',
     'HomeUnfilled', 'check', 'check_family', 'fill_remedy', 'home_of', 'unfilled', 'usable',
 ]  # fmt: skip
 
@@ -23,7 +23,11 @@ VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': st
 #: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
 SCHEMA: Final = {
     'role': str, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
+    'helpers': dict,
 }  # fmt: skip
+#: The git credential helpers a ``[dev] helpers.<forge host>`` may declare: ``store`` -- that host reads ONLY
+#: ``~/.git-credentials`` (a narrowly scoped bot token), every other host keeps the machine's own helper.
+HELPERS: Final = ('store',)
 #: The box's hardware; a SHARED box also declares the part this user holds (``allotted_*``), read before the total.
 RESOURCES: Final = {
     'cpu': str, 'cores': int, 'logical_cores': int, 'memory_gb': (int, float), 'gpu': str, 'shared': bool,
@@ -81,6 +85,12 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
     if 'role' in table and table['role'] not in ROLES:
         found.append(f'{where}.role {table["role"]!r} is not one of {list(ROLES)}')
     found += _named_lists(table, 'forges', where, 'account names')
+    helpers = table.get('helpers') if isinstance(table.get('helpers'), dict) else {}
+    found += [
+        f'{where}.helpers.{host} {helper!r} is not one of {list(HELPERS)}'
+        for host, helper in helpers.items()
+        if helper not in HELPERS
+    ]
     found += _named_lists(table, 'detect', where, 'glob patterns')
     found += _resources(table, where)
     vendors = table.get('vendors') if isinstance(table.get('vendors'), dict) else {}
