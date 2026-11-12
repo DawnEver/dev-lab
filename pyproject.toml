@@ -117,6 +117,8 @@ output = "output/logs"
 # producer of every part ({part} filled); a cluster part runs from [tool.lab_commons.hpc].
 [tool.lab_commons.tests]
 produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
+# An OS mark (@pytest.mark.windows) runs only on a producer of that OS; each OS is a declared resource.
+resources = ["linux", "macos", "windows"]
 
 # The tool FLOORS this repo's parts need (D21): `<tool> = {floor = "<version>", reason = "<why>"}`. A
 # declaration is a floor with its reason, never a pin (user ruling 2026-10-17); a tool needing no floor --
