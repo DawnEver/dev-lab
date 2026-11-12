@@ -150,7 +150,7 @@ def rendered(role: Forge, api: forgeprotect.Api, repo: str, ref: str) -> Protect
     owner, _, name = repo.partition('/')
     remote = Remote(public_host(role), owner, name)
     try:
-        text = manifest_at(api, ref)  # type: ignore[arg-type]  # manifest_at needs only .repo and .call
+        text = manifest_at(api, ref)
         wanted = forgeprotect.targets(text, f'{repo}@{ref}:pyproject.toml', remote)
     except (DeclarationUnread, ForgeRefused) as unread:
         msg = f'{repo}: pyproject.toml at {ref} cannot be read: {unread}'
