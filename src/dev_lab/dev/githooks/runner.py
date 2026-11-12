@@ -42,6 +42,7 @@ from dev_lab.dev import metrics
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
+    'PUSH_URL_ENV',
     'ZERO_SHA',
     'PushLine',
     'parse_push_lines',
@@ -300,10 +301,22 @@ def run_stage(
             continue
         hook_stdin = ''.join(f'{line.line}\n' for line in lines) if stage == 'pre-push' else None
         argvs = _argvs(hook, stage, git_args, chosen)
-        if _report(stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=env or {})):
+        if _report(
+            stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=_stage_env(stage, git_args, env))
+        ):
             failed.append(hook.id)
     _log(root, stage, failed, push)
     return _verdict(stage, failed)
+
+
+#: The URL git pushes to (its second pre-push argument), handed to every pre-push hook; a hook's argv cannot carry it.
+PUSH_URL_ENV: Final = 'DEV_LAB_PUSH_URL'
+
+
+def _stage_env(stage: str, git_args: Sequence[str], env: Mapping[str, str] | None) -> dict[str, str]:
+    """*env*, plus at pre-push :data:`PUSH_URL_ENV`."""
+    pushed = {PUSH_URL_ENV: git_args[1]} if stage == 'pre-push' and len(git_args) > 1 else {}
+    return {**(env or {}), **pushed}
 
 
 def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine] = ()) -> None:

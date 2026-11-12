@@ -236,11 +236,25 @@ def _render(item: Issue | PullRequest | Comment) -> str:
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
 
 
-def _refused(parser: argparse.ArgumentParser, args: argparse.Namespace) -> str | None:
-    """Why the verb is refused before any forge call: a reasonless close, a PR text naming a private value."""
+def _refused(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    root: Path,
+    env: Mapping[str, str] | None,
+    transport: Transport,
+) -> str | None:
+    """Why the verb is refused before any write: a reasonless close, a PUBLIC repo's PR text naming a private value.
+
+    A private repository is where private names belong; an unreadable visibility is scanned (fail closed).
+    """
     if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
         parser.error('pr close: --reason must say why')
     if (args.noun, args.verb) == ('pr', 'create'):
+        private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
+        if private:
+            return None
+        if why:
+            emit(f'[forge] scanning the PR text for private markers: {why}', err=True)
         return privatemarkers.text_refusal(f'{args.title}\n{args.body}', 'PR title or body')
     return None
 
@@ -255,10 +269,10 @@ def issue_and_pr(
     """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy."""
     parser = _parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if (refused := _refused(parser, args)) is not None:
+    root = Path.cwd() if cwd is None else cwd
+    if (refused := _refused(parser, args, root, env, transport)) is not None:
         emit(f'[forge] {refused}', err=True)
         return 1
-    root = Path.cwd() if cwd is None else cwd
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (

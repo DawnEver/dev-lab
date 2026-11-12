@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev.githooks import main as githooks_main
-from dev_lab.dev.githooks.runner import ZERO_SHA, parse_push_lines, resolve, run_stage
+from dev_lab.dev.githooks.runner import PUSH_URL_ENV, ZERO_SHA, parse_push_lines, resolve, run_stage
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
@@ -353,3 +353,13 @@ def test_a_push_names_the_branch_and_tip_it_pushes(repo: Path) -> None:
     assert run_stage('pre-push', ['origin', 'u'], root=repo, stdin=deleted + pushed, hooks=()) == 0
     [line] = read(PUSH, root=repo)
     assert (line['vcs.ref.head.name'], line['vcs.ref.head.revision']) == ('pr/x', sha)
+
+
+def test_every_pre_push_hook_is_told_the_url_git_pushes_to(repo: Path) -> None:
+    """The private-markers message scan judges by the PUSHED-TO repo's visibility; git names it only as an argument."""
+    seen = _Recorder()
+    hook = Hook(stage='pre-push', id='h', run=('tool',), always_run=True)
+    stdin = _push_line(repo, 'refs/heads/x')
+    url = 'https://example.com/o/r.git'
+    assert run_stage('pre-push', ['origin', url], root=repo, stdin=stdin, hooks=(hook,), runner=seen) == 0
+    assert seen.env == {PUSH_URL_ENV: url}
