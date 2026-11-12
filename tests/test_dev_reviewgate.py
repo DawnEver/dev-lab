@@ -1,4 +1,4 @@
-"""REVIEW-IS-REQUIRED: one predicate decides whether a head is reviewed, for the merge AND for Break-Glass.
+"""One predicate reports whether a head is reviewed; the review is advisory and never gates (rulings 2026-11-11/12).
 
 ai-lab #3 and dev-lab #5 (2026-10-31, ~16:45Z) were auto-merged with ``tests/review=error``: the merge called an
 ``error`` and a takeover-pending review "advisory". Every state but a posted ``success`` (with no hold pending)
@@ -15,7 +15,6 @@ import pytest
 from _forge_state import StateForge
 from test_dev_forgereview import _LANE_POLICY, _work
 
-from dev_lab.dev import breakglass
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeheadgate import GATES
 from dev_lab.dev.forgemerge import decide, judged
@@ -52,8 +51,11 @@ def _status(context: str, state: str, description: str, creator: str = ACTIONS_B
         ('failure', '1 blocking finding open'),
     ],
 )
-def test_every_review_state_but_success_blocks_the_merge_and_names_itself(tmp_path: Path, review) -> None:
-    """PLANTED CONTROL: the same head with a forge-posted success review is ready."""
+def test_every_review_state_but_success_is_reported_and_never_blocks_the_merge(tmp_path: Path, review) -> None:
+    """The review is ADVISORY (user rulings 2026-11-11/12): a missing review does not block; it is named.
+
+    PLANTED CONTROL: the same head with a forge-posted success review reports nothing; with a red part it waits.
+    """
     work, head = _work(tmp_path)
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
     rest = (
@@ -66,18 +68,23 @@ def test_every_review_state_but_success_blocks_the_merge_and_names_itself(tmp_pa
     found = decide(
         work, policy, branch='pr/x', number=1, head=head, statuses=statuses, reviewed=status_gate(github_posted)
     )
-    assert not found.ready
-    (line,) = [one for one in found.missing if REVIEW_CONTEXT in one]
-    assert (review[1] if review else 'not posted') in line
+    assert found.ready, found.missing
+    assert found.review is not None
+    assert (review[1] if review else 'not posted') in found.review
     ok = (_status(REVIEW_CONTEXT, 'success', 'review round 1: no blocking finding open'), *rest)
     assert review_missing(ok, github_posted) is None
-    assert decide(
-        work, policy, branch='pr/x', number=1, head=head, statuses=ok, reviewed=status_gate(github_posted)
-    ).ready
+    passed = decide(work, policy, branch='pr/x', number=1, head=head, statuses=ok, reviewed=status_gate(github_posted))
+    assert passed.ready
+    assert passed.review is None
+    red = tuple(_status('tests/base', 'failure', 'scope=full ran=3 hands=-') if one.context == 'tests/base' else one
+                for one in statuses)  # fmt: skip
+    held = decide(work, policy, branch='pr/x', number=1, head=head, statuses=red, reviewed=status_gate(github_posted))
+    assert not held.ready
+    assert not any(REVIEW_CONTEXT in one for one in held.missing), held.missing
 
 
 @pytest.mark.parametrize('creator', ['maintainer', 'a', ''])
-def test_a_success_a_user_posted_never_satisfies_the_gate(tmp_path: Path, creator: str) -> None:
+def test_a_success_a_user_posted_is_reported_as_no_review(tmp_path: Path, creator: str) -> None:
     """D11, F-e4d5c529db40: a PAT with GITHUB_ACTIONS=true in its env still posts AS ITS USER, and the forge says so.
 
     PLANTED CONTROL: the same success created by github-actions[bot] satisfies it.
@@ -88,9 +95,11 @@ def test_a_success_a_user_posted_never_satisfies_the_gate(tmp_path: Path, creato
     said = review_missing(forged, github_posted)
     assert said is not None
     assert 'not by the forge' in said
-    assert not decide(
+    found = decide(
         work, policy, branch='pr/x', number=1, head=head, statuses=forged, reviewed=status_gate(github_posted)
-    ).ready
+    )
+    assert found.review is not None
+    assert 'not by the forge' in found.review
     real = (_status(REVIEW_CONTEXT, 'success', 'review round 1: clean'), _status(*_SECURED))
     assert review_missing(real, github_posted) is None
 
@@ -100,10 +109,10 @@ def test_github_status_list_reads_the_creator_the_forge_recorded() -> None:
     forge, head = StateForge(Forge('github.com', 'o', 'r')), 'c' * 40
     forge.login = 'maintainer'
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='looks fine to me')
-    assert breakglass.unreviewed(forge, head, base=_BASE) is not None
+    assert _gate(forge, head) is not None
     forge.login = ACTIONS_BOT
     status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean')
-    assert breakglass.unreviewed(forge, head, base=_BASE) is None
+    assert _gate(forge, head) is None
 
 
 def _gitea_review(forge: StateForge, head: str, *, login: str, url: str) -> str | None:
@@ -111,7 +120,7 @@ def _gitea_review(forge: StateForge, head: str, *, login: str, url: str) -> str 
     status_post(
         forge, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean', target_url=url
     )
-    return breakglass.unreviewed(forge, head, base=_BASE)
+    return _gate(forge, head)
 
 
 @pytest.mark.parametrize('creator', ['DawnEver', 'ServeBot', ACTIONS_BOT, GITEA_ACTIONS_LOGIN])
@@ -130,7 +139,7 @@ def test_on_gitea_a_success_counts_whoever_posted_it(creator: str, url: str) -> 
     status_post(
         github, head, context=REVIEW_CONTEXT, state='success', description='review round 1: clean', target_url=url
     )
-    said = breakglass.unreviewed(github, head, base=_BASE)
+    said = _gate(github, head)
     assert (said is None) == (creator == ACTIONS_BOT)
     if said is not None:
         assert 'not by the forge' in said
@@ -172,15 +181,6 @@ def test_a_pending_hold_blocks_a_successful_review_until_released() -> None:
     assert 'held' in review_missing(held, github_posted)
     released = (_status(HOLD_CONTEXT, 'success', 'released by box'), *held[1:])
     assert review_missing(released, github_posted) is None
-
-
-def test_break_glass_and_the_merge_read_the_one_predicate() -> None:
-    """Single source: neither module keeps a review rule of its own."""
-    forge, head = StateForge(), 'a' * 40
-    status_post(forge, head, context=REVIEW_CONTEXT, state='error', description='the review command failed')
-    assert breakglass.unreviewed(forge, head, base=_BASE) == review_missing(
-        status_list(forge, head), forge_posted(forge)
-    )
 
 
 def test_the_door_records_what_this_process_posted_and_nothing_outside_the_block() -> None:
@@ -231,7 +231,6 @@ def test_a_judge_repo_s_merge_never_waits_on_the_judge(verdicts: tuple[tuple[str
         forge.add_review(number, login=login, state=state, commit=head)
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='held')
     assert _gate(forge, head) is None
-    assert breakglass.unreviewed(forge, head, base=_BASE) is None
 
 
 def test_a_serve_repo_is_unaffected_by_a_judge_approval() -> None:
@@ -250,14 +249,31 @@ def test_a_judge_declaration_without_a_judge_login_is_refused() -> None:
     forge.pyproject_at[_BASE] = '[tool.dev_lab.review]\nwhere = "judge"\n'
     with pytest.raises(ValueError, match='judge_login'):
         _gate(forge, head)
-    with pytest.raises(ValueError, match='judge_login'):  # Break-Glass's forge_unreviewed names it as a reason
-        breakglass.unreviewed(forge, head, base=_BASE)
 
 
-def test_a_judge_base_without_a_login_is_the_merge_s_wait_never_its_crash(tmp_path: Path) -> None:
+def test_a_judge_base_without_a_login_is_reported_never_a_crash_nor_a_wait(tmp_path: Path) -> None:
     work, head = _work(tmp_path)
     forge = StateForge()
     forge.pyproject_at[_LANE_POLICY.integration] = '[tool.dev_lab.review]\nwhere = "judge"\n'
     number = forge.add_pull('pr/x', _LANE_POLICY.integration, sha=head)
     found = judged(work, forge, _LANE_POLICY, branch='pr/x', number=number, head=head)
-    assert any('judge_login' in line for line in found.missing)
+    assert found.review is not None
+    assert 'judge_login' in found.review
+    assert not any('judge_login' in line for line in found.missing)
+
+
+def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pending() -> None:
+    """``error``, ``takeover pending`` and a claim are not a review; the forge's (its Actions ghost) ``success`` is."""
+    forge = StateForge()
+    forge.login = GITEA_ACTIONS_LOGIN  # the job token: Gitea records its Actions ghost as the creator
+    head = 'a' * 40
+    _, run = forge.add_run(head)
+    assert 'not posted' in _gate(forge, head)
+    for state, description in (('pending', 'claimed by h, reviewing'), ('error', 'the review command failed')):
+        status_post(forge, head, context=REVIEW_CONTEXT, state=state, description=description)
+        assert description in _gate(forge, head)
+    status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='over the cap')
+    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings', target_url=run)
+    assert 'over the cap' in _gate(forge, head), 'a hold not yet released is not a review'
+    status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released: review reviewed this head')
+    assert _gate(forge, head) is None

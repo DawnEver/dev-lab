@@ -268,12 +268,15 @@ def test_on_gitea_a_review_that_did_not_run_is_ready_warned_never_waiting_on_pen
         assert state == 'success'
         assert 'WARNED -- Unreviewed: no reviewer returned findings (a unsupported)' in description
     else:
-        assert state == 'pending'
-        assert description.startswith(f'waits on: its review: tests/review is pending: {UNREVIEWED_STATUS}')
+        assert state == 'success'  # no waiver, yet the advisory review never holds
+        assert 'WARNED -- its advisory review: tests/review is pending: not reviewed' in description
 
 
-def test_a_high_finding_never_holds_the_merge_and_a_security_one_does(tmp_path: Path) -> None:
-    """User ruling 2026-11-06: findings are advice. PLANTED CONTROL: a security finding's failure holds the merge."""
+def test_no_review_finding_holds_the_merge_and_a_security_one_is_reported(tmp_path: Path) -> None:
+    """User rulings 2026-11-06 and 2026-11-11/12: the review is advice; even its security finding merges WARNED.
+
+    The scanner's ``tests/security`` (forgesecurity) is the deterministic gate, not the AI review.
+    """
     work, forge, number, head = _hub_pr(tmp_path)
     ready(work, forge, number)
     assert _merge_ready(forge, head)[0] == 'success', 'a success carrying HIGH advice is ready'
@@ -281,20 +284,24 @@ def test_a_high_finding_never_holds_the_merge_and_a_security_one_does(tmp_path: 
     work, forge, number, head = _hub_pr(tmp_path / 'security')
     status_post(forge, head, context='tests/review', state='failure', description='security finding(s) F-1')
     ready(work, forge, number)
-    assert _merge_ready(forge, head)[0] == 'failure'
-    assert forge.merges == []
+    state, description = _merge_ready(forge, head)
+    assert state == 'success'
+    assert 'WARNED -- its advisory review: tests/review is failure: security finding(s) F-1' in description
+    assert forge.merges != []
 
 
-def test_a_unreviewed_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same status, its record pasted by the PR author: the review still holds it."""
+def test_a_unreviewed_status_without_a_trusted_record_is_no_waiver_yet_never_holds(tmp_path: Path) -> None:
+    """The record pasted by the PR author waives nothing (no ``Unreviewed:`` line), yet the advisory review merges."""
     work, forge, number, head = _hub_pr(tmp_path)
     status_post(forge, head, context='tests/review', state='pending', description=f'{UNREVIEWED_STATUS} budget')
     forge.login = 'a'
     forge.issue_comment(number, unreviewed_line('review budget reached: 11.00/10.00 USD'))
     forge.login = 'github-actions[bot]'
     ready(work, forge, number)
-    assert _merge_ready(forge, head)[0] == 'pending'
-    assert forge.merges == []
+    state, description = _merge_ready(forge, head)
+    assert state == 'success'
+    assert 'Unreviewed:' not in description
+    assert 'its advisory review' in description
 
 
 @pytest.mark.parametrize('how', ['non-writer', 'fork'])
@@ -332,7 +339,7 @@ def test_gitea_vets_no_author_so_the_serve_tick_has_no_external_pr(tmp_path: Pat
 def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, poster: str) -> None:
     """User ruling 2026-11-06, "Gitea is safe; vetting is for GitHub": an agent's or the serve's success counts.
 
-    PLANTED CONTROL: the same success posted by the same non-bot login on GitHub waits on the review.
+    PLANTED CONTROL: the same success posted by a non-bot login on GitHub is reported as no review (never waits).
     """
     work, forge, number, head = _pr(tmp_path)
     forge.login = poster
@@ -344,8 +351,9 @@ def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, post
     hub.login = 'serve-host'
     status_post(hub, hub_head, context='tests/review', state='success', description='reviewed abc: advice; none blocks')
     found = judged(hub_work, hub, load_policy(hub_work), branch='pr/x', number=hub_number, head=hub_head)
-    assert not found.ready
-    assert any('tests/review' in one for one in found.missing)
+    assert found.ready
+    assert found.review is not None
+    assert 'tests/review' in found.review
 
 
 def test_a_ready_status_without_a_message_row_says_messages_are_not_declared(tmp_path: Path) -> None:
