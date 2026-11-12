@@ -18,7 +18,7 @@ from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Status
 from dev_lab.dev import localpart, platformparts
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import CommitStatus, state_for
-from dev_lab.dev.producer import ProducerExit
+from dev_lab.dev.producer import Owner, ProducerExit, owned, release_reason
 from dev_lab.dev.verdictenv import verdict_env_record
 
 SHA = 'a' * 40
@@ -375,3 +375,36 @@ def test_a_runs_log_prefix_names_its_part_and_its_short_sha() -> None:
     """Two runs of one part at once write to one serve.log: the prefix tells their lines apart by sha."""
     assert platformparts.run_tag('base', '46754ff8' + '0' * 32) == '[base@46754ff8]'
     assert platformparts.run_tag('base', 'a' * 40) != platformparts.run_tag('base', 'b' * 40)
+
+
+def _passing_base() -> CommitStatus:
+    part = platformparts.Part(platform=BASE, scope='full', result=Conclusion.PASS, ran=3)
+    return CommitStatus(platformparts.part_context(BASE), part.state, part.description(), '')
+
+
+def test_an_environment_error_is_not_the_authors_red_and_never_a_pass() -> None:
+    """Contract 6: a non-code error leaves the commit INCONCLUSIVE (blocks main), named as not the author's."""
+    broke = CommitStatus('tests/jmag', 'error', release_reason(ProducerExit.INCONCLUSIVE, outage=None), '')
+    read = platformparts.standing([_passing_base(), broke], head='h')
+    assert read.result is Conclusion.INCONCLUSIVE, 'never a PASS, never the author FAIL'
+    assert any("not the author's (class=environment)" in one for one in read.problems), read.problems
+
+
+def test_a_licence_outage_reads_as_vendor_licence_not_a_fail() -> None:
+    outage = release_reason(ProducerExit.UNREACHABLE, outage=Owner.VENDOR_LICENCE)
+    read = platformparts.standing([_passing_base(), CommitStatus('tests/jmag', 'error', outage, '')], head='h')
+    assert read.result is Conclusion.INCONCLUSIVE
+    assert any('class=vendor-licence' in one for one in read.problems), read.problems
+
+
+def test_a_code_failure_is_the_authors_red() -> None:
+    """PLANTED: a real FAIL part, and the commit's own defect posted as error class=code, both read FAIL."""
+    part = platformparts.Part(platform='jmag', scope='full', result=Conclusion.FAIL, ran=3)
+    red = CommitStatus('tests/jmag', part.state, part.description(), '')
+    assert platformparts.standing([_passing_base(), red], head='h').result is Conclusion.FAIL
+    refused = CommitStatus('tests/jmag', 'error', owned(Owner.CODE, 'refused at this commit: no such need'), '')
+    read = platformparts.standing([_passing_base(), refused], head='h')
+    assert read.result is Conclusion.FAIL
+    assert any("the author's red (class=code)" in one for one in read.problems)
+    waived = platformparts.standing([_passing_base(), refused], head='h', waived=frozenset({'jmag'}))
+    assert waived.result is Conclusion.PASS, 'CONTROL: a waived part is not read'

@@ -51,7 +51,7 @@ from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
 from dev_lab.dev.platformparts import part_context, part_of
-from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, producing, release_reason
+from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
 from dev_lab.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
@@ -1581,7 +1581,7 @@ def test_a_box_with_no_room_releases_a_producers_claim_claimable(
     key = RunKey(tree='t', env='e', selector='verify')
     code, lines = verify._judge(tmp_path, (), key, tmp_path / 'runs.jsonl', wait_s=0.0, post=post)
     assert code == (ProducerExit.UNREACHABLE if producer else ProducerExit.INCONCLUSIVE)
-    assert release_reason(code, outage=producer).startswith(RETRYABLE) is producer, (
+    assert release_reason(code, outage=Owner.NETWORK if producer else None).startswith(RETRYABLE) is producer, (
         'serve re-queues exactly the capacity release'
     )
     assert 'planted-holder' in lines[0], 'the one line names the capacity reason'

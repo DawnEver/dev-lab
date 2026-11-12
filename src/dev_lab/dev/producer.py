@@ -29,32 +29,50 @@ a fact about a sha, produced ONCE, after the push, by the host that claimed the 
 runs only in a process serve spawned for a claim, which carries :data:`PRODUCING_VAR` naming the part
 (:func:`producing`). Everywhere else :func:`full_suite_refusal` refuses it with the remedy; there is no
 flag, because a flag is a second door a developer can walk through by habit.
+
+EVERY NON-PASS NAMES ITS OWNER (:class:`Owner`, architecture contract 6). A forge has four states, so the
+owner is not a state: it is the ``class=<owner>`` field of an ``error`` description (:func:`owned`), read
+back by :func:`owner_of`. A ``failure`` is a judged FAIL and always :attr:`Owner.CODE`; an ``error`` is
+the author's red only when it says ``class=code``. Every other class is not the author's: it still blocks
+promoting ``main`` and is never a PASS. A producer DECLARES an outage it did not cause -- infrastructure
+that did not answer (:func:`unreachable`) or a vendor licence it could not check out (:func:`licence_outage`)
+-- and either is released RETRYABLE under its class.
 """
 
 from __future__ import annotations
 
 import os
-from enum import IntEnum
+import re
+from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.box import ProcessEnd, Refused
 
+from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
 __all__ = [
+    'AUTHORS_RED',
+    'CLASS_FIELD',
     'OUTCOME_VAR',
     'PRODUCING_VAR',
     'RETRYABLE',
+    'Owner',
     'ProducerExit',
     'box_release_reason',
     'declared_outage',
     'full_suite_refusal',
+    'licence_outage',
     'outage_env',
+    'owned',
+    'owner_of',
     'producing',
     'release_reason',
     'unreachable',
+    'whose',
 ]
 
 #: Set by ``forge serve`` on the producer it spawns: the claimed part, ``tests/<part>@<sha>``.
@@ -92,6 +110,65 @@ class ProducerExit(IntEnum):
     UNREACHABLE = 4
 
 
+class Owner(StrEnum):
+    """Who owns a non-PASS -- THE ONE LIST (architecture contract 6); only :attr:`CODE` is the author's red."""
+
+    CODE = 'code'  # the commit under test: a judged FAIL, or a defect of the commit itself
+    ENVIRONMENT = 'environment'  # the producer, its tree or its interpreter broke: a crash, no record, no tree
+    SCHEDULING = 'scheduling'  # the box refused or killed it, a lease lapsed, a newer tip superseded it
+    VENDOR_LICENCE = 'vendor-licence'  # a vendor tool's licence could not be checked out
+    NETWORK = 'network'  # infrastructure it needs did not answer: a login host, the forge
+    STATUS_PUBLISHING = 'status-publishing'  # the verdict exists but its status could not be posted (the outbox)
+
+
+#: The description field naming a non-PASS's owner: ``class=<owner>``.
+CLASS_FIELD: Final = 'class='
+_CLASS: Final = re.compile(r'(?:^|\s)class=(?P<owner>[a-z-]+)\b')
+
+
+def owned(owner: Owner, description: str) -> str:
+    """*description* naming *owner* in its :data:`CLASS_FIELD`: appended, so every prefix a reader matches stays put.
+
+    The description is cut to fit a status first, so the field is never the part a forge cuts off.
+    """
+    field = f' {CLASS_FIELD}{owner}'
+    return description[: DESCRIPTION_LIMIT - len(field)] + field
+
+
+def owner_of(state: str, description: str) -> Owner | None:
+    """The owner a status names: a ``failure`` is :attr:`Owner.CODE`; an ``error`` its ``class=``; else ``None``.
+
+    Read tolerantly: the field may sit anywhere among other ``key=value`` fields. An ``error`` naming no class,
+    or one not in :class:`Owner`, is ``None`` -- unowned, so never the author's red and never a PASS.
+    """
+    if state == 'failure':
+        return Owner.CODE
+    found = _CLASS.search(description) if state == 'error' else None
+    try:
+        return Owner(found['owner']) if found else None
+    except ValueError:
+        return None
+
+
+#: How :func:`whose` names a red its author owns; a reading's problem ending so is the commit's FAIL.
+AUTHORS_RED: Final = "the author's red (class=code)"
+
+
+def whose(state: str, description: str) -> str:
+    """The owner an unsettled *state* names, said for a reader: ``''`` for a claim, else whose red it is.
+
+    Architecture contract 6: an ``error`` of any class but ``code`` is NOT the author's -- it still leaves the
+    commit unsettled (never a PASS, so it blocks promoting ``main``), but it is the producer's, the box's,
+    the network's, a vendor licence's or the forge's to clear, and the reading says so.
+    """
+    if state != 'error':
+        return ''
+    owner = owner_of(state, description)
+    if owner is Owner.CODE:
+        return f'; {AUTHORS_RED}'
+    return f"; not the author's (class={owner or 'unnamed'})"
+
+
 #: The description prefix of a released claim the next tick may claim again (:func:`release_reason`): OPEN, not settled.
 RETRYABLE: Final = 'released: unreachable'
 
@@ -99,16 +176,33 @@ RETRYABLE: Final = 'released: unreachable'
 #: The path ``forge serve`` hands its producer: a producer whose infrastructure did not answer WRITES its outage there.
 OUTCOME_VAR: Final = 'DEV_LAB_PRODUCER_OUTCOME'
 
+#: What a producer may declare (:func:`declared_outage`): an outage it did not cause, never the code's.
+_OUTAGE: Final = {
+    Owner.ENVIRONMENT: 'a tool it needs could not run here',
+    Owner.NETWORK: 'infrastructure did not answer',
+    Owner.SCHEDULING: 'the box had no room for it',
+    Owner.VENDOR_LICENCE: 'a vendor licence could not be checked out',
+    Owner.STATUS_PUBLISHING: 'its verdict could not be posted',
+}
 
-def unreachable(why: str) -> int:
-    """Declare an outage in the record ``forge serve`` named (:data:`OUTCOME_VAR`) and return the code to exit with.
+
+def unreachable(why: str, owner: Owner = Owner.NETWORK) -> int:
+    """Declare an outage of *owner* in the record ``forge serve`` named (:data:`OUTCOME_VAR`); the code to exit with.
 
     The exit code alone is not the evidence: a command a repo declares may exit 4 itself, and read as an outage it
     would be released RETRYABLE and re-claimed every tick (sharp-review 2026-10-15). Outside serve nothing is written.
     """
+    if owner not in _OUTAGE:
+        msg = f'a producer declares an outage of {sorted(_OUTAGE)}, never {owner}'
+        raise ValueError(msg)
     if target := os.environ.get(OUTCOME_VAR):
-        Path(target).write_text(f'unreachable: {why}\n', encoding='utf-8')
+        Path(target).write_text(f'unreachable: {CLASS_FIELD}{owner} {why}\n', encoding='utf-8')
     return ProducerExit.UNREACHABLE
+
+
+def licence_outage(why: str) -> int:
+    """Declare that a vendor licence could not be checked out: released RETRYABLE as ``class=vendor-licence``."""
+    return unreachable(why, Owner.VENDOR_LICENCE)
 
 
 def outage_env(record: Path) -> dict[str, str]:
@@ -116,32 +210,44 @@ def outage_env(record: Path) -> dict[str, str]:
     return {OUTCOME_VAR: str(record.with_name(f'{record.name}.producer'))}
 
 
-def declared_outage(record: Path) -> bool:
-    """Whether the producer of the run boxed at *record* declared an outage; the declaration is consumed."""
+def declared_outage(record: Path) -> Owner | None:
+    """The outage the producer of the run boxed at *record* declared, ``None`` if none; the declaration is consumed.
+
+    A declaration naming no class it may declare is :attr:`Owner.NETWORK`: infrastructure that did not answer.
+    """
     said = Path(outage_env(record)[OUTCOME_VAR])
     try:
-        return said.read_text(encoding='utf-8').startswith('unreachable:')
+        text = said.read_text(encoding='utf-8')
     except OSError:
-        return False
+        return None
     finally:
         said.unlink(missing_ok=True)
+    if not text.startswith('unreachable:'):
+        return None
+    owner = owner_of('error', text)
+    return owner if owner in _OUTAGE else Owner.NETWORK
 
 
-def release_reason(code: int, *, outage: bool) -> str:
-    """The ``error`` description releasing a claim its producer left pending after exiting *code*.
+def release_reason(code: int, *, outage: Owner | None, detail: str = '') -> str:
+    """The ``error`` description releasing a claim its producer left pending after exiting *code*, naming its owner.
 
     Exit 4 is RETRYABLE only when the producer declared the *outage* in its record; undeclared it is a crash's code.
+    A producer that ends without a part never names the code's fault: every other release is the environment's.
+    *detail* follows the reason, before the class.
     """
-    if code == ProducerExit.UNREACHABLE and not outage:
-        return f'released: producer exited {code} without declaring an outage -- settled, not retried'
+    if code == ProducerExit.UNREACHABLE and outage is not None:
+        return owned(outage, f'{RETRYABLE} (exit 4) -- {_OUTAGE[outage]}; retried next tick{detail}')
+    if code == ProducerExit.UNREACHABLE:
+        return owned(
+            Owner.ENVIRONMENT, f'released: producer exited {code} without declaring an outage -- not retried{detail}'
+        )
     reasons: dict[int, str] = {
         ProducerExit.PASS: 'released: producer exited 0 (PASS) but posted no part',
         ProducerExit.FAIL: 'released: producer exited 1 (FAIL) but posted no part',
         ProducerExit.USAGE: 'released: producer refused its argv (exit 2)',
         ProducerExit.INCONCLUSIVE: 'released: inconclusive (exit 3) -- no part',
-        ProducerExit.UNREACHABLE: f'{RETRYABLE} (exit 4) -- infrastructure did not answer; retried next tick',
     }
-    return reasons.get(code, f'released: producer crashed (exit {code})')
+    return owned(Owner.ENVIRONMENT, reasons.get(code, f'released: producer crashed (exit {code})') + detail)
 
 
 def box_release_reason(ended: ProcessEnd | Refused | None) -> str | None:
@@ -151,9 +257,10 @@ def box_release_reason(ended: ProcessEnd | Refused | None) -> str | None:
     are released naming what happened, never red.
     """
     if isinstance(ended, Refused):
-        return f'{RETRYABLE} -- the box refused it ({ended}); retried next tick'
+        return owned(Owner.SCHEDULING, f'{RETRYABLE} -- the box refused it ({ended}); retried next tick')
     if ended is None:
-        return 'released: the box crashed -- it left no record of how the producer ended'
+        return owned(Owner.ENVIRONMENT, 'released: the box crashed -- it left no record of how the producer ended')
     if ended.killed:
-        return f'released: the box killed it past its declared {ended.reason} (exit {ended.returncode})'
+        why = f'released: the box killed it past its declared {ended.reason} (exit {ended.returncode})'
+        return owned(Owner.SCHEDULING, why)
     return None
