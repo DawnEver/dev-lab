@@ -42,8 +42,9 @@ READ: Final = 'read'
 #: ``reqRepoWriter(unit.TypeCode)``, so a reviewer is a WRITE collaborator and its token's scopes are its limit. A
 #: break-glass merger merges past branch protection, which Gitea allows only a REPOSITORY admin -- never org or site.
 ROLE_GRANTS: Final = {'read': READ, 'write': 'write', 'review': 'write', 'breakglass': 'admin'}
-#: The only scopes a ``breakglass`` login's token may hold: merge (repository) and name itself (``GET /user``).
-BREAKGLASS_SCOPES: Final = frozenset({'read:repository', 'write:repository', 'read:user'})
+#: The only scopes a ``breakglass`` login's token may hold: merge (repository), post its reason comment (issue)
+#: and name itself (``GET /user``).
+BREAKGLASS_SCOPES: Final = frozenset({'read:repository', 'write:repository', 'read:issue', 'write:issue', 'read:user'})
 #: Runs one argv; its exit code and output.
 type Runner = Callable[[list[str]], tuple[int, str]]
 #: One local API call ``(method, path, token, body) -> (status, json)``.
