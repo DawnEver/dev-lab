@@ -12,8 +12,9 @@ whose key authorizes nothing by itself.
 EVERY FORGE OF THE FAMILY (user ruling 2026-11-04). Each served repo is reached on ITS forge -- Gitea or GitHub, the
 backend its URL's host selects (:class:`ClientForge` over :mod:`dev_lab.dev.forgework`) -- as that forge's ONE
 break-glass identity (``[ops.breakglass.tokens]``). The repo's integration branch is read from its declaration on the
-forge (:func:`dev_lab.dev.reviewgate.manifest_at` at the default branch), so a repo this host never clones is served
-as well as one it promotes. The identity must be able to bypass the branch's protection: on GitHub a user the
+forge (:func:`dev_lab.dev.reviewgate.manifest_at` at the PR's BASE branch, the one the merge lands on -- never the
+default branch, which may be a data commit that declares nothing), so a repo this host never clones is served as well
+as one it promotes. The identity must be able to bypass the branch's protection: on GitHub a user the
 ruleset lists as a bypass actor (or a repository admin where classic protection does not enforce on administrators);
 on Gitea an account the protection's merge whitelist admits, or an admin.
 
@@ -64,8 +65,7 @@ from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
-from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
+from dev_lab.dev.reviewgate import manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.config import Breakglass, OpsConfig
@@ -74,7 +74,7 @@ from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.statelock import exclusive
-from dev_lab.ops.wavesweep import Pull, sweep
+from dev_lab.ops.wavesweep import Pull, integration_at, sweep
 
 __all__ = ['BreakglassRefused', 'ClientForge', 'ConsentWanted', 'Forge', 'Server', 'merge_message']
 
@@ -104,8 +104,8 @@ def _consent_stands(forge: Forge, pr: int) -> None:
 class Forge(Protocol):
     """The forge calls the role makes, on one repository, as the break-glass identity."""
 
-    def declaration(self) -> str:
-        """The repository's ``pyproject.toml`` at its default branch; raises ``ValueError`` when it cannot be read."""
+    def declaration(self, ref: str) -> str:
+        """The repository's ``pyproject.toml`` at *ref*; raises ``ValueError`` when it cannot be read."""
         ...
 
     def pull(self, number: int) -> tuple[str, str, str]:
@@ -140,14 +140,9 @@ class ClientForge:
         """Reach *url*'s repository through *transport* (the network by default)."""
         self._client = Client(forge_of_url(url), token, transport=transport)
 
-    def declaration(self) -> str:
-        """The ``pyproject.toml`` at the repository's default branch, as the forge holds it."""
-        try:
-            default = str(self._client.call('GET', self._client.repo)['default_branch'])
-        except (ForgeCallFailed, KeyError, TypeError) as unread:
-            msg = f'the default branch of {self._client.repo} cannot be read: {unread}'
-            raise DeclarationUnread(msg) from unread
-        return manifest_at(self._client, default)
+    def declaration(self, ref: str) -> str:
+        """The ``pyproject.toml`` at *ref*, as the forge holds it (:func:`dev_lab.dev.reviewgate.manifest_at`)."""
+        return manifest_at(self._client, ref)
 
     def pull(self, number: int) -> tuple[str, str, str]:
         """``(state, base, head_sha)`` of PR *number*."""
@@ -397,14 +392,14 @@ class Server:
             msg = f'a reason of at least {self.role.min_reason} characters is required'
             raise BreakglassRefused(msg)
         forge = self.forge_for(url)
-        try:
-            integration = policy_from(forge.declaration(), f'{asked.repo}:pyproject.toml').integration
-        except ValueError as unread:
-            raise BreakglassRefused(str(unread)) from unread
         state, base, found = forge.pull(asked.pr)
         if state != 'open':
             msg = f'#{asked.pr} is {state}, not open'
             raise BreakglassRefused(msg)
+        try:
+            integration = integration_at(forge, base, asked.repo)
+        except ValueError as unread:
+            raise BreakglassRefused(str(unread)) from unread
         if base != integration:
             msg = f'#{asked.pr} targets {base}, not the integration branch {integration}'
             raise BreakglassRefused(msg)
