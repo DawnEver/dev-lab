@@ -305,6 +305,8 @@ _SWEEP = {'type': 'command', 'command': agent_wiring.SWEEP_COMMAND}
 _PRESSURE = {'type': 'command', 'command': agent_wiring.PRESSURE_COMMAND}
 #: PUSHED-HEAD-IS-WATCHED, the Stop half (ruling 2026-11-04): after the hand-back check.
 _PUSHSTOP = {'type': 'command', 'command': agent_wiring.PUSHSTOP_COMMAND}
+#: SCRATCH-IS-NEVER-COMMITTED, the Stop half: a session does not end with untracked entries in scratch.
+_SCRATCHSTOP = {'type': 'command', 'command': agent_wiring.SCRATCHSTOP_COMMAND}
 
 
 def test_the_install_wires_the_stray_census_once_at_stop() -> None:
@@ -315,7 +317,12 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
     assert after['hooks']['PostToolUse'] == [
         {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
     ]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
+    assert after['hooks']['Stop'] == [
+        {'hooks': [stray]},
+        {'hooks': [handback]},
+        {'hooks': [_PUSHSTOP]},
+        {'hooks': [_SCRATCHSTOP]},
+    ]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
     assert 'dev_lab.dev.codeplace stray' in agent_wiring.STRAY_COMMAND
     assert agent_wiring.PUSHWATCH_COMMAND.startswith('node ')
@@ -345,6 +352,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
         {'hooks': [stray]},
         {'hooks': [handback]},
         {'hooks': [_PUSHSTOP]},
+        {'hooks': [_SCRATCHSTOP]},
     ]
     assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
 
@@ -359,7 +367,12 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     assert after['hooks']['PostToolUse'] == [
         {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
     ]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
+    assert after['hooks']['Stop'] == [
+        {'hooks': [stray]},
+        {'hooks': [handback]},
+        {'hooks': [_PUSHSTOP]},
+        {'hooks': [_SCRATCHSTOP]},
+    ]
 
 
 def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:
