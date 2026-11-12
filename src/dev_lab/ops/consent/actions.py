@@ -63,6 +63,9 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         Action('ops.forge.tokens', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
         # One `ops forge token revoke` (one named token of one login, deleted); subject = the request's digest.
         Action('ops.forge.revoke', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        # One `ops forge protect apply` (one repo's declared branch protection at a ref); subject = the repo, the ref
+        # and the rendered protection's digest.
+        Action('ops.forge.protect', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
         # One `ops secret place` (one declared secret file written); subject = path + the content's SHA-256.
         Action('ops.secret.place', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
     )
