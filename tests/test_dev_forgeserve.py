@@ -27,6 +27,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import (
+    forgeclaim,
     forgehosts,
     forgepoller,
     forgeproduce,
@@ -112,11 +113,25 @@ class _Forge:
     def __init__(self) -> None:
         self.posts: list[tuple[str, str, str]] = []
 
-    def post(self, _client, _sha, *, context, state, description) -> None:
+    def post(self, _client, _sha, *, context, state, description, target_url='') -> None:
         self.posts.append((context, state, description))
 
     def history(self, _client, _sha) -> tuple[SimpleNamespace, ...]:
-        return tuple(SimpleNamespace(context=c, state=s, description=d) for c, s, d in self.posts)
+        return tuple(SimpleNamespace(context=c, state=s, description=d, created=None) for c, s, d in self.posts)
+
+    def claimed(self, client, sha) -> tuple[SimpleNamespace, ...]:
+        """The history as the claim gate reads it: ``ME``'s claim on each part heads it."""
+        head = [SimpleNamespace(context=f'tests/{part}', state='pending', description=ME.description(), created=None)
+                for part in ('windows', 'linux')]  # fmt: skip
+        return (*head, *self.history(client, sha))
+
+    def route(self, monkeypatch) -> None:
+        """Every forge seam the producer reaches -- its own, and the claim gate's -- onto this forge."""
+        monkeypatch.setattr(forgeproduce, 'status_post', self.post)
+        monkeypatch.setattr(forgeproduce, 'status_history', self.history)
+        monkeypatch.setattr(forgeclaim, 'status_post', self.post)
+        monkeypatch.setattr(forgeclaim, 'status_history', self.claimed)
+        monkeypatch.setattr(forgeclaim, 'forge_now', lambda _client: NOW)
 
 
 class _Trees:
@@ -229,8 +244,7 @@ def _serve(
     monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
     monkeypatch.setattr(forgeship, 'tidy', tidy)
     trees = trees or _Trees(tmp_path)
@@ -488,8 +502,7 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     """The card beats at the tick period; the claim is still renewed on its own, longer, cadence."""
     forge, beats = _Forge(), []
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
@@ -1161,8 +1174,7 @@ def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> 
     """One local part through :func:`forgeproduce.produce`, every forge and tree seam faked."""
     forge = _Forge()
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)

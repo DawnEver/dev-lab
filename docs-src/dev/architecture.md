@@ -90,14 +90,21 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
 
 - **Contract.** Exactly one producer runs a (commit, part); a claim is atomic, leased, recovered after a timeout,
   a retry keeps the result's identity, and publishing is idempotent across several verification accounts.
-- **Today.** A claim is a `pending` status; the EARLIEST live claim by forge order wins
-  (`dev_lab.dev.forgeclaim::assess`, `claim`); the lease is `DEFAULT_LEASE` (6 h) on the forge's clock
-  (`forge_now`) and a lapsed one is retaken. A released claim with `producer.RETRYABLE` is claimable again.
-  Every write is journaled and replayed until acknowledged, never double-posted (`dev_lab.dev.forgeoutbox`).
+- **Today.** A claim is a `pending` status naming its owner (machine, login, cluster account); the holder is a pure function of the
+  status history (`dev_lab.dev.forgeclaim::holder`, `assess`): replayed in forge order, the first claim takes
+  the job, another owner takes it only if the holder's lease had lapsed by the forge clock at that post's
+  `created_at`, and the holder's owner renews it. A loser posts nothing further; a stale retake while the
+  lease is live, or an old owner's renewal after a retake, counts for nothing. The lease is `DEFAULT_LEASE`
+  (6 h) on the forge's clock (`forge_now`). A result is posted only through `forgeclaim::publish`, which
+  re-reads the history first: a settled context is a no-op and a claim that no longer holds withdraws; the
+  outbox keeps the first result and drops an identical second (`dev_lab.dev.forgeoutbox`). A released claim
+  with `producer.RETRYABLE` is claimable again. Every write is journaled and replayed until acknowledged.
   A cluster run's file is keyed by repo + sha + platform + scope (`dev_lab.dev.forgerunstate`).
-- **Gap.** The claim is post-then-reread, not compare-and-swap: a loser may already have posted its `pending`,
-  and the winner's renewal and a stale retake race on one context. Two verification accounts finishing the same
-  part both publish; nothing makes the second a no-op beyond "latest wins" (contract 1).
+- **Gap.** Neither forge offers compare-and-swap, so `publish` is read-then-post: a retake landing between
+  its read and its post (possible only once the lease lapsed) lets both results reach the forge, and the
+  outbox's first-result rule then decides. A result queued in the outbox (`platformparts.post`) is checked
+  for duplicates there but not re-gated on the claim. A post the forge dates no `created_at` is judged at
+  the reader's `now`.
 
 ### 4. Authorization
 
