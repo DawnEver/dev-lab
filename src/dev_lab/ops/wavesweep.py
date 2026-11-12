@@ -41,7 +41,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.ops import request as requests
 
-__all__ = ['Listing', 'Pull', 'reason_of', 'sweep']
+__all__ = ['Listing', 'Pull', 'integration_at', 'reason_of', 'sweep']
 
 
 @dataclass(frozen=True)
@@ -57,8 +57,8 @@ class Pull:
 class Listing(Protocol):
     """What the sweep reads of one served repository's forge."""
 
-    def declaration(self) -> str:
-        """The repository's ``pyproject.toml`` at its default branch."""
+    def declaration(self, ref: str) -> str:
+        """The repository's ``pyproject.toml`` at *ref*; raises ``ValueError`` when it cannot be read."""
         ...
 
     def open_pulls(self) -> Sequence[Pull]:
@@ -68,6 +68,15 @@ class Listing(Protocol):
     def statuses(self, head: str) -> Sequence[CommitStatus]:
         """The statuses *head* carries."""
         ...
+
+
+def integration_at(forge: Listing, base: str, repo: str) -> str:
+    """The integration branch *repo*'s declaration AT *base* names -- the branch a PR into *base* lands on.
+
+    The ONE reading break-glass makes (admission and sweep): never the default branch, which may hold no declaration
+    (2026-11-12: a member's ``main`` an old data commit, ``integrate/main`` the declared one).
+    """
+    return policy_from(forge.declaration(base), f'{repo}@{base}:pyproject.toml').integration
 
 
 def reason_of(wave: str) -> str:
@@ -86,6 +95,14 @@ def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
     return any(one.context == context and one.state == 'success' for one in posted)
 
 
+def _integrates(forge: Listing, base: str, url: str) -> bool:
+    """Whether *base* is the integration branch its own declaration names; unreadable there is ``False``."""
+    try:
+        return integration_at(forge, base, url) == base
+    except ValueError:
+        return False
+
+
 def sweep(
     repos: Iterable[str], forge_for: Callable[[str], Listing], *, wave: Callable[[], str | None],
     land: Callable[[requests.Merge], str | None], refused: type[Exception],
@@ -101,12 +118,8 @@ def sweep(
         if (held := wave()) is None:
             return said
         forge = forge_for(url)
-        try:
-            integration = policy_from(forge.declaration(), f'{url}:pyproject.toml').integration
-        except ValueError:
-            continue
         for pull in forge.open_pulls():
-            if pull.draft or pull.base != integration:
+            if pull.draft or not _integrates(forge, pull.base, url):
                 continue
             if not _waits_for_the_wave(forge.statuses(pull.head), pull.head):
                 continue

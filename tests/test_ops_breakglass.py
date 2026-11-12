@@ -35,6 +35,7 @@ from dev_lab.ops.totp import STEP
 HEAD = 'a' * 40
 KEY = 'SHA256:agentkey'
 HOUR = 3600.0
+DECLARED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
 GREEN = (
     CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=-', ''),
     CommitStatus('tests/security', 'success', 'nothing found', ''),
@@ -49,8 +50,9 @@ class FakeForge:
     calls: list[tuple[str, int, str]] = field(default_factory=list)
     #: The head's statuses; green tests by default, as every break-glass merge needs.
     posted: list[CommitStatus] = field(default_factory=lambda: list(GREEN))
-    #: The repo's ``pyproject.toml`` at its default branch; ``None`` plants one the forge cannot serve.
-    manifest: str | None = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+    #: The repo's ``pyproject.toml`` per ref; an absent ref is one the forge cannot serve. The default branch
+    #: (``main``) declares nothing, as a member's old data commit did: only the PR's base may be read.
+    manifests: dict[str, str] = field(default_factory=lambda: {'integrate/main': DECLARED})
     #: Each PR's labels (none by default); a PR in ``unreadable`` plants a forge that cannot answer for them.
     labelled: dict[int, tuple[str, ...]] = field(default_factory=dict)
     unreadable: frozenset[int] = frozenset()
@@ -60,11 +62,11 @@ class FakeForge:
             raise ForgeCallFailed(Report(f'GET /pulls/{number}', (), 1))
         return self.labelled.get(number, ())
 
-    def declaration(self) -> str:
-        if self.manifest is None:
-            unread = 'pyproject.toml at main cannot be read: 404'
+    def declaration(self, ref: str) -> str:
+        if ref not in self.manifests:
+            unread = f'pyproject.toml at {ref} cannot be read: 404'
             raise DeclarationUnread(unread)
-        return self.manifest
+        return self.manifests[ref]
 
     def pull(self, number: int) -> tuple[str, str, str]:
         del number
@@ -293,7 +295,7 @@ def test_ack_needs_no_code_and_records_who(host: Host) -> None:
         ({'repo': 'alpha'}, FakeForge(), 'not a repository this host serves'),
         ({'reason': 'short'}, FakeForge(), 'at least 10'),
         ({}, FakeForge(state='closed'), 'closed, not open'),
-        ({}, FakeForge(base='main'), 'not the integration branch integrate/main'),
+        ({}, FakeForge(base='main', manifests={'main': DECLARED}), 'not the integration branch integrate/main'),
         ({}, FakeForge(head='b' * 40), 'not the aaaaaaaaaaaa you were shown'),
     ],
 )
@@ -411,12 +413,19 @@ def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
 
 
 def test_an_unreadable_declaration_is_a_refusal_audited_and_alerted(host: Host) -> None:
-    host.forge = FakeForge(manifest=None)
+    host.forge = FakeForge(manifests={'main': DECLARED})  # PLANTED CONTROL: only the default branch declares
     host.open()
-    with pytest.raises(BreakglassRefused, match='cannot be read'):
+    with pytest.raises(BreakglassRefused, match=r'pyproject\.toml at integrate/main cannot be read'):
         host.merge()
     assert host.forge.calls == []
     assert any('REFUSED' in a[0] for a in host.alerts)
+
+
+def test_the_declaration_is_read_at_the_prs_base_not_the_default_branch(host: Host) -> None:
+    host.forge = FakeForge()  # the default branch ``main`` declares nothing; the base ``integrate/main`` does
+    host.open()
+    assert 'merged' in host.merge()
+    assert [call[0] for call in host.forge.calls] == ['comment', 'merge']
 
 
 def test_each_repo_is_merged_on_its_own_forge(host: Host) -> None:
@@ -495,14 +504,13 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
             'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'},
             'labels': [{'name': 'needs-consent'}]}  # fmt: skip
     manifest = base64.b64encode(b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n').decode()
-    answer('GET', prefix, (200, {'default_branch': 'main'}))
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('POST', f'{prefix}/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}))
     answer(merge, f'{prefix}/pulls/7/merge', (200, {'merged': True}))
     forge = ClientForge(url, 'secret', transport=loopback)
-    assert 'integrate/main' in forge.declaration()
+    assert 'integrate/main' in forge.declaration('integrate/main')
     assert forge.pull(7) == ('open', 'integrate/main', HEAD)
     assert forge.labels(7) == ('needs-consent',)
     forge.comment(7, 'BREAK-GLASS')
@@ -510,7 +518,7 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     assert set(loopback.asked) == {api}
     sent = Recorder.received
     assert {r['headers']['Authorization'] for r in sent} == {f'{auth} secret'}
-    assert sent[1]['path'] == f'{prefix}/contents/pyproject.toml?ref=main'
+    assert sent[0]['path'] == f'{prefix}/contents/pyproject.toml?ref=integrate/main'
     merged = sent[-1]
     assert (merged['method'], merged['path']) == (merge, f'{prefix}/pulls/7/merge')
     body = json.dumps(merged['body'])
