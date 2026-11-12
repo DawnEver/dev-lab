@@ -16,16 +16,12 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and NO other part: a part a
   declared resource derives (``tests/windows``) is a hand part, tested later and never a merge condition (user ruling
   2026-11-10, :func:`dev_lab.dev.forgemerge.hand_parts`);
-* the APPROVER is ``[tool.dev_lab.review] judge_login``: only a judge posts an approving PR review, so approvals
-  are required only where one is declared -- a count with nobody to approve would hold every merge forever;
-* a GitHub repo judged by an App (``judge_app``) requires the App's
-  :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` FROM THAT APP (``integration_id``) on integration, and no approval:
-  the App posts a check run, never an approving review;
+* NO APPROVAL AND NO JUDGE CHECK is ever required: the judge's verdict is ADVISORY on every forge
+  (:data:`~dev_lab.dev._forgebackends.ADVISORY`, user ruling 2026-11-11), so ``approvals`` above 0 is refused;
 * what THIS table declares, once, is the rest -- per forge host, the ONE bypass identity (break-glass) and the
   identities that may push the trunk (promote)::
 
     [tool.dev_lab.protection]
-    approvals = 1                                  # optional; default 1 with a judge, else 0 (more needs a judge)
     [tool.dev_lab.protection.forges."github.com"]
     breakglass = ["app:<id>", "role:admin"]        # GitHub: a list of role:<admin|maintain|write>|app:<id>|team:<id>
     [tool.dev_lab.protection.forges."gitea.example"]
@@ -59,7 +55,7 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT, SECURITY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgereview_declared import JUDGE, review_from
+from dev_lab.dev.forgereview_declared import review_from
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
@@ -162,16 +158,11 @@ def declaration_from(text: str, origin: str) -> Declaration:
         named = entry['breakglass']
         bypass = (str(named),) if isinstance(named, str) else tuple(str(one) for one in named)
         forges[host] = Identities(bypass, tuple(entry.get('promote', ())))
-    review = review_from(text, origin)
-    judged = review.where == JUDGE and not review.judge_app
-    approvals = int(table.get('approvals', 1 if judged else 0))
-    if approvals and review.judge_app:
-        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} with judge_app -- the App posts a check'
-        raise ValueError(msg)
-    if approvals and not judged:
+    approvals = int(table.get('approvals', 0))
+    if approvals > 0:  # only a judge approves, and its verdict is ADVISORY on every forge (user ruling 2026-11-11)
         msg = (
-            f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} with no [tool.dev_lab.review] '
-            f'where = "{JUDGE}" -- nobody posts an approving review, so every merge would wait forever'
+            f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} -- only the judge posts an approving '
+            f'review, and the judge is advisory: no merge waits on it (user ruling 2026-11-11)'
         )
         raise ValueError(msg)
     if approvals < 0:
@@ -210,7 +201,7 @@ def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
     approver = review.judge_login if declared.approvals else ''
     return (
         Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),
-               declared.approvals, approver, review.judge_app),
+               declared.approvals, approver),
         Target(TRUNK, policy.trunk, contexts[TRUNK], ours.breakglass, ours.promote),
     )  # fmt: skip
 

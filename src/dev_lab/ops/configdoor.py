@@ -14,6 +14,13 @@ and interpreters and the probe commands, so a free hand on it is a free hand on 
 An accepted candidate is loaded by the CURRENT code before anything is written, the live file is backed up beside
 itself, the candidate replaces it atomically, and the install self-check (:func:`dev_lab.ops.upgrade.checks`) runs;
 a failed check restores the backup. The printed diff names keys, never values.
+
+The FAMILY FILE (``[ops.config] family = {file, to}``) rides the same door: every fetch of the host file also takes
+``file`` from the same reviewed source and ref (:func:`fetch`), and the door writes it at ``to`` (backup beside it,
+mode 0644: it holds no secrets by rule -- the config source's check refuses a secret value in it -- and the judge
+reads it as its own account) only when its text changed. A family change is BOUNDARY, never routine: it carries the
+family's spend caps and HPC grants, so it needs an ``ops.config`` credential exactly as a boundary host key does, and
+the credential's subject binds both texts (:func:`digest`); ``config tick`` parks it as ``needs-consent``.
 """
 
 from __future__ import annotations
@@ -29,15 +36,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.temp import TEMP_PREFIX
+
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource
 
 __all__ = [
-    'ACTION', 'ROUTINE', 'Applied', 'ConfigRefused', 'apply', 'boundary', 'changes', 'digest', 'fetch', 'git_with_env',
-    'tick',
+    'ACTION', 'FAMILY_KEY', 'ROUTINE', 'Applied', 'ConfigRefused', 'Family', 'Fetched', 'apply', 'boundary', 'changes',
+    'digest', 'fetch', 'git_with_env', 'tick',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
@@ -65,6 +73,9 @@ ROUTINE: Final[tuple[str, ...]] = (
     'ops.backup.retention*',
 )
 
+#: The name a family-file change is reported under among the changed (and boundary) keys.
+FAMILY_KEY: Final = 'ops.config.family:file'
+
 #: Check name -> argv; each must exit 0 for the applied file to stand.
 type Checks = Mapping[str, list[str]]
 #: Runs one argv; its exit code and output.
@@ -88,9 +99,32 @@ class Applied:
     backup: Path | None
 
 
-def digest(text: str) -> str:
-    """The SHA-256 a consent credential's subject must equal to consent to exactly *text*."""
-    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+@dataclass(frozen=True)
+class Family:
+    """The family file as fetched: its *text*, and the path *to* on this host it is placed at."""
+
+    to: Path
+    text: str
+
+    def changed(self) -> bool:
+        """Whether the placed file is absent or differs from *text*."""
+        return not self.to.is_file() or self.to.read_text(encoding='utf-8') != self.text
+
+
+@dataclass(frozen=True)
+class Fetched:
+    """One fetch of the reviewed source: the host file's text, and the family file when ``[ops.config]`` declares it."""
+
+    host: str
+    family: Family | None = None
+
+
+def digest(text: str, family: Family | None = None) -> str:
+    """The SHA-256 a consent credential's subject must equal: exactly *text*, and the *family* text when it changes."""
+    if family is None or not family.changed():
+        return hashlib.sha256(text.encode('utf-8')).hexdigest()
+    bound = f'{text}\0family {family.to.as_posix()}\0{family.text}'
+    return hashlib.sha256(bound.encode('utf-8')).hexdigest()
 
 
 def _flat(table: Mapping[str, Any], prefix: str = '') -> dict[str, Any]:
@@ -121,11 +155,11 @@ def git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
     return report.returncode, ''
 
 
-def fetch(source: ConfigSource, *, run: EnvRunner) -> str:
-    """The text of ``source.path`` at the tip of ``source.ref``, cloned over HTTPS with the host's read token.
+def fetch(source: ConfigSource, *, run: EnvRunner) -> Fetched:
+    """``source.path`` (and ``source.family``'s file) at the tip of ``source.ref``, cloned over HTTPS, read token.
 
-    The token goes into the git process's environment as an ``http.extraHeader`` (``GIT_CONFIG_*``), never on
-    argv, and no refusal repeats git's output (it could echo the header).
+    One clone serves both files. The token goes into the git process's environment as an ``http.extraHeader``
+    (``GIT_CONFIG_*``), never on argv, and no refusal repeats git's output (it could echo the header).
 
     Raises:
         ConfigRefused: the clone failed or the declared file is not in it.
@@ -145,14 +179,22 @@ def fetch(source: ConfigSource, *, run: EnvRunner) -> str:
         if status != 0:
             msg = f'fetching {source.source}@{source.ref} failed (git exit {status})'
             raise ConfigRefused(msg)
-        found = target / source.path
-        if not found.is_file():
-            msg = f'{source.source}@{source.ref} has no {source.path}'
-            raise ConfigRefused(msg)
-        return found.read_text(encoding='utf-8')
+        texts = [_read(target, source, name) for name in (source.path, source.family.get('file'))]
+    family = Family(Path(source.family['to']), texts[1]) if source.family else None
+    return Fetched(texts[0], family)
+
+
+def _read(target: Path, source: ConfigSource, name: str | None) -> str:
+    if name is None:
+        return ''
+    if not (found := target / name).is_file():
+        msg = f'{source.source}@{source.ref} has no {name}'
+        raise ConfigRefused(msg)
+    return found.read_text(encoding='utf-8')
 
 
 def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
     fd, temp = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.')
     try:
@@ -167,10 +209,10 @@ def _write(path: Path, text: str) -> None:
 
 def apply(
     live: Path, candidate: str, *, loads: Callable[[Path], object], checks: Checks, run: Runner,
-    redeem: Redeem | None = None, credential: Mapping[str, Any] | None = None,
+    redeem: Redeem | None = None, credential: Mapping[str, Any] | None = None, family: Family | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Applied:  # fmt: skip
-    """Replace *live* with *candidate* if the door admits it (see the module docstring).
+    """Replace *live* with *candidate*, and place a changed *family*, if the door admits it (module docstring).
 
     Raises:
         ConfigRefused: the candidate does not parse or load, touches the boundary without a credential that
@@ -182,16 +224,14 @@ def apply(
     except tomllib.TOMLDecodeError as bad:
         msg = f'the candidate is not TOML: {bad}'
         raise ConfigRefused(msg) from bad
-    old = tomllib.loads(live.read_text(encoding='utf-8'))
-    changed = changes(old, new)
-    guarded = boundary(changed)
+    changed, guarded = _changed(live, new, family)
     if not changed:
         return Applied((), (), None)
     if guarded:
         if credential is None or redeem is None:
             msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
             raise ConfigRefused(msg)
-        redeem(credential, digest(candidate))
+        redeem(credential, digest(candidate, family))
     with tempfile.TemporaryDirectory(
         prefix=TEMP_PREFIX
     ) as scratch:  # loaded by the current code BEFORE the live file is touched
@@ -202,7 +242,9 @@ def apply(
         except (ValueError, TypeError) as bad:
             msg = f'the current code refuses the candidate: {bad}'
             raise ConfigRefused(msg) from bad
-    backup = live.with_name(f'{live.name}.bak-{now().strftime("%Y%m%dT%H%M%SZ")}')
+    if changed == (FAMILY_KEY,) and family is not None:  # only the family file moved: the host file stays
+        return Applied(changed, guarded, _place(family, now))
+    backup = live.with_name(f'{live.name}.bak-{_stamp(now)}')
     previous = live.read_text(encoding='utf-8')
     backup.write_text(previous, encoding='utf-8')
     _write(live, candidate)
@@ -212,12 +254,36 @@ def apply(
             _write(live, previous)
             msg = f'self-check {name} failed ({status}) on the applied file; restored the previous one: {said[-400:]}'
             raise ConfigRefused(msg)
+    if family is not None and FAMILY_KEY in changed:
+        _place(family, now)
     return Applied(changed, guarded, backup)
+
+
+def _changed(live: Path, new: Mapping[str, Any], family: Family | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``(changed, boundary)`` keys of the host file, plus :data:`FAMILY_KEY` (boundary) when the family file moved."""
+    changed = changes(tomllib.loads(live.read_text(encoding='utf-8')), new)
+    moved = (FAMILY_KEY,) if family is not None and family.changed() else ()
+    return changed + moved, boundary(changed) + moved
+
+
+def _stamp(now: Callable[[], datetime]) -> str:
+    return now().strftime('%Y%m%dT%H%M%SZ')
+
+
+def _place(family: Family, now: Callable[[], datetime]) -> Path | None:
+    """Write the changed family file at its ``to``, mode 0644, backing up the one it replaces; that backup, if any."""
+    backup = None
+    if family.to.is_file():
+        backup = family.to.with_name(f'{family.to.name}.bak-{_stamp(now)}')
+        backup.write_text(family.to.read_text(encoding='utf-8'), encoding='utf-8')
+    _write(family.to, family.text)
+    family.to.chmod(0o644)
+    return backup
 
 
 def tick(
     live: Path, candidate: str, *, pending: Path, notify: Callable[[str], object], loads: Callable[[Path], object],
-    checks: Checks, run: Runner, now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    checks: Checks, run: Runner, family: Family | None = None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> str:  # fmt: skip
     """One scheduled pass of the door over the merged source: ``applied``, ``unchanged`` or ``needs-consent``.
 
@@ -230,12 +296,12 @@ def tick(
         ConfigRefused: the routine candidate does not load or failed the self-check (the backup was restored).
 
     """
-    changed = changes(tomllib.loads(live.read_text(encoding='utf-8')), tomllib.loads(candidate))
+    changed, guarded = _changed(live, tomllib.loads(candidate), family)
     if not changed:
         pending.unlink(missing_ok=True)
         return 'unchanged'
-    if guarded := boundary(changed):
-        subject = digest(candidate)
+    if guarded:
+        subject = digest(candidate, family)
         if not pending.is_file() or pending.read_text(encoding='utf-8').strip() != subject:
             notify(
                 f'merged config touches boundary keys {list(guarded)}; it applies only with consent: grant '
@@ -243,6 +309,6 @@ def tick(
             )
             pending.write_text(f'{subject}\n', encoding='utf-8')
         return 'needs-consent'
-    apply(live, candidate, loads=loads, checks=checks, run=run, now=now)
+    apply(live, candidate, loads=loads, checks=checks, run=run, family=family, now=now)
     pending.unlink(missing_ok=True)
     return 'applied'

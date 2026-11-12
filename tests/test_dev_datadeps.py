@@ -67,6 +67,15 @@ def test_sync_checks_out_exactly_the_pin_and_check_then_passes(tmp_path, library
     assert datadeps.main(['check', '--root', str(root)]) == 0
 
 
+def test_a_fresh_sync_to_the_line_head_carries_its_files(tmp_path, library) -> None:
+    """PLANTED: a --no-checkout clone already sits at the head; reading that as "already at" left no files."""
+    repo, _, second = library
+    root = _consumer(tmp_path, repo.as_uri(), second)
+    (dep,) = datadeps.declared(root)
+    datadeps.sync(root, dep)
+    assert (root / 'recipes' / 'b.toml').read_text(encoding='utf-8') == 'b = 2\n'
+
+
 def test_a_copy_at_another_commit_is_stale_and_named(tmp_path, library) -> None:
     """PLANTED: the copy here is the line head, the pin is the first commit -- the reader must refuse it."""
     repo, first, second = library

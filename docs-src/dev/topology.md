@@ -2,7 +2,8 @@
 
 The one map of the family's development system: which repositories exist and how they depend, how a change
 travels, which forges and identities carry it, which hosts do what, and how each piece is configured. Every
-section states the shape and points at the page or module that owns the detail; nothing here restates a rule.
+section states the shape and points at the page or module that owns the detail; nothing here restates a rule. The normative design this map serves is
+[the family architecture](architecture.md).
 
 The concrete instance -- host names, addresses, account logins, App ids, cluster names -- is never written in
 this public repo. A family keeps it in its PRIVATE host-configuration repo (the role below), beside the reviewed
@@ -96,11 +97,15 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
 - `[tool.dev_lab.protection]` in each repo's `pyproject.toml` declares, per forge host, the ONE bypass identity
   (`breakglass`: on GitHub a list of `app:<id>`/`role:<r>`/`team:<id>`, on Gitea a login) and who may push the trunk
   (`promote`, Gitea). Branches come from `[tool.dev_lab.integrator]`, required contexts from the rendered workflows
-  (`required_contexts`), the approver from `[tool.dev_lab.review]` (`judge_login` on Gitea, `judge_app` on GitHub).
+  (`required_contexts`); no approval is ever required (the judge is advisory).
 - `python -m dev_lab.dev.forge protect plan|check|apply` renders it onto the forge (`dev_lab.dev.forgeprotect`).
   `apply` is an administrator's verb, run from a workstation after reading `plan`; CI never runs it.
-- Review: `[tool.dev_lab.review] where = "judge"` sends every PR to the judge host; the merge decision
-  (`tests/merge-ready`) waits on the judge's verdict ([review](forge.md#a-review-judged-on-its-own-host-forge-review-prepare--judge)).
+- Who produces is the forge's data (`_forgebackends.Backend.producers`, user rulings 2026-11-11): a GitHub repo is
+  gated and promoted by its Actions jobs alone -- no forge serve host, cluster or workstation; a part no
+  hosted runner produces (a heavy test) is kept and off its gate (`jobparts.off_gate`). Gitea wires every producer.
+- Review: `[tool.dev_lab.review] where = "judge"` (either forge) sends every PR to the judge host, whose verdict is
+  ADVISORY (`_forgebackends.ADVISORY`): posted as information, never waited on by `tests/merge-ready`
+  ([review](forge.md#a-review-judged-on-its-own-host-forge-review-prepare--judge)).
 
 ## 4. Hosts and their roles
 
@@ -125,12 +130,15 @@ declares (`dev_lab.ops.config.load`).
 
 ## 5. Consent: one code per shown plan
 
-- The forge host's consent ISSUER alone holds the host's TOTP seed and an Ed25519 key (`dev_lab.ops.consent`);
+- THE CLUSTER CODE is the 6-digit TOTP code the user types: every ops host of a cluster (its consent issuer
+  and each `[ops.access]` login) holds the SAME TOTP secret, so one Authenticator entry answers for the whole
+  cluster, never one per host. Every prompt, refusal and doc names it "the cluster code".
+- The forge host's consent ISSUER alone holds the cluster's TOTP seed and an Ed25519 key (`dev_lab.ops.consent`);
   verifiers hold the public key; clients hold nothing. A credential is signed for ONE action of the registry
   (`dev_lab.ops.consent.actions`) and ONE subject (a digest), and an irreversible action registers its single use
   online.
 - A plan (`{"host", "grants": [...]}`, at most `MAX_GRANTS` = 16) is shown to the user with its digest
-  (`python -m dev_lab.ops.consent plan <plan.json>`); one code from the user buys one credential per grant AND opens
+  (`python -m dev_lab.ops.consent plan <plan.json>`); one cluster code from the user buys one credential per grant AND opens
   the host session. A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
 - `sshhold` holds that session: one authentication per work session, every later command rides it
   (`python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
@@ -140,8 +148,10 @@ declares (`dev_lab.ops.config.load`).
 
 ## 6. Break-glass waves
 
-- Break-glass merges a PR past the review, never past its tests: the server refuses a head whose security check or
-  test parts do not stand PASS (`_tests_stand`, `dev_lab.ops.breakglass`).
+- Break-glass merges a PR past the review AND its tests (user ruling 2026-11-11): unrun, pending or red, it merges
+  inside an open wave, and its test state at merge time -- `passed`, `red: <contexts>` or `untested` -- is named in
+  the PR comment, the audit line and the wave's summary (`tests_at`, `dev_lab.ops.breakglass`). The host's own
+  sweep still lands only green PRs (`dev_lab.ops.wavesweep`); an untested merge is always an explicit request.
 - It runs only inside a WAVE the user opened with a `breakglass.wave` credential whose params are the window
   (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_hours_max` / `max_merges_max`
   -- above a ceiling it is refused, never clamped. The merge that reaches the cap ends the wave.
@@ -194,8 +204,8 @@ declares (`dev_lab.ops.config.load`).
 3. `python -m dev_lab.ops --config /etc/dev-lab/supervise.toml install` renders every unit, sudoers line, sshd
    block and PAM include, and prints the root `next_steps` (accounts, `systemctl daemon-reload`, sshd test and
    reload). It is idempotent (`dev_lab.ops.install`).
-4. Enrol the host's ONE TOTP secret: `consent enrol` (or `access adopt` for a secret the user's Authenticator
-   already holds); `consent keygen` makes the issuer key if absent.
+4. Place the cluster's ONE TOTP secret: `consent enrol` on the cluster's first host only, `access adopt` on every
+   other (the secret the user's Authenticator already holds); `consent keygen` makes the issuer key if absent.
 5. Place each declared secret: `python -m dev_lab.ops secret place --path <declared path> --credential <cred>`
    with the content on stdin (`dev_lab.ops.secretplace`: 0600, owned by the declared role's user, only a sha256
    prefix ever printed). The break-glass forge token or App key, the promote credential, the config token.
@@ -210,6 +220,17 @@ declares (`dev_lab.ops.config.load`).
    through a bastion is reached with `sshhold open --jump`.
 3. Each repo names the judge in `[tool.dev_lab.review]` (`where = "judge"`, `judge_login` or `judge_app`) and is
    listed in `[ops.judge] repos`; then `forge protect apply` makes the judge's verdict required.
+
+Its review model keys and the family spend cap arrive as ONE consent plan of three steps
+(`python -m dev_lab.dev.planrun preflight|run`, one code):
+
+1. `config apply` -- the host file declares `[ops.judge] keys_file` and `[ops.config] family = { file = "family.toml",
+   to = "/etc/dev-lab/family.toml" }`, with `[ops.judge.family] source = "/etc/dev-lab/family.toml"`. The door takes
+   `family.toml` from the same reviewed source and ref and places it (0644, no secrets); a family change is boundary.
+   A declared keys_file not yet placed loads; one present but not a `[keys]` bundle refuses.
+2. `secret place --path <keys_file>` with `"stdin_task": "pr-review"`: the task's bundle streams from this machine's
+   `forge secrets` store into the verb's stdin -- no file anywhere, never on a command line or the audit.
+3. `install` -- it refuses while the keys_file is declared but not placed, and names step 2.
 
 ### A CI verify account (HPC)
 

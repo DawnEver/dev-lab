@@ -16,17 +16,26 @@ here, through the client verb of :data:`LOCAL_VERBS` (a ``breakglass.wave`` open
      "steps": [{"argv": ["config", "apply", "--from", "/srv/plan/candidate.toml"]},
                {"argv": ["config", "apply", "--from", "/srv/plan/judge.toml"], "dest": "ops@judge",
                 "config": "/etc/dev-lab/judge.toml"},
-               {"argv": ["secret", "place", "--path", "/etc/x"], "stdin": "/srv/plan/x.secret"},
+               {"argv": ["secret", "place", "--path", "/etc/x"], "stdin_local": "secrets/x.secret"},
                {"local": true}]}
 
 each host step running ``sudo -n <python> -m dev_lab.ops --config <config> <argv...> --credential <file>`` on its
-host (``stdin`` a file ON THAT HOST, so a secret never rides a command line or the hold's audit).
+host. ``stdin_local`` is a file HERE, on the operator's machine: its bytes are streamed through the session into the
+verb's stdin (:meth:`.planremote.Remote.run`), so a secret is never staged on the host's disk -- where the agent's
+login could read it (ruling 2026-11-04: after lockdown no one reads a bot token on a host) -- nor rides a command
+line or the hold's audit (a sha256 prefix only). ``stdin_task`` (instead: exactly one of the two) is a task's key
+bundle from THIS machine's forge-secrets store (:func:`.forgesecrets.stored_bundle`), streamed the same way -- no
+file is written anywhere, and the bytes are never printed.
 
-:func:`preflight` spends no code. Per host it asks ``consent ready`` (the verifier key resolves, a use can register);
-per host step, that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
+:func:`preflight` spends no code. Per host it asks ``consent ready`` WITHOUT sudo
+(it reads only the config and the public key, so no sudoers row: the verifier key resolves, a use can register);
+per host step, that its ``stdin_local`` file exists here or its ``stdin_task`` bundle is stored here (never its
+content shown), that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
 ``--subject``) equals the grant's; per local step, that the machine file names the client's endpoint. A door a host
 gains only from an earlier ``ops.config`` step ON THAT HOST (``config apply`` installs sudoers) is ``after step N``,
-never a failure. A remote is the held session when one is open, else key-only ssh (:mod:`.planremote`).
+never a failure; so is a subject that differs after such a step (the apply changes the live config the subject is
+derived from), and :func:`run_plan` checks it for real at that point. A remote is the held session when one is
+open, else key-only ssh (:mod:`.planremote`).
 
 :func:`run_plan` runs the GRANTED plan's steps in order: it carries each host step's credential (found in
 :func:`dev_lab.dev.consentguard.state_dir` by its action and subject) to its host under umask 077, runs the verb,
@@ -52,7 +61,7 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import sshhold
+from dev_lab.dev import forgesecrets, sshhold
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.planremote import Remote, remote_for
 from dev_lab.ops.consent.client import spent_ids
@@ -102,7 +111,8 @@ class Step:
     dest: str = ''
     config: str = ''
     python: str = ''
-    stdin: str | None = None
+    stdin_local: str | None = None
+    stdin_task: str | None = None
     local: bool = False
 
 
@@ -113,7 +123,7 @@ class Steps:
     steps: tuple[Step, ...]
 
 
-_HOST_KEYS: Final = {'argv', 'stdin', 'dest', 'config', 'python'}
+_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'dest', 'config', 'python'}
 
 
 def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str) -> Step:
@@ -127,8 +137,11 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     if not (isinstance(argv, list) and argv and all(isinstance(word, str) for word in argv)) or (
         set(step) - _HOST_KEYS or not all(isinstance(step.get(key, ''), str) for key in _HOST_KEYS - {'argv'})
     ):
-        msg = (f'{name} is {{"argv": [ops verb words...], "stdin"?, "dest"?, "config"?, "python"?: "<str>"}} '
-               'or {"local": true}')  # fmt: skip
+        msg = (f'{name} is {{"argv": [ops verb words...], "stdin_local"? | "stdin_task"?, "dest"?, "config"?, '
+               '"python"?: "<str>"} or {"local": true}')  # fmt: skip
+        raise ConsentRefused(msg)
+    if {'stdin_local', 'stdin_task'} <= set(step):
+        msg = f'{name} names both stdin_local and stdin_task: exactly one source feeds its stdin'
         raise ConsentRefused(msg)
     if action in LOCAL_VERBS:
         msg = f'{name} grants {action}, which is redeemed here: {{"local": true}}'
@@ -138,7 +151,7 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
         raise ConsentRefused(msg)
     return Step(
         tuple(argv), step.get('dest', dest), step.get('config', str(data['config'])),
-        step.get('python', str(data['python'])), step.get('stdin'),
+        step.get('python', str(data['python'])), step.get('stdin_local'), step.get('stdin_task'),
     )  # fmt: skip
 
 
@@ -169,8 +182,11 @@ def run_local(words: Sequence[str]) -> tuple[str, int]:
     return done.stdout + done.stderr, done.returncode
 
 
-def _with_stdin(command: str, stdin: str | None) -> str:
-    return command if stdin is None else f'{command} < {shlex.quote(stdin)}'
+def _stdin(step: Step) -> bytes | None:
+    """The bytes of *step*'s ``stdin_local`` file or ``stdin_task`` bundle, read here; ``None`` when it has neither."""
+    if step.stdin_task is not None:
+        return forgesecrets.stored_bundle(step.stdin_task).encode('utf-8')
+    return None if step.stdin_local is None else Path(step.stdin_local).read_bytes()
 
 
 def _last_line(output: str) -> str:
@@ -179,32 +195,43 @@ def _last_line(output: str) -> str:
 
 
 def _ready(step: Step, remote: Remote) -> str | None:
-    """``None`` when *step*'s host can verify and register a use, else the blocker."""
-    ready = ['consent', 'ready']
-    said, status = remote.run(ops_command(step, ready, sudo='sudo -n -l'))
-    if status:
-        return f'no sudo door for `{shlex.join(ready)}` ({_last_line(said)})'
-    said, status = remote.run(ops_command(step, ready))
-    return _last_line(said) if status else None
+    """``None`` when *step*'s host can verify and register a use, else the blocker; asked unprivileged."""
+    said, status = remote.run(
+        shlex.join([step.python, '-m', 'dev_lab.ops', '--config', step.config, 'consent', 'ready'])
+    )
+    return (_last_line(said) or f'consent ready exited {status}') if status else None
+
+
+def _no_stdin(step: Step) -> str | None:
+    """Why *step*'s stdin source is not here (its content never read into a message); ``None`` when it is."""
+    if step.stdin_local is not None and not Path(step.stdin_local).is_file():
+        return f'no stdin_local file here: {step.stdin_local}'
+    if step.stdin_task is not None and not forgesecrets.stored_bundle(step.stdin_task):
+        return f'no stored bundle for task {step.stdin_task} here: `forge secrets store --task {step.stdin_task}`'
+    return None
 
 
 def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote) -> tuple[str, bool]:
     """``(verdict, blocked)`` of host step *index*: its door, else an earlier config step on its host, then subject."""
     grant, step = plan.grants[index], steps.steps[index]
+    if missing := _no_stdin(step):
+        return f'BLOCKED -- {missing}', True
     placeholder = f'{REMOTE_DIR}/preflight.json'
     said, status = remote.run(ops_command(step, [*step.argv, '--credential', placeholder], sudo='sudo -n -l'))
+    here = [i for i in range(index) if not steps.steps[i].local and steps.steps[i].dest == step.dest]
+    after = next((i + 1 for i in reversed(here) if plan.grants[i]['action'] == CONFIG_ACTION), None)
     if status:
-        here = [i for i in range(index) if not steps.steps[i].local and steps.steps[i].dest == step.dest]
-        installers = [i for i in here if plan.grants[i]['action'] == CONFIG_ACTION]
-        if installers:
-            return f'after step {installers[-1] + 1} (its door is installed by that config apply)', False
+        if after:
+            return f'after step {after} (its door is installed by that config apply)', False
         return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({_last_line(said)})', True
-    said, status = remote.run(_with_stdin(ops_command(step, [*step.argv, '--subject']), step.stdin))
+    said, status = remote.run(ops_command(step, [*step.argv, '--subject']), _stdin(step))
     derived = _last_line(said)
-    if status:
-        return f'BLOCKED -- the host could not derive the subject ({derived})', True
-    if derived != grant['subject']:
-        return f'BLOCKED -- the host derives subject {derived[:12]}, the plan grants {grant["subject"][:12]}', True
+    if not status and derived != grant['subject'] and after:
+        return f'after step {after} (subject derived once step {after} applied)', False
+    if status or derived != grant['subject']:
+        why = (f'the host could not derive the subject ({derived})' if status else
+               f'the host derives subject {derived[:12]}, the plan grants {grant["subject"][:12]}')  # fmt: skip
+        return f'BLOCKED -- {why}', True
     return 'green', False
 
 
@@ -274,7 +301,7 @@ def _redeem(step: Step, ident: str, text: str, remotes: Remotes, local: Local) -
     carried = f'{REMOTE_DIR}/{ident}.json'
     remote.put(carried, text)
     try:
-        return remote.run(_with_stdin(ops_command(step, [*step.argv, '--credential', carried]), step.stdin))
+        return remote.run(ops_command(step, [*step.argv, '--credential', carried]), _stdin(step))
     finally:
         remote.run(f'rm -f {shlex.quote(carried)}')
 

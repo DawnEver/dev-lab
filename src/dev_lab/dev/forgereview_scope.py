@@ -39,13 +39,14 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.temp import TEMP_PREFIX
+
 from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgereview_command import ReviewPending
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, is_code, matches
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence

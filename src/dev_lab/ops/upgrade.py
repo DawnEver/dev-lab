@@ -27,11 +27,11 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.writeroots import TEMP_PREFIX
 from dev_lab.ops import configdoor
 from dev_lab.ops.config import OpsConfig
 
@@ -185,7 +185,7 @@ def reviewed_candidate(config: OpsConfig) -> str | None:
     """The text of the reviewed config the host will run next (``[ops.config]``'s source), else ``None``."""
     if config.config_source is None:
         return None
-    return configdoor.fetch(config.config_source, run=configdoor.git_with_env)
+    return configdoor.fetch(config.config_source, run=configdoor.git_with_env).host
 
 
 def _candidate_loads(config: OpsConfig, probe: Runner, candidate: Callable[[OpsConfig], str | None]) -> str:

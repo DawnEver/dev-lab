@@ -25,7 +25,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev import sshhold
+from dev_lab.dev import sshhold, sshholdstate
 
 _ANSWER_ENV: Final = 'SSHHOLD_ANSWER'
 _PROBE_S: Final = 120.0
@@ -34,7 +34,7 @@ _TICK_S: Final = 1.0
 
 def askpass_helper() -> Path:
     """The ``SSH_ASKPASS`` program: prints ``$SSHHOLD_ANSWER``. It holds no secret, so it may sit on disk."""
-    folder = sshhold.state_dir()
+    folder = sshholdstate.state_dir()
     folder.mkdir(parents=True, exist_ok=True)
     if sys.platform == 'win32':
         helper = folder / 'askpass.cmd'
@@ -139,8 +139,8 @@ def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> N
     """Record the session, then answer one client at a time until a verb, the ceiling or a set idle limit ends it."""
     opened = time.time()
     token = secrets.token_urlsafe(32)
-    session = sshhold.Session(dest, os.getpid(), listener.getsockname()[1], token, opened, opened + hours * 3600)
-    sshhold.write_session(session)
+    session = sshholdstate.Session(dest, os.getpid(), listener.getsockname()[1], token, opened, opened + hours * 3600)
+    sshholdstate.write_session(session)
     idle, last = sshhold.idle_s(), time.monotonic()
     _say({'ok': True, 'pid': session.pid})
     listener.settimeout(_TICK_S)
@@ -160,10 +160,10 @@ def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> N
             last = time.monotonic()
             if ending:
                 return
-        sshhold.audit('expire', dest, status=0)
+        sshholdstate.audit('expire', dest, status=0)
     finally:
         holder.stop()
-        sshhold.forget(dest)
+        sshholdstate.forget(dest)
 
 
 def main(argv: list[str] | None = None) -> int:

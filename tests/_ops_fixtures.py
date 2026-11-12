@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from dev_lab.ops.config import OpsConfig, load
+from dev_lab.ops.consent.credential import public_text
 from dev_lab.ops.consent.issuer import keygen
 from dev_lab.ops.totp import STEP, code_at
 
@@ -65,7 +66,7 @@ def config(tmp: Path, repos: list[str], *, extra: str = '', glass: tuple[str, ..
     )
     served = ', '.join(f'"{url}"' for url in glass)
     (tmp / 'totp').write_text(RFC_KEY + '\n', encoding='utf-8')
-    keygen(tmp / 'consent.key', force=True)
+    published = public_text(keygen(tmp / 'consent.key', force=True).public_key())
     home = (tmp / 'home').as_posix()
     listed = ', '.join(f'"{url}"' for url in repos)
     text = f"""
@@ -93,6 +94,9 @@ account = "consent"
 totp = "{(tmp / 'totp').as_posix()}"
 key = "{(tmp / 'consent.key').as_posix()}"
 state = "{(tmp / 'consent-state').as_posix()}"
+[ops.consent_client]
+endpoint = "consent@localhost"
+public_key = "{published}"
 """
     path = tmp / 'supervise.toml'
     path.write_text(text, encoding='utf-8')

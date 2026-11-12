@@ -490,6 +490,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
 * :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
+* :mod:`dev_lab.dev.sshholdstate` -- a held session's state file and the append-only audit of every verb.
 * :mod:`dev_lab.dev.planrun` -- A CODE IS NEVER WASTED: preflight a consent plan's doors on its hosts, then run it.
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
@@ -498,7 +499,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   refused before it is written.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the command to arm as a Monitor after a push, and an
   advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``; it journals each push.
-* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending or red.
+* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
+  while a PR of the session is red and unacknowledged.
+* :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps.
 * :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
@@ -519,6 +522,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.gitenv` -- the environment a git call against another repository runs in: no locator inherited.
 * :mod:`dev_lab.dev.datadeps` -- a DATA dependency is pinned: declared once, synced to its rev, a stale copy refused.
 * :mod:`dev_lab.dev.dataconsumers` -- a data repo's PR is judged by its consumers' tests at its head.
+* :mod:`dev_lab.dev.verifiedby` -- a data repo's ``tests/base`` is its declared consumers' tests at its head.
 * :mod:`dev_lab.dev.forgedataruns` -- the serve runs a consumed data PR's consumer tests here and posts them there.
 * :mod:`dev_lab.dev.doorrows` -- how one door argv is spelled as allow rows: one literal interpreter per layout.
 * :mod:`dev_lab.dev.forgelabel` -- `forge label create`: one repository label through the door, idempotent by name.

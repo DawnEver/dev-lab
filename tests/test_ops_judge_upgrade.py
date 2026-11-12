@@ -14,6 +14,7 @@ from dev_lab.ops import __main__ as door
 from dev_lab.ops import installpaths, judge, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.install import install
+from dev_lab.ops.installpaths import under
 
 ALPHA = 'https://gitea.example/owner/alpha'
 BETA = 'https://github.com/owner/beta'
@@ -284,6 +285,10 @@ def test_an_app_declaration_that_lies_is_refused(tmp_path: Path, apps: str, toke
         _config(tmp_path, table)
 
 
+NL = chr(10)
+BUNDLE = f'[keys]{NL}anthropic = ["k"]{NL}'
+
+
 def test_install_loads_the_judge_s_key_bundle_from_its_root_only_file(tmp_path: Path) -> None:
     """2026-11-05: the judge's model keys are the pr-review task's ONE bundle, loaded on stdin, naming no provider.
 
@@ -291,6 +296,9 @@ def test_install_loads_the_judge_s_key_bundle_from_its_root_only_file(tmp_path: 
     """
     bundle = (tmp_path / 'pr-review.toml').as_posix()
     table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle}"\nrepos = [', 1)
+    placed = under(tmp_path / 'root', bundle)
+    placed.parent.mkdir(parents=True)
+    placed.write_text(BUNDLE, encoding='utf-8')
     steps = install(_config(tmp_path, table), tmp_path / 'root').next_steps
     (load,) = [step for step in steps if 'ai_lab.auth' in step]
     assert load.startswith('sudo -u forge-judge ')
@@ -303,22 +311,24 @@ def test_install_loads_the_judge_s_key_bundle_from_its_root_only_file(tmp_path: 
     assert piped.endswith('--bundle -  (the pr-review key bundle on stdin)')
 
 
-NL = chr(10)
-BUNDLE = f'[keys]{NL}anthropic = ["k"]{NL}'
-
-
-@pytest.mark.parametrize(
-    ('content', 'why'),
-    [(None, 'unreadable'), ('not = [toml', 'not a key bundle'), (f'[other]{NL}a = 1{NL}', 'not a key bundle')],
-)
-def test_a_root_load_refuses_a_keys_file_missing_or_not_a_bundle(tmp_path: Path, content: str | None, why: str) -> None:
+@pytest.mark.parametrize('content', ['not = [toml', f'[other]{NL}a = 1{NL}'])
+def test_a_root_load_refuses_a_keys_file_not_a_bundle_and_loads_one_not_yet_placed(
+    tmp_path: Path, content: str
+) -> None:
     """F-62e1a094ad3a: ``keys_file`` takes ``environment_file``'s one root-secret read; the bundle is never echoed.
 
-    PLANTED CONTROL: a readable ``[keys]`` bundle is accepted, and a non-root load never reads the root-only file.
+    An ABSENT declared keys_file loads (not yet placed: ``secret place`` writes only a declared path, so the config
+    declaring it must apply first). PLANTED CONTROL: a readable ``[keys]`` bundle is accepted, and a non-root load
+    never reads the root-only file.
     """
     bundle = tmp_path / 'pr-review.toml'
-    if content is not None:
-        bundle.write_text(content, encoding='utf-8')
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle.as_posix()}"{NL}repos = [', 1)
+    path = tmp_path / 'supervise.toml'
+    head = f'[ops]{NL}home = "{(tmp_path / "home").as_posix()}"{NL}python = "/p"{NL}'
+    path.write_text(head + table, encoding='utf-8')
+    assert load(path, environ={}, as_root=True).judge is not None  # absent: declared, not yet placed
+    bundle.write_text(content, encoding='utf-8')
+    why = 'not a key bundle'
     table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle.as_posix()}"{NL}repos = [', 1)
     path = tmp_path / 'supervise.toml'
     head = f'[ops]{NL}home = "{(tmp_path / "home").as_posix()}"{NL}python = "/p"{NL}'
@@ -329,6 +339,22 @@ def test_a_root_load_refuses_a_keys_file_missing_or_not_a_bundle(tmp_path: Path,
     assert load(path, environ={}, as_root=False).judge is not None
     bundle.write_text(BUNDLE, encoding='utf-8')
     assert load(path, environ={}, as_root=True).judge is not None
+
+
+def test_install_refuses_a_declared_keys_file_not_yet_placed(tmp_path: Path) -> None:
+    """The order is config apply (declares it) -> secret place -> install; install names the placing door.
+
+    PLANTED CONTROL: the same config installs once the bundle is placed.
+    """
+    root = tmp_path / 'root'
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "/etc/pr-review.toml"{NL}repos = [', 1)
+    host = _config(tmp_path, table)
+    with pytest.raises(ValueError, match=r'declared but not placed: place it with `secret place --path /etc/pr-'):
+        install(host, root)
+    assert not (root / 'etc' / 'systemd').exists(), 'refused before anything is written'
+    (root / 'etc').mkdir(parents=True)
+    (root / 'etc' / 'pr-review.toml').write_text(BUNDLE, encoding='utf-8')
+    assert install(host, root).next_steps
 
 
 def test_install_narrows_a_0644_keys_file_to_root_0600(tmp_path: Path) -> None:

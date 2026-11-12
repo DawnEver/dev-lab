@@ -19,7 +19,8 @@ person's work) and ``home`` (loose non-dot files directly in the home) are only 
 ONLY OUR OWN IS SWEPT (user ruling 2026-11-11): a temp root is shared with every program on the machine -- an
 installer's setup log, a browser's drag file, a runtime's cache -- and none of that is ours to delete (the sweep
 kept tripping over the VS Code installer's locked log). The family creates its temp entries under ONE prefix,
-:data:`TEMP_PREFIX`, and :func:`owned_globs` (that prefix, plus the machine file's ``[writeroots] owned`` globs for
+:data:`lab_commons.temp.TEMP_PREFIX` (there because every repo's runtime code needs it and lab-commons never
+imports dev-lab), and :func:`owned_globs` (that prefix, plus the machine file's ``[writeroots] owned`` globs for
 a tool the family runs that names its own) is the whole of what the sweep may remove.
 
 NO CHECKOUT EXEMPTION, in either half: a write beneath a write-prone root is refused EVEN INSIDE A CHECKOUT
@@ -39,6 +40,7 @@ from pathlib import Path
 from typing import Any, Final, Literal
 
 from lab_commons.config import section
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.disclosure import details_for
 
@@ -49,7 +51,6 @@ __all__ = [
     'HAZARD',
     'REMEDY',
     'RULE_ID',
-    'TEMP_PREFIX',
     'Root',
     'declared',
     'excluded_paths',
@@ -62,8 +63,8 @@ __all__ = [
 RULE_ID: Final = 'WRITES-STAY-IN-THE-TREE'
 HAZARD: Final = 'outside every checkout nothing scans, ignores or cleans a file, so it outlives the session.'
 REMEDY: Final = (
-    "A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/ and an experiment to scratch/ "
-    'of the checkout you work in.'
+    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/ and an "
+    'experiment to scratch/ of the checkout you work in.'
 )
 
 #: Directory names that are write-prone at a drive root and in the home, and the KIND each is.
@@ -84,9 +85,6 @@ EXCLUDED_IN_TEMP: Final[Mapping[str, str]] = {
 #: The :data:`EXCLUDED_IN_TEMP` names that are GLOBS (a harness file named at random), matched against an entry's
 #: name; the rest are exact names, excluded as paths (:func:`excluded_paths`).
 EXCLUDED_GLOBS_IN_TEMP: Final = tuple(name for name in EXCLUDED_IN_TEMP if any(c in name for c in '*?['))
-
-#: The prefix of every temp entry the family's code creates (``tempfile`` ``prefix=``): what marks an entry OURS.
-TEMP_PREFIX: Final = 'dev-lab-'
 
 #: Environment variables naming a tool cache the family uses; one inside a root is excluded.
 _CACHE_VARS: Final = ('UV_CACHE_DIR', 'PIP_CACHE_DIR', 'RUFF_CACHE_DIR')

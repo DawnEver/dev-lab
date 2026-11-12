@@ -6,6 +6,7 @@ Every blocker and every stop has its planted control: the green host below, with
 from __future__ import annotations
 
 import dataclasses
+import getpass
 import json
 import shlex
 from pathlib import Path
@@ -32,8 +33,18 @@ PLAN = parsed({'host': HOST, 'grants': [APPLY, PLACE]})
 CONF, PY = '/etc/dev-lab/supervise.toml', '/usr/bin/python3'
 STEPS = planrun.Steps((
     planrun.Step(('config', 'apply', '--from', CANDIDATE), HOST, CONF, PY),
-    planrun.Step(('secret', 'place', '--path', '/etc/x'), HOST, CONF, PY, '/srv/plan/x.secret'),
+    planrun.Step(('secret', 'place', '--path', '/etc/x'), HOST, CONF, PY, 'x.secret'),
 ))  # fmt: skip
+SECRET, LOCAL = b'bot-token-PLANTED-7f3a', 'x.secret'
+
+
+@pytest.fixture(autouse=True)
+def secret_here(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The secret step's ``stdin_local`` file, on THIS machine (relative to the test's own cwd)."""
+    monkeypatch.chdir(tmp_path)
+    local = tmp_path / LOCAL
+    local.write_bytes(SECRET)
+    return local
 
 
 class FakeHost:
@@ -41,7 +52,7 @@ class FakeHost:
 
     def __init__(self) -> None:
         """The green host: every door, a ready verifier, the plan's subjects."""
-        self.doors = {('consent', 'ready'), ('config', 'apply'), ('secret', 'place')}
+        self.doors = {('config', 'apply'), ('secret', 'place')}
         self.ready = (0, '[ops consent] ready: key abcdef, uses register at the local issuer')
         self.subjects = {'config': APPLY['subject'], 'secret': PLACE['subject']}
         self.commands: list[str] = []
@@ -49,10 +60,12 @@ class FakeHost:
         self.outcomes: dict[str, tuple[str, int, bool]] = {}  # verb -> (output, status, registers its use)
         self.ledger: set[str] = set()
         self.carried: list[str] = []
+        self.stdins: list[tuple[str, bytes | None]] = []
 
-    def run(self, command: str) -> tuple[str, int]:
+    def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
         self.commands.append(command)
-        words = shlex.split(command.split(' < ', maxsplit=1)[0])
+        self.stdins.append((command, stdin))
+        words = shlex.split(command)
         verb = tuple(words[words.index('--config') + 2 :][:2]) if '--config' in words else ()
         if words[:3] == ['sudo', '-n', '-l']:
             return ('', 0) if verb in self.doors else ('sudo: a password is required', 1)
@@ -82,7 +95,8 @@ def test_a_host_with_every_door_is_green() -> None:
     green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
     assert green, lines
     assert lines[-1].startswith('preflight: green')
-    assert any(command.endswith('< /srv/plan/x.secret') and '--subject' in command for command in host.commands)
+    assert any(given == SECRET and '--subject' in command for command, given in host.stdins)
+    assert not any(SECRET.decode() in command for command in host.commands)
 
 
 def test_a_host_that_cannot_verify_or_register_is_blocked() -> None:
@@ -93,12 +107,20 @@ def test_a_host_that_cannot_verify_or_register_is_blocked() -> None:
     assert 'BLOCKED -- refused: no consent public key' in lines[0]
 
 
-def test_a_missing_ready_door_is_blocked_by_name() -> None:
+def test_consent_ready_is_asked_without_sudo_so_a_host_needs_no_sudoers_row_for_it() -> None:
     host = FakeHost()
-    host.doors.discard(('consent', 'ready'))
+    planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    asked = [command for command in host.commands if command.endswith('consent ready')]
+    assert asked == [shlex.join([PY, '-m', 'dev_lab.ops', '--config', CONF, 'consent', 'ready'])]
+
+
+def test_a_missing_stdin_local_file_is_blocked_before_any_code(secret_here: Path) -> None:
+    host = FakeHost()
+    assert planrun.preflight(PLAN, STEPS, lambda _dest: host)[0]  # the control: the file is here
+    secret_here.unlink()
     green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
     assert not green
-    assert 'no sudo door for `consent ready`' in lines[0]
+    assert f'BLOCKED -- no stdin_local file here: {LOCAL}' in lines[2]
 
 
 def test_a_missing_door_with_no_config_step_before_it_is_blocked() -> None:
@@ -115,6 +137,15 @@ def test_a_door_installed_by_an_earlier_config_apply_is_after_that_step_not_a_fa
     green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
     assert green, lines
     assert lines[2].startswith('step 2 ops.secret.place: after step 1')
+
+
+def test_a_subject_after_an_earlier_config_apply_on_its_host_is_derived_after_that_step() -> None:
+    """The earlier apply changes the live config the subject is derived from (a family file fetched once declared)."""
+    host = FakeHost()
+    host.subjects['secret'] = 'd' * 64
+    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    assert green, lines
+    assert lines[2].startswith('step 2 ops.secret.place: after step 1 (subject derived once step 1 applied) on ')
 
 
 def test_a_subject_the_host_derives_differently_is_blocked() -> None:
@@ -143,8 +174,10 @@ def _steps_file(tmp_path: Path, steps: object) -> Path:
 
 
 def test_a_steps_file_lists_one_step_per_grant(tmp_path: Path) -> None:
-    good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin': '/h/x'}]
-    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN, HOST).steps[1].stdin == '/h/x'  # the control
+    good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_local': '/h/x'}]
+    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN, HOST).steps[1].stdin_local == '/h/x'  # the control
+    with pytest.raises(ConsentRefused, match='stdin_local'):  # the host-side `stdin` is gone, not aliased
+        planrun.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place'], 'stdin': '/h/x'}]), PLAN, HOST)
     with pytest.raises(ConsentRefused, match='one step per grant'):
         planrun.load_steps(_steps_file(tmp_path, good[:1]), PLAN, HOST)
     with pytest.raises(ConsentRefused, match='the runner adds them'):
@@ -186,7 +219,7 @@ def test_consent_ready_is_green_at_the_issuer_and_blocked_where_no_use_can_regis
     host = config(tmp_path, [])
     assert consentverbs.ready(host, alert=lambda *_: None) == 0  # the control: the issuer's own host
     assert 'ready: key' in capsys.readouterr().out
-    assert consentverbs.ready(dataclasses.replace(host, consent=None), alert=lambda *_: None) == 2
+    assert consentverbs.ready(dataclasses.replace(host, consent=None, consent_client=None), alert=lambda *_: None) == 2
     assert 'refused' in capsys.readouterr().err
 
 
@@ -219,7 +252,8 @@ def test_a_granted_plan_runs_in_order_and_deletes_only_spent_credentials(tmp_pat
     assert not any(path.exists() for path in written)
     assert host.files == {}  # every carried copy removed from the host
     secret = next(command for command in host.commands if '--credential' in command and 'secret' in command)
-    assert secret.endswith('< /srv/plan/x.secret')
+    assert dict(host.stdins)[secret] == SECRET
+    assert SECRET.decode() not in secret
 
 
 def test_a_refusal_stops_the_run_and_keeps_every_unspent_credential(tmp_path: Path) -> None:
@@ -408,3 +442,105 @@ def test_a_steps_file_names_each_steps_host_and_a_local_wave(tmp_path: Path) -> 
         planrun.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE, HOST)
     with pytest.raises(ConsentRefused, match='redeemed on a host'):
         planrun.load_steps(_steps_file(tmp_path, [{'local': True}, *good[1:]]), WIDE, HOST)
+
+
+BUNDLE = 'OPENAI_API_KEY=sk-PLANTED-9c1e\n'
+TASK_STEPS = planrun.Steps((
+    STEPS.steps[0],
+    dataclasses.replace(STEPS.steps[1], stdin_local=None, stdin_task='judge'),
+))  # fmt: skip
+
+
+@pytest.fixture
+def stored(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """The forge-secrets store of this machine, as task -> bundle."""
+    bundles = {'judge': BUNDLE}
+    monkeypatch.setattr(planrun.forgesecrets, 'stored_bundle', lambda task: bundles.get(task, ''))
+    return bundles
+
+
+@pytest.mark.usefixtures('stored')
+def test_a_task_bundle_streams_as_the_steps_stdin_and_never_rides_a_command() -> None:
+    host = FakeHost()
+    green, lines = planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)
+    assert green, lines
+    assert any(given == BUNDLE.encode() and '--subject' in command for command, given in host.stdins)
+    assert not any('sk-PLANTED' in command for command in host.commands)
+    assert not any('sk-PLANTED' in line for line in lines)
+
+
+def test_a_task_with_no_stored_bundle_is_blocked_before_any_code(stored: dict[str, str]) -> None:
+    host = FakeHost()
+    assert planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)[0]  # the control: the bundle is stored
+    stored.clear()
+    green, lines = planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)
+    assert not green
+    assert 'BLOCKED -- no stored bundle for task judge here' in lines[2]
+
+
+@pytest.mark.usefixtures('stored')
+def test_a_granted_task_step_streams_its_bundle_and_writes_no_file(tmp_path: Path) -> None:
+    host, _ = FakeHost(), _granted(tmp_path)
+    before = set(tmp_path.rglob('*'))
+    finished, lines = planrun.run_plan(PLAN, TASK_STEPS, lambda _dest: host, spent=lambda ids: set(ids) & host.ledger,
+                                       home=tmp_path, now=lambda: NOW)  # fmt: skip
+    assert finished, lines
+    secret = next(command for command in host.commands if '--credential' in command and 'secret' in command)
+    assert dict(host.stdins)[secret] == BUNDLE.encode()
+    assert not any('sk-PLANTED' in path.read_text(errors='ignore') for path in set(tmp_path.rglob('*')) - before
+                   if path.is_file())  # fmt: skip
+    assert host.files == {}
+
+
+def test_a_step_names_exactly_one_stdin_source(tmp_path: Path) -> None:
+    one = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_task': 'judge'}]
+    assert planrun.load_steps(_steps_file(tmp_path, one), PLAN, HOST).steps[1].stdin_task == 'judge'  # the control
+    both = [one[0], {**one[1], 'stdin_local': 'x.secret'}]
+    with pytest.raises(ConsentRefused, match='exactly one source'):
+        planrun.load_steps(_steps_file(tmp_path, both), PLAN, HOST)
+
+
+def test_consent_ready_stats_the_issuer_key_and_never_reads_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = config(tmp_path, [])
+
+    def unreadable(*_: object, **__: object) -> bytes:
+        raise PermissionError(13, 'Permission denied', host.consent.key)
+
+    monkeypatch.setattr(Path, 'read_bytes', unreadable)  # present but root 600: opening it is refused
+    assert consentverbs.ready(host, alert=lambda *_: None) == 0
+    assert 'ready: key' in capsys.readouterr().out
+    Path(host.consent.key).unlink()  # planted control: a missing key reads not ready, by its path
+    assert consentverbs.ready(host, alert=lambda *_: None) == 2
+    assert f'issuer key missing: {Path(host.consent.key)}' in capsys.readouterr().err
+
+
+def test_an_unsearchable_issuer_key_directory_is_the_readiness_answer_not_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = config(tmp_path, [])
+
+    def hidden(*_: object, **__: object) -> object:
+        raise PermissionError(13, 'Permission denied', host.consent.key)
+
+    monkeypatch.setattr(Path, 'stat', hidden)
+    assert consentverbs.ready(host, alert=lambda *_: None) == 2
+    assert f'issuer key not visible to {getpass.getuser()}: {Path(host.consent.key)}' in capsys.readouterr().err
+
+
+def test_the_issuer_is_ready_without_a_published_key_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-11-12 forge-a1: requiring the published key at the issuer deadlocked the config that would declare it."""
+    host = config(tmp_path, [])
+
+    def unpublished(_table: object) -> object:
+        msg = 'no consent public key: set [consent] public_key in the machine file'
+        raise consentverbs.ConsentRefused(msg)
+
+    monkeypatch.setattr(consentverbs, 'public_key', unpublished)
+    assert consentverbs.ready(host, alert=lambda *_: None) == 0
+    assert 'no published key declared here' in capsys.readouterr().out
+    Path(host.consent.key).unlink()  # planted control: the private key itself still decides
+    assert consentverbs.ready(host, alert=lambda *_: None) == 2

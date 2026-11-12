@@ -237,6 +237,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'servetask',
     # ORIGINAL: one TOTP-authenticated ssh connection held for a work session (user ruling 2026-11-09).
     'sshhold',
+    # ORIGINAL: sshhold's state file and audit split from its client (MODULE-SIZE-ALARM, 2026-11-11).
+    'sshholdstate',
     'workstation',
     'workstationfile',
     'workstationprobe',
@@ -366,6 +368,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
     'pushwatch',
     'pushstop',
+    'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'venvfollow',
     'liverun',
     'metrics',
@@ -441,6 +444,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'dataconsumers',
     # ORIGINAL: the serve step that carries out a data PR's consumer runs (2026-11-11); no consumer held it.
     'forgedataruns',
+    # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
+    'verifiedby',
     # ORIGINAL: split out of `hpcaccount.fleet` inside the kit (2026-11-10); the judge's machine file reads it too.
     'machinehome',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.

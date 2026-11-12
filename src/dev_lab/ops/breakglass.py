@@ -2,7 +2,7 @@
 
 User rulings 2026-11-03: a local agent session may run it, only under the user's authorization. Since 2026-11-07 that
 authorization is a ``breakglass.wave`` CONSENT CREDENTIAL (:mod:`dev_lab.ops.consent`) the user granted with their
-Authenticator code at the issuer: it opens a WAVE (:mod:`dev_lab.ops.wave`) bounded by its signed params; merges
+cluster code at the issuer: it opens a WAVE (:mod:`dev_lab.ops.wave`) bounded by its signed params; merges
 inside it need none, and this server -- never the client -- sends the wave's summary through the configuration's
 ``[alerts]`` when it ends.
 The client is ``forge pr breakglass`` / ``forge breakglass open|close|ack|status``
@@ -27,7 +27,9 @@ One request is one JSON line with an ``action``:
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
-  declared integration branch, or whose head is not the one shown; then comment, merge at that head with a
+  declared integration branch, or whose head is not the one shown -- NEVER for its tests (user ruling 2026-11-11: the
+  wave waives them too): unrun, pending or red, it merges, and its test state at merge time (:func:`tests_at`) is
+  named in the comment, the audit line and the wave's summary; then comment, merge at that head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
   owes), audit; the merge that reaches the cap ends the wave;
 * ``close`` -- end the open wave; ``ack {id?, by}`` -- record who acknowledged an audit (the oldest unacknowledged
@@ -173,19 +175,28 @@ class ClientForge:
         merge(self._client, number, head=head, message=message, delete_branch=False)
 
 
-def _tests_stand(forge: Forge, asked: requests.Merge) -> None:
-    """Refuse a head whose security check or test parts do not stand PASS: break-glass waives the review alone.
+def tests_at(posted: Sequence[CommitStatus], head: str) -> str:
+    """*head*'s test state at merge time: ``passed``, ``red: <contexts>; <why>`` or ``untested: <why>``.
 
-    The rule is merge-ready's own (:func:`dev_lab.dev.forgesecurity.security_wait`,
-    :func:`dev_lab.dev.forgemerge.parts_wait`), on either forge -- a Gitea ruleset enforces no check, so this is the
-    one place a break-glass merge meets its tests.
+    User ruling 2026-11-11: break-glass waives the tests as well as the review -- the open wave is the authorization
+    -- so this never refuses; it names what was waived, for the audit and the notice. The reading is merge-ready's
+    own (:func:`dev_lab.dev.forgesecurity.security_wait`, :func:`dev_lab.dev.forgemerge.parts_wait`).
     """
-    posted = forge.statuses(asked.head)
-    red = [wait for wait in (security_wait(posted), parts_wait(asked.head, posted)) if wait is not None]
-    if red:
-        said = '; '.join(red)
-        msg = f'break-glass bypasses only the review, never the tests: #{asked.pr} at {asked.head[:12]}: {said}'
-        raise BreakglassRefused(msg)
+    waits = [wait for wait in (security_wait(posted), parts_wait(head, posted)) if wait is not None]
+    if not waits:
+        return 'passed'
+    latest = {one.context: one.state for one in reversed(posted)}  # newest first: the newest write wins
+    red = [ctx for ctx, state in latest.items() if state in {'failure', 'error'} and ctx.startswith('tests/')]
+    return f'red: {", ".join(red)}; {"; ".join(waits)}' if red else f'untested: {"; ".join(waits)}'
+
+
+def _merged(tests: str) -> str:
+    """How a merge names its test state: ``merged``, ``merged red (<contexts>)`` or ``merged untested``."""
+    if tests == 'passed':
+        return 'merged'
+    if tests.startswith('red: '):
+        return f'merged red ({tests.removeprefix("red: ").split("; ")[0]})'
+    return 'merged untested'
 
 
 def _installation_token(url: str, app_id: int, key_file: Path) -> str:
@@ -363,12 +374,15 @@ class Server:
             raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
-        forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}. Reason: {reason}')
+        tests = tests_at(forge.statuses(head), head)
+        forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
+                          f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
-        held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key))
+        held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key, tests))
         waves.save(self.state, held)
-        said = f'merged {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
-        self._audit({'wave': held.id, 'outcome': 'merged', 'repo': repo, 'pr': pr, 'head': head, 'reason': reason})
+        said = f'{_merged(tests)} {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
+        self._audit({'wave': held.id, 'outcome': 'merged', 'repo': repo, 'pr': pr, 'head': head, 'reason': reason,
+                     'tests': tests})  # fmt: skip
         if held.full():
             self._close(held)
             said += f'; the cap of {held.max_merges} ended the wave'
@@ -398,7 +412,6 @@ class Server:
             msg = f'#{asked.pr} head is {found[:12]}, not the {asked.head[:12]} you were shown: re-run the verb'
             raise BreakglassRefused(msg)
         _consent_stands(forge, asked.pr)
-        _tests_stand(forge, asked)
         return forge, integration
 
     def _close_verb(self, _asked: None) -> str:

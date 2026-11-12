@@ -23,37 +23,67 @@ from dev_lab.dev.venvpath import PYTHON_SLOT
 
 _ID = 'HPC-THROUGH-THE-DOOR'
 
-__all__ = ['HPC_THROUGH_THE_DOOR', 'USAGES', 'exits', 'remedy']
+__all__ = ['CAMPAIGN', 'HPC_THROUGH_THE_DOOR', 'USAGES', 'exits', 'remedy']
 
-#: Per door exit (its argv after ``python -m``): the need it serves, and its full command line. EVERY exit of
-#: :data:`POLICY` must have one (:func:`remedy` raises otherwise), so the refusal names each unified verb in full.
-USAGES: Final[Mapping[tuple[str, ...], tuple[str, str]]] = {
-    ('dev_lab.dev.forge', 'queue'): ('status', 'forge queue'),
-    ('dev_lab.dev.forge', 'run', 'show'): ('run', 'forge run show <sha>'),
-    ('dev_lab.dev.hpcaccount', 'deploy-fleet'): ('redeploy', 'hpcaccount deploy-fleet [--dry-run]'),
-    ('dev_lab.dev.hpcaccount', 'forget'): (
-        'forget a learned row',
-        'hpcaccount forget --repo <url> --row <key> --fleet|--account <u> [--dry-run]',
+#: The doors that are no :data:`POLICY` row of this table but are this row's exits all the same: the research batch
+#: door lives in lab-commons, whose CLI is its own (``python -m lab_commons.hpc --help``).
+#: They are KEY-ONLY: a key-only host (Ada, user ruling 2026-11-11) never needs a code, so every agent publishes,
+#: gathers and cleans through them with no session held.
+_BATCH: Final = ('plan', 'submit', 'status', 'gather', 'retry')
+_RUN: Final = (('run', 'submit'), ('run', 'gather'), ('run', 'build'))
+CAMPAIGN: Final[tuple[tuple[str, ...], ...]] = (
+    *(('lab_commons.hpc', verb) for verb in _BATCH),
+    *(('lab_commons.hpc', *verbs) for verbs in _RUN),
+    ('lab_commons.hpc', 'clean'),
+)
+
+#: Per PURPOSE: the door exits (argv after ``python -m``) serving it, and their command shape. EVERY exit must be
+#: under one (:func:`remedy` raises otherwise), so the refusal names every door by purpose (user ruling 2026-11-11);
+#: the flags beyond the shape live in ``docs-src/dev/refusals.md#hpc-through-the-door``.
+USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
+    'TOTP host': (
+        (('dev_lab.dev.sshhold', 'open'), ('dev_lab.dev.sshhold', 'run')),
+        '`sshhold open|run --code` (key-only: no code)',
     ),
-    ('dev_lab.dev.hpcaccount', 'deploy'): ('user-only', 'hpcaccount deploy'),
+    'deploy': (
+        (
+            ('dev_lab.dev.hpcaccount', 'deploy-fleet'),
+            ('dev_lab.dev.hpcaccount', 'forget'),
+            ('dev_lab.dev.hpcaccount', 'deploy'),
+        ),
+        '`hpcaccount deploy*|forget`',
+    ),
+    'verify: push,': (
+        (('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'run', 'show')),
+        '`forge queue|run show <sha>`',
+    ),
+    'batch': (
+        CAMPAIGN[: len(_BATCH) + len(_RUN)],
+        '`lab_commons.hpc plan|submit|status|gather|retry|run`',
+    ),
+    'clean': (
+        (('lab_commons.hpc', 'clean'),),
+        '`lab_commons.hpc clean`',
+    ),
 }
 
 
 def exits() -> tuple[tuple[str, ...], ...]:
-    """Every door of :data:`POLICY` that is this row's exit, as its argv after ``python -m``."""
-    return tuple(door.argv[2:] for door in POLICY if door.deny == _ID and door.argv[:2] == ('python', '-m'))
+    """Every door of :data:`POLICY` that is this row's exit, as its argv after ``python -m``, then :data:`CAMPAIGN`."""
+    policy = tuple(door.argv[2:] for door in POLICY if door.deny == _ID and door.argv[:2] == ('python', '-m'))
+    return (*policy, *CAMPAIGN)
 
 
 def remedy(exit_argvs: Iterable[tuple[str, ...]]) -> str:
-    """The refusal's remedy: per need, the exact door command; an exit with no :data:`USAGES` line raises."""
-    lines = []
-    for argv in exit_argvs:
-        if argv not in USAGES:
+    """The refusal's remedy: each purpose holding an exit of *exit_argvs*, with its shape; an unheld exit raises."""
+    given = tuple(exit_argvs)
+    held = {argv for argvs, _ in USAGES.values() for argv in argvs}
+    for argv in given:
+        if argv not in held:
             msg = f'{_ID} exit {argv} has no USAGES line: a refusal must name its full command'
             raise KeyError(msg)
-        need, usage = USAGES[argv]
-        lines.append(f'{need} `{usage}`')
-    return f'Door ({PYTHON_SLOT} -m dev_lab.dev.<door>): ' + '; '.join(lines) + '; tests: push.'
+    doors = '; '.join(f'{purpose} {shape}' for purpose, (argvs, shape) in USAGES.items() if set(argvs) & set(given))
+    return f'Doors ({PYTHON_SLOT} -m dev_lab.dev.<door>): {doors}.'
 
 
 _SLURM = r'(?:sbatch|srun|salloc|scancel)\b'
@@ -82,5 +112,8 @@ HPC_THROUGH_THE_DOOR: dict[str, object] = {
         'echo "ssh alice@hpclogin01 then sbatch job.sh"',
         'git commit -m "sbatch goes through the forge"',
         'python -m dev_lab.dev.forge queue',
+        'python -m lab_commons.hpc clean --root /gpfs01/home/alice/out --at alice@hpclogin01.example.org e69',
+        'python -m lab_commons.hpc gather -c job.toml --wait',
+        'python -m lab_commons.hpc run submit --sha 0123abc',
     ),
 }

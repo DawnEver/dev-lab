@@ -7,6 +7,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 - `integrate/main` coordinates; `main` moves only by `integrate promote`, when every part is a full PASS.
 - `.claude/rules/**` in each repo holds hard constraints only and is read on every turn; these pages hold the
   mechanism and are read when you do the thing.
+- The rules of the whole design -- repo kinds, contracts, constitution -- are [the family architecture](architecture.md).
 - New here, or arriving from the old local-gate model: read [Migrating a workstation](migrate.md) first.
 
 ## The pages
@@ -15,6 +16,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 |---|---|
 | [Onboarding a repo](./onboarding.md) | Every declaration a new repo supplies, in one call and one table |
 | [Migrating a workstation](./migrate.md) | Start here if you used to run the gate before a push: what to stop, and the five commands that replace it |
+| [The family architecture](./architecture.md) | The normative spec: repo kinds, branch flow, HPC, consent, six contracts and their gaps, the constitution |
 | [Development architecture and topology](./topology.md) | The map: repo family, branch flow, forges and identities, hosts, consent, config files, setup and rotation |
 | [The three participants](./the-three-participants.md) | Who does what: the human, the authors, the producers, the forge and the integrator |
 | [The verdict model](./verdict-model.md) | What a verdict is, the tiers, and which destination needs which forge parts |

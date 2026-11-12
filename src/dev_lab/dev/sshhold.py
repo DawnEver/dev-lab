@@ -37,6 +37,7 @@ module is the client and the CLI::
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import hashlib
 import json
@@ -48,47 +49,37 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Final
 from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
 from lab_commons.config import section
-from lab_commons.home import part
 from lab_commons.log import emit
 
+from dev_lab.dev.sshholdstate import Session, audit, forget, read_session, state_dir, state_path
 from dev_lab.ops.consent.client import given_code, grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.totp import write_private
 
 __all__ = [
     'DEFAULT_MAX_HOURS',
     'DEFAULT_TIMEOUT_S',
     'HoldRefused',
-    'Session',
-    'audit',
-    'audit_path',
     'ceiling',
     'check_hours',
     'close_session',
     'credential_script',
-    'forget',
     'frame',
     'idle_s',
     'main',
     'open_planned',
     'open_session',
-    'read_session',
     'request',
     'run_command',
     'session_over',
     'split_marker',
-    'state_dir',
-    'state_path',
     'status_lines',
     'store_credential',
-    'write_session',
 ]
 
 #: The ceiling on ``--hours`` when the machine file names none (user ruling 2026-11-09: 4 h).
@@ -103,18 +94,6 @@ _NO_HELPER: Final = 3
 
 class HoldRefused(RuntimeError):
     """A session verb that cannot proceed; the message says why and what to do."""
-
-
-@dataclass(frozen=True)
-class Session:
-    """One live holder as its state file records it."""
-
-    dest: str
-    pid: int
-    port: int
-    token: str
-    opened: float
-    expires: float
 
 
 def _table(table: dict[str, Any] | None) -> dict[str, Any]:
@@ -161,55 +140,6 @@ def split_marker(text: str, nonce: str) -> tuple[str, int] | None:
     return None if found is None else (text[: found.start()], int(found.group(1)))
 
 
-def state_dir() -> Path:
-    """``<machine home>/state/sshhold``: one state file per dest, and the audit."""
-    return part('state') / 'sshhold'
-
-
-def state_path(dest: str) -> Path:
-    """The state file of *dest*, its name made filesystem-safe."""
-    return state_dir() / f'{re.sub(r"[^A-Za-z0-9._-]", "_", dest)}.json'
-
-
-def audit_path() -> Path:
-    """The append-only JSONL audit of every open, run and close."""
-    return state_dir() / 'audit.jsonl'
-
-
-def write_session(session: Session) -> None:
-    """Record *session* private (it carries the token)."""
-    write_private(state_path(session.dest), json.dumps(asdict(session)))
-
-
-def forget(dest: str) -> None:
-    """Remove *dest*'s state file; already gone, or being removed by the other side (Windows: delete pending), is fine.
-
-    The client and the ending holder both remove it, so one of them loses that race with PermissionError.
-    """
-    with contextlib.suppress(FileNotFoundError, PermissionError):
-        state_path(dest).unlink()
-
-
-def read_session(dest: str) -> Session | None:
-    """The recorded session of *dest*, or ``None``."""
-    path = state_path(dest)
-    try:
-        return Session(**json.loads(path.read_text(encoding='utf-8')))
-    except (OSError, ValueError, TypeError):
-        return None
-
-
-def audit(
-    verb: str, dest: str, *, command: str = '', status: int | None = None, duration_s: float = 0.0, **fields: object
-) -> None:
-    """Append one audit line: what the caller passes, never more. A secret is never a field (a digest may be)."""
-    line = {'time': time.time(), 'dest': dest, 'verb': verb, 'command': command, 'status': status, **fields}
-    line['duration_s'] = round(duration_s, 3)
-    state_dir().mkdir(parents=True, exist_ok=True)
-    with audit_path().open('a', encoding='utf-8') as out:
-        out.write(json.dumps(line) + '\n')
-
-
 def request(session: Session, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
     """Send *payload* with the token and read the one JSON reply; :class:`OSError` when the holder is gone."""
     with socket.create_connection(('127.0.0.1', session.port), timeout=_CONNECT_S) as conn:
@@ -226,7 +156,12 @@ def request(session: Session, payload: dict[str, Any], timeout_s: float) -> dict
 def _live(dest: str) -> Session:
     session = read_session(dest)
     if session is None:
-        msg = f'no held session for {dest}: open one with the code the user gives'
+        msg = (
+            f'no held session for {dest}. A key-only host (Ada) needs no code and no session: use the '
+            '`python -m lab_commons.hpc` doors (plan|submit|status|gather|retry|run, and '
+            '`clean --root <abs> [--dry-run] --at <user@host> <name>...`). A key+TOTP host: '
+            f'`python -m dev_lab.dev.sshhold open {dest} --hours N --code <code>`, the code the user gave.'
+        )
         raise HoldRefused(msg)
     return session
 
@@ -292,14 +227,25 @@ def _exchange(dest: str, command: str, timeout_s: float) -> dict[str, Any]:
     return reply
 
 
-def run_command(dest: str, command: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> tuple[str, int]:
+def stdin_script(command: str, stdin: bytes, end: str) -> str:
+    """*command* reading *stdin* exactly: base64 heredoc DATA in the held shell's stream, never a file or an argv."""
+    data = base64.encodebytes(stdin).decode('ascii').rstrip('\n')
+    return f"base64 -d <<'{end}' | {command}\n{data}\n{end}"
+
+
+def run_command(
+    dest: str, command: str, timeout_s: float = DEFAULT_TIMEOUT_S, *, stdin: bytes | None = None
+) -> tuple[str, int]:
     """Run *command* on *dest*'s held connection: ``(merged output, remote status)``.
 
-    The audit records *command* VERBATIM, so a secret never travels here: it goes through :func:`store_credential`.
+    The audit records *command* VERBATIM, so a secret never rides *command*: it is *stdin*, sent by
+    :func:`stdin_script` and audited as a sha256 prefix only (a forge token goes through :func:`store_credential`).
     """
     started = time.monotonic()
-    reply = _exchange(dest, command, timeout_s)
-    audit('run', dest, command=command, status=reply.get('status'), duration_s=time.monotonic() - started)
+    sent = command if stdin is None else stdin_script(command, stdin, f'__SSHHOLD_IN_{secrets.token_hex(8)}')
+    reply = _exchange(dest, sent, timeout_s)
+    fields = {} if stdin is None else {'stdin_sha256': hashlib.sha256(stdin).hexdigest()[:12]}
+    audit('run', dest, command=command, status=reply.get('status'), duration_s=time.monotonic() - started, **fields)
     if 'error' in reply:
         msg = f'{dest}: {reply["error"]}'
         raise HoldRefused(msg)

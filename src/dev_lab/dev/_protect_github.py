@@ -8,10 +8,9 @@ A RULESET CANNOT NAME A USER. Its bypass actors are a repository role, a GitHub 
 (``role:admin|maintain|write``, ``app:<id>``, ``team:<id>``); on a personal repository the role is the only kind, so
 the break-glass identity is the role it holds. Every bypass is ``pull_request`` mode: the actor may MERGE a pull
 request past the rules -- break-glass merges one -- and may never push past them. Nor can a ruleset name the
-approving login: the judge (``[tool.dev_lab.review] judge_login``) is enforced by the merge decision
-(:func:`dev_lab.dev.reviewgate.judge_missing`) the required ``tests/merge-ready`` context carries, and the ruleset
-counts approvals. The trunk is pushed by the promotion's job token, judged by the required contexts, so a GitHub
-forge declares no ``promote`` identity.
+approving login, and none is needed: the judge is advisory on every forge (user ruling 2026-11-11), so the
+ruleset counts no approval. The trunk is pushed by the promotion's job token, judged by the required contexts, so a
+GitHub forge declares no ``promote`` identity.
 
 Only rulesets named :data:`PREFIX` are this door's; a stray one is deleted, any other is left alone.
 """

@@ -33,12 +33,20 @@ resources = ["femm", "windows"]
         ('windows', 'windows-latest'),
         ('linux', 'ubuntu-latest'),
         ('macos', 'macos-latest'),
-        ('femm+windows', ['self-hosted', 'femm', 'windows']),
-        ('femm', ['self-hosted', 'femm']),
+        ('femm+windows', None),
+        ('femm', None),
     ],
 )
 def test_a_part_runs_on_a_hosted_runner_only_when_it_needs_no_more_than_an_os(part: str, runs_on: object) -> None:
+    """User ruling 2026-11-11: GitHub wires Actions alone -- no self-hosted runner a workstation registers."""
     assert jobparts.runner_for(part) == runs_on
+
+
+def test_a_heavy_part_is_kept_and_off_the_github_gate_and_a_secret_hosted_or_os_part_is_on_it() -> None:
+    declared = {'live': jobparts.Hosted(('live',))}
+    parts = ['base', 'base@windows', 'windows', 'live', 'femm', 'femm+windows']
+    assert jobparts.off_gate(parts, declared) == {'femm', 'femm+windows'}
+    assert jobparts.rows('femm', 'push', {}) == [], 'no row: nothing posts it absent, no job waits on a workstation'
 
 
 def test_the_matrix_is_every_need_set_the_collection_derives_and_base_always(tmp_path: Path) -> None:
@@ -49,7 +57,6 @@ def test_the_matrix_is_every_need_set_the_collection_derives_and_base_always(tmp
         'include': [
             {'part': 'base', 'runs-on': 'ubuntu-latest'},
             {'part': 'base@windows', 'runs-on': 'windows-latest'},
-            {'part': 'femm+windows', 'runs-on': ['self-hosted', 'femm', 'windows']},
             {'part': 'windows', 'runs-on': 'windows-latest'},
         ]
     }
@@ -214,8 +221,6 @@ def test_an_unproduced_resource_has_no_row_and_a_declared_one_keeps_its_row(tmp_
     declared = '[tool.lab_commons.tests]\nresources = ["workstation"]\n'
     carrying = {'': ['t::a', 't::w'], 'workstation': ['t::w']}
     (tmp_path / 'pyproject.toml').write_text(declared, encoding='utf-8')
-    kept = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='push')
-    assert 'workstation' in [row['part'] for row in kept['include']], 'PLANTED CONTROL: a declared part keeps its row'
     unproduced = declared + '\n[tool.dev_lab.parts]\nunproduced = ["workstation"]\n'
     (tmp_path / 'pyproject.toml').write_text(unproduced, encoding='utf-8')
     found = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='push')
@@ -243,9 +248,7 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
     assert live == [{'part': 'live', 'runs-on': 'ubuntu-latest', 'secrets': ['AI_LAB_KEYS_LIVE']}][:live_rows]
     others = [row for row in rows if not row['part'].startswith('live')]
     assert all('secrets' not in row for row in others), 'no other row carries a secret'
-    assert {'part': 'workstation', 'runs-on': ['self-hosted', 'workstation']} in others, (
-        'PLANTED CONTROL: an undeclared resource part still gets no hosted row'
-    )
+    assert all(row['part'] != 'workstation' for row in others), 'an undeclared resource part is off the gate'
     generic = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event, hosted=True)['include']
     assert all(not row['part'].startswith('live') for row in generic), 'its own job produces it, not the matrix'
 

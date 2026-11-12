@@ -131,8 +131,14 @@ POLICY: Final[tuple[Door, ...]] = (
         'Opening one held login session to a key and authenticator-code host, answered with the one-time code the '
         'user supplied in this conversation for it, within the machine ceiling on its hours; never an invented, '
         'stored, logged or reused code.',
+        deny='HPC-THROUGH-THE-DOOR',
     ),
-    Door(_module('sshhold', 'run'), MAIN, 'Running one command on a login session the user authenticated, audited.'),
+    Door(
+        _module('sshhold', 'run'),
+        MAIN,
+        'Running one command on a login session the user authenticated, audited.',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
     Door(
         _module('sshhold', 'credential'),
         MAIN,
@@ -208,9 +214,10 @@ POLICY: Final[tuple[Door, ...]] = (
         _forge('pr', 'breakglass'),
         MAIN,
         'A Break-Glass merge into the integration branch inside a wave the user opened with a one-time code, '
-        "only after the pull request's current head is pushed and its base, base on windows and security test "
-        'statuses are all posted green, carried by a commit trailer that states the reason, so every use stays in '
-        'the history it bypassed (integrator ruling 2026-11-08: a merge follows a verified push).',
+        "at the pull request's current head, past its review AND its tests -- unrun, pending or red (user ruling "
+        '2026-11-11: the tests are the slowest step) -- with the test state at merge time named in the PR comment, '
+        'the audit and the wave summary, and carried by a commit trailer that states the reason, so every use '
+        'stays in the history it bypassed.',
     ),
     Door(
         _forge('breakglass', 'open'),
@@ -221,7 +228,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         ('python', '-m', 'dev_lab.ops.consent', 'grant'),
         MAIN,
-        'Granting one consent credential with the authenticator code the user supplied in this conversation for '
+        'Granting one consent credential with the cluster code the user supplied in this conversation for '
         'it (user ruling 2026-11-08: only the user provides the code, the agent runs the grant); never an '
         'invented, stored, logged or reused code.',
     ),

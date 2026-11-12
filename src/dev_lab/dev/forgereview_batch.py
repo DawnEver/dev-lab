@@ -31,10 +31,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.temp import TEMP_PREFIX
 from lab_commons.units import Q_
 
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
