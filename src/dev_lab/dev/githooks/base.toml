@@ -171,6 +171,15 @@ run = ["python", "-m", "dev_lab.dev.branchnotices", "--push"]
 always_run = true
 refs = '^refs/heads/pr/'
 
+# SESSION-HEARS-ITS-PRS (2026-11-12): a push records its branches and heads as the agent session's
+# (CLAUDE_CODE_SESSION_ID) in the repository git is pushing, from git's own ref lines -- never from a shell line's
+# working directory (dev_lab.dev.sessionprs.record_pushed). Records, says a failure, exits 0 always.
+[[pre-push]]
+id = "session-prs"
+run = ["python", "-m", "dev_lab.dev.sessionprs", "--push"]
+always_run = true
+refs = '^refs/heads/'
+
 # RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12: clearing useless worktrees is REQUIRED): every push, from
 # any tree, detaches a background reclaim of the main checkout (dev_lab.dev.reclaimrun --background: per-repo lock,
 # bounded batch, exit 0 always), so it never delays or fails the push. Merge and checkout run it below.
