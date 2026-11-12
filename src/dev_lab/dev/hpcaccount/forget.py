@@ -24,12 +24,11 @@ import tomllib
 from collections.abc import Callable, Sequence
 from typing import Final
 
-from lab_commons.config import section
 from lab_commons.hpc.cluster import Runner, runner_for
-from lab_commons.hpc.grants import Grant, load_grants
+from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
-from dev_lab.dev.hpcaccount.division import split_hpc
+from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 
 __all__ = ['forget_command', 'forget_fleet', 'main', 'peek_command']
@@ -103,5 +102,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     who.add_argument('--fleet', action='store_true', help='every [[hpc.grant]] account')
     parser.add_argument('--dry-run', action='store_true', help='print the row each account holds; change nothing')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    grants = load_grants(split_hpc(section('hpc'))[0]).grants
+    try:
+        grants = reached_machine(args.account).grants
+    except (PermissionError, LookupError, ValueError) as refused:
+        emit(f'forget: refused -- {refused}')
+        return 2
     return forget_fleet(grants, args.account, repo=args.repo, row=args.row, dry_run=args.dry_run, say=emit)

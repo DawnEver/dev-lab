@@ -33,13 +33,13 @@ from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final
 
 from lab_commons import home as _home
-from lab_commons.config import CONFIG_ENV, section
+from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.cluster import Runner, runner_for
-from lab_commons.hpc.grants import Grant, load_grants
+from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.datedlog import dated_log
-from dev_lab.dev.hpcaccount.division import Division, split_hpc
+from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.remote import detached, ssh_argv
@@ -91,7 +91,13 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
-    return Target(named[0], deploy.get('root', DEFAULT_ROOT), deploy.get('role', ''))
+    root = deploy.get('root', DEFAULT_ROOT)
+    if grant.root and root != grant.root:
+        return (
+            f'{grant.user}: refused -- its [deploy] root {root} is not the root its cluster declares {grant.root} '
+            '(the family declaration is the source: redeploy with --root naming it)'
+        )
+    return Target(named[0], root, deploy.get('role', ''))
 
 
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
@@ -100,17 +106,35 @@ def in_checkout(target: Target, argv: Sequence[str]) -> str:
     return f'cd {PurePosixPath("~", target.root, KIT)} && {python} {shlex.join(argv)}'
 
 
-def remote_argv(user: str, target: Target, division: Division | None = None) -> list[str]:
-    """The ssh argv that runs *user*'s own deploy on its DECLARED host, never prompting (:mod:`dev_lab.dev.remote`).
+def grant_slice(grant: Grant) -> dict[str, Any]:
+    """*grant* as the ``[hpc]`` slice its account's own machine file holds: its cluster, its grant, its role reached."""
+    account: dict[str, Any] = {'billed': grant.billed}
+    if grant.budget is not None:
+        account['budget'] = {'core_hours': grant.budget.core_hours, 'since': grant.budget.since}
+    cluster: dict[str, Any] = {'hosts': list(grant.hosts), 'slurm_accounts': {grant.slurm_account: account}}
+    optional = {
+        'partitions': list(grant.partitions), 'qos': dict(grant.qos), 'setup': list(grant.setup),
+        'architecture': grant.architecture, 'root': grant.root,
+    }  # fmt: skip
+    cluster.update({key: value for key, value in optional.items() if value})
+    row = {'user': grant.user, 'cluster': grant.cluster_name, 'slurm_account': grant.slurm_account, 'role': grant.role}
+    row.update({key: value for key, value in (('owner', grant.owner), ('priority', grant.priority)) if value})
+    return {'reach': [grant.role], 'clusters': {grant.cluster_name: cluster}, 'grant': [row]}
 
-    With *division*, the deploy is passed the workstation's role for *user* and that role's table.
+
+def remote_argv(grant: Grant, target: Target, division: Division | None = None) -> list[str]:
+    """The ssh argv that runs *grant*'s own deploy on its DECLARED host, never prompting (:mod:`dev_lab.dev.remote`).
+
+    The deploy is passed its declared ``[hpc]`` slice (:func:`grant_slice`); with *division*, also the role and its
+    table.
     """
     python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
     command = f'cd {PurePosixPath("~", target.root, KIT)} && {python} -m dev_lab.dev.hpcaccount deploy'
-    if division is not None and (role := division.role_of(user)):
+    command += f' --grant-table {shlex.quote(json.dumps(grant_slice(grant), sort_keys=True))}'
+    if division is not None and (role := division.role_of(grant.user)):
         table = json.dumps(dict(division.roles[role]), sort_keys=True)
         command += f' --fleet-role {shlex.quote(role)} --role-table {shlex.quote(table)}'
-    return ssh_argv(f'{user}@{target.host}', command, batch=True)
+    return ssh_argv(f'{grant.user}@{target.host}', command, batch=True)
 
 
 def deploy_fleet(
@@ -151,7 +175,7 @@ def deploy_fleet(
             say(target)
             refused += 1
             continue
-        argv = remote_argv(user, target, division)
+        argv = remote_argv(grant, target, division)
         path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
         role = (division.role_of(user) if division else '') or target.role or 'role undeclared'
         say(f'{user} ({role}): {"would start" if dry_run else "started"} {shlex.join(argv)}  log {path}')
@@ -167,6 +191,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--account', action='append', default=[], help='one account of the fleet (repeatable)')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    table, division = split_hpc(section('hpc'))
-    grants = load_grants(table).grants
-    return deploy_fleet(grants, args.account, home=Path.home(), dry_run=args.dry_run, say=emit, division=division)
+    try:
+        machine = reached_machine(args.account)
+    except (PermissionError, LookupError, ValueError) as refused:
+        emit(f'deploy-fleet: refused -- {refused}')
+        return 2
+    return deploy_fleet(
+        machine.grants, args.account, home=Path.home(), dry_run=args.dry_run, say=emit, division=division_of(machine)
+    )
