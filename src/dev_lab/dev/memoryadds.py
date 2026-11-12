@@ -1,17 +1,15 @@
-"""MEMORY-SHAPE, the change half: memory is ADDED to -- never edited, deleted or moved away.
+"""MEMORY-SHAPE, the change half: memory is never DELETED -- it may be added to, updated and moved.
 
-THE RULE (user rulings 2026-10-31, the four-layer plan). A memory entry is immutable once written: a
-correction is a NEW entry naming the old one in ``corrects:``, and a consolidation is a NEW entry naming
-its sources in ``merged_from:``. So a change touching ``**/.claude/memory/**`` may only ADD a file.
-Three shapes are not narrative edits:
+THE RULE (user ruling 2026-11-12, superseding the 2026-10-31 "immutable" reading). A memory entry may be
+updated in place and moved (a rename, or a package scope's entry moved into the root scope), but never
+deleted: a change touching ``**/.claude/memory/**`` may add, modify or rename within memory, and is refused
+for a deletion, a type change, or a move OUT of every memory tree (which removes the entry from memory).
+Two shapes stay judged beyond that:
 
-* a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
-  closed task becomes history, and it is the one rename into memory;
-* the one-shot four-layer migration, which removes only the volatile frontmatter fields
-  (:data:`VOLATILE_FIELDS`) a reader used to rewrite on every read. A change whose ONLY difference is
-  those lines is that migration and nothing else;
-* rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
-  rewrite task text or turn narrative memory into a task list. Both versions must match the format.
+* a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is the one rename
+  INTO memory from outside it;
+* rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never rewrite task
+  text; and no ordinary entry is turned into a task list. Both versions must match the format.
 
 The task-list protocol is authored by rem 2.2.0, ``scripts/task-engine.js`` functions ``handleAdd``
 and ``handleMark``. This classifier recognizes that version's complete output, not arbitrary Markdown.
@@ -26,7 +24,7 @@ WHERE IT RUNS -- two family hook rows, so no route past it is left:
 
 * ``commit`` (commit-msg, EVERY commit, a merge included): the INDEX against HEAD, so a plain commit and
   a merge's resolution are read alike (:func:`pending`); an entry not yet on ``origin/<integration>`` is a
-  draft its author may still edit or delete;
+  draft its author may still delete;
 * ``push`` (pre-push): every pushed ref's range since its merge-base with ``origin/<integration>``
   (:func:`problems_between`), so a commit made with the hook bypassed still reds before it leaves.
 """
@@ -48,10 +46,7 @@ from dev_lab.dev.lanepolicy import policy_at
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-__all__ = ['VOLATILE_FIELDS', 'MemoryAddsError', 'main', 'merged_entry_problems', 'pending', 'problems_between']
-
-#: Frontmatter fields the migration strips: per-read bookkeeping, never content.
-VOLATILE_FIELDS = ('accessed', 'tier', 'count')
+__all__ = ['MemoryAddsError', 'main', 'merged_entry_problems', 'pending', 'problems_between']
 
 _GIT = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S = 120
@@ -62,22 +57,7 @@ _MEMORY = '.claude/memory/'
 _TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
 _FRONTMATTER = re.compile(r'\A---\n(.*?)\n---(?:\n|\Z)', re.DOTALL)
 _MERGED_FROM = re.compile(r'^merged_from:\s*(.*)$', re.MULTILINE)
-_VOLATILE = re.compile(rf'^(?:{"|".join(VOLATILE_FIELDS)}):')
 _CITATION = re.compile(r'[\w./-]*[\w-]\.(?:md|py|rs|mjs|js|ts|toml|json|txt|yaml|yml|csv)\b')
-REDACTION_NOTE: Final = 'Redacted {day}: site markers removed (public repo).'
-# A redaction swaps a site span for a placeholder token or one of these neutral role phrases -- nothing else.
-REDACTION_ROLES: Final = (
-    "the private consumer's",
-    'the private consumer repo',
-    'the private consumer',
-    "the second private consumer's",
-    'the second private consumer',
-    'an optimisation consumer',
-    "the integrator workstation's",
-    'the integrator workstation',
-)
-_PLACEHOLDER = re.compile('|'.join([r'<[a-z][a-z0-9-]*>', *(re.escape(role) for role in REDACTION_ROLES)]))
-_NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
 _MANUAL = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
 _MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
@@ -109,33 +89,6 @@ def _scope(path: str) -> str:
 
 def _lf(text: str) -> str:
     return text.replace('\r\n', '\n')
-
-
-def _only_volatile_stripped(old: str, new: str) -> bool:
-    old, new = _lf(old), _lf(new)
-    match = _FRONTMATTER.match(old)
-    if match is None or old == new:
-        return False
-    head = '\n'.join(line for line in match.group(1).splitlines() if not _VOLATILE.match(line))
-    return f'---\n{head}\n---\n' + old[match.end() :] == new
-
-
-def _only_redacted(old: str, new: str) -> bool:
-    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders."""
-    after_lines = _lf(new).splitlines()
-    if not any(_NOTE_LINE.fullmatch(line) for line in after_lines):
-        return False
-    before = [line for line in _lf(old).splitlines() if line.strip()]
-    after = [line for line in after_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
-    if len(before) != len(after):
-        return False
-    for was, now in zip(before, after, strict=True):
-        if was == now:
-            continue
-        literals = _PLACEHOLDER.split(now)
-        if len(literals) == 1 or not re.fullmatch('.+?'.join(map(re.escape, literals)), was):
-            return False
-    return True
 
 
 def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
@@ -235,23 +188,30 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
         elif status == 'R' and _is_memory(new) and not _is_memory(old):
             if not _TASK.search(old):
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
-        elif status == 'M' and _is_memory(old):
-            before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
-            if not (
-                _only_volatile_stripped(before, after)
-                or _only_manual_tasks_updated(old, before, after)
-                or _only_redacted(before, after)
-            ):
-                remedy = 'a memory entry is immutable -- write a new entry with `corrects:` instead'
-                if _MANUAL.search(old):
-                    remedy += (
-                        '; rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
-                        'without changing existing task text, module or order'
-                    )
-                out.append(f'{old}: {remedy}')
+        elif status in 'MR' and _is_memory(old) and _is_memory(new):
+            out.extend(_task_list_problems(root, old_rev, new_rev, old, new))
         elif status in 'DRT' and _is_memory(old):
-            out.append(f'{old}: a memory entry is never deleted or moved ({status})')
+            out.append(
+                f'{old}: a memory entry is never deleted ({status}) -- update it in place or move it within memory'
+            )
     return tuple(out)
+
+
+def _task_list_problems(root: Path, old_rev: str, new_rev: str, old: str, new: str) -> tuple[str, ...]:
+    """An update is free, except a rem task list judged by its format and an entry turned into one."""
+    after = _git(root, 'show', f'{new_rev}:{new}')
+    if _MANUAL.search(old) or _MANUAL.search(new):
+        if _only_manual_tasks_updated(new, _git(root, 'show', f'{old_rev}:{old}'), after):
+            return ()
+        return (
+            (
+                f'{old}: rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
+                'without changing existing task text, module or order'
+            ),
+        )
+    if _MANUAL_ROW.search(_lf(after)):
+        return (f'{old}: an ordinary memory entry never becomes a task list (rem 2.2.0 rows belong in manual.md)',)
+    return ()
 
 
 def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
@@ -265,27 +225,23 @@ def pending(root: Path) -> tuple[str, ...]:
     if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
         return ()
     tree = _git(root, 'write-tree').strip()
-    rows = _published_only(root, tree, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
+    rows = _published_only(root, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
     return _judge(root, 'HEAD', tree, rows)
 
 
-def _published_only(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
-    """*rows* without edits, deletions and moves of a memory entry not yet on ``origin/<integration>``.
+def _published_only(root: Path, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """*rows* without deletions of a memory entry not yet on ``origin/<integration>``.
 
-    Immutability starts when an entry is PUBLISHED: one added in an unpushed range is still a draft, and its
-    author may cite, fix or drop it. The exemption covers ONLY that immutability rule for an ordinary entry:
-    a rem task list (``manual.md``) and an entry whose new text is task-shaped stay judged, because the
-    task-format and injection rules hold for drafts too. An entry the integration ref holds stays judged;
-    without that ref nothing is a draft.
+    The no-delete rule starts when an entry is PUBLISHED: one added in an unpushed range is still a draft, and its
+    author may drop it. Updates are judged only by the task-list rules, which hold for drafts too. An entry the
+    integration ref holds stays judged; without that ref nothing is a draft.
     """
     ref = f'origin/{policy_at(root, "HEAD").integration}'
     if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
         return rows
 
     def draft(status: str, old: str, new: str) -> bool:
-        if status not in 'MDRT' or not _is_memory(old) or _MANUAL.search(old) or _MANUAL.search(new):
-            return False
-        if status in 'MRT' and _MANUAL_ROW.search(_git(root, 'show', f'{tree}:{new}')):
+        if status not in 'DRT' or not _is_memory(old) or (status != 'D' and _is_memory(new)):
             return False
         return _run(root, 'cat-file', '-e', f'{ref}:{old}')[0] != 0
 
@@ -353,9 +309,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not problems:
         return 0
     lines = [
-        f'memory-adds: {args[0]} REFUSED -- it edits, deletes or moves memory (MEMORY-SHAPE).',
+        f'memory-adds: {args[0]} REFUSED -- it deletes memory or breaks a task list (MEMORY-SHAPE).',
         *(f'memory-adds:   {line}' for line in problems),
-        'memory-adds: Remedy: restore each entry as it was; a correction is a NEW entry with `corrects:`.',
+        'memory-adds: Remedy: restore each deleted entry; update an entry in place or move it within memory.',
     ]
     emit('\n'.join(lines), err=True)
     return 1

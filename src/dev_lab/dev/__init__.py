@@ -413,7 +413,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reviewturn` -- the review is the last gate: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
 * :mod:`dev_lab.dev.forgerunshow` -- ``forge run show`` (what a cluster run published), ``forge run supersede``.
-* :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
+* :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is updated or moved, never deleted.
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
