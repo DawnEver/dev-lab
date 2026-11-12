@@ -32,6 +32,7 @@ import sys
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -92,8 +93,9 @@ _STATE_FOR: Final[dict[Conclusion, str]] = {
 class CommitStatus:
     """One commit status, identical in shape whichever forge answered.
 
-    ``id`` orders the posts on one commit (the forge assigns it ascending) and ``creator`` is the login
-    that posted it; neither takes part in equality, which is about what the status SAYS.
+    ``id`` orders the posts on one commit (the forge assigns it ascending), ``creator`` is the login
+    that posted it and ``created`` the FORGE's time it was posted (``None`` when the forge named none);
+    none takes part in equality, which is about what the status SAYS.
     """
 
     context: str
@@ -102,6 +104,7 @@ class CommitStatus:
     url: str
     id: int = field(default=0, compare=False)
     creator: str = field(default='', compare=False)
+    created: datetime | None = field(default=None, compare=False)
 
 
 def _status(raw: Mapping[str, Any]) -> CommitStatus:
@@ -114,7 +117,18 @@ def _status(raw: Mapping[str, Any]) -> CommitStatus:
         raw.get('target_url') or '',
         int(raw.get('id') or 0),
         (raw.get('creator') or {}).get('login') or '',
+        _forge_time(raw.get('created_at')),
     )
+
+
+def _forge_time(stamp: object) -> datetime | None:
+    """The forge's ``created_at`` as an aware UTC time; ``None`` when absent or unreadable."""
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp).astimezone(UTC)
+    except ValueError:
+        return None
 
 
 def state_for(outcome: Conclusion) -> str:

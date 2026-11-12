@@ -70,7 +70,7 @@ from lab_commons.proccpu import TreeCpu
 from dev_lab.dev import producer
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
-from dev_lab.dev.forgeclaim import Work, forge_now
+from dev_lab.dev.forgeclaim import Work, forge_now, publish
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeintent import Intent, forget, journal
 from dev_lab.dev.forgelabels import LabelMissing
@@ -402,8 +402,13 @@ def _settle(
 
 
 def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:
+    """Post a heartbeat, or a RESULT through :func:`~dev_lab.dev.forgeclaim.publish` while the item's claim holds."""
     try:
-        status_post(client, item.sha, context=item.context, state=state, description=description)
+        if state == 'pending' or item.holder is None:
+            status_post(client, item.sha, context=item.context, state=state, description=description)
+        elif not publish(client, item, item.holder, state=state, description=description):
+            say(f'{run_tag(item.platform, item.sha)} posted no {state}: settled already, or its claim no longer holds')
+            return
     except ForgeCallFailed as failed:  # a missed heartbeat is not a dead producer; say so and keep going
         say(f'{run_tag(item.platform, item.sha)} could not post {state}: {failed}')
     else:
