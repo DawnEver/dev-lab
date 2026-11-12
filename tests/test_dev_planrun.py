@@ -544,3 +544,55 @@ def test_the_issuer_is_ready_without_a_published_key_and_says_so(
     assert 'no published key declared here' in capsys.readouterr().out
     Path(host.consent.key).unlink()  # planted control: the private key itself still decides
     assert consentverbs.ready(host, alert=lambda *_: None) == 2
+
+
+MINTED = 'forge-PLANTED-91c2'
+
+
+def _minting(host: FakeHost, home: Path, stdout_local: str | None) -> tuple[bool, list[str]]:
+    """Step 2 runs with *stdout_local* as it is printed by the host (a ``forge token mint``)."""
+    steps = planrun.Steps((STEPS.steps[0], dataclasses.replace(STEPS.steps[1], stdout_local=stdout_local)))
+    return planrun.run_plan(
+        PLAN, steps, lambda _dest: host, spent=lambda ids: set(ids) & host.ledger, home=home, now=lambda: NOW
+    )
+
+
+def test_a_step_without_stdout_local_shows_its_last_line(tmp_path: Path) -> None:
+    """The planted control: the output IS shown when the step does not declare it private."""
+    host, _ = FakeHost(), _granted(tmp_path)
+    host.outcomes['secret'] = (f'minting\n{MINTED}\n', 0, True)
+    finished, lines = _minting(host, tmp_path, None)
+    assert finished, lines
+    assert MINTED in lines[1]
+
+
+def test_a_stdout_local_step_writes_its_output_privately_and_never_shows_it(tmp_path: Path) -> None:
+    host, _ = FakeHost(), _granted(tmp_path)
+    host.outcomes['secret'] = (f'minting\n{MINTED}\n', 0, True)
+    finished, lines = _minting(host, tmp_path, 'tokens/judge.token')
+    assert finished, lines
+    kept = tmp_path / 'state' / 'consent' / 'outputs' / 'tokens' / 'judge.token'
+    assert kept.read_text(encoding='utf-8') == f'minting\n{MINTED}\n'
+    assert MINTED not in '\n'.join(lines)
+    assert f'wrote {kept} (sha256 ' in lines[1]
+    assert f'{len(kept.read_bytes())} bytes)' in lines[1]
+
+
+def test_a_failed_stdout_local_step_withholds_its_output_and_writes_nothing(tmp_path: Path) -> None:
+    host, _ = FakeHost(), _granted(tmp_path)
+    host.outcomes['secret'] = (f'{MINTED}\n', 3, False)
+    finished, lines = _minting(host, tmp_path, 't.token')
+    assert not finished
+    assert MINTED not in '\n'.join(lines)
+    assert 'exit 3' in lines[-1]
+    assert 'output withheld' in lines[-1]
+    assert not (tmp_path / 'state' / 'consent' / 'outputs' / 't.token').exists()
+
+
+@pytest.mark.parametrize('name', ['/abs/x', '../x', 'a/../../x', '', 'C:/x', 'C:x', '\\\\srv\\x'])
+def test_stdout_local_is_a_relative_name_without_dotdot(tmp_path: Path, name: str) -> None:
+    good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdout_local': 'ok/x'}]
+    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN, HOST).steps[1].stdout_local == 'ok/x'  # control
+    bad = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdout_local': name}]
+    with pytest.raises(ConsentRefused, match='stdout_local'):
+        planrun.load_steps(_steps_file(tmp_path, bad), PLAN, HOST)

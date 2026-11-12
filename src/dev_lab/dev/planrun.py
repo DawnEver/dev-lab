@@ -25,7 +25,11 @@ verb's stdin (:meth:`.planremote.Remote.run`), so a secret is never staged on th
 login could read it (ruling 2026-11-04: after lockdown no one reads a bot token on a host) -- nor rides a command
 line or the hold's audit (a sha256 prefix only). ``stdin_task`` (instead: exactly one of the two) is a task's key
 bundle from THIS machine's forge-secrets store (:func:`.forgesecrets.stored_bundle`), streamed the same way -- no
-file is written anywhere, and the bytes are never printed.
+file is written anywhere, and the bytes are never printed. ``stdout_local`` (a relative name, no ``..``) is the
+mirror for a step whose OUTPUT is the secret (a ``forge token mint``): the output is written owner-only under THIS
+machine's private state (:func:`stdout_path`, beside the credentials of :func:`.consentguard.state_dir`, never a
+checkout), and the run shows only ``wrote <path> (sha256 <12 hex>, <n> bytes)``; on a failure it shows the exit
+status and that the output was withheld, and writes nothing.
 
 :func:`preflight` spends no code. Per host it asks ``consent ready`` WITHOUT sudo
 (it reads only the config and the public key, so no sudoers row: the verifier key resolves, a use can register);
@@ -48,13 +52,14 @@ is recorded per plan digest, so a second run resumes where the first stopped.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shlex
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Final
 
 import lab_commons.launch as _door
@@ -113,6 +118,7 @@ class Step:
     python: str = ''
     stdin_local: str | None = None
     stdin_task: str | None = None
+    stdout_local: str | None = None
     local: bool = False
 
 
@@ -123,7 +129,7 @@ class Steps:
     steps: tuple[Step, ...]
 
 
-_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'dest', 'config', 'python'}
+_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'stdout_local', 'dest', 'config', 'python'}
 
 
 def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str) -> Step:
@@ -138,10 +144,13 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
         set(step) - _HOST_KEYS or not all(isinstance(step.get(key, ''), str) for key in _HOST_KEYS - {'argv'})
     ):
         msg = (f'{name} is {{"argv": [ops verb words...], "stdin_local"? | "stdin_task"?, "dest"?, "config"?, '
-               '"python"?: "<str>"} or {"local": true}')  # fmt: skip
+               '"stdout_local"?, "python"?: "<str>"} or {"local": true}')  # fmt: skip
         raise ConsentRefused(msg)
     if {'stdin_local', 'stdin_task'} <= set(step):
         msg = f'{name} names both stdin_local and stdin_task: exactly one source feeds its stdin'
+        raise ConsentRefused(msg)
+    if 'stdout_local' in step and not _relative(step['stdout_local']):
+        msg = f'{name} stdout_local is {step["stdout_local"]!r}: a relative name under the private state, no ..'
         raise ConsentRefused(msg)
     if action in LOCAL_VERBS:
         msg = f'{name} grants {action}, which is redeemed here: {{"local": true}}'
@@ -152,7 +161,30 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     return Step(
         tuple(argv), step.get('dest', dest), step.get('config', str(data['config'])),
         step.get('python', str(data['python'])), step.get('stdin_local'), step.get('stdin_task'),
+        step.get('stdout_local'),
     )  # fmt: skip
+
+
+def _relative(name: str) -> bool:
+    """*name* is a non-empty relative path on every platform, with no ``..`` part."""
+    pure = PureWindowsPath(name)
+    return bool(name) and not (pure.drive or pure.root or PurePosixPath(name).is_absolute()) and '..' not in pure.parts
+
+
+def stdout_path(name: str, home: Path | None = None) -> Path:
+    """Where a ``stdout_local`` *name* is kept: ``outputs/<name>`` under :func:`.consentguard.state_dir`."""
+    return state_dir(home) / 'outputs' / name
+
+
+def _shown(step: Step, said: str, status: int, home: Path | None) -> str:
+    """What the run prints of *step*'s output: its last line, or -- for ``stdout_local`` -- where it was kept."""
+    if step.stdout_local is None:
+        return _last_line(said)
+    if status:
+        return 'output withheld (stdout_local)'
+    path, data = stdout_path(step.stdout_local, home), said.encode('utf-8')
+    write_private(path, said)
+    return f'wrote {path} (sha256 {hashlib.sha256(data).hexdigest()[:12]}, {len(data)} bytes)'
 
 
 def load_steps(path: Path, plan: Plan, dest: str) -> Steps:
@@ -338,11 +370,13 @@ def run_plan(
             held.unlink()
         kept = 'spent, deleted' if used else f'NOT spent, kept: {held}'
         if status:
-            lines.append(f'{name}: STOPPED -- refused (exit {status}): {_last_line(said)}; credential {kept}')
+            lines.append(
+                f'{name}: STOPPED -- refused (exit {status}): {_shown(step, said, status, home)}; credential {kept}'
+            )
             return False, lines
         done.add(index)
         write_private(_progress(plan, home), json.dumps({'done': sorted(done)}) + '\n')
-        lines.append(f'{name}: ran ({_last_line(said)}); credential {kept}')
+        lines.append(f'{name}: ran ({_shown(step, said, status, home)}); credential {kept}')
     return True, [*lines, 'plan: every step ran']
 
 
