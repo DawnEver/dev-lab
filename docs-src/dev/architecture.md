@@ -50,10 +50,10 @@ mechanisms; each is owned where it is linked:
 
 - The consent door: the user's TOTP code, shown ONE plan digest, a preflight before the code is spent, and one
   single-use signed credential per grant (`dev_lab.ops.consent`, [topology](topology.md)).
-- Break-glass may bypass the review AND the tests inside an open wave, audited with the test state at merge.
-  Today it bypasses the review only (`dev_lab.ops.breakglass::_tests_stand`); the change is in progress on
-  `pr/break-glass-bypasses-the-tests`.
-- The judge's review is ADVISORY on both forges, never a merge gate (gap: contract 4 below, article 3).
+- Break-glass bypasses the review AND the tests inside an open wave, each merge audited with its test state at
+  merge (`dev_lab.ops.breakglass::tests_at`) under the consent that opened the wave.
+- The AI review is ADVISORY on both forges: it runs and posts, the merge decision reports it, nothing waits on it
+  (contract 4 below, article 3).
 
 ## Feedback
 
@@ -120,15 +120,21 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
 - **Contract.** One consent grant permits one action, on one subject, within its scope and expiry, once, and is
   audited; a plan changed after approval is refused.
 - **Today.** A credential is Ed25519-signed over every field: `action`, `subject`, `params` and `params_hash`,
-  `scope`, `cap`, `issued`, `expires` (`dev_lab.ops.consent.credential::verify`). The action registry is
+  `scope`, `cap`, `plan`, `issued`, `expires` (`dev_lab.ops.consent.credential::verify`). The action registry is
   `dev_lab.ops.consent.actions.ACTIONS`. A plan's digest is shown before the code and a changed plan is refused
-  (`dev_lab.ops.consent.plan::load`); the issuer records that digest in its append-only ledger
-  (`issuer.Issuer.issue_plan`). An irreversible use is registered online, failing closed
-  (`dev_lab.ops.consent.client::redeem`).
-- **Gap.** The plan digest is not a signed credential field, so a verifier cannot tie a use to the shown plan
-  without the issuer's ledger. A `breakglass.wave` is redeemed with no subject (`redeem(subject=None)`): it
-  authorizes any PRs up to `max_merges` inside its window, each pinned only to the head shown. The review is
-  still a merge gate (`dev_lab.dev.reviewgate::review_missing`), not advisory.
+  (`dev_lab.ops.consent.plan::load`); every credential issued from a plan SIGNS that digest as `plan`
+  (`issuer.Issuer.issue_plan`), so `grant_plan`/`recover` refuse an answer of another plan and `planrun` carries
+  only a credential whose `plan` is the plan it runs -- no ledger needed. An irreversible use is registered
+  online, failing closed (`dev_lab.ops.consent.client::redeem`). A `breakglass.wave` is the user's one-code grant
+  for a window (`max_merges`, `hours`); each merge is refused outside `[ops.breakglass] repos`, pinned to the head
+  shown, and audited as (repo, PR, head, reason, tests) under the id of the credential that opened the wave
+  (`dev_lab.ops.breakglass.Server`). The review is advisory: `dev_lab.dev.forgemerge::decide` never lists it as
+  missing, merge-ready says why a head is unreviewed and the merged PR is told (`ready`), Break-Glass pushes
+  never ask it (`dev_lab.dev.sessionbranch`); no branch protection requires `tests/review`
+  (`dev_lab.dev.forgeprotect::required_contexts`).
+- **Gap.** A wave's merges are bound to the grant only after the fact (the audit), not to subjects the user saw:
+  by design, one code for a window. `redeem` itself does not compare `plan` -- a host verb redeems a credential
+  without knowing which plan it runs; the client sides (`planrun`, `grant_plan`, `recover`) check it.
 
 ### 5. Generated artifacts
 
@@ -171,11 +177,11 @@ A session hears every PR it touched: the session PR record (`dev_lab.dev.session
 |---|---|---|
 | 1 | Humans hold final authority over high-risk actions; an agent cannot widen its own permissions. | implemented: consent door, `CONSENT-CODE-FROM-THE-USER` |
 | 2 | dev-lab governs family development and carries no business or compute duty that is not its own. | implemented |
-| 3 | GitHub toolchain repos' merge gate does not depend on HPC, workstations or the judge being online. | target: a merge waits on `tests/review` (contract 4) |
+| 3 | GitHub toolchain repos' merge gate does not depend on HPC, workstations or the judge being online. | implemented: the review is advisory, never a merge condition (contract 4) |
 | 4 | Gitea business repos carry heavy verification and cross-repo integration; test definitions are not needlessly copied. | implemented in dev-lab: lists read from `ciworkflows` and `rules.enforced_ids`; the motor product adopts at its next relock (contract 5) |
 | 5 | Each fact has one authoritative source; derived artifacts are maintained by deterministic generation. | partly: `rendergoldens` pins every fixture render; the agent-hook renderers are outside it (contract 5) |
 | 6 | `integrate/main` may fail; a normal promotion of `main` requires a green verification of the exact commit. | partly: required set, env and policy unchecked (contract 2) |
-| 7 | Break-glass is an explicitly authorized, fully audited exception and does not change test facts. | target: test bypass in progress; wave not bound to subjects (contract 4) |
+| 7 | Break-glass is an explicitly authorized, fully audited exception and does not change test facts. | implemented: a wave waives tests and review, audits each merge under its consent; merges bound after the fact (contract 4) |
 | 8 | Every HPC operation follows the one door, rate limit, quota protection and cleanup rules. | implemented: `HPC-THROUGH-THE-DOOR` |
 | 9 | Every CI status is traceable to a specific commit, test, environment and execution record. | target: no env in the status (contract 1) |
 | 10 | Reuse existing capability first; a new service is introduced only when a real need proves it necessary. | implemented as review practice; nothing enforces it |

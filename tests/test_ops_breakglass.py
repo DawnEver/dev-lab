@@ -329,6 +329,22 @@ def test_the_key_is_in_the_wave_record_and_every_audit_line(host: Host) -> None:
     assert {json.loads(line)['key'] for line in lines} == {KEY}
 
 
+def test_every_merge_is_audited_under_the_one_consent_that_opened_its_wave(host: Host) -> None:
+    """The wave has no subject: each merge's (repo, PR, head, reason) is tied to the user's grant by its id."""
+    host.open()
+    host.merge()
+    host.merge(reason='a second emergency fix')
+    assert host.config.breakglass is not None
+    lines = [json.loads(line) for line in Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()]
+    [opened] = [line for line in lines if line['outcome'] == 'opened']
+    merged = [line for line in lines if line['outcome'] == 'merged']
+    assert len(merged) == 2  # the control: both merged
+    assert {line['consent'] for line in merged} == {opened['consent']}
+    assert all({'repo', 'pr', 'head', 'reason'} <= set(line) for line in merged)
+    [record] = (Path(host.config.breakglass.state) / 'waves').glob('*.json')
+    assert json.loads(record.read_text(encoding='utf-8'))['consent'] == opened['consent']
+
+
 def _race(count: int, run: Callable[[], object]) -> None:
     gate = threading.Barrier(count)
 
@@ -571,7 +587,7 @@ def test_closing_a_wave_that_merged_sends_one_summary_of_every_merge(host: Host)
     assert title == _summary(host)
     assert f'{ALPHA}#7 at {HEAD} by key {KEY}: review-bot is down' in body
     assert f'{ALPHA}#8 at {HEAD} by key {KEY}: numerics-lab gate is wedged' in body
-    assert f'by key {KEY}, ended' in body  # who opened it
+    assert f'by key {KEY} under consent ' in body  # who opened it, under which grant
     assert 'opened 20' in body  # the window: when it opened and when it ended
     assert 'ended 20' in body
 

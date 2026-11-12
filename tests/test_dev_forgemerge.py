@@ -405,8 +405,8 @@ def test_a_unreviewed_review_with_red_tests_does_not_merge(tmp_path: Path) -> No
     assert not any(one.startswith('its review: ') for one in found.missing), found.missing
 
 
-def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
-    """PLANTED CONTROL: a security finding with no waiver recorded waits on the review, unwarned."""
+def test_a_review_finding_with_no_waiver_never_blocks_and_is_reported(tmp_path: Path) -> None:
+    """The review is ADVISORY (user rulings 2026-11-11/12): no waiver needed; the decision reports it, unwaived."""
     work, head = _work(tmp_path)
     raw = [
         {**r, 'status': 'failure', 'description': 'security finding(s) F-1'} if r['context'] == 'tests/review' else r
@@ -417,7 +417,8 @@ def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
             work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(statuses),
             reviewed=status_gate(github_posted),
         )  # fmt: skip
-        assert any(one.startswith('its review: ') for one in found.missing), found.missing
+        assert found.ready, found.missing
+        assert found.review is not None
         assert not found.unreviewed
         assert 'Unreviewed' not in found.message
 

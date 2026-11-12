@@ -72,8 +72,8 @@ def test_a_valid_credential_verifies_and_registers(host: Host) -> None:
 def test_tampering_with_any_field_fails_verification(host: Host, name: str) -> None:
     credential = host.issue(WAVE)
     changed = {'id': 'other', 'action': 'review.raise-cap', 'subject': 'x', 'params': {'hours': 24, 'max_merges': 3},
-               'params_hash': '0' * 64, 'scope': 'campaign', 'cap': 9, 'issued': NOW - 1, 'expires': NOW + 9e4,
-               'issuer': 'mallory'}  # fmt: skip
+               'params_hash': '0' * 64, 'scope': 'campaign', 'cap': 9, 'plan': 'f' * 64, 'issued': NOW - 1,
+               'expires': NOW + 9e4, 'issuer': 'mallory'}  # fmt: skip
     with pytest.raises(ConsentRefused):
         verify(credential | {name: changed[name]}, host.issuer.public(), now=host.clock[0])
     verify(credential, host.issuer.public(), now=host.clock[0])  # the control

@@ -1,11 +1,12 @@
-"""REVIEW-IS-REQUIRED: the ONE predicate of whether a head is reviewed -- for the merge and for Break-Glass alike.
+"""The ONE predicate of whether a head is reviewed: a REPORT, never a merge condition.
 
-User ruling 2026-10-31, "every PR must get a review". A head is reviewed when, and only when, its latest
+The review is ADVISORY on both forges (user rulings 2026-11-11/12; it replaced the 2026-10-31 "every PR must get a
+review" gate): it runs and posts, and the merge decision (:mod:`dev_lab.dev.forgemerge`) reports this
+predicate's answer, never wait on it. A head is reviewed when, and only when, its latest
 :data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no
 :data:`~dev_lab.dev.forgecontexts.HOLD_CONTEXT` is pending. Every other state -- absent, a claim still reviewing,
 an ``error``, a ``failure`` (a security finding) -- is not a review, and :func:`review_missing` names it. A review
-that DID NOT RUN is waived at the merge from its recorded cause (:mod:`dev_lab.dev.reviewcap`), never by a status
-(ai-lab #3 and dev-lab #5 were auto-merged with ``tests/review=error`` when a status could waive it).
+that DID NOT RUN leaves its recorded cause (:mod:`dev_lab.dev.reviewcap`) in the merge message.
 
 WHO POSTED A SUCCESS COUNTS ONLY WHERE THE FORGE VETS AUTHORS (:func:`forge_posted`; user ruling 2026-11-06,
 "Gitea is safe; vetting is for GitHub", extended to review statuses the same day). GitHub
@@ -215,7 +216,7 @@ def post_review(client: Client, head: str, *, state: str, description: str, targ
 
 
 def status_gate(posted: Callable[[CommitStatus], bool]) -> Reviewed:
-    """The serve-mode gate: :func:`review_missing` over a head's statuses, *posted* telling the forge's own post."""
+    """The serve-mode reading: :func:`review_missing` over a head's statuses, *posted* telling the forge's own post."""
     return lambda statuses: review_missing(statuses, posted)
 
 

@@ -11,13 +11,8 @@ flag -- so every use is in the history it bypassed:
   (:func:`notices`), naming the commit and its reason. It closes when ``pr_merges_since`` is moved past it
   -- by a pull request, which is the follow-up the use owes.
 
-BREAK-GLASS BYPASSES THE FORGE'S MERGE, NEVER THE REVIEW (user ruling 2026-10-31, every PR must get a review,
-after lab-commons #11 and dev-lab #3 landed by Break-Glass with none). Every head a Break-Glass push lands -- a
-merge's PR head, else the commit itself -- needs a POSTED review (:func:`unreviewed`): its latest
-:data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no hold is pending -- the ONE predicate the
-merge reads too (:mod:`dev_lab.dev.reviewgate`), and only a success the FORGE wrote counts (D11): a head the forge's
-review never reached waits for :data:`~dev_lab.dev.reviewgate.RERUN`. A forge that cannot be read refuses: a push
-needs the forge, so a forge down for reads is down for the push too.
+THE REVIEW IS ADVISORY (user rulings 2026-11-11/12, both forges), so a Break-Glass push is never held on it: the
+review of a head it lands runs and posts as for any PR, and is reported, never asked here.
 """
 
 from __future__ import annotations
@@ -30,17 +25,11 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
-from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgereview_gate import review_gate
-from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import client_for
-from dev_lab.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
-    from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['BREAK_GLASS', 'empty_reason', 'forge_unreviewed', 'notices', 'reason', 'unreviewed']
+__all__ = ['BREAK_GLASS', 'empty_reason', 'notices', 'reason']
 
 #: The trailer that admits a direct push to the integration branch, with its reason as the value.
 BREAK_GLASS: Final = 'Break-Glass'
@@ -90,19 +79,3 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
             )
             found.append(Alarm(INTEGRATION, repo, subject, body, about=f'break-glass {sha[:12]}'))
     return found
-
-
-def unreviewed(client: Client, head: str, *, base: str) -> str | None:
-    """Why *head* is not reviewed on *client*'s forge, or ``None``: the one gate (forgereview_gate.review_gate).
-
-    *base* is the integration branch whose declaration, with *head*'s, says who the forge is.
-    """
-    return review_gate(client, base=base)(status_list(client, head))
-
-
-def forge_unreviewed(root: Path, head: str) -> str | None:
-    """:func:`unreviewed` on *root*'s origin forge; a forge that cannot be read is a reason, never a pass."""
-    try:
-        return unreviewed(client_for(root), head, base=load_policy(root).integration)
-    except (ForgeCallFailed, OSError, ValueError) as failed:
-        return f'the forge cannot be read ({type(failed).__name__}: {failed})'

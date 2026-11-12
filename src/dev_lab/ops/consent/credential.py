@@ -1,13 +1,15 @@
 """THE CREDENTIAL: a JSON object whose Ed25519 ``sig`` covers every other field; offline verification.
 
 Fields: ``id`` (UUID), ``action``, ``subject``, ``params`` (the request's parameters) and ``params_hash`` (SHA-256 of
-their canonical JSON), ``scope``, ``cap`` (a campaign's, else ``None``), ``issued``, ``expires`` (epoch seconds),
-``issuer`` and ``sig``. The signed bytes are the canonical JSON (sorted keys, no whitespace, ASCII) of every field but
-``sig``, so changing any field -- or adding or dropping one -- breaks the signature.
+their canonical JSON), ``scope``, ``cap`` (a campaign's, else ``None``), ``plan`` (the SHA-256 digest of the plan it
+was issued from, else ``None``), ``issued``, ``expires`` (epoch seconds), ``issuer`` and ``sig``. The signed bytes are
+the canonical JSON (sorted keys, no whitespace, ASCII) of every field but ``sig``, so changing any field -- or adding
+or dropping one -- breaks the signature.
 
 :func:`verify` is everything a verifier can check WITHOUT the issuer: the field set, the signature, the params hash,
-the registry row (action, scope, cap, lifetime) and the clock, with :data:`SKEW_S` of skew either side. Whether a
-single credential was already used, or a campaign is over its cap, only the issuer knows (:mod:`.issuer`).
+the registry row (action, scope, cap, lifetime), the plan digest's form and the clock, with :data:`SKEW_S` of skew
+either side. Whether a single credential was already used, or a campaign is over its cap, only the issuer knows
+(:mod:`.issuer`).
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ __all__ = [
     'ConsentRefused',
     'Credential',
     'canonical',
+    'full_digest',
     'params_hash',
     'public_key_from',
     'public_text',
@@ -43,8 +46,10 @@ __all__ = [
 SKEW_S: Final = 120.0
 #: Every field a credential carries, ``sig`` last.
 FIELDS: Final = (
-    'id', 'action', 'subject', 'params', 'params_hash', 'scope', 'cap', 'issued', 'expires', 'issuer', 'sig',
+    'id', 'action', 'subject', 'params', 'params_hash', 'scope', 'cap', 'plan', 'issued', 'expires', 'issuer', 'sig',
 )  # fmt: skip
+#: Hex characters of a full SHA-256 digest.
+_DIGEST_HEX: Final = 64
 
 
 class ConsentRefused(ValueError):
@@ -54,6 +59,11 @@ class ConsentRefused(ValueError):
 def canonical(value: object) -> bytes:
     """The one byte spelling of *value*: sorted keys, no whitespace, ASCII."""
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False).encode()
+
+
+def full_digest(value: object) -> bool:
+    """Whether *value* is a full SHA-256 digest in lowercase hex: how a plan is named."""
+    return isinstance(value, str) and len(value) == _DIGEST_HEX and not set(value) - set('0123456789abcdef')
 
 
 def params_hash(params: Mapping[str, Any]) -> str:
@@ -71,6 +81,8 @@ class Credential:
     params: Mapping[str, Any]
     scope: str
     cap: int | None
+    #: The digest of the plan the user was shown when it was issued (:mod:`.plan`); ``None`` for a lone request.
+    plan: str | None
     issued: float
     expires: float
     issuer: str
@@ -124,6 +136,10 @@ def verify(data: object, key: Ed25519PublicKey, *, now: float) -> Credential:
     if (row.scope == CAMPAIGN) != isinstance(data['cap'], int) or isinstance(data['cap'], bool):
         msg = 'a campaign credential carries an integer cap, a single one none'
         raise ConsentRefused(msg)
+    plan = data['plan']
+    if plan is not None and not full_digest(plan):
+        msg = 'a credential plan is a full SHA-256 hex digest or null'
+        raise ConsentRefused(msg)
     issued, expires = _number(data['issued'], 'issued'), _number(data['expires'], 'expires')
     if expires - issued > row.max_ttl:
         msg = f'the credential lives {expires - issued:g} s, above {row.name} max_ttl {row.max_ttl:g} s'
@@ -135,6 +151,6 @@ def verify(data: object, key: Ed25519PublicKey, *, now: float) -> Credential:
         msg = 'the credential is issued in the future: a clock is wrong'
         raise ConsentRefused(msg)
     return Credential(
-        str(data['id']), row.name, str(data['subject']), dict(data['params']), row.scope, data['cap'], issued,
+        str(data['id']), row.name, str(data['subject']), dict(data['params']), row.scope, data['cap'], plan, issued,
         expires, str(data['issuer']),
     )  # fmt: skip

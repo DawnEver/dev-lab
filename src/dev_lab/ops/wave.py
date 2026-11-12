@@ -55,6 +55,8 @@ class Wave:
     summarized: float | None = None
     #: The fingerprint of the ssh key that opened it (:mod:`dev_lab.ops.sshkey`).
     key: str = ''
+    #: The id of the ``breakglass.wave`` consent credential that opened it: every merge is audited under it.
+    consent: str = ''
     #: ``<repo>#<pr>`` of each PR the sweep held back for its own consent, so each is logged once per wave.
     held_back: list[str] = field(default_factory=list)
 
@@ -100,7 +102,8 @@ def report(state: Path, wave: Wave) -> str:
     lines = [
         f'# Break-glass wave {wave.id}',
         '',
-        f'- opened {_iso(wave.opened)} by key {wave.key or "unknown"}, ended {_iso(wave.closed or wave.expires)}, '
+        f'- opened {_iso(wave.opened)} by key {wave.key or "unknown"} under consent {wave.consent or "unknown"}, '
+        f'ended {_iso(wave.closed or wave.expires)}, '
         f'{len(wave.merges)} merge(s)' + ('' if wave.merges else ': no merge'),
         '',
         *(

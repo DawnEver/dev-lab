@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
 
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
-from dev_lab.ops.consent.credential import ConsentRefused, Credential, params_hash, sign, verify
+from dev_lab.ops.consent.credential import ConsentRefused, Credential, full_digest, params_hash, sign, verify
 from dev_lab.ops.consent.plan import parsed
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
@@ -38,8 +38,6 @@ from dev_lab.ops.totp import TotpRefused, accept, write_private
 
 __all__ = ['Issuer', 'keygen', 'requested']
 
-#: Hex characters of a full plan digest.
-_DIGEST_HEX = 64
 #: One checked request: ``(row, subject, params, cap, ttl)``.
 type _Row = tuple[Action, str, dict[str, Any], int | None, float]
 
@@ -168,7 +166,8 @@ class Issuer:
     def issue_plan(self, plan: object, code: str) -> list[dict[str, Any]]:
         """One single-use credential per grant of *plan* (:mod:`.plan`), all paid for with ONE TOTP *code*.
 
-        Every grant is checked as a lone request is, before the code; the ledger records the plan's digest on each.
+        Every grant is checked as a lone request is, before the code; each credential SIGNS the plan's digest (its
+        ``plan`` field), and the ledger records it on each.
         """
         found = parsed(plan)
         return self._issue([requested(grant) for grant in found.grants], code, plan=found.digest)
@@ -181,8 +180,8 @@ class Issuer:
             issued = []
             for row, subject, params, cap, ttl in rows:
                 fields = {'id': str(uuid.uuid4()), 'action': row.name, 'subject': subject, 'params': params,
-                          'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'issued': now,
-                          'expires': now + ttl, 'issuer': self.name}  # fmt: skip
+                          'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'plan': plan,
+                          'issued': now, 'expires': now + ttl, 'issuer': self.name}  # fmt: skip
                 credential = sign(fields, key)
                 self._record('granted', verify(credential, key.public_key(), now=now), plan=plan)
                 if plan is not None:
@@ -202,7 +201,7 @@ class Issuer:
         returns at most one credential per grant of the plan (the newest live one); none for a grant any of whose
         credentials was USED (the step happened); none that no longer verifies (expired); none of another plan.
         """
-        if not isinstance(plan, str) or len(plan) != _DIGEST_HEX or set(plan) - set('0123456789abcdef'):
+        if not full_digest(plan):
             msg = 'fetch-unspent names a plan by its full SHA-256 digest'
             raise ConsentRefused(msg)
         with exclusive(self.state):
