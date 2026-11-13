@@ -9,11 +9,19 @@ upload by ``scp``/``rsync``, are refused here; read-only ssh (``uptime``, ``syst
 HOW A WRITE IS RECOGNISED: by the remote command's verb, from a closed list of the shapes that change a host
 (:data:`_WRITERS`), and for a copy by its LAST argument being remote (``host:path``). A list rather than an
 allowlist of readers because a refusal must name its exit, and a read the list misses is merely prompted.
+
+Two shapes are refused WHEREVER they stand in the remote command (incident 2026-11-13: ``ssh ops@host "$C"``
+with ``C`` holding a ``dev_lab.ops ... --subject`` call passed this row and drew only a generic denial):
+
+* an unexpanded ``$VAR``, ``${...}``, ``$(...)`` or backtick -- the hook cannot judge what it hides, so the
+  remote command must be spelled out;
+* ``dev_lab.ops`` under any verb, a ``--subject`` read included -- a host's ops entry is reached through the
+  consent doors: ``planrun preflight`` asks each host for its subject through the held session,
+  ``sshhold open --plan`` spends the user's one code, ``planrun run`` runs the plan.
 """
 
 from __future__ import annotations
 
-from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.venvpath import PYTHON_SLOT
 
 __all__ = ['REMOTE_WRITE']
@@ -25,8 +33,10 @@ _WRITERS = (
     r'sudo|rm|mv|cp|tee|install|mkdir|rmdir|chmod|chown|ln|truncate|dd|kill|pkill|reboot|shutdown|crontab'
     r'|systemctl\s+(?:start|stop|restart|reload|enable|disable|daemon-reload|mask|edit)'
     r'|apt(?:-get)?|dnf|yum|pip3?|uv|git\s+(?:pull|push|checkout|switch|reset|merge|clone|fetch|clean|stash)'
-    r'|docker\s+(?:run|rm|stop|start|restart|compose|pull|exec)|[\w./-]*python[\w.]*\s+-m\s+dev_lab\.ops'
+    r'|docker\s+(?:run|rm|stop|start|restart|compose|pull|exec)'
 )
+#: Anywhere in the remote command: an expansion the hook cannot see through, or the ops entry point.
+_ANYWHERE = r'\$[\w{(]|`|\bdev_lab\.ops\b'
 #: ssh's options before its target: ``-o X``, ``-p 22``, ``-J jump``, ``-i key`` take a value; flags do not.
 _SSH_OPTS = r'(?:\s+(?:-[oplJiFLRDwWcmbeEQS]\s*\S+|-[46AaCfGgKkMNnqsTtVvXxYy]+))*'
 
@@ -34,13 +44,14 @@ REMOTE_WRITE: dict[str, object] = {
     'id': _ID,
     'pattern': (
         rf'(?:ssh{_SSH_OPTS}\s+\S+\s+[\'"]?(?:[^\n\'"]*[;&|]\s*)?(?:{_WRITERS})\b'
+        rf'|ssh{_SSH_OPTS}\s+\S+\s+[^\n]*(?:{_ANYWHERE})'
         r'|(?:scp|rsync)\b[^\n;&|]*\s\S*[\w.-]:\S*\s*$)'
     ),
     'matches': 'command',
     'hazard': 'a hand-written write to a remote host leaves no record of which door, host or reason changed it.',
-    'remedy': f'A server: {PYTHON_SLOT} -m dev_lab.dev.opsserver <server> <verb> [<unit>]; a cluster account: '
-    f'{PYTHON_SLOT} -m '
-    f'dev_lab.dev.hpcaccount {exits_of("HPC-THROUGH-THE-DOOR", "dev_lab.dev.hpcaccount")}. Read-only ssh is open.',
+    'remedy': f'dev_lab.ops (--subject too): {PYTHON_SLOT} -m dev_lab.dev.planrun preflight --plan P --steps S asks '
+    "hosts; sshhold open --hours H --plan P --digest D (user's code); planrun run. Else opsserver <server> <verb>, "
+    'hpcaccount. Spell out $VAR; read-only ssh is open.',
     'needs': None,
     'refuses': (
         'ssh ops@forge.example sudo systemctl restart gitea',
@@ -49,12 +60,21 @@ REMOTE_WRITE: dict[str, object] = {
         'ssh -J jump ops@inner "uptime; systemctl restart caddy"',
         'scp supervise.toml ops@forge.example:/etc/dev-lab/',
         'rsync -a out/ ops@forge.example:/srv/out/',
+        'ssh ops@forge.example "$C"',
+        'ssh ops@forge.example "${CMD}"',
+        'ssh ops@forge.example "$(cat cmd.txt)"',
+        'ssh ops@forge.example `cat cmd.txt`',
+        'ssh ops@forge.example /opt/x/.venv/bin/python -m dev_lab.ops --config /etc/x.toml config apply --subject',
+        "ssh ops@forge.example 'cd /opt/x && python3 -m dev_lab.ops consent ready'",
+        'ssh -J jump ops@inner "sudo -n /opt/x/bin/python -m dev_lab.ops.consent grant r.json"',
     ),
     'permits': (
         'ssh ops@forge.example uptime',
         'ssh ops@forge.example systemctl --no-pager status gitea',
         "ssh ops@forge.example 'journalctl --no-pager -u caddy -n 50'",
         'scp ops@forge.example:/var/log/x.log output/',
+        'ssh ops@forge.example df -h',
+        "ssh ops@forge.example 'cat /etc/os-release'",
         'git commit -m "ssh ops@host sudo restart is refused now"',
         f'{PYTHON_SLOT} -m dev_lab.dev.opsserver forge restart gitea',
     ),
