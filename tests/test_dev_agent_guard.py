@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import venv
 from pathlib import Path
 
 import pytest
@@ -588,3 +589,57 @@ def test_the_scratch_baseline_is_taken_at_session_start_and_judged_at_stop() -> 
     assert any(snap in entry['hooks'] for entry in after['hooks']['SessionStart'])
     assert any(_SCRATCHSTOP in entry['hooks'] for entry in after['hooks']['Stop'])
     assert all(_SCRATCHSTOP not in entry['hooks'] for entry in after['hooks']['SubagentStop'])
+
+
+def _venv_with_dev_lab_at(root: Path, installed: str, locked: str) -> dict[str, str]:
+    """*root* a checkout whose venv holds a dev-lab at *installed* and whose ``uv.lock`` pins *locked*."""
+    agent_guard.install_guard(root)
+    venv.EnvBuilder(with_pip=False).create(root / '.venv')
+    site = next((root / '.venv').glob('**/site-packages'))
+    info = site / 'dev_lab-0.dist-info'
+    info.mkdir()
+    (info / 'METADATA').write_text('Metadata-Version: 2.1\nName: dev-lab\nVersion: 0\n', encoding='utf-8')
+    origin = {'url': 'https://example.invalid/dev-lab.git', 'vcs_info': {'vcs': 'git', 'commit_id': installed}}
+    (info / 'direct_url.json').write_text(json.dumps(origin), encoding='utf-8')
+    pin = f'source = {{ git = "{origin["url"]}#{locked}" }}'
+    # Text mode: CRLF on Windows, as a checked-out lock may be -- the launcher reads both.
+    (root / 'uv.lock').write_text(f'[[package]]\nname = "dev-lab"\nversion = "0"\n{pin}\n', encoding='utf-8')
+    node = node_path().parent.as_posix()
+    return {
+        **os.environ,
+        'CLAUDE_PROJECT_DIR': str(root),
+        'CLAUDE_CODE_SESSION_ID': 'planted',
+        'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}',
+    }
+
+
+def _bind(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [_SHELL, '-c', agent_wiring.TASKBIND_COMMAND],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, check=False,
+    )  # fmt: skip
+
+
+def test_a_stale_venv_names_its_fix_and_records_the_wall(tmp_path: Path) -> None:
+    """2026-11-13: a venv behind its lock failed a hook with only ``No module named``; now cause, door, wall, exit 0."""
+    done = _bind(_venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40))
+    assert done.returncode == 0, done.stderr
+    [line] = done.stderr.splitlines()
+    assert 'aaaaaaaaaa is behind' in line, line
+    assert "lock's bbbbbbbbbb" in line, line
+    assert f'-m dev_lab.dev.dep --bootstrap {tmp_path}' in line, line
+    [wall] = [
+        json.loads(raw)
+        for path in tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl')
+        for raw in path.read_text(encoding='utf-8').splitlines()
+    ]
+    assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'planted')
+
+
+def test_a_missing_module_from_a_current_venv_is_reported_as_itself(tmp_path: Path) -> None:
+    """PLANTED control: the venv matches its lock, so the missing module is a real bug -- passed through, failing."""
+    done = _bind(_venv_with_dev_lab_at(tmp_path, 'c' * 40, 'c' * 40))
+    assert done.returncode != 0
+    assert "No module named 'dev_lab'" in done.stderr
+    assert 'behind' not in done.stderr
+    assert not list(tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl'))

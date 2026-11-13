@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import memoryadds
+from dev_lab.dev import memoryadds, memoryentry
 
 _GIT = shutil.which('git') or 'git'
 ENTRY = '.claude/memory/2026/10/01/an-entry.md'
@@ -149,13 +149,13 @@ def test_manual_refusal_names_the_versioned_task_format_and_remedy(repo: Path) -
 def test_scoped_manual_task_format_preserves_crlf_operations(prefix: str) -> None:
     before = MANUAL_HEAD + MANUAL_FIRST
     after = before.replace('- [ ]', '- [x]') + '\n' + MANUAL_NEXT
-    assert memoryadds._only_manual_tasks_updated(prefix + MANUAL, before.replace('\n', '\r\n'), after)
+    assert memoryentry.only_manual_tasks_updated(prefix + MANUAL, before.replace('\n', '\r\n'), after)
 
 
 @pytest.mark.parametrize('path', [ENTRY, MANUAL.replace('manual.md', 'narrative.md'), MANUAL.replace('/11/', '/99/')])
 def test_a_task_shaped_body_cannot_make_another_memory_path_mutable(path: str) -> None:
     before = MANUAL_HEAD + MANUAL_FIRST
-    assert not memoryadds._only_manual_tasks_updated(path, before, before + '\n' + MANUAL_NEXT)
+    assert not memoryentry.only_manual_tasks_updated(path, before, before + '\n' + MANUAL_NEXT)
 
 
 @pytest.mark.parametrize('change', ['edit', 'delete', 'rename'])
@@ -205,7 +205,7 @@ def test_a_privacy_redaction_of_a_published_entry_is_not_an_edit(repo: Path) -> 
         repo,
         ENTRY,
         '---\nname: an-entry\ndescription: d\n---\n\n> '
-        + memoryadds.REDACTION_NOTE.format(day='2026-11-09')
+        + memoryentry.REDACTION_NOTE.format(day='2026-11-09')
         + '\n\nThe forge is at <ip> on host <host>.\nBody.\n',
     )
     _commit(repo, 'redact', ENTRY)
@@ -225,7 +225,7 @@ def test_planted_a_redaction_note_never_admits_a_narrative_edit(repo: Path, body
     _commit(repo, 'site', ENTRY)
     _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
     base = _lane(repo)
-    note = '> ' + memoryadds.REDACTION_NOTE.format(day='2026-11-09')
+    note = '> ' + memoryentry.REDACTION_NOTE.format(day='2026-11-09')
     _write(repo, ENTRY, f'---\nname: an-entry\ndescription: d\n---\n\n{note}\n\n{body}')
     _commit(repo, 'redact and rewrite', ENTRY)
     found = memoryadds.problems_between(repo, base, 'HEAD')
@@ -266,19 +266,19 @@ CITED = (
 
 
 def test_a_merged_entry_that_cites_every_paragraph_in_one_scope_passes() -> None:
-    assert memoryadds.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', CITED) == ()
+    assert memoryentry.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', CITED) == ()
 
 
 def test_a_merged_entry_with_an_uncited_paragraph_is_refused() -> None:
     text = CITED + '\nA claim with no source.\n'
-    found = memoryadds.merged_entry_problems('.claude/memory/2026/10/31/m.md', text)
+    found = memoryentry.merged_entry_problems('.claude/memory/2026/10/31/m.md', text)
     assert len(found) == 1
     assert 'A claim with no source' in found[0]
 
 
 def test_a_merged_entry_reaching_into_another_scope_is_refused() -> None:
     text = CITED.replace('2026/10/02/b.md]', 'src/y/.claude/memory/2026/10/02/b.md]')
-    found = memoryadds.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', text)
+    found = memoryentry.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', text)
     assert any('src/y/.claude/memory/2026/10/02/b.md' in line for line in found), found
 
 
@@ -342,7 +342,7 @@ def test_a_crlf_entry_stripped_to_lf_is_still_only_the_strip(repo: Path) -> None
 
 
 def test_a_merged_source_missing_at_the_base_is_refused() -> None:
-    found = memoryadds.merged_entry_problems('.claude/memory/2026/10/31/m.md', CITED, exists=lambda p: 'a.md' in p)
+    found = memoryentry.merged_entry_problems('.claude/memory/2026/10/31/m.md', CITED, exists=lambda p: 'a.md' in p)
     assert found == (
         (
             '.claude/memory/2026/10/31/m.md: merged_from 2026/10/02/b.md does not exist at the base '
@@ -524,7 +524,7 @@ _WRONG = '---\nname: an-entry\ndescription: d\n---\n\nThe user said: D31 decide 
 
 
 def _amend_note(reason: str = 'the quote was mistranslated', approved: str = 'fix that line') -> str:
-    return '> ' + memoryadds.AMENDMENT_NOTE.format(day='2026-11-13', reason=reason, approved=approved)
+    return '> ' + memoryentry.AMENDMENT_NOTE.format(day='2026-11-13', reason=reason, approved=approved)
 
 
 def test_an_approved_amendment_corrects_a_published_entry_in_place(repo: Path) -> None:
