@@ -135,3 +135,15 @@ def test_against_the_integration_tip_each_red_is_labelled_inherited_or_new() -> 
 def test_the_known_reds_of_a_tip_are_its_not_ok_nodes_per_part() -> None:
     base = {'cells': _cells(**{'tests/test_a.py::test_a': 'error', 'tests/test_b.py::test_b': 'ok'})}
     assert known_reds(_Pair({}, base), _BASE) == {'tests/base': frozenset({'tests/test_a.py::test_a'})}
+
+
+def test_a_part_whose_target_is_a_run_page_fetches_no_record() -> None:
+    """Live 2026-11-13: an ``error`` part targets its Actions RUN PAGE, and fetching that HTML as a record read 406.
+
+    PLANTED CONTROL: the record URL in the same position is fetched (the test above), so the skip is the target's.
+    """
+    page = 'https://github.com/o/r/actions/runs/43481529255'
+    client = _Client([_status('error', 'unreachable: the box is held class=scheduling', url=page)], None)
+    lines = status_show(client, _SHA)
+    assert client.downloads == [], 'a run page is not a record'
+    assert f'  no record is attached to this part; its target is {page}' in lines
