@@ -36,7 +36,7 @@ def _credential(
 ) -> None:
     fields = {
         'id': str(uuid.uuid4()), 'action': hpcsession.ACTION, 'subject': subject, 'params': {},
-        'params_hash': params_hash({}), 'scope': ACTIONS[hpcsession.ACTION].scope, 'cap': None,
+        'params_hash': params_hash({}), 'scope': ACTIONS[hpcsession.ACTION].scope, 'cap': None, 'plan': None,
         'issued': expires - 3600, 'expires': expires, 'issuer': 'test',
     }  # fmt: skip
     target = state_dir(home)
