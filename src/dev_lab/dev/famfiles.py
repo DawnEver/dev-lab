@@ -16,8 +16,11 @@ declares a delta for, so a base edit here reaches a repo by one re-render rather
 THE ONE DOOR (2026-11-13). ``python -m dev_lab.dev.famfiles`` WITHOUT ``--files`` runs every renderer due in
 the repo (:func:`render_repo`) -- CI workflows, the whole files, deny rules and engine, the settings wiring, the
 door rules, the dev-docs pointer table -- each with the inputs its ``[tool.dev_lab.render]`` declares; ``forge
-sync``'s relock calls the same function. A renderer is due where a file it writes is present, or, for one that
-writes a PART of a repo-owned file, where its input is declared: a repo that declares no artefact gets none.
+sync``'s relock calls the same function. In a FAMILY repo (:func:`is_member`: a dev-lab dependency or any
+``[tool.dev_lab.*]`` table) every renderer whose inputs are derivable is due, present files or not -- cc-market
+(2026-11-13) declared only ``[tool.dev_lab.integrator]`` and the door rendered nothing while its workflows were
+missing. Elsewhere a renderer is due where a file it writes is present. One that writes a PART of a repo-owned file
+is due only where its input is declared. The door prints one line per renderer: rendered, or skipped and why.
 
 THE TWO KINDS, and the line between them is the noun test the rules registry uses: a file whose
 CONTENT is about the family's toolchain is managed; a file whose content is about the repo (its
@@ -28,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import re
 import shutil
 import sys
 import tomllib
@@ -58,8 +62,10 @@ __all__ = [
     'ProjectFile',
     'Renderer',
     'due_renderers',
+    'is_member',
     'load_deltas',
     'main',
+    'plan',
     'project_files_on_disk',
     'render_agent_files',
     'render_all',
@@ -97,11 +103,13 @@ class Renderer:
     inputs: tuple[tuple[str, str], ...] = ()
     required: frozenset[str] = frozenset()
     declared_by: str = ''  # set: due where the repo DECLARES this input, not where a file it writes is present
+    needs: str = ''  # set: in a family repo with no file it writes, due only where the renderer named here is
 
 
 #: Optional ``deltas``: a repo with no deltas module (cc-market) has no per-file overrides and adopts no base.
 FAMFILES: Final = Renderer('famfiles', ('dev_lab.dev.famfiles', '--files'), inputs=(('deltas', '--deltas'),))
-AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--install'))
+#: The guard installs over the deny rules hook_adoption renders: without them its install is refused (exit 1).
+AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--install'), needs='hook_adoption')
 HOOK_ADOPTION: Final = Renderer(
     'hook_adoption', ('dev_lab.dev.hook_adoption',), inputs=(('adoption', '--adoption'),),
     required=frozenset({'adoption'}),
@@ -195,7 +203,38 @@ RENDERERS: Final = tuple(dict.fromkeys(row.renderer for row in PROJECT_FILES.val
 
 def due_renderers(root: Path) -> tuple[Renderer, ...]:
     """The renderers of :data:`RENDERERS` due in *root*: what a re-render there runs (:class:`Renderer`)."""
-    return _due(lambda path: (root / path).is_file(), _render_table(_manifest(root)))
+    return tuple(renderer for renderer, why in plan(root) if why is None)
+
+
+#: Each renderer by name: what a :attr:`Renderer.needs` names.
+_NAMED: Final = {renderer.name: renderer for renderer in RENDERERS}
+
+
+def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
+    """Every renderer of :data:`RENDERERS` with ``None`` when it is due in *root*, else why it is skipped.
+
+    Due: a file it writes is present, or -- in a family repo (:func:`is_member`) -- its required inputs are all
+    declared. A ``declared_by`` renderer writes part of a repo-owned file and is due only where that is declared.
+    """
+    text = _manifest(root)
+    declared = _render_table(text)
+    member = is_member(text)
+    present = set(_due(lambda path: (root / path).is_file(), declared))
+
+    def why(renderer: Renderer) -> str | None:
+        if renderer in present:
+            return None
+        if renderer.declared_by:
+            return f'[{RENDER_TABLE}] {renderer.declared_by} is not declared'
+        if not member:
+            return 'not a family repo (no dev-lab dependency, no [tool.dev_lab.*] table) and no file it writes exists'
+        if missing := sorted(renderer.required - set(declared)):
+            return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared'
+        if renderer.needs and (reason := why(_NAMED[renderer.needs])) is not None:
+            return f'it needs {renderer.needs}, skipped: {reason}'
+        return None
+
+    return tuple((renderer, why(renderer)) for renderer in RENDERERS)
 
 
 def _due(has: Callable[[str], bool], declared: Mapping[str, object]) -> tuple[Renderer, ...]:
@@ -206,6 +245,20 @@ def _due(has: Callable[[str], bool], declared: Mapping[str, object]) -> tuple[Re
 
     present = {row.renderer for row in PROJECT_FILES.values() if due(row)}
     return tuple(renderer for renderer in RENDERERS if renderer in present)
+
+
+_DEV_LAB: Final = re.compile(r'^\s*dev[-_.]lab(?![\w.-])', re.IGNORECASE)
+
+
+def is_member(text: str) -> bool:
+    """Whether manifest *text* is a family repo's: it depends on dev-lab, or declares any ``[tool.dev_lab.*]`` table."""
+    data = tomllib.loads(text) if text else {}
+    if data.get('tool', {}).get('dev_lab'):
+        return True
+    project = data.get('project', {})
+    lists = [project.get('dependencies', []), *project.get('optional-dependencies', {}).values()]
+    lists += data.get('dependency-groups', {}).values()
+    return any(isinstance(dep, str) and _DEV_LAB.match(dep) for deps in lists for dep in deps)
 
 
 def _manifest(root: Path) -> str:
@@ -251,17 +304,23 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
 
 
 def render_repo(root: Path, python: str, run: Callable[[list[str], Path], int]) -> tuple[str, ...]:
-    """THE ONE DOOR: run every renderer due in *root* under *python* (``run(argv, root)``); the names it ran.
+    """THE ONE DOOR: run every renderer due in *root* under *python* (``run(argv, root)``).
 
+    Answers one line per renderer of :data:`RENDERERS`, ``"<name>: rendered"`` or ``"<name>: skipped -- <why>"``.
     RAISES :class:`ValueError` naming the renderer when a declared input is missing or it exits non-zero, before
     any later renderer runs.
     """
-    commands = [(renderer.name, render_argv(renderer, root, python)) for renderer in due_renderers(root)]
-    for name, argv in commands:
-        if (exited := run(argv, root)) != 0:
-            msg = f'the renderer {name} exited {exited} in {root}: {" ".join(argv[1:])}'
+    steps = [(r, why, None if why else render_argv(r, root, python)) for r, why in plan(root)]
+    lines: list[str] = []
+    for renderer, why, argv in steps:
+        if argv is None:
+            lines.append(f'{renderer.name}: skipped -- {why}')
+        elif (exited := run(argv, root)) != 0:
+            msg = f'the renderer {renderer.name} exited {exited} in {root}: {" ".join(argv[1:])}'
             raise ValueError(msg)
-    return tuple(name for name, _ in commands)
+        else:
+            lines.append(f'{renderer.name}: rendered')
+    return tuple(lines)
 
 
 def _run(argv: list[str], root: Path) -> int:
@@ -385,11 +444,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             parser.error('--check reads one renderer: name --files')
         try:
-            ran = render_repo(root, sys.executable, _run)
+            lines = render_repo(root, sys.executable, _run)
         except ValueError as exc:
             emit(f'[famfiles] REFUSED -- {exc}', err=True)
             return 1
-        emit(f'[famfiles] rendered {", ".join(ran) or "nothing: this repo declares no family artefact"}')
+        for line in lines:
+            emit(f'[famfiles] {line}')
         return 0
     deltas = load_deltas(args.deltas.resolve()) if args.deltas is not None else None
     lines = (
@@ -400,3 +460,7 @@ def main(argv: list[str] | None = None) -> int:
         emit(f'[famfiles] {line}')
     settled = ('current', 'rendered')
     return 0 if all(line.split(': ', 1)[1].startswith(settled) for line in lines) else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
