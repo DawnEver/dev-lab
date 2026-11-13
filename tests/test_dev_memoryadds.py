@@ -615,3 +615,32 @@ def test_a_manifest_naming_no_integration_branch_is_still_refused(tmp_path: Path
         _git(repo, 'add', '--', 'pyproject.toml')
     with pytest.raises(ValueError, match='names no integration branch'):
         memoryadds.pending(repo)
+
+
+# --- the shape of an added entry, and the amendment that completes a published one -----------------------------
+
+
+@pytest.mark.parametrize(
+    ('text', 'missing'),
+    [
+        ('---\ncreated: 2026-11-13\n---\n# X\n', 'name, description'),  # 2026-11-13: committed, caught only later
+        ('---\nname: x\n---\n# X\n', 'description'),
+        ('# no frontmatter at all\n', 'name, description'),
+    ],
+)
+def test_planted_an_added_entry_without_name_or_description_is_refused_at_commit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, text: str, missing: str
+) -> None:
+    """PLANTED CONTROL: the shape the dated-memory test reads, refused when the entry is ADDED, not later.
+
+    The clean twin (name and description declared) is ``test_a_lane_that_only_adds_memory_passes``.
+    """
+    rel = '.claude/memory/2026/11/13/half.md'
+    _write(repo, rel, text)
+    _git(repo, 'add', '--', rel)
+    monkeypatch.chdir(repo)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert rel in found[0], found
+    assert f'declares no {missing}' in found[0], found
+    assert memoryadds.main(['commit']) == 1
