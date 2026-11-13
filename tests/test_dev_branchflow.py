@@ -448,3 +448,58 @@ def test_planted_control_a_sync_outside_a_session_stamps_no_trailer(
     forgesync.sync(work, POLICY)
     assert git_out(work, 'log', '-1', '--format=%(trailers)') == ''
     assert git_out(work, 'log', '-1', '--format=%P').count(' ') == 1, 'still a merge commit'
+
+
+def _hook(work: Path, body: str) -> None:
+    """Install *body* as *work*'s pre-commit hook (``core.hooksPath``), as the family's hooks run on every commit."""
+    hooks = work.parent / 'hooks'
+    hooks.mkdir(exist_ok=True)
+    (hooks / 'pre-commit').write_text(f'#!/bin/sh\n{body}\n', encoding='utf-8', newline='\n')
+    (hooks / 'pre-commit').chmod(0o755)
+    run_git(work, 'config', 'core.hooksPath', hooks.as_posix())
+
+
+def test_a_sync_merge_commit_waits_for_hooks_slower_than_the_git_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 2026-11-13: the merge commit ran under the fixed 30 s git timeout and died mid-hook with a traceback.
+    work = _child(tmp_path)
+    monkeypatch.setattr(forgesync, '_GIT_TIMEOUT_S', 1)  # the planted control: the hook outlasts the git ceiling
+    _hook(work, 'sleep 3')
+    _, merged = forgesync.sync(work, POLICY)
+    assert merged == ('origin/integrate/main',)
+    assert git_out(work, 'rev-parse', '-q', '--verify', 'HEAD^2') == git_out(work, 'rev-parse', 'origin/integrate/main')
+
+
+def test_a_refused_sync_merge_commit_reports_its_state_and_remedy_in_one_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = _child(tmp_path)
+    head = git_out(work, 'rev-parse', 'HEAD')
+    _hook(work, 'echo the hook refused >&2; exit 1')
+    code = forgesync.main([], cwd=work, fetch=lambda _root: None, door=lambda _root: ())
+    err = capsys.readouterr().err
+    assert code == 2
+    assert 'Traceback' not in err
+    [line] = err.strip().splitlines()
+    assert 'origin/integrate/main was NOT committed (exit 1) and was aborted' in line
+    assert 'the hook refused' in line
+    assert 'Remedy: ' in line
+    assert git_out(work, 'rev-parse', 'HEAD') == head
+    assert not (work / '.git' / 'MERGE_HEAD').exists(), 'the uncommitted merge was aborted'
+
+
+def test_a_sync_refuses_a_half_done_merge_naming_it_and_the_remedy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 2026-11-13: a killed commit left the tree MERGING (MERGE_HEAD set, all staged); the next sync must say so.
+    work = _child(tmp_path)
+    run_git(work, 'merge', '--no-ff', '--no-commit', 'origin/integrate/main')
+    pending = git_out(work, 'rev-parse', 'MERGE_HEAD')
+    code = forgesync.main([], cwd=work, fetch=lambda _root: None, door=lambda _root: ())
+    [line] = capsys.readouterr().err.strip().splitlines()
+    assert code == 2
+    assert f'a merge of {pending[:10]} is in progress and uncommitted' in line
+    assert 'git commit --no-edit' in line
+    assert 'git merge --abort' in line
+    assert git_out(work, 'rev-parse', 'MERGE_HEAD') == pending, 'the half-done merge is reported, never discarded'
