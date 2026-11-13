@@ -11,7 +11,7 @@ import pytest
 from _forge_fake import make_repo
 from _forge_state import StateForge
 
-from dev_lab.dev import forgemerge, jobparts, localpart, partrows, platformparts
+from dev_lab.dev import forgemergewaits, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, client_for
@@ -281,6 +281,6 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
     PLANTED CONTROL: the same head with ``tests/base`` red still waits.
     """
     handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemerge.parts_wait('hosted', handed) is None
+    assert forgemergewaits.parts_wait('hosted', handed) is None
     red = [CommitStatus('tests/base', 'failure', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemerge.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'
+    assert forgemergewaits.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'

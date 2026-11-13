@@ -61,7 +61,8 @@ from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgemerge import merge, parts_wait
+from dev_lab.dev.forgemergecall import merge
+from dev_lab.dev.forgemergewaits import parts_wait
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import CommitStatus, status_list
@@ -167,7 +168,7 @@ class ClientForge:
         self._client.issue_comment(number, body)
 
     def merge(self, number: int, *, head: str, message: str) -> None:
-        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemerge.merge`, either backend); the branch is kept."""
+        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemergecall.merge`, either backend); branch kept."""
         merge(self._client, number, head=head, message=message, delete_branch=False)
 
 
@@ -176,7 +177,7 @@ def tests_at(posted: Sequence[CommitStatus], head: str) -> str:
 
     User ruling 2026-11-11: break-glass waives the tests as well as the review -- the open wave is the authorization
     -- so this never refuses; it names what was waived, for the audit and the notice. The reading is merge-ready's
-    own (:func:`dev_lab.dev.forgesecurity.security_wait`, :func:`dev_lab.dev.forgemerge.parts_wait`).
+    own (:func:`dev_lab.dev.forgesecurity.security_wait`, :func:`dev_lab.dev.forgemergewaits.parts_wait`).
     """
     waits = [wait for wait in (security_wait(posted), parts_wait(head, posted)) if wait is not None]
     if not waits:

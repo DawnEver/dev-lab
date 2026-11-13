@@ -50,7 +50,7 @@ class Policy:
     pr_merges_since: str = ''
     #: The forge checks the merge decision waits on IN PLACE of the statuses a serve host posts (the test parts,
     #: ``tests/security``, the head gates): each a status context that must stand ``success`` at the PR head
-    #: (:func:`dev_lab.dev.forgemerge.checks_wait`), and required on the integration branch
+    #: (:func:`dev_lab.dev.forgemergewaits.checks_wait`), and required on the integration branch
     #: (:func:`dev_lab.dev.forgeprotect.required_contexts`). For a repo no serve host serves -- a config-only repo
     #: whose Actions workflow is its check (user ruling 2026-11-12). ``()``: the serve-posted statuses gate.
     merge_checks: tuple[str, ...] = ()
