@@ -10,7 +10,7 @@ import gzip
 import json
 from typing import Any
 
-from dev_lab.dev.forgestatus import status_show
+from dev_lab.dev.forgestatus import known_reds, status_show
 
 _SHA = 'a' * 40
 _RECORD_URL = 'https://forge.example.org/attachments/record.json.gz'
@@ -96,3 +96,42 @@ def test_an_unreadable_record_names_the_url_instead_of_failing() -> None:
 
     lines = status_show(Broken([_status('failure')], None), _SHA)
     assert any('could not be read' in line and _RECORD_URL in line for line in lines)
+
+
+_BASE = 'b' * 40
+_BASE_URL = 'https://forge.example.org/attachments/base.json.gz'
+
+
+class _Pair(_Client):
+    """A head and its base (the integration tip), each with its own record."""
+
+    def __init__(self, head: dict[str, Any], base: dict[str, Any]) -> None:
+        super().__init__([_status('failure')], head)
+        self._base = base
+
+    def call(self, method: str, path: str) -> list[dict[str, Any]]:
+        assert method == 'GET'
+        if path.endswith(f'/statuses/{_BASE}'):
+            return [_status('failure', url=_BASE_URL)]
+        return super().call(method, path)
+
+    def download(self, url: str) -> bytes:
+        if url == _BASE_URL:
+            return gzip.compress(json.dumps(self._base).encode('utf-8'))
+        return super().download(url)
+
+
+def test_against_the_integration_tip_each_red_is_labelled_inherited_or_new() -> None:
+    """2026-11-13: an agent could not tell the reds it inherited from the ones it made. PLANTED: one of each."""
+    head = {'cells': _cells(**{'tests/test_a.py::test_a': 'error', 'tests/test_b.py::test_b': 'error'})}
+    base = {'cells': _cells(**{'tests/test_a.py::test_a': 'error', 'tests/test_b.py::test_b': 'ok'})}
+    lines = status_show(_Pair(head, base), _SHA, against=_BASE)
+    assert lines[0] == f'against {_BASE[:12]}: reds it carries too are inherited'
+    assert '  against the base: 1 inherited, 1 new' in lines
+    assert any(line.startswith('  - tests/test_a.py::test_a') and line.endswith('  inherited') for line in lines)
+    assert any(line.startswith('  - tests/test_b.py::test_b') and line.endswith('  NEW') for line in lines)
+
+
+def test_the_known_reds_of_a_tip_are_its_not_ok_nodes_per_part() -> None:
+    base = {'cells': _cells(**{'tests/test_a.py::test_a': 'error', 'tests/test_b.py::test_b': 'ok'})}
+    assert known_reds(_Pair({}, base), _BASE) == {'tests/base': frozenset({'tests/test_a.py::test_a'})}

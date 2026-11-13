@@ -28,6 +28,7 @@ import argparse
 import dataclasses
 import gzip
 import json
+import re
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -55,7 +56,9 @@ __all__ = [
     'STATES',
     'CommitStatus',
     'head_sha',
+    'known_reds',
     'main',
+    'resolve_commit',
     'state_for',
     'status_history',
     'status_list',
@@ -78,6 +81,9 @@ SAME_TREE: Final = 'same tree'
 
 #: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
 DESCRIPTION_LIMIT: Final = 140
+
+#: A commit named in full, used as given; anything else is resolved through git.
+_FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
 
 #: How many failing node ids ``status show`` prints before it says how many it left out.
 FAILING_LIMIT: Final = 20
@@ -221,39 +227,88 @@ def verdict_commit(
     return head_before
 
 
-def _red_lines(status: CommitStatus, client: Client) -> tuple[str, ...]:
-    """Every test the record behind *status* does not call ``ok``, with its own word, or why it cannot say."""
+def _not_ok(status: CommitStatus, client: Client) -> tuple[dict[str, TestCell], int] | str:
+    """``({node: cell} of every test not ``ok``, how many cells)`` in the record behind *status*, or why not read."""
     if not status.url:
-        return ('  no record is attached to this part',)
+        return '  no record is attached to this part'
     try:
         record = json.loads(gzip.decompress(client.download(status.url)).decode('utf-8'))
     except (ForgeCallFailed, OSError, ValueError) as failed:
-        return (f'  the record at {status.url} could not be read ({failed}); open it by hand',)
+        return f'  the record at {status.url} could not be read ({failed}); open it by hand'
     cells = record.get('cells') or {}
-    not_ok = sorted(
-        (node, TestCell.from_plain(plain))
-        for node, plain in cells.items()
-        if isinstance(plain, Mapping) and TestCell.from_plain(plain).status is not Status.OK
-    )
-    shown = [f'  - {node}  {cell.word()}' for node, cell in not_ok[:FAILING_LIMIT]]
-    more = [f'  ... and {len(not_ok) - FAILING_LIMIT} more'] if len(not_ok) > FAILING_LIMIT else []
-    return (f'  not ok: {len(not_ok)} of {len(cells)} test(s)', *shown, *more, f'  record: {status.url}')
+    found = {node: TestCell.from_plain(plain) for node, plain in cells.items() if isinstance(plain, Mapping)}
+    return {node: cell for node, cell in sorted(found.items()) if cell.status is not Status.OK}, len(cells)
 
 
-def status_show(client: Client, sha: str, *, part: str = '') -> tuple[str, ...]:
+def _red_lines(status: CommitStatus, client: Client, known: Mapping[str, frozenset[str]] | None) -> tuple[str, ...]:
+    """Every test the record behind *status* does not call ``ok``, with its own word, or why it cannot say.
+
+    With *known* (the base's not-ok nodes per part), each is labelled ``inherited`` (red on the base too) or ``NEW``.
+    """
+    read = _not_ok(status, client)
+    if isinstance(read, str):
+        return (read,)
+    not_ok, total = read
+    base = known.get(status.context) if known is not None else None
+
+    def label(node: str) -> str:
+        if known is None:
+            return ''
+        return '  inherited' if base is not None and node in base else '  NEW'
+
+    nodes = list(not_ok)
+    shown = [f'  - {node}  {not_ok[node].word()}{label(node)}' for node in nodes[:FAILING_LIMIT]]
+    more = [f'  ... and {len(nodes) - FAILING_LIMIT} more'] if len(nodes) > FAILING_LIMIT else []
+    tally = []
+    if known is not None:
+        new = sum(1 for node in nodes if label(node) == '  NEW')
+        tally = [f'  against the base: {len(nodes) - new} inherited, {new} new']
+    return (f'  not ok: {len(nodes)} of {total} test(s)', *tally, *shown, *more, f'  record: {status.url}')
+
+
+def known_reds(client: Client, sha: str) -> dict[str, frozenset[str]]:
+    """THE KNOWN REDS of *sha* (e.g. the integration tip): every part's not-ok node ids, read from its records.
+
+    The one record an agent compares its own run against, so an inherited red is told from a new one; a part whose
+    record cannot be read contributes nothing (every red against it then reads ``NEW`` -- never a false
+    ``inherited``).
+    """
+    reds: dict[str, frozenset[str]] = {}
+    for status in status_list(client, sha):
+        read = _not_ok(status, client) if status.state != 'success' else ({}, 0)
+        reds[status.context] = frozenset(read[0]) if not isinstance(read, str) else frozenset()
+    return reds
+
+
+def status_show(client: Client, sha: str, *, part: str = '', against: str = '') -> tuple[str, ...]:
     """``forge status show``: each part's verdict, and WHICH tests failed in it.
 
     A verdict line answers "is it green"; the reason it is red is in the record the status carries as its
     target URL (:mod:`dev_lab.dev.forgerecords`), one cell per test. *part* narrows the answer to one.
+    *against* (a base sha, e.g. the integration tip) labels each red ``inherited`` or ``NEW``
+    (:func:`known_reds`); ``show <integration tip>`` alone IS the list of the known reds.
     """
-    lines: list[str] = []
+    known = known_reds(client, against) if against else None
+    lines: list[str] = [f'against {against[:12]}: reds it carries too are inherited'] if against else []
     for status in status_list(client, sha):
         if part and status.context != part:
             continue
         lines.append(f'{status.context}  {status.state}  {status.description}')
         if status.state != 'success':
-            lines += list(_red_lines(status, client))
-    return tuple(lines or (f'{sha[:12]} carries no {part or "tests/<part>"} status',))
+            lines += list(_red_lines(status, client, known))
+    return tuple(lines if len(lines) > bool(against) else (f'{sha[:12]} carries no {part or "tests/<part>"} status',))
+
+
+def resolve_commit(root: Path, name: str) -> str:
+    """*name* as a commit sha: a full sha as given, else ``origin/<name>`` (a branch, e.g. ``integrate/main``)."""
+    if _FULL_SHA.fullmatch(name):
+        return name
+    found = _git(root, 'rev-parse', '--verify', '-q', f'refs/remotes/origin/{name}^{{commit}}')
+    found = found or _git(root, 'rev-parse', '--verify', '-q', f'{name}^{{commit}}')
+    if not found:
+        msg = f'{name!r} names no commit here (a sha, or a branch fetched from origin)'
+        raise ValueError(msg)
+    return found
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -269,6 +324,9 @@ def _parser() -> argparse.ArgumentParser:
     showing = verbs.add_parser('show')
     showing.add_argument('sha')
     showing.add_argument('--part', default='', help='one context, e.g. tests/base; every part by default')
+    showing.add_argument(
+        '--against', default='', help='a base (sha or branch, e.g. integrate/main): label each red inherited or NEW'
+    )
     for sub in (post, listing, showing):
         sub.add_argument('--json', action='store_true', help='print the normalized result as JSON')
     return parser
@@ -290,11 +348,14 @@ def main(
                 status_post(client, args.sha, context=args.context, state=args.state, description=args.description),
             )
         elif args.verb == 'show':
-            lines = status_show(client, args.sha, part=args.part)
+            root = Path.cwd() if cwd is None else cwd
+            sha = resolve_commit(root, args.sha)
+            against = resolve_commit(root, args.against) if args.against else ''
+            lines = status_show(client, sha, part=args.part, against=against)
             for line in lines if not args.json else ():
                 emit(line)
             if args.json:
-                emit(json.dumps({'sha': args.sha, 'part': args.part, 'lines': list(lines)}, indent=2))
+                emit(json.dumps({'sha': sha, 'part': args.part, 'against': against, 'lines': list(lines)}, indent=2))
             return 0
         else:
             found = status_list(client, args.sha)
@@ -302,6 +363,9 @@ def main(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
+    except ValueError as unnamed:
+        emit(f'[forge] {unnamed}', err=True)
+        return 2
     if args.json:
         data = [dataclasses.asdict(status) for status in found]
         emit(json.dumps(data[0] if args.verb == 'post' else data, indent=2))
