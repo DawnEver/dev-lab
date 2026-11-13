@@ -25,6 +25,7 @@ import contextlib
 import os
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Final, Protocol
+from urllib.parse import quote
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, JUDGE_CHECK, REVIEW_CONTEXT
@@ -104,20 +105,25 @@ class RepoReader(Protocol):
 
 
 def manifest_at(client: RepoReader, ref: str) -> str:
-    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree.
+    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree (:func:`file_at`)."""
+    return file_at(client, 'pyproject.toml', ref)
+
+
+def file_at(client: RepoReader, path: str, ref: str) -> str:
+    """The text of *path* at *ref* in the client's repo, as the forge holds it -- never a working tree.
 
     Raises:
         DeclarationUnread: the file is absent at *ref*, cannot be read, or the answer carries no content.
 
     """
     try:
-        answer: Any = client.call('GET', f'{client.repo}/contents/pyproject.toml?ref={ref}')
+        answer: Any = client.call('GET', f'{client.repo}/contents/{quote(path)}?ref={ref}')
     except ForgeCallFailed as failed:
-        msg = f'pyproject.toml at {ref} cannot be read: {failed}'
+        msg = f'{path} at {ref} cannot be read: {failed}'
         raise DeclarationUnread(msg) from failed
     content = answer.get('content') if isinstance(answer, dict) else None
     if not content:
-        msg = f'pyproject.toml at {ref}: the forge answered no content'
+        msg = f'{path} at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
     return base64.b64decode(content).decode()
 

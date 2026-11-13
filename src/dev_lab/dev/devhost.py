@@ -53,8 +53,8 @@ from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, 
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'OWN_TABLE', 'RENDER_DOOR', 'declared', 'declared_channels', 'detect', 'drift', 'main', 'notice', 'render',
-    'stop_block',
+    'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'detect', 'drift', 'host_file',
+    'main', 'notice', 'render', 'stop_block',
 ]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
@@ -83,8 +83,31 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
+def host_file(host: str) -> str:
+    """Where *host*'s declaration lives in the config source, relative to its root."""
+    return f'hosts/{host}.toml'
+
+
 def _sources(clone: Path, host: str) -> tuple[Path, Path]:
-    return clone / 'family.toml', clone / 'hosts' / f'{host}.toml'
+    return clone / 'family.toml', clone / host_file(host)
+
+
+def config_source(live: Mapping[str, Any] | None = None) -> str:
+    """The config source's forge URL: the ``origin`` of the clone the machine file's ``[devhost]`` names.
+
+    Raises:
+        ValueError: the machine file is not a render (no ``[devhost] source``), or that clone has no ``origin``.
+
+    """
+    own = (machineconfig.machine() if live is None else live).get(OWN_TABLE, {})
+    if not own.get('source'):
+        msg = f'the machine file has no [{OWN_TABLE}] source: render it (devhost render --host NAME --from CLONE)'
+        raise ValueError(msg)
+    url = git_out(Path(own['source']), 'remote', 'get-url', 'origin')
+    if not url:
+        msg = f'{own["source"]} has no origin remote: the config source is unknown here'
+        raise ValueError(msg)
+    return url.strip()
 
 
 def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
