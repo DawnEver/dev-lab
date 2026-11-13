@@ -46,3 +46,21 @@ def test_the_cli_polls_every_two_minutes_and_never_faster_than_its_floor(monkeyp
     forgewatch.main([SHA, '--every-seconds', '45'])
     assert given == [forgewatch.EVERY_S, forgewatch.FLOOR_S, 45.0]
     assert (forgewatch.EVERY_S, forgewatch.FLOOR_S) == (120.0, 30.0)
+
+
+def test_a_part_a_failed_job_posted_error_reads_red_and_a_pending_one_does_not() -> None:
+    """claude-code-config #6: the job's ``error`` (jobparts.produce/absent) is a red the watch reports and settles on.
+
+    PLANTED CONTROL: the same row ``pending`` (absent) keeps the watch waiting to its deadline.
+    """
+    forge, said = StateForge(), []
+    forge.call(
+        'POST',
+        f'{forge.repo}/statuses/{SHA}',
+        {'context': 'tests/base@windows', 'state': 'error', 'description': "unreachable: cannot run 'npm'"},
+    )
+    assert watch(forge, (SHA,), deadline_s=0, every_s=1, say=said.append) == 1
+    assert said == ["tests/base@windows: error unreachable: cannot run 'npm'"]
+    other = StateForge()
+    _post(other, 'tests/base@windows', 'pending')
+    assert watch(other, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None, sleep=lambda _s: None) == 3

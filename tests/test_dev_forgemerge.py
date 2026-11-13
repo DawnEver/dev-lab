@@ -159,11 +159,29 @@ def test_a_repo_declaring_its_merge_check_merges_on_that_check_alone(tmp_path: P
     red = _checked(work, head, [*review, {**check, 'status': 'failure', 'description': 'Failure'}])
     assert not red.ready, 'PLANTED CONTROL: a red declared check holds the merge'
     assert not red.waiting
-    assert any(one.startswith(f'its merge checks: {_CHECK} is failure') for one in red.missing), red.missing
+    assert any(one.startswith(f'its merge checks: {_CHECK} FAILED (failure)') for one in red.missing), red.missing
     absent = _checked(work, head, review)
     assert not absent.ready, 'PLANTED CONTROL: a missing declared check holds the merge'
     assert absent.waiting
     assert any(f'{_CHECK} is not yet posted' in one for one in absent.missing), absent.missing
+
+
+def test_a_declared_check_whose_job_failed_reads_failed_and_a_running_one_reads_pending(tmp_path: Path) -> None:
+    """claude-code-config #6 (2026-11-13): a job that ended with no record read "is pending", so everyone waited.
+
+    PLANTED CONTROL both ways: the ``error`` a failed job posts says FAILED and is not waiting; a ``pending`` says
+    pending and waits.
+    """
+    work, head = _work(tmp_path)
+    review = [r for r in _green() if r['context'] == 'tests/review']
+    error = {'id': 9, 'context': _CHECK, 'status': 'error', 'description': "unreachable: cannot run 'npm'"}
+    failed = _checked(work, head, [*review, error])
+    assert not failed.waiting
+    assert any(f"{_CHECK} FAILED (error): unreachable: cannot run 'npm'" in one for one in failed.missing)
+    running = _checked(work, head, [*review, {**error, 'status': 'pending', 'description': 'running'}])
+    assert running.waiting
+    assert any(f'{_CHECK} is pending: running' in one for one in running.missing), running.missing
+    assert not any('FAILED' in one for one in running.missing)
 
 
 def test_a_declared_merge_check_is_not_satisfied_by_the_serve_parts(tmp_path: Path) -> None:

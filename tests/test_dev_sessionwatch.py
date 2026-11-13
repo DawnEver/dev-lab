@@ -103,6 +103,26 @@ def test_a_red_then_green_then_merge_is_reported_once_each_and_the_watch_ends(
     assert _watch(forge)[1] == ['session s1: no open PR left'], 'a merge is reported once, never again'
 
 
+def test_a_row_its_failed_job_posted_error_streams_red_and_an_absent_row_streams_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """claude-code-config #6 (2026-11-13): an unreachable windows job read pending, so the stream never said it.
+
+    The job now posts the row ``error`` (jobparts); PLANTED CONTROL: the row absent (``pending``) says nothing.
+    """
+    forge = StateForge()
+    number = _opened(forge, capsys)
+    key = f'{FORGE.identity}#{number}'
+    status_post(forge, SHA, context='tests/base@windows', state='pending', description='absent: no job settled')
+    code, said = _watch(forge, posts=[
+        lambda: status_post(forge, SHA, context='tests/base@windows', state='error', description='unreachable: npm'),
+        lambda: _merge(forge, number),
+    ])  # fmt: skip
+    assert code == 0
+    assert said[0] == f'{key} {SHA[:12]} tests/base@windows error unreachable: npm', said
+    assert not any('absent' in line for line in said), 'an absent row is not a red'
+
+
 def test_a_closed_pr_is_reported_closed_and_another_session_hears_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
