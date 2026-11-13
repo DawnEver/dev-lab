@@ -2,7 +2,7 @@
 
 User ruling 2026-10-21: a try NEVER BLOCKS. It runs the repository's test producer over *paths* at ``HEAD`` as a
 request (:data:`dev_lab.dev.forgerequest.TESTS`), PLACED by the markers its files carry
-(:func:`dev_lab.dev.forgerequest.placement`): on Linux for anything Linux can run, on a Windows host only for a
+(:func:`dev_lab.dev.forgerequestpaths.placement`): on Linux for anything Linux can run, on a Windows host only for a
 selection holding a ``jmag`` test.
 
 ROOM IS READ, NOT WAITED FOR. The hosts' cards (:mod:`dev_lab.dev.forgehosts`) say what each host admitted against
