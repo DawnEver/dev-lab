@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tomllib
@@ -336,3 +337,30 @@ def test_channels_are_one_machine_fact_never_the_family(tmp_path: Path) -> None:
     family = FAMILY.replace('[dev]\n', '[dev]\nchannels = { "b" = "u" }\n')
     found = check_family(_write(tmp_path, 'family.toml', family))
     assert any('channels' in line for line in found), found
+
+
+def test_the_channels_verb_prints_the_declaration_as_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(LOCAL + '\n[agent]\nchannels = { "bridge-x" = "123456" }\n', encoding='utf-8')
+    assert devhost.main(['--machine', str(machine), 'channels', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == {'bridge-x': '123456'}
+
+
+def test_the_channels_verb_prints_an_empty_object_when_nothing_is_declared(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(LOCAL, encoding='utf-8')
+    assert devhost.main(['--machine', str(machine), 'channels', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == {}
+    assert devhost.main(['--machine', str(tmp_path / 'absent.toml'), 'channels', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == {}
+
+
+def test_the_channels_verb_refuses_a_malformed_declaration(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(LOCAL + '\n[agent]\nchannels = { "bridge-x" = 1 }\n', encoding='utf-8')
+    assert devhost.main(['--machine', str(machine), 'channels', '--json']) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert 'channels' in captured.err
