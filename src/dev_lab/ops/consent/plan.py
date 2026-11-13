@@ -29,10 +29,8 @@ from typing import Any, Final
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.credential import ConsentRefused, canonical
 
-__all__ = ['DIGEST_SHOWN', 'MAX_GRANTS', 'STALE_CLIENT', 'Plan', 'digest', 'load', 'parsed', 'show', 'stale_client']
+__all__ = ['DIGEST_SHOWN', 'STALE_CLIENT', 'Plan', 'digest', 'load', 'parsed', 'show', 'stale_client']
 
-#: The most grants one code may buy (the same bound as a token batch).
-MAX_GRANTS: Final = 16
 #: Hex characters of the digest the user is shown and every grant command names.
 DIGEST_SHOWN: Final = 12
 
@@ -64,8 +62,8 @@ def parsed(data: object) -> Plan:
     if not isinstance(host, str) or '@' not in host:
         msg = 'plan host is "<user>@<host>", the session it opens'
         raise ConsentRefused(msg)
-    if not isinstance(grants, list) or not 0 < len(grants) <= MAX_GRANTS:
-        msg = f'plan grants is a list of 1..{MAX_GRANTS} requests'
+    if not isinstance(grants, list) or not grants:
+        msg = 'plan grants is a non-empty list of requests (the issuer bounds it by [ops.consent] max_grants)'
         raise ConsentRefused(msg)
     for index, grant in enumerate(grants):
         if not isinstance(grant, dict) or not all(isinstance(grant.get(key), str) for key in ('action', 'subject')):
@@ -98,8 +96,22 @@ def load(path: Path, shown: str) -> Plan:
 
 
 def show(path: Path) -> str:
-    """What the user reads before giving a code: the host, every grant, and the digest to name."""
+    """What the user reads before a code: the digest, the boundary summary, every grant by host and action.
+
+    Grouped so a large plan stays readable at a glance.
+
+    A boundary action is a registry row's ``boundary`` (:mod:`.actions`); an action this client does not know is
+    counted as one (it cannot say otherwise).
+    """
     plan = parsed(json.loads(path.read_text(encoding='utf-8')))
-    lines = [f'plan {plan.digest[:DIGEST_SHOWN]}: one code opens {plan.host} and consents to:']
-    lines += [f'  {grant["action"]}  {grant["subject"]}' for grant in plan.grants]
+    by_action: dict[str, list[str]] = {}
+    for grant in plan.grants:
+        by_action.setdefault(grant['action'], []).append(grant['subject'])
+    crossing = [f'{action} x{len(subjects)}' for action, subjects in by_action.items()
+                if action not in ACTIONS or ACTIONS[action].boundary]  # fmt: skip
+    head = f'plan {plan.digest[:DIGEST_SHOWN]}: one code opens {plan.host} and consents to {len(plan.grants)} grant(s):'
+    lines = [head, 'boundary: ' + (', '.join(crossing) if crossing else 'none'), f'  {plan.host}']
+    for action, subjects in by_action.items():
+        lines.append(f'    {action} ({len(subjects)})')
+        lines += [f'      {subject}' for subject in subjects]
     return '\n'.join(lines)

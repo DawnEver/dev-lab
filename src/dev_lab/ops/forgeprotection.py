@@ -18,6 +18,10 @@ short-lived token minted per use and deleted after it). So the host applies what
 (:meth:`Protection.subject`) binds the repo, the ref and the rendered protection's digest, so a grant cannot be
 spent on another repo, ref or protection; ``--subject`` prints it, and nothing is written. Every apply is audited to
 ``[ops.forge] log``.
+
+THE SUBJECT IS ALSO COMPUTED OFF THE HOST (:func:`local_subject`): it is a pure function of the repo, the ref, the
+public forge host and the declaration's text, so a workstation that reads the same ``pyproject.toml`` at the same ref
+derives the same subject through the same :func:`protection_of` -- a plan is built with no session on the host.
 """
 
 from __future__ import annotations
@@ -56,7 +60,9 @@ __all__ = [
     'add_parser',
     'apply',
     'declared_repos',
+    'local_subject',
     'plan',
+    'protection_of',
     'public_host',
     'rendered',
     'run',
@@ -147,17 +153,39 @@ def rendered(role: Forge, api: forgeprotect.Api, repo: str, ref: str) -> Protect
     if repo not in declared_repos(role):
         msg = f'{repo} is not declared in [ops.forge.accounts]; declared: {sorted(declared_repos(role))}'
         raise ForgeRefused(msg)
-    owner, _, name = repo.partition('/')
-    remote = Remote(public_host(role), owner, name)
     try:
         text = manifest_at(api, ref)
-        wanted = forgeprotect.targets(text, f'{repo}@{ref}:pyproject.toml', remote)
     except (DeclarationUnread, ForgeRefused) as unread:
         msg = f'{repo}: pyproject.toml at {ref} cannot be read: {unread}'
         raise ForgeRefused(msg) from unread
+    return protection_of(repo, ref, public_host(role), text)
+
+
+def protection_of(repo: str, ref: str, host: str, text: str) -> Protection:
+    """*repo*'s :class:`Protection` on the public forge *host*, rendered from its ``pyproject.toml`` *text* at *ref*.
+
+    The ONE place a protection is rendered, on the host (:func:`rendered`) and off it (:func:`local_subject`).
+
+    Raises:
+        ForgeRefused: the declaration does not render for *host*.
+
+    """
+    owner, _, name = repo.partition('/')
+    remote = Remote(host, owner, name)
+    try:
+        wanted = forgeprotect.targets(text, f'{repo}@{ref}:pyproject.toml', remote)
     except ValueError as refused:
         raise ForgeRefused(str(refused)) from refused
     return Protection(repo, ref, remote, wanted)
+
+
+def local_subject(repo: str, ref: str, host: str, read: Callable[[str], str]) -> str:
+    """The :data:`ACTION` subject the forge *host* derives for *repo* at *ref*, computed HERE.
+
+    *read* returns the repo's ``pyproject.toml`` text at a ref (a forge read or ``git show``); the rendering is
+    :func:`protection_of`, the host's own.
+    """
+    return protection_of(repo, ref, host, read(ref)).subject()
 
 
 def plan(api: forgeprotect.Api, found: Protection) -> list[Step]:

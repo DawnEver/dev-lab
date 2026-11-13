@@ -1,7 +1,8 @@
 """``upgrade``: install dev-lab into ``[ops] python``'s environment at the tip of the CONFIGURED ref and source.
 
-It takes no argument, so an operator allowed exactly this command (sudo) installs only the configured integration tip --
-never a sha or URL of their choosing. Every input is ``[ops.upgrade]`` (:class:`dev_lab.ops.config.Upgrade`).
+Its bare form takes no argument, so an operator allowed exactly this command (sudo) installs only the configured
+integration tip -- never a sha or URL of their choosing. Every input is ``[ops.upgrade]``
+(:class:`dev_lab.ops.config.Upgrade`).
 
 The ref may be red or carry break-glassed untested code, and this host runs break-glass -- the tool that repairs a bad
 tip -- from this very install (user ruling 2026-11-06). So an upgrade PROVES ITSELF OR ROLLS BACK: it records the
@@ -13,6 +14,14 @@ names, together with every git package dev-lab's own ``uv.lock`` pins AT THAT CO
 uv overrides derived from the lock (:func:`locked_family`). A hand-written override file was a second source: the
 hosts pinned an old lab-commons the upgraded dev-lab could not import, and the judge died. A rollback reinstalls the
 old commit with the old commit's lock.
+
+AN UPGRADE IS A PLAN STEP (2026-11-13: it needed a held session of its own, so a second code). ``upgrade --sha S
+--credential F`` (:func:`planned`) redeems one :data:`ACTION` credential whose subject is S, so the user approves the
+exact revision in the plan's digest; ``upgrade --subject`` prints the declared ref's tip (:func:`subject`). The host
+installs S only when S IS that tip -- an older or foreign sha is refused before the credential is spent, so the
+consented form installs nothing the bare verb could not -- and an S already installed is done again without
+spending it (idempotent: a resumed plan re-runs the step harmlessly). The bare ``upgrade`` stays the operator's
+argument-less sudo door.
 """
 
 from __future__ import annotations
@@ -33,15 +42,33 @@ from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops import configdoor
-from dev_lab.ops.config import OpsConfig
+from dev_lab.ops.config import OpsConfig, Upgrade
 
-__all__ = ['checks', 'command', 'commit', 'failed_check', 'fetch_lock', 'locked_family', 'run', 'run_check']
+__all__ = [
+    'ACTION',
+    'checks',
+    'command',
+    'commit',
+    'failed_check',
+    'fetch_lock',
+    'locked_family',
+    'planned',
+    'run',
+    'run_check',
+    'subject',
+]
 
 #: Runs a command line; its exit code and stdout.
 type Runner = Callable[[Sequence[str]], tuple[int, str]]
 
 #: ``(source, ref)`` -> the commit the ref names and dev-lab's ``uv.lock`` text at that commit.
 type Fetcher = Callable[[str, str], tuple[str, str]]
+
+#: The consent action of one ``upgrade --sha`` (:mod:`dev_lab.ops.consent.actions`).
+ACTION: Final = 'ops.upgrade'
+
+#: Redeems a credential on one subject (:func:`dev_lab.ops.consent.client.redeem`); raises when it does not.
+type Redeem = Callable[[object, str], object]
 
 #: Seconds one self-check may take before it counts as failed.
 CHECK_TIMEOUT = 120
@@ -248,3 +275,46 @@ def run(
     if again:
         return 1, f'self-check {failed} FAILED on tip {new}; rollback to {old} ALSO FAILED ({again}): {out.strip()}'
     return 1, f'self-check {failed} FAILED on tip {new}; restored {old}'
+
+
+def _role(config: OpsConfig) -> Upgrade:
+    if config.upgrade is None:
+        msg = f'{config.path} enables no [ops.upgrade]'
+        raise ValueError(msg)
+    return config.upgrade
+
+
+def subject(config: OpsConfig, *, fetch: Fetcher = fetch_lock) -> str:
+    """The :data:`ACTION` subject a plan grants: the sha the declared ``[ops.upgrade] ref`` names now."""
+    role = _role(config)
+    return fetch(role.source, role.ref)[0]
+
+
+def planned(
+    config: OpsConfig,
+    sha: str,
+    *,
+    redeem: Redeem,
+    credential: object,
+    install: Runner = _install,
+    probe: Runner = run_check,
+    fetch: Fetcher = fetch_lock,
+) -> tuple[int, str]:
+    """Install *sha* as one consented plan step (see the module docstring); the exit code and what happened.
+
+    Raises:
+        ConsentRefused: the credential does not consent to *sha* (nothing is installed).
+
+    """
+    role = _role(config)
+    if commit(config, probe) == sha:
+        return 0, f'dev-lab already at {sha}; credential not spent'
+    tip, lock = fetch(role.source, role.ref)
+    if sha != tip:
+        return 2, f'refused: {sha} is not the tip of [ops.upgrade] ref {role.ref} ({tip}); nothing spent'
+    redeem(credential, sha)
+
+    def pinned(source: str, ref: str) -> tuple[str, str]:  # the tip checked IS the tip installed
+        return (tip, lock) if ref == role.ref else fetch(source, ref)
+
+    return run(config, install=install, probe=probe, fetch=pinned)

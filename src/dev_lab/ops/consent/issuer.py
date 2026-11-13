@@ -32,6 +32,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption,
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, full_digest, params_hash, sign, verify
 from dev_lab.ops.consent.plan import parsed
+from dev_lab.ops.consentrole import Consent
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.totp import TotpRefused, accept, write_private
@@ -116,6 +117,7 @@ class Issuer:
     lockout_after: int = 5
     lockout_minutes: float = 15.0
     on_lock: Callable[[float], None] = lambda _until: None
+    max_grants: int = Consent.max_grants
 
     @property
     def ledger(self) -> Path:
@@ -170,6 +172,12 @@ class Issuer:
         ``plan`` field), and the ledger records it on each.
         """
         found = parsed(plan)
+        if len(found.grants) > self.max_grants:
+            msg = (
+                f'the plan grants {len(found.grants)}; [ops.consent] max_grants = {self.max_grants} on this issuer '
+                '(the user approves the whole plan by its digest; raise the declared cap, or split the plan)'
+            )
+            raise ConsentRefused(msg)
         return self._issue([requested(grant) for grant in found.grants], code, plan=found.digest)
 
     def _issue(self, rows: list[_Row], code: str, *, plan: str | None) -> list[dict[str, Any]]:

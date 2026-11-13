@@ -45,7 +45,7 @@ def issuer(role: Consent, *, alert: Alert) -> Issuer:
         alert('consent LOCKED OUT', f'{role.lockout_after} wrong codes; every code refused until {when}')
 
     return Issuer(Path(role.totp), Path(role.key), Path(role.state), role.issuer, time.time,
-                  role.lockout_after, role.lockout_minutes, locked)  # fmt: skip
+                  role.lockout_after, role.lockout_minutes, locked, role.max_grants)  # fmt: skip
 
 
 def ends(config: OpsConfig, *, alert: Alert) -> tuple[Ed25519PublicKey, Register]:

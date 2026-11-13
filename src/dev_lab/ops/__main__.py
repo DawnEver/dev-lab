@@ -1,6 +1,7 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
+Verbs: ``install``, ``promote``, ``judge``, ``upgrade [--sha S --credential F | --subject]`` (:mod:`.upgrade`),
+``probe``, ``breakglass serve|tick``,
 ``consent serve|enrol|keygen|ready`` (:mod:`dev_lab.ops.consentverbs`), ``backup export|pull``,
 ``access enrol|adopt``, ``disk``, ``clean`` (:mod:`dev_lab.ops.disk`), ``config apply|tick``
 (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`),
@@ -121,11 +122,25 @@ def _judge(config: OpsConfig) -> int:
     return 1 if failed else 0
 
 
-def _upgrade(config: OpsConfig) -> int:
+def _upgrade(config: OpsConfig, args: argparse.Namespace) -> int:
     if config.upgrade is None:
         emit(f'[ops] {config.path} enables no [ops.upgrade]', err=True)
         return 2
-    code, said = upgrade.run(config)
+    try:
+        if args.subject:  # what a preflight compares with the plan's ops.upgrade grant; nothing is installed
+            emit(upgrade.subject(config))
+            return 0
+        if args.sha or args.credential:
+            if not (args.sha and args.credential):
+                emit(f'[ops upgrade] refused: --sha and --credential come together ({upgrade.ACTION})', err=True)
+                return 2
+            granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
+            code, said = upgrade.planned(config, args.sha, redeem=_redeemer(config)(upgrade.ACTION), credential=granted)
+        else:
+            code, said = upgrade.run(config)
+    except (ConsentRefused, OSError, ValueError) as refused:
+        emit(f'[ops upgrade] refused: {refused}', err=True)
+        return 2
     emit(f'[ops upgrade] {said}', err=code != 0)
     return 0 if code == 0 else 1
 
@@ -276,7 +291,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs.add_parser('install').add_argument('--root', type=Path, default=Path('/'))
     verbs.add_parser('promote')
     verbs.add_parser('judge', help='one judging pass over [ops.judge] repos')
-    verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref; takes no argument')
+    upgrading = verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref')
+    upgrading.add_argument('--sha', default='', help='a plan step: the tip sha its ops.upgrade grant names')
+    upgrading.add_argument('--credential', default='', help='a plan step: a single-use ops.upgrade credential')
+    upgrading.add_argument('--subject', action='store_true', help="print the ref's tip sha a grant names; no install")
     verbs.add_parser('probe')
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'tick'))
@@ -332,7 +350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             show=lambda link: _show(link, uri_only=args.uri),
         ),
         'judge': lambda: _judge(config),
-        'upgrade': lambda: _upgrade(config),
+        'upgrade': lambda: _upgrade(config, args),
         'config': lambda: (
             configverbs.tick(config, alert=lambda title, detail: _alert(config, title, detail))
             if args.action == 'tick'
