@@ -8,8 +8,8 @@ Three shapes are not narrative edits:
 * a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
   closed task becomes history, and it is the one rename into memory;
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
-  (:data:`VOLATILE_FIELDS`) a reader used to rewrite on every read. A change whose ONLY difference is
-  those lines is that migration and nothing else;
+  (:data:`dev_lab.dev.memoryentry.VOLATILE_FIELDS`) a reader used to rewrite on every read. A change
+  whose ONLY difference is those lines is that migration and nothing else;
 * rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
   rewrite task text or turn narrative memory into a task list. Both versions must match the format.
 
@@ -37,7 +37,6 @@ from __future__ import annotations
 import re
 import shutil
 import sys
-from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -46,61 +45,35 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.log import emit
 
 from dev_lab.dev.lanepolicy import policy_at, policy_from
+from dev_lab.dev.memoryentry import (
+    AMENDMENT_NOTE,
+    MANUAL_PATH,
+    MANUAL_ROW,
+    is_memory,
+    merged_entry_problems,
+    only_amended,
+    only_manual_tasks_updated,
+    only_redacted,
+    only_volatile_stripped,
+    shape_problems,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
 __all__ = [
-    'REQUIRED_KEYS',
-    'VOLATILE_FIELDS',
     'MemoryAddsError',
     'main',
-    'merged_entry_problems',
     'pending',
     'problems_between',
 ]
-
-#: The frontmatter keys every entry declares (MEMORY-SHAPE): ``name`` is an index's key, ``description`` what a
-#: reader decides on unopened. An ADDED entry lacking one is refused at commit, not by a later tree scan.
-REQUIRED_KEYS: Final = ('name', 'description')
-
-#: Frontmatter fields the migration strips: per-read bookkeeping, never content.
-VOLATILE_FIELDS = ('accessed', 'tier', 'count')
 
 _GIT = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S = 120
 _ZERO = '0' * 40
 _EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
-_MEMORY = '.claude/memory/'
 _TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
-_FRONTMATTER = re.compile(r'\A---\n(.*?)\n---(?:\n|\Z)', re.DOTALL)
-_MERGED_FROM = re.compile(r'^merged_from:\s*(.*)$', re.MULTILINE)
-_VOLATILE = re.compile(rf'^(?:{"|".join(VOLATILE_FIELDS)}):')
-_CITATION = re.compile(r'[\w./-]*[\w-]\.(?:md|py|rs|mjs|js|ts|toml|json|txt|yaml|yml|csv)\b')
-REDACTION_NOTE: Final = 'Redacted {day}: site markers removed (public repo).'
-# A redaction swaps a site span for a placeholder token or one of these neutral role phrases -- nothing else.
-REDACTION_ROLES: Final = (
-    "the private consumer's",
-    'the private consumer repo',
-    'the private consumer',
-    "the second private consumer's",
-    'the second private consumer',
-    'an optimisation consumer',
-    "the integrator workstation's",
-    'the integrator workstation',
-)
-_PLACEHOLDER = re.compile('|'.join([r'<[a-z][a-z0-9-]*>', *(re.escape(role) for role in REDACTION_ROLES)]))
-_NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
-# THE EXCEPTIONAL CASE (user ruling 2026-11-13): a published line that is WRONG -- a misstated fact, a
-# mistranslated quote, a character a family rule forbids -- is corrected IN PLACE when the user approved it.
-# The entry gains this note (its reason and the user's words, both non-empty); every other change replaces
-# a line one-for-one, so nothing is added or removed and git history keeps the original. A disagreement
-# with a past conclusion is still a NEW entry with ``corrects:``: this note is for content that is wrong.
-AMENDMENT_NOTE: Final = 'Amended {day}: {reason} -- approved: "{approved}"'
-_AMEND_LINE = re.compile(r'> Amended \d{4}-\d{2}-\d{2}: \S.*? -- approved: "[^"]*\S[^"]*"')
-_MANUAL = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
-_MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
 
 class MemoryAddsError(RuntimeError):
@@ -120,153 +93,6 @@ def _git(root: Path, *args: str) -> str:
     return out
 
 
-def _is_memory(path: str) -> bool:
-    return _MEMORY in f'/{path}'
-
-
-def _scope(path: str) -> str:
-    return f'/{path}'.split(f'/{_MEMORY}', 1)[0].lstrip('/')
-
-
-def _lf(text: str) -> str:
-    return text.replace('\r\n', '\n')
-
-
-def _only_volatile_stripped(old: str, new: str) -> bool:
-    old, new = _lf(old), _lf(new)
-    match = _FRONTMATTER.match(old)
-    if match is None or old == new:
-        return False
-    head = '\n'.join(line for line in match.group(1).splitlines() if not _VOLATILE.match(line))
-    return f'---\n{head}\n---\n' + old[match.end() :] == new
-
-
-def missing_keys(text: str) -> tuple[str, ...]:
-    """The :data:`REQUIRED_KEYS` *text*'s frontmatter does not declare (all of them when it has none)."""
-    match = _FRONTMATTER.match(_lf(text))
-    head = match.group(1).splitlines() if match else []
-    return tuple(key for key in REQUIRED_KEYS if not any(line.startswith(f'{key}:') for line in head))
-
-
-def _completed(old: str, new: str) -> list[str] | None:
-    """*new*'s lines minus the required keys it adds to *old*'s frontmatter; ``None`` when it adds none."""
-    lacking = missing_keys(old)
-    match = _FRONTMATTER.match(_lf(new))
-    if not lacking or match is None or not _FRONTMATTER.match(_lf(old)):
-        return None
-    head = match.group(1).splitlines()
-    kept = [line for line in head if not any(line.startswith(f'{key}:') for key in lacking)]
-    if len(kept) == len(head):
-        return None
-    return ['---', *kept, '---', *_lf(new)[match.end() :].splitlines()]
-
-
-def _only_amended(old: str, new: str) -> bool:
-    """An approved amendment: ONE new note, plus one-for-one line replacements or a frontmatter completion.
-
-    One-for-one: the other lines replaced, none added or removed. Completion (user ruling 2026-11-13): the
-    missing :data:`REQUIRED_KEYS` added to a published entry's frontmatter and nothing else changed.
-    """
-    old_lines, new_lines = _lf(old).splitlines(), _lf(new).splitlines()
-    notes = sum(1 for line in new_lines if _AMEND_LINE.fullmatch(line))
-    if notes != 1 + sum(1 for line in old_lines if _AMEND_LINE.fullmatch(line)):
-        return False
-    before = [line for line in old_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
-    if (completed := _completed(old, new)) is not None:
-        return before == [line for line in completed if line.strip() and not _AMEND_LINE.fullmatch(line)]
-    after = [line for line in new_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
-    return len(before) == len(after) and before != after
-
-
-def _only_redacted(old: str, new: str) -> bool:
-    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders."""
-    after_lines = _lf(new).splitlines()
-    if not any(_NOTE_LINE.fullmatch(line) for line in after_lines):
-        return False
-    before = [line for line in _lf(old).splitlines() if line.strip()]
-    after = [line for line in after_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
-    if len(before) != len(after):
-        return False
-    for was, now in zip(before, after, strict=True):
-        if was == now:
-            continue
-        literals = _PLACEHOLDER.split(now)
-        if len(literals) == 1 or not re.fullmatch('.+?'.join(map(re.escape, literals)), was):
-            return False
-    return True
-
-
-def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
-    """Recognize rem task-engine's dedicated list, not a filename exemption for prose."""
-    match = _MANUAL.search(path)
-    if match is None:
-        return None
-    day = '-'.join(match.groups())
-    try:
-        date.fromisoformat(day)
-    except ValueError:
-        return None
-    header = f'---\nname: manual-{day}\ndescription: Manual tasks created on {day}\nmetadata:\n  type: project\n---\n'
-    text = _lf(text)
-    if not text.startswith(header):
-        return None
-    lines = [line for line in text[len(header) :].splitlines() if line]
-    if len(lines) % 2:
-        return None
-    rows = []
-    ids: set[str] = set()
-    for task, module in zip(lines[::2], lines[1::2], strict=True):
-        row = _MANUAL_ROW.fullmatch(task)
-        if (
-            row is None
-            or row[2] in ids
-            or row[3] != day.replace('-', '')
-            or row[4] != day
-            or re.fullmatch(r' {6}module: \S.*', module) is None
-        ):
-            return None
-        ids.add(row[2])
-        rows.append((row[1], task[5:], module))
-    return rows
-
-
-def _only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
-    before, after = _manual_rows(path, old), _manual_rows(path, new)
-    if before is None or after is None or len(after) < len(before):
-        return False
-    return all(a[1:] == b[1:] for a, b in zip(before, after[: len(before)], strict=True))
-
-
-def merged_entry_problems(path: str, text: str, exists: Callable[[str], bool] | None = None) -> tuple[str, ...]:
-    """Why the entry at *path* (repo-relative) fails as a merge.
-
-    *exists* says a source is at the base or added by the same change.
-    """
-    text = _lf(text)
-    match = _FRONTMATTER.match(text)
-    sources = _MERGED_FROM.search(match.group(1)) if match else None
-    if sources is None:
-        return ()
-    scope = _scope(path)
-    home = f'{scope}/{_MEMORY}' if scope else _MEMORY
-    out: list[str] = []
-    for source in re.findall(r'[^\s\[\],\'"]+', sources.group(1)):
-        full = source if _is_memory(source) else home + source
-        if '..' in source or _scope(full) != scope:
-            out.append(f'{path}: merged_from {source} is not a memory file of the scope {home}')
-        elif exists is not None and not exists(full):
-            out.append(f'{path}: merged_from {source} does not exist at the base ({full})')
-    in_fence = False
-    for paragraph in re.split(r'\n\s*\n', text[match.end() :]):
-        lines = [line for line in paragraph.strip().splitlines() if line.strip()]
-        fences = sum(line.lstrip().startswith('```') for line in lines)
-        prose = not in_fence and fences == 0 and lines and not all(line.startswith('#') for line in lines)
-        in_fence ^= fences % 2 == 1
-        if prose and not _CITATION.search(paragraph):
-            out.append(f'{path}: a merged paragraph cites no source file: "{lines[0][:60]}"')
-    return tuple(out)
-
-
 def _changes(root: Path, *spec: str) -> list[tuple[str, str, str]]:
     """``(status, old, new)`` rows of ``git diff -M -C --name-status`` over *spec*."""
     fields = _git(root, 'diff', '-M', '-C', '--name-status', '-z', *spec).split('\0')
@@ -279,17 +105,6 @@ def _changes(root: Path, *spec: str) -> list[tuple[str, str, str]]:
     return rows
 
 
-def _shape_problems(path: str, text: str) -> tuple[str, ...]:
-    """An added entry's missing :data:`REQUIRED_KEYS`, as one refusal naming its exit."""
-    if not path.endswith('.md') or not (lacking := missing_keys(text)):
-        return ()
-    why = (
-        f'{path}: its frontmatter declares no {", ".join(lacking)} -- every entry opens with '
-        '`---` / `name: <slug>` / `description: <one line>` / `---` (MEMORY-SHAPE); add them and commit'
-    )
-    return (why,)
-
-
 def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
     added = {new for status, _, new in rows if status in 'AC'}
 
@@ -299,19 +114,19 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
 
     out: list[str] = []
     for status, old, new in rows:
-        if status in 'AC' and _is_memory(new):
+        if status in 'AC' and is_memory(new):
             text = _git(root, 'show', f'{new_rev}:{new}')
-            out.extend((*_shape_problems(new, text), *merged_entry_problems(new, text, exists)))
-        elif status == 'R' and _is_memory(new) and not _is_memory(old):
+            out.extend((*shape_problems(new, text), *merged_entry_problems(new, text, exists)))
+        elif status == 'R' and is_memory(new) and not is_memory(old):
             if not _TASK.search(old):
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
-        elif status == 'M' and _is_memory(old):
+        elif status == 'M' and is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
             if not (
-                _only_volatile_stripped(before, after)
-                or _only_manual_tasks_updated(old, before, after)
-                or _only_redacted(before, after)
-                or _only_amended(before, after)
+                only_volatile_stripped(before, after)
+                or only_manual_tasks_updated(old, before, after)
+                or only_redacted(before, after)
+                or only_amended(before, after)
             ):
                 remedy = (
                     'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
@@ -319,13 +134,13 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                     + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
                     + '` and lines replaced one-for-one, or only the missing name/description frontmatter added'
                 )
-                if _MANUAL.search(old):
+                if MANUAL_PATH.search(old):
                     remedy += (
                         '; rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
                         'without changing existing task text, module or order'
                     )
                 out.append(f'{old}: {remedy}')
-        elif status in 'DRT' and _is_memory(old):
+        elif status in 'DRT' and is_memory(old):
             out.append(f'{old}: a memory entry is never deleted or moved ({status})')
     return tuple(out)
 
@@ -374,9 +189,9 @@ def _published_only(
         return rows
 
     def draft(status: str, old: str, new: str) -> bool:
-        if status not in 'MDRT' or not _is_memory(old) or _MANUAL.search(old) or _MANUAL.search(new):
+        if status not in 'MDRT' or not is_memory(old) or MANUAL_PATH.search(old) or MANUAL_PATH.search(new):
             return False
-        if status in 'MRT' and _MANUAL_ROW.search(_git(root, 'show', f'{tree}:{new}')):
+        if status in 'MRT' and MANUAL_ROW.search(_git(root, 'show', f'{tree}:{new}')):
             return False
         return _run(root, 'cat-file', '-e', f'{ref}:{old}')[0] != 0
 
