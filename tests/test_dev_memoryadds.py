@@ -518,3 +518,54 @@ def test_planted_a_founding_push_adding_an_uncited_merged_entry_is_still_refused
     found = memoryadds.pushed(repo, _fresh_origin(repo, uncited=True))
     assert len(found) == 1, found
     assert 'Uncited' in found[0]
+
+
+_WRONG = '---\nname: an-entry\ndescription: d\n---\n\nThe user said: D31 decide it NOT yourself.\nBody.\n'
+
+
+def _amend_note(reason: str = 'the quote was mistranslated', approved: str = 'fix that line') -> str:
+    return '> ' + memoryadds.AMENDMENT_NOTE.format(day='2026-11-13', reason=reason, approved=approved)
+
+
+def test_an_approved_amendment_corrects_a_published_entry_in_place(repo: Path) -> None:
+    """The exceptional case: a published line is WRONG (a fact, a mistranslation, a forbidden character).
+
+    It is corrected in place when the entry carries the amendment note -- its reason and the user's words
+    approving it -- and every other change replaces a line one-for-one: nothing is added or removed.
+    """
+    _write(repo, ENTRY, _WRONG)
+    _commit(repo, 'wrong', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    base = _lane(repo)
+    _write(
+        repo,
+        ENTRY,
+        f'---\nname: an-entry\ndescription: d\n---\n\n{_amend_note()}\n\n'
+        'The user said: D31 decide it yourself.\nBody.\n',
+    )
+    _commit(repo, 'amend', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    ('note', 'body'),
+    [
+        (None, 'The user said: D31 decide it yourself.\nBody.\n'),  # no note: an edit
+        ('reason-only', 'The user said: D31 decide it yourself.\nBody.\n'),  # no approval quoted
+        ('full', 'The user said: D31 decide it yourself.\n'),  # a line removed
+        ('full', 'The user said: D31 decide it yourself.\nBody.\nA new claim.\n'),  # a line added
+    ],
+)
+def test_planted_an_amendment_needs_its_note_its_approval_and_one_for_one_lines(
+    repo: Path, note: str | None, body: str
+) -> None:
+    """PLANTED CONTROL: without the note, without the user's words, or with lines added/removed, it is an edit."""
+    _write(repo, ENTRY, _WRONG)
+    _commit(repo, 'wrong', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    base = _lane(repo)
+    head = {None: '', 'reason-only': _amend_note(approved='') + '\n\n', 'full': _amend_note() + '\n\n'}[note]
+    _write(repo, ENTRY, f'---\nname: an-entry\ndescription: d\n---\n\n{head}{body}')
+    _commit(repo, 'amend badly', ENTRY)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert len(found) == 1, found
