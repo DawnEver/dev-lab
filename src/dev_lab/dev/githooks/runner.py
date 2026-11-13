@@ -266,9 +266,16 @@ def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequen
     if os.environ.get(FOREIGN_INTERPRETER_ENV) != '1':
         return chosen
     for hook in chosen:
-        if not needs_only_lab_commons(hook):
+        if hook.bootstraps:
+            emit(
+                f'[githooks] {stage}: this checkout has no venv -- {hook.id} bootstraps it in the background; '
+                f'until it lands (or if it never does) run: {Path(sys.executable).as_posix()} -m dev_lab.dev.dep '
+                f'--bootstrap {root.as_posix()}',
+                err=True,
+            )
+        elif not needs_only_lab_commons(hook):
             _note(f'[githooks] {stage} {hook.id}: skipped -- needs the repo venv, which this checkout lacks')
-    return tuple(hook for hook in chosen if needs_only_lab_commons(hook))
+    return tuple(hook for hook in chosen if needs_only_lab_commons(hook) or hook.bootstraps)
 
 
 def _report(stage: str, hook_id: str, code: int, output: str) -> int:

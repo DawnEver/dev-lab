@@ -70,6 +70,9 @@ class Hook:
     always_run: bool = False
     refs: str | None = None
     env: dict[str, str] = field(default_factory=dict)
+    #: It CREATES the checkout's own venv, so it runs on whichever dev_lab interpreter the shim found: a checkout
+    #: with no venv is the case it exists for (2026-11-13: a new worktree's hooks all skipped, the venv never came).
+    bootstraps: bool = False
 
     def selects(self, path: str) -> bool:
         """Whether *path* (repo-relative, POSIX) is one this hook judges."""
