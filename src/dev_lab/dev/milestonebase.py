@@ -1,0 +1,129 @@
+"""A PUSH BUILDS ON THE NEWEST MILESTONE, and an agent mints no version tag unasked.
+
+User ruling 2026-11-13: a milestone is a version tag. The integration branch carries dev versions
+(``v0.2.13.dev1``), a trunk promotion ``vX.Y.Z``; every agent iterates on a base holding the newest one, and a
+version tag is added only on promotion to the trunk or at the user's request. Two pre-push rules, LOCAL reads only
+(no network call beyond the push itself):
+
+* ``BASE-HOLDS-THE-MILESTONE`` -- a branch the push creates or updates must contain (``merge-base
+  --is-ancestor``) the newest milestone held LOCALLY: the highest ``v*`` tag in the family grammar
+  ``v<major>.<minor>.<patch>[.dev<N>][-unverified]`` (stdlib regex: the dev layer imports no :mod:`packaging`),
+  a release outranking its dev tags, the legacy suffix read as its base, any other tag ignored. The hook reads
+  no remote tags: ``forge sync`` fetches them, so a stale local tag set judges against an older milestone,
+  never a wrong one. No version tag -> nothing to hold. Remedy: ``python -m dev_lab.dev.forge sync``.
+* ``VERSION-TAG-NEEDS-APPROVAL`` -- in an agent session (:data:`dev_lab.dev.sessionprs.SESSION_ENV` set), a push
+  CREATING a ``v*`` tag on origin is refused unless :data:`APPROVED_ENV` holds the user's own words -- the
+  ``--approved "<words>"`` pattern of ``branchset --discard``, through the environment because git passes a hook
+  no flags. A human push and an existing remote tag are not judged.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import sys
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Final
+
+import lab_commons.launch as _door
+from lab_commons.log import emit
+
+from dev_lab.dev.refspec import pushed_refs
+from dev_lab.dev.sessionprs import SESSION_ENV
+
+__all__ = [
+    'APPROVED_ENV',
+    'BASE_RULE',
+    'HOOK_ID',
+    'TAG_RULE',
+    'main',
+    'milestone_version',
+    'newest_milestone',
+    'refusals',
+]
+
+BASE_RULE: Final = 'BASE-HOLDS-THE-MILESTONE'
+TAG_RULE: Final = 'VERSION-TAG-NEEDS-APPROVAL'
+#: The id this guard runs under in ``githooks/base.toml``.
+HOOK_ID: Final = 'milestone-base'
+#: The user's own approval words for a version tag pushed from an agent session.
+APPROVED_ENV: Final = 'DEV_LAB_TAG_APPROVED'
+_VERSIONS: Final = 'refs/tags/v'
+_GRAMMAR: Final = re.compile(r'v(\d+)\.(\d+)\.(\d+)(?:\.dev(\d+))?(?:-unverified)?')
+_GIT: Final = shutil.which('git') or 'git'
+
+
+def _git(root: Path, *args: str) -> tuple[int, str]:
+    done = _door.run(
+        [_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=False, timeout=60
+    )
+    return done.returncode, done.stdout.strip()
+
+
+def milestone_version(tag: str) -> tuple[int, int, int, tuple[int, int]] | None:
+    """The sort key of a family version tag, or ``None``: ``.devN`` ranks ``(0, N)``, a release ``(1, 0)``."""
+    if (match := _GRAMMAR.fullmatch(tag)) is None:
+        return None
+    major, minor, patch, dev = match.groups()
+    return int(major), int(minor), int(patch), (1, 0) if dev is None else (0, int(dev))
+
+
+def newest_milestone(root: Path) -> str | None:
+    """The local ``v*`` tag naming the highest family version, or ``None`` when no tag parses."""
+    code, out = _git(root, 'for-each-ref', '--format=%(refname:strip=2)', 'refs/tags/')
+    parsed = [(version, tag) for tag in (out.splitlines() if code == 0 else []) if (version := milestone_version(tag))]
+    return max(parsed)[1] if parsed else None
+
+
+def _behind(tag: str, branch: str, sha: str) -> str:
+    return (
+        f'{BASE_RULE}: {branch} at {sha[:12]} does not contain the newest milestone {tag}; every push builds on it. '
+        f'Merge the integration branch in: `python -m dev_lab.dev.forge sync`, then push again'
+    )
+
+
+def _unapproved(tag: str) -> str:
+    return (
+        f'{TAG_RULE}: an agent session creates {tag} on origin only at the user`s request (a version tag marks a '
+        f'milestone or a promotion); rerun the push with {APPROVED_ENV}="<the user`s words>"'
+    )
+
+
+def refusals(root: Path, lines: str, *, env: Mapping[str, str] | None = None) -> list[str]:
+    """Every refusal for the push *lines* describe; *env* defaults to the process environment."""
+    env = os.environ if env is None else env
+    found: list[str] = []
+    milestone = newest_milestone(root)
+    for ref in pushed_refs(lines.splitlines()):
+        if ref.deleted:
+            continue
+        if ref.branch is not None and milestone is not None:
+            code, _ = _git(root, 'merge-base', '--is-ancestor', f'{milestone}^{{commit}}', ref.local_sha)
+            if code != 0:
+                found.append(_behind(milestone, ref.branch, ref.local_sha))
+        elif (
+            ref.created
+            and ref.remote_ref.startswith(_VERSIONS)
+            and env.get(SESSION_ENV)
+            and not env.get(APPROVED_ENV, '').strip()
+        ):
+            found.append(_unapproved(ref.remote_ref.removeprefix('refs/tags/')))
+    return found
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """The pre-push hook: git's ref lines on stdin; exit 1 refuses, 0 publishes."""
+    del argv  # git passes the remote name and url; nothing here reads the remote
+    _, top = _git(Path.cwd(), 'rev-parse', '--show-toplevel')
+    stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+    found = refusals(Path(top or Path.cwd()), stdin)
+    if found:
+        emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), '']), err=True)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1:]))
