@@ -13,7 +13,7 @@ drifting with nobody saying so, and :mod:`dev_lab.dev.famtests.famfiles` refuses
 :func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artefact a repo
 declares a delta for, so a base edit here reaches a repo by one re-render rather than one per file.
 
-THE ONE DOOR (2026-11-13). ``python -m dev_lab.dev.famfiles`` WITHOUT ``--deltas`` runs every renderer due in
+THE ONE DOOR (2026-11-13). ``python -m dev_lab.dev.famfiles`` WITHOUT ``--files`` runs every renderer due in
 the repo (:func:`render_repo`) -- CI workflows, the whole files, deny rules and engine, the settings wiring, the
 door rules, the dev-docs pointer table -- each with the inputs its ``[tool.dev_lab.render]`` declares; ``forge
 sync``'s relock calls the same function. A renderer is due where a file it writes is present, or, for one that
@@ -99,9 +99,8 @@ class Renderer:
     declared_by: str = ''  # set: due where the repo DECLARES this input, not where a file it writes is present
 
 
-FAMFILES: Final = Renderer(
-    'famfiles', ('dev_lab.dev.famfiles',), inputs=(('deltas', '--deltas'),), required=frozenset({'deltas'})
-)
+#: Optional ``deltas``: a repo with no deltas module (cc-market) has no per-file overrides and adopts no base.
+FAMFILES: Final = Renderer('famfiles', ('dev_lab.dev.famfiles', '--files'), inputs=(('deltas', '--deltas'),))
 AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--install'))
 HOOK_ADOPTION: Final = Renderer(
     'hook_adoption', ('dev_lab.dev.hook_adoption',), inputs=(('adoption', '--adoption'),),
@@ -369,20 +368,22 @@ def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI. Without ``--deltas``: THE ONE DOOR (:func:`render_repo`), exit 0 when every due renderer did.
+    """CLI. Without ``--files``/``--deltas``: THE ONE DOOR (:func:`render_repo`), exit 0 when every due renderer did.
 
-    With ``--deltas`` (the famfiles renderer itself): exit 0 when every declared artefact is current (after
-    writing, unless --check), else 1.
+    With ``--files`` (the famfiles renderer itself): the whole files, plus every base + delta file when ``--deltas``
+    names the repo's module (no deltas: no per-file overrides, no base written); exit 0 when every one is current
+    (after writing, unless --check), else 1. ``--deltas`` implies ``--files``.
     """
     parser = argparse.ArgumentParser(description='Render every family artefact a repo declares (the one door).')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
-    parser.add_argument('--deltas', type=Path, help='only the base + delta files, from this DELTAS module')
-    parser.add_argument('--check', action='store_true', help='with --deltas: write nothing; report what would change')
+    parser.add_argument('--files', action='store_true', help='only the famfiles renderer: whole + base/delta files')
+    parser.add_argument('--deltas', type=Path, help='the repo DELTAS module; implies --files')
+    parser.add_argument('--check', action='store_true', help='with --files: write nothing; report what would change')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
-    if args.deltas is None:
+    if not args.files and args.deltas is None:
         if args.check:
-            parser.error('--check reads one renderer: name its --deltas')
+            parser.error('--check reads one renderer: name --files')
         try:
             ran = render_repo(root, sys.executable, _run)
         except ValueError as exc:
@@ -390,15 +391,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         emit(f'[famfiles] rendered {", ".join(ran) or "nothing: this repo declares no family artefact"}')
         return 0
+    deltas = load_deltas(args.deltas.resolve()) if args.deltas is not None else None
     lines = (
-        *render_all(root, load_deltas(args.deltas.resolve()), write=not args.check),
+        *(render_all(root, deltas, write=not args.check) if deltas is not None else ()),
         *render_agent_files(root, write=not args.check),
     )
     for line in lines:
         emit(f'[famfiles] {line}')
     settled = ('current', 'rendered')
     return 0 if all(line.split(': ', 1)[1].startswith(settled) for line in lines) else 1
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())

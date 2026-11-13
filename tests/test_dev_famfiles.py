@@ -28,6 +28,7 @@ from dev_lab.dev.famfiles import (
     render_all,
     render_argv,
     render_repo,
+    whole_files,
 )
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
@@ -190,12 +191,30 @@ def test_a_renderers_command_reads_the_repos_render_table(tmp_path: Path) -> Non
     )
     named = {renderer.name: renderer for renderer in RENDERERS}
     assert render_argv(named['famfiles'], tmp_path, 'py') == [
-        'py', '-m', 'dev_lab.dev.famfiles', '--repo', str(tmp_path), '--deltas', 'tests/_d.py',
+        'py', '-m', 'dev_lab.dev.famfiles', '--files', '--repo', str(tmp_path), '--deltas', 'tests/_d.py',
     ]  # fmt: skip
     assert render_argv(named['autodoors'], tmp_path, 'py')[-4:] == ['--shell-door', 'a.sh', '--shell-door', 'b.sh']
     assert render_argv(named['ciworkflows'], tmp_path, 'py') == [
         'py', '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tmp_path),
     ]  # fmt: skip
+
+
+def test_a_repo_without_a_deltas_module_renders_its_whole_files_and_no_base(tmp_path: Path) -> None:
+    """2026-11-13: cc-market has no deltas module, so the one door refused it. No deltas = no per-file overrides.
+
+    PLANTED CONTROL: the door without ``--files`` is still the one door, not this renderer.
+    """
+    named = {renderer.name: renderer for renderer in RENDERERS}
+    assert render_argv(named['famfiles'], tmp_path, 'py') == [
+        'py', '-m', 'dev_lab.dev.famfiles', '--files', '--repo', str(tmp_path),
+    ]  # fmt: skip
+    (tmp_path / '.gitignore').write_text('mine', encoding='utf-8')
+    assert main(['--files', '--repo', str(tmp_path)]) == 0
+    assert (tmp_path / '.gitignore').read_text(encoding='utf-8') == 'mine', 'no delta: the base is not written'
+    assert all((tmp_path / rel).read_text(encoding='utf-8') == text for rel, text in whole_files())
+    assert main(['--files', '--check', '--repo', str(tmp_path)]) == 0
+    with pytest.raises(SystemExit):
+        main(['--check', '--repo', str(tmp_path)])  # the door itself: --check reads one renderer
 
 
 def test_a_due_renderer_missing_its_declared_input_is_refused_by_name(tmp_path: Path) -> None:
