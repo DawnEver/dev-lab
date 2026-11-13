@@ -147,11 +147,11 @@ declares (`dev_lab.ops.config.load`).
   verifiers hold the public key; clients hold nothing. A credential is signed for ONE action of the registry
   (`dev_lab.ops.consent.actions`) and ONE subject (a digest), and an irreversible action registers its single use
   online.
-- A plan (`{"host", "grants": [...]}`, at most `[ops.consent] max_grants` grants -- default 16, refused by the
+- A plan (`{"hosts": [...], "grants": [{"host", "action", "subject", ...}]}`, each grant on one of the plan's hosts; at most `[ops.consent] max_grants` grants -- default 16, refused by the
   issuer before the code) is shown to the user with its digest (`python -m dev_lab.ops.consent plan <plan.json>`);
-  one cluster code from the user buys one credential per grant AND opens the host session. A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
+  one cluster code from the user buys one credential per grant AND opens every host's session (5.1). A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
 - `sshhold` holds that session: one authentication per work session, every later command rides it
-  (`python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
+  (`python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
   `status`; `--jump <bastion>` for a host behind a bastion that shares the TOTP secret). The code reaches ssh only
   through `SSH_ASKPASS`, never argv, disk or a log (`dev_lab.dev.sshhold`).
 - A code is the user's own, typed for THIS plan; no host step needing one runs without it.
@@ -161,22 +161,20 @@ declares (`dev_lab.ops.config.load`).
 - `consent plan` groups the grants by host and action under a `boundary:` summary of the grants that change a
   security boundary (the registry row's `boundary`).
 
-### 5.1 Design (not built): one plan, several hosts, one code
+### 5.1 One plan, several hosts, one code
 
-Today a plan names ONE `host`, and a step on another host needs that host's own session, hence a second code.
-Every ingredient of one code for N hosts already exists: the cluster shares ONE TOTP secret, each verifier
-(pam_oath per host, the issuer) accepts a code once, and a credential verifies OFFLINE on any host holding the
-issuer's public key (its use registers online at the issuer). What is missing:
+The cluster shares ONE TOTP secret, each verifier (pam_oath per host, the issuer) accepts a code once, and a
+credential verifies OFFLINE on any host holding the issuer's public key (its use registers online at the issuer). So:
 
-1. The plan names `hosts: [...]` and each grant its `host`; the digest covers both, so the user approves where
-   each grant runs. `consent plan` already groups by host.
-2. `sshhold open --plan` opens every host's session with the same code inside ONE TOTP step (or the skew
-   window), issuer grant first; a host whose open misses the window is reported, never retried with the code.
-3. `grant_plan`'s host check becomes "the session host is one of the plan's hosts"; `planrun` keys `dest` from the
-   grant, and `recover` stays per plan digest.
-
-Not small: it changes the signed plan schema (every stored plan migrates once), and the one-step window makes
-opening N sessions a timing contract that needs its own failure path. Build it as its own change.
+1. The plan names `hosts: [...]` and each grant its `host`, one of them -- a grant naming another host is refused;
+   the digest covers both, so the user approves where each grant runs (`dev_lab.ops.consent.plan`). The old
+   `{"host", "grants"}` shape is refused by name with its one-time migration, never upgraded on read.
+2. `sshhold open --plan` grants first (the issuer), then opens every host's session concurrently with the same code,
+   each started inside ONE TOTP step of it; a host that fails or misses the window is reported, never retried with
+   the code, and is re-opened alone with a new code (`dev_lab.dev.sshhold.open_planned`). Granting spends nothing.
+3. `grant_plan` checks the session host is one of the plan's hosts; `planrun` runs each step on its grant's host,
+   first asking every pending host to answer -- one that does not stops the run before any step, so no grant on
+   another host is spent -- and resumes per plan digest; `recover` stays per plan digest.
 
 ## 6. Break-glass waves
 

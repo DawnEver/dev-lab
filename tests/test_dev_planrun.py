@@ -15,7 +15,7 @@ import pytest
 from _ops_fixtures import NOW as FIXED
 from _ops_fixtures import RFC_KEY, code, config
 
-from dev_lab.dev import planrun
+from dev_lab.dev import planrun, sshhold
 from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops import configdoor, consentverbs
 from dev_lab.ops.consent import serve
@@ -27,9 +27,9 @@ from dev_lab.ops.secretplace import subject
 
 HOST = 'ops@judge.example.org'
 CANDIDATE = '/srv/plan/candidate.toml'
-APPLY = {'action': 'ops.config', 'subject': 'a' * 64}
-PLACE = {'action': 'ops.secret.place', 'subject': 'b' * 64}
-PLAN = parsed({'host': HOST, 'grants': [APPLY, PLACE]})
+APPLY = {'host': HOST, 'action': 'ops.config', 'subject': 'a' * 64}
+PLACE = {'host': HOST, 'action': 'ops.secret.place', 'subject': 'b' * 64}
+PLAN = parsed({'hosts': [HOST], 'grants': [APPLY, PLACE]})
 CONF, PY = '/etc/dev-lab/supervise.toml', '/usr/bin/python3'
 STEPS = planrun.Steps((
     planrun.Step(('config', 'apply', '--from', CANDIDATE), HOST, CONF, PY),
@@ -61,8 +61,11 @@ class FakeHost:
         self.ledger: set[str] = set()
         self.carried: list[str] = []
         self.stdins: list[tuple[str, bytes | None]] = []
+        self.down = ''  # a host whose session dropped: every command raises with this reason
 
     def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
+        if self.down:
+            raise sshhold.HoldRefused(self.down)
         self.commands.append(command)
         self.stdins.append((command, stdin))
         words = shlex.split(command)
@@ -175,15 +178,13 @@ def _steps_file(tmp_path: Path, steps: object) -> Path:
 
 def test_a_steps_file_lists_one_step_per_grant(tmp_path: Path) -> None:
     good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_local': '/h/x'}]
-    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN, HOST).steps[1].stdin_local == '/h/x'  # the control
+    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN).steps[1].stdin_local == '/h/x'  # the control
     with pytest.raises(ConsentRefused, match='stdin_local'):  # the host-side `stdin` is gone, not aliased
-        planrun.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place'], 'stdin': '/h/x'}]), PLAN, HOST)
+        planrun.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place'], 'stdin': '/h/x'}]), PLAN)
     with pytest.raises(ConsentRefused, match='one step per grant'):
-        planrun.load_steps(_steps_file(tmp_path, good[:1]), PLAN, HOST)
+        planrun.load_steps(_steps_file(tmp_path, good[:1]), PLAN)
     with pytest.raises(ConsentRefused, match='the runner adds them'):
-        planrun.load_steps(
-            _steps_file(tmp_path, [good[0], {'argv': ['secret', 'place', '--credential', 'x']}]), PLAN, HOST
-        )
+        planrun.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place', '--credential', 'x']}]), PLAN)
 
 
 def test_config_apply_subject_prints_the_candidates_digest_and_applies_nothing(
@@ -350,7 +351,7 @@ def test_a_step_with_no_live_credential_stops_before_running(tmp_path: Path) -> 
 def test_a_credential_issued_from_another_plan_is_never_carried(tmp_path: Path) -> None:
     """Same grants, another plan (another host): its signed ``plan`` digest is not this run's, so it is not used."""
     host = FakeHost()
-    _granted(tmp_path, parsed({'host': 'ops@other.example.org', 'grants': [APPLY, PLACE]}))
+    _granted(tmp_path, parsed({'hosts': [HOST, 'ops@other.example.org'], 'grants': [APPLY, PLACE]}))
     finished, lines = _run(host, tmp_path)
     assert not finished
     assert 'STOPPED -- no unexpired credential' in lines[-1]
@@ -363,7 +364,7 @@ def test_the_issuer_answers_which_ids_were_spent(tmp_path: Path) -> None:
     (tmp_path / 'totp').write_text(RFC_KEY + '\n', encoding='utf-8')
     keygen(tmp_path / 'k')
     issuer = Issuer(tmp_path / 'totp', tmp_path / 'k', tmp_path / 's', 'test', lambda: FIXED)
-    first, second = issuer.issue_plan({'host': HOST, 'grants': [APPLY, PLACE]}, code(0))
+    first, second = issuer.issue_plan({'hosts': [HOST], 'grants': [APPLY, PLACE]}, code(0))
     issuer.register(first)
 
     def send(_table: object, payload: dict[str, object]) -> tuple[int, str]:
@@ -374,9 +375,9 @@ def test_the_issuer_answers_which_ids_were_spent(tmp_path: Path) -> None:
 
 
 JUDGE = 'ops@judge.example.org:2222'
-JUDGE_APPLY = {'action': 'ops.config', 'subject': 'c' * 64}
-WAVE = {'action': 'breakglass.wave', 'subject': 'wave'}
-WIDE = parsed({'host': HOST, 'grants': [APPLY, JUDGE_APPLY, PLACE, WAVE]})
+JUDGE_APPLY = {'host': JUDGE, 'action': 'ops.config', 'subject': 'c' * 64}
+WAVE = {'host': HOST, 'action': 'breakglass.wave', 'subject': 'wave'}
+WIDE = parsed({'hosts': [HOST, JUDGE], 'grants': [APPLY, JUDGE_APPLY, PLACE, WAVE]})
 WIDE_STEPS = planrun.Steps((
     STEPS.steps[0],
     planrun.Step(('config', 'apply', '--from', '/srv/plan/judge.toml'), JUDGE, '/etc/dev-lab/judge.toml', PY),
@@ -467,20 +468,50 @@ def test_a_wave_the_forge_refused_unspent_keeps_its_credential_and_resumes_there
     assert not written[3].exists()
 
 
+def test_a_host_unreachable_before_the_run_stops_it_with_no_grant_spent_on_any_host(tmp_path: Path) -> None:
+    """topology.md 5.1: the judge's session dropped mid-open; nothing runs on the forge host either.
+
+    PLANTED CONTROL: the judge back, the same grant runs every step.
+    """
+    hosts, written = _hosts(), _granted(tmp_path, WIDE)
+    hosts[JUDGE].down = 'no held session for the judge'
+    finished, lines = _wide_run(hosts, tmp_path, lambda words: (hosts[HOST].ledger.add(words[-1]), ('ok', 0))[1])
+    assert not finished
+    assert lines[0] == f'host {JUDGE}: UNREACHABLE -- no held session for the judge'
+    assert 'no credential spent on any host' in lines[-1]
+    assert hosts[HOST].carried == []
+    assert all(path.exists() for path in written)
+    hosts[JUDGE].down = ''
+    finished, lines = _wide_run(hosts, tmp_path, lambda words: (hosts[HOST].ledger.add(words[-1]), ('ok', 0))[1])
+    assert finished, lines
+
+
+def test_a_host_whose_steps_are_done_is_not_asked_on_resume(tmp_path: Path) -> None:
+    """Resume per host: steps done on the judge need no judge session on the next run."""
+    hosts, _ = _hosts(), _granted(tmp_path, WIDE)
+    finished, _ = _wide_run(hosts, tmp_path, lambda _words: ('[breakglass] refused', 2))
+    assert not finished  # steps 1-3 done, the wave kept
+    hosts[JUDGE].down = 'no held session for the judge'
+    finished, lines = _wide_run(hosts, tmp_path, lambda words: (hosts[HOST].ledger.add(words[-1]), ('ok', 0))[1])
+    assert finished, lines
+
+
 def test_a_steps_file_names_each_steps_host_and_a_local_wave(tmp_path: Path) -> None:
     good = [
-        {'argv': ['config', 'apply']}, {'argv': ['config', 'apply'], 'dest': JUDGE, 'config': '/etc/j.toml'},
+        {'argv': ['config', 'apply']}, {'argv': ['config', 'apply'], 'config': '/etc/j.toml'},
         {'argv': ['secret', 'place']}, {'local': True},
     ]  # fmt: skip
-    steps = planrun.load_steps(_steps_file(tmp_path, good), WIDE, HOST).steps  # the control
+    steps = planrun.load_steps(_steps_file(tmp_path, good), WIDE).steps  # the control: each on its grant's host
     assert [(step.dest, step.config, step.local) for step in steps] == [
         (HOST, '/etc/c.toml', False), (JUDGE, '/etc/j.toml', False), (HOST, '/etc/c.toml', False), ('', '', True),
     ]  # fmt: skip
+    with pytest.raises(ConsentRefused, match='"argv"'):  # the plan names where a grant runs; a step never does
+        planrun.load_steps(_steps_file(tmp_path, [good[0], {**good[1], 'dest': JUDGE}, *good[2:]]), WIDE)
     assert steps[3].argv == ('breakglass', 'open')
     with pytest.raises(ConsentRefused, match='redeemed here'):
-        planrun.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE, HOST)
+        planrun.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE)
     with pytest.raises(ConsentRefused, match='redeemed on a host'):
-        planrun.load_steps(_steps_file(tmp_path, [{'local': True}, *good[1:]]), WIDE, HOST)
+        planrun.load_steps(_steps_file(tmp_path, [{'local': True}, *good[1:]]), WIDE)
 
 
 BUNDLE = 'OPENAI_API_KEY=sk-PLANTED-9c1e\n'
@@ -533,10 +564,10 @@ def test_a_granted_task_step_streams_its_bundle_and_writes_no_file(tmp_path: Pat
 
 def test_a_step_names_exactly_one_stdin_source(tmp_path: Path) -> None:
     one = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_task': 'judge'}]
-    assert planrun.load_steps(_steps_file(tmp_path, one), PLAN, HOST).steps[1].stdin_task == 'judge'  # the control
+    assert planrun.load_steps(_steps_file(tmp_path, one), PLAN).steps[1].stdin_task == 'judge'  # the control
     both = [one[0], {**one[1], 'stdin_local': 'x.secret'}]
     with pytest.raises(ConsentRefused, match='exactly one source'):
-        planrun.load_steps(_steps_file(tmp_path, both), PLAN, HOST)
+        planrun.load_steps(_steps_file(tmp_path, both), PLAN)
 
 
 def test_consent_ready_stats_the_issuer_key_and_never_reads_it(
@@ -631,15 +662,17 @@ def test_a_failed_stdout_local_step_withholds_its_output_and_writes_nothing(tmp_
 @pytest.mark.parametrize('name', ['/abs/x', '../x', 'a/../../x', '', 'C:/x', 'C:x', '\\\\srv\\x'])
 def test_stdout_local_is_a_relative_name_without_dotdot(tmp_path: Path, name: str) -> None:
     good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdout_local': 'ok/x'}]
-    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN, HOST).steps[1].stdout_local == 'ok/x'  # control
+    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN).steps[1].stdout_local == 'ok/x'  # control
     bad = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdout_local': name}]
     with pytest.raises(ConsentRefused, match='stdout_local'):
-        planrun.load_steps(_steps_file(tmp_path, bad), PLAN, HOST)
+        planrun.load_steps(_steps_file(tmp_path, bad), PLAN)
 
 
 def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_update() -> None:
     """A plan written against a newer registry is BLOCKED here, before a code -- not refused after the user gave one."""
-    newer = parsed({'host': HOST, 'grants': [APPLY, {'action': 'ops.not.yet.known', 'subject': 'c' * 64}]})
+    newer = parsed(
+        {'hosts': [HOST], 'grants': [APPLY, {'host': HOST, 'action': 'ops.not.yet.known', 'subject': 'c' * 64}]}
+    )
     steps = planrun.Steps((*STEPS.steps[:1], planrun.Step(('not', 'known'), HOST, CONF, PY)))
     green, lines = planrun.preflight(newer, steps, lambda _dest: FakeHost())
     assert not green
@@ -659,7 +692,7 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
     from dev_lab.ops import forgeprotection  # noqa: PLC0415
 
     want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
-    plan = parsed({'host': HOST, 'grants': [{'action': forgeprotection.ACTION, 'subject': want}]})
+    plan = parsed({'hosts': [HOST], 'grants': [{'host': HOST, 'action': forgeprotection.ACTION, 'subject': want}]})
     step = planrun.Step(('forge', 'protect', 'apply', '--repo', 'owner/alpha'), HOST, CONF, PY, forge='gitea.example')
     host = FakeHost()
     host.doors.add(('forge', 'protect'))
@@ -685,10 +718,10 @@ def test_a_forge_key_on_a_step_that_is_not_protect_is_refused(tmp_path: Path) ->
                                                    {'argv': ['secret', 'place'], 'stdin_local': LOCAL}]}  # fmt: skip
     path.write_text(json.dumps(body), encoding='utf-8')
     with pytest.raises(ConsentRefused, match='forge'):
-        planrun.load_steps(path, PLAN, HOST)
+        planrun.load_steps(path, PLAN)
     body['steps'][0].pop('forge')
     path.write_text(json.dumps(body), encoding='utf-8')
-    assert planrun.load_steps(path, PLAN, HOST).steps[0].forge == ''  # the control
+    assert planrun.load_steps(path, PLAN).steps[0].forge == ''  # the control
 
 
 def test_planrun_subject_prints_the_protect_subject_with_no_host(capsys: pytest.CaptureFixture[str]) -> None:

@@ -33,6 +33,7 @@ from dev_lab.dev.forgebreakglass import Send, ssh_send
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
+from dev_lab.ops.consent.plan import request as plan_request
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -241,22 +242,25 @@ def grant_plan(
     home: Path | None = None,
     now: Callable[[], float] = time.time,
 ) -> list[Path]:
-    """One credential per grant of the plan at *plan_file*, the one the user was *shown* for *host*, for ONE *code*.
+    """One credential per grant of the plan at *plan_file*, the one the user was *shown*, for ONE *code*.
+
+    *host* is a session the code opens; it must be one of the plan's hosts (a code given for one plan's hosts never
+    opens another).
 
     Raises:
-        ConsentRefused: the plan is not the one shown or names another host, a grant is malformed, the code is not
+        ConsentRefused: the plan is not the one shown or does not name *host*, a grant is malformed, the code is not
             six digits, or the issuer refused.
 
     """
     found = _endpoint(table)
     public_key(found)
     plan = load_plan(plan_file, shown)
-    if plan.host != host:
-        msg = f'the plan opens {plan.host}, not {host}: a code given for one host never opens another'
+    if host not in plan.hosts:
+        msg = f'the plan opens {list(plan.hosts)}, not {host}: a code given for one plan never opens another host'
         raise ConsentRefused(msg)
     for grant_ in plan.grants:
-        requested(grant_)  # refused here, before the user spends a code
-    payload = {'verb': 'issue-plan', 'plan': {'host': plan.host, 'grants': list(plan.grants)},
+        requested(plan_request(grant_))  # refused here, before the user spends a code
+    payload = {'verb': 'issue-plan', 'plan': {'hosts': list(plan.hosts), 'grants': list(plan.grants)},
                'code': _six_digits(code)}  # fmt: skip
     return _issued(found, payload, send=send, home=home, now=now(), plan=plan.digest)
 

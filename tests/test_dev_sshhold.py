@@ -186,10 +186,10 @@ def test_a_bastion_that_refuses_the_code_fails_the_open(monkeypatch: pytest.Monk
 def test_the_cli_jump_rides_both_the_plain_and_the_planned_open(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[tuple[str, ...]] = []
     monkeypatch.setattr(sshhold, 'open_session', lambda *_a, ssh: seen.append(ssh) or 'opened')
-    monkeypatch.setattr(sshhold, 'open_planned', lambda *_a, ssh: seen.append(ssh) or ['granted', 'opened'])
+    monkeypatch.setattr(sshhold, 'open_planned', lambda *_a, ssh: seen.append(ssh) or (True, ['granted', 'opened']))
     assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion']) == 0
     plan = ['--plan', 'plan.json', '--digest', 'abc']
-    assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion', *plan]) == 0
+    assert sshhold.main(['open', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion', *plan]) == 0
     assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE]) == 0
     assert seen == [('ssh', '-J', 'ops@bastion'), ('ssh', '-J', 'ops@bastion'), ('ssh',)]
 
@@ -226,8 +226,9 @@ def test_no_held_session_names_the_door_for_each_host_kind(monkeypatch: pytest.M
 
 def test_a_plan_naming_an_action_this_client_lacks_is_refused_before_the_code_is_sent(tmp_path) -> None:
     plan = tmp_path / 'plan.json'
-    plan.write_text(json.dumps({'host': 'ops@h', 'grants': [{'action': 'ops.not.yet.known', 'subject': 'c'}]}))
+    unknown = {'host': 'ops@h', 'action': 'ops.not.yet.known', 'subject': 'c'}
+    plan.write_text(json.dumps({'hosts': ['ops@h'], 'grants': [unknown]}))
     sent: list[str] = []
     with pytest.raises(sshhold.HoldRefused, match='local dev-lab is older than the plan; update it'):
-        sshhold.open_planned('ops@h', 1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [])
+        sshhold.open_planned(1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [])
     assert sent == []
