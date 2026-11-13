@@ -149,6 +149,7 @@ steps = [
 
 ["ci.yml".jobs.absent-parts.permissions]
 contents = "read"
+actions = "read"  # jobparts.run_jobs: a part whose job concluded failed with no record is error, not absent
 statuses = "write"
 
 ["ci.yml".jobs.security]

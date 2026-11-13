@@ -189,3 +189,37 @@ def test_continue_yml_dispatches_ci_on_the_branch_for_the_pr_it_opened(tmp_path:
     }, 'actions: write dispatches; nothing more'
     nothing = _opened_says(tmp_path / 'none', '[forge] pr continue: no branch continues a merged PR\n')
     assert nothing == {'pr': ''}, 'PLANTED CONTROL: nothing opened, nothing dispatched'
+
+
+# --- a first adoption: the integration branch has no manifest yet -------------------------------------------
+
+
+@pytest.mark.parametrize('base', ['bare', 'declared'])
+def test_a_base_with_no_manifest_continues_nothing(tmp_path: Path, base: str, capsys: pytest.CaptureFixture) -> None:
+    """``continue.yml`` on a repo's first adoption: the base declares nothing, so nothing continues (exit 0, said).
+
+    PLANTED control: a base WITH a manifest continues the landed branch exactly as before.
+    """
+    manifest = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
+    git = shutil.which('git') or 'git'
+
+    def run(*args: str) -> None:
+        subprocess.run([git, '-C', str(tmp_path), *args], check=True, capture_output=True)
+
+    run('init', '-q', '-b', 'integrate/main')
+    run('config', 'user.email', 't@t')
+    run('config', 'user.name', 't')
+    (tmp_path / 'README.md').write_text('r\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(manifest, encoding='utf-8')
+    run('add', 'README.md', *(['pyproject.toml'] if base == 'declared' else []))
+    run('commit', '-q', '-m', 'base')
+    run('update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    forge = StateForge()
+    _merged(forge)
+    assert prcontinue.main(['--head', 'pr/x', '--sha', _TIP], cwd=tmp_path, client=forge) == 0
+    said = capsys.readouterr().out
+    if base == 'declared':
+        assert 'continues #' in said
+    else:
+        assert 'declares nothing' in said
+        assert 'continues #' not in said

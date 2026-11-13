@@ -9,7 +9,7 @@ PASS (:func:`parts_wait`). A hand part (:func:`hand_parts`, user ruling 2026-11-
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from lab_commons.hpc.needsets import BASE
 from lab_commons.outcomes import Conclusion
@@ -23,7 +23,10 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['checks_wait', 'hand_note', 'hand_parts', 'parts_wait', 'red_checks', 'status_waits']
+__all__ = ['RED', 'checks_wait', 'hand_note', 'hand_parts', 'parts_wait', 'red_checks', 'status_waits']
+
+#: The terminal red states of a status, on both forges: the check FAILED, it is not waiting.
+RED: Final = frozenset({'failure', 'error'})
 
 
 def hand_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
@@ -72,7 +75,8 @@ def parts_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
 def checks_wait(checks: Sequence[str], statuses: Sequence[CommitStatus]) -> str | None:
     """Why the declared *checks* do not all stand ``success`` in *statuses*, or ``None``: each one named.
 
-    A check not yet posted, or posted ``pending``, waits; ``failure`` or ``error`` is red. Nothing else stands in.
+    A check not yet posted, or posted ``pending``, waits (``is pending``); ``failure`` or ``error`` FAILED and says
+    so -- a job that ended without a record is never read as one still running. Nothing else stands in.
     """
     latest = {status.context: status for status in statuses}
     said = []
@@ -80,6 +84,8 @@ def checks_wait(checks: Sequence[str], statuses: Sequence[CommitStatus]) -> str 
         held = latest.get(context)
         if held is None:
             said.append(f'{context} is not yet posted')
+        elif held.state in RED:
+            said.append(f'{context} FAILED ({held.state}): {held.description}')
         elif held.state != 'success':
             said.append(f'{context} is {held.state}: {held.description}')
     return '; '.join(said) or None
@@ -106,4 +112,4 @@ def red_checks(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
     """The contexts in *statuses* standing terminal red (``failure``/``error``), every hand part excluded."""
     hands = {part_context(name) for name in hand_parts(statuses)}
     latest = {status.context: status for status in statuses}
-    return tuple(c for c, s in latest.items() if s.state in ('failure', 'error') and c not in hands)
+    return tuple(c for c, s in latest.items() if s.state in RED and c not in hands)

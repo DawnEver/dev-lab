@@ -26,7 +26,8 @@ WHERE IT RUNS -- two family hook rows, so no route past it is left:
 
 * ``commit`` (commit-msg, EVERY commit, a merge included): the INDEX against HEAD, so a plain commit and
   a merge's resolution are read alike (:func:`pending`); an entry not yet on ``origin/<integration>`` is a
-  draft its author may still edit or delete;
+  draft its author may still edit or delete. The branch is named by HEAD's manifest, else -- a first adoption --
+  by the commit's own staged one; with neither, nothing is published yet;
 * ``push`` (pre-push): every pushed ref's range since its merge-base with ``origin/<integration>``
   (:func:`problems_between`), so a commit made with the hook bypassed still reds before it leaves.
 """
@@ -41,9 +42,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.hpc.declared import pyproject_at
 from lab_commons.log import emit
 
-from dev_lab.dev.lanepolicy import policy_at
+from dev_lab.dev.lanepolicy import policy_at, policy_from
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -289,11 +291,26 @@ def pending(root: Path) -> tuple[str, ...]:
     if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
         return ()
     tree = _git(root, 'write-tree').strip()
-    rows = _published_only(root, tree, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
+    into = _integration(root, tree)
+    rows = _published_only(root, tree, into, _not_as_upstream_holds(root, tree, into, _changes(root, 'HEAD', tree)))
     return _judge(root, 'HEAD', tree, rows)
 
 
-def _published_only(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+def _integration(root: Path, tree: str) -> str | None:
+    """The integration branch HEAD's manifest names, else the staged *tree*'s -- a first adoption's own.
+
+    ``None`` when neither carries a ``pyproject.toml``: nothing names a branch, so nothing is published yet. A
+    manifest that exists and names no branch is refused (:func:`~dev_lab.dev.lanepolicy.policy_from`).
+    """
+    for rev in ('HEAD', tree):
+        if text := pyproject_at(root, rev):
+            return policy_from(text, f'{rev}:pyproject.toml').integration
+    return None
+
+
+def _published_only(
+    root: Path, tree: str, into: str | None, rows: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
     """*rows* without edits, deletions and moves of a memory entry not yet on ``origin/<integration>``.
 
     Immutability starts when an entry is PUBLISHED: one added in an unpushed range is still a draft, and its
@@ -302,8 +319,8 @@ def _published_only(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> 
     task-format and injection rules hold for drafts too. An entry the integration ref holds stays judged;
     without that ref nothing is a draft.
     """
-    ref = f'origin/{policy_at(root, "HEAD").integration}'
-    if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
+    ref = f'origin/{into}'
+    if into is None or _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
         return rows
 
     def draft(status: str, old: str, new: str) -> bool:
@@ -316,7 +333,9 @@ def _published_only(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> 
     return [(status, old, new) for status, old, new in rows if not draft(status, old, new)]
 
 
-def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+def _not_as_upstream_holds(
+    root: Path, tree: str, into: str | None, rows: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
     """*rows* without the paths staged EXACTLY as ``MERGE_HEAD`` or ``origin/<integration>`` holds them.
 
     Such a path is a change judged where it was made, not an edit by this commit -- two shapes, both measured
@@ -330,7 +349,7 @@ def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str
     A path staged as neither is still this commit's, and is judged.
     """
     differs: set[str] | None = None
-    for ref in ('MERGE_HEAD', f'origin/{policy_at(root, "HEAD").integration}'):
+    for ref in ('MERGE_HEAD', *(() if into is None else (f'origin/{into}',))):
         if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
             continue
         against = set(_git(root, 'diff', '--no-renames', '--name-only', '-z', ref, tree).split('\0')) - {''}
