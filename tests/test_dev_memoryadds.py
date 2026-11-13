@@ -569,3 +569,49 @@ def test_planted_an_amendment_needs_its_note_its_approval_and_one_for_one_lines(
     _commit(repo, 'amend badly', ENTRY)
     found = memoryadds.problems_between(repo, base, 'HEAD')
     assert len(found) == 1, found
+
+
+# --- a first adoption: HEAD carries no manifest yet ------------------------------------------------------------
+
+
+def _bare(tmp_path: Path) -> Path:
+    _git(tmp_path, 'init', '-q', '-b', 'integrate/main')
+    _git(tmp_path, 'config', 'user.email', 't@t')
+    _git(tmp_path, 'config', 'user.name', 't')
+    _write(tmp_path, 'README.md', 'r\n')
+    _commit(tmp_path, 'before the family', 'README.md')
+    return tmp_path
+
+
+def test_a_first_adoption_commit_is_judged_by_its_own_staged_manifest(tmp_path: Path) -> None:
+    """HEAD has no pyproject.toml: the commit's OWN staged manifest names the integration branch."""
+    repo = _bare(tmp_path)
+    _write(repo, 'pyproject.toml', "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n")
+    _write(repo, '.claude/memory/2026/11/13/adopted.md', '---\nname: adopted\ndescription: d\n---\n\nA.\n')
+    _git(repo, 'add', '--', 'pyproject.toml', '.claude/memory/2026/11/13/adopted.md')
+    assert memoryadds.pending(repo) == ()
+
+
+def test_a_commit_with_no_manifest_anywhere_is_judged_without_one(tmp_path: Path) -> None:
+    """Neither HEAD nor the index has a manifest: nothing names an integration branch, and memory is still judged."""
+    repo = _bare(tmp_path)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nBody.\n')
+    _commit(repo, 'an entry', ENTRY)
+    _write(repo, '.claude/memory/2026/11/13/new.md', '---\nname: new\ndescription: d\n---\n\nN.\n')
+    _git(repo, 'add', '--', '.claude/memory/2026/11/13/new.md')
+    assert memoryadds.pending(repo) == ()
+    _git(repo, 'rm', '-q', '--', ENTRY)
+    assert any('never deleted' in line for line in memoryadds.pending(repo)), 'PLANTED CONTROL: a deletion still reds'
+
+
+@pytest.mark.parametrize('where', ['staged', 'head'])
+def test_a_manifest_naming_no_integration_branch_is_still_refused(tmp_path: Path, where: str) -> None:
+    """PLANTED control: a manifest that exists -- at HEAD, or staged by the first adoption -- must name the branch."""
+    repo = _bare(tmp_path)
+    _write(repo, 'pyproject.toml', "[project]\nname = 'x'\n")
+    if where == 'head':
+        _commit(repo, 'a manifest without the table', 'pyproject.toml')
+    else:
+        _git(repo, 'add', '--', 'pyproject.toml')
+    with pytest.raises(ValueError, match='names no integration branch'):
+        memoryadds.pending(repo)
