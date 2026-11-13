@@ -50,7 +50,6 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import verifiedby
-from dev_lab.dev.content import content_address
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgerequest import offer_line
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
@@ -75,7 +74,7 @@ from dev_lab.dev.verifybox import (
     MEASURE_WAIT_S,
     WAIT_S,
 )
-from dev_lab.dev.verifysteps import MEASURED_TARGETS, run_verify
+from dev_lab.dev.verifysteps import run_verify, tree_address
 from dev_lab.dev.workstationverdict import after_run, before_run, head_tree, workstation_fields, workstation_refusal
 
 __all__ = [
@@ -308,7 +307,7 @@ def _retired(argv: list[str]) -> str | None:
 def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
     """What makes two verify requests ONE run: the tree address, the env key and the selection."""
     return RunKey(
-        tree=content_address(root, MEASURED_TARGETS),
+        tree=tree_address(root),
         env=verdict_env(root),
         selector=' '.join(('verify', *pytest_args)),
     )
