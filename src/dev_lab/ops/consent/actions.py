@@ -22,6 +22,7 @@ CAMPAIGN: Final = 'campaign'
 SCOPES: Final = (SINGLE, CAMPAIGN)
 _MINUTE: Final = 60.0
 _HOUR: Final = 3600.0
+_DAY: Final = 24 * _HOUR
 
 
 @dataclass(frozen=True)
@@ -71,5 +72,9 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         # One session holds the integrator role (verification HPC accounts) until expiry; subject = the session id,
         # verified offline on every load (dev_lab.dev.hpcaccount.session); a day at most, never a standing grant.
         Action('session.integrator', {}, SINGLE, 12 * _HOUR, 24 * _HOUR),
+        # One TASK holds the integrator role until expiry; subject = the task id `<slug>@<authority>` (the authority the
+        # user's own task-open minted). A session inherits it only while the USER's prompt bound it to that task
+        # (dev_lab.dev.hpcaccount.session). A week at most: a task outlives its sessions, never its re-consent.
+        Action('task.integrator', {}, SINGLE, 3 * _DAY, 7 * _DAY),
     )
 })  # fmt: skip

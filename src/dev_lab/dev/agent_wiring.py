@@ -134,6 +134,10 @@ AUTOMODE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab
 #: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
 PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
 
+#: A SESSION WORKS ON A TASK BY THE USER'S WORD (:mod:`dev_lab.dev.hpcaccount.session`, ruling 2026-11-13): a prompt
+#: whose first line is ``task: <slug>`` binds the session to that task, so it holds the role the task was granted.
+TASKBIND_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hpcaccount.session bind'
+
 
 @dataclass(frozen=True, slots=True)
 class Wire:
@@ -164,6 +168,7 @@ WIRING: Final = (
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
     Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
+    Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.hpcaccount.session bind', on_shells=False),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),

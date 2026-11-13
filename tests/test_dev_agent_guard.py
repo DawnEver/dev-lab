@@ -303,6 +303,7 @@ _SESSIONPRS = {'type': 'command', 'command': agent_wiring.SESSIONPRS_COMMAND}
 _SWEEP = {'type': 'command', 'command': agent_wiring.SWEEP_COMMAND}
 #: A PRESSED HOST TELLS ITS AGENTS (D54): after every shell call, and on each prompt.
 _PRESSURE = {'type': 'command', 'command': agent_wiring.PRESSURE_COMMAND}
+_TASKBIND = {'type': 'command', 'command': agent_wiring.TASKBIND_COMMAND}
 #: PUSHED-HEAD-IS-WATCHED, the Stop half (ruling 2026-11-04): after the hand-back check.
 _PUSHSTOP = {'type': 'command', 'command': agent_wiring.PUSHSTOP_COMMAND}
 #: SCRATCH-IS-NEVER-COMMITTED, the Stop half: a session does not end with untracked entries in scratch.
@@ -326,7 +327,7 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
         {'hooks': [_SCRATCHSTOP]},
         {'hooks': [_DEVHOSTSTOP]},
     ]
-    assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
+    assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}, {'hooks': [_TASKBIND]}]
     assert 'dev_lab.dev.codeplace stray' in agent_wiring.STRAY_COMMAND
     assert agent_wiring.PUSHWATCH_COMMAND.startswith('node ')
     assert 'dev_lab.dev.pushwatch' in agent_wiring.PUSHWATCH_COMMAND
