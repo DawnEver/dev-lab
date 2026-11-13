@@ -3,7 +3,8 @@
 Three checks, each generic (the repository's own facts arrive as the files it holds):
 
 - a HOST file is a server's (``[ops]``) or a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
-  checked with the family file: a restated family key is refused; the machine tables it renders are open); a
+  checked with the family file: a restated family key is refused; the machine tables it renders are open, but
+  ``[ssh]`` is checked against :data:`~dev_lab.dev.devschema.SSH`); a
   server's file loads by structure
   (:func:`dev_lab.ops.config.load` with ``structure_only``): the shape the live door will load, without the host's
   environment or secret files, which exist only on the host; and it holds no key the schema
@@ -66,6 +67,8 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
     if 'dev' in parsed:
         shared = tomllib.loads(family.read_text(encoding='utf-8')) if family is not None else {}
         found += [f'{path.name}: {line}' for line in devschema.check(parsed, shared)]
+        if 'ssh' in parsed:
+            found += [f'{path.name}: {line}' for line in devschema.ssh_defects(parsed['ssh'])]
     if 'ops' in parsed or 'dev' not in parsed:
         try:
             opsconfig.load(path, environ={}, as_root=False, structure_only=True)
@@ -76,6 +79,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         'ops': {},
         'dev': {},
         **({key: {} for key in devschema.MACHINE_TABLES} if 'dev' in parsed else {}),
+        **({'ssh': {}} if 'dev' in parsed else {}),
     }
     return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
 
