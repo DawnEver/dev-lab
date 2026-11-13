@@ -1334,6 +1334,25 @@ def test_the_mirror_follows_the_forge_when_it_moves_hosts(tmp_path: Path) -> Non
     assert set_url < run.index('git -C "$MIRROR" -c gc.auto=0 fetch')
 
 
+def test_the_scheduled_tick_prunes_the_records_home_nothing_else_does_on_github(tmp_path: Path) -> None:
+    """GitHub has no ``forge serve``, whose tick is the only other records prune.
+
+    LIVE 2026-11-13 (dev-lab 6cc2d023..cdb5439b): the records release reached its 1000-asset cap and every part's
+    post was refused.
+
+    The tick prunes on its schedule (and by hand), even when merge-ready failed; a ``status`` event, one per
+    posted part, never prunes. PLANTED CONTROL: merge-ready itself carries no such guard.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
+    job = workflows(tmp_path)['merge-tick.yml']['jobs']['merge-tick']
+    pruned = [step for step in job['steps'] if 'dev_lab.dev.forge records prune' in step.get('run', '')]
+    assert len(pruned) == 1, 'the one prune a GitHub repo runs'
+    assert pruned[0]['if'] == "${{ !cancelled() && github.event_name != 'status' }}"
+    assert job['permissions']['contents'] == 'write', 'deleting a release asset needs contents: write'
+    ready = next(step for step in job['steps'] if step.get('id') == 'ready')
+    assert 'if' not in ready, 'control: merge-ready runs on every event the job runs on'
+
+
 def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: Path) -> None:
     """A part settling after ci.yml's merge-ready ran (a workstation or HPC part) re-judges the PR, no human.
 
@@ -1351,7 +1370,8 @@ def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: P
     assert "startsWith(github.event.context, 'tests/')" in gate
     assert "github.event.context != 'tests/merge-ready'" in gate
     assert "github.event.state != 'pending'" in gate
-    ready, dispatch = job['steps'][-2:]
+    named = {step.get('name'): step for step in job['steps']}
+    ready, dispatch = named['tests/merge-ready'], named['Run CI on the merged integration']
     assert 'forge merge ready)' in ready['run'], 'no --pr: every open PR into integration'
     assert '*"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
     assert dispatch['if'] == "${{ steps.ready.outputs.merged == 'true' }}"
@@ -1502,7 +1522,8 @@ def test_the_review_job_s_posted_status_is_judged_again_in_the_same_run(tmp_path
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
     tick = workflows(tmp_path)['merge-tick.yml']['jobs']
     assert set(tick) == {'merge-tick', 'review'}
-    assert 'forge merge ready)' in tick['merge-tick']['steps'][-2]['run']
+    ready = next(step for step in tick['merge-tick']['steps'] if step.get('id') == 'ready')
+    assert 'forge merge ready)' in ready['run']
 
 
 def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
