@@ -12,10 +12,13 @@ a stale cache can cost a refused claim, never a duplicate one.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import os
-from collections.abc import Callable, Sequence
+import threading
+from collections.abc import Callable, Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.forgestatus import CommitStatus, status_history
@@ -24,7 +27,10 @@ from dev_lab.dev.platformparts import derived, parts_of
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = ['SettledHistories', 'settled']
+__all__ = ['READERS', 'SettledHistories', 'settled']
+
+#: How many status histories :meth:`SettledHistories.prefetch` reads at once: independent GETs, one per sha.
+READERS: Final = 8
 
 #: The settled commits kept per repository, newest last; the oldest beyond it are dropped (and read again if served).
 KEPT: Final = 4096
@@ -51,6 +57,7 @@ class SettledHistories:
         home = client.cache_dir
         self._path = None if home is None else home / f'settled-{client.forge.owner}-{client.forge.repo}.json'
         self._kept: dict[str, list[dict[str, Any]]] = self._load()
+        self._lock = threading.Lock()
 
     def _load(self) -> dict[str, list[dict[str, Any]]]:
         if self._path is None:
@@ -73,11 +80,32 @@ class SettledHistories:
             if found is not None:
                 self._memo[sha] = found
                 return found
-        found = self._read(self._client, sha) if sha else ()
-        self._memo[sha] = found
-        if sha and settled(found):
-            self._keep(sha, found)
+        return self._hold(sha, self._read(self._client, sha) if sha else ())
+
+    def _hold(self, sha: str, found: tuple[CommitStatus, ...]) -> tuple[CommitStatus, ...]:
+        with self._lock:
+            self._memo[sha] = found
+            if sha and settled(found):
+                self._keep(sha, found)
         return found
+
+    def prefetch(self, shas: Iterable[str]) -> None:
+        """Read every history of *shas* not yet held, :data:`READERS` at once: each is its own independent GET.
+
+        Each reader asks through its own copy of the client (a client's last answer is per-reader state);
+        the copies share its memo, so what one reads the pass reads once.
+        """
+        wanted = sorted({sha for sha in shas if sha and sha not in self._memo and sha not in self._kept})
+        if len(wanted) < 2:  # noqa: PLR2004 -- one read gains nothing from a pool
+            for sha in wanted:
+                self(sha)
+            return
+
+        def read(sha: str) -> None:
+            self._hold(sha, self._read(copy.copy(self._client), sha))
+
+        with ThreadPoolExecutor(max_workers=READERS) as pool:
+            list(pool.map(read, wanted))
 
     def _keep(self, sha: str, history: tuple[CommitStatus, ...]) -> None:
         if self._path is None:
