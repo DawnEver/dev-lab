@@ -506,6 +506,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.sshholdwire` -- the client's half of the holder's protocol: the request and the marker frame.
 * :mod:`dev_lab.dev.sshholdrun` -- a command, or a forge credential, sent through a held session, and its audit.
 * :mod:`dev_lab.dev.planrun` -- A CODE IS NEVER WASTED: preflight a consent plan's doors on its hosts, then run it.
+* :mod:`dev_lab.dev.planrunsteps` -- a plan's steps file: one step per grant, and how each is invoked.
+* :mod:`dev_lab.dev.planrunpreflight` -- every door of a plan checked on its hosts before the code is spent.
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
