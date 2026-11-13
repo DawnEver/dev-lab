@@ -60,7 +60,7 @@ import re
 import subprocess
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -374,6 +374,7 @@ def candidates(
     now: datetime,
     say: Callable[[str], None] = lambda _: None,
     waived: Callable[[str], frozenset[str]] = lambda _: frozenset(),
+    prefetch: Callable[[Iterable[str]], None] = lambda _: None,
 ) -> tuple[Candidate, ...]:
     """Every candidate, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
 
@@ -385,11 +386,15 @@ def candidates(
     The integration branch, every open PR into it (labels from the PR), every branch ``classes_by_ref``
     classes, and every request issue -- each kept only where its part's ref filter admits its ref
     (:func:`dev_lab.dev.partrefs.part_refs`, the exclusion said through *say*) -- PRs and requests
-    :func:`optional`, a failure said through *say*. A PR's origin is its author; any other head's is the
+    :func:`optional`, a failure said through *say*. *prefetch* is handed every served sha before *parts* asks of
+    any one: the reads it may make concurrently (:meth:`~dev_lab.dev.forgesettled.SettledHistories.prefetch`).
+    A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
     """
     found, reached = [], set()
-    for ref, sha, kind, labels, number, pr_author in _part_refs(root, client, schedule, policy, say=say):
+    served = _part_refs(root, client, schedule, policy, say=say)
+    prefetch(sha for _, sha, *_ in served)
+    for ref, sha, kind, labels, number, pr_author in served:
         needed = parts(sha)
         if kind == PR:
             skipped = waived(sha)

@@ -183,6 +183,22 @@ def test_an_ssh_remote_yields_the_same_three_and_the_original_could_not(tmp_path
     assert forge_from_remote(ssh) == forge_from_remote(scp)
 
 
+def test_a_remote_is_read_once_and_again_after_set_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One ``forge queue`` asked ``git remote get-url`` 54 times: kept per version of the git config.
+
+    PLANTED CONTROL: ``git remote set-url`` rewrites the config, and the new remote is read, never the kept one.
+    """
+    repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')
+    assert forge_from_remote(repo).repo == 'something'
+    asked = []
+    real = module._door.run
+    monkeypatch.setattr(module._door, 'run', lambda *a, **k: asked.append(a) or real(*a, **k))
+    assert forge_from_remote(repo).repo == 'something'
+    assert asked == [], 'an unchanged remote was asked of git again'
+    _run(repo, 'remote', 'set-url', 'origin', 'https://forge.example.org/someone/other.git')
+    assert forge_from_remote(repo).repo == 'other', 'a changed remote was served stale'
+
+
 def test_a_remote_that_names_no_repository_is_refused_rather_than_half_parsed(tmp_path: Path) -> None:
     """A partial parse is the failure that travels: it authenticates somewhere and reports on it."""
     for index, bad in enumerate(('https://forge.example.org/', 'https://forge.example.org/someone', 'not-a-remote')):
