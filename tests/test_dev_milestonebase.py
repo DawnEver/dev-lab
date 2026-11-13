@@ -109,18 +109,29 @@ def test_a_deleted_branch_is_not_judged(repo: Path) -> None:
 
 
 def test_an_agent_session_creating_a_version_tag_is_refused(repo: Path) -> None:
-    found = refusals(repo, _tag(repo, 'v0.2.13.dev1'), env={SESSION_ENV: 's1'})
+    _git(repo, 'tag', '-a', 'v0.2.14.dev0', '-m', 'v0.2.14.dev0')
+    found = refusals(repo, _tag(repo, 'v0.2.14.dev0'), env={SESSION_ENV: 's1'})
     assert len(found) == 1
     assert found[0].startswith(f'{TAG_RULE}:')
     assert APPROVED_ENV in found[0]
     assert len(found[0]) <= _WIDTH
 
 
-def test_the_users_approval_words_admit_the_tag(repo: Path) -> None:
-    """PLANTED CONTROL: the same push, with the user's words, passes; blank words do not count."""
-    line = _tag(repo, 'v0.2.13.dev1')
-    assert refusals(repo, line, env={SESSION_ENV: 's1', APPROVED_ENV: 'tag dev1 now'}) == []
+def test_the_users_approval_words_admit_a_dev0_tag(repo: Path) -> None:
+    """PLANTED CONTROL: a ``.dev0`` milestone, with the user's words, passes; blank words do not count."""
+    _git(repo, 'tag', '-a', 'v0.2.14.dev0', '-m', 'v0.2.14.dev0')
+    line = _tag(repo, 'v0.2.14.dev0')
+    assert refusals(repo, line, env={SESSION_ENV: 's1', APPROVED_ENV: 'tag dev0 now'}) == []
     assert refusals(repo, line, env={SESSION_ENV: 's1', APPROVED_ENV: '  '}) != []
+
+
+def test_a_dev_tag_not_ending_in_dev0_is_refused_even_approved(repo: Path) -> None:
+    """hatch-vcs builds no ``.devN`` tag but ``.dev0``; the next milestone bumps the patch or minor instead."""
+    found = refusals(repo, _tag(repo, 'v0.2.13.dev1'), env={SESSION_ENV: 's1', APPROVED_ENV: 'tag dev1 now'})
+    assert len(found) == 1
+    assert found[0].startswith(f'{TAG_RULE}:')
+    assert '.dev0' in found[0]
+    assert len(found[0]) <= _WIDTH
 
 
 def test_a_human_push_and_other_tags_are_not_judged(repo: Path) -> None:

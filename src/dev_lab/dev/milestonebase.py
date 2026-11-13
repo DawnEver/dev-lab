@@ -14,7 +14,9 @@ version tag is added only on promotion to the trunk or at the user's request. Tw
 * ``VERSION-TAG-NEEDS-APPROVAL`` -- in an agent session (:data:`dev_lab.dev.sessionprs.SESSION_ENV` set), a push
   CREATING a ``v*`` tag on origin is refused unless :data:`APPROVED_ENV` holds the user's own words -- the
   ``--approved "<words>"`` pattern of ``branchset --discard``, through the environment because git passes a hook
-  no flags. A human push and an existing remote tag are not judged.
+  no flags. A dev tag not ending in ``.dev0`` is refused even approved: hatch-vcs chooses the ``.devN`` distance
+  itself and refuses a custom one, so a milestone is ``vX.Y.Z.dev0`` and the next bumps the patch or minor. A human
+  push and an existing remote tag are not judged.
 """
 
 from __future__ import annotations
@@ -91,6 +93,13 @@ def _unapproved(tag: str) -> str:
     )
 
 
+def _not_dev0(tag: str) -> str:
+    return (
+        f'{TAG_RULE}: {tag} is refused even approved: hatch-vcs builds a dev tag only as .dev0 (it picks the .devN '
+        f'distance itself); a milestone is vX.Y.Z.dev0, the next one bumps the patch or minor'
+    )
+
+
 def refusals(root: Path, lines: str, *, env: Mapping[str, str] | None = None) -> list[str]:
     """Every refusal for the push *lines* describe; *env* defaults to the process environment."""
     env = os.environ if env is None else env
@@ -103,13 +112,12 @@ def refusals(root: Path, lines: str, *, env: Mapping[str, str] | None = None) ->
             code, _ = _git(root, 'merge-base', '--is-ancestor', f'{milestone}^{{commit}}', ref.local_sha)
             if code != 0:
                 found.append(_behind(milestone, ref.branch, ref.local_sha))
-        elif (
-            ref.created
-            and ref.remote_ref.startswith(_VERSIONS)
-            and env.get(SESSION_ENV)
-            and not env.get(APPROVED_ENV, '').strip()
-        ):
-            found.append(_unapproved(ref.remote_ref.removeprefix('refs/tags/')))
+        elif ref.created and ref.remote_ref.startswith(_VERSIONS) and env.get(SESSION_ENV):
+            tag = ref.remote_ref.removeprefix('refs/tags/')
+            if (match := _GRAMMAR.fullmatch(tag)) is not None and match.group(4) not in {None, '0'}:
+                found.append(_not_dev0(tag))
+            elif not env.get(APPROVED_ENV, '').strip():
+                found.append(_unapproved(tag))
     return found
 
 
