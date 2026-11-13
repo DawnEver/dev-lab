@@ -55,6 +55,7 @@ __all__ = [
     'UNCONFIGURED',
     'CycleResult',
     'action_for',
+    'enabled_components',
     'run_cycle',
 ]
 
@@ -207,6 +208,12 @@ def _is_enabled(sections: Mapping[str, Any], name: str) -> bool:
     return bool(section.get('enabled', True)) if isinstance(section, Mapping) else True
 
 
+def enabled_components(registry: Registry, config: Mapping[str, Any]) -> list[str]:
+    """The names of *registry*'s components the ``components`` table of *config* leaves on, in registry order."""
+    sections = config.get('components', {})
+    return [name for name in registry.components if _is_enabled(sections, name)]
+
+
 def _unconfigured(message: str) -> Anomaly:
     """Return the anomaly that says a supervisor is watching nothing.
 
@@ -276,7 +283,7 @@ def _gather(
     # and the registry each held a version of the same fact and agreed only because the CLI happens
     # to call `configure` with the same mapping. Two sources for one fact is the arrangement this
     # family refuses everywhere else, and it is invisible precisely until they disagree.
-    enabled = [component for name, component in registry.components.items() if _is_enabled(sections, name)]
+    enabled = [registry.components[name] for name in enabled_components(registry, config)]
     if not enabled:
         all_off = 'every configured component is disabled, so nothing is being watched'
         return (metrics, [_unconfigured(all_off)], completions)

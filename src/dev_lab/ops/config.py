@@ -30,7 +30,7 @@ from typing import Any, Final
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
-from dev_lab.ops.caddy import Caddy
+from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configupgrade import upgraded
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
 from dev_lab.ops.giteaadmin import Forge
@@ -286,6 +286,7 @@ class OpsConfig:
     forge: Forge | None = None
     environment_file: str = ''
     caddy: Caddy | None = None
+    status: Status | None = None
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -297,7 +298,7 @@ class OpsConfig:
 OPS_KEYS: Final = frozenset({
     'home', 'python', 'repos', 'environment_file',
     'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
-    'upgrade', 'probe', 'config', 'forge',
+    'upgrade', 'probe', 'config', 'forge', 'status',
 })  # fmt: skip
 
 
@@ -322,6 +323,7 @@ def _role[
         ConfigSource,
         Forge,
         Caddy,
+        Status,
     )
 ](cls: type[T], table: object, where: str) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -420,7 +422,7 @@ def load(
     if not ops.get('home') or not ops.get('python'):
         msg = '[ops] needs home (where the clones live) and python (the interpreter the units run)'
         raise ValueError(msg)
-    return OpsConfig(
+    found = OpsConfig(
         path=path,
         home=Path(ops['home']),
         python=str(ops['python']),
@@ -440,7 +442,15 @@ def load(
         config_source=_role(ConfigSource, ops.get('config'), '[ops.config]'),
         forge=_role(Forge, ops.get('forge'), '[ops.forge]'),
         environment_file=environment_file,
+        status=_role(Status, ops.get('status'), '[ops.status]'),
     )
+    if found.status is not None and (found.caddy is None or found.supervise is None):
+        msg = (
+            '[ops.status] needs [ops.caddy] (the allowlist the card is served behind) and [ops.supervise] '
+            '(the supervisor that writes it)'
+        )
+        raise ValueError(msg)
+    return found
 
 
 def _backup(table: object) -> Backup | None:

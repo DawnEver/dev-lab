@@ -6,6 +6,11 @@ could change -- and after the lockdown no account holds root. So the allowed add
 sites when none is named) to that list, leaving every other byte alone. A Caddyfile with no such matcher, a named
 site that is absent, or a value that is not an IP address or CIDR is refused, never guessed at: the value lands in a
 file root's web server parses, so it is checked by :mod:`ipaddress`, not by shape.
+
+``[ops.status]`` (:class:`Status`, 2026-11-13) adds ONE managed route to its declared site: the supervisor's status
+card (:mod:`dev_lab.supervise.card`) at ``path``, served read-only from the card's own directory to the same
+``[ops.caddy] allow`` list, matched before every other handler of the site (:func:`status_routed`). Undeclared, the
+route is removed.
 """
 
 from __future__ import annotations
@@ -15,10 +20,10 @@ import ipaddress
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Final
 
-__all__ = ['Caddy', 'allowlisted', 'install_caddy']
+__all__ = ['Caddy', 'Status', 'allowlisted', 'install_caddy', 'status_routed', 'status_unrouted']
 
 
 @dataclass(frozen=True)
@@ -31,6 +36,38 @@ class Caddy:
     allow: tuple[str, ...]
     file: str = '/etc/caddy/Caddyfile'
     sites: tuple[str, ...] = ()
+
+
+#: A path that lands in the Caddyfile: plain characters only, so it cannot widen the config it is written into.
+_PLAIN: Final = re.compile(r'/[A-Za-z0-9/_.-]+')
+
+
+@dataclass(frozen=True)
+class Status:
+    """The host's status card (:mod:`dev_lab.supervise.card`): where the supervisor writes it, where Caddy serves it.
+
+    ``file`` is the card (absolute; its directory holds nothing else -- it is what Caddy's ``root`` names); ``site``
+    the Caddyfile site that serves it at ``path``, to the ``[ops.caddy] allow`` list only.
+    """
+
+    file: str
+    site: str
+    path: str = '/dev-lab/status.json'
+
+    def __post_init__(self) -> None:
+        """Refuse a value that is not a plain absolute path: each lands in a file root's web server parses."""
+        for key, value in (('file', self.file), ('path', self.path)):
+            if not _PLAIN.fullmatch(value) or '..' in value:
+                msg = f'[ops.status] {key} must be an absolute plain path, got {value!r}'
+                raise ValueError(msg)
+
+    def flags(self, audit: str) -> list[str]:
+        """The supervisor's ``--card`` flags: the card, and the auto-upgrade *audit* whose last line it quotes."""
+        return ['--card', self.file, '--card-audit', audit]
+
+    def directory_step(self, owner: str) -> str:
+        """The step making the card's own directory: world-readable for Caddy, *owner*'s (empty: root) to write."""
+        return f'install -d -m 0755 -o {owner or "root"} {PurePosixPath(self.file).parent}'
 
 
 _MATCHER: Final = re.compile(r'^(?P<head>\s*@\S+\s+remote_ip)\s+(?P<list>[^\n{}#]+?)\s*$')
@@ -87,7 +124,47 @@ def allowlisted(text: str, allow: Sequence[str], *, sites: Sequence[str] = ()) -
     return ''.join(out)
 
 
-def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str]) -> list[str]:
+#: The lines that open and close the managed status route; everything between them is rendered, never edited.
+_BEGIN: Final = '\t# dev-lab status card -- rendered by dev_lab.ops ([ops.status]); edits are overwritten\n'
+_END: Final = '\t# end dev-lab status card\n'
+
+
+def status_routed(text: str, *, site: str, path: str, file: str, allow: Sequence[str]) -> str:
+    """*text* (a Caddyfile) with the managed status route as the first block of *site*; any older route dropped.
+
+    Raises:
+        ValueError: *site* is not a site of *text*, or *allow* is empty or holds a non-address.
+
+    """
+    card = PurePosixPath(file)
+    route = (
+        f'{_BEGIN}\t@dev_lab_status {{\n\t\tpath {path}\n\t\tremote_ip {_checked(allow)}\n\t}}\n'
+        f'\thandle @dev_lab_status {{\n\t\troot * {card.parent}\n\t\trewrite * /{card.name}\n'
+        f'\t\theader Cache-Control no-store\n\t\tfile_server\n\t}}\n{_END}'
+    )
+    out: list[str] = []
+    depth, placed = 0, False
+    for line in status_unrouted(text).splitlines(keepends=True):
+        out.append(line)
+        top = _SITE.match(line.rstrip('\n')) if depth == 0 else None
+        if top and not placed and site in top['names'].replace(',', ' ').split():
+            out.append(route)
+            placed = True
+        depth += line.count('{') - line.count('}')
+    if not placed:
+        msg = f'[ops.status] site: {site!r} is not a site of the Caddyfile'
+        raise ValueError(msg)
+    return ''.join(out)
+
+
+def status_unrouted(text: str) -> str:
+    """*text* without the managed status route (unchanged when it holds none)."""
+    start = text.find(_BEGIN)
+    end = text.find(_END)
+    return text if start < 0 or end < start else text[:start] + text[end + len(_END) :]
+
+
+def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str], status: Status | None = None) -> list[str]:
     """The install step: add the allowlisted Caddyfile to *rendered*, its old text kept beside it when it changes.
 
     Returns the reload step whenever the file Caddy would load is not the one it last loaded; nothing when
@@ -107,6 +184,10 @@ def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str]) -> 
         raise ValueError(msg)
     old = live.read_text(encoding='utf-8')
     new = allowlisted(old, caddy.allow, sites=caddy.sites)
+    if status is None:
+        new = status_unrouted(new)
+    else:
+        new = status_routed(new, site=status.site, path=status.path, file=status.file, allow=caddy.allow)
     rendered[live.relative_to(root).as_posix()] = new
     if new != old:
         live.with_name(f'{live.name}.bak-dev-lab').write_text(old, encoding='utf-8', newline='\n')
