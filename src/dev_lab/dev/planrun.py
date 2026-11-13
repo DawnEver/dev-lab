@@ -46,7 +46,9 @@ open, else key-only ssh (:mod:`.planremote`).
 removes the host's copy; a local step hands the client the credential's id. Then it asks the issuer whether the use
 was REGISTERED. A local credential is deleted only when the issuer says it was spent -- never on a bare exit status,
 never when the issuer cannot be asked. It stops at the first refusal and keeps every unspent credential; a step done
-is recorded per plan digest, so a second run resumes where the first stopped.
+is recorded per GRANT -- ``runs/<plan digest>-<issued ms>.json``, the grant being the newest live credentials' issue
+time -- so a second run on the same grant resumes where the first stopped, and a fresh grant of the same plan (a
+re-mint) starts a new run rather than reading the old one's steps as "done earlier" (user ruling 2026-11-13).
 """
 
 from __future__ import annotations
@@ -323,13 +325,26 @@ def _local(plan: Plan, index: int, home: Path | None, now: float) -> Path | None
     return max(found)[1] if found else None
 
 
-def _progress(plan: Plan, home: Path | None) -> Path:
-    return state_dir(home) / 'runs' / f'{plan.digest}.json'
+def _grant(plan: Plan, home: Path | None, now: float) -> float | None:
+    """The grant this run redeems: the newest issue time among *plan*'s live local credentials; ``None``: none live."""
+    held = [_local(plan, index, home, now) for index in range(len(plan.grants))]
+    issued = [json.loads(path.read_text(encoding='utf-8')).get('issued', 0) for path in held if path is not None]
+    return max(issued) if issued else None
 
 
-def _done(plan: Plan, home: Path | None) -> set[int]:
-    path = _progress(plan, home)
-    return set(json.loads(path.read_text(encoding='utf-8'))['done']) if path.is_file() else set()
+def _progress(plan: Plan, grant: float, home: Path | None) -> Path:
+    """The run record of ONE grant of *plan*: a re-mint is a new grant, hence a new record."""
+    return state_dir(home) / 'runs' / f'{plan.digest}-{round(grant * 1000)}.json'
+
+
+def _done(record: Path | None) -> set[int]:
+    return set(json.loads(record.read_text(encoding='utf-8'))['done']) if record and record.is_file() else set()
+
+
+def _newest_record(plan: Plan, home: Path | None) -> Path | None:
+    """With no live credential, the newest run record of *plan*: what a resume reports as done."""
+    found = sorted((state_dir(home) / 'runs').glob(f'{plan.digest}-*.json'), key=lambda path: path.stat().st_mtime)
+    return found[-1] if found else None
 
 
 def _redeem(step: Step, ident: str, text: str, remotes: Remotes, local: Local) -> tuple[str, int]:
@@ -351,12 +366,14 @@ def run_plan(
 ) -> tuple[bool, list[str]]:  # fmt: skip
     """``(finished, lines)``: the plan's steps run in order, each where it runs; see the module docstring."""
     lines: list[str] = []
-    done = _done(plan, home)
+    grant = _grant(plan, home, now())
+    record = _newest_record(plan, home) if grant is None else _progress(plan, grant, home)
+    done = _done(record)
     for index, grant in enumerate(plan.grants):
         step = steps.steps[index]
         name = f'step {index + 1} {grant["action"]} {"here" if step.local else "on " + step.dest}'
         if index in done:
-            lines.append(f'{name}: done earlier')
+            lines.append(f'{name}: done earlier (run record {record}; a new grant of this plan starts a new run)')
             continue
         held = _local(plan, index, home, now())
         if held is None:
@@ -382,7 +399,7 @@ def run_plan(
             )
             return False, lines
         done.add(index)
-        write_private(_progress(plan, home), json.dumps({'done': sorted(done)}) + '\n')
+        write_private(record, json.dumps({'done': sorted(done)}) + '\n')
         lines.append(f'{name}: ran ({_shown(step, said, status, home)}); credential {kept}')
     return True, [*lines, 'plan: every step ran']
 
