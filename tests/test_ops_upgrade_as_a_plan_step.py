@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from test_ops_upgrade_installs_the_locked_family import LOCK, OLD, TIP, _config
 
+from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops import upgrade
 from dev_lab.ops.consent.actions import ACTIONS, SINGLE
 from dev_lab.ops.consent.credential import ConsentRefused
@@ -75,14 +76,14 @@ def test_an_installed_sha_is_done_again_without_spending_the_credential(tmp_path
     assert (host.redeemed, host.installs) == ([], [])
 
 
-def test_a_refused_credential_installs_nothing(tmp_path: Path) -> None:
+def test_a_refused_credential_installs_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     host = Host()
 
     def refuse(_credential: object, _subject: str) -> None:
         msg = 'the credential names another subject'
         raise ConsentRefused(msg)
 
-    host.redeem = refuse  # type: ignore[method-assign]
+    monkeypatch.setattr(host, 'redeem', refuse)
     with pytest.raises(ConsentRefused):
         _planned(tmp_path, host, TIP)
     assert host.installs == []
@@ -95,8 +96,6 @@ def test_the_subject_is_the_declared_refs_tip(tmp_path: Path) -> None:
 def test_the_ops_door_prints_the_subject_and_refuses_a_sha_without_its_credential(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from dev_lab.ops import __main__ as ops_main  # noqa: PLC0415
-
     path = _config(tmp_path).path
     monkeypatch.setattr(upgrade, 'subject', lambda _config: TIP)
     assert ops_main.main(['--config', str(path), 'upgrade', '--subject']) == 0

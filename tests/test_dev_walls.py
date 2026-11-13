@@ -37,10 +37,10 @@ def test_the_ledger_is_dated_program_output_under_the_checkout(tmp_path: Path) -
 
 def test_a_wall_line_carries_a_digest_never_the_command(tmp_path: Path) -> None:
     """The command may hold a secret, so only a sha256 prefix of it is written."""
-    secret = 'curl -H "Authorization: token s3cr3t" https://forge.example/api'  # noqa: S105 -- the planted secret
-    walls.record(tmp_path, rule='FORGE-WRITE-VIA-HTTP', command=secret, remedy=True, session=SESSION)
+    command = 'curl -H "Authorization: token s3cr3t" https://forge.example/api'  # the planted secret
+    walls.record(tmp_path, rule='FORGE-WRITE-VIA-HTTP', command=command, remedy=True, session=SESSION)
     (line,) = _lines(tmp_path)
-    assert line['command_sha256'] == hashlib.sha256(secret.encode('utf-8')).hexdigest()[: walls.DIGEST_CHARS]
+    assert line['command_sha256'] == hashlib.sha256(command.encode('utf-8')).hexdigest()[: walls.DIGEST_CHARS]
     assert 's3cr3t' not in walls.ledger(tmp_path).read_text(encoding='utf-8')
     assert (line['session'], line['rule'], line['remedy_present']) == (SESSION, 'FORGE-WRITE-VIA-HTTP', True)
     assert set(line) == {'ts', 'session', 'rule', 'command_sha256', 'remedy_present'}
