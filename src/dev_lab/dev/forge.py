@@ -43,6 +43,7 @@ import getpass
 import http.client
 import json
 import os
+import pathlib
 import re
 import socket
 from dataclasses import dataclass, field
@@ -231,11 +232,45 @@ class Clause:
     detail: str
 
 
+_REMOTES: dict[tuple[str, str, int, int], Forge] = {}
+
+
+def _git_config(root: Path) -> Path | None:
+    """The config *root*'s checkout reads its remotes from (a worktree's: its common dir's); ``None``: unknown."""
+    for here in (root, *root.parents):
+        dot = here / '.git'
+        if dot.is_dir():
+            return dot / 'config'
+        if dot.is_file():
+            gitdir = here / dot.read_text(encoding='utf-8').partition(':')[2].strip()
+            common = gitdir / 'commondir'
+            return (gitdir / common.read_text(encoding='utf-8').strip() if common.is_file() else gitdir) / 'config'
+    return None
+
+
 def forge_from_remote(root: Path, *, remote: str = 'origin') -> Forge:
     """Host, owner and repository, read from *root*'s remote; both URL and scp spellings.
 
     *remote* carries a default because ``origin`` is git's own convention rather than a repo's answer.
+    Kept per version of the checkout's git config (one ``forge queue`` asked git 54 times): ``remote
+    set-url`` rewrites that file, so it is read again; a checkout whose config cannot be found is never kept.
     """
+    here = pathlib.Path(root).resolve()
+    try:
+        config = _git_config(here)
+        stat = config.stat() if config is not None else None
+    except OSError:
+        stat = None
+    key = None if stat is None else (str(here), remote, stat.st_mtime_ns, stat.st_size)
+    if key is not None and key in _REMOTES:
+        return _REMOTES[key]
+    found = _read_remote(root, remote)
+    if key is not None:
+        _REMOTES[key] = found
+    return found
+
+
+def _read_remote(root: Path, remote: str) -> Forge:
     done = _door.run(
         [_GIT, 'remote', 'get-url', remote],
         cwd=root,
