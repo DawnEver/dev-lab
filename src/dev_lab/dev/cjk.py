@@ -14,16 +14,25 @@ THE RULE AS RULED IS CJK, NOT NON-ASCII. Measured 2026-09-16, over ``consumer-a`
 CJK touches 287 tracked files; refusing every non-ASCII character touches 732, because this family
 writes em dashes, ``~=``, a multiplication sign and other ordinary symbols constantly in its prose. The
 user's own wording names the CJK script family, not the ASCII table, so :data:`CJK_RANGES` matches
-exactly the five blocks below and nothing wider -- an em dash stays legal everywhere.
+exactly the blocks below and nothing wider -- an em dash stays legal everywhere.
 
 THE RANGES, and each is a real CJK block rather than a guess:
 
+* ``U+1100-11FF`` -- Hangul Jamo (user ruling 2026-11-13: Korean hangul is CJK under this rule).
 * ``U+3000-303F`` -- CJK Symbols and Punctuation (the ideographic space, full-width brackets).
+* ``U+3040-30FF`` -- Hiragana and Katakana, adjacent blocks matched as one span (user ruling
+  2026-11-13: Japanese kana is CJK under this rule).
+* ``U+3130-318F`` -- Hangul Compatibility Jamo.
+* ``U+31F0-31FF`` -- Katakana Phonetic Extensions.
 * ``U+3400-4DBF`` -- CJK Unified Ideographs Extension A.
 * ``U+4E00-9FFF`` -- CJK Unified Ideographs, the block that carries ordinary Chinese/Japanese text.
+* ``U+A960-A97F`` -- Hangul Jamo Extended-A.
+* ``U+AC00-D7AF`` -- Hangul Syllables, the block that carries ordinary Korean text.
+* ``U+D7B0-D7FF`` -- Hangul Jamo Extended-B.
 * ``U+F900-FAFF`` -- CJK Compatibility Ideographs.
 * ``U+FF00-FFEF`` -- Halfwidth and Fullwidth Forms, which is where a full-width Latin letter or a
-  full-width punctuation mark used inside CJK prose lives, and which plain "is this Han" tests miss.
+  full-width punctuation mark used inside CJK prose lives, and which plain "is this Han" tests miss. Half-width katakana
+  (``U+FF66-FF9F``) and half-width hangul (``U+FFA0-FFDC``) already live inside it.
 
 THIS CANNOT BE A FLAT ASSERTION ON DAY ONE, and the ratchet shape is not a stylistic choice: measured
 population at authoring time was 287 files / 22162 characters in consumer-a alone, and a single
@@ -102,13 +111,21 @@ __all__ = [
     'translation_source',
 ]
 
-#: The five CJK blocks the directive refuses. See the module docstring for what each one is and why
+#: The CJK blocks the directive refuses -- Han, kana and hangul (kana and hangul ruled in 2026-11-13).
+#: See the module docstring for what each one is and why
 #: the set stops here rather than widening to "any non-ASCII" -- that is a measured, not a guessed,
 #: boundary.
 CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
+    (0x1100, 0x11FF),
     (0x3000, 0x303F),
+    (0x3040, 0x30FF),
+    (0x3130, 0x318F),
+    (0x31F0, 0x31FF),
     (0x3400, 0x4DBF),
     (0x4E00, 0x9FFF),
+    (0xA960, 0xA97F),
+    (0xAC00, 0xD7AF),
+    (0xD7B0, 0xD7FF),
     (0xF900, 0xFAFF),
     (0xFF00, 0xFFEF),
 )
@@ -367,7 +384,8 @@ def remedy(occurrence: Occurrence) -> str:
     """One refusal line for *occurrence* -- the exact file:line and the remedy, no CJK in the text."""
     point = ord(occurrence.char)
     return (
-        f'{occurrence.path}:{occurrence.line}: a CJK character (U+{point:04X}) at column {occurrence.col} is not '
+        f'{occurrence.path}:{occurrence.line}: a CJK (Han, kana or hangul) character (U+{point:04X}) at '
+        f'column {occurrence.col} is not '
         f'permitted in tracked source. Translate it to English letters, digits and symbols, faithfully rather '
         f'than by deleting the information. If the character must survive verbatim -- for example a test '
         f'asserting that a guard REJECTS non-ASCII input -- write it as a \\uXXXX escape sequence instead: the '

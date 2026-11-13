@@ -1,6 +1,7 @@
 # Translations
 
-No tracked file may contain a CJK character (`NO-CJK-IN-TRACKED-SOURCE`), with one named exception: a
+No tracked file may contain a CJK character -- Han, Japanese kana or Korean hangul, the blocks
+`dev_lab.dev.cjk.CJK_RANGES` names (`NO-CJK-IN-TRACKED-SOURCE`) -- with one named exception: a
 translation `<stem>.zh.md` beside its English `<stem>.md`. Write or change the English page first, then put the
 translation beside it in the same commit. The English page is the source of truth.
 
