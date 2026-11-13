@@ -130,7 +130,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'BASE-HOLDS-THE-MILESTONE',
         (
             'A push that creates or updates `refs/heads/<X>` is refused at pre-push unless its tip contains the '
-            'newest milestone held locally: the highest `v<major>.<minor>.<patch>[.devN]` tag, a release above its '
+            'newest milestone on the line: the highest `v<major>.<minor>.<patch>[.devN]` tag contained in '
+            '`origin/<integration>` or `origin/<trunk>` (a local-only stray tag is no milestone), a release above its '
             'dev tags, dev tags such as `v0.2.13.dev1` on the integration branch included and a legacy `-unverified` '
             'suffix read as its base (user ruling 2026-11-13: every agent iterates on a base holding the newest '
             'milestone); no version tag holds nothing, '

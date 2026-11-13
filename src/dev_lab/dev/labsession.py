@@ -27,12 +27,28 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, forge_from_remote
 
-__all__ = ['ENV', 'FORGE_NAME', 'TRAILER', 'forge_email', 'machine_env', 'main', 'sessions', 'stamp']
+__all__ = [
+    'CLAUDE_ENV',
+    'CLAUDE_TRAILER',
+    'ENV',
+    'FORGE_NAME',
+    'TRAILER',
+    'forge_email',
+    'machine_env',
+    'main',
+    'sessions',
+    'stamp',
+    'trailers',
+]
 
 #: The environment variable the launcher issues the session id in.
 ENV: Final = 'LAB_SESSION'
 #: The commit trailer this hook writes.
 TRAILER: Final = 'Lab-Session'
+#: The variable the Claude Code harness names its session in, as the ``session_...`` id of the session's page.
+CLAUDE_ENV: Final = 'CLAUDE_CODE_BRIDGE_SESSION_ID'
+#: The prose trailer naming that page (the commit attribution a Claude session writes by hand).
+CLAUDE_TRAILER: Final = 'Claude-Session'
 #: The author and committer name of every commit the forge makes.
 FORGE_NAME: Final = 'Forge'
 
@@ -69,6 +85,20 @@ def sessions(root: Path, base: str, head: str) -> frozenset[str]:
         capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False,
     )  # fmt: skip
     return frozenset(done.stdout.split()) if done.returncode == 0 else frozenset()
+
+
+def trailers(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """The session trailers a commit made inside a session carries, read from *env* (default: this process's).
+
+    ``Lab-Session`` (what the commit-msg hook stamps) and ``Claude-Session`` (its page's URL); a malformed or
+    absent id stamps nothing. For a commit a family door makes itself (``forge sync``), so it carries the session
+    whether or not the hook is installed where it runs.
+    """
+    env = os.environ if env is None else env
+    out = [f'{TRAILER}: {session}'] if _ID.match(session := env.get(ENV, '')) else []
+    if _ID.match(page := env.get(CLAUDE_ENV, '')):
+        out.append(f'{CLAUDE_TRAILER}: https://claude.ai/code/{page}')
+    return tuple(out)
 
 
 def stamp(message_file: str, session: str) -> None:

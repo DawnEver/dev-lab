@@ -13,7 +13,7 @@ import pytest
 from _ops_fixtures import NOW, RFC_KEY, code
 from lab_commons.home import HOME_ENV
 
-from dev_lab.dev import sshhold
+from dev_lab.dev import sshhold, sshholdwire
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import grant_plan, redeem
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
@@ -226,7 +226,7 @@ def _open_two(
         order.append(f'open {given} {dest}')
         if dest == refuse:
             msg = f'{dest} did not authenticate: unreachable'
-            raise sshhold.HoldRefused(msg)
+            raise sshholdwire.HoldRefused(msg)
         return f'{dest}: open'
 
     ticks = iter([0.0, sshhold.OPEN_WINDOW_S + 1 if late else 1.0])

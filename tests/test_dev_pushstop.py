@@ -6,13 +6,16 @@ docs-only head) read ``pending`` forever, and a pending refusal was never releas
 
 from __future__ import annotations
 
+import io
+import json
 from typing import TYPE_CHECKING
 
+import pytest
 from _branch_repos import clone_pair
 from _forge_fake import git_out
 from _forge_state import StateForge
 
-from dev_lab.dev import pushwatch
+from dev_lab.dev import pushstop, pushwatch, sessionprs, walls
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.pushstop import GRACE_S, Stop, stop_refusal
 from dev_lab.dev.pushwatch import watch_command
@@ -70,3 +73,18 @@ def test_a_pending_head_whose_watch_reached_its_deadline_is_released_on_the_repe
     assert released.note is not None
     assert head[:12] in released.note
     assert 'deadline' in released.note
+
+
+def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """WALLS-ARE-RECORDED: the pushed-head block reaches the ledger through the one choke point."""
+    block = f'{sessionprs.RULE}: this session has open PRs (x) and nothing watches them.\nArm ONE Monitor running: w'
+    monkeypatch.setattr(pushstop, 'pushed_by', lambda _root, _session: set())
+    monkeypatch.setattr(pushstop.sessionprs, 'open_rows', lambda _session: ['x'])
+    monkeypatch.setattr(pushstop, 'red_refusal', lambda _session, **_k: Stop())
+    monkeypatch.setattr(pushstop, 'unwatched_refusal', lambda _session: Stop(block=block))
+    out = io.StringIO()
+    payload = {'session_id': 's1', 'cwd': str(tmp_path)}
+    assert pushstop._gate(payload, lambda: (), None, lambda _forge: None, out) == 0
+    assert json.loads(out.getvalue())['decision'] == 'block'
+    [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present'], line['session']) == (sessionprs.RULE, True, 's1')

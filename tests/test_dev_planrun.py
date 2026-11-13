@@ -15,7 +15,7 @@ import pytest
 from _ops_fixtures import NOW as FIXED
 from _ops_fixtures import RFC_KEY, code, config
 
-from dev_lab.dev import planrun, sshhold
+from dev_lab.dev import forgesecrets, planrun, planrunpreflight, planrunsteps, sshholdwire, walls
 from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops import configdoor, consentverbs
 from dev_lab.ops.consent import serve
@@ -31,9 +31,9 @@ APPLY = {'host': HOST, 'action': 'ops.config', 'subject': 'a' * 64}
 PLACE = {'host': HOST, 'action': 'ops.secret.place', 'subject': 'b' * 64}
 PLAN = parsed({'hosts': [HOST], 'grants': [APPLY, PLACE]})
 CONF, PY = '/etc/dev-lab/supervise.toml', '/usr/bin/python3'
-STEPS = planrun.Steps((
-    planrun.Step(('config', 'apply', '--from', CANDIDATE), HOST, CONF, PY),
-    planrun.Step(('secret', 'place', '--path', '/etc/x'), HOST, CONF, PY, 'x.secret'),
+STEPS = planrunsteps.Steps((
+    planrunsteps.Step(('config', 'apply', '--from', CANDIDATE), HOST, CONF, PY),
+    planrunsteps.Step(('secret', 'place', '--path', '/etc/x'), HOST, CONF, PY, 'x.secret'),
 ))  # fmt: skip
 SECRET, LOCAL = b'bot-token-PLANTED-7f3a', 'x.secret'
 
@@ -65,7 +65,7 @@ class FakeHost:
 
     def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
         if self.down:
-            raise sshhold.HoldRefused(self.down)
+            raise sshholdwire.HoldRefused(self.down)
         self.commands.append(command)
         self.stdins.append((command, stdin))
         words = shlex.split(command)
@@ -95,7 +95,7 @@ class FakeHost:
 def test_a_host_with_every_door_is_green() -> None:
     """The planted control of every blocker below."""
     host = FakeHost()
-    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert green, lines
     assert lines[-1].startswith('preflight: green')
     assert any(given == SECRET and '--subject' in command for command, given in host.stdins)
@@ -105,7 +105,7 @@ def test_a_host_with_every_door_is_green() -> None:
 def test_a_host_that_cannot_verify_or_register_is_blocked() -> None:
     host = FakeHost()
     host.ready = (2, 'refused: no consent public key: set [consent] public_key')
-    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert not green
     assert 'BLOCKED -- refused: no consent public key' in lines[0]
 
@@ -117,28 +117,28 @@ def test_a_login_refused_for_want_of_a_code_names_the_hold_and_its_door() -> Non
     """
     host = FakeHost()
     host.ready = (255, 'user@h: Permission denied (publickey,keyboard-interactive).')
-    _, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    _, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert 'Permission denied' in lines[0]
     assert 'sshhold open --hours H --plan <plan.json> --digest <D>' in lines[0]
     assert 'Build the plan first' in lines[0]
     other = FakeHost()
     other.ready = (2, 'refused: no consent public key')
-    _, said = planrun.preflight(PLAN, STEPS, lambda _dest: other)
+    _, said = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: other)
     assert 'sshhold' not in said[0]
 
 
 def test_consent_ready_is_asked_without_sudo_so_a_host_needs_no_sudoers_row_for_it() -> None:
     host = FakeHost()
-    planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     asked = [command for command in host.commands if command.endswith('consent ready')]
     assert asked == [shlex.join([PY, '-m', 'dev_lab.ops', '--config', CONF, 'consent', 'ready'])]
 
 
 def test_a_missing_stdin_local_file_is_blocked_before_any_code(secret_here: Path) -> None:
     host = FakeHost()
-    assert planrun.preflight(PLAN, STEPS, lambda _dest: host)[0]  # the control: the file is here
+    assert planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)[0]  # the control: the file is here
     secret_here.unlink()
-    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert not green
     assert f'BLOCKED -- no stdin_local file here: {LOCAL}' in lines[2]
 
@@ -146,7 +146,7 @@ def test_a_missing_stdin_local_file_is_blocked_before_any_code(secret_here: Path
 def test_a_missing_door_with_no_config_step_before_it_is_blocked() -> None:
     host = FakeHost()
     host.doors.discard(('config', 'apply'))
-    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert not green
     assert lines[1].startswith('step 1 ops.config: BLOCKED -- no sudo door')
 
@@ -154,7 +154,7 @@ def test_a_missing_door_with_no_config_step_before_it_is_blocked() -> None:
 def test_a_door_installed_by_an_earlier_config_apply_is_after_that_step_not_a_failure() -> None:
     host = FakeHost()
     host.doors.discard(('secret', 'place'))
-    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert green, lines
     assert lines[2].startswith('step 2 ops.secret.place: after step 1')
 
@@ -163,7 +163,7 @@ def test_a_subject_after_an_earlier_config_apply_on_its_host_is_derived_after_th
     """The earlier apply changes the live config the subject is derived from (a family file fetched once declared)."""
     host = FakeHost()
     host.subjects['secret'] = 'd' * 64
-    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert green, lines
     assert lines[2].startswith('step 2 ops.secret.place: after step 1 (subject derived once step 1 applied) on ')
 
@@ -171,17 +171,17 @@ def test_a_subject_after_an_earlier_config_apply_on_its_host_is_derived_after_th
 def test_a_subject_the_host_derives_differently_is_blocked() -> None:
     host = FakeHost()
     host.subjects['config'] = 'c' * 64
-    green, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert not green
     assert 'derives subject cccccccccccc, the plan grants aaaaaaaaaaaa' in lines[1]
 
 
 def test_the_door_check_names_the_credential_flag_the_run_will_pass() -> None:
     host = FakeHost()
-    planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     asked = [command for command in host.commands if command.startswith('sudo -n -l') and 'apply' in command]
     first = STEPS.steps[0]
-    door = planrun.ops_command(
+    door = planrunsteps.ops_command(
         first, [*first.argv, '--credential', '.dev-lab/consent/preflight.json'], sudo='sudo -n -l'
     )
     assert asked == [door]
@@ -195,13 +195,15 @@ def _steps_file(tmp_path: Path, steps: object) -> Path:
 
 def test_a_steps_file_lists_one_step_per_grant(tmp_path: Path) -> None:
     good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_local': '/h/x'}]
-    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN).steps[1].stdin_local == '/h/x'  # the control
+    assert planrunsteps.load_steps(_steps_file(tmp_path, good), PLAN).steps[1].stdin_local == '/h/x'  # the control
     with pytest.raises(ConsentRefused, match='stdin_local'):  # the host-side `stdin` is gone, not aliased
-        planrun.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place'], 'stdin': '/h/x'}]), PLAN)
+        planrunsteps.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place'], 'stdin': '/h/x'}]), PLAN)
     with pytest.raises(ConsentRefused, match='one step per grant'):
-        planrun.load_steps(_steps_file(tmp_path, good[:1]), PLAN)
+        planrunsteps.load_steps(_steps_file(tmp_path, good[:1]), PLAN)
     with pytest.raises(ConsentRefused, match='the runner adds them'):
-        planrun.load_steps(_steps_file(tmp_path, [good[0], {'argv': ['secret', 'place', '--credential', 'x']}]), PLAN)
+        planrunsteps.load_steps(
+            _steps_file(tmp_path, [good[0], {'argv': ['secret', 'place', '--credential', 'x']}]), PLAN
+        )
 
 
 def test_config_apply_subject_prints_the_candidates_digest_and_applies_nothing(
@@ -395,11 +397,11 @@ JUDGE = 'ops@judge.example.org:2222'
 JUDGE_APPLY = {'host': JUDGE, 'action': 'ops.config', 'subject': 'c' * 64}
 WAVE = {'host': HOST, 'action': 'breakglass.wave', 'subject': 'wave'}
 WIDE = parsed({'hosts': [HOST, JUDGE], 'grants': [APPLY, JUDGE_APPLY, PLACE, WAVE]})
-WIDE_STEPS = planrun.Steps((
+WIDE_STEPS = planrunsteps.Steps((
     STEPS.steps[0],
-    planrun.Step(('config', 'apply', '--from', '/srv/plan/judge.toml'), JUDGE, '/etc/dev-lab/judge.toml', PY),
+    planrunsteps.Step(('config', 'apply', '--from', '/srv/plan/judge.toml'), JUDGE, '/etc/dev-lab/judge.toml', PY),
     STEPS.steps[1],
-    planrun.Step(('breakglass', 'open'), local=True),
+    planrunsteps.Step(('breakglass', 'open'), local=True),
 ))  # fmt: skip
 ENDPOINT = {'endpoint': 'breakglass@forge'}
 
@@ -411,7 +413,7 @@ def _hosts() -> dict[str, FakeHost]:
 
 
 def _wide_preflight(hosts: dict[str, FakeHost], table: dict[str, str] = ENDPOINT) -> tuple[bool, list[str]]:
-    return planrun.preflight(WIDE, WIDE_STEPS, hosts.__getitem__, machine=lambda _table: table)
+    return planrunpreflight.preflight(WIDE, WIDE_STEPS, hosts.__getitem__, machine=lambda _table: table)
 
 
 def test_a_plan_across_hosts_and_a_local_wave_is_green_with_every_check_on_its_own_host() -> None:
@@ -423,7 +425,7 @@ def test_a_plan_across_hosts_and_a_local_wave_is_green_with_every_check_on_its_o
     assert lines[3] == f'step 2 ops.config: green on {JUDGE}'
     assert lines[5].startswith('step 4 breakglass.wave: green (here: forge breakglass open via breakglass@forge')
     judged = [command for command in hosts[JUDGE].commands if '--subject' in command]
-    assert judged == [planrun.ops_command(WIDE_STEPS.steps[1], [*WIDE_STEPS.steps[1].argv, '--subject'])]
+    assert judged == [planrunsteps.ops_command(WIDE_STEPS.steps[1], [*WIDE_STEPS.steps[1].argv, '--subject'])]
     assert all('judge.toml' not in command for command in hosts[HOST].commands)
 
 
@@ -449,7 +451,7 @@ def test_a_local_step_with_no_endpoint_in_the_machine_file_is_blocked() -> None:
     assert lines[5] == 'step 4 breakglass.wave: BLOCKED -- the machine file has no [breakglass] endpoint'
 
 
-def _wide_run(hosts: dict[str, FakeHost], home: Path, local: planrun.Local) -> tuple[bool, list[str]]:
+def _wide_run(hosts: dict[str, FakeHost], home: Path, local: planrunsteps.Local) -> tuple[bool, list[str]]:
     def spent(ids: list[str]) -> set[str]:
         return set(ids) & (hosts[HOST].ledger | hosts[JUDGE].ledger)
 
@@ -518,21 +520,21 @@ def test_a_steps_file_names_each_steps_host_and_a_local_wave(tmp_path: Path) -> 
         {'argv': ['config', 'apply']}, {'argv': ['config', 'apply'], 'config': '/etc/j.toml'},
         {'argv': ['secret', 'place']}, {'local': True},
     ]  # fmt: skip
-    steps = planrun.load_steps(_steps_file(tmp_path, good), WIDE).steps  # the control: each on its grant's host
+    steps = planrunsteps.load_steps(_steps_file(tmp_path, good), WIDE).steps  # the control: each on its grant's host
     assert [(step.dest, step.config, step.local) for step in steps] == [
         (HOST, '/etc/c.toml', False), (JUDGE, '/etc/j.toml', False), (HOST, '/etc/c.toml', False), ('', '', True),
     ]  # fmt: skip
     with pytest.raises(ConsentRefused, match='"argv"'):  # the plan names where a grant runs; a step never does
-        planrun.load_steps(_steps_file(tmp_path, [good[0], {**good[1], 'dest': JUDGE}, *good[2:]]), WIDE)
+        planrunsteps.load_steps(_steps_file(tmp_path, [good[0], {**good[1], 'dest': JUDGE}, *good[2:]]), WIDE)
     assert steps[3].argv == ('breakglass', 'open')
     with pytest.raises(ConsentRefused, match='redeemed here'):
-        planrun.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE)
+        planrunsteps.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE)
     with pytest.raises(ConsentRefused, match='redeemed on a host'):
-        planrun.load_steps(_steps_file(tmp_path, [{'local': True}, *good[1:]]), WIDE)
+        planrunsteps.load_steps(_steps_file(tmp_path, [{'local': True}, *good[1:]]), WIDE)
 
 
 BUNDLE = 'OPENAI_API_KEY=sk-PLANTED-9c1e\n'
-TASK_STEPS = planrun.Steps((
+TASK_STEPS = planrunsteps.Steps((
     STEPS.steps[0],
     dataclasses.replace(STEPS.steps[1], stdin_local=None, stdin_task='judge'),
 ))  # fmt: skip
@@ -542,14 +544,14 @@ TASK_STEPS = planrun.Steps((
 def stored(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     """The forge-secrets store of this machine, as task -> bundle."""
     bundles = {'judge': BUNDLE}
-    monkeypatch.setattr(planrun.forgesecrets, 'stored_bundle', lambda task: bundles.get(task, ''))
+    monkeypatch.setattr(forgesecrets, 'stored_bundle', lambda task: bundles.get(task, ''))
     return bundles
 
 
 @pytest.mark.usefixtures('stored')
 def test_a_task_bundle_streams_as_the_steps_stdin_and_never_rides_a_command() -> None:
     host = FakeHost()
-    green, lines = planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, TASK_STEPS, lambda _dest: host)
     assert green, lines
     assert any(given == BUNDLE.encode() and '--subject' in command for command, given in host.stdins)
     assert not any('sk-PLANTED' in command for command in host.commands)
@@ -558,9 +560,9 @@ def test_a_task_bundle_streams_as_the_steps_stdin_and_never_rides_a_command() ->
 
 def test_a_task_with_no_stored_bundle_is_blocked_before_any_code(stored: dict[str, str]) -> None:
     host = FakeHost()
-    assert planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)[0]  # the control: the bundle is stored
+    assert planrunpreflight.preflight(PLAN, TASK_STEPS, lambda _dest: host)[0]  # the control: the bundle is stored
     stored.clear()
-    green, lines = planrun.preflight(PLAN, TASK_STEPS, lambda _dest: host)
+    green, lines = planrunpreflight.preflight(PLAN, TASK_STEPS, lambda _dest: host)
     assert not green
     assert 'BLOCKED -- no stored bundle for task judge here' in lines[2]
 
@@ -581,10 +583,10 @@ def test_a_granted_task_step_streams_its_bundle_and_writes_no_file(tmp_path: Pat
 
 def test_a_step_names_exactly_one_stdin_source(tmp_path: Path) -> None:
     one = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdin_task': 'judge'}]
-    assert planrun.load_steps(_steps_file(tmp_path, one), PLAN).steps[1].stdin_task == 'judge'  # the control
+    assert planrunsteps.load_steps(_steps_file(tmp_path, one), PLAN).steps[1].stdin_task == 'judge'  # the control
     both = [one[0], {**one[1], 'stdin_local': 'x.secret'}]
     with pytest.raises(ConsentRefused, match='exactly one source'):
-        planrun.load_steps(_steps_file(tmp_path, both), PLAN)
+        planrunsteps.load_steps(_steps_file(tmp_path, both), PLAN)
 
 
 def test_consent_ready_stats_the_issuer_key_and_never_reads_it(
@@ -638,7 +640,7 @@ MINTED = 'forge-PLANTED-91c2'
 
 def _minting(host: FakeHost, home: Path, stdout_local: str | None) -> tuple[bool, list[str]]:
     """Step 2 runs with *stdout_local* as it is printed by the host (a ``forge token mint``)."""
-    steps = planrun.Steps((STEPS.steps[0], dataclasses.replace(STEPS.steps[1], stdout_local=stdout_local)))
+    steps = planrunsteps.Steps((STEPS.steps[0], dataclasses.replace(STEPS.steps[1], stdout_local=stdout_local)))
     return planrun.run_plan(
         PLAN, steps, lambda _dest: host, spent=lambda ids: set(ids) & host.ledger, home=home, now=lambda: NOW
     )
@@ -679,10 +681,10 @@ def test_a_failed_stdout_local_step_withholds_its_output_and_writes_nothing(tmp_
 @pytest.mark.parametrize('name', ['/abs/x', '../x', 'a/../../x', '', 'C:/x', 'C:x', '\\\\srv\\x'])
 def test_stdout_local_is_a_relative_name_without_dotdot(tmp_path: Path, name: str) -> None:
     good = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdout_local': 'ok/x'}]
-    assert planrun.load_steps(_steps_file(tmp_path, good), PLAN).steps[1].stdout_local == 'ok/x'  # control
+    assert planrunsteps.load_steps(_steps_file(tmp_path, good), PLAN).steps[1].stdout_local == 'ok/x'  # control
     bad = [{'argv': ['config', 'apply']}, {'argv': ['secret', 'place'], 'stdout_local': name}]
     with pytest.raises(ConsentRefused, match='stdout_local'):
-        planrun.load_steps(_steps_file(tmp_path, bad), PLAN)
+        planrunsteps.load_steps(_steps_file(tmp_path, bad), PLAN)
 
 
 def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_update() -> None:
@@ -690,13 +692,13 @@ def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_updat
     newer = parsed(
         {'hosts': [HOST], 'grants': [APPLY, {'host': HOST, 'action': 'ops.not.yet.known', 'subject': 'c' * 64}]}
     )
-    steps = planrun.Steps((*STEPS.steps[:1], planrun.Step(('not', 'known'), HOST, CONF, PY)))
-    green, lines = planrun.preflight(newer, steps, lambda _dest: FakeHost())
+    steps = planrunsteps.Steps((*STEPS.steps[:1], planrunsteps.Step(('not', 'known'), HOST, CONF, PY)))
+    green, lines = planrunpreflight.preflight(newer, steps, lambda _dest: FakeHost())
     assert not green
     blocked = [line for line in lines if 'ops.not.yet.known' in line and 'BLOCKED' in line]
     assert blocked, lines
     assert 'local dev-lab is older than the plan; update it' in blocked[0]
-    assert planrun.preflight(PLAN, STEPS, lambda _dest: FakeHost())[0]  # the control: every action known
+    assert planrunpreflight.preflight(PLAN, STEPS, lambda _dest: FakeHost())[0]  # the control: every action known
 
 
 def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -> None:
@@ -710,7 +712,9 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
 
     want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
     plan = parsed({'hosts': [HOST], 'grants': [{'host': HOST, 'action': forgeprotection.ACTION, 'subject': want}]})
-    step = planrun.Step(('forge', 'protect', 'apply', '--repo', 'owner/alpha'), HOST, CONF, PY, forge='gitea.example')
+    step = planrunsteps.Step(
+        ('forge', 'protect', 'apply', '--repo', 'owner/alpha'), HOST, CONF, PY, forge='gitea.example'
+    )
     host = FakeHost()
     host.doors.add(('forge', 'protect'))
     reads: list[tuple[str, str, str]] = []
@@ -719,14 +723,14 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
         reads.append((forge, repo, ref))
         return GITEA_TEXT
 
-    readers = planrun.Readers(declared=declared)
-    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, readers=readers)
+    readers = planrunpreflight.Readers(declared=declared)
+    green, lines = planrunpreflight.preflight(plan, planrunsteps.Steps((step,)), lambda _d: host, readers=readers)
     assert green, lines
     assert reads == [('gitea.example', 'owner/alpha', 'integrate/main')]
     assert not any('--subject' in command for command in host.commands)
     other = GITEA_TEXT.replace('promote-bot', 'other-bot')
-    readers = planrun.Readers(declared=lambda *_: other)
-    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, readers=readers)
+    readers = planrunpreflight.Readers(declared=lambda *_: other)
+    green, lines = planrunpreflight.preflight(plan, planrunsteps.Steps((step,)), lambda _d: host, readers=readers)
     assert not green
     assert any('derived here' in line and want[:12] in line for line in lines), lines
 
@@ -737,10 +741,10 @@ def test_a_forge_key_on_a_step_that_is_not_protect_is_refused(tmp_path: Path) ->
                                                    {'argv': ['secret', 'place'], 'stdin_local': LOCAL}]}  # fmt: skip
     path.write_text(json.dumps(body), encoding='utf-8')
     with pytest.raises(ConsentRefused, match='forge'):
-        planrun.load_steps(path, PLAN)
+        planrunsteps.load_steps(path, PLAN)
     body['steps'][0].pop('forge')
     path.write_text(json.dumps(body), encoding='utf-8')
-    assert planrun.load_steps(path, PLAN).steps[0].forge == ''  # the control
+    assert planrunsteps.load_steps(path, PLAN).steps[0].forge == ''  # the control
 
 
 def test_planrun_subject_prints_the_protect_subject_with_no_host(capsys: pytest.CaptureFixture[str]) -> None:
@@ -749,8 +753,28 @@ def test_planrun_subject_prints_the_protect_subject_with_no_host(capsys: pytest.
     from dev_lab.ops import forgeprotection  # noqa: PLC0415
 
     argv = ['subject', '--forge', 'gitea.example', '--repo', 'owner/alpha']
-    readers = planrun.Readers(declared=lambda *_: GITEA_TEXT)
+    readers = planrunpreflight.Readers(declared=lambda *_: GITEA_TEXT)
     assert planrun.main(argv, readers=readers) == 0
     want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
     assert capsys.readouterr().out.strip() == want
     assert planrun.main(['subject', '--forge', 'unknown.example', '--repo', 'owner/alpha'], readers=readers) == 2
+
+
+@pytest.mark.parametrize('green', [True, False])
+def test_a_blocked_preflight_is_this_sessions_wall_and_a_green_one_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, green: bool
+) -> None:
+    """WALLS-ARE-RECORDED: a BLOCKED preflight reaches the ledger through the one choke point; green records none."""
+    plan = tmp_path / 'plan.json'
+    plan.write_text('{}', encoding='utf-8')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(planrun, 'parsed', lambda _raw: PLAN)
+    monkeypatch.setattr(planrun, 'load_steps', lambda _path, _plan: STEPS)
+    said = ['host h: BLOCKED -- no consent key', 'preflight: BLOCKED (fix the named blocker before asking for a code)']
+    monkeypatch.setattr(planrun, 'preflight', lambda *_a, **_k: (green, said))
+    assert planrun.main(['preflight', '--plan', str(plan), '--steps', str(plan)]) == (0 if green else 2)
+    if green:
+        assert not walls.ledger(tmp_path).exists()
+        return
+    [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present']) == (planrunpreflight.RULE, True)

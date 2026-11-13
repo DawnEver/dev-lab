@@ -41,6 +41,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import datadeps
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
+from dev_lab.dev.labsession import trailers
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.lockcheck import LOCK
 from dev_lab.dev.relock import RelockFailed, door_upgrade, rerender, siblings
@@ -166,7 +167,9 @@ def sync(root: Path, policy: Policy, refs: Sequence[str] | None = None) -> tuple
     for ref, tried in found.trials:
         if tried.behind == 0:
             continue
-        done = _git(root, 'merge', '--no-ff', '--no-edit', ref)
+        done = _git(root, 'merge', '--no-ff', '--no-commit', ref)
+        if done.returncode == 0:
+            done = _git(root, 'commit', '-q', '--no-edit', *_trailer_args())
         if done.returncode != 0:
             _git(root, 'merge', '--abort')
             why = (done.stderr or done.stdout).strip()
@@ -242,8 +245,17 @@ def _commit(root: Path, paths: Sequence[str], *message: str) -> subprocess.Compl
     NO TIMEOUT: a local commit runs the repo's own commit hooks, which the hook runner itself runs unbounded
     (:mod:`dev_lab.dev.githooks.runner`); acme-consumer's exceed 30 s (2026-11-07), so any ceiling here is a guess.
     """
-    argv = [_GIT, 'commit', '-q', *(arg for line in message for arg in ('-m', line)), '--only', '--', *paths]
+    argv = [_GIT, 'commit', '-q', *(arg for line in message for arg in ('-m', line)), *_trailer_args(), '--only']
+    argv += ['--', *paths]
     return _door.run(argv, cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
+
+
+def _trailer_args() -> list[str]:
+    """``--trailer`` for each session trailer (:func:`~dev_lab.dev.labsession.trailers`).
+
+    A sync's commits are the session's and carry it whether or not the commit-msg hook is installed (it replaces).
+    """
+    return [arg for line in trailers() for arg in ('--trailer', line)]
 
 
 def _touched(root: Path) -> frozenset[tuple[bool, str]]:

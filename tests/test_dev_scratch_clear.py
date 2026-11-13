@@ -13,6 +13,7 @@ import sys
 import pytest
 from lab_commons import home, launch
 
+from dev_lab.dev import walls
 from dev_lab.dev.scratch import SCRATCH_README, ScratchEscape, clear_scratch, main, untracked_scratch
 from dev_lab.dev.sessionprs import SESSION_ENV
 
@@ -172,3 +173,20 @@ def test_a_link_escaping_scratch_refuses_the_whole_clear(tmp_path) -> None:
         clear_scratch(tmp_path, ['probe.py', 'run'])
     assert (tmp_path / 'scratch/probe.py').exists()
     assert (outside / 'data.txt').exists()
+
+
+def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path, capsys) -> None:
+    """WALLS-ARE-RECORDED: the scratch block reaches the ledger through the one choke point."""
+    _repo(tmp_path)
+    assert _hook('snapshot', tmp_path) == 0
+    assert _hook('stop', tmp_path) == 0
+    assert not walls.ledger(tmp_path).exists()
+    _plant(tmp_path, 'scratch/ours.py')
+    assert _hook('stop', tmp_path) == 0
+    capsys.readouterr()
+    [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present'], line['session']) == (
+        'SCRATCH-IS-NEVER-COMMITTED',
+        True,
+        'this-session',
+    )
