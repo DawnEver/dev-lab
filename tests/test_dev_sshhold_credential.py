@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import sshhold, sshholdstate
-from dev_lab.dev.sshhold import HoldRefused
+from dev_lab.dev import sshhold, sshholdrun, sshholdstate
+from dev_lab.dev.sshholdwire import HoldRefused
 
 FAKE = (sys.executable, str(Path(__file__).with_name('_sshhold_fake.py')))
 PLANTED = 'gt-planted-5e7d1a'
@@ -25,7 +25,7 @@ URL = 'https://forge.example/team/repo.git'
 
 
 def test_the_script_feeds_git_exactly_the_credential_lines() -> None:
-    script = sshhold.credential_script(URL, 'ro-login', PLANTED, 'n1')
+    script = sshholdrun.credential_script(URL, 'ro-login', PLANTED, 'n1')
     assert 'git credential approve' in script
     lines = 'protocol=https\nhost=forge.example\nusername=ro-login\npassword=' + PLANTED + '\n'
     assert lines in script
@@ -43,7 +43,7 @@ def test_the_script_feeds_git_exactly_the_credential_lines() -> None:
 )
 def test_a_value_that_could_inject_a_line_is_refused(url: str, login: str, token: str) -> None:
     with pytest.raises(HoldRefused):
-        sshhold.credential_script(url, login, token, 'n1')
+        sshholdrun.credential_script(url, login, token, 'n1')
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def held(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
 
 def test_a_credential_reaches_the_remote_and_nowhere_else(held: dict[str, Path]) -> None:
     state = sshholdstate.state_path('ops@fake').read_text(encoding='utf-8')
-    sshhold.store_credential('ops@fake', URL, 'ro-login', PLANTED)
+    sshholdrun.store_credential('ops@fake', URL, 'ro-login', PLANTED)
     said = held['cred'].read_text(encoding='utf-8')
     assert said == f'protocol=https\nhost=forge.example\nusername=ro-login\npassword={PLANTED}\n'
     line = json.loads(sshholdstate.audit_path().read_text(encoding='utf-8').splitlines()[-1])
@@ -76,7 +76,7 @@ def test_a_credential_reaches_the_remote_and_nowhere_else(held: dict[str, Path])
 def test_no_credential_helper_on_the_remote_is_refused_by_name(held: dict[str, Path]) -> None:
     held['helper'].write_text('', encoding='utf-8')
     with pytest.raises(HoldRefused, match='credential helper'):
-        sshhold.store_credential('ops@fake', URL, 'ro-login', PLANTED)
+        sshholdrun.store_credential('ops@fake', URL, 'ro-login', PLANTED)
     assert not held['cred'].exists()
 
 

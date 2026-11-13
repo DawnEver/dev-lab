@@ -16,24 +16,24 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import sshhold, sshholdstate
-from dev_lab.dev.sshhold import HoldRefused
+from dev_lab.dev import sshhold, sshholdrun, sshholdstate, sshholdwire
+from dev_lab.dev.sshholdwire import HoldRefused
 
 FAKE = (sys.executable, str(Path(__file__).with_name('_sshhold_fake.py')))
 CODE = '481516'
 
 
 def test_a_frame_runs_the_command_merged_and_ends_on_the_marker_with_its_status() -> None:
-    framed = sshhold.frame('echo hi', 'abc')
+    framed = sshholdwire.frame('echo hi', 'abc')
     assert framed.startswith('{ echo hi\n} 2>&1')
     assert '__SSHHOLD_abc_%s' in framed
     assert framed.endswith('\n')
 
 
 def test_the_marker_splits_the_output_from_the_status() -> None:
-    assert sshhold.split_marker('one\ntwo\n\n__SSHHOLD_n1_7\n', 'n1') == ('one\ntwo\n', 7)
-    assert sshhold.split_marker('one\ntwo\n', 'n1') is None
-    assert sshhold.split_marker('x\n__SSHHOLD_other_0\n', 'n1') is None
+    assert sshholdwire.split_marker('one\ntwo\n\n__SSHHOLD_n1_7\n', 'n1') == ('one\ntwo\n', 7)
+    assert sshholdwire.split_marker('one\ntwo\n', 'n1') is None
+    assert sshholdwire.split_marker('x\n__SSHHOLD_other_0\n', 'n1') is None
 
 
 def test_hours_above_the_ceiling_are_refused_never_clamped() -> None:
@@ -74,8 +74,8 @@ def test_a_held_session_runs_commands_on_one_connection_and_closes(monkeypatch: 
         held = sshholdstate.read_session(dest)
         assert held is not None
         assert f'holder pid {held.pid}' in said  # the holder's own pid, never a venv launcher's
-        assert sshhold.run_command(dest, 'echo hello', timeout_s=60) == ('hello\n', 0)
-        output, status = sshhold.run_command(dest, f'echo again&& "{sys.executable}" -c "raise SystemExit(3)"', 60)
+        assert sshholdrun.run_command(dest, 'echo hello', timeout_s=60) == ('hello\n', 0)
+        output, status = sshholdrun.run_command(dest, f'echo again&& "{sys.executable}" -c "raise SystemExit(3)"', 60)
         assert (output, status) == ('again\n', 3)
         session = sshholdstate.read_session(dest)
         assert session is not None
@@ -101,7 +101,7 @@ def test_a_dropped_connection_is_named_and_the_session_ends(monkeypatch: pytest.
     dest = 'ops@fake'
     sshhold.open_session(dest, 1.0, '', ssh=FAKE)  # an empty answer is allowed (a trusted window)
     with pytest.raises(HoldRefused, match='ssh connection ended'):
-        sshhold.run_command(dest, '__drop__', timeout_s=60)
+        sshholdrun.run_command(dest, '__drop__', timeout_s=60)
     assert sshholdstate.read_session(dest) is None
 
 
@@ -166,7 +166,7 @@ def test_one_code_answers_both_hops_of_a_jump_session(monkeypatch: pytest.Monkey
     dest = 'ops@inner'
     sshhold.open_session(dest, 1.0, CODE, ssh=(*FAKE, '-J', 'ops@bastion'))
     try:
-        assert sshhold.run_command(dest, 'echo through', timeout_s=60) == ('through\n', 0)
+        assert sshholdrun.run_command(dest, 'echo through', timeout_s=60) == ('through\n', 0)
     finally:
         sshhold.close_session(dest)
     argv = json.loads((tmp_path / 'argv.json').read_text(encoding='utf-8'))
@@ -226,9 +226,9 @@ def test_a_runs_stdin_rides_heredoc_data_and_the_audit_keeps_only_its_digest(mon
     secret = b'bot-token-PLANTED-9c1e\nno trailing newline'
     sent: list[str] = []
     monkeypatch.setattr(
-        sshhold, '_exchange', lambda _d, command, _t: sent.append(command) or {'output': '', 'status': 0}
+        sshholdrun, '_exchange', lambda _d, command, _t: sent.append(command) or {'output': '', 'status': 0}
     )
-    assert sshhold.run_command('ops@fake', 'sudo -n place', stdin=secret) == ('', 0)
+    assert sshholdrun.run_command('ops@fake', 'sudo -n place', stdin=secret) == ('', 0)
     script = sent[0]
     head, data, end = script.split('\n', 2)[0], script.split('\n')[1:-1], script.split('\n')[-1]
     assert head == f"base64 -d <<'{end}' | sudo -n place"  # the data is heredoc DATA, never the command line
@@ -242,7 +242,7 @@ def test_a_runs_stdin_rides_heredoc_data_and_the_audit_keeps_only_its_digest(mon
 
 def test_no_held_session_names_the_door_for_each_host_kind(monkeypatch: pytest.MonkeyPatch) -> None:
     """User ruling 2026-11-11: a key-only host never needs a code, so the refusal names both doors."""
-    monkeypatch.setattr(sshhold, 'read_session', lambda _dest: None)
+    monkeypatch.setattr(sshholdwire, 'read_session', lambda _dest: None)
     with pytest.raises(HoldRefused) as refused:
         sshhold.close_session('alice@hpclogin01.example.org')
     text = str(refused.value)
@@ -257,6 +257,6 @@ def test_a_plan_naming_an_action_this_client_lacks_is_refused_before_the_code_is
     unknown = {'host': 'ops@h', 'action': 'ops.not.yet.known', 'subject': 'c'}
     plan.write_text(json.dumps({'hosts': ['ops@h'], 'grants': [unknown]}))
     sent: list[str] = []
-    with pytest.raises(sshhold.HoldRefused, match='local dev-lab is older than the plan; update it'):
+    with pytest.raises(sshholdwire.HoldRefused, match='local dev-lab is older than the plan; update it'):
         sshhold.open_planned(1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [])
     assert sent == []
