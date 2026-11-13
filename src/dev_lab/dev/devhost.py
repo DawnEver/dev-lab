@@ -254,6 +254,16 @@ def _detect(source: Path | None) -> int:
     return 0
 
 
+def _channels(live: Mapping[str, Any]) -> int:
+    try:
+        channels = declared_channels(live)
+    except ValueError as malformed:
+        emit(f'refused: {malformed}', err=True)
+        return 2
+    emit(json.dumps(channels, sort_keys=True))
+    return 0
+
+
 def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -> int:
     own = live.get(OWN_TABLE, {})
     host, clone = args.host or own.get('host'), _source(args.clone, own)
@@ -277,12 +287,14 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (read only; exit 1 on drift), ``render`` (``--write`` backs up first), ``detect``, ``stop``."""
+    """``drift`` (read only; exit 1 on drift), ``render`` (``--write`` backs up), ``detect``, ``stop``, ``channels``."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('drift', help='report where the machine file departs from its render')
     verbs.add_parser('stop', help='the Stop hook: block once per session while an install home is unfilled')
+    telling = verbs.add_parser('channels', help="print this machine's declared session channels (source -> user)")
+    telling.add_argument('--json', action='store_true', required=True, help='as one JSON object ({} when undeclared)')
     finding = verbs.add_parser('detect', help="print the host-file lines for this machine's vendor install homes")
     finding.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making = verbs.add_parser('render', help='render the machine file from the family and host files')
@@ -295,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     live = _read(path) if path.is_file() else {}
     if args.verb == 'stop':
         return _stop(path, live)
+    if args.verb == 'channels':
+        return _channels(live)
     if args.verb == 'drift':
         return _drift(path, live)
     if args.verb == 'detect':
