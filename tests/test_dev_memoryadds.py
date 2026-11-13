@@ -232,6 +232,50 @@ def test_planted_a_redaction_note_never_admits_a_narrative_edit(repo: Path, body
     assert len(found) == 1, found
 
 
+_HAN = chr(0x4E2D) + chr(0x6587)
+_CJK_ENTRY = f'---\nname: an-entry\ndescription: d\n---\n\nThe user said: "{_HAN}".\nBody.\n'
+_NOTE = '> ' + memoryadds.TRANSLATION_NOTE.format(day='2026-11-12')
+
+
+def _published_cjk_lane(repo: Path) -> str:
+    _write(repo, ENTRY, _CJK_ENTRY)
+    _commit(repo, 'cjk', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    return _lane(repo)
+
+
+def test_a_translation_of_a_published_entrys_cjk_is_not_an_edit(repo: Path) -> None:
+    """User ruling 2026-11-12: memory is English; the CJK line is translated in place, the rest untouched."""
+    base = _published_cjk_lane(repo)
+    body = 'The user said (translated): "Chinese text".\nBody.\n'
+    _write(repo, ENTRY, f'---\nname: an-entry\ndescription: d\n---\n\n{_NOTE}\n\n{body}')
+    _commit(repo, 'translate', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        'The user said (translated): "Chinese text".\nBody, and a new claim.\n',  # an ASCII line rewritten
+        f'The user said: "{_HAN}", partly.\nBody.\n',  # CJK left behind
+        'The user said (translated): "Chinese text".\n',  # a line dropped
+    ],
+)
+def test_planted_a_translation_note_never_admits_a_narrative_edit(repo: Path, body: str) -> None:
+    """PLANTED CONTROL: only CJK-bearing lines may change, and none may keep CJK."""
+    base = _published_cjk_lane(repo)
+    _write(repo, ENTRY, f'---\nname: an-entry\ndescription: d\n---\n\n{_NOTE}\n\n{body}')
+    _commit(repo, 'translate and rewrite', ENTRY)
+    assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1
+
+
+def test_planted_a_translation_without_the_note_is_refused(repo: Path) -> None:
+    base = _published_cjk_lane(repo)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nThe user said (translated): "x".\nBody.\n')
+    _commit(repo, 'translate silently', ENTRY)
+    assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1
+
+
 def test_planted_a_merge_that_edits_an_existing_entry_is_refused(repo: Path) -> None:
     """PLANTED CONTROL: the lane adds only; the RESOLUTION rewrites an entry -- the merge reds."""
     _lane(repo)

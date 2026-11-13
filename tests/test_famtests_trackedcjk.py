@@ -131,22 +131,22 @@ def test_the_shipped_exemption_arm_passes_over_the_shipped_prefixes() -> None:
 
 
 def test_the_exemption_arm_reds_when_the_matcher_is_doctored(monkeypatch: pytest.MonkeyPatch) -> None:
-    """DOCTORED INPUT, the direction that matters: a substring matcher excuses a tree nobody named."""
+    """DOCTORED INPUT, the direction that matters: a substring matcher excuses a nested attic/ nobody named."""
     monkeypatch.setattr(
         'dev_lab.dev.cjk.exempted',
         lambda name, prefixes=_PREFIXES: any(prefix.rstrip('/') in name for prefix in prefixes),
     )
-    with pytest.raises(AssertionError, match='substring'):
+    with pytest.raises(AssertionError, match='ROOT-ANCHORED yet matched src/pkg/attic/'):
         assert_the_exemptions_match_a_path_segment(_PREFIXES)
 
 
 def test_the_exemption_arm_reds_when_nesting_is_lost(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The opposite doctoring: a root-only match, which reported 47,521 phantom characters once."""
+    """The opposite doctoring: a matcher that compares the anchored spelling verbatim misses the root."""
     monkeypatch.setattr(
         'dev_lab.dev.cjk.exempted',
         lambda name, prefixes=_PREFIXES: any(name.startswith(prefix) for prefix in prefixes),
     )
-    with pytest.raises(AssertionError, match='nested path SEGMENT'):
+    with pytest.raises(AssertionError, match='not matched at the ROOT'):
         assert_the_exemptions_match_a_path_segment(_PREFIXES)
 
 

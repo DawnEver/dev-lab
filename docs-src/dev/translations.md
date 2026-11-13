@@ -1,12 +1,16 @@
 # Translations
 
-No tracked file may contain a CJK character (`NO-CJK-IN-TRACKED-SOURCE`), with one named exception: a
+No tracked file may contain a CJK character -- Han, Japanese kana or Korean hangul, the blocks
+`dev_lab.dev.cjk.CJK_RANGES` names (`NO-CJK-IN-TRACKED-SOURCE`) -- with one named exception: a
 translation `<stem>.zh.md` beside its English `<stem>.md`. Write or change the English page first, then put the
 translation beside it in the same commit. The English page is the source of truth.
 
 ## The rule
 
-- Exempt everywhere: `.claude/memory/` and `attic/` at any depth, and `archived/` at the repo root only.
+- Exempt by path: the repo-root `attic/` only (a nested `x/attic/` is scanned). Memory, task journals and
+  `archived/` are scanned like everything else (user rulings 2026-11-12): a quoted ruling is a faithful
+  English translation marked as translated, and an existing memory entry is translated in place through
+  `dev_lab.dev.memoryadds.only_translated`.
 - A `<stem>.zh.md` is exempt **only while `<stem>.md` is tracked beside it**. An orphaned translation is scanned
   like any other file, and the `TRANSLATION-HAS-ITS-SOURCE` refusal names the English page to add.
 

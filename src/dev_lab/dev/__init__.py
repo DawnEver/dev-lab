@@ -60,8 +60,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   named slices (locals, attributes, output keys, Rust identifiers, comment units, absolute
   tolerances) and reported, never a verdict; ``python -m dev_lab.dev.units report <root>``.
 * :mod:`dev_lab.dev.cjk` — the family's ONE "no CJK in tracked source" guard (user directive,
-  2026-09-16): the scan, the five CJK ranges, the ``.claude/memory/``/``attic/``/``archived/``
-  exemptions and the floor are shared; each adopting repo supplies its own named-set declaration of
+  2026-09-16): the scan, the five CJK ranges, the repo-root ``attic/`` exemption, the
+  designated-translation route and the floor are shared; each adopting repo supplies its own named-set declaration of
   files still carrying CJK, exactly the shape the suppression ratchet already uses, so a population
   too large for one commit can be migrated as a ratchet instead of a flat assertion. Re-exported
   below under ``CJK``-prefixed names because :class:`~dev_lab.dev.units.Scan` and
