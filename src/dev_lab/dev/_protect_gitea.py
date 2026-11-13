@@ -3,7 +3,8 @@
 Every identity is a LOGIN: the break-glass account is the protection's only bypass-allowlist entry; the trunk's push
 whitelist is the promote identities and nobody else; the integration branch takes no direct push at all (a pull
 request merge only), and the trunk no pull-request merge (its merge whitelist is enabled and empty); the approving
-login is the approvals whitelist; ``block_admin_merge_override`` holds an administrator to the same rule.
+login is the approvals whitelist. A review only ADVISES, so a rejected review never blocks a merge, and an
+administrator may still merge by hand to rescue a stuck branch (user rulings 2026-11-11, 2026-11-13).
 
 Rules for branches the declaration does not name are not this door's and are left alone.
 
@@ -62,10 +63,10 @@ def body(target: Target) -> dict[str, Any]:
         'enable_approvals_whitelist': bool(target.approvals),
         'approvals_whitelist_username': [target.approver] if target.approvals else [],
         'dismiss_stale_approvals': True,
-        'block_on_rejected_reviews': True,
+        'block_on_rejected_reviews': False,  # a review advises; it never gates (user ruling 2026-11-11)
         'enable_bypass_allowlist': True,
         'bypass_allowlist_usernames': [login],
-        'block_admin_merge_override': True,
+        'block_admin_merge_override': False,  # the admin keeps a hand rescue (user ruling 2026-11-13)
     }
 
 
