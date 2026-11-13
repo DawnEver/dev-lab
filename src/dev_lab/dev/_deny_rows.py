@@ -87,11 +87,16 @@ RETIRED_ROW_KEY = 'deny row'
 
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
 _UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb != 'pip')
+#: A family door that FORWARDS the git argv after it, so the push it runs is judged as if typed: the netverb
+#: retry door (``<python> -m dev_lab.dev.netverb [--] git push ...``). 2026-11-13: anchoring the push rows at the
+#: invoked program let a force, a no-verify and a remote delete through this door (a consumer's agent-guard rows).
+PUSH_FORWARDERS = r'(?:"?\S*python[\w.]*(?:\.exe)?"?\s+-m\s+dev_lab\.dev\.netverb(?:\s+--)?\s+)'
 #: ``push`` in VERB position: the invoked command is git (bare, by path, or quoted with spaces; ``-C``/``-c``
-#: options allowed) or the retry wrapper. Anchored as a ``command`` row, so the same words inside another
-#: command's arguments -- a ``sed`` or heredoc editing a file that mentions them -- name nothing (2026-11-13).
+#: options allowed), the retry wrapper, or git behind a :data:`PUSH_FORWARDERS` door. Anchored as a ``command``
+#: row, so the same words inside another command's arguments -- a ``sed`` or heredoc editing a file that
+#: mentions them -- name nothing (2026-11-13).
 PUSH_VERB = (
-    r'(?:(?:"[^"]*[/\\])?"?\S*?\bgit(?:\.exe)?"?(?:\s+-[Cc]\s+\S+)*'
+    PUSH_FORWARDERS + r'?(?:(?:"[^"]*[/\\])?"?\S*?\bgit(?:\.exe)?"?(?:\s+-[Cc]\s+\S+)*'
     r'|(?:sh\s+)?\S*with-retry\.sh)\s+push\b'
 )
 #: The shell spelling of :func:`dev_lab.dev.netverb.is_network_verb`, derived from its verb lists.
@@ -243,6 +248,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'needs': None,
         'refuses': (
             'git push --force origin main',
+            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin main --force-with-lease',
             'git push origin main --force-with-lease',
             'sh scripts/hooks/with-retry.sh push -f origin HEAD',
             'git -C ../sib push origin +main',
@@ -267,6 +273,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'sh scripts/hooks/with-retry.sh push origin -d lane/x',
             'git push --prune origin',
             'git push --mirror origin',
+            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin --delete lane/x',
+            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin :lane/x',
             '"C:/Program Files/Git/cmd/git.exe" push origin --delete lane/x',
             'git push origin :refs/tags/v1.0',
             'git push origin --delete refs/tags/v1.0',
@@ -289,7 +297,11 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'remedy': 'Push without the flag (no hook runs a test; the forge produces the part after the push), '
         'and to check a change first measure what you touched: {remedy}',
         'needs': 'verdict-entry-point',
-        'refuses': ('git push --no-verify origin HEAD', 'sh scripts/hooks/with-retry.sh push origin HEAD --no-verify'),
+        'refuses': (
+            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push --no-verify',
+            'git push --no-verify origin HEAD',
+            'sh scripts/hooks/with-retry.sh push origin HEAD --no-verify',
+        ),
         'permits': (
             'sh scripts/hooks/with-retry.sh push origin HEAD',
             'git commit -m "x"',
