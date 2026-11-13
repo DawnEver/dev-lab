@@ -6,6 +6,8 @@ write. Every refusal has its planted control.
 
 from __future__ import annotations
 
+import argparse
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,17 @@ from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
 
 from dev_lab.dev import forgedraft
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgedraft import STALE_DRAFT, NotReady, alarms, mark_draft, mark_ready, opened_line
+from dev_lab.dev.forgecli import _declared_body
+from dev_lab.dev.forgedraft import (
+    READY_WHEN,
+    STALE_DRAFT,
+    NotReady,
+    alarms,
+    mark_draft,
+    mark_ready,
+    opened_line,
+    ready_when_current,
+)  # fmt: skip
 from dev_lab.dev.forgemergeready import READY, ready
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_command import Runner
@@ -154,5 +166,50 @@ def test_the_ready_door_exits_one_and_says_why(capsys) -> None:
     number = forge.add_pull('pr/x', 'integrate/main', title='WIP: add x', sha='a' * 40)
     code = forgedraft.main(['ready', str(number)], judge=lambda *_: ('the lock is stale',), cwd=Path(), client=forge)
     assert code == 1
-    assert f'pr ready #{number} refused: the lock is stale' in capsys.readouterr().err
+    assert capsys.readouterr().out.strip() == f'#{number} stays a DRAFT: pr ready refused: the lock is stale'
     assert forgedraft.main(['ready', str(number)], judge=_current, cwd=Path(), client=forge) == 0
+    assert capsys.readouterr().out.startswith(f'#{number} is ready for review'), 'PLANTED CONTROL'
+
+
+def test_a_multi_line_refusal_is_one_stdout_line_naming_the_outcome_never_only_its_tail(capsys) -> None:
+    """The 11-12 defect: a refusal ending in a ``git status`` line printed as just `` M uv.lock``."""
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', title='WIP: add x', sha='a' * 40)
+    tail = ('the head is stale:\n M uv.lock',)
+    code = forgedraft.main(['ready', str(number)], judge=lambda *_: tail, cwd=Path(), client=forge)
+    (line,) = capsys.readouterr().out.splitlines()
+    assert code == 1
+    assert line == f'#{number} stays a DRAFT: pr ready refused: the head is stale: M uv.lock'
+
+
+def test_a_git_failure_in_the_judgement_exits_one_and_never_raises(capsys) -> None:
+    forge = StateForge()
+    number = forge.add_pull('pr/x', 'integrate/main', title='WIP: add x', sha='a' * 40)
+
+    def broken(*_: object) -> tuple[str, ...]:
+        raise subprocess.CalledProcessError(128, ['git', 'fetch'])
+
+    assert forgedraft.main(['ready', str(number)], judge=broken, cwd=Path(), client=forge) == 1
+    assert 'stays a DRAFT' in capsys.readouterr().out
+    assert forge.pr_view(number).draft
+
+
+def test_a_draft_declaring_ready_when_current_is_readied_once_current_and_an_undeclared_one_never() -> None:
+    """User ruling 2026-11-13: ready at the right time. PLANTED CONTROLS: stale held; undeclared untouched."""
+    forge = StateForge()
+    declared = forge.add_pull('pr/x', 'integrate/main', title='WIP: x', body=f'why\n\n{READY_WHEN}', sha='a' * 40)
+    silent = forge.add_pull('pr/y', 'integrate/main', title='WIP: y', body='why', sha='b' * 40)
+    stale = ready_when_current(Path(), forge, 'integrate/main', judge=lambda *_: ('behind integration',))
+    assert stale == [f'#{declared} stays a DRAFT until current: behind integration']
+    assert forge.pr_view(declared).draft
+    (line,) = ready_when_current(Path(), forge, 'integrate/main', judge=_current)
+    assert line.startswith(f'#{declared} is ready for review')
+    assert not forge.pr_view(declared).draft
+    assert forge.pr_view(silent).draft, 'a draft without the declaration waits on its author'
+    assert ready_when_current(Path(), forge, 'integrate/main', judge=_current) == [], 'a ready PR is not re-readied'
+
+
+def test_pr_create_ready_when_current_writes_the_declaration_line() -> None:
+    args = argparse.Namespace(body='what and why', ready_when_current=True)
+    assert _declared_body(args).splitlines()[-1] == READY_WHEN
+    assert _declared_body(argparse.Namespace(body='b', ready_when_current=False)) == 'b', 'PLANTED CONTROL'

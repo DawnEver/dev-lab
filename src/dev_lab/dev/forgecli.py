@@ -200,6 +200,10 @@ def _parser() -> argparse.ArgumentParser:
         '--ready', action='store_true',
         help='open it ready for review; the default is a DRAFT, marked ready by `forge pr ready N` (D53)',
     )  # fmt: skip
+    opened.add_argument(
+        '--ready-when-current', action='store_true',
+        help=f'open a DRAFT the serve marks ready once its head is current (`{forgedraft.READY_WHEN}` in the body)',
+    )  # fmt: skip
     return parser
 
 
@@ -223,12 +227,19 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
         ('pr', 'create'): lambda: client.pr_create(
-            args.title, args.body, head=args.head, base=args.base, draft=not args.ready
+            args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: pr_close(client, args.number, args.reason),
     }
     return verbs[args.noun, args.verb]()
+
+
+def _declared_body(args: argparse.Namespace) -> str:
+    """*args*' PR body, with :data:`~dev_lab.dev.forgedraft.READY_WHEN` as its last line when the author declared it."""
+    if not args.ready_when_current:
+        return args.body
+    return '\n\n'.join([*([args.body] if args.body else []), forgedraft.READY_WHEN])
 
 
 def _render(item: Issue | PullRequest | Comment) -> str:
@@ -250,6 +261,8 @@ def _refused(
     """
     if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
         parser.error('pr close: --reason must say why')
+    if (args.noun, args.verb) == ('pr', 'create') and args.ready and args.ready_when_current:
+        parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
     if (args.noun, args.verb) == ('pr', 'create'):
         private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
         if private:

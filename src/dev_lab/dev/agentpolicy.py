@@ -138,7 +138,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         _forge('pr', 'ready'),
         MAIN,
-        'Marking a draft pull request ready for review once its tree is clean and its head current.',
+        'Marking a draft pull request ready for review once its pushed head is current, from any checkout.',
         _FORGE_WRITE,
     ),
     Door(

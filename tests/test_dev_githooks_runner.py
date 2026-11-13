@@ -363,3 +363,58 @@ def test_every_pre_push_hook_is_told_the_url_git_pushes_to(repo: Path) -> None:
     url = 'https://example.com/o/r.git'
     assert run_stage('pre-push', ['origin', url], root=repo, stdin=stdin, hooks=(hook,), runner=seen) == 0
     assert seen.env == {PUSH_URL_ENV: url}
+
+
+def _merge_in_flight(repo: Path) -> None:
+    """``lane`` merging ``main``: upstream brings ``up.py``; ``both.py`` conflicts and is resolved by hand."""
+    for name in ('both.py', 'mine.py'):
+        (repo / name).write_text('x = 0\n', encoding='utf-8')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'seed', '--no-verify')
+    _git(repo, 'checkout', '-qb', 'lane')
+    (repo / 'both.py').write_text('x = 1\n', encoding='utf-8')
+    (repo / 'mine.py').write_text('x = 1\n', encoding='utf-8')
+    _git(repo, 'commit', '-qam', 'lane', '--no-verify')
+    _git(repo, 'checkout', '-q', 'main')
+    (repo / 'both.py').write_text('x = 2\n', encoding='utf-8')
+    (repo / 'up.py').write_text('x = 2  \n', encoding='utf-8')  # upstream's own business, not the merge's
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'upstream', '--no-verify')
+    _git(repo, 'checkout', '-q', 'lane')
+    done = subprocess.run([_GIT, '-C', str(repo), 'merge', '--no-edit', 'main'], capture_output=True, check=False)
+    assert done.returncode, 'the planted conflict'
+    (repo / 'both.py').write_text('x = 3\n', encoding='utf-8')
+    _git(repo, 'add', 'both.py')
+
+
+def test_a_merge_commit_hands_a_hook_only_the_paths_the_merge_itself_changes(repo: Path) -> None:
+    """User ruling 2026-11-13: never the files the merge only brings in. PLANTED CONTROL: the resolution arrives."""
+    _merge_in_flight(repo)
+    seen = _Recorder()
+    py = Hook(stage='pre-commit', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    assert run_stage('pre-commit', root=repo, hooks=(py,), runner=seen) == 0
+    assert [argv[1:] for argv, _ in seen.calls] == [['both.py']]
+
+
+def test_a_merge_with_no_content_of_its_own_runs_no_path_hook(repo: Path) -> None:
+    _merge_in_flight(repo)
+    _git(repo, 'checkout', '-q', 'lane', '--', 'both.py')  # resolve to the lane's side: the merge adds nothing
+    seen = _Recorder()
+    py = Hook(stage='pre-commit', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    assert run_stage('pre-commit', root=repo, hooks=(py,), runner=seen) == 0
+    assert seen.calls == []
+
+
+def test_a_pushed_merge_hands_a_pre_push_hook_only_its_own_and_the_lanes_paths(repo: Path) -> None:
+    """The upstream commit is already on the remote: its ``up.py`` is not the push's. PLANTED CONTROL: lane paths."""
+    _merge_in_flight(repo)
+    _git(repo, 'commit', '-qm', 'merge', '--no-verify')
+    tip = _git(repo, 'rev-parse', 'HEAD').strip()
+    seed = _git(repo, 'rev-parse', 'main~1').strip()
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
+    _git(repo, 'update-ref', 'refs/remotes/origin/lane', seed)
+    line = f'refs/heads/lane {tip} refs/heads/lane {seed}\n'
+    seen = _Recorder()
+    py = Hook(stage='pre-push', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    assert run_stage('pre-push', ('origin', 'url'), root=repo, stdin=line, hooks=(py,), runner=seen) == 0
+    assert sorted(seen.calls[0][0][1:]) == ['both.py', 'mine.py']

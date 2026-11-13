@@ -127,22 +127,24 @@ def test_a_machine_branch_and_a_deletion_are_not_judged(repo: Path) -> None:
     assert len(refusals(repo, _line(repo), fetch=fetch_ref, read=_lagging)) == 2
 
 
-def test_ready_is_refused_on_a_dirty_tree_then_on_a_stale_head_and_passes_once_current(repo: Path) -> None:
+def test_ready_judges_the_pushed_head_never_the_local_tree_and_passes_once_current(repo: Path) -> None:
+    """User ruling 2026-11-13: ready is a forge call -- a dirty checkout (the 11-12 ``M uv.lock``) has no say."""
     forge = StateForge()
     _git(repo, 'push', 'origin', 'pr/x')
     number = forge.add_pull('pr/x', 'int/line', title='WIP: x', sha=_git(repo, 'rev-parse', 'HEAD'))
-    (repo / 'pyproject.toml').write_text(_DECL + '# edit\n', encoding='utf-8')
+    (repo / 'uv.lock').write_text('an unrelated local edit\n', encoding='utf-8')
     (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_fresh)
-    assert 'uncommitted changes' in why
-    _git(repo, 'checkout', '--', 'pyproject.toml')
-    (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_fresh)
-    assert 'does not contain origin/int/line' in why
+    assert 'does not contain origin/int/line' in why, 'a stale head still refuses'
+    assert 'uncommitted' not in why
+    _git(repo, 'checkout', '--', 'uv.lock')
     _git(repo, 'merge', '--no-edit', 'origin/int/line')
     _git(repo, 'push', 'origin', 'pr/x')
     forge.pulls[number]['head']['sha'] = _git(repo, 'rev-parse', 'HEAD')
     (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_lagging)
     assert _LAG in why
     assert ready_refusals(repo, forge, forge.pr_view(number), read=_fresh) == [], 'PLANTED CONTROL'
+    (repo / 'uv.lock').write_text('an unrelated local edit\n', encoding='utf-8')
+    assert ready_refusals(repo, forge, forge.pr_view(number), read=_fresh) == [], 'a dirty checkout readies too'
 
 
 def test_pr_current_reads_the_lock_lag_window_never_exact_heads() -> None:

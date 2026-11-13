@@ -28,6 +28,7 @@ from dev_lab.dev.forgebacklog import declared_wait
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgedataruns import serve_step as data_runs
 from dev_lab.dev.forgedraft import alarms as idle_drafts
+from dev_lab.dev.forgedraft import ready_when_current
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeintegration import alarms as sync_alarms
@@ -49,6 +50,7 @@ from dev_lab.dev.integrator import observe
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.prcontinue import serve_continue_landed
+from dev_lab.dev.prcurrent import ready_refusals
 from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.relock import carry
@@ -147,6 +149,8 @@ def prompt(
         ticked = integration_tick(root, built, policy, host=host)  # the host claims each auto-sync
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
+        for line in ready_when_current(root, built, policy.integration, judge=ready_refusals):
+            say(f'[serve] ready-when: {line}')
         security_step(root, built, say=say)  # tests/security on each unjudged head: a merge condition
         glass = break_glass(root, policy, repo)
         red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
