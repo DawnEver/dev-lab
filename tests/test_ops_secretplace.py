@@ -14,7 +14,7 @@ import pytest
 from _ops_fixtures import config
 
 from dev_lab.ops import __main__ as ops_main
-from dev_lab.ops import secretplace
+from dev_lab.ops import redeemverbs, secretplace
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.secretplace import SecretRefused
@@ -122,7 +122,7 @@ def test_the_ops_cli_routes_secret_place_and_reads_stdin(tmp_path: Path, monkeyp
     credential = tmp_path / 'cred.json'
     credential.write_text('{"id": "x"}', encoding='utf-8')
     monkeypatch.setattr(secretplace, 'place', fake_place)
-    monkeypatch.setattr(ops_main, '_redeemer', lambda _config: lambda _action: _Consent(''))
+    monkeypatch.setattr(redeemverbs, 'redeemer', lambda _config: lambda _action: _Consent(''))
     monkeypatch.setattr('sys.stdin', type('S', (), {'buffer': type('B', (), {'read': staticmethod(lambda: SECRET)})})())
     argv = ['--config', str(host.path), 'secret', 'place', '--path', JUDGE_FILE, '--credential', str(credential)]
     assert ops_main.main(argv) == 0
