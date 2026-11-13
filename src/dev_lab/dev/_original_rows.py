@@ -388,7 +388,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgereview_gate',  # the one review gate every merge door reads, split from forgereview_declared
     'forgereview_identity',  # who reviews: the forge's status, never a head's author, new here
     'forgerunshow',  # a cluster run's findings published on the forge, new here
-    'memoryadds',  # memory is added to, never edited, new here
+    'memoryadds',  # memory is never deleted, new here
     'remconfig',  # the family's rem.json, new here
     'reviewgate',  # the one reviewed-head predicate, new here
     'reviewgitauth',  # the review door's file-held tokens, new here

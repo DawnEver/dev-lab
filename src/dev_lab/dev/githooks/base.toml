@@ -120,8 +120,9 @@ run = ["python", "-m", "dev_lab.dev.mergeaudit"]
 id = "merge-resolution"
 run = ["python", "-m", "dev_lab.dev.mergeresolution"]
 
-# MEMORY-SHAPE, the change half (dev_lab.dev.memoryadds): EVERY commit, a merge included, may only ADD under
-# **/.claude/memory/** -- read off the index, so a plain commit and a merge resolution are judged alike.
+# MEMORY-SHAPE, the change half (dev_lab.dev.memoryadds): EVERY commit, a merge included, never DELETES under
+# **/.claude/memory/** (an update or a move within memory is free) -- read off the index, so a plain commit
+# and a merge resolution are judged alike.
 [[commit-msg]]
 id = "memory-adds"
 run = ["python", "-m", "dev_lab.dev.memoryadds", "commit"]

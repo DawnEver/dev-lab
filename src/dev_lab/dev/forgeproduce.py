@@ -115,12 +115,15 @@ def tree_gb(pid: int) -> float | None:
     return sum(known) / _GB if known else None
 
 
-def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
-    """Record one finished box run of *root*'s repository under ``(its producer, its need-set)``.
+def learn_box_run(root: Path, item: Work, run: Run, *, ended: str) -> None:
+    """Record one box run of *root*'s repository under ``(its producer, its need-set)``, by how it *ended*.
+
+    *ended* is :attr:`~lab_commons.box.ProcessEnd.reason`'s vocabulary; ``record_run`` prices only an exit
+    and a memory kill, so a run the wall or a signal cut mid-climb teaches nothing.
 
     A part's producer is ``local``; a request's is its declared NAME, so it never shares a test part's record.
     """
-    record_run(origin_url(root), item.producer, needs_of_row(item.platform), run, killed=killed)
+    record_run(origin_url(root), item.producer, needs_of_row(item.platform), run, ended=ended)
 
 
 def _origin(root: Path | None) -> str:
@@ -289,8 +292,8 @@ def _run(
     boxed_out = box_release_reason(ended)  # the box's decision, from its record: never from the exit code
     measured = _measured(ended, usage, declared_gb, max(1.0, (clock() - started).total_seconds()))
     if measured is not None and not stopped:
-        oom = isinstance(ended, ProcessEnd) and ended.reason == 'memory'
-        learn(root, item, measured, killed=oom or returncode < 0)
+        how = ended.reason if isinstance(ended, ProcessEnd) else ('exit' if returncode >= 0 else 'signal')
+        learn(root, item, measured, ended=how)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
         _settle(

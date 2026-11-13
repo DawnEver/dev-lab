@@ -1497,6 +1497,27 @@ def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_p
     verifybox.learn_ended(tmp_path, ['tests'], None)  # a step the box did not run teaches nothing
 
 
+def test_planted_an_unfinished_selection_teaches_no_peak(tmp_path: Path, monkeypatch) -> None:
+    """O53: a run the box's WALL cut (or any ending but exit/memory) stopped mid-climb -- its peak is no price.
+
+    THE INCIDENT (2026-11-12): a timed-out measurement's peak was learned as the selection's need, and
+    every later light measure of the tree was refused for memory it was never shown to need. PLANTED CONTROL: the
+    same record ending ``exit`` teaches its peak.
+    """
+    monkeypatch.setattr(verifybox, '_repo', lambda _root: 'https://g/cut.git')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    files = verifybox.selection_files(tmp_path, ['tests'])
+    producer = verifybox.selection_producer(files)
+    record = tmp_path / 'o.json'
+    write_ended(record, box.ProcessEnd(1, 'wall', 30 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    assert learned.run_of('https://g/cut.git', producer, ()) is None
+    write_ended(record, box.ProcessEnd(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    assert learned.run_of('https://g/cut.git', producer, ()).peak_mem_gb == pytest.approx(3.0, abs=1e-9)  # GB
+
+
 def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, monkeypatch) -> None:
     """D5: the refusal prints the exact `forge request tests` command; a dirty tree cannot be offered."""
     (tmp_path / 'tests').mkdir()
