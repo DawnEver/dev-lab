@@ -101,6 +101,7 @@ def test_the_git_grep_path_finds_a_planted_file_and_skips_exempt_and_binary(tmp_
             'dirty.py': f'x = 1  # {_CHAR}\n',
             'clean.md': 'plain\n',
             'attic/old.md': f'{_CHAR}\n',
+            'x/attic/c.md': f'{_CHAR}\n',
             'deep/.claude/memory/m.md': f'{_CHAR}\n',
             'archived/a.md': f'{_CHAR}\n',
             'x/archived/b.md': f'{_CHAR}\n',
@@ -108,7 +109,13 @@ def test_the_git_grep_path_finds_a_planted_file_and_skips_exempt_and_binary(tmp_
     )
     (tmp_path / 'blob.bin').write_bytes(b'\x00' + _CHAR.encode())
     subprocess.run([_GIT, 'add', 'blob.bin'], cwd=tmp_path, check=True, timeout=60)
-    assert alwayson.candidates(tmp_path) == ('dirty.py', 'x/archived/b.md')
+    assert alwayson.candidates(tmp_path) == (
+        'archived/a.md',
+        'deep/.claude/memory/m.md',
+        'dirty.py',
+        'x/archived/b.md',
+        'x/attic/c.md',
+    )
 
 
 def test_the_pattern_is_derived_from_the_shared_ranges() -> None:

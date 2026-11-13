@@ -183,8 +183,9 @@ def _walk_every_character(
 def test_the_prefilter_skips_work_without_changing_one_reported_occurrence(tmp_path: Path) -> None:
     """THE EQUIVALENCE PROOF: every case the two implementations must agree about, planted at once.
 
-    The plant is a corpus of four files -- CJK at a known line and column, an EXEMPT file that still
-    carries CJK, an UNDECODABLE file, and a CLEAN file -- because the fast path's whole risk is that
+    The plant is a corpus of five files -- CJK at a known line and column, a memory note that is
+    SCANNED like any other file, a root ``attic/`` file that is EXEMPT though it still carries CJK, an
+    UNDECODABLE file, and a CLEAN file -- because the fast path's whole risk is that
     it returns the empty tuple for something the walk would have reported.
 
     THE FLOOR COMES FIRST: the control is asserted to FIND the plant, at the exact line and column,
@@ -194,7 +195,10 @@ def test_the_prefilter_skips_work_without_changing_one_reported_occurrence(tmp_p
     han, full_width_a = chr(0x4E2D), chr(0xFF21)
     dirty = tmp_path / 'dirty.py'
     dirty.write_text(f'clean first line\nx = 1  # {han}{full_width_a}\n', encoding='utf-8')
-    exempt = tmp_path / '.claude' / 'memory' / 'note.md'
+    memory = tmp_path / '.claude' / 'memory' / 'note.md'
+    memory.parent.mkdir(parents=True)
+    memory.write_text(f'{han} is scanned here too\n', encoding='utf-8')
+    exempt = tmp_path / 'attic' / 'note.md'
     exempt.parent.mkdir(parents=True)
     exempt.write_text(f'{han} is allowed to live here\n', encoding='utf-8')
     undecodable = tmp_path / 'blob.bin'
@@ -206,17 +210,22 @@ def test_the_prefilter_skips_work_without_changing_one_reported_occurrence(tmp_p
     control = _walk_every_character(dirty.read_text(encoding='utf-8'))
     assert control == ((2, 10, han), (2, 11, full_width_a)), control
     assert _walk_every_character(exempt.read_text(encoding='utf-8')) == ((1, 1, han),)
+    assert _walk_every_character(memory.read_text(encoding='utf-8')) == ((1, 1, han),)
     assert _walk_every_character(clean.read_text(encoding='utf-8')) == ()
 
-    for planted in (dirty, exempt, clean):
+    for planted in (dirty, memory, exempt, clean):
         text = planted.read_text(encoding='utf-8')
         assert find_cjk(text) == _walk_every_character(text), planted.name
 
-    scan = scan_files((dirty, exempt, clean, undecodable), root=tmp_path)
-    assert scan.occurrences == (Occurrence('dirty.py', 2, 10, han), Occurrence('dirty.py', 2, 11, full_width_a))
-    assert scan.exempted == ('.claude/memory/note.md',)
+    scan = scan_files((dirty, memory, exempt, clean, undecodable), root=tmp_path)
+    assert scan.occurrences == (
+        Occurrence('.claude/memory/note.md', 1, 1, han),
+        Occurrence('dirty.py', 2, 10, han),
+        Occurrence('dirty.py', 2, 11, full_width_a),
+    )
+    assert scan.exempted == ('attic/note.md',)
     assert scan.undecodable == ('blob.bin',)
-    assert scan.files_read == 2
+    assert scan.files_read == 3
 
 
 def test_the_prefilter_agrees_with_the_control_on_every_declared_range_and_line_boundary() -> None:
@@ -300,12 +309,17 @@ def test_the_non_ascii_census_counts_per_file_and_per_class_and_reports_the_dist
     memory = tmp_path / '.claude' / 'memory' / 'n.md'
     memory.parent.mkdir(parents=True)
     memory.write_text('\u2014\n', encoding='utf-8')
-    scan = scan_non_ascii((dirty, clean, memory), root=tmp_path)
-    assert scan.files_read == 2
-    assert scan.total == 3
+    attic = tmp_path / 'attic' / 'old.md'
+    attic.parent.mkdir(parents=True)
+    attic.write_text('\u00d7\n', encoding='utf-8')
+    scan = scan_non_ascii((dirty, clean, memory, attic), root=tmp_path)
+    assert scan.files_read == 3
+    assert scan.total == 4
     assert dict(scan.by_file['dirty.md']) == {'dash': 1, 'math symbol': 1, 'CJK': 1}
+    assert dict(scan.by_file['.claude/memory/n.md']) == {'dash': 1}
+    assert 'attic/old.md' not in scan.by_file
     report = non_ascii_distance(scan)
-    assert report.startswith('3 non-ASCII character(s) remain in 1 of 2 file(s) read.')
+    assert report.startswith('4 non-ASCII character(s) remain in 2 of 3 file(s) read.')
     assert 'dirty.md' in report
     assert 'dash 1' in report
     assert report.isascii()
