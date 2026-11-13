@@ -143,7 +143,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A `v*` tag is added only on promotion to the trunk or at the user`s request: from an '
             'agent session, a push creating one on origin is refused at pre-push unless `DEV_LAB_TAG_APPROVED` '
-            'holds the user`s own words (the `--approved` pattern of `branchset --discard`).'
+            'holds the user`s own words (the `--approved` pattern of `branchset --discard`). A dev tag not ending in '
+            '`.dev0` is refused even approved: hatch-vcs chooses the `.devN` distance itself and refuses a custom '
+            'one, so a milestone is `vX.Y.Z.dev0` and the next one bumps the patch or minor.'
         ),
         ('tests/test_dev_milestonebase.py',),
     ),
