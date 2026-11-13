@@ -47,15 +47,19 @@ DOOR: Final = (
 
 
 def local_shell(cmd: str, stdin: str | None) -> str:
-    """Run *cmd* in this machine's POSIX shell (Git's ``sh`` on Windows); raise on a non-zero exit."""
+    """Run *cmd* in this machine's POSIX shell (Git's ``sh`` on Windows); raise on a non-zero exit.
+
+    *stdin* goes in as UTF-8 BYTES: a text-mode pipe on Windows writes CR LF for LF, and a staged credential line
+    ending in CR matches no host in git's store, so the forge answers anonymous.
+    """
     done = _door.run(
         [shutil.which('sh') or 'sh', '-c', cmd],
-        input=stdin, capture_output=True, text=True, encoding='utf-8', check=False,
+        input=None if stdin is None else stdin.encode('utf-8'), capture_output=True, check=False,
     )  # fmt: skip
     if done.returncode:
-        msg = f'exit {done.returncode}: {done.stderr.strip()[-300:]}'
+        msg = f'exit {done.returncode}: {done.stderr.decode("utf-8", "replace").strip()[-300:]}'
         raise RuntimeError(msg)
-    return done.stdout
+    return done.stdout.decode('utf-8', 'replace')
 
 
 def helpers(host: str) -> list[str]:

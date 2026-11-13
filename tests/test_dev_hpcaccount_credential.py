@@ -27,6 +27,7 @@ from dev_lab.dev.credstore import (
     stage_command,
     verify_prefix,
 )
+from dev_lab.dev.devcredential import local_shell
 from dev_lab.dev.hpcaccount import credential
 from dev_lab.dev.hpcaccount.account import _READER_REMEDY
 from dev_lab.dev.hpcaccount.credential import declared_logins, drop_host, place_credential, usage
@@ -359,3 +360,13 @@ def test_the_refusals_page_shows_the_credential_usage_its_argparse_renders() -> 
     assert '[-h]' not in shown, 'PLANTED CONTROL: the help flag is no part of the shape'
     page = (Path(__file__).resolve().parents[1] / 'docs-src' / 'dev' / 'refusals.md').read_text(encoding='utf-8')
     assert f'`{shown}`' in page
+
+
+def test_the_local_shell_writes_a_staged_line_with_lf_only(tmp_path: Path) -> None:
+    """A text-mode pipe on Windows turns the staged LF into CR LF; git's store then matches no host.
+
+    PLANTED: the file the stage command writes must end with exactly one LF and hold no CR.
+    """
+    target = tmp_path / 'staged'
+    local_shell(f'IFS= read -r line && printf "%s\\n" "$line" > "{target.as_posix()}"', 'a-line\n')
+    assert target.read_bytes() == b'a-line\n'
