@@ -615,3 +615,71 @@ def test_a_manifest_naming_no_integration_branch_is_still_refused(tmp_path: Path
         _git(repo, 'add', '--', 'pyproject.toml')
     with pytest.raises(ValueError, match='names no integration branch'):
         memoryadds.pending(repo)
+
+
+# --- the shape of an added entry, and the amendment that completes a published one -----------------------------
+
+
+@pytest.mark.parametrize(
+    ('text', 'missing'),
+    [
+        ('---\ncreated: 2026-11-13\n---\n# X\n', 'name, description'),  # 2026-11-13: committed, caught only later
+        ('---\nname: x\n---\n# X\n', 'description'),
+        ('# no frontmatter at all\n', 'name, description'),
+    ],
+)
+def test_planted_an_added_entry_without_name_or_description_is_refused_at_commit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, text: str, missing: str
+) -> None:
+    """PLANTED CONTROL: the shape the dated-memory test reads, refused when the entry is ADDED, not later.
+
+    The clean twin (name and description declared) is ``test_a_lane_that_only_adds_memory_passes``.
+    """
+    rel = '.claude/memory/2026/11/13/half.md'
+    _write(repo, rel, text)
+    _git(repo, 'add', '--', rel)
+    monkeypatch.chdir(repo)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert rel in found[0], found
+    assert f'declares no {missing}' in found[0], found
+    assert memoryadds.main(['commit']) == 1
+
+
+_HEADLESS = '---\ncreated: 2026-11-13\n---\n# Title\n\nBody line.\n'
+
+
+def _published(repo: Path) -> str:
+    _write(repo, ENTRY, _HEADLESS)
+    _commit(repo, 'headless', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    return _lane(repo)
+
+
+def test_an_approved_amendment_may_add_the_missing_required_frontmatter(repo: Path) -> None:
+    """2026-11-13: the user approved completing a published entry's frontmatter; one-for-one could not add a key."""
+    base = _published(repo)
+    note = _amend_note('added the name/description frontmatter the memory shape requires', '\u540c\u610f\u8865\u5168')
+    _write(
+        repo, ENTRY, f'---\nname: an-entry\ndescription: d\ncreated: 2026-11-13\n---\n# Title\n\nBody line.\n{note}\n'
+    )
+    _commit(repo, 'complete', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    ('note', 'head', 'body'),
+    [
+        ('approved', 'name: an-entry\ndescription: d\n', 'Body line.\nA new claim.\n'),  # a key AND a body line added
+        ('approved', 'name: an-entry\ndescription: d\n', 'Body line changed.\n'),  # a key AND a body line rewritten
+        ('approved', 'name: an-entry\ndescription: d\nowner: me\n', 'Body line.\n'),  # a key nothing requires
+        ('', 'name: an-entry\ndescription: d\n', 'Body line.\n'),  # no approved note
+    ],
+)
+def test_planted_a_frontmatter_completion_admits_nothing_else(repo: Path, note: str, head: str, body: str) -> None:
+    """PLANTED CONTROL: beside the added required keys, every other line stays exactly as published."""
+    base = _published(repo)
+    tail = f'{_amend_note()}\n' if note else ''
+    _write(repo, ENTRY, f'---\n{head}created: 2026-11-13\n---\n# Title\n\n{body}{tail}')
+    _commit(repo, 'complete badly', ENTRY)
+    assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1

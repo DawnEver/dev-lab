@@ -50,7 +50,19 @@ from dev_lab.dev.lanepolicy import policy_at, policy_from
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-__all__ = ['VOLATILE_FIELDS', 'MemoryAddsError', 'main', 'merged_entry_problems', 'pending', 'problems_between']
+__all__ = [
+    'REQUIRED_KEYS',
+    'VOLATILE_FIELDS',
+    'MemoryAddsError',
+    'main',
+    'merged_entry_problems',
+    'pending',
+    'problems_between',
+]
+
+#: The frontmatter keys every entry declares (MEMORY-SHAPE): ``name`` is an index's key, ``description`` what a
+#: reader decides on unopened. An ADDED entry lacking one is refused at commit, not by a later tree scan.
+REQUIRED_KEYS: Final = ('name', 'description')
 
 #: Frontmatter fields the migration strips: per-read bookkeeping, never content.
 VOLATILE_FIELDS = ('accessed', 'tier', 'count')
@@ -129,13 +141,39 @@ def _only_volatile_stripped(old: str, new: str) -> bool:
     return f'---\n{head}\n---\n' + old[match.end() :] == new
 
 
+def missing_keys(text: str) -> tuple[str, ...]:
+    """The :data:`REQUIRED_KEYS` *text*'s frontmatter does not declare (all of them when it has none)."""
+    match = _FRONTMATTER.match(_lf(text))
+    head = match.group(1).splitlines() if match else []
+    return tuple(key for key in REQUIRED_KEYS if not any(line.startswith(f'{key}:') for line in head))
+
+
+def _completed(old: str, new: str) -> list[str] | None:
+    """*new*'s lines minus the required keys it adds to *old*'s frontmatter; ``None`` when it adds none."""
+    lacking = missing_keys(old)
+    match = _FRONTMATTER.match(_lf(new))
+    if not lacking or match is None or not _FRONTMATTER.match(_lf(old)):
+        return None
+    head = match.group(1).splitlines()
+    kept = [line for line in head if not any(line.startswith(f'{key}:') for key in lacking)]
+    if len(kept) == len(head):
+        return None
+    return ['---', *kept, '---', *_lf(new)[match.end() :].splitlines()]
+
+
 def _only_amended(old: str, new: str) -> bool:
-    """An approved amendment: ONE new note, the other lines replaced one-for-one, none added or removed."""
+    """An approved amendment: ONE new note, plus one-for-one line replacements or a frontmatter completion.
+
+    One-for-one: the other lines replaced, none added or removed. Completion (user ruling 2026-11-13): the
+    missing :data:`REQUIRED_KEYS` added to a published entry's frontmatter and nothing else changed.
+    """
     old_lines, new_lines = _lf(old).splitlines(), _lf(new).splitlines()
     notes = sum(1 for line in new_lines if _AMEND_LINE.fullmatch(line))
     if notes != 1 + sum(1 for line in old_lines if _AMEND_LINE.fullmatch(line)):
         return False
     before = [line for line in old_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
+    if (completed := _completed(old, new)) is not None:
+        return before == [line for line in completed if line.strip() and not _AMEND_LINE.fullmatch(line)]
     after = [line for line in new_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
     return len(before) == len(after) and before != after
 
@@ -241,6 +279,17 @@ def _changes(root: Path, *spec: str) -> list[tuple[str, str, str]]:
     return rows
 
 
+def _shape_problems(path: str, text: str) -> tuple[str, ...]:
+    """An added entry's missing :data:`REQUIRED_KEYS`, as one refusal naming its exit."""
+    if not path.endswith('.md') or not (lacking := missing_keys(text)):
+        return ()
+    why = (
+        f'{path}: its frontmatter declares no {", ".join(lacking)} -- every entry opens with '
+        '`---` / `name: <slug>` / `description: <one line>` / `---` (MEMORY-SHAPE); add them and commit'
+    )
+    return (why,)
+
+
 def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
     added = {new for status, _, new in rows if status in 'AC'}
 
@@ -251,7 +300,8 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
     out: list[str] = []
     for status, old, new in rows:
         if status in 'AC' and _is_memory(new):
-            out.extend(merged_entry_problems(new, _git(root, 'show', f'{new_rev}:{new}'), exists))
+            text = _git(root, 'show', f'{new_rev}:{new}')
+            out.extend((*_shape_problems(new, text), *merged_entry_problems(new, text, exists)))
         elif status == 'R' and _is_memory(new) and not _is_memory(old):
             if not _TASK.search(old):
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
@@ -267,7 +317,7 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                     'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
                     'is corrected in place only with the user-approved note `> '
                     + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
-                    + '` and lines replaced one-for-one'
+                    + '` and lines replaced one-for-one, or only the missing name/description frontmatter added'
                 )
                 if _MANUAL.search(old):
                     remedy += (
@@ -396,9 +446,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not problems:
         return 0
     lines = [
-        f'memory-adds: {args[0]} REFUSED -- it edits, deletes or moves memory (MEMORY-SHAPE).',
+        (
+            f'memory-adds: {args[0]} REFUSED -- it edits, deletes or moves memory, or adds a misshapen entry '
+            '(MEMORY-SHAPE).'
+        ),
         *(f'memory-adds:   {line}' for line in problems),
-        'memory-adds: Remedy: restore each entry as it was; a correction is a NEW entry with `corrects:`.',
+        (
+            'memory-adds: Remedy: restore each entry as it was; a correction is a NEW entry with `corrects:`; '
+            'an added entry declares its name and description.'
+        ),
     ]
     emit('\n'.join(lines), err=True)
     return 1
