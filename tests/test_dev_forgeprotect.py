@@ -265,7 +265,7 @@ _HAND_SET = {
     'main': {'enable_push': True, 'enable_push_whitelist': True,
              'push_whitelist_usernames': ['user-a-admin', 'promote-bot'], 'enable_merge_whitelist': True,
              'merge_whitelist_usernames': ['user-a-admin'], 'enable_force_push': False,
-             'enable_bypass_allowlist': False, 'block_admin_merge_override': False, 'required_approvals': 0},
+             'enable_bypass_allowlist': False, 'block_admin_merge_override': True, 'required_approvals': 0},
     'integrate/main': {'enable_push': False, 'enable_bypass_allowlist': True,
                        'bypass_allowlist_usernames': ['breakglass-bot'], 'block_on_rejected_reviews': True,
                        'dismiss_stale_approvals': True, 'required_approvals': 0},
@@ -278,7 +278,7 @@ def test_gitea_names_every_hand_set_difference_and_apply_removes_them() -> None:
     steps = {step.subject: step.lines for step in plan(forge, GITEA, wanted)}
     trunk = steps['trunk main: branch protection differs -> update']
     assert "push_whitelist_usernames: live=['promote-bot', 'user-a-admin'] declared=['promote-bot']" in trunk
-    assert 'block_admin_merge_override: live=False declared=True' in trunk
+    assert 'block_admin_merge_override: live=True declared=False' in trunk
     integration = steps['integration integrate/main: branch protection differs -> update']
     assert any(line.startswith('status_check_contexts: the forge did not answer') for line in integration)
     assert apply(forge, GITEA, wanted) == []
@@ -411,3 +411,14 @@ def test_a_final_refusal_s_message_carries_the_status_and_every_error_the_forge_
     failed = ForgeCallFailed(Report(('POST', 'x'), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
     assert 'the forge answered 422: Validation Failed' in str(failed)
     assert 'Invalid integration ids' in str(failed)
+
+
+def test_a_rejected_review_never_blocks_and_the_admin_can_still_merge_by_hand() -> None:
+    """A review only advises (2026-11-11) and an administrator keeps a hand rescue (2026-11-13).
+
+    PLANTED: every rendered Gitea rule must say False for both, on the trunk and on integration.
+    """
+    for target in targets(GITEA_TEXT, 'p', GITEA):
+        rule = _protect_gitea.body(target)
+        assert rule['block_on_rejected_reviews'] is False, target
+        assert rule['block_admin_merge_override'] is False, target
