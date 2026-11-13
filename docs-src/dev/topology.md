@@ -102,7 +102,14 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
   (`promote`, Gitea). Branches come from `[tool.dev_lab.integrator]`, required contexts from the rendered workflows
   (`required_contexts`); no approval is ever required (the judge is advisory).
 - `python -m dev_lab.dev.forge protect plan|check|apply` renders it onto the forge (`dev_lab.dev.forgeprotect`).
-  `apply` is an administrator's verb, run from a workstation after reading `plan`; CI never runs it.
+  `plan`/`check` need no admin: a fact the credential cannot read is said unanswered, never "as declared" (Gitea
+  shows a reader only a branch's protected flag, approvals and contexts). `apply` from a workstation is GitHub's
+  (an admin of the repo); CI never runs it. A self-hosted Gitea's protection is applied by its forge host, never a
+  human admin login: `python -m dev_lab.ops --config <supervise.toml> forge protect plan|apply --repo <owner/name>
+  --ref <sha>` reads the declaration at that commit from the forge itself, renders it with this one renderer and
+  writes it as the site admin, behind one single-use `ops.forge.protect` consent whose subject is the digest of the
+  repo, the ref and the rendered protection (`--subject` prints it with no code, so `planrun preflight` checks it);
+  an undeclared repo (`[ops.forge.accounts]`) is refused before the forge is asked (`dev_lab.ops.forgeprotection`).
 - Who produces is the forge's data (`_forgebackends.Backend.producers`, user rulings 2026-11-11): a GitHub repo is
   gated and promoted by its Actions jobs alone -- no forge serve host, cluster or workstation; a part no
   hosted runner produces (a heavy test) is kept and off its gate (`jobparts.off_gate`). Gitea wires every producer.

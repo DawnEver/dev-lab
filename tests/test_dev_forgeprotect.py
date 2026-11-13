@@ -6,13 +6,14 @@ planted control is a declaration or a live rule that must NOT read as clean.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import Any
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, FakeGitea, FakeGitHub, refused
 
-from dev_lab.dev import forgeprotect
+from dev_lab.dev import _protect_gitea, forgeprotect
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -306,6 +307,39 @@ def test_gitea_leaves_a_rule_for_an_undeclared_branch_alone() -> None:
     forge = FakeGitea(protections={'release/*': {'enable_push': False}})
     apply(forge, GITEA, targets(GITEA_TEXT, 'p', GITEA))
     assert forge.protections['release/*'] == {'enable_push': False}
+
+
+def test_gitea_without_an_admin_reads_what_a_reader_may_and_names_the_rest_unanswered() -> None:
+    held = FakeGitea()
+    apply(held, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    reader = FakeGitea(protections=held.protections, admin=False)
+    steps = plan(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    # PLANTED CONTROL: a forge holding the declaration exactly is still never "as declared" to a reader.
+    assert len(steps) == 2
+    assert all(_protect_gitea.READ_IN_PART in step.subject for step in steps)
+    lines = [line for step in steps for line in step.lines]
+    assert any(line.startswith('bypass_allowlist_usernames: the forge did not answer') for line in lines)
+    assert not any(line.startswith('status_check_contexts') for line in lines)  # read, and as declared
+
+
+def test_gitea_without_an_admin_names_a_readable_drift_and_an_unprotected_branch() -> None:
+    reader = FakeGitea(protections={'main': {'enable_status_check': False, 'required_approvals': 0}}, admin=False)
+    steps = {step.subject: step.lines for step in plan(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))}
+    trunk = next(lines for subject, lines in steps.items() if subject.startswith('trunk main'))
+    assert 'enable_status_check: live=False declared=True' in trunk
+    assert any(subject.startswith('integration integrate/main: branch protection absent') for subject in steps)
+
+
+def test_gitea_without_an_admin_refuses_to_write_and_names_the_host_door() -> None:
+    reader = FakeGitea(admin=False)
+    with pytest.raises(PermissionError, match=re.escape('forge protect apply --repo owner/alpha')):
+        apply(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    assert reader.writes == []
+
+
+def test_gitea_any_other_refusal_of_the_list_still_raises() -> None:
+    with pytest.raises(ForgeCallFailed):
+        plan(FakeGitea(down=True), GITEA, targets(GITEA_TEXT, 'p', GITEA))
 
 
 def test_the_door_is_the_forge_noun() -> None:
