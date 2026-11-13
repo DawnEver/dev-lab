@@ -301,7 +301,8 @@ def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _exit) -> tu
     """The one door (:func:`dev_lab.dev.famfiles.render_repo`) in *tree*, under its NEW interpreter.
 
     The rendered files depend on the dev-lab the lock now pins, so each runs under the tree's own ``.venv`` the
-    door re-synced. Answers the renderers run; a tree declaring no family artefact runs none. RAISES
+    door re-synced. Answers one line per renderer, rendered or skipped and why
+    (:func:`~dev_lab.dev.famfiles.plan`). RAISES
     :class:`RelockFailed` naming the renderer when its declared input is missing or it exits non-zero.
     """
     python = _tree_python(tree) if due_renderers(tree) else ''
