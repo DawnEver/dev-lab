@@ -74,13 +74,12 @@ from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
-from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
     'BASE_PATH',
     'BY_FORGE',
-    'FAMILY_INTEGRATION',
     'FORGE_KEY',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
@@ -125,9 +124,6 @@ LIGHT: Final = 'light'
 
 #: In any base or layer string, the repo's declared integration branch (``[tool.dev_lab.integrator]``), at render.
 INTEGRATION_PLACEHOLDER: Final = '@integration@'
-#: The integration branch a pyproject declaring no ``[tool.dev_lab.integrator]`` renders: the family's.
-FAMILY_INTEGRATION: Final = 'integrate/main'
-
 #: The key of a step that stands for a named list of :data:`SHARED`.
 USE_STEPS: Final = 'use-steps'
 #: The directory each forge's Actions runs its workflows from.
