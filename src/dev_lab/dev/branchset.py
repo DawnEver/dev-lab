@@ -224,8 +224,9 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     )
 
 
-def _local_branches(root: Path) -> tuple[str, ...] | None:
-    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/')
+def _short_refs(root: Path, prefix: str) -> tuple[str, ...] | None:
+    """The sorted short names of the refs under *prefix*, or ``None`` when git could not answer."""
+    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', prefix)
     return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
 
 
@@ -237,7 +238,7 @@ def _unpushed(root: Path, branch: str) -> int | None:
 def census(root: Path, branchset: BranchSet) -> Census | None:
     """The undeclared branches of *root*, or ``None`` when git could not answer -- never a clean read."""
     remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _local_branches(root)
+    local = _short_refs(root, 'refs/heads/')
     if remote is None or local is None:
         return None
     debt: list[str] = []
@@ -268,16 +269,11 @@ ORIGIN_DOOR: Final = 'python -m dev_lab.dev.branchprune delete'
 """The agent's exit for a landed origin branch: LOSSLESS-DELETE re-judges it after a fresh fetch, then lease-deletes."""
 
 
-def _archive_tags(root: Path) -> tuple[str, ...] | None:
-    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', f'refs/tags/{ARCHIVE_PREFIX}')
-    return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
-
-
 def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] | None:
     """Every undeclared branch (local, origin) and parked tag, and whether its tip is held by a declared one."""
     remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _local_branches(root)
-    parked = _archive_tags(root)
+    local = _short_refs(root, 'refs/heads/')
+    parked = _short_refs(root, f'refs/tags/{ARCHIVE_PREFIX}')
     if remote is None or local is None or parked is None:
         return None
     held_by = holders(root, branchset)
