@@ -54,7 +54,7 @@ from urllib.parse import parse_qs, unquote
 import lab_commons.launch as _door
 
 from dev_lab.dev._dep_project import follow_pin, uv_remedy
-from dev_lab.dev.famfiles import due_renderers, render_argv
+from dev_lab.dev.famfiles import due_renderers, render_repo
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgenotice import duration
@@ -298,22 +298,17 @@ def _tree_python(tree: Path) -> str:
 
 
 def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _exit) -> tuple[str, ...]:
-    """Run every renderer due in *tree* (:func:`dev_lab.dev.famfiles.due_renderers`) with its NEW interpreter.
+    """The one door (:func:`dev_lab.dev.famfiles.render_repo`) in *tree*, under its NEW interpreter.
 
     The rendered files depend on the dev-lab the lock now pins, so each runs under the tree's own ``.venv`` the
-    door re-synced. Answers the renderers run; a tree holding no generated file runs none. RAISES
+    door re-synced. Answers the renderers run; a tree declaring no family artefact runs none. RAISES
     :class:`RelockFailed` naming the renderer when its declared input is missing or it exits non-zero.
     """
-    python = _tree_python(tree) if (due := due_renderers(tree)) else ''
+    python = _tree_python(tree) if due_renderers(tree) else ''
     try:
-        commands = [(renderer.name, render_argv(renderer, tree, python)) for renderer in due]
+        return render_repo(tree, python, run)
     except ValueError as exc:
         raise RelockFailed(str(exc)) from exc
-    for name, argv in commands:
-        if (exited := run(argv, tree)) != 0:
-            msg = f'the renderer {name} exited {exited} in {tree}: {" ".join(argv[1:])}'
-            raise RelockFailed(msg)
-    return tuple(name for name, _ in commands)
 
 
 def _follow_host_uv(version: str) -> str:
