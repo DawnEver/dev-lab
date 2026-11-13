@@ -13,6 +13,7 @@ import pytest
 from _forge_fake import git_out, run_git
 from lab_commons.hpc.retired import MOVED_TABLES
 
+from dev_lab.dev import forgerequestpaths
 from dev_lab.dev.forgerequest import (
     TESTS,
     UndeclaredRequest,
@@ -110,8 +111,6 @@ def test_a_selection_reads_its_files_in_one_git_process_however_many_it_names(
     ~800 processes while the forge answered its 25 HTTP calls in 5 s. A selection is read as ONE batch; the
     control is that the count stays flat as the selection grows, and a missing file is still refused by name.
     """
-    from dev_lab.dev import forgerequest  # noqa: PLC0415
-
     root, sha = repo
     names = [f'tests/test_n{i}.py' for i in range(6)]
     for name in names:
@@ -120,14 +119,14 @@ def test_a_selection_reads_its_files_in_one_git_process_however_many_it_names(
     run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'more')
     sha = git_out(root, 'rev-parse', 'HEAD')
     reads: list[list[str]] = []
-    real = forgerequest._door.run
+    real = forgerequestpaths._door.run
 
     def counted(argv: list[str], *args: object, **kwargs: object) -> object:
         if 'cat-file' in argv or 'show' in argv:
             reads.append(list(argv))
         return real(argv, *args, **kwargs)
 
-    monkeypatch.setattr(forgerequest._door, 'run', counted)
+    monkeypatch.setattr(forgerequestpaths._door, 'run', counted)
     declared_request(root, sha, TESTS, tuple(names[:1]))
     one = len(reads)
     reads.clear()

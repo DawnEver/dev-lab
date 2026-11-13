@@ -159,6 +159,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeorigin',
     'breakglass',
     'forgerequest',
+    'forgerequesthost',
+    'forgerequestpaths',
     'retention',
     'retentionplan',
     'diskusage',

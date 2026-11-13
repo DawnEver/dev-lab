@@ -341,7 +341,7 @@ def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -
         ('', False),
     ],
 )
-def test_a_repo_is_a_family_member_by_its_dev_lab_dependency_or_table(manifest: str, member: bool) -> None:  # noqa: FBT001
+def test_a_repo_is_a_family_member_by_its_dev_lab_dependency_or_table(manifest: str, *, member: bool) -> None:
     assert is_member(manifest) is member
 
 
@@ -369,10 +369,10 @@ def test_the_module_door_runs_and_its_check_says_no_to_a_stale_file(tmp_path: Pa
     page = tmp_path / PAGE_REL
     page.parent.mkdir(parents=True)
     page.write_text('stale\n', encoding='utf-8')
-    checked = subprocess.run([*door, '--check'], capture_output=True, text=True, check=False)
+    checked = subprocess.run([*door, '--check'], capture_output=True, text=True, encoding='utf-8', check=False)
     assert checked.returncode == 1
     assert f'{PAGE_REL}: would render (drifted)' in checked.stdout
     assert subprocess.run(door, capture_output=True, check=False).returncode == 0
     assert page.read_text(encoding='utf-8') == render_principles()
-    again = subprocess.run([*door, '--check'], capture_output=True, text=True, check=False)
+    again = subprocess.run([*door, '--check'], capture_output=True, text=True, encoding='utf-8', check=False)
     assert (again.returncode, f'{PAGE_REL}: current' in again.stdout) == (0, True)

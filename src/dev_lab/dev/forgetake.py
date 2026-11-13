@@ -65,8 +65,8 @@ from dev_lab.dev.forgerequest import (
     unreachable_source,
     unreproducible,
     unserved,
-    untrusted,
 )
+from dev_lab.dev.forgerequesthost import untrusted
 from dev_lab.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgewait import Box, Outlook

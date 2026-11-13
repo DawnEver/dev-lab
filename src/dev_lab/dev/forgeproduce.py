@@ -21,7 +21,7 @@ a request's declared ``wall_h``). A box with no
 room releases the claim retryable; a kill is released naming it -- both read from the box's record
 beside the run's tree, never from the exit code, which is the producer's own. A REQUEST (context
 ``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
-is SETTLED here from the exit code (:func:`dev_lab.dev.forgerequest.settle`).
+is SETTLED here from the exit code (:func:`dev_lab.dev.forgerequesthost.settle`).
 
 THE PART IS JUDGED AT THE CLAIMED SHA, in a tree this producer owns (:mod:`dev_lab.dev.shatree`):
 the declared argv (read at the sha) runs with that tree's own interpreter, cwd = the tree, and the tree
@@ -67,14 +67,14 @@ from lab_commons.compute.model import Demand
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
-from dev_lab.dev import producer
+from dev_lab.dev import forgerequest, producer
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
 from dev_lab.dev.forgeclaim import Claim, Work, forge_now, publish
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeintent import Intent, forget, journal
 from dev_lab.dev.forgelabels import LabelMissing
-from dev_lab.dev.forgerequest import CONTEXT_PREFIX, result, settle
+from dev_lab.dev.forgerequesthost import result, settle
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgewait import claim_vector
 from dev_lab.dev.forgework import Client
@@ -292,7 +292,7 @@ def _run(
         oom = isinstance(ended, ProcessEnd) and ended.reason == 'memory'
         learn(root, item, measured, killed=oom or returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
-    if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
+    if context.startswith(forgerequest.CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
         _settle(
             client(root),
             item,
@@ -393,7 +393,7 @@ def _settle(
     named = _named(returncode, record)
     state, description = ('error', boxed_out) if boxed_out else result(returncode, host, outage=said, detail=named)
     try:
-        number = int(item.context.removeprefix(CONTEXT_PREFIX))
+        number = int(item.context.removeprefix(forgerequest.CONTEXT_PREFIX))
         settle(client, number, state, description, log=log, host=host, record=record)
     except (ForgeCallFailed, LabelMissing) as failed:
         say(f'{run_tag(item.platform, item.sha)} could not comment the result: {failed}')

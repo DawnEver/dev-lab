@@ -327,6 +327,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``[priority] hosts`` entry matches.
 * :mod:`dev_lab.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
 * :mod:`dev_lab.dev.forgerequest` -- a request: an issue-declared job ranked, admitted and run on the part path.
+* :mod:`dev_lab.dev.forgerequesthost` -- how a serve host treats a request: trust, the unadmitted reminder, its result.
+* :mod:`dev_lab.dev.forgerequestpaths` -- a tests request's files read at its sha: roots, blobs, refusals, placement.
 * :mod:`dev_lab.dev.forgetick` -- requests derived from origin; the best feasible one claimed each tick.
 * :mod:`dev_lab.dev.forgecred` -- how a stored secret (:mod:`lab_commons.credentials`) meets a forge.
 * :mod:`dev_lab.dev.forgedemand` -- SHARED DEMAND: the forge's run records folded into the learned cache.
