@@ -14,8 +14,10 @@ A host file restating a family key is refused (:func:`check`). ``[dev]`` (:data:
 (the account roles the machine may reach, rendered as ``[hpc] reach``), ``ref`` (the dev-lab ref followed),
 ``forges`` (forge host -> account names), ``os``,
 ``resources`` (:data:`RESOURCES`; :func:`usable` is the part this user holds), ``vendors.<name>`` (:data:`VENDOR`),
-``detect`` (vendor -> install-home glob patterns, family-wide). ``[dev]`` is not rendered itself; a vendor's
-``seats > 0`` renders as ``[capabilities.<vendor>] seats``, its one consumer-facing copy.
+``detect`` (vendor -> install-home glob patterns, family-wide),
+``channels`` (session channel source -> user, host-only; rendered as ``[agent] channels``, read by
+:func:`declared_channels`). ``[dev]`` is not rendered itself; a vendor's ``seats > 0`` renders as
+``[capabilities.<vendor>] seats``, its one consumer-facing copy.
 
 Install homes are found ON each machine: ``detect`` globs the family's patterns locally and prints the host-file
 lines to propose through a pull request; a vendor with seats and no ``home`` is named by the drift notice.
@@ -47,10 +49,13 @@ from lab_commons.log import emit
 
 from dev_lab.dev._machinefile import dumps, render_value
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.devschema import fill_remedy, hpc_reach, unfilled
+from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
-__all__ = ['OWN_TABLE', 'RENDER_DOOR', 'declared', 'detect', 'drift', 'main', 'notice', 'render', 'stop_block']
+__all__ = [
+    'OWN_TABLE', 'RENDER_DOOR', 'declared', 'declared_channels', 'detect', 'drift', 'main', 'notice', 'render',
+    'stop_block',
+]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
 OWN_TABLE: Final = 'devhost'
@@ -91,6 +96,8 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     seats = {name: {'seats': vendor['seats']} for name, vendor in vendors.items() if vendor.get('seats')}
     layered = _merge(layered, {'capabilities': seats} if seats else {})
     layered = _merge(layered, {'hpc': {'reach': hpc_reach(declared.get('dev', {}))}} if 'hpc' in layered else {})
+    if channels := declared.get('dev', {}).get('channels'):
+        layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}
     own = {OWN_TABLE: {'host': host, 'source': clone.as_posix()}}
     header = (
@@ -99,6 +106,22 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
         f'this machine keeps {sorted(local)}.\n\n'
     )
     return header + dumps({**layered, **local, **own})
+
+
+def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
+    """Return this machine's session channels: source -> the user whose messages through it ARE the machine's user.
+
+    Read from the machine file's ``[agent] channels`` (the render of the host file's ``[dev] channels``). Empty when
+    none is declared: an undeclared channel or user carries no authority.
+
+    Raises:
+        ValueError: the table is not non-empty source strings to non-empty user strings -- never read past.
+
+    """
+    channels = (machineconfig.machine() if live is None else live).get(CHANNELS_TABLE, {}).get('channels', {})
+    if defects := channel_defects(channels, f'[{CHANNELS_TABLE}].channels'):
+        raise ValueError('; '.join(defects))
+    return dict(channels)
 
 
 def _branch(checkout: str) -> str | None:
