@@ -1,6 +1,7 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``judge``, ``upgrade [--sha S --credential F | --subject]`` (:mod:`.upgrade`),
+Verbs: ``install``, ``promote``, ``judge``,
+``upgrade [--sha S --credential F | --subject | --follow]`` (:mod:`.upgrade`, :mod:`.upgradefollow`),
 ``probe``, ``breakglass serve|tick``,
 ``consent serve|enrol|keygen|ready`` (:mod:`dev_lab.ops.consentverbs`), ``backup export|pull``,
 ``access enrol|adopt``, ``disk``, ``clean`` (:mod:`dev_lab.ops.disk`), ``config apply|tick``
@@ -58,6 +59,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     upgrading.add_argument('--sha', default='', help='a plan step: the tip sha its ops.upgrade grant names')
     upgrading.add_argument('--credential', default='', help='a plan step: a single-use ops.upgrade credential')
     upgrading.add_argument('--subject', action='store_true', help="print the ref's tip sha a grant names; no install")
+    upgrading.add_argument('--follow', action='store_true', help='the timer: install [ops.upgrade] follow if it moved')
     verbs.add_parser('probe')
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'tick'))

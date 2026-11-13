@@ -187,23 +187,35 @@ def _probe(config: OpsConfig) -> dict[str, str]:
     return _timer(config, role, 'probe', 'Probe forge protection and CI runs', _door(config, 'probe'))
 
 
+def _root_timer(config: OpsConfig, name: str, what: str, schedule: str, *verb: str) -> dict[str, str]:
+    """A root oneshot service running the door's *verb*, and its ``OnCalendar`` timer."""
+    env = [f'EnvironmentFile={config.environment_file}'] if config.environment_file else []
+    service = (
+        f'[Unit]\nDescription={what}\nWants=network-online.target\nAfter=network-online.target\n[Service]\n'
+        + ''.join(f'{line}\n' for line in (*env, 'Type=oneshot', f'ExecStart={_door(config, *verb)}'))
+    )
+    timer = (
+        f'[Unit]\nDescription={what}\n'
+        f'[Timer]\nOnCalendar={schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
+    )
+    unit = f'etc/systemd/system/{_UNIT}-{name}'
+    return {f'{unit}.service': service, f'{unit}.timer': timer}
+
+
+def _upgrade_follow(config: OpsConfig) -> dict[str, str]:
+    """The ``upgrade --follow`` timer: root, since it installs into ``[ops] python``'s environment."""
+    if (role := config.upgrade) is None or not role.follow:
+        return {}
+    what = f'Follow {role.follow} of the dev-lab source (dev_lab.ops)'
+    return _root_timer(config, 'upgrade-follow', what, role.schedule, 'upgrade', '--follow')
+
+
 def _config_tick(config: OpsConfig) -> dict[str, str]:
     """The ``config tick`` timer: root, since it replaces the root-owned live file through the door."""
     if (source := config.config_source) is None or not source.schedule:
         return {}
     what = 'Apply the merged config source (dev_lab.ops)'
-    env = [f'EnvironmentFile={config.environment_file}'] if config.environment_file else []
-    exec_start = _door(config, 'config', 'tick')
-    service = (
-        f'[Unit]\nDescription={what}\nWants=network-online.target\nAfter=network-online.target\n[Service]\n'
-        + ''.join(f'{line}\n' for line in (*env, 'Type=oneshot', f'ExecStart={exec_start}'))
-    )
-    timer = (
-        f'[Unit]\nDescription={what}\n'
-        f'[Timer]\nOnCalendar={source.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
-    )
-    name = f'etc/systemd/system/{_UNIT}-config-tick'
-    return {f'{name}.service': service, f'{name}.timer': timer}
+    return _root_timer(config, 'config-tick', what, source.schedule, 'config', 'tick')
 
 
 def _supervise(config: OpsConfig) -> dict[str, str]:
@@ -243,6 +255,7 @@ def files(config: OpsConfig) -> dict[str, str]:
         **_backup(config),
         **_probe(config),
         **_config_tick(config),
+        **_upgrade_follow(config),
         **access,
         **_supervise(config),
     }
@@ -281,6 +294,8 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
     steps += _probe_steps(config)
     if config.config_source is not None and config.config_source.schedule:
         steps += ['systemctl daemon-reload', f'systemctl enable --now {_UNIT}-config-tick.timer']
+    if config.upgrade is not None and config.upgrade.follow:
+        steps += ['systemctl daemon-reload', f'systemctl enable --now {_UNIT}-upgrade-follow.timer']
     if (role := config.access) is not None:
         steps += ['apt-get install -y libpam-oath', f'id {role.account} || useradd --create-home {role.account}',
                   'sshd -t && systemctl reload ssh']  # fmt: skip

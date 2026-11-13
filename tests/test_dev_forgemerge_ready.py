@@ -227,6 +227,72 @@ def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_
     assert _merge_ready(forge, head)[0] == 'success'
 
 
+def _refusing_deletes(forge: StateForge, monkeypatch: pytest.MonkeyPatch, code: int, said: str) -> None:
+    """*forge* answers every ref DELETE with *code* saying *said*; every other call as before."""
+    real = forge.call
+
+    def call(method: str, path: str, body: object = None, durable: object = None) -> object:
+        if method == 'DELETE' and '/git/refs/heads/' in path:
+            refusal = Attempt(1, code, f'{{"message": "{said}"}}', Diagnosis.FORGE_REFUSED)
+            raise ForgeCallFailed(Report(('DELETE', 'ref'), (refusal,), 1))
+        return real(method, path, body, durable)
+
+    monkeypatch.setattr(forge, 'call', call)
+
+
+@pytest.mark.parametrize(('code', 'said'), [(422, 'Reference does not exist'), (404, 'Not Found')])
+def test_a_merged_pr_whose_head_branch_is_already_gone_is_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int, said: str
+) -> None:
+    """cc-market #12 (2026-11-13): GitHub merged it and auto-deleted the head; already gone is the delete done.
+
+    The door's delete got 422 and said NOT merged, exiting non-zero -- a declaration that lies.
+    """
+    work, forge, number, _head = _hub_pr(tmp_path)
+    _refusing_deletes(forge, monkeypatch, code, said)
+    line = ready(work, forge, number)
+    assert line.endswith('; merged')
+    assert 'NOT merged' not in line
+    assert [one[0] for one in forge.merges] == [number]
+
+
+def test_a_head_branch_delete_refused_for_another_reason_still_surfaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED CONTROL: a 422 that is not "already gone" raises from the merge call and is named by the door.
+
+    The door says it as merged, because the forge holds the PR merged.
+    """
+    work, forge, number, _head = _hub_pr(tmp_path)
+    _refusing_deletes(forge, monkeypatch, 422, 'Reference update failed')
+    with pytest.raises(ForgeCallFailed, match='Reference update failed'):
+        forgemergecall.merge(forge, number, head=forge.pr_view(number).head_sha, message='t', delete_branch=True)
+    forge.pulls[number] |= {'state': 'open', 'merged': False}
+    line = ready(work, forge, number)
+    assert '; merged, but after it:' in line
+    assert 'Reference update failed' in line
+    assert 'NOT merged' not in line
+
+
+def test_a_failed_merge_call_on_a_pr_the_forge_holds_merged_is_said_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before NOT merged is said, the PR's state is read: the forge's word, never the failed call's.
+
+    PLANTED CONTROL: the moved-head test above, whose PR stays unmerged, is still NOT merged.
+    """
+    work, forge, number, _head = _hub_pr(tmp_path)
+
+    def lost_answer(_client: Client, n: int, **_kwargs: object) -> None:
+        forge.pulls[n] |= {'state': 'closed', 'merged': True}  # the merge landed; its answer did not
+        raise ForgeCallFailed(Report(('PUT', 'merge'), (Attempt(1, 502, 'Bad Gateway', Diagnosis.TRANSIENT),), 3))
+
+    monkeypatch.setattr(forgemergeready, 'merge', lost_answer)
+    line = ready(work, forge, number)
+    assert '; merged, but after it:' in line
+    assert 'NOT merged' not in line
+
+
 def test_a_ready_pr_the_forge_refuses_to_merge_fails_the_tick_and_the_prs_after_it_are_still_judged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -37,7 +37,7 @@ from dev_lab.dev.lanepolicy import (
 from dev_lab.dev.reviewturn import review_turn
 
 if TYPE_CHECKING:
-    from dev_lab.dev.forgework import Client
+    from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = ['READY', 'NotMerged', 'main', 'ready']
 
@@ -65,7 +65,8 @@ def ready(root: Path, client: Client, number: int) -> str:
     of that judged head (:func:`~dev_lab.dev.forgemergecall.merge`); a refusal -- the head
     moved, a required check still pending, a token the branch protection does not let merge -- raises
     :class:`NotMerged` saying it (hosts-config #25, 2026-11-13: a ready PR the job could not merge left the job
-    green): the decision stands posted either way.
+    green): the decision stands posted either way. A failed call is NOT merged only when the forge's PR state says
+    so: a PR the forge holds merged is said merged, naming what failed after it (cc-market #12, 2026-11-13).
     """
     pull, (policy, undeclared) = client.pr_view(number), _policy(root)
     if pull.base != policy.integration:
@@ -92,14 +93,26 @@ def ready(root: Path, client: Client, number: int) -> str:
     said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}{turn}'
     if missing or (client.backend is not GITHUB and not ci_merges(root)):
         return said
-    ephemeral = declared_branchset(root).is_ephemeral(pull.head)
-    try:
-        merge(client, number, head=pull.head_sha, message=decision.message, delete_branch=ephemeral)
-    except ForgeCallFailed as refused:
-        refusal = f'{said}; NOT merged -- {refused}'
-        raise NotMerged(refusal) from refused
+    said = _merged(root, client, pull, decision.message, said)
     if unpassed := decision.unreviewed or decision.review:
         client.issue_comment(number, f'Merged WITHOUT a passing review (advisory) -- {unpassed}')
+    return said
+
+
+def _merged(root: Path, client: Client, pull: PullRequest, message: str, said: str) -> str:
+    """Merge *pull* at its judged head; *said* naming the outcome. NOT merged only when the forge's PR state says so.
+
+    A failed call on a PR the forge holds merged (a head-branch delete refused after it, an answer lost) is said
+    merged, naming what failed (cc-market #12, 2026-11-13); an unmerged one raises :class:`NotMerged`.
+    """
+    try:
+        number, ephemeral = pull.number, declared_branchset(root).is_ephemeral(pull.head)
+        merge(client, number, head=pull.head_sha, message=message, delete_branch=ephemeral)
+    except ForgeCallFailed as refused:
+        if not client.pr_view(pull.number).merged:
+            refusal = f'{said}; NOT merged -- {refused}'
+            raise NotMerged(refusal) from refused
+        return f'{said}; merged, but after it: {refused}'
     return f'{said}; merged'
 
 

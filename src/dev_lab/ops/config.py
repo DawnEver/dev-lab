@@ -160,6 +160,11 @@ class Upgrade:
     reviewer, ``ai-lab``, which dev-lab declares only as its ``review`` dependency GROUP, which a git requirement
     cannot carry); ``uv`` the binary (empty: from ``PATH``). The family's revisions (lab-commons, ai-lab) come from
     dev-lab's own lock at the installed commit (:func:`dev_lab.ops.upgrade.locked_family`), never from this table.
+
+    ``follow`` (a branch of ``source``; empty: off) makes the host upgrade ITSELF to that branch's tip on the
+    ``schedule`` timer (a systemd ``OnCalendar``), authorized by this declaration instead of a consent grant
+    (:mod:`dev_lab.ops.upgradefollow`). ``follow`` is boundary (only a consented ``config apply`` sets it);
+    ``schedule`` is routine.
     """
 
     source: str
@@ -167,6 +172,8 @@ class Upgrade:
     extras: tuple[str, ...] = ()
     packages: tuple[str, ...] = ()
     uv: str = ''
+    follow: str = ''
+    schedule: str = '*:0/15'
 
 
 @dataclass(frozen=True)
