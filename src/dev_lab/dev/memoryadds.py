@@ -148,13 +148,32 @@ def missing_keys(text: str) -> tuple[str, ...]:
     return tuple(key for key in REQUIRED_KEYS if not any(line.startswith(f'{key}:') for line in head))
 
 
+def _completed(old: str, new: str) -> list[str] | None:
+    """*new*'s lines minus the required keys it adds to *old*'s frontmatter; ``None`` when it adds none."""
+    lacking = missing_keys(old)
+    match = _FRONTMATTER.match(_lf(new))
+    if not lacking or match is None or not _FRONTMATTER.match(_lf(old)):
+        return None
+    head = match.group(1).splitlines()
+    kept = [line for line in head if not any(line.startswith(f'{key}:') for key in lacking)]
+    if len(kept) == len(head):
+        return None
+    return ['---', *kept, '---', *_lf(new)[match.end() :].splitlines()]
+
+
 def _only_amended(old: str, new: str) -> bool:
-    """An approved amendment: ONE new note, the other lines replaced one-for-one, none added or removed."""
+    """An approved amendment: ONE new note, plus one-for-one line replacements or a frontmatter completion.
+
+    One-for-one: the other lines replaced, none added or removed. Completion (user ruling 2026-11-13): the
+    missing :data:`REQUIRED_KEYS` added to a published entry's frontmatter and nothing else changed.
+    """
     old_lines, new_lines = _lf(old).splitlines(), _lf(new).splitlines()
     notes = sum(1 for line in new_lines if _AMEND_LINE.fullmatch(line))
     if notes != 1 + sum(1 for line in old_lines if _AMEND_LINE.fullmatch(line)):
         return False
     before = [line for line in old_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
+    if (completed := _completed(old, new)) is not None:
+        return before == [line for line in completed if line.strip() and not _AMEND_LINE.fullmatch(line)]
     after = [line for line in new_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
     return len(before) == len(after) and before != after
 
@@ -298,7 +317,7 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                     'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
                     'is corrected in place only with the user-approved note `> '
                     + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
-                    + '` and lines replaced one-for-one'
+                    + '` and lines replaced one-for-one, or only the missing name/description frontmatter added'
                 )
                 if _MANUAL.search(old):
                     remedy += (
