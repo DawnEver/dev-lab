@@ -78,6 +78,13 @@ PRINCIPLES: Final = (
         'reference match ADDS a selectable option and never replaces or deletes the alternative; numerical '
         'method choices are options even with no current caller.',
     ),
+    Principle(
+        'every-wall-teaches',
+        'Every wall teaches',
+        'Every refusal or failure an agent hits names its cause and its door; one that does not is a mechanism '
+        'gap, and closing it (a hook row, a remedy, a test) comes before the task. Never route around a wall or '
+        'hand the user a command. The loop: docs-src/dev/feedback.md.',
+    ),
 )
 
 #: Where each family repo carries the rendered page (always loaded by the agent).
