@@ -179,6 +179,8 @@ WIRING: Final = (
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
     Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
     Wire('PostToolUse', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
+    # PostToolUseFailure: a documented hook event ("After a tool call fails") --
+    # https://code.claude.com/docs/en/hooks; PostToolUse alone never sees a failed call's error text.
     Wire('PostToolUseFailure', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
     Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.hpcaccount.session bind', on_shells=False),
