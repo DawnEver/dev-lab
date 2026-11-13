@@ -189,6 +189,8 @@ _ENFORCED = {
     'PUSHED-HEAD-IS-WATCHED': (guard('tests/test_dev_pushwatch.py'),),
     # User ruling 2026-11-11: lab-commons #158 went red and nothing told the session.
     'SESSION-HEARS-ITS-PRS': (guard('tests/test_dev_sessionwatch.py'),),
+    # User ruling 2026-11-13: every wall teaches -- a refusal that named no door is a gap closed before the task.
+    'WALLS-ARE-RECORDED': (guard('tests/test_dev_walls.py'), guard('tests/test_dev_hooks.py')),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (
         # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates

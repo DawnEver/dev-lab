@@ -72,6 +72,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+const crypto = require('crypto');
 
 /** The tools whose `tool_input.command` the shell executes. */
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
@@ -560,16 +561,26 @@ function familySiblingClone(cmd, cwd) {
   }
 }
 
-/* A refusal is a line of the toolchain's metrics (P0, dev_lab.dev.metrics): appended by the ONE writer, in a
- * DETACHED interpreter, so the refusal the agent sees waits for nothing. No interpreter, no line. */
-function logRefusal(name, where) {
+/* A refusal is a WALL (WALLS-ARE-RECORDED, dev_lab.dev.walls): one metrics line and one ledger line, appended by the
+ * ONE writer in a DETACHED interpreter, so the refusal the agent sees waits for nothing. No interpreter, no line. The
+ * command never leaves this process: only a sha256 prefix of it does. A reason names a door when a line beyond its
+ * cause is not only the `details:` pointer or the cross-repo header -- dev_lab.dev.walls.has_remedy, the same test. */
+function hasRemedy(reason) {
+  const lines = String(reason).split('\n').map((line) => line.trim()).filter(Boolean);
+  return lines.filter((line) => !line.startsWith('details: ') && !/^\[targets .*\]$/.test(line)).length >= 2;
+}
+
+function logRefusal(name, where, reason) {
   const python = venvPython(sessionRoot);
   if (!python) return;
   try {
-    const argv = ['-m', 'dev_lab.dev.metrics_report', 'record', 'refusal', '--rule', name, '--reason', 'agent-guard'];
+    const digest = crypto.createHash('sha256').update(cmd, 'utf8').digest('hex').slice(0, 16);
+    const argv = ['-m', 'dev_lab.dev.walls', 'refused', '--rule', name, '--reason', 'agent-guard',
+      '--command-sha256', digest, hasRemedy(reason) ? '--remedy' : '--no-remedy'];
+    if (typeof input.session_id === 'string' && input.session_id) argv.push('--session', input.session_id);
     spawn(python, argv, { cwd: where, detached: true, stdio: 'ignore', windowsHide: true }).unref();
   } catch {
-    // a metrics line never blocks the refusal it describes
+    // a ledger line never blocks the refusal it describes
   }
 }
 
@@ -631,16 +642,13 @@ for (const rule of rules) {
     // A PROBE (run_engine) names where its refusal is logged, '' for nowhere; the tool never sends the key.
     const probed = typeof input.dev_lab_metrics_root === 'string';
     const where = probed ? input.dev_lab_metrics_root : input.cwd ? repoRoot(ruleTarget(rule, cmd, input.cwd)) || input.cwd : sessionRoot;
-    if (where) logRefusal(rule.name, where);
+    const reason =
+      liveReason ||
+      reasonFor(rule, expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)), cmd, input.cwd || '', sessionRoot);
+    if (where) logRefusal(rule.name, where, reason);
     process.stdout.write(
       JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason:
-            liveReason ||
-            reasonFor(rule, expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)), cmd, input.cwd || '', sessionRoot),
-        },
+        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
       })
     );
     process.exit(0);

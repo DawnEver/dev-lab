@@ -91,6 +91,7 @@ _IDS = frozenset(
         'DOCS-ONLY-CARRIES',
         'PUSHED-HEAD-IS-WATCHED',
         'SESSION-HEARS-ITS-PRS',
+        'WALLS-ARE-RECORDED',
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',
         'RECURSIVE-DELETE',

@@ -7,6 +7,7 @@ whose refs were not pushed.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import walls
 from dev_lab.dev.githooks import main as githooks_main
 from dev_lab.dev.githooks.runner import PUSH_URL_ENV, ZERO_SHA, parse_push_lines, resolve, run_stage
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
@@ -345,6 +347,22 @@ def test_a_refusing_stage_logs_one_refusal_per_hook_and_a_push_is_counted(repo: 
     assert run_stage('pre-push', ['origin', 'u'], root=repo, hooks=(), runner=fail) == 0
     assert [(line['lab.rule.id'], line['error.type']) for line in read(REFUSAL, root=repo)] == [('cz', 'commit-msg')]
     assert len(read(PUSH, root=repo)) == 1
+
+
+def test_a_refusing_hook_is_a_wall_whose_remedy_is_read_off_its_own_output(repo: Path) -> None:
+    """WALLS-ARE-RECORDED: a one-line failure names no door; one that says what to do does."""
+    said = {'bare': 'no', 'told': 'cz: the subject is not conventional.\nWrite `feat(x): y`.'}
+
+    def fail(argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return 1, said[argv[0]]
+
+    hooks = (Hook(stage='commit-msg', id='bare', run=('bare',)), Hook(stage='commit-msg', id='told', run=('told',)))
+    assert run_stage('commit-msg', ['.git/COMMIT_EDITMSG'], root=repo, hooks=hooks, runner=fail) == 1
+    ledger = walls.ledger(repo).read_text(encoding='utf-8').splitlines()
+    assert [(json.loads(one)['rule'], json.loads(one)['remedy_present']) for one in ledger] == [
+        ('bare', False),
+        ('told', True),
+    ]
 
 
 def test_a_push_names_the_branch_and_tip_it_pushes(repo: Path) -> None:

@@ -21,9 +21,9 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
     assert [one.id for one in PRINCIPLES] == [
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
         'layered-decoupling', 'names-match-behaviour', 'no-backward-compatibility', 'progressive-disclosure',
-        'keep-valuable-options',
+        'keep-valuable-options', 'every-wall-teaches',
     ]  # fmt: skip
-    kept = PRINCIPLES[-1]
+    kept = PRINCIPLES[-2]
     assert kept.name == 'Keep every valuable parameter and option'
     assert kept.statement.startswith('Generality is a requirement: keep every parameter and option')
 
@@ -40,6 +40,19 @@ def test_a_reference_match_adds_an_option_and_the_razors_never_remove_capability
         assert clause in kept
     assert by_id['occams-razor'].endswith('never a capability.')
     assert by_id['no-historical-baggage'].endswith('never a capability.')
+
+
+def test_every_wall_teaches_names_the_gap_and_the_loop() -> None:
+    """User ruling 2026-11-13: a wall with no named cause and door is a mechanism gap, closed before the task."""
+    wall = {one.id: one for one in PRINCIPLES}['every-wall-teaches']
+    for clause in (
+        'names its cause and its door',
+        'is a mechanism gap',
+        'comes before the task',
+        'Never route around a wall or hand the user a command.',
+        'docs-src/dev/feedback.md',
+    ):
+        assert clause in wall.statement
 
 
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:
