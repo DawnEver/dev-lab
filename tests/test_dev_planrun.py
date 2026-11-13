@@ -14,10 +14,11 @@ from pathlib import Path
 import pytest
 from _ops_fixtures import NOW as FIXED
 from _ops_fixtures import RFC_KEY, code, config
+from _protect_fakes import GITEA_TEXT
 
 from dev_lab.dev import forgesecrets, planrun, planrunpreflight, planrunsteps, sshholdwire, walls
 from dev_lab.ops import __main__ as ops_main
-from dev_lab.ops import configdoor, consentverbs
+from dev_lab.ops import configdoor, consentverbs, forgeprotection
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import spent_ids
 from dev_lab.ops.consent.credential import ConsentRefused
@@ -706,10 +707,6 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
 
     PLANTED: a declaration that renders another protection blocks, naming both subjects.
     """
-    from _protect_fakes import GITEA_TEXT  # noqa: PLC0415
-
-    from dev_lab.ops import forgeprotection  # noqa: PLC0415
-
     want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
     plan = parsed({'hosts': [HOST], 'grants': [{'host': HOST, 'action': forgeprotection.ACTION, 'subject': want}]})
     step = planrunsteps.Step(
@@ -748,10 +745,6 @@ def test_a_forge_key_on_a_step_that_is_not_protect_is_refused(tmp_path: Path) ->
 
 
 def test_planrun_subject_prints_the_protect_subject_with_no_host(capsys: pytest.CaptureFixture[str]) -> None:
-    from _protect_fakes import GITEA_TEXT  # noqa: PLC0415
-
-    from dev_lab.ops import forgeprotection  # noqa: PLC0415
-
     argv = ['subject', '--forge', 'gitea.example', '--repo', 'owner/alpha']
     readers = planrunpreflight.Readers(declared=lambda *_: GITEA_TEXT)
     assert planrun.main(argv, readers=readers) == 0
