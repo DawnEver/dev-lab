@@ -92,12 +92,21 @@ def stage_command(stamp: str) -> str:
     return f'umask 077 && IFS= read -r line && printf \'%s\\n\' "$line" > {_staged(stamp)}'
 
 
-def verify_prefix(stamp: str) -> str:
-    """The exports that make git's credential helper read ONLY the staged file (an empty helper resets the list)."""
-    _checked('x', stamp)
+def verify_prefix(host: str, stamp: str) -> str:
+    """The exports that make git's credential helper read ONLY the staged file for *host*.
+
+    An empty helper resets a list; both the generic list and *host*'s URL-scoped one (which git prefers, and which
+    ``rewrite_command``'s global config holds) are reset, then pointed at the staged file. ``$HOME`` stays literal: the
+    helper's own shell expands it, so a native git under MSYS bash gets a path it can open (not an MSYS ``/c/...``).
+    """
+    _checked(host, stamp)
+    staged = f'\'store --file="$HOME/{STORE}.new-{stamp}"\''
+    scoped = f'credential.https://{host}.helper'
     return (
-        'export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= '
-        f'GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1="store --file=$HOME/{STORE}.new-{stamp}" && '
+        'export GIT_CONFIG_COUNT=4 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= '
+        f'GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1={staged} '
+        f'GIT_CONFIG_KEY_2={scoped} GIT_CONFIG_VALUE_2= '
+        f'GIT_CONFIG_KEY_3={scoped} GIT_CONFIG_VALUE_3={staged} && '
     )
 
 
@@ -183,7 +192,7 @@ def place_verified(shell: Shell, *, login: str, token: str, repo: str, role: str
     stamp, host = stamp or stamp_now(), urlsplit(repo).hostname or ''
     shell(stage_command(stamp), f'https://{quote(login, safe="")}:{quote(token, safe="")}@{host}\n')
     try:
-        answered = str(json.loads(shell(verify_prefix(stamp) + role, None)).get('login') or '')
+        answered = str(json.loads(shell(verify_prefix(host, stamp) + role, None)).get('login') or '')
     except (RuntimeError, OSError, ValueError) as failed:
         answered = f'an error ({failed})'
     if answered != login:
