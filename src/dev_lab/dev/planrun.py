@@ -6,6 +6,7 @@ UNSPENT credential). Two verbs, one steps file; ``<dest>`` is the plan's host an
 
     python -m dev_lab.dev.planrun preflight <dest> --plan <plan.json> --steps <steps.json>
     python -m dev_lab.dev.planrun run <dest> --plan <plan.json> --digest <D> --steps <steps.json>   # after the code
+    python -m dev_lab.dev.planrun subject --forge <host> --repo <owner/name> [--ref R]   # an ops.forge.protect grant
 
 The STEPS FILE says what each grant of the plan runs, in the plan's order (one step per grant). A HOST step runs an
 ops verb on ``dest`` (default ``<dest>``; ``config``/``python`` default the file's); a LOCAL step redeems its grant
@@ -38,7 +39,11 @@ content shown), that the ops verb is a sudo door (``sudo -n -l``) and that the s
 ``--subject``) equals the grant's; per local step, that the machine file names the client's endpoint. A door a host
 gains only from an earlier ``ops.config`` step ON THAT HOST (``config apply`` installs sudoers) is ``after step N``,
 never a failure; so is a subject that differs after such a step (the apply changes the live config the subject is
-derived from), and :func:`run_plan` checks it for real at that point. A remote is the held session when one is
+derived from), and :func:`run_plan` checks it for real at that point. An ``ops.forge.protect`` step naming its
+public ``forge`` host (``{"argv": ["forge", "protect", "apply", "--repo", R, "--ref"?, F], "forge": "<host>"}``) has
+its subject derived HERE (:func:`dev_lab.ops.forgeprotection.local_subject`: the repo's declaration read from that
+forge at the ref, rendered as the host renders it), so building the plan needs no session; ``planrun subject``
+prints it. A remote is the held session when one is
 open, else key-only ssh (:mod:`.planremote`).
 
 :func:`run_plan` runs the GRANTED plan's steps in order: it carries each host step's credential (found in
@@ -70,11 +75,15 @@ from lab_commons.log import emit
 
 from dev_lab.dev import forgesecrets, sshhold
 from dev_lab.dev.consentguard import state_dir
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.planremote import Remote, remote_for
+from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
+from dev_lab.ops import forgeprotection
 from dev_lab.ops.consent.client import spent_ids
 from dev_lab.ops.consent.credential import SKEW_S, ConsentRefused
 from dev_lab.ops.consent.plan import STALE_CLIENT, Plan, parsed, stale_client
 from dev_lab.ops.consent.plan import load as load_plan
+from dev_lab.ops.giteaadmin import ForgeRefused
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -95,6 +104,8 @@ __all__ = [
 type Spent = Callable[[list[str]], set[str]]
 #: A host's remote, by its dest.
 type Remotes = Callable[[str], Remote]
+#: ``(forge host, owner/name, ref)`` -> the repo's ``pyproject.toml`` text at the ref, read here.
+type Declared = Callable[[str, str, str], str]
 #: Runs a local client verb (``forge`` argv words); ``(merged output, exit status)``.
 type Local = Callable[[Sequence[str]], tuple[str, int]]
 
@@ -122,6 +133,7 @@ class Step:
     stdin_task: str | None = None
     stdout_local: str | None = None
     local: bool = False
+    forge: str = ''
 
 
 @dataclass(frozen=True)
@@ -131,7 +143,7 @@ class Steps:
     steps: tuple[Step, ...]
 
 
-_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'stdout_local', 'dest', 'config', 'python'}
+_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'stdout_local', 'dest', 'config', 'python', 'forge'}
 
 
 def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str) -> Step:
@@ -157,13 +169,16 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     if action in LOCAL_VERBS:
         msg = f'{name} grants {action}, which is redeemed here: {{"local": true}}'
         raise ConsentRefused(msg)
+    if 'forge' in step and action != forgeprotection.ACTION:
+        msg = f'{name} names forge, which only an {forgeprotection.ACTION} step derives its subject from'
+        raise ConsentRefused(msg)
     if '--credential' in argv or '--subject' in argv:
         msg = f'{name} names --credential or --subject itself: the runner adds them'
         raise ConsentRefused(msg)
     return Step(
         tuple(argv), step.get('dest', dest), step.get('config', str(data['config'])),
         step.get('python', str(data['python'])), step.get('stdin_local'), step.get('stdin_task'),
-        step.get('stdout_local'),
+        step.get('stdout_local'), forge=step.get('forge', ''),
     )  # fmt: skip
 
 
@@ -245,7 +260,44 @@ def _no_stdin(step: Step) -> str | None:
     return None
 
 
-def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote) -> tuple[str, bool]:
+def declared_at(forge: str, repo: str, ref: str) -> str:
+    """*repo*'s ``pyproject.toml`` at *ref* on *forge*, read here through the forge client (never a working tree)."""
+    from dev_lab.dev.forgework import client_for  # noqa: PLC0415 -- the forge client only a local subject needs
+
+    return manifest_at(client_for(Path.cwd(), url=f'https://{forge}/{repo}.git'), ref)
+
+
+def protect_target(argv: Sequence[str]) -> tuple[str, str]:
+    """``(repo, ref)`` a ``forge protect apply`` argv names; the ref defaults as the host's parser does."""
+    if '--repo' not in argv:
+        msg = f'`{shlex.join(argv)}` names no --repo'
+        raise ConsentRefused(msg)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--repo')
+    parser.add_argument('--ref', default=forgeprotection.DEFAULT_REF)
+    found, _ = parser.parse_known_args(list(argv))
+    return found.repo, found.ref
+
+
+def _local_subject(step: Step, declared: Declared) -> str:
+    repo, ref = protect_target(step.argv)
+    return forgeprotection.local_subject(repo, ref, step.forge, lambda at: declared(step.forge, repo, at))
+
+
+def _derived_here(granted: str, step: Step, declared: Declared) -> tuple[str, bool]:
+    """``(verdict, blocked)`` of a step whose subject is derived HERE rather than asked of its host."""
+    try:
+        derived = _local_subject(step, declared)
+    except (ForgeRefused, DeclarationUnread, ForgeCallFailed, ConsentRefused) as unread:
+        return f'BLOCKED -- the subject cannot be derived here ({unread})', True
+    if derived != granted:
+        return f'BLOCKED -- derived here {derived[:12]} from {step.forge}, the plan grants {granted[:12]}', True
+    return 'green (subject derived here)', False
+
+
+def _host_check(
+    plan: Plan, steps: Steps, index: int, remote: Remote, declared: Declared = declared_at
+) -> tuple[str, bool]:
     """``(verdict, blocked)`` of host step *index*: its door, else an earlier config step on its host, then subject."""
     grant, step = plan.grants[index], steps.steps[index]
     if missing := _no_stdin(step):
@@ -258,19 +310,31 @@ def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote) -> tuple[s
         if after:
             return f'after step {after} (its door is installed by that config apply)', False
         return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({_last_line(said)})', True
+    if step.forge:
+        return _derived_here(grant['subject'], step, declared)
+    return _asked_of_host(grant['subject'], step, remote, after)
+
+
+def _asked_of_host(granted: str, step: Step, remote: Remote, after: int | None) -> tuple[str, bool]:
+    """``(verdict, blocked)`` of the subject *step*'s host derives (its verb's ``--subject``) against *granted*."""
     said, status = remote.run(ops_command(step, [*step.argv, '--subject']), _stdin(step))
     derived = _last_line(said)
-    if not status and derived != grant['subject'] and after:
+    if not status and derived != granted and after:
         return f'after step {after} (subject derived once step {after} applied)', False
-    if status or derived != grant['subject']:
+    if status or derived != granted:
         why = (f'the host could not derive the subject ({derived})' if status else
-               f'the host derives subject {derived[:12]}, the plan grants {grant["subject"][:12]}')  # fmt: skip
+               f'the host derives subject {derived[:12]}, the plan grants {granted[:12]}')  # fmt: skip
         return f'BLOCKED -- {why}', True
     return 'green', False
 
 
 def preflight(
-    plan: Plan, steps: Steps, remotes: Remotes, *, machine: Callable[[str], Mapping[str, Any]] = section
+    plan: Plan,
+    steps: Steps,
+    remotes: Remotes,
+    *,
+    machine: Callable[[str], Mapping[str, Any]] = section,
+    declared: Declared = declared_at,
 ) -> tuple[bool, list[str]]:
     """``(green, lines)``: every check of the module docstring, BEFORE a code; the lines name each blocker."""
     stale = stale_client(plan)
@@ -291,7 +355,7 @@ def preflight(
             verdict = (f'BLOCKED -- the machine file has no [{table}] endpoint' if fault else
                        f'green (here: forge {shlex.join(step.argv)} via {endpoint})')  # fmt: skip
         else:
-            verdict, fault = _host_check(plan, steps, index, remotes(step.dest))
+            verdict, fault = _host_check(plan, steps, index, remotes(step.dest), declared)
             verdict = f'{verdict} on {step.dest}'
         if grant['action'] in stale:
             verdict, fault = f'BLOCKED -- unknown to this client: {STALE_CLIENT}', True
@@ -422,12 +486,24 @@ def _parser() -> argparse.ArgumentParser:
         verb.add_argument('--plan', type=Path, required=True)
         verb.add_argument('--steps', type=Path, required=True)
     running.add_argument('--digest', required=True, help="the plan's digest, as shown to the user")
+    deriving = verbs.add_parser('subject', help=f'print the {forgeprotection.ACTION} subject, derived here')
+    deriving.add_argument('--forge', required=True, help='the public forge host whose declaration row applies')
+    deriving.add_argument('--repo', required=True, help='owner/name')
+    deriving.add_argument('--ref', default=forgeprotection.DEFAULT_REF)
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """The CLI; 0 green / every step ran, 2 a named blocker, a stop or a refusal."""
+def main(argv: Sequence[str] | None = None, *, declared: Declared = declared_at) -> int:
+    """The CLI; 0 green / every step ran / a subject printed, 2 a named blocker, a stop or a refusal."""
     args = _parser().parse_args(argv)
+    if args.verb == 'subject':
+        try:
+            read = lambda at: declared(args.forge, args.repo, at)  # noqa: E731
+            emit(forgeprotection.local_subject(args.repo, args.ref, args.forge, read))
+        except (ForgeRefused, DeclarationUnread, ForgeCallFailed) as refused:
+            emit(f'planrun: refused: {refused}', err=True)
+            return 2
+        return 0
     try:
         plan = _plan(args.plan, args.dest)
         if args.verb == 'run':

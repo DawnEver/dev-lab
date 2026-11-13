@@ -647,3 +647,57 @@ def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_updat
     assert blocked, lines
     assert 'local dev-lab is older than the plan; update it' in blocked[0]
     assert planrun.preflight(PLAN, STEPS, lambda _dest: FakeHost())[0]  # the control: every action known
+
+
+def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -> None:
+    """``ops.forge.protect`` with a ``forge`` key: the subject is :func:`forgeprotection.local_subject`, computed here.
+
+    PLANTED: a declaration that renders another protection blocks, naming both subjects.
+    """
+    from _protect_fakes import GITEA_TEXT  # noqa: PLC0415
+
+    from dev_lab.ops import forgeprotection  # noqa: PLC0415
+
+    want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
+    plan = parsed({'host': HOST, 'grants': [{'action': forgeprotection.ACTION, 'subject': want}]})
+    step = planrun.Step(('forge', 'protect', 'apply', '--repo', 'owner/alpha'), HOST, CONF, PY, forge='gitea.example')
+    host = FakeHost()
+    host.doors.add(('forge', 'protect'))
+    reads: list[tuple[str, str, str]] = []
+
+    def declared(forge: str, repo: str, ref: str) -> str:
+        reads.append((forge, repo, ref))
+        return GITEA_TEXT
+
+    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, declared=declared)
+    assert green, lines
+    assert reads == [('gitea.example', 'owner/alpha', 'integrate/main')]
+    assert not any('--subject' in command for command in host.commands)
+    other = GITEA_TEXT.replace('promote-bot', 'other-bot')
+    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, declared=lambda *_: other)
+    assert not green
+    assert any('derived here' in line and want[:12] in line for line in lines), lines
+
+
+def test_a_forge_key_on_a_step_that_is_not_protect_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / 'steps.json'
+    body = {'config': CONF, 'python': PY, 'steps': [{'argv': ['config', 'apply'], 'forge': 'gitea.example'},
+                                                   {'argv': ['secret', 'place'], 'stdin_local': LOCAL}]}  # fmt: skip
+    path.write_text(json.dumps(body), encoding='utf-8')
+    with pytest.raises(ConsentRefused, match='forge'):
+        planrun.load_steps(path, PLAN, HOST)
+    body['steps'][0].pop('forge')
+    path.write_text(json.dumps(body), encoding='utf-8')
+    assert planrun.load_steps(path, PLAN, HOST).steps[0].forge == ''  # the control
+
+
+def test_planrun_subject_prints_the_protect_subject_with_no_host(capsys: pytest.CaptureFixture[str]) -> None:
+    from _protect_fakes import GITEA_TEXT  # noqa: PLC0415
+
+    from dev_lab.ops import forgeprotection  # noqa: PLC0415
+
+    argv = ['subject', '--forge', 'gitea.example', '--repo', 'owner/alpha']
+    assert planrun.main(argv, declared=lambda *_: GITEA_TEXT) == 0
+    want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
+    assert capsys.readouterr().out.strip() == want
+    assert planrun.main([*argv, '--forge', 'unknown.example'], declared=lambda *_: GITEA_TEXT) == 2  # no such row
