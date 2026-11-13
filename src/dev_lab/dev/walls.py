@@ -7,7 +7,8 @@ that does not is a mechanism gap. A gap nobody records is met again next session
 
 * :func:`refused` -- THE refusal choke point: one :mod:`dev_lab.dev.metrics` refusal line (the baseline's
   count) and one ledger line (this session's wall). The agent-guard engine reaches it as ``walls refused``, the
-  git hook runner calls it, so no refusal path writes either log on its own;
+  git hook runner calls it, and every family hook or CLI that refuses with a TEXT goes through
+  :func:`refused_text`, so no refusal path writes either log on its own;
 * ``walls post-tool`` -- a ``PostToolUse``/``PostToolUseFailure`` hook: a denial in a tool's error text that
   carries no family ``details:`` pointer (a classifier, a tool's own refusal) is a wall NO family emit path saw,
   recorded with no remedy;
@@ -53,6 +54,7 @@ __all__ = [
     'open_walls',
     'record',
     'refused',
+    'refused_text',
 ]
 
 RULE: Final = 'WALLS-ARE-RECORDED'
@@ -141,6 +143,17 @@ def refused(
     """THE refusal choke point: the metrics refusal line and the ledger's wall, in one call; the ledger file."""
     metrics.record(metrics.REFUSAL, root=root, repo=repo, rule=rule, reason=reason)
     return record(root, rule=rule, remedy=remedy, command=command, command_sha256=command_sha256, session=session)
+
+
+def refused_text(root: Path, text: str, *, reason: str, rule: str = '', session: str | None = None) -> Path:
+    """A family refusal's *text* through :func:`refused`: its *rule* (else the first rule id it names) and remedy.
+
+    The remedy is :func:`has_remedy` of the text the agent was shown, the same test every refusal path takes.
+    """
+    named = rule or ((found := _RULE_ID.search(text)) and found.group(0)) or UNKNOWN
+    return refused(
+        root, repo=metrics.repo_of(root), rule=named, reason=reason, remedy=has_remedy(text), session=session or None
+    )
 
 
 def close(root: Path, *, rule: str, by: str, session: str | None = None) -> Path:

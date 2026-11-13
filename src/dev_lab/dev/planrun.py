@@ -82,7 +82,7 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import devhost, forgesecrets, sshhold
+from dev_lab.dev import devhost, forgesecrets, sshhold, walls
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.planremote import Remote, remote_for
@@ -120,6 +120,8 @@ type SourceReader = configdoor.SourceReader
 #: Runs a local client verb (``forge`` argv words); ``(merged output, exit status)``.
 type Local = Callable[[Sequence[str]], tuple[str, int]]
 
+#: A preflight that names a blocker refuses the code's request: a wall of this session (``walls``).
+RULE: Final = 'PREFLIGHT-BEFORE-THE-CODE'
 #: The action whose step changes the host's config -- and so may install the sudo doors of the steps after it.
 CONFIG_ACTION: Final = 'ops.config'
 #: Where a carried credential lives on the host, relative to the session account's home (umask 077).
@@ -625,6 +627,8 @@ def main(argv: Sequence[str] | None = None, *, readers: Readers | None = None) -
             green, lines = run_plan(plan, steps, remote_for, spent=spent_ids)
         else:
             green, lines = preflight(plan, steps, remote_for)
+            if not green:
+                walls.refused_text(Path.cwd(), '\n'.join(lines), reason='preflight', rule=RULE)
     except (ConsentRefused, sshhold.HoldRefused, OSError, ValueError) as refused:
         emit(f'planrun: refused: {refused}', err=True)
         return 2

@@ -15,7 +15,7 @@ import pytest
 from _ops_fixtures import NOW as FIXED
 from _ops_fixtures import RFC_KEY, code, config
 
-from dev_lab.dev import planrun, sshhold
+from dev_lab.dev import planrun, sshhold, walls
 from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops import configdoor, consentverbs
 from dev_lab.ops.consent import serve
@@ -754,3 +754,23 @@ def test_planrun_subject_prints_the_protect_subject_with_no_host(capsys: pytest.
     want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
     assert capsys.readouterr().out.strip() == want
     assert planrun.main(['subject', '--forge', 'unknown.example', '--repo', 'owner/alpha'], readers=readers) == 2
+
+
+@pytest.mark.parametrize('green', [True, False])
+def test_a_blocked_preflight_is_this_sessions_wall_and_a_green_one_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, green: bool
+) -> None:
+    """WALLS-ARE-RECORDED: a BLOCKED preflight reaches the ledger through the one choke point; green records none."""
+    plan = tmp_path / 'plan.json'
+    plan.write_text('{}', encoding='utf-8')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(planrun, 'parsed', lambda _raw: PLAN)
+    monkeypatch.setattr(planrun, 'load_steps', lambda _path, _plan: STEPS)
+    said = ['host h: BLOCKED -- no consent key', 'preflight: BLOCKED (fix the named blocker before asking for a code)']
+    monkeypatch.setattr(planrun, 'preflight', lambda *_a, **_k: (green, said))
+    assert planrun.main(['preflight', '--plan', str(plan), '--steps', str(plan)]) == (0 if green else 2)
+    if green:
+        assert not walls.ledger(tmp_path).exists()
+        return
+    [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present']) == (planrun.RULE, True)

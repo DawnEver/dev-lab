@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 from lab_commons.census import processes as census
 from lab_commons.log import emit
 
-from dev_lab.dev import sessionprs
+from dev_lab.dev import sessionprs, walls
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgewatch import TESTS, clients_at, settled, unacknowledged_reds
@@ -159,6 +159,7 @@ def _gate(
     except (ForgeCallFailed, OSError, ValueError):
         return 0
     if said.block is not None:
+        walls.refused_text(root, said.block, reason='stop', session=session)
         answer = {'decision': 'block', 'reason': said.block}
     elif said.note is not None:
         answer = {'systemMessage': said.note}

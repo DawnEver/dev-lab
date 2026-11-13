@@ -21,6 +21,8 @@ A gap found late is closed at the earliest layer that could have caught it.
 
 - `dev_lab.dev.walls.refused` is the refusal choke point: one `metrics` refusal line and one ledger line.
   The deny engine reaches it as `python -m dev_lab.dev.walls refused`; the git hook runner calls it.
+  A family hook or CLI refusing with a text (the journal door, the hand-back, pushed-head and scratch stops,
+  the plan preflight) goes through `walls.refused_text`, which names the rule and computes the remedy.
 - `walls post-tool` (`PostToolUse`, `PostToolUseFailure`) records a denial in a tool's error text that
   carries no family `details:` pointer -- a classifier's or a tool's own -- as a wall with no remedy.
 - Where: `output/logs/<yy>/<mm>/<dd>/walls/walls.jsonl` under the main checkout. One line per wall:
