@@ -41,7 +41,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import metrics
+from dev_lab.dev import metrics, walls
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
@@ -318,7 +318,7 @@ def run_stage(
     paths: tuple[str, ...] = ()
     if stage == 'pre-commit':
         paths = staged_paths(root)
-    failed: list[str] = []
+    failed: dict[str, str] = {}
     for hook in selected_hooks:
         lines = push
         if hook.refs is not None:
@@ -334,12 +334,11 @@ def run_stage(
             continue
         hook_stdin = ''.join(f'{line.line}\n' for line in lines) if stage == 'pre-push' else None
         argvs = _argvs(hook, stage, git_args, chosen)
-        if _report(
-            stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=_stage_env(stage, git_args, env))
-        ):
-            failed.append(hook.id)
+        code, output = _run_hook(hook, argvs, root, hook_stdin, runner, env=_stage_env(stage, git_args, env))
+        if _report(stage, hook.id, code, output):
+            failed[hook.id] = output
     _log(root, stage, failed, push)
-    return _verdict(stage, failed)
+    return _verdict(stage, list(failed))
 
 
 #: The URL git pushes to (its second pre-push argument), handed to every pre-push hook; a hook's argv cannot carry it.
@@ -352,13 +351,16 @@ def _stage_env(stage: str, git_args: Sequence[str], env: Mapping[str, str] | Non
     return {**(env or {}), **pushed}
 
 
-def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine] = ()) -> None:
+def _log(root: Path, stage: str, failed: Mapping[str, str], push: Sequence[PushLine] = ()) -> None:
     """The stage's metrics (:mod:`dev_lab.dev.metrics`): one refusal per failed hook, and every pre-push as a push.
+
+    A refusal goes through :func:`dev_lab.dev.walls.refused`, so it is this session's wall too: the failed hook's
+    *failed* output (``hook id -> output``) is what says whether it named a door.
 
     A push line names the branch and tip it publishes (the first ref it does not delete): a branch's first push
     is where its edit starts.
     """
-    refused = () if stage in ADVISORY else failed
+    refused = {} if stage in ADVISORY else failed
     if stage != 'pre-push' and not refused:
         return
     repo = metrics.repo_of(root)
@@ -372,8 +374,8 @@ def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine]
             vcs_ref_head_name=branch,
             vcs_ref_head_revision=head.local_sha if head else '',
         )
-    for hook_id in refused:
-        metrics.record(metrics.REFUSAL, root=root, repo=repo, rule=hook_id, reason=stage)
+    for hook_id, output in refused.items():
+        walls.refused(root, repo=repo, rule=hook_id, reason=stage, remedy=walls.has_remedy(output))
 
 
 def _verdict(stage: str, failed: Sequence[str]) -> int:

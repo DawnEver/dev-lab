@@ -170,6 +170,7 @@ PAGES: Final[tuple[Page, ...]] = (
         'Local cleanup and run stops are checked doors both clients allow unprompted',
     ),
     Page('refusals', 'Refusals', 'Every deny refusal is a clause, a door and a pointer; the full text of each row'),
+    Page('feedback', 'Every wall teaches', 'The feedback layers, the wall ledger, and closing a gap before the task'),
     Page(
         'project-files',
         'Project files',

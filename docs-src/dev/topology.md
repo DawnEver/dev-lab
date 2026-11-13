@@ -152,11 +152,14 @@ declares (`dev_lab.ops.config.load`).
   one cluster code from the user buys one credential per grant AND opens every host's session (5.1). A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
 - `sshhold` holds that session: one authentication per work session, every later command rides it
   (`python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
-  `status`; `--jump <bastion>` for a host behind a bastion that shares the TOTP secret). The code reaches ssh only
+  `status`; a host behind a bastion that shares the TOTP secret is routed by the machine file's
+  `[ssh] jump = {"<dest>" = "<bastion>"}`, per host, else `--jump <bastion>`). The code reaches ssh only
   through `SSH_ASKPASS`, never argv, disk or a log (`dev_lab.dev.sshhold`).
 - A code is the user's own, typed for THIS plan; no host step needing one runs without it.
-- A round needs no extra code for what the plan can carry: an `ops.forge.protect` subject is derived on the
-  workstation (`python -m dev_lab.dev.planrun subject`, the host's own renderer), and an upgrade is the plan step
+- A round needs no extra code for what the plan can carry: an `ops.forge.protect` subject and an `ops.config`
+  subject (`planrun subject --config <host name>`: `hosts/<name>.toml` and its family file read from the config
+  source through the forge client; a steps-file `config_host`) are derived on the workstation
+  (`python -m dev_lab.dev.planrun subject`, the host's own renderer), and an upgrade is the plan step
   `ops upgrade --sha <tip> --credential` (`ops.upgrade`, subject = the declared ref's tip; idempotent).
 - `consent plan` groups the grants by host and action under a `boundary:` summary of the grants that change a
   security boundary (the registry row's `boundary`).

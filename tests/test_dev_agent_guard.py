@@ -310,6 +310,9 @@ _PUSHSTOP = {'type': 'command', 'command': agent_wiring.PUSHSTOP_COMMAND}
 _SCRATCHSTOP = {'type': 'command', 'command': agent_wiring.SCRATCHSTOP_COMMAND}
 #: AN UNFILLED INSTALL HOME IS FORCED-FIRST WORK: the stop blocks once per session on the placeholder.
 _DEVHOSTSTOP = {'type': 'command', 'command': agent_wiring.DEVHOSTSTOP_COMMAND}
+#: WALLS-ARE-RECORDED (ruling 2026-11-13): the foreign-denial reader after every shell call; the stop at every stop.
+_WALLSPOST = {'type': 'command', 'command': agent_wiring.WALLSPOST_COMMAND}
+_WALLSSTOP = {'type': 'command', 'command': agent_wiring.WALLSSTOP_COMMAND}
 
 
 def test_the_install_wires_the_stray_census_once_at_stop() -> None:
@@ -318,7 +321,7 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
     stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [
-        {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
+        {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE, _WALLSPOST]}
     ]
     assert after['hooks']['Stop'] == [
         {'hooks': [stray]},
@@ -326,6 +329,7 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
         {'hooks': [_PUSHSTOP]},
         {'hooks': [_SCRATCHSTOP]},
         {'hooks': [_DEVHOSTSTOP]},
+        {'hooks': [_WALLSSTOP]},
     ]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}, {'hooks': [_TASKBIND]}]
     assert 'dev_lab.dev.codeplace stray' in agent_wiring.STRAY_COMMAND
@@ -347,7 +351,14 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
     assert once['hooks']['PostToolUse'] == [
         {
             'matcher': 'Bash|PowerShell',
-            'hooks': [{'type': 'command', 'command': 'node log.js'}, _PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE],
+            'hooks': [
+                {'type': 'command', 'command': 'node log.js'},
+                _PUSHWATCH,
+                _SESSIONPRS,
+                _SWEEP,
+                _PRESSURE,
+                _WALLSPOST,
+            ],
         }
     ]
     handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
@@ -358,6 +369,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
         {'hooks': [_PUSHSTOP]},
         {'hooks': [_SCRATCHSTOP]},
         {'hooks': [_DEVHOSTSTOP]},
+        {'hooks': [_WALLSSTOP]},
     ]
     assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
 
@@ -370,7 +382,7 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
     stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
     handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
     assert after['hooks']['PostToolUse'] == [
-        {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
+        {'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE, _WALLSPOST]}
     ]
     assert after['hooks']['Stop'] == [
         {'hooks': [stray]},
@@ -378,6 +390,7 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
         {'hooks': [_PUSHSTOP]},
         {'hooks': [_SCRATCHSTOP]},
         {'hooks': [_DEVHOSTSTOP]},
+        {'hooks': [_WALLSSTOP]},
     ]
 
 
@@ -406,12 +419,12 @@ def test_the_hand_back_check_is_wired_at_every_stop_through_the_launcher() -> No
     """AGENT-RUNS-ITS-OWN-COMMANDS reaches every Stop and SubagentStop; a wiring missing it is STALE."""
     handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
     after = agent_guard.wire_settings({})
-    assert after['hooks']['SubagentStop'] == [{'hooks': [handback]}]
+    assert after['hooks']['SubagentStop'] == [{'hooks': [handback]}, {'hooks': [_WALLSSTOP]}]
     assert any(handback in entry['hooks'] for entry in after['hooks']['Stop'])
     assert agent_wiring.HANDBACK_COMMAND.startswith('node ')
     assert '.venv' not in agent_wiring.HANDBACK_COMMAND
     del after['hooks']['SubagentStop']
-    assert agent_guard._unwired(after) == ['SubagentStop']
+    assert agent_guard._unwired(after) == ['SubagentStop', 'SubagentStop']  # the hand-back and the walls stop
 
 
 def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Path) -> None:
@@ -461,8 +474,18 @@ def test_a_retired_wire_is_removed_from_an_installed_settings_file() -> None:
     old = {'hooks': {'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [foreign, stray]}]}}
     after = agent_guard.wire_settings(old)
     assert after['hooks']['PostToolUse'] == [
-        {'matcher': 'Bash|PowerShell', 'hooks': [foreign, _PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE]}
+        {'matcher': 'Bash|PowerShell', 'hooks': [foreign, _PUSHWATCH, _SESSIONPRS, _SWEEP, _PRESSURE, _WALLSPOST]}
     ]
+
+
+def test_the_wall_ledger_reads_every_shell_call_and_holds_every_stop() -> None:
+    """WALLS-ARE-RECORDED: a denial is read after a call that succeeded or failed; main and subagent stops hold."""
+    after = agent_guard.wire_settings({})
+    for event in ('PostToolUse', 'PostToolUseFailure'):
+        assert any(_WALLSPOST in entry['hooks'] for entry in after['hooks'][event]), event
+    for event in ('Stop', 'SubagentStop'):
+        assert any(_WALLSSTOP in entry['hooks'] for entry in after['hooks'][event]), event
+    assert 'dev_lab.dev.walls stop' in agent_wiring.WALLSSTOP_COMMAND
 
 
 def test_the_pushed_head_gate_stops_the_main_session_and_the_venv_follow_starts_it() -> None:

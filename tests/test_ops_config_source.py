@@ -158,7 +158,7 @@ def test_an_unchanged_family_file_is_not_written_and_a_changed_one_is_backed_up(
     before = family.to.stat().st_mtime_ns
     assert apply(live, _HOST, family=family, **door).changed == ()  # unchanged: no consent asked, no write
     assert family.to.stat().st_mtime_ns == before
-    assert digest(_HOST, family) == digest(_HOST)
+    assert digest(_HOST, family) != digest(_HOST), 'a declared family is bound unchanged too: no host state in it'
     moved = Family(family.to, '[judge]\nmonthly_usd = 80\n')
     done = apply(live, _HOST, family=moved, redeem=lambda _c, _s: None, credential={}, **door)
     assert done.backup is not None

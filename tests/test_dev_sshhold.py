@@ -185,13 +185,41 @@ def test_a_bastion_that_refuses_the_code_fails_the_open(monkeypatch: pytest.Monk
 
 def test_the_cli_jump_rides_both_the_plain_and_the_planned_open(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[tuple[str, ...]] = []
+    monkeypatch.setattr(sshhold, 'section', lambda _name: {})  # no declared route: the flag alone decides
     monkeypatch.setattr(sshhold, 'open_session', lambda *_a, ssh: seen.append(ssh) or 'opened')
-    monkeypatch.setattr(sshhold, 'open_planned', lambda *_a, ssh: seen.append(ssh) or (True, ['granted', 'opened']))
+    monkeypatch.setattr(
+        sshhold, 'open_planned', lambda *_a, routes: seen.append(routes('ops@inner')) or (True, ['granted', 'opened'])
+    )
     assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion']) == 0
     plan = ['--plan', 'plan.json', '--digest', 'abc']
     assert sshhold.main(['open', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion', *plan]) == 0
     assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE]) == 0
     assert seen == [('ssh', '-J', 'ops@bastion'), ('ssh', '-J', 'ops@bastion'), ('ssh',)]
+
+
+def test_each_plan_host_opens_on_the_route_the_machine_file_declares_for_it(tmp_path: Path) -> None:
+    """One plan, two hosts: the inner one through its declared bastion, the other direct -- never one route for both.
+
+    PLANTED CONTROL: with no declaration both open direct, so the bastion comes from the table and nothing else.
+    """
+    plan = tmp_path / 'plan.json'
+    hosts = ['ops@direct.example', 'ops@inner.example']
+    grants = [{'host': host, 'action': 'ops.config', 'subject': c * 64} for host, c in zip(hosts, 'ab', strict=True)]
+    plan.write_text(json.dumps({'hosts': hosts, 'grants': grants}), encoding='utf-8')
+    table = {'jump': {'ops@inner.example': 'ops@bastion.example'}}
+
+    def opened(declared: dict[str, object]) -> dict[str, tuple[str, ...]]:
+        seen: dict[str, tuple[str, ...]] = {}
+        sshhold.open_planned(
+            1, CODE, plan, 'abc', grant=lambda *_a: [], routes=lambda dest: sshhold.route(dest, table=declared),
+            opener=lambda dest, *_a, ssh: seen.setdefault(dest, ssh) and f'{dest}: open',
+        )  # fmt: skip
+        return seen
+
+    assert opened(table) == {hosts[0]: ('ssh',), hosts[1]: ('ssh', '-J', 'ops@bastion.example')}
+    assert opened({}) == {hosts[0]: ('ssh',), hosts[1]: ('ssh',)}
+    assert sshhold.route(hosts[1], 'ops@flag.example', table) == ('ssh', '-J', 'ops@bastion.example'), 'declared wins'
+    assert sshhold.route(hosts[0], 'ops@flag.example', table) == ('ssh', '-J', 'ops@flag.example')
 
 
 def test_a_runs_stdin_rides_heredoc_data_and_the_audit_keeps_only_its_digest(monkeypatch: pytest.MonkeyPatch) -> None:

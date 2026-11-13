@@ -47,7 +47,7 @@ from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 if os.name == 'nt':
     import _winapi
 
-from dev_lab.dev import agenthooks
+from dev_lab.dev import agenthooks, walls
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy
 from dev_lab.dev.jsrun import node_path
@@ -481,9 +481,9 @@ def _link_dir(link: Path, target: Path) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
-def _tool(command: str, rules: Path, cwd: Path) -> str:
+def _tool(command: str, rules: Path, cwd: Path, session: str = '') -> str:
     """What the AGENT TOOL sends: a payload with no probe key -- the one call whose refusal is a metrics line."""
-    payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(cwd)}
+    payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(cwd), 'session_id': session}
     done = subprocess.run(
         [str(node_path()), str(agenthooks.engine_path('deny-commands')), str(rules)],
         input=json.dumps(payload), capture_output=True, text=True, encoding='utf-8', check=True, timeout=60,
@@ -524,6 +524,40 @@ def test_a_refusal_is_one_metrics_line_written_without_delaying_the_refusal(tmp_
     assert [(line['lab.rule.id'], line['error.type']) for line in _lines(session, 1)] == [
         ('PLANTED-DENY', 'agent-guard')
     ], 'the two probes logged nothing into the session checkout; the tool call did'
+
+
+def _walls(root: Path, count: int) -> list[dict[str, object]]:
+    """*root*'s wall lines once *count* arrived (the writer is detached), or as many as did in 60 s."""
+    deadline, ledger = time.monotonic() + 60, walls.ledger(root)
+
+    def read_walls() -> list[dict[str, object]]:
+        return [json.loads(one) for one in ledger.read_text(encoding='utf-8').splitlines()] if ledger.exists() else []
+
+    while len(read_walls()) < count and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return read_walls()
+
+
+def test_a_tool_refusal_is_a_wall_with_a_digest_and_whether_its_reason_names_a_door(tmp_path: Path) -> None:
+    """WALLS-ARE-RECORDED through the real engine: a digest, never the command; whether the reason names a door.
+
+    ``D`` alone names no door, a reason with a door line does -- the same test as :func:`walls.has_remedy`.
+    """
+    session = tmp_path / 'session'
+    (session / '.git').mkdir(parents=True)
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    _link_dir(session / '.venv', Path(sys.executable).parents[1])
+    told = {**_DENY, 'name': 'PLANTED-TOLD', 'pattern': r'git\s+stash', 'reason': 'T: refused.\nCommit instead.'}
+    rules = _rows(hooks, _DENY, told)
+    assert _tool('rm -rf build', rules, session, session='s-1') == 'D'
+    assert _tool('git stash', rules, session, session='s-1').startswith('T: refused.')
+    found = sorted(_walls(session, 2), key=lambda line: str(line['rule']))
+    assert [(line['rule'], line['remedy_present'], line['session']) for line in found] == [
+        ('PLANTED-DENY', False, 's-1'),
+        ('PLANTED-TOLD', True, 's-1'),
+    ]
+    assert found[0]['command_sha256'] == walls.digest('rm -rf build')
 
 
 def test_a_user_code_passes_and_a_planted_credential_is_refused_through_the_real_engine(rules: Path) -> None:
