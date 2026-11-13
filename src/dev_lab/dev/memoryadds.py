@@ -78,6 +78,13 @@ REDACTION_ROLES: Final = (
 )
 _PLACEHOLDER = re.compile('|'.join([r'<[a-z][a-z0-9-]*>', *(re.escape(role) for role in REDACTION_ROLES)]))
 _NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
+# THE EXCEPTIONAL CASE (user ruling 2026-11-13): a published line that is WRONG -- a misstated fact, a
+# mistranslated quote, a character a family rule forbids -- is corrected IN PLACE when the user approved it.
+# The entry gains this note (its reason and the user's words, both non-empty); every other change replaces
+# a line one-for-one, so nothing is added or removed and git history keeps the original. A disagreement
+# with a past conclusion is still a NEW entry with ``corrects:``: this note is for content that is wrong.
+AMENDMENT_NOTE: Final = 'Amended {day}: {reason} -- approved: "{approved}"'
+_AMEND_LINE = re.compile(r'> Amended \d{4}-\d{2}-\d{2}: \S.*? -- approved: "[^"]*\S[^"]*"')
 _MANUAL = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
 _MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
@@ -118,6 +125,17 @@ def _only_volatile_stripped(old: str, new: str) -> bool:
         return False
     head = '\n'.join(line for line in match.group(1).splitlines() if not _VOLATILE.match(line))
     return f'---\n{head}\n---\n' + old[match.end() :] == new
+
+
+def _only_amended(old: str, new: str) -> bool:
+    """An approved amendment: ONE new note, the other lines replaced one-for-one, none added or removed."""
+    old_lines, new_lines = _lf(old).splitlines(), _lf(new).splitlines()
+    notes = sum(1 for line in new_lines if _AMEND_LINE.fullmatch(line))
+    if notes != 1 + sum(1 for line in old_lines if _AMEND_LINE.fullmatch(line)):
+        return False
+    before = [line for line in old_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
+    after = [line for line in new_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
+    return len(before) == len(after) and before != after
 
 
 def _only_redacted(old: str, new: str) -> bool:
@@ -241,8 +259,14 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                 _only_volatile_stripped(before, after)
                 or _only_manual_tasks_updated(old, before, after)
                 or _only_redacted(before, after)
+                or _only_amended(before, after)
             ):
-                remedy = 'a memory entry is immutable -- write a new entry with `corrects:` instead'
+                remedy = (
+                    'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
+                    'is corrected in place only with the user-approved note `> '
+                    + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
+                    + '` and lines replaced one-for-one'
+                )
                 if _MANUAL.search(old):
                     remedy += (
                         '; rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
