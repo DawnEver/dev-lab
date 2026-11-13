@@ -51,7 +51,7 @@ from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
 from dev_lab.dev.platformparts import part_context, part_of
-from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
+from dev_lab.dev.producer import OUTCOME_VAR, PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
 from dev_lab.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
@@ -1585,6 +1585,31 @@ def test_a_box_with_no_room_releases_a_producers_claim_claimable(
         'serve re-queues exactly the capacity release'
     )
     assert 'planted-holder' in lines[0], 'the one line names the capacity reason'
+
+
+def test_a_planted_outage_never_reaches_the_serve_record_running_these_tests(tmp_path: Path) -> None:
+    """A test's declared outage is the test's own: the record ``forge serve`` handed THIS run stays untouched.
+
+    Live 2026-11-13: integrate/main 61560e40's tests/base read ``unreachable: the box is held: not admitted:
+    planted-holder holds every core class=scheduling``. No box was held: the producer case above called
+    :func:`~dev_lab.dev.producer.unreachable`, which wrote its planted refusal into the inherited
+    :data:`OUTCOME_VAR` -- the real record of the serve running the suite. PLANTED CONTROL: the same environment
+    DOES carry the record to a child that declares an outage, so the untouched file is the isolation's.
+    """
+    real = tmp_path / 'serve-outcome.txt'
+    env = os.environ | {OUTCOME_VAR: str(real)}
+    declare = 'from dev_lab.dev.producer import Owner, unreachable; unreachable("control", Owner.SCHEDULING)'
+    subprocess.run([sys.executable, '-c', declare], env=env, check=False, timeout=120)
+    assert 'control' in real.read_text(encoding='utf-8'), 'the control: the record reaches a declaring child'
+    real.unlink()
+    done = subprocess.run(
+        [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', __file__, '-k', 'a_box_with_no_room_releases'],
+        cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True, encoding='utf-8',
+        timeout=600, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert '2 passed' in done.stdout, done.stdout
+    assert not real.exists(), f'a test wrote the real serve record: {real.read_text(encoding="utf-8")!r}'
 
 
 # ------------------------------------------------------------------ the coverage REPORT (never a gate)
