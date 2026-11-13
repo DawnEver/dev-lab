@@ -38,7 +38,7 @@ It gets ONE linux row, on a full run only (as macos, D84), carrying its bundles'
 pipes each to ai-lab's loader on stdin -- never argv, never echoed -- before the part is produced. The render names
 a secret; it never holds a value, and it names no provider (ai-lab's routes say which a task uses).
 No pull request has its row, and a PR's merge gate waits on no part but base's rows
-(:func:`dev_lab.dev.forgemerge.hand_parts`); the full
+(:func:`dev_lab.dev.forgemergewaits.hand_parts`); the full
 run produces it, and ``integrate promote`` reads it there.
 """
 

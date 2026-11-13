@@ -5,11 +5,11 @@ forge (VERDICTS-FROM-THE-FORGE), deploys through ``hpcaccount``. The night befor
 connections per diagnosis to the login nodes (six accounts, two hosts, poll loops with ``sleep``) and the cluster
 stopped answering ssh.
 
-HOW A HOST IS RECOGNISED, and why not by name. The declared hosts are the machine file's ``[[hpc.grant]] hosts``,
-but the engine reads a COMMITTED ``deny-rules.json`` and cannot read the machine file at match time; rendering the
-names into it would put fleet facts into git history, which user ruling 2026-10-23 forbids
-(:mod:`dev_lab.dev.automode`). So the row matches the login-node SHAPE every declared grant host has -- a first
-DNS label carrying ``login`` (``hpclogin01``, ``login2``) -- and ``sbatch``/``srun``/``salloc``/``scancel`` as a
+HOW A HOST IS RECOGNISED, and why not by name. The declared hosts are the machine file's
+``[hpc.clusters.<name>] hosts``, but the engine reads a COMMITTED ``deny-rules.json`` and cannot read the machine
+file at match time; rendering the names into it would put fleet facts into git history, which user ruling 2026-10-23
+forbids (:mod:`dev_lab.dev.automode`). So the row matches the login-node SHAPE every declared cluster host has --
+a first DNS label carrying ``login`` (``hpclogin01``, ``login2``) -- and ``sbatch``/``srun``/``salloc``/``scancel`` as a
 command, or anywhere after ``ssh``. A non-HPC host (a workstation, a forge VM by address) is admitted.
 """
 

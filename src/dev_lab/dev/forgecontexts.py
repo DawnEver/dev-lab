@@ -37,9 +37,9 @@ HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
 #: :func:`dev_lab.dev.forgesecurity.security_wait`.
 SECURITY_CONTEXT: Final = f'{CONTEXT_PREFIX}security'
 
-#: The MERGE DECISION's context (:func:`dev_lab.dev.forgemerge.ready`): ONE status per head, ``success`` when the PR
-#: may merge, else ``failure`` naming what is missing. A workflow job posts it on GitHub, where native auto-merge waits
-#: on it as a required check; never a part.
+#: The MERGE DECISION's context (:func:`dev_lab.dev.forgemergeready.ready`): ONE status per head, ``success`` when
+#: the PR may merge, else ``failure`` naming what is missing. A workflow job posts it on GitHub, where native
+#: auto-merge waits on it as a required check; never a part.
 MERGE_READY_CONTEXT: Final = f'{CONTEXT_PREFIX}merge-ready'
 
 #: The CHECK RUN a GitHub App judge posts its verdict as (:mod:`dev_lab.dev.forgereview_bundle`): ``success``

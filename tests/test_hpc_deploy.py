@@ -16,18 +16,28 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from lab_commons.hpc.grants import load_grants
+from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount import deploy, tick
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount import steps as deploy_steps
 from dev_lab.dev.hpcaccount.account import UNREACHED
+from dev_lab.dev.hpcaccount.fleet import grant_slice
 from dev_lab.dev.hpcaccount.steps import Tools
 
 URL: Final = 'https://forge.example/team'
 LAB: Final = ('--repo', f'dev-lab={URL}/dev-lab.git@trunk')
-GRANT: Final = ('--partition', 'shortq', '--partition', 'defq', '--role', 'verification')
+#: The family's declaration of alice's grant, as deploy-fleet passes it: the one source of a grant.
+DECLARED: Final = Grant(
+    user='alice', hosts=('login02.int.cluster',), slurm_account='acct-free', partitions=('shortq', 'defq'),
+    role='verification', cluster_name='int',
+)  # fmt: skip
+GRANT: Final = (
+    '--partition', 'shortq', '--partition', 'defq', '--role', 'verification',
+    '--grant-table', json.dumps(grant_slice(DECLARED)),
+)  # fmt: skip
 DECLARE: Final = (
     '--host', 'login02', *LAB, '--repo', f'alpha={URL}/alpha.git@trunk', '--repo', f'beta={URL}/beta.git@trunk', *GRANT
 )  # fmt: skip
@@ -379,19 +389,30 @@ def test_the_deploy_writes_this_accounts_own_grant_once(box: Box) -> None:
     assert box.machine.read_text(encoding='utf-8') == before
 
 
-def test_two_slurm_accounts_are_refused_until_one_is_declared(
+def test_a_declared_account_slurm_does_not_associate_is_refused_and_nothing_is_written(
     box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv('FAKE_SACCT', 'acct-int|cpu=96\nacct-free|cpu=96,mem=1G\n')
+    """The grant is the family's declaration; Slurm only confirms it. PLANTED CONTROL: an associated account deploys."""
+    monkeypatch.setenv('FAKE_SACCT', 'acct-int|cpu=96\n')
     assert box.run(*DECLARE) == 2
     err = capsys.readouterr().err
+    assert 'acct-free' in err
     assert 'acct-int' in err
-    assert '--slurm-account' in err
     assert not box.machine.exists() or '[[hpc.grant]]' not in box.machine.read_text(encoding='utf-8')
     box.machine.unlink(missing_ok=True)
-    assert box.run(*DECLARE, '--slurm-account', 'acct-free') == 0
+    monkeypatch.setenv('FAKE_SACCT', 'acct-int|cpu=96\nacct-free|cpu=96,mem=1G\n')
+    assert box.run(*DECLARE) == 0
     (grant,) = load_grants(tomllib.loads(box.machine.read_text(encoding='utf-8'))['hpc']).grants
     assert grant.slurm_account == 'acct-free'
+
+
+def test_a_hand_run_deploy_with_no_grant_is_refused_naming_deploy_fleet(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A grant is never derived on the account. PLANTED CONTROL: the passed slice is written (the test above)."""
+    declare = DECLARE[: DECLARE.index('--grant-table')]
+    assert box.run(*declare) == 2
+    assert 'deploy-fleet' in capsys.readouterr().err
 
 
 def test_the_rendered_declaration_reads_back(tmp_path: Path) -> None:
@@ -448,7 +469,7 @@ def test_the_tick_runs_inside_the_grant_setup_and_its_git_is_proven_there(
     assert 'setup = ["module load' in err
     assert not box.crontab.exists()
     text = box.machine.read_text(encoding='utf-8')
-    box.machine.write_text(text.replace('[[hpc.grant]]\n', f'[[hpc.grant]]\nsetup = ["{setup}"]\n'))
+    box.machine.write_text(text.replace('[hpc.clusters.int]\n', f'[hpc.clusters.int]\nsetup = ["{setup}"]\n'))
     assert box.run() == 0
     marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
     assert marked
@@ -697,9 +718,11 @@ def test_the_deploy_ticks_now_only_the_repos_its_cron_ticks(box: Box) -> None:
 
 def _as_role(box: Box, role: str | None) -> None:
     """Rewrite the stored ``[deploy] role`` as *role*; ``None`` removes the key."""
-    text = box.machine.read_text(encoding='utf-8').replace('role = "verification"\n', '')
-    line = '' if role is None else f'role = "{role}"\n'
-    box.machine.write_text(text.replace('[deploy]\n', f'[deploy]\n{line}', 1), encoding='utf-8')
+    table = tomllib.loads(box.machine.read_text(encoding='utf-8'))  # the grant's own role is the declaration's
+    table['deploy'].pop('role', None)
+    if role is not None:
+        table['deploy']['role'] = role
+    box.machine.write_text(dumps(table), encoding='utf-8')
 
 
 def _marked(box: Box) -> set[str]:

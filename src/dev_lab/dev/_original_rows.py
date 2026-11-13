@@ -89,6 +89,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgelanes',
     'forgemerge',
     'forgemessages',  # the message condition split out of forgemerge (2026-11-07)
+    # ORIGINAL: split out of forgemerge inside the kit by responsibility (2026-11-13); no consumer held them.
+    'forgemergecall',
+    'forgemergeready',
+    'forgemergewaits',
     'reviewturn',
     'forgereview',
     'forgereview_declared',
@@ -347,17 +351,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'filechecks',
     'ciworkflows',
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
-    # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
-    # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
-    'account',
-    'allocate',
-    'checks',
-    'deploy',
-    'division',  # ORIGINAL: the workstation's HPC division as data (user rulings 2026-11-09)
-    'fleet',
-    'spec',
-    'steps',
-    'tick',
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
     'forgestuck',

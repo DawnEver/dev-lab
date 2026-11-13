@@ -136,14 +136,16 @@ class FakeRunCluster:
             self.scripts.append(stdin or '')
         if 'sbatch' in command:
             return f'{4242 + len(self.manifests)}\n'
+        # sacct answers only the jobs asked for: the latest submission's id
+        job = command.split(' -j ', 1)[1].split(maxsplit=1)[0].rsplit(',', maxsplit=1)[-1] if ' -j ' in command else ''
         if 'sacct' in command and self.active:
             self.active -= 1
-            return '\n'.join(f'1_{i}|RUNNING' for i in range(9)) + '\n'
+            return '\n'.join(f'{job}_{i}|RUNNING' for i in range(9)) + '\n'
         if 'sacct' in command:
             state = 'OUT_OF_MEMORY' if (self.oom and len(self.manifests) == 1) or self.hog else 'TIMEOUT'
             hour = 1 + len(self.manifests)
             rows = (
-                f'1_{i}|{state if i == 0 else "COMPLETED"}|2026-10-11T0{hour}:00:00|2026-10-11T0{hour}:01:00'
+                f'{job}_{i}|{state if i == 0 else "COMPLETED"}|2026-10-11T0{hour}:00:00|2026-10-11T0{hour}:01:00'
                 f'|2026-10-11T0{hour}:{2 + i:02d}:00|{60 + 60 * i}|1'
                 for i in range(9)
             )
