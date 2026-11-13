@@ -17,14 +17,14 @@ from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import recover
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
-from dev_lab.ops.consent.plan import DIGEST_SHOWN, parsed
+from dev_lab.ops.consent.plan import DIGEST_SHOWN, parsed, request
 from dev_lab.ops.totp import STEP
 
 HOST = 'ops@forge.example.org'
-APPLY = {'action': 'ops.config', 'subject': 'a' * 64}
-REVOKE = {'action': 'ops.forge.revoke', 'subject': 'b' * 64}
-PLAN = {'host': HOST, 'grants': [APPLY, REVOKE]}
-OTHER = {'host': HOST, 'grants': [{'action': 'ops.forge.token', 'subject': 'c' * 64}]}
+APPLY = {'host': HOST, 'action': 'ops.config', 'subject': 'a' * 64}
+REVOKE = {'host': HOST, 'action': 'ops.forge.revoke', 'subject': 'b' * 64}
+PLAN = {'hosts': [HOST], 'grants': [APPLY, REVOKE]}
+OTHER = {'hosts': [HOST], 'grants': [{'host': HOST, 'action': 'ops.forge.token', 'subject': 'c' * 64}]}
 
 
 class Clock:
@@ -118,7 +118,7 @@ def test_another_plans_credentials_are_never_returned(tmp_path: Path, issuer: Is
 
 
 def test_a_lone_grant_is_never_fetched(tmp_path: Path, issuer: Issuer, clock: Clock) -> None:
-    issuer.issue(APPLY, code(0))  # no plan: nothing is kept to re-deliver
+    issuer.issue(request(APPLY), code(0))  # no plan: nothing is kept to re-deliver
     assert not (issuer.state / 'issued').exists()
     assert _recover(tmp_path, issuer, clock) == []
 

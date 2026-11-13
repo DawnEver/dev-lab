@@ -2,21 +2,21 @@
 
 A code is never wasted (incidents 2026-11-11: a code spent, then the host refused -- no consent key, a sudo door
 installed only by a later ``config apply``, an issuer it could not reach; and a hand-written wrapper deleted an
-UNSPENT credential). Two verbs, one steps file; ``<dest>`` is the plan's host and every step's default::
+UNSPENT credential). Two verbs, one steps file; each step runs on the host its GRANT names (the plan's, signed by
+its digest -- topology.md 5.1)::
 
-    python -m dev_lab.dev.planrun preflight <dest> --plan <plan.json> --steps <steps.json>
-    python -m dev_lab.dev.planrun run <dest> --plan <plan.json> --digest <D> --steps <steps.json>   # after the code
+    python -m dev_lab.dev.planrun preflight --plan <plan.json> --steps <steps.json>
+    python -m dev_lab.dev.planrun run --plan <plan.json> --digest <D> --steps <steps.json>   # after the code
     python -m dev_lab.dev.planrun subject --forge <host> --repo <owner/name> [--ref R]   # an ops.forge.protect grant
 
 The STEPS FILE says what each grant of the plan runs, in the plan's order (one step per grant). A HOST step runs an
-ops verb on ``dest`` (default ``<dest>``; ``config``/``python`` default the file's); a LOCAL step redeems its grant
+ops verb on its grant's ``host`` (``config``/``python`` default the file's); a LOCAL step redeems its grant
 here, through the client verb of :data:`LOCAL_VERBS` (a ``breakglass.wave`` opens a wave:
 ``python -m dev_lab.dev.forge breakglass open --credential <id>``)::
 
     {"config": "/etc/dev-lab/supervise.toml", "python": "/usr/bin/python3",
      "steps": [{"argv": ["config", "apply", "--from", "/srv/plan/candidate.toml"]},
-               {"argv": ["config", "apply", "--from", "/srv/plan/judge.toml"], "dest": "ops@judge",
-                "config": "/etc/dev-lab/judge.toml"},
+               {"argv": ["config", "apply", "--from", "/srv/plan/judge.toml"], "config": "/etc/dev-lab/judge.toml"},
                {"argv": ["secret", "place", "--path", "/etc/x"], "stdin_local": "secrets/x.secret"},
                {"local": true}]}
 
@@ -50,7 +50,9 @@ open, else key-only ssh (:mod:`.planremote`).
 :func:`dev_lab.dev.consentguard.state_dir` by its action and subject) to its host under umask 077, runs the verb,
 removes the host's copy; a local step hands the client the credential's id. Then it asks the issuer whether the use
 was REGISTERED. A local credential is deleted only when the issuer says it was spent -- never on a bare exit status,
-never when the issuer cannot be asked. It stops at the first refusal and keeps every unspent credential; a step done
+never when the issuer cannot be asked. Before any step it asks every host a pending step runs on to
+answer; one that does not (its session dropped mid-open, the host down) stops the run with NO step run on any host,
+so no grant on another host is spent. It stops at the first refusal and keeps every unspent credential; a step done
 is recorded per GRANT -- ``runs/<plan digest>-<issued ms>.json``, the grant being the newest live credentials' issue
 time -- so a second run on the same grant resumes where the first stopped, and a fresh grant of the same plan (a
 re-mint) starts a new run rather than reading the old one's steps as "done earlier" (user ruling 2026-11-13).
@@ -143,7 +145,7 @@ class Steps:
     steps: tuple[Step, ...]
 
 
-_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'stdout_local', 'dest', 'config', 'python', 'forge'}
+_HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'stdout_local', 'config', 'python', 'forge'}
 
 
 def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str) -> Step:
@@ -157,7 +159,7 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     if not (isinstance(argv, list) and argv and all(isinstance(word, str) for word in argv)) or (
         set(step) - _HOST_KEYS or not all(isinstance(step.get(key, ''), str) for key in _HOST_KEYS - {'argv'})
     ):
-        msg = (f'{name} is {{"argv": [ops verb words...], "stdin_local"? | "stdin_task"?, "dest"?, "config"?, '
+        msg = (f'{name} is {{"argv": [ops verb words...], "stdin_local"? | "stdin_task"?, "config"?, '
                '"stdout_local"?, "python"?: "<str>"} or {"local": true}')  # fmt: skip
         raise ConsentRefused(msg)
     if {'stdin_local', 'stdin_task'} <= set(step):
@@ -176,7 +178,7 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
         msg = f'{name} names --credential or --subject itself: the runner adds them'
         raise ConsentRefused(msg)
     return Step(
-        tuple(argv), step.get('dest', dest), step.get('config', str(data['config'])),
+        tuple(argv), dest, step.get('config', str(data['config'])),
         step.get('python', str(data['python'])), step.get('stdin_local'), step.get('stdin_task'),
         step.get('stdout_local'), forge=step.get('forge', ''),
     )  # fmt: skip
@@ -204,8 +206,8 @@ def _shown(step: Step, said: str, status: int, home: Path | None) -> str:
     return f'wrote {path} (sha256 {hashlib.sha256(data).hexdigest()[:12]}, {len(data)} bytes)'
 
 
-def load_steps(path: Path, plan: Plan, dest: str) -> Steps:
-    """The steps file at *path* for *plan*, *dest* the default host; :class:`ConsentRefused` names the fault."""
+def load_steps(path: Path, plan: Plan) -> Steps:
+    """The steps file at *path* for *plan*, each step on its grant's host; :class:`ConsentRefused` names the fault."""
     data = json.loads(path.read_text(encoding='utf-8'))
     if not isinstance(data, dict) or set(data) != {'config', 'python', 'steps'}:
         msg = 'a steps file is a JSON object with exactly config, python and steps'
@@ -215,7 +217,8 @@ def load_steps(path: Path, plan: Plan, dest: str) -> Steps:
         listed = len(steps) if isinstance(steps, list) else 'no'
         msg = f'the steps file lists {listed} steps; the plan grants {len(plan.grants)}: one step per grant, in order'
         raise ConsentRefused(msg)
-    return Steps(tuple(_step(i, step, plan.grants[i]['action'], data, dest) for i, step in enumerate(steps)))
+    grants = plan.grants
+    return Steps(tuple(_step(i, step, grants[i]['action'], data, grants[i]['host']) for i, step in enumerate(steps)))
 
 
 def ops_command(step: Step, words: Sequence[str], *, sudo: str = 'sudo -n') -> str:
@@ -424,6 +427,21 @@ def _redeem(step: Step, ident: str, text: str, remotes: Remotes, local: Local) -
         remote.run(f'rm -f {shlex.quote(carried)}')
 
 
+def _unreachable(steps: Steps, done: set[int], remotes: Remotes) -> list[str]:
+    """One line per host a pending host step runs on that does not answer ``true``; empty when every one does."""
+    pending = dict.fromkeys(step.dest for i, step in enumerate(steps.steps) if not step.local and i not in done)
+    down = []
+    for dest in pending:
+        try:
+            _, status = remotes(dest).run('true')
+        except (sshhold.HoldRefused, OSError) as gone:
+            down.append(f'host {dest}: UNREACHABLE -- {gone}')
+            continue
+        if status:
+            down.append(f'host {dest}: UNREACHABLE -- `true` exited {status}')
+    return down
+
+
 def run_plan(
     plan: Plan, steps: Steps, remotes: Remotes, *, spent: Spent, local: Local = run_local, home: Path | None = None,
     now: Callable[[], float] = time.time,
@@ -433,6 +451,14 @@ def run_plan(
     grant = _grant(plan, home, now())
     record = _newest_record(plan, home) if grant is None else _progress(plan, grant, home)
     done = _done(record)
+    if down := _unreachable(steps, done, remotes):
+        return False, [
+            *down,
+            (
+                'plan: STOPPED before any step -- no credential spent on any host; re-open the named '
+                'host(s) and run again (it resumes where it stopped)'
+            ),
+        ]
     for index, grant in enumerate(plan.grants):
         step = steps.steps[index]
         name = f'step {index + 1} {grant["action"]} {"here" if step.local else "on " + step.dest}'
@@ -468,21 +494,12 @@ def run_plan(
     return True, [*lines, 'plan: every step ran']
 
 
-def _plan(path: Path, dest: str) -> Plan:
-    plan = parsed(json.loads(path.read_text(encoding='utf-8')))
-    if plan.host != dest:
-        msg = f'the plan is for {plan.host}, not {dest}'
-        raise ConsentRefused(msg)
-    return plan
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.planrun', description=__doc__.split('\n')[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     checking = verbs.add_parser('preflight', help='check every door of a plan on its hosts; spends no code')
     running = verbs.add_parser('run', help="run a granted plan's steps in order; resumes where it stopped")
     for verb in (checking, running):
-        verb.add_argument('dest', help="the plan's host, and every step's default")
         verb.add_argument('--plan', type=Path, required=True)
         verb.add_argument('--steps', type=Path, required=True)
     running.add_argument('--digest', required=True, help="the plan's digest, as shown to the user")
@@ -505,10 +522,10 @@ def main(argv: Sequence[str] | None = None, *, declared: Declared = declared_at)
             return 2
         return 0
     try:
-        plan = _plan(args.plan, args.dest)
+        plan = parsed(json.loads(args.plan.read_text(encoding='utf-8')))
         if args.verb == 'run':
             load_plan(args.plan, args.digest)  # the plan the user was shown, or none
-        steps = load_steps(args.steps, plan, args.dest)
+        steps = load_steps(args.steps, plan)
         if args.verb == 'run':
             green, lines = run_plan(plan, steps, remote_for, spent=spent_ids)
         else:

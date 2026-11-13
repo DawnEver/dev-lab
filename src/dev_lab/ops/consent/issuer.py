@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption,
 
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, full_digest, params_hash, sign, verify
-from dev_lab.ops.consent.plan import parsed
+from dev_lab.ops.consent.plan import parsed, request
 from dev_lab.ops.consentrole import Consent
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
@@ -178,7 +178,7 @@ class Issuer:
                 '(the user approves the whole plan by its digest; raise the declared cap, or split the plan)'
             )
             raise ConsentRefused(msg)
-        return self._issue([requested(grant) for grant in found.grants], code, plan=found.digest)
+        return self._issue([requested(request(grant)) for grant in found.grants], code, plan=found.digest)
 
     def _issue(self, rows: list[_Row], code: str, *, plan: str | None) -> list[dict[str, Any]]:
         with exclusive(self.state):
