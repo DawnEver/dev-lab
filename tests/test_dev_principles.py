@@ -21,9 +21,9 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
     assert [one.id for one in PRINCIPLES] == [
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
         'layered-decoupling', 'names-match-behaviour', 'no-backward-compatibility', 'progressive-disclosure',
-        'keep-valuable-options', 'every-wall-teaches',
+        'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out',
     ]  # fmt: skip
-    kept = PRINCIPLES[-2]
+    kept = PRINCIPLES[-3]
     assert kept.name == 'Keep every valuable parameter and option'
     assert kept.statement.startswith('Generality is a requirement: keep every parameter and option')
 
@@ -53,6 +53,18 @@ def test_every_wall_teaches_names_the_gap_and_the_loop() -> None:
         'docs-src/dev/feedback.md',
     ):
         assert clause in wall.statement
+
+
+def test_no_barrier_fan_out_lands_each_item_without_waiting() -> None:
+    """User ruling 2026-11-13: parallel items land as each finishes; no join on the slowest unless truly needed."""
+    fan = {one.id: one for one in PRINCIPLES}['no-barrier-fan-out']
+    for clause in (
+        'each landed the moment it is done',
+        'nothing waits for the slowest sibling',
+        'unless a step truly needs every result',
+        'docs-src/dev/fanout.md',
+    ):
+        assert clause in fan.statement
 
 
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:

@@ -1756,3 +1756,28 @@ def test_each_failed_step_in_the_summary_names_its_door_and_a_failed_test_its_lo
     assert 'dev_lab.dev.hook_install --install' in lines[0]
     assert 'ruff check --fix' in lines[1]
     assert lines[2] == f'  failed: tests/a.py::test_a -- its output: {log.as_posix()}'
+
+
+def test_an_unstaged_edit_to_any_tracked_file_moves_the_run_key(tmp_path: Path) -> None:
+    """2026-11-13: a cited FAIL was reused for "the same tree" while a tracked file held unstaged edits.
+
+    The address covered ``src``, ``tests`` and ``pyproject.toml`` only, so an edit to any other tracked file (a
+    conftest at the root, a Makefile, a rendered hook) read as the tree already judged.
+    PLANTED CONTROL: the untouched tree keys the same twice, and restoring the bytes restores the key.
+    """
+    git = shutil.which('git') or 'git'
+    for args in (('init', '-q'), ('config', 'user.email', 'a@b.c'), ('config', 'user.name', 'a')):
+        subprocess.run([git, '-C', str(tmp_path), *args], check=True, timeout=60)
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('def test_a(): pass\n', encoding='utf-8')
+    (tmp_path / 'conftest.py').write_text('X = 1\n', encoding='utf-8')
+    subprocess.run([git, '-C', str(tmp_path), 'add', '.'], check=True, timeout=60)
+    subprocess.run([git, '-C', str(tmp_path), 'commit', '-q', '-m', 'x'], check=True, timeout=60)
+    clean = verify.run_key(tmp_path, ('a',))
+    assert verify.run_key(tmp_path, ('a',)) == clean, 'the control: an untouched tree keys the same'
+    (tmp_path / 'conftest.py').write_text('X = 2\n', encoding='utf-8')
+    assert verify.run_key(tmp_path, ('a',)).tree != clean.tree, 'an unstaged tracked edit kept the judged key'
+    (tmp_path / 'conftest.py').write_text('X = 1\n', encoding='utf-8')
+    assert verify.run_key(tmp_path, ('a',)) == clean
+    (tmp_path / 'conftest.py').unlink()
+    assert verify.run_key(tmp_path, ('a',)).tree != clean.tree, 'a deleted tracked file kept the judged key'

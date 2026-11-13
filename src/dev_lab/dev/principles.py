@@ -85,6 +85,13 @@ PRINCIPLES: Final = (
         'gap, and closing it (a hook row, a remedy, a test) comes before the task. Never route around a wall or '
         'hand the user a command. The loop: docs-src/dev/feedback.md.',
     ),
+    Principle(
+        'no-barrier-fan-out',
+        'Fan out without a barrier',
+        'Parallel work is independent items, each landed the moment it is done; nothing waits for the slowest '
+        'sibling -- no barrier-style orchestration (e.g. a dynamic workflow that joins all agents) unless a step '
+        'truly needs every result. How: docs-src/dev/fanout.md.',
+    ),
 )
 
 #: Where each family repo carries the rendered page (always loaded by the agent).

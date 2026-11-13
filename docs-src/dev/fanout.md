@@ -68,6 +68,16 @@ forge's job, not yours.
   or recorded the gap ([feedback.md](feedback.md#a-subagents-hand-back)).
 - Tell it not to kill processes or delete lock files it does not own.
 
+## No barrier: land each item when it is done
+
+- `no-barrier-fan-out` (`.claude/rules/principles.md`, user ruling 2026-11-13): split the work into items that
+  stand alone, and land each one (commit, hand back, push) the moment it is green. A barrier makes every item
+  wait for the slowest sibling, so the fan-out runs at the speed of its worst agent.
+- Do not use barrier-style orchestration -- a dynamic workflow, or any driver that spawns agents and joins on
+  all of them before acting. Spawn them in the background and act on each notification as it arrives.
+- A join is legitimate only when one step truly needs every result (a combined verdict, a merge of all lanes);
+  make that step its own item and keep everything before it unjoined.
+
 ## Measuring under fan-out
 
 - A targeted measure is the tests you wrote or touched, not a subset of the suite. Many lanes measuring at once

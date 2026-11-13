@@ -14,7 +14,7 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, serve
 
-from dev_lab.dev import forgesync
+from dev_lab.dev import forgesync, labsession
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import CONTEXT, retarget_note, tick
 from dev_lab.dev.forgelanes import OWNER_CLOSED, open_lanes
@@ -404,3 +404,47 @@ def test_a_moved_data_pin_alone_commits_pyproject_in_the_relock(tmp_path: Path) 
     assert 'Relocked: recipes' in git_out(work, 'log', '-1', '--format=%b')
     assert git_out(work, 'show', 'HEAD:pyproject.toml') == 'rev = "new"'
     assert git_out(work, 'status', '--porcelain') == ''
+
+
+_SESSION = '0f3c2a9e-5b1d-4e7a-9c11-2d3e4f5a6b7c'
+_BRIDGE = 'session_015BVi5YEVzxDoc8t7EkKMds'
+
+
+def _no_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (labsession.ENV, labsession.CLAUDE_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_the_syncs_own_commits_carry_the_sessions_trailers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-11-13: a sync's merge and relock commits carried no session trailer, so they read as nobody's.
+
+    The commit-msg hook stamps ``Lab-Session`` only where it is installed; the sync stamps both trailers itself.
+    PLANTED CONTROL: with no session in the environment, neither commit carries one.
+    """
+    monkeypatch.setenv(labsession.ENV, _SESSION)
+    monkeypatch.setenv(labsession.CLAUDE_ENV, _BRIDGE)
+    work = _child(tmp_path)
+    forgesync.sync(work, POLICY)
+    merge = git_out(work, 'log', '-1', '--format=%(trailers)')
+    assert f'Lab-Session: {_SESSION}' in merge
+    assert f'Claude-Session: https://claude.ai/code/{_BRIDGE}' in merge
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('lab-commons @ new\n', encoding='utf-8')
+        return ('lab-commons',)
+
+    commit(work, 'uv.lock', 'lab-commons @ old\n')
+    forgesync.relock(work, door=door, render=lambda _root: (), data=lambda _root: ())
+    relocked = git_out(work, 'log', '-1', '--format=%(trailers)')
+    assert f'Claude-Session: https://claude.ai/code/{_BRIDGE}' in relocked
+    assert f'Lab-Session: {_SESSION}' in relocked
+
+
+def test_planted_control_a_sync_outside_a_session_stamps_no_trailer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_session(monkeypatch)
+    work = _child(tmp_path)
+    forgesync.sync(work, POLICY)
+    assert git_out(work, 'log', '-1', '--format=%(trailers)') == ''
+    assert git_out(work, 'log', '-1', '--format=%P').count(' ') == 1, 'still a merge commit'

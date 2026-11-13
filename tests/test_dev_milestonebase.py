@@ -1,6 +1,7 @@
 """BASE-HOLDS-THE-MILESTONE and VERSION-TAG-NEEDS-APPROVAL, judged on real repositories.
 
-A pushed branch must contain the highest local ``v*`` tag in the family grammar (dev versions included); an agent
+A pushed branch must contain the highest ``v*`` tag in the family grammar (dev versions included) that is on the
+line -- ``origin/integrate/main`` or ``origin/main``; a local-only stray is no milestone. An agent
 session creates a ``v*`` tag on origin only with the user's approval words in the environment. Every refusal has its
 planted control: the same push, made the right way, passes.
 """
@@ -36,13 +37,14 @@ def _git(cwd: Path, *args: str) -> str:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """``old`` is behind the milestone ``v0.2.13.dev1``, ``new`` contains it."""
+    """``old`` is behind the milestone ``v0.2.13.dev1`` on ``origin/integrate/main``, ``new`` contains it."""
     _git(tmp_path, 'init', '-q', '-b', 'main')
     _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'feat: one')
     _git(tmp_path, 'tag', '-a', 'v0.2.12', '-m', 'v0.2.12')
     _git(tmp_path, 'branch', 'old')
     _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'feat: two')
     _git(tmp_path, 'tag', '-a', 'v0.2.13.dev1', '-m', 'v0.2.13.dev1')
+    _git(tmp_path, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
     _git(tmp_path, 'checkout', '-q', '-b', 'new')
     _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'feat: three')
     return tmp_path
@@ -79,10 +81,35 @@ def test_the_highest_family_version_is_the_milestone_not_the_newest_tag(repo: Pa
     _git(repo, 'tag', '-a', 'v0.2.13.dev10', '-m', 'x')
     _git(repo, 'commit', '-q', '--allow-empty', '-m', 'feat: five')
     _git(repo, 'tag', '-a', 'v0.2.13.dev9', '-m', 'x')
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
     found = refusals(repo, _branch(repo, 'new'), env={})
     assert len(found) == 1
     assert 'v0.2.13.dev10' in found[0]
     assert refusals(repo, _branch(repo, 'main'), env={}) == []
+
+
+def test_a_local_only_stray_tag_newer_than_the_milestone_is_not_one(repo: Path) -> None:
+    """A ``v*`` tag on neither ``origin/integrate/main`` nor ``origin/main`` is a stray no sync can bring in."""
+    _git(repo, 'checkout', '-q', '-b', 'stray', 'main')
+    _git(repo, 'commit', '-q', '--allow-empty', '-m', 'feat: local only')
+    _git(repo, 'tag', '-a', 'v0.1.0', '-m', 'x')
+    _git(repo, 'tag', '-a', 'v9.0.0', '-m', 'x')
+    assert refusals(repo, _branch(repo, 'new'), env={}) == []
+    found = refusals(repo, _branch(repo, 'old'), env={})
+    assert len(found) == 1
+    assert 'v0.2.13.dev1' in found[0]
+
+
+def test_a_milestone_on_the_trunk_alone_is_held(repo: Path) -> None:
+    """PLANTED CONTROL for the line: the same tag, once ``origin/main`` contains it, refuses a branch lacking it."""
+    _git(repo, 'checkout', '-q', '-b', 'release', 'new')
+    _git(repo, 'commit', '-q', '--allow-empty', '-m', 'feat: released')
+    _git(repo, 'tag', '-a', 'v0.3.0', '-m', 'x')
+    assert refusals(repo, _branch(repo, 'old'), env={})[0].count('v0.2.13.dev1') == 1
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', 'release')
+    found = refusals(repo, _branch(repo, 'new'), env={})
+    assert len(found) == 1
+    assert 'v0.3.0' in found[0]
 
 
 def _parsed(tag: str) -> tuple[int, int, int, tuple[int, int]]:
