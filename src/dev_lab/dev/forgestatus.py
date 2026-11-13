@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
 from lab_commons.hpc.testcells import TestCell
@@ -227,10 +228,17 @@ def verdict_commit(
     return head_before
 
 
+#: A run record's file suffix (``lab_commons.hpc.records``: ``run-<sha>-<part>-<req>.json.gz``); any other target
+#: -- an outage's Actions run page -- is no record, and fetching it as one reads the HTML page's 406.
+RECORD_SUFFIX: Final = '.json.gz'
+
+
 def _not_ok(status: CommitStatus, client: Client) -> tuple[dict[str, TestCell], int] | str:
     """``({node: cell} of every test not ``ok``, how many cells)`` in the record behind *status*, or why not read."""
     if not status.url:
         return '  no record is attached to this part'
+    if not urlsplit(status.url).path.endswith(RECORD_SUFFIX):  # an outage's target is its run page, not a record
+        return f'  no record is attached to this part; its target is {status.url}'
     try:
         record = json.loads(gzip.decompress(client.download(status.url)).decode('utf-8'))
     except (ForgeCallFailed, OSError, ValueError) as failed:
