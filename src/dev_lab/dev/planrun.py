@@ -69,6 +69,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shlex
 import sys
 import time
@@ -261,6 +262,19 @@ def _last_line(output: str) -> str:
     return lines[-1] if lines else ''
 
 
+#: An ssh login the host refused without a code: key-only ssh reached no hold (2026-11-13: an agent read the bare
+#: ``Permission denied (keyboard-interactive)`` and could not tell it was a hold to open, not a host to fix).
+_NO_HOLD: Final = re.compile(r'Permission denied \((?:[\w-]+,)*(?:keyboard-interactive|password)')
+
+#: What a refused login means, and the exit: the plan first, then ONE code opens every host's hold.
+HOLD_NEEDED: Final = (
+    'no open ssh hold on this host, and it admits no login without a code. Build the plan first (the steps file '
+    'and its plan.json; digest D: `python -m dev_lab.ops.consent plan <plan.json>`), then ask the user for the one '
+    'code: `python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D>` opens every plan host, '
+    'and preflight re-runs through the held sessions'
+)
+
+
 def _ready(step: Step, remote: Remote) -> tuple[str | None, bool]:
     """``(blocker, reached)``: ``None`` when *step*'s host can verify and register a use; asked unprivileged.
 
@@ -273,7 +287,8 @@ def _ready(step: Step, remote: Remote) -> tuple[str | None, bool]:
     except (sshhold.HoldRefused, OSError) as gone:
         return str(gone), False
     if status == _SSH_UNREACHED:
-        return _last_line(said) or f'ssh exited {status}', False
+        last = _last_line(said) or f'ssh exited {status}'
+        return (f'{last} -- {HOLD_NEEDED}' if _NO_HOLD.search(said) else last), False
     return ((_last_line(said) or f'consent ready exited {status}') if status else None), True
 
 

@@ -55,6 +55,7 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgerequest import offer_line
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
 from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
 from dev_lab.dev.localpart import part_selection, post_cited, post_part
 from dev_lab.dev.lockpins import lock_freshness
@@ -319,6 +320,23 @@ def _inconclusive(line: str) -> tuple[int, list[str]]:
     return EXIT_CODES[Conclusion.INCONCLUSIVE], [line]
 
 
+#: The door out of each failed STEP (a test node's own output is in the log). 2026-11-13: ``failed: hooks-installed``
+#: said nothing of why or what to do.
+STEP_REMEDIES: Final = {
+    HOOKS_STEP: f'no live hook shim in this checkout -- run: {INSTALL_COMMAND}',
+    'ruff check .': 'lint findings -- run: ruff check --fix . (then fix what it cannot)',
+    'ruff format --check .': 'unformatted files -- run: ruff format .',
+}
+
+
+def failure_lines(failures: tuple[str, ...], log: Path) -> list[str]:
+    """One summary line per failure: a step's remedy, else where its output is (the run's log)."""
+    return [
+        f'  failed: {failure} -- {STEP_REMEDIES.get(failure) or f"its output: {Path(log).as_posix()}"}'
+        for failure in failures
+    ]
+
+
 def _judge(
     root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, post: Callable[..., str] | None
 ) -> tuple[int, list[str]]:
@@ -345,7 +363,7 @@ def _judge(
         )
     verdict.stamp()
     lines = [verdict.line(), f'verify: {verdict.result.render()}']
-    lines += [f'  failed: {failure}' for failure in verdict.result.failures]
+    lines += failure_lines(verdict.result.failures, verdict.log.path)
     emit('')
     for line in lines:
         emit(line)

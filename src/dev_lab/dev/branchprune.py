@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, sweep
+from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, delete_tags, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forge import fetch_origin
@@ -315,10 +315,13 @@ def post_push(
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
-    """``python -m dev_lab.dev.branchprune {delete <branch>... | sweep [--local] [--log] | post-push}``."""
+    """``python -m dev_lab.dev.branchprune {delete B... | delete-tag T... --approved W | sweep | post-push}``."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.branchprune', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('delete').add_argument('branches', nargs='+')
+    tagged = verbs.add_parser('delete-tag', help='a tag the integration branch or trunk holds, user-approved')
+    tagged.add_argument('tags', nargs='+')
+    tagged.add_argument('--approved', default='', help="the user's own words approving the delete")
     swept = verbs.add_parser('sweep')
     swept.add_argument('--local', action='store_true', help='also local branches and clean landed worktrees')
     swept.add_argument('--log', action='store_true', help=f'write to output/logs/.../{_LOG_KIND}/, not the console')
@@ -334,6 +337,10 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         session = os.environ.get(ENV, '')
         if args.verb == 'delete':
             return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
+        if args.verb == 'delete-tag':
+            return delete_tags(
+                root, args.tags, approved=args.approved, client=client, session=session, fetch=fetch_origin, say=say
+            )
         return sweep(root, client=client, session=session, fetch=fetch_origin, say=say, local=args.local)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         if say is emit:

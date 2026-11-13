@@ -110,6 +110,23 @@ def test_a_host_that_cannot_verify_or_register_is_blocked() -> None:
     assert 'BLOCKED -- refused: no consent public key' in lines[0]
 
 
+def test_a_login_refused_for_want_of_a_code_names_the_hold_and_its_door() -> None:
+    """2026-11-13: a bare ``Permission denied (keyboard-interactive)`` did not say a hold was missing.
+
+    PLANTED control: a host refusing for another reason is not told to open a hold.
+    """
+    host = FakeHost()
+    host.ready = (255, 'user@h: Permission denied (publickey,keyboard-interactive).')
+    _, lines = planrun.preflight(PLAN, STEPS, lambda _dest: host)
+    assert 'Permission denied' in lines[0]
+    assert 'sshhold open --hours H --plan <plan.json> --digest <D>' in lines[0]
+    assert 'Build the plan first' in lines[0]
+    other = FakeHost()
+    other.ready = (2, 'refused: no consent public key')
+    _, said = planrun.preflight(PLAN, STEPS, lambda _dest: other)
+    assert 'sshhold' not in said[0]
+
+
 def test_consent_ready_is_asked_without_sudo_so_a_host_needs_no_sudoers_row_for_it() -> None:
     host = FakeHost()
     planrun.preflight(PLAN, STEPS, lambda _dest: host)

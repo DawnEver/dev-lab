@@ -326,10 +326,12 @@ def test_a_retire_that_fails_leaves_the_new_shim_written_beside_the_slot(
 _SH = shutil.which('sh')
 
 
-def _run_shim_without_interpreter(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+def _run_shim_without_interpreter(
+    repo: Path, tmp_path: Path, stage: str = 'pre-commit'
+) -> subprocess.CompletedProcess[str]:
     assert _SH is not None, 'no sh on PATH: the hook shims cannot run on this box'
-    script = tmp_path / 'pre-commit'
-    script.write_text(shim('pre-commit', (tmp_path / 'gone' / 'python').as_posix()), encoding='utf-8', newline='\n')
+    script = tmp_path / stage
+    script.write_text(shim(stage, (tmp_path / 'gone' / 'python').as_posix()), encoding='utf-8', newline='\n')
     return subprocess.run(
         [_SH, str(script)], cwd=repo, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False
     )
@@ -353,6 +355,20 @@ def test_a_plain_commit_without_any_interpreter_is_refused_and_names_the_remedy(
     done = _run_shim_without_interpreter(repo, tmp_path)
     assert done.returncode == 1
     assert 'hooks skipped' not in done.stderr
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
+    assert 'dev_lab.dev.hook_install --install' in done.stderr
+
+
+def test_a_checkout_without_any_interpreter_is_told_the_bootstrap_door_and_not_refused(
+    repo: Path, tmp_path: Path
+) -> None:
+    """An advisory stage refuses nothing (the checkout is done), so it exits 0 -- and names the venv's door.
+
+    2026-11-13: a new worktree said "hooks skipped" and agents improvised a PYTHONPATH.
+    """
+    done = _run_shim_without_interpreter(repo, tmp_path, 'post-checkout')
+    assert done.returncode == 0
+    assert 'refused' not in done.stderr
     assert 'dev_lab.dev.dep --bootstrap' in done.stderr
     assert 'dev_lab.dev.hook_install --install' in done.stderr
 

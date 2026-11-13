@@ -223,16 +223,19 @@ always_run = true
 
 # VENV-FOLLOWS-THE-LOCK (user ruling 2026-11-04): a merge or checkout that moved pyproject.toml/uv.lock detaches a
 # re-bootstrap of this checkout's venv (dev_lab.dev.venvfollow); an unchanged lock costs one hash, a live run skips.
-# Both stages are ADVISORY: the merge or checkout is done.
+# Both stages are ADVISORY: the merge or checkout is done. `bootstraps`: a checkout with NO venv (a new worktree) runs
+# it on the interpreter the shim found, so the venv is created rather than every row skipped.
 [[post-merge]]
 id = "venv-follows-lock"
 run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
 always_run = true
+bootstraps = true
 
 [[post-checkout]]
 id = "venv-follows-lock"
 run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
 always_run = true
+bootstraps = true
 
 # RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12): a merge or checkout that lands detaches the same background
 # reclaim as a push (the pre-push row above); ADVISORY, and reclaimrun exits 0 always.

@@ -17,7 +17,14 @@ import pytest
 
 from dev_lab.dev import walls
 from dev_lab.dev.githooks import main as githooks_main
-from dev_lab.dev.githooks.runner import PUSH_URL_ENV, ZERO_SHA, parse_push_lines, resolve, run_stage
+from dev_lab.dev.githooks.runner import (
+    FOREIGN_INTERPRETER_ENV,
+    PUSH_URL_ENV,
+    ZERO_SHA,
+    parse_push_lines,
+    resolve,
+    run_stage,
+)
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
@@ -438,3 +445,31 @@ def test_a_pushed_merge_hands_a_pre_push_hook_only_its_own_and_the_lanes_paths(r
     py = Hook(stage='pre-push', id='py', run=('tool',), files=r'\.py$', pass_files=True)
     assert run_stage('pre-push', ('origin', 'url'), root=repo, stdin=line, hooks=(py,), runner=seen) == 0
     assert sorted(seen.calls[0][0][1:]) == ['both.py', 'mine.py']
+
+
+def test_under_a_foreign_interpreter_a_bootstrapping_row_runs_and_names_the_door(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """2026-11-13: a new worktree had no venv, every row skipped, and the venv never came.
+
+    PLANTED control: beside it a repo-venv row is still skipped.
+    """
+    monkeypatch.setenv(FOREIGN_INTERPRETER_ENV, '1')
+    seen = _Recorder()
+    follow = Hook(
+        stage='post-checkout', id='venv-follows-lock', run=('python', '-m', 'x'), always_run=True, bootstraps=True
+    )
+    other = Hook(stage='post-checkout', id='reclaim', run=('python', '-m', 'y'), always_run=True)
+    assert run_stage('post-checkout', root=repo, hooks=(follow, other), runner=seen) == 0
+    assert [argv[-1] for argv, _ in seen.calls] == ['x']
+    said = capsys.readouterr().err
+    assert 'this checkout has no venv -- venv-follows-lock bootstraps it' in said
+    assert f'-m dev_lab.dev.dep --bootstrap {repo.as_posix()}' in said
+
+
+def test_the_base_venv_follow_rows_bootstrap_a_checkout_with_no_venv() -> None:
+    table = merge(base_rows(), {})
+    stages = ('post-checkout', 'post-merge')
+    rows = [hook for stage in stages for hook in table[stage] if hook.id == 'venv-follows-lock']
+    assert len(rows) == 2
+    assert all(hook.bootstraps for hook in rows)

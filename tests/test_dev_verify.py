@@ -1722,3 +1722,12 @@ def test_planted_an_UNDECLARED_output_root_is_refused_naming_the_key(tmp_path: P
     """No default root: a repo that declares none is told the key, never handed another repo's answer."""
     with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
         verifysteps.coverage_report(tmp_path, tmp_path / 'verify-x.log')
+
+
+def test_each_failed_step_in_the_summary_names_its_door_and_a_failed_test_its_log(tmp_path: Path) -> None:
+    """2026-11-13: ``failed: hooks-installed`` carried no cause and no door."""
+    log = tmp_path / 'run.log'
+    lines = verify.failure_lines(('hooks-installed', 'ruff check .', 'tests/a.py::test_a'), log)
+    assert 'dev_lab.dev.hook_install --install' in lines[0]
+    assert 'ruff check --fix' in lines[1]
+    assert lines[2] == f'  failed: tests/a.py::test_a -- its output: {log.as_posix()}'

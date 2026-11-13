@@ -87,6 +87,13 @@ RETIRED_ROW_KEY = 'deny row'
 
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
 _UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb != 'pip')
+#: ``push`` in VERB position: the invoked command is git (bare, by path, or quoted with spaces; ``-C``/``-c``
+#: options allowed) or the retry wrapper. Anchored as a ``command`` row, so the same words inside another
+#: command's arguments -- a ``sed`` or heredoc editing a file that mentions them -- name nothing (2026-11-13).
+PUSH_VERB = (
+    r'(?:(?:"[^"]*[/\\])?"?\S*?\bgit(?:\.exe)?"?(?:\s+-[Cc]\s+\S+)*'
+    r'|(?:sh\s+)?\S*with-retry\.sh)\s+push\b'
+)
 #: The shell spelling of :func:`dev_lab.dev.netverb.is_network_verb`, derived from its verb lists.
 NETWORK_VERB_PATTERN = (
     rf'(?:git(?:\s+-[Cc]\s+\S+)*\s+(?:{_GIT_VERBS}|submodule\s+update)'
@@ -227,8 +234,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     {
         'id': 'PUSH-FORCE',
         # `+<ref>` is the refspec spelling of the same force (MAIN-SESSION-PUBLISHES opened `push origin *`).
-        'pattern': r'\bpush\b[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b|\+\S)',
-        'matches': 'argument',
+        'pattern': PUSH_VERB + r'[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b|\+\S)',
+        'matches': 'command',
         'hazard': 'rewriting a shared ref invalidates every verdict taken '
         'against the old tree; --force-with-lease included.',
         'remedy': 'Land the change FORWARD: git revert <sha> or a new commit on your own lane, then push without '
@@ -248,10 +255,11 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     {
         'id': 'PUSH-REMOTE-DELETE',
-        'pattern': r'\bpush\b[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
-        'matches': 'argument',
+        'pattern': PUSH_VERB + r'[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
+        'matches': 'command',
         'hazard': 'a raw remote delete can lose commits held nowhere else.',
-        'remedy': '`{python} -m dev_lab.dev.branchprune delete <branch>` (LOSSLESS-DELETE).',
+        'remedy': 'a branch: `{python} -m dev_lab.dev.branchprune delete <branch>`; a tag: `{python} -m '
+        'dev_lab.dev.branchprune delete-tag <tag> --approved "<the user`s words>"` (LOSSLESS-DELETE).',
         'needs': None,
         'refuses': (
             'git push origin --delete lane/x',
@@ -259,18 +267,23 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'sh scripts/hooks/with-retry.sh push origin -d lane/x',
             'git push --prune origin',
             'git push --mirror origin',
+            '"C:/Program Files/Git/cmd/git.exe" push origin --delete lane/x',
+            'git push origin :refs/tags/v1.0',
+            'git push origin --delete refs/tags/v1.0',
         ),
         'permits': (
             'sh scripts/hooks/with-retry.sh push origin HEAD:refs/heads/lane/x',
             'sh scripts/hooks/with-retry.sh push origin main',
             'git branch -d lane/x',
+            "python - <<'EOF'  # edits a file whose text says: git push origin --delete lane/x",
             f'{VENV_PYTHONS[0]} -m dev_lab.dev.branchprune delete lane/x',
+            f'{VENV_PYTHONS[0]} -m dev_lab.dev.branchprune delete-tag v1.0 --approved "drop it"',
         ),
     },
     {
         'id': 'PUSH-NO-VERIFY',
-        'pattern': r'\bpush\b[^\n]*--no-verify\b',
-        'matches': 'argument',
+        'pattern': PUSH_VERB + r'[^\n]*--no-verify\b',
+        'matches': 'command',
         'hazard': '`--no-verify` skips the pre-push hooks (admission, the trunk proof), so the push publishes what '
         'no hook checked.',
         'remedy': 'Push without the flag (no hook runs a test; the forge produces the part after the push), '
@@ -280,6 +293,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'permits': (
             'sh scripts/hooks/with-retry.sh push origin HEAD',
             'git commit -m "x"',
+            "sed -i 's/git push --no-verify/git push/' tests/test_x.py",
         ),
     },
     {

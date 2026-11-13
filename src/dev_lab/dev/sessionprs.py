@@ -22,6 +22,9 @@ output was piped away, and a push after ``cd`` into another repository -- all si
   resolves to its PR, open or not, or closes with a reason when no PR can come (a protected or a gone branch);
 * :func:`is_open` is the ONE predicate the watch and the ``Stop`` gate read: a PR is open when the forge named
   its number and no end was heard -- a branch row with no PR yet is pending, and holds nothing;
+* THE DOOR THAT MERGES ENDS THE ROW (2026-11-13: a PR merged through ``forge pr breakglass`` stayed open on
+  record and the ``Stop`` gate kept blocking on it): every merge door calls :func:`ended`, which marks the PR
+  ``merged`` in every session record on this machine that holds it open;
 * ``forge watch --session <id> --ack <key> --reason <why>`` records why a red head may stand (:func:`ack`);
   a newer head is not covered by an older head's reason.
 """
@@ -56,6 +59,7 @@ __all__ = [
     'Row',
     'ack',
     'close',
+    'ended',
     'is_open',
     'main',
     'noted',
@@ -223,6 +227,22 @@ def resolve(session: str, row: Row, number: int) -> Row:
 def close(session: str, row: Row, done: str, *, reason: str = '') -> Row:
     """Mark *row* ``merged`` or ``closed`` (*reason*: why, when no PR closed it); never watched or blocked on again."""
     return _put(session, Row(row.forge, row.branch, row.number, row.sha, row.at, done, row.acks, reason))
+
+
+def ended(forge: Forge, number: int, done: str = 'merged') -> tuple[str, ...]:
+    """Mark PR *number* of *forge* *done* in every session record holding it open; the sessions it closed in.
+
+    The door that merges calls this, so the record says the state the moment it changes -- the session that
+    opened the PR need not be the one that merged it, so every record on this machine is read.
+    """
+    found = sorted((_home.home() / SESSIONS).glob('*.json')) if (_home.home() / SESSIONS).is_dir() else []
+    closed: list[str] = []
+    for session in (path.stem for path in found if valid(path.stem)):
+        row = rows(session).get(Row(forge, number=number).key)
+        if row is not None and is_open(row):
+            close(session, row, done)
+            closed.append(session)
+    return tuple(closed)
 
 
 def ack(session: str, row: Row, sha: str, reason: str) -> Row:

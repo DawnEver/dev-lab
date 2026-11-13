@@ -14,7 +14,7 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev.branchdelete import delete
+from dev_lab.dev.branchdelete import delete, delete_tags
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
 
@@ -94,7 +94,9 @@ def test_a_raw_remote_delete_is_still_refused_and_its_remedy_names_the_door() ->
     """PLANTED control: the door's own invocation is permitted."""
     assert denies(DENY_RULES, 'git -C ../sib push origin --delete lane/x') == 'PUSH-REMOTE-DELETE'
     assert denies(DENY_RULES, 'sh scripts/hooks/with-retry.sh push origin :lane/x') == 'PUSH-REMOTE-DELETE'
-    assert 'dev_lab.dev.branchprune delete' in str(rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy)
+    remedy = str(rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy)
+    assert 'dev_lab.dev.branchprune delete <branch>' in remedy
+    assert 'dev_lab.dev.branchprune delete-tag <tag> --approved' in remedy, 'a tag has its own exit'
     assert denies(DENY_RULES, '.venv/Scripts/python.exe -m dev_lab.dev.branchprune delete lane/x') is None
 
 
@@ -208,3 +210,51 @@ def test_a_line_deletion_is_refused(tmp_path: Path) -> None:
     run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
     run_git(work, 'fetch', '-q', 'origin')
     _refused_naming(work, 'pr/x', 'two.txt')
+
+
+def _tag(work: Path, tag: str, sha: str) -> None:
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'tag', '-a', '-m', tag, tag, sha)
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'refs/tags/{tag}')
+
+
+def _tag_on_origin(work: Path, tag: str) -> bool:
+    return bool(git_out(work, 'ls-remote', '--tags', 'origin', f'refs/tags/{tag}'))
+
+
+def _delete_tags(work: Path, *tags: str, approved: str = 'yes, drop those tags') -> tuple[int, list[str]]:
+    said: list[str] = []
+    code = delete_tags(
+        work,
+        tags,
+        approved=approved,
+        client=StateForge(),
+        session=SESSION,
+        fetch=fetch_origin,
+        say=said.append,
+        alarm=lambda _: None,
+    )
+    return code, said
+
+
+def test_an_approved_tag_held_by_integration_is_deleted_and_one_on_a_lane_alone_is_kept(tmp_path: Path) -> None:
+    """PLANTED control: the tag whose commit lives on a lane alone survives beside the held one that goes."""
+    _, work = clone_pair(tmp_path)
+    held = advance(work, 'integrate/main', 'i.txt', 'i\n')
+    alone = advance(work, 'lane/mine', 'm.txt', 'm\n')
+    _tag(work, 'v0.1.0', held)
+    _tag(work, 'v0.2.0', alone)
+    code, said = _delete_tags(work, 'v0.1.0', 'v0.2.0')
+    assert code == 1
+    assert not _tag_on_origin(work, 'v0.1.0')
+    assert _tag_on_origin(work, 'v0.2.0')
+    assert any('held by integrate/main' in line and 'yes, drop those tags' in line for line in said)
+    assert any(f'tag v0.2.0: refused -- its commit {alone[:12]}' in line for line in said), said
+
+
+def test_a_tag_delete_without_the_users_words_is_refused_touching_nothing(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    _tag(work, 'v0.1.0', advance(work, 'integrate/main', 'i.txt', 'i\n'))
+    code, said = _delete_tags(work, 'v0.1.0', approved=' ')
+    assert code == 1
+    assert _tag_on_origin(work, 'v0.1.0')
+    assert any('--approved' in line for line in said)

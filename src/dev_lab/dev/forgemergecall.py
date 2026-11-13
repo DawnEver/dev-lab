@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev import sessionprs
 from dev_lab.dev.forgework import GITHUB
 
 if TYPE_CHECKING:
@@ -44,7 +45,8 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
     """Ask the forge to merge PR *number* at *head* with a merge commit saying *message*.
 
     Both forges refuse a *head* that is no longer the PR's (Gitea ``head_commit_id``, GitHub ``sha``). On GitHub,
-    which deletes no branch with a merge, *delete_branch* deletes the PR's head branch after it.
+    which deletes no branch with a merge, *delete_branch* deletes the PR's head branch after it. The merged PR
+    ends in every session record holding it (:func:`dev_lab.dev.sessionprs.ended`).
     """
     title, _, body = message.partition('\n\n')
     if client.backend is GITHUB:
@@ -55,6 +57,7 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
         )
         if delete_branch:
             client.call('DELETE', f'{client.repo}/git/refs/heads/{client.pr_view(number).head}')
+        sessionprs.ended(client.forge, number)
         return
     client.call(
         'POST',
@@ -67,3 +70,4 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
             'delete_branch_after_merge': delete_branch,
         },
     )
+    sessionprs.ended(client.forge, number)
