@@ -22,7 +22,6 @@ with ``C`` holding a ``dev_lab.ops ... --subject`` call passed this row and drew
 
 from __future__ import annotations
 
-from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.venvpath import PYTHON_SLOT
 
 __all__ = ['REMOTE_WRITE']
@@ -50,10 +49,9 @@ REMOTE_WRITE: dict[str, object] = {
     ),
     'matches': 'command',
     'hazard': 'a hand-written write to a remote host leaves no record of which door, host or reason changed it.',
-    'remedy': 'Remote dev_lab.ops, --subject too: planrun preflight --plan P --steps S (asks each host its subject), '
-    "sshhold open --hours H --plan P --digest D (the user's one code), planrun run. Else opsserver <server> <verb> "
-    f'or hpcaccount {exits_of("HPC-THROUGH-THE-DOOR", "dev_lab.dev.hpcaccount")}. Spell out $VAR; read-only ssh '
-    'is open.',
+    'remedy': f'dev_lab.ops (--subject too): {PYTHON_SLOT} -m dev_lab.dev.planrun preflight --plan P --steps S asks '
+    "hosts; sshhold open --hours H --plan P --digest D (user's code); planrun run. Else opsserver <server> <verb>, "
+    'hpcaccount. Spell out $VAR; read-only ssh is open.',
     'needs': None,
     'refuses': (
         'ssh ops@forge.example sudo systemctl restart gitea',
