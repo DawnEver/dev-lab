@@ -100,3 +100,28 @@ def test_needs_consent_names_the_boundary_keys_a_change_touches() -> None:
     assert needs_consent(old, old.replace('/opt/dev-lab', '/srv/dev-lab')) == ('ops.python',)
     assert needs_consent(old, old.replace('repos = ["https://forge.example/o/a.git"]\nkeys', 'repos = []\nkeys')) == ()
     assert needs_consent('', old)[0].startswith('ops.')
+
+
+DEV_HOST = '[dev]\nhpc = []\nref = "integrate/main"\n'
+SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nmax_hours = 8\nidle_minutes = 30\n'
+
+
+def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
+    assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + SSH_ROUTES)) == []
+
+
+@pytest.mark.parametrize(
+    ('extra', 'named'),
+    [
+        ('[ssh]\nbogus = 1\n', 'ssh.bogus'),
+        ('[ssh.hold]\nmax_hour = 8\n', 'ssh.hold.max_hour'),
+        ('[ssh.jump]\n"node.example" = 22\n', 'ssh.jump'),
+        ('[ssh.jump]\n"node.example" = ""\n', 'ssh.jump'),
+        ('[ssh]\njump = "bastion.example"\n', 'ssh.jump'),
+        ('[ssh.hold]\nmax_hours = "8"\n', 'ssh.hold.max_hours'),
+    ],
+)
+def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: str, named: str) -> None:
+    found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + extra))
+    assert len(found) == 1, found
+    assert named in found[0]
