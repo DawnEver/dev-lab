@@ -249,7 +249,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'pattern': r'\bpush\b[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
         'matches': 'argument',
         'hazard': 'a raw remote delete can lose commits held nowhere else.',
-        'remedy': '`{python} -m dev_lab.dev.branchprune delete <branch>` (LOSSLESS-DELETE).',
+        'remedy': 'a branch: `{python} -m dev_lab.dev.branchprune delete <branch>`; a tag: `{python} -m '
+        'dev_lab.dev.branchprune delete-tag <tag> --approved "<the user`s words>"` (LOSSLESS-DELETE).',
         'needs': None,
         'refuses': (
             'git push origin --delete lane/x',
@@ -257,12 +258,15 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'sh scripts/hooks/with-retry.sh push origin -d lane/x',
             'git push --prune origin',
             'git push --mirror origin',
+            'git push origin :refs/tags/v1.0',
+            'git push origin --delete refs/tags/v1.0',
         ),
         'permits': (
             'sh scripts/hooks/with-retry.sh push origin HEAD:refs/heads/lane/x',
             'sh scripts/hooks/with-retry.sh push origin main',
             'git branch -d lane/x',
             f'{VENV_PYTHONS[0]} -m dev_lab.dev.branchprune delete lane/x',
+            f'{VENV_PYTHONS[0]} -m dev_lab.dev.branchprune delete-tag v1.0 --approved "drop it"',
         ),
     },
     {

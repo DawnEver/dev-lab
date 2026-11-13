@@ -49,9 +49,12 @@ __all__ = [
     'DELETED_EVENT',
     'DOOR',
     'ORIGIN',
+    'TAG_DOOR',
     'Verdict',
     'delete',
+    'delete_tags',
     'judge',
+    'judge_tag',
     'landed',
     'serve_sweep',
     'sweep',
@@ -64,6 +67,8 @@ ORIGIN: Final = 'refs/remotes/origin/'
 DELETED_EVENT: Final = 'lab_commons.forge.branch-delete'
 #: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it).
 DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>...'
+#: The door an agent deletes a remote TAG through: lossless when a declared branch holds its commit, and approved.
+TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune delete-tag <tag>... --approved "<the user`s words>"'
 #: Its refusals, each said once, here.
 LOSSY: Final = '{branch}: refused -- {count} commit(s) exist on it alone ({commits}), with unlanded content in: {files}'
 PROTECTED: Final = '{branch}: refused -- it is {why}, never deleted'
@@ -192,6 +197,83 @@ def delete(
         body = f'{branch} at {found.sha[:12]}, held by {found.container}; by session {session or "none"}'
         alarm(Alarm(PRUNED, client.forge.repo, f'{branch} deleted (lossless)', body))
         say(f'{branch}: deleted at {found.sha[:12]} -- held by {found.container}')
+    return 1 if failed else 0
+
+
+def _remote_tag(root: Path, tag: str) -> tuple[str, str]:
+    """``(tag object sha, peeled commit sha)`` of origin's *tag*, through the network door; ``('', '')``: absent."""
+    ref = f'refs/tags/{tag}'
+    report = run_network_verb([_GIT, 'ls-remote', 'origin', ref, f'{ref}^{{}}'], cwd=root, timeout=120)
+    if not report.ok:
+        raise OSError(report.remedy)
+    shas = {
+        ref.strip(): sha for sha, _, ref in (line.partition('\t') for line in report.attempts[-1].output.splitlines())
+    }
+    obj = shas.get(ref, '').strip()
+    return obj, shas.get(f'{ref}^{{}}', obj).strip()
+
+
+def judge_tag(root: Path, policy: Policy, tag: str, obj: str, commit: str) -> Verdict:
+    """Whether deleting origin's *tag* (object *obj*, commit *commit*) loses nothing: a DECLARED branch holds it.
+
+    Only the integration branch or the trunk counts -- a tag marks a point on the line that ships, and a lane
+    branch is itself deletable, so it holds nothing for good. Read from the fetched remote-tracking refs.
+    """
+    if not obj:
+        return Verdict(tag, refused=f'tag {tag}: not on origin (gone already)')
+    for name in (policy.integration, policy.trunk):
+        if git_out(root, 'merge-base', '--is-ancestor', commit, f'{ORIGIN}{name}') is not None:
+            return Verdict(tag, obj, container=name)
+    why = f'its commit {commit[:12]} is on neither {policy.integration} nor {policy.trunk} (or is not fetched)'
+    return Verdict(tag, obj, refused=f'tag {tag}: refused -- {why}; deleting it could lose that commit')
+
+
+def _push_tag_delete(root: Path, tag: str, obj: str) -> str:
+    """Delete origin's *tag* if still at *obj* (a lease), through the network door; ``''``, or why not."""
+    ref = f'refs/tags/{tag}'
+    report = run_network_verb(
+        [_GIT, 'push', f'--force-with-lease={ref}:{obj}', 'origin', '--delete', ref], cwd=root, timeout=300
+    )
+    return '' if report.ok else report.remedy
+
+
+def delete_tags(
+    root: Path,
+    tags: Sequence[str],
+    *,
+    approved: str,
+    client: Client,
+    session: str,
+    fetch: Callable[[Path], None],
+    say: Callable[[str], None],
+    remote_tag: Callable[[Path, str], tuple[str, str]] = _remote_tag,
+    push: Callable[[Path, str, str], str] = _push_tag_delete,
+    alarm: Callable[[Alarm], object] = sound,
+) -> int:
+    """LOSSLESS-DELETE each of origin's *tags* the user approved; 0 when every one was deleted, else 1.
+
+    A tag is not work in progress but a name others cite, so even a lossless delete needs *approved*: the user's
+    own words, echoed into the record. Refused without them, touching nothing.
+    """
+    if not approved.strip():
+        say(f'refused -- a tag is deleted only with the user`s own words: {TAG_DOOR}')
+        return 1
+    fetch(root)
+    policy = load_policy(root)
+    failed = 0
+    for tag in tags:
+        obj, commit = remote_tag(root, tag)
+        found = judge_tag(root, policy, tag, obj, commit)
+        why = found.refused or push(root, tag, found.sha)
+        if why:
+            say(why if found.refused else f'tag {tag}: the delete failed: {why}')
+            failed += 1
+            continue
+        record = {'event': DELETED_EVENT, 'ref': f'refs/tags/{tag}', 'sha': found.sha, 'container': found.container}
+        say(json.dumps(record | {'session': session or None, 'approved': approved.strip()}))
+        body = f'tag {tag} at {found.sha[:12]}, held by {found.container}; by session {session or "none"}'
+        alarm(Alarm(PRUNED, client.forge.repo, f'tag {tag} deleted (lossless, approved)', body))
+        say(f'tag {tag}: deleted at {found.sha[:12]} -- held by {found.container}; approved: "{approved.strip()}"')
     return 1 if failed else 0
 
 

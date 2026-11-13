@@ -249,6 +249,12 @@ POLICY: Final[tuple[Door, ...]] = (
         'another live branch or open pull request; never a force push and never a lossy delete.',
     ),
     Door(
+        _module('branchprune', 'delete-tag'),
+        MAIN,
+        'Deleting a remote tag the user approved in their own words, only when its commit is on the integration '
+        'branch or the trunk; never a lossy delete.',
+    ),
+    Door(
         ('gh', 'workflow', 'enable'),
         MAIN,
         'Re-enabling a GitHub Actions workflow of a family repository that the integrator paused '
