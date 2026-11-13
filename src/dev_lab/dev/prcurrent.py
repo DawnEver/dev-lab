@@ -153,14 +153,14 @@ def refusals(root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = w
 def ready_refusals(
     root: Path, client: Client, pull: PullRequest, *, fetch: Fetch = fetch_ref, read: Read = within_window
 ) -> list[str]:
-    """Why PR *pull* may not be marked ready: a dirty tree, then :func:`judge` on its head as origin holds it.
+    """Why PR *pull* may not be marked ready: :func:`judge` on its head as origin holds it -- never the local tree.
 
+    Ready is a forge API call on a pushed head (user ruling 2026-11-13): the checkout it runs from -- a main checkout
+    with an unrelated ``M uv.lock``, any worktree of the repo -- has no say, so no dirty-tree condition exists.
     The required test statuses are NOT read (ruling 2026-11-07, D53): a draft runs nothing, so ready is the event
     that starts the tests, and the merge gate (:mod:`dev_lab.dev.forgemerge`) already requires them to pass.
     """
     del client  # the head is read off the PR record; the forge itself is not asked again
-    if dirty := _git(root, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
-        return [f'{RULE}: the tree has uncommitted changes to tracked files; commit and push them first:\n{dirty}']
     if (why := fetch(root, pull.head)) is not None:
         return [f'{RULE}: the head {pull.head} could not be fetched: {why}']
     return judge(root, pull.head_sha, pull.base, fetch=fetch, read=read)

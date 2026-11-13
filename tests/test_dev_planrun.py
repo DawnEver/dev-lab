@@ -226,14 +226,14 @@ def test_consent_ready_is_green_at_the_issuer_and_blocked_where_no_use_can_regis
 NOW = 1_800_000_000.0
 
 
-def _granted(home: Path, plan: object = PLAN) -> list[Path]:
+def _granted(home: Path, plan: object = PLAN, *, issued: float = NOW) -> list[Path]:
     """One local credential per grant, as ``sshhold open --plan`` writes them (only the fields the runner reads)."""
     folder = home / 'state' / 'consent'
     folder.mkdir(parents=True, exist_ok=True)
     written = []
     for index, grant in enumerate(plan.grants):
-        path = folder / f'id-{index}.json'
-        fields = {**grant, 'id': f'id-{index}', 'plan': plan.digest, 'issued': NOW, 'expires': NOW + 900}
+        path = folder / f'id-{index}-{issued:.0f}.json'
+        fields = {**grant, 'id': f'id-{index}', 'plan': plan.digest, 'issued': issued, 'expires': NOW + 900}
         path.write_text(json.dumps(fields), 'utf-8')
         written.append(path)
     return written
@@ -307,9 +307,34 @@ def test_a_second_run_resumes_where_the_first_stopped(tmp_path: Path) -> None:
     del host.outcomes['secret']  # the blocker fixed
     finished, lines = _run(host, tmp_path)
     assert finished, lines
-    assert lines[0] == f'step 1 ops.config on {HOST}: done earlier'
+    assert lines[0].startswith(f'step 1 ops.config on {HOST}: done earlier (run record ')
+    assert 'a new grant of this plan starts a new run' in lines[0]
     assert [json.loads(text)['id'] for text in host.carried] == ['id-0', 'id-1', 'id-1']
     assert not any(path.exists() for path in written)
+
+
+def test_a_fresh_grant_of_a_finished_plan_runs_again_never_done_earlier(tmp_path: Path) -> None:
+    """The 11-12 defect: a re-minted plan read the old run's record and ran nothing. PLANTED CONTROL: same grant."""
+    host = FakeHost()
+    assert _run(host, tmp_path)[0] is False, 'no credential yet: nothing runs'
+    _granted(tmp_path)
+    assert _run(host, tmp_path)[0]
+    assert len(host.carried) == 2
+    _granted(tmp_path, issued=NOW + 60)  # the user grants the same plan again
+    finished, lines = _run(host, tmp_path)
+    assert finished, lines
+    assert not any('done earlier' in line for line in lines)
+    assert len(host.carried) == 4, 'both steps ran on the fresh grant'
+
+
+def test_a_resume_on_the_same_grant_names_its_record(tmp_path: Path) -> None:
+    host, _ = FakeHost(), _granted(tmp_path)
+    host.outcomes['secret'] = ('refused: no door', 2, False)
+    assert not _run(host, tmp_path)[0]
+    record = next((tmp_path / 'state' / 'consent' / 'runs').glob(f'{PLAN.digest}-*.json'))
+    del host.outcomes['secret']
+    lines = _run(host, tmp_path)[1]
+    assert str(record) in lines[0]
 
 
 def test_a_step_with_no_live_credential_stops_before_running(tmp_path: Path) -> None:
@@ -438,7 +463,7 @@ def test_a_wave_the_forge_refused_unspent_keeps_its_credential_and_resumes_there
     assert [path.exists() for path in written] == [False, False, False, True]
     finished, lines = _wide_run(hosts, tmp_path, lambda words: (hosts[HOST].ledger.add(words[-1]), ('ok', 0))[1])
     assert finished, lines
-    assert lines[2] == f'step 3 ops.secret.place on {HOST}: done earlier'
+    assert lines[2].startswith(f'step 3 ops.secret.place on {HOST}: done earlier (run record ')
     assert not written[3].exists()
 
 
