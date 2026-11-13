@@ -321,7 +321,8 @@ continues it (LANDED-BRANCH-CONTINUES, above).
 
 The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) refuses a `pr/*` push whose tip
 lacks `origin/<integration>` (fetched afresh; a failed fetch refuses) or whose lock lags a floated sibling's
-head, naming `forge sync`; `forge pr ready` refuses on the same judgement and on a dirty tree.
+head, naming `forge sync`; `forge pr ready` refuses on the same judgement of the pushed head -- never on the local tree, so it works from any
+checkout (user ruling 2026-11-13).
 
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
 integration branch after `merges_only_since` that is not a two-parent merge with a `Merged-Branch:` trailer
@@ -367,7 +368,8 @@ head it names that head's branch, on stderr and as an `Admission:` line in the P
 not hold (`trialmerge.shares_unmerged`) that it is stacked and lands only after that PR, and opens it anyway.
 
 `DRAFT-UNTIL-READY` (D53): the rule row states it; the mechanism -- each forge's draft, the `pr ready`/`pr draft`
-doors, the pending `tests/merge-ready` and the idle-draft alarm -- is `dev_lab.dev.forgedraft`'s docstring.
+doors, the pending `tests/merge-ready`, the idle-draft alarm and `pr create --ready-when-current` (the serve readies
+the draft once its head is current) -- is `dev_lab.dev.forgedraft`'s docstring.
 A draft RUNS NOTHING (user ruling 2026-11-05): every job of a PR-started workflow on either forge is guarded at
 render by `forgedraft.READY_ONLY`, and the serve claims no part, syncs and gates no head of a draft; marking it
 ready (`ready_for_review`, or on Gitea the serve's next tick after the title edit) starts everything. A consumer takes it by re-rendering

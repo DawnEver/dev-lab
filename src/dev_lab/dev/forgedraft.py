@@ -32,15 +32,26 @@ A DRAFT NEVER STALLS SILENTLY -- a session that has not read this rule would not
 ``python -m dev_lab.dev.forge pr ready <N>`` / ``pr draft <N>`` (:func:`main`) move a PR between the two.
 
 READY IS EARNED (user ruling 2026-11-07): :func:`mark_ready` refuses, naming which condition failed, unless the
-checkout is clean and the PR head is CURRENT -- it contains integration's tip and its lock is fresh against the
-floated siblings' heads (:func:`dev_lab.dev.prcurrent.ready_refusals`, the one judgement the pre-push row reads
-too). There is no override. The head's test statuses are NOT a condition: a draft runs nothing (D53), so ready is
-what starts the tests, and the merge gate already requires them to pass.
+PR head is CURRENT -- it contains integration's tip and its lock is fresh against the floated siblings' heads
+(:func:`dev_lab.dev.prcurrent.ready_refusals`, the one judgement the pre-push row reads too). There is no override.
+The head's test statuses are NOT a condition: a draft runs nothing (D53), so ready is what starts the tests, and the
+merge gate already requires them to pass.
+
+READY IS A FORGE CALL (user ruling 2026-11-13): it judges the pushed head as origin holds it, never the checkout it
+runs from, so it works from any checkout of the repo -- a main checkout with an unrelated ``M uv.lock`` included.
+:func:`main` prints ONE stdout line naming the outcome (``#N is ready for review`` / ``#N stays a DRAFT: <why>``)
+and exits 1 on any refusal or forge/git failure; nothing is swallowed.
+
+READY AT THE RIGHT TIME (user ruling 2026-11-13): ``forge pr create --ready-when-current`` opens the draft with the
+:data:`READY_WHEN` line in its body. The serve's integration step (:func:`ready_when_current`) marks such a draft
+ready on the first tick its head judges current -- the same judgement as the door, so automation never readies
+what the door would refuse. Deleting the line from the body withdraws the declaration.
 """
 
 from __future__ import annotations
 
 import argparse
+import subprocess
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -61,13 +72,15 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'READY_DOOR', 'READY_ONLY', 'STALE_DRAFT', 'WAITING', 'Judge', 'NotReady', 'alarms', 'main', 'mark_draft',
-    'mark_ready', 'opened_line',
-    'pushed', 'waiting',
+    'READY_DOOR', 'READY_ONLY', 'READY_WHEN', 'STALE_DRAFT', 'WAITING', 'Judge', 'NotReady', 'alarms', 'main',
+    'mark_draft', 'mark_ready', 'opened_line', 'pushed', 'ready_when_current', 'waiting',
 ]  # fmt: skip
 
 #: The door that marks PR ``{n}`` ready.
 READY_DOOR: Final = 'python -m dev_lab.dev.forge pr ready {n}'
+
+#: The PR-body line declaring "mark me ready once my head is current" (``forge pr create --ready-when-current``).
+READY_WHEN: Final = 'Ready-When: current'
 
 #: What a draft head's ``tests/merge-ready`` says (``pending``), and what the merge decision names as missing.
 WAITING: Final = 'draft: mark ready with `' + READY_DOOR + '` -- nothing reviews or merges a draft'
@@ -139,6 +152,24 @@ def mark_draft(client: Client, number: int) -> PullRequest:
     return client.pr_view(number)
 
 
+def ready_when_current(root: Path, client: Client, base: str, *, judge: Judge) -> list[str]:
+    """Mark ready every open draft into *base* whose body declares :data:`READY_WHEN` and whose head *judge* passes.
+
+    One line per PR acted on or still held, for the serve to say; a draft without the line is never touched.
+    """
+    lines = []
+    for pull in pr_list(client):
+        if pull.base != base or not pull.draft or READY_WHEN not in pull.body.splitlines():
+            continue
+        try:
+            mark_ready(client, pull.number, root=root, judge=judge)
+        except NotReady as held:
+            lines.append(f'#{pull.number} stays a DRAFT until current: {held}')
+            continue
+        lines.append(f'#{pull.number} is ready for review: its head {pull.head_sha[:12]} is current ({READY_WHEN})')
+    return lines
+
+
 def waiting(client: Client, pull: PullRequest) -> str | None:
     """Post :data:`WAITING` (``pending``) as *pull*'s draft head's ``tests/merge-ready``, once; the line or ``None``."""
     said = WAITING.format(n=pull.number)
@@ -186,14 +217,16 @@ def main(argv: Sequence[str], *, judge: Judge, cwd: Path | None = None, client: 
     parser.add_argument('number', type=int)
     args = parser.parse_args(list(argv))
     root = Path.cwd() if cwd is None else cwd
-    client = client or client_for(root)
     try:
+        client = client or client_for(root)
         if args.verb == 'ready':
             pull = mark_ready(client, args.number, root=root, judge=judge)
         else:
             pull = mark_draft(client, args.number)
-    except (ForgeCallFailed, ValueError) as refused:
-        emit(f'[forge] pr {args.verb} #{args.number} refused: {refused}', err=True)
+    except (ForgeCallFailed, ValueError, OSError, subprocess.SubprocessError) as refused:
+        said = ' '.join(str(refused).split())  # one line: a multi-line reason never hides the verdict
+        stays = 'stays a DRAFT' if args.verb == 'ready' else 'is unchanged'
+        emit(f'#{args.number} {stays}: pr {args.verb} refused: {said}')
         return 1
     emit(f'#{pull.number} is {"a DRAFT" if pull.draft else "ready for review"}: {pull.title}')
     return 0
