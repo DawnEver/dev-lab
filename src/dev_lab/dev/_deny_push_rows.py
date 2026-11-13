@@ -36,7 +36,7 @@ PUSH_ROWS: tuple[dict[str, object], ...] = (
         'needs': None,
         'refuses': (
             'git push --force origin main',
-            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin main --force-with-lease',
+            f'./{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git push origin main --force-with-lease',
             'git push origin main --force-with-lease',
             'sh scripts/hooks/with-retry.sh push -f origin HEAD',
             'git -C ../sib push origin +main',
@@ -61,8 +61,8 @@ PUSH_ROWS: tuple[dict[str, object], ...] = (
             'sh scripts/hooks/with-retry.sh push origin -d lane/x',
             'git push --prune origin',
             'git push --mirror origin',
-            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin --delete lane/x',
-            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin :lane/x',
+            f'./{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git push origin --delete lane/x',
+            f'./{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git push origin :lane/x',
             '"C:/Program Files/Git/cmd/git.exe" push origin --delete lane/x',
             'git push origin :refs/tags/v1.0',
             'git push origin --delete refs/tags/v1.0',
@@ -86,7 +86,7 @@ PUSH_ROWS: tuple[dict[str, object], ...] = (
         'and to check a change first measure what you touched: {remedy}',
         'needs': 'verdict-entry-point',
         'refuses': (
-            './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push --no-verify',
+            f'./{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git push --no-verify',
             'git push --no-verify origin HEAD',
             'sh scripts/hooks/with-retry.sh push origin HEAD --no-verify',
         ),
