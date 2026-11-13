@@ -40,10 +40,7 @@ _TABLE: Final = 'integrator'
 FAMILY_INTEGRATION: Final = 'integrate/main'
 
 #: The note a decision carries when it was judged against :data:`FAMILY_INTEGRATION` for want of a declaration.
-UNDECLARED_INTEGRATION: Final = (
-    f'judged into {FAMILY_INTEGRATION}: the checkout declares no [tool.dev_lab.{_TABLE}] -- declare it '
-    '(docs-src/dev/onboarding.md)'
-)
+UNDECLARED_INTEGRATION: Final = f'no [tool.dev_lab.{_TABLE}]: judged into {FAMILY_INTEGRATION}'
 
 
 class IntegrationNotDeclared(ValueError):
@@ -113,9 +110,10 @@ def policy_from(text: str, origin: str) -> Policy:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     if not declared.get('integration'):
+        # The exit leads: a forge status description is cut at its limit, and the origin path is the longest part.
         msg = (
-            f'[tool.dev_lab.{_TABLE}] in {origin} names no integration branch; declare integration = '
-            f'"{FAMILY_INTEGRATION}" there (every piece a member declares: docs-src/dev/onboarding.md)'
+            f'names no integration branch: declare [tool.dev_lab.{_TABLE}] integration = "{FAMILY_INTEGRATION}" '
+            f'in {origin} (docs-src/dev/onboarding.md)'
         )
         raise IntegrationNotDeclared(msg)
     declared = declared | {key: tuple(declared[key]) for key in ('test_roots', 'merge_checks') if key in declared}

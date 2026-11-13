@@ -104,7 +104,7 @@ def test_a_checkout_declaring_no_integrator_refuses_a_pr_into_another_branch_nam
     state, description = _merge_ready(forge, head)
     assert state == 'failure'
     assert 'names no integration branch' in description
-    assert 'declare integration = "integrate/main"' in description
+    assert 'declare [tool.dev_lab.integrator] integration = "integrate/main"' in description
     assert 'ValueError' not in description
 
 
