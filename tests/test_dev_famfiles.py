@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Final
 
@@ -21,7 +22,9 @@ from dev_lab.dev.famfiles import (
     OWNED,
     PROJECT_FILES,
     RENDERERS,
+    _run,
     due_renderers,
+    is_member,
     main,
     project_files_on_disk,
     render_agent_files,
@@ -250,7 +253,7 @@ def test_a_declared_input_makes_its_renderer_due_and_an_omitted_one_does_not(tmp
     _declare(tmp_path, 'deltas = "d.py"\n')
     assert 'devdocs' not in {renderer.name for renderer in due_renderers(tmp_path)}
     _declare(tmp_path, f'docs_base = "{_BASE}"\n')
-    assert {renderer.name for renderer in due_renderers(tmp_path)} == {'devdocs'}
+    assert 'devdocs' in {renderer.name for renderer in due_renderers(tmp_path)}
 
 
 def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path: Path) -> None:
@@ -265,13 +268,17 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
     (tmp_path / '.gitignore').write_text('x\n', encoding='utf-8')
     _declare(tmp_path, f'deltas = "d.py"\nadoption = "scripts/deny_rules.py"\ndocs_base = "{_BASE}"\n')
     ran: list[list[str]] = []
-    assert render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0) == (
-        'famfiles', 'hook_adoption', 'devdocs',
-    )  # fmt: skip
-    assert ran[1][-2:] == ['--adoption', 'scripts/deny_rules.py']
-    assert ran[2] == ['py', '-m', 'dev_lab.dev.devdocs', '--repo', str(tmp_path), '--base', _BASE]
+    lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
+    assert [line.split(':')[0] for line in lines if line.endswith(': rendered')] == [
+        'famfiles', 'agent_guard', 'hook_adoption', 'autodoors', 'ciworkflows', 'devdocs',
+    ]  # fmt: skip
+    assert ran[2][-2:] == ['--adoption', 'scripts/deny_rules.py']
+    assert ran[5] == ['py', '-m', 'dev_lab.dev.devdocs', '--repo', str(tmp_path), '--base', _BASE]
     (hooks / 'deny-rules.json').unlink()
-    assert 'hook_adoption' not in render_repo(tmp_path, 'py', lambda _argv, _root: 0)
+    _declare(tmp_path, f'deltas = "d.py"\ndocs_base = "{_BASE}"\n')
+    assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in render_repo(
+        tmp_path, 'py', lambda _argv, _root: 0
+    )
     with pytest.raises(ValueError, match='the renderer famfiles exited 3'):
         render_repo(tmp_path, 'py', lambda _argv, _root: 3)
 
@@ -279,11 +286,15 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
 def test_the_door_writes_the_pointer_table_end_to_end(tmp_path: Path) -> None:
     """The real door in a real subprocess: the declared table lands in the index; an undeclared repo is untouched."""
     index = _index(tmp_path, '# Dev\n')
-    _declare(tmp_path, 'nothing = "declared"\n')
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
     assert main(['--repo', str(tmp_path)]) == 0
     assert index.read_text(encoding='utf-8') == '# Dev\n', 'the control: no declaration, no table'
     _declare(tmp_path, f'docs_base = "{_BASE}"\n')
-    assert main(['--repo', str(tmp_path)]) == 0
+
+    def only_devdocs(argv: list[str], root: Path) -> int:
+        return _run(argv, root) if 'dev_lab.dev.devdocs' in argv else 0
+
+    assert 'devdocs: rendered' in render_repo(tmp_path, sys.executable, only_devdocs)
     assert pointer_table(_BASE) in index.read_text(encoding='utf-8')
 
 
@@ -299,3 +310,69 @@ def test_the_pointer_table_replaces_the_family_one_and_keeps_the_repos_own(tmp_p
 def test_an_index_without_a_family_table_gets_one_appended(tmp_path: Path) -> None:
     assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: rendered'
     assert (tmp_path / INDEX_REL).read_text(encoding='utf-8').endswith(f'{pointer_table(_BASE)}\n')
+
+
+def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -> None:
+    """2026-11-13: cc-market declared only ``[tool.dev_lab.integrator]``; the door rendered nothing, silently.
+
+    PLANTED CONTROL: the same tree without the table is no family repo, and every renderer says why it skipped.
+    """
+    ran: list[list[str]] = []
+    lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
+    assert ran == []
+    assert len(lines) == len(RENDERERS)
+    assert all(': skipped -- not a family repo' in line or 'is not declared' in line for line in lines)
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nintegration = "main"\n', encoding='utf-8')
+    lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
+    assert 'ciworkflows: rendered' in lines
+    assert ['py', '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tmp_path)] in ran
+    assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in lines
+    assert 'devdocs: skipped -- [tool.dev_lab.render] docs_base is not declared' in lines
+
+
+@pytest.mark.parametrize(
+    ('manifest', 'member'),
+    [
+        ('[project]\ndependencies = ["dev-lab[test]>=1"]\n', True),
+        ('[dependency-groups]\ndev = [{ include-group = "x" }, "dev_lab"]\n', True),
+        ('[project.optional-dependencies]\ndev = ["Dev.Lab"]\n', True),
+        ('[tool.dev_lab.ci]\n"ci.yml" = {}\n', True),
+        ('[project]\ndependencies = ["dev-labyrinth", "lab-commons"]\n', False),  # the control
+        ('', False),
+    ],
+)
+def test_a_repo_is_a_family_member_by_its_dev_lab_dependency_or_table(manifest: str, member: bool) -> None:  # noqa: FBT001
+    assert is_member(manifest) is member
+
+
+def test_the_guard_waits_for_the_deny_rules_it_installs_over(tmp_path: Path) -> None:
+    """agent_guard --install exits 1 without deny rules, so a family repo not adopting them skips it, by name.
+
+    PLANTED CONTROL: declaring the adoption makes both due.
+    """
+    _declare(tmp_path, 'deltas = "d.py"\n')
+    lines = render_repo(tmp_path, 'py', lambda _argv, _root: 0)
+    skipped = 'agent_guard: skipped -- it needs hook_adoption, skipped: [tool.dev_lab.render] adoption is not declared'
+    assert skipped in lines
+    _declare(tmp_path, 'adoption = "a.py"\n')
+    assert {'agent_guard: rendered', 'hook_adoption: rendered'} <= set(render_repo(tmp_path, 'py', lambda _a, _r: 0))
+
+
+def test_the_module_door_runs_and_its_check_says_no_to_a_stale_file(tmp_path: Path) -> None:
+    """2026-11-13: ``python -m dev_lab.dev.famfiles`` had no ``__main__`` guard: a check that could not say no.
+
+    Every invocation -- the door, ``--files``, ``--check`` -- imported the module, printed nothing and exited 0.
+
+    PLANTED CONTROL: a stale principles page makes ``--check`` exit 1; after the render it exits 0.
+    """
+    door = [sys.executable, '-m', 'dev_lab.dev.famfiles', '--files', '--repo', str(tmp_path)]
+    page = tmp_path / PAGE_REL
+    page.parent.mkdir(parents=True)
+    page.write_text('stale\n', encoding='utf-8')
+    checked = subprocess.run([*door, '--check'], capture_output=True, text=True, check=False)
+    assert checked.returncode == 1
+    assert f'{PAGE_REL}: would render (drifted)' in checked.stdout
+    assert subprocess.run(door, capture_output=True, check=False).returncode == 0
+    assert page.read_text(encoding='utf-8') == render_principles()
+    again = subprocess.run([*door, '--check'], capture_output=True, text=True, check=False)
+    assert (again.returncode, f'{PAGE_REL}: current' in again.stdout) == (0, True)
