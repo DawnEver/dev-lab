@@ -6,11 +6,14 @@ version tag is added only on promotion to the trunk or at the user's request. Tw
 (no network call beyond the push itself):
 
 * ``BASE-HOLDS-THE-MILESTONE`` -- a branch the push creates or updates must contain (``merge-base
-  --is-ancestor``) the newest milestone held LOCALLY: the highest ``v*`` tag in the family grammar
+  --is-ancestor``) the newest milestone: the highest ``v*`` tag in the family grammar
   ``v<major>.<minor>.<patch>[.dev<N>][-unverified]`` (stdlib regex: the dev layer imports no :mod:`packaging`),
-  a release outranking its dev tags, the legacy suffix read as its base, any other tag ignored. The hook reads
-  no remote tags: ``forge sync`` fetches them, so a stale local tag set judges against an older milestone,
-  never a wrong one. No version tag -> nothing to hold. Remedy: ``python -m dev_lab.dev.forge sync``.
+  a release outranking its dev tags, the legacy suffix read as its base, any other tag ignored -- and only a tag
+  ON THE LINE: contained in ``origin/<integration>`` or ``origin/<trunk>`` (the pushed tip's
+  ``[tool.dev_lab.integrator]``, else ``integrate/main`` and ``main``). A local-only tag reachable from neither
+  is a stray no ``forge sync`` can bring in, so it is ignored, never a wall without an exit. The hook reads the
+  local tracking refs and fetches nothing: ``forge sync`` fetches them, so a stale local view judges against an
+  older milestone, never a wrong one. No milestone -> nothing to hold. Remedy: ``python -m dev_lab.dev.forge sync``.
 * ``VERSION-TAG-NEEDS-APPROVAL`` -- in an agent session (:data:`dev_lab.dev.sessionprs.SESSION_ENV` set), a push
   CREATING a ``v*`` tag on origin is refused unless :data:`APPROVED_ENV` holds the user's own words -- the
   ``--approved "<words>"`` pattern of ``branchset --discard``, through the environment because git passes a hook
@@ -32,6 +35,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.refspec import pushed_refs
 from dev_lab.dev.sessionprs import SESSION_ENV
 
@@ -53,6 +57,7 @@ HOOK_ID: Final = 'milestone-base'
 #: The user's own approval words for a version tag pushed from an agent session.
 APPROVED_ENV: Final = 'DEV_LAB_TAG_APPROVED'
 _VERSIONS: Final = 'refs/tags/v'
+_INTEGRATION: Final = 'integrate/main'
 _GRAMMAR: Final = re.compile(r'v(\d+)\.(\d+)\.(\d+)(?:\.dev(\d+))?(?:-unverified)?')
 _GIT: Final = shutil.which('git') or 'git'
 
@@ -72,10 +77,25 @@ def milestone_version(tag: str) -> tuple[int, int, int, tuple[int, int]] | None:
     return int(major), int(minor), int(patch), (1, 0) if dev is None else (0, int(dev))
 
 
-def newest_milestone(root: Path) -> str | None:
-    """The local ``v*`` tag naming the highest family version, or ``None`` when no tag parses."""
-    code, out = _git(root, 'for-each-ref', '--format=%(refname:strip=2)', 'refs/tags/')
-    parsed = [(version, tag) for tag in (out.splitlines() if code == 0 else []) if (version := milestone_version(tag))]
+def _line(root: Path, sha: str) -> tuple[str, ...]:
+    """The origin tracking refs of the integration line and trunk *sha* declares, the family defaults otherwise."""
+    try:
+        policy = policy_at(root, sha)
+    except (ValueError, OSError):
+        policy = Policy(integration=_INTEGRATION)
+    return tuple(f'refs/remotes/origin/{branch}' for branch in dict.fromkeys((policy.integration, policy.trunk)))
+
+
+def newest_milestone(root: Path, line: Sequence[str]) -> str | None:
+    """The ``v*`` tag naming the highest family version contained in a ref of *line*, or ``None``.
+
+    A tag reachable from no ref of *line* -- a local-only stray -- is not a milestone.
+    """
+    tags: set[str] = set()
+    for ref in line:
+        code, out = _git(root, 'for-each-ref', '--format=%(refname:strip=2)', f'--merged={ref}', 'refs/tags/')
+        tags.update(out.splitlines() if code == 0 else [])
+    parsed = [(version, tag) for tag in tags if (version := milestone_version(tag))]
     return max(parsed)[1] if parsed else None
 
 
@@ -104,11 +124,13 @@ def refusals(root: Path, lines: str, *, env: Mapping[str, str] | None = None) ->
     """Every refusal for the push *lines* describe; *env* defaults to the process environment."""
     env = os.environ if env is None else env
     found: list[str] = []
-    milestone = newest_milestone(root)
     for ref in pushed_refs(lines.splitlines()):
         if ref.deleted:
             continue
-        if ref.branch is not None and milestone is not None:
+        if ref.branch is not None:
+            milestone = newest_milestone(root, _line(root, ref.local_sha))
+            if milestone is None:
+                continue
             code, _ = _git(root, 'merge-base', '--is-ancestor', f'{milestone}^{{commit}}', ref.local_sha)
             if code != 0:
                 found.append(_behind(milestone, ref.branch, ref.local_sha))
