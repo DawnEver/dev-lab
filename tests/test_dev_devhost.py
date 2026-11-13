@@ -291,3 +291,48 @@ def test_render_write_refuses_a_render_that_does_not_parse(tmp_path: Path, monke
     assert devhost.main([*argv, str(tmp_path / 'backups')]) == 2
     assert machine.read_bytes() == before
     assert not (tmp_path / 'backups').exists()
+
+
+CHANNELS = HOST.replace('os = "windows"\n', 'os = "windows"\nchannels = { "bridge-x" = "user-x" }\n')
+
+
+def test_declared_channels_render_as_the_agent_table_and_read_back(tmp_path: Path) -> None:
+    clone = _clone(tmp_path, CHANNELS)
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
+    rendered = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    assert rendered['agent'] == {'channels': {'bridge-x': 'user-x'}}
+    assert devhost.declared_channels(rendered) == {'bridge-x': 'user-x'}
+    assert devhost.drift(rendered) == []
+
+
+def test_a_machine_declaring_no_channel_grants_none(tmp_path: Path) -> None:
+    rendered = _rendered_machine(tmp_path)
+    assert 'agent' not in rendered, 'no declaration renders no table, never an empty grant'
+    assert devhost.declared_channels(rendered) == {}
+    assert devhost.declared_channels(tomllib.loads(LOCAL)) == {}
+
+
+@pytest.mark.parametrize(
+    'channels',
+    [
+        '"bridge-x"',
+        '{ "bridge-x" = 1 }',
+        '{ "bridge-x" = ["user-x"] }',
+        '{ "bridge-x" = "" }',
+        '{ "" = "user-x" }',
+        '{ "bridge-x" = { user = "user-x" } }',
+    ],
+)
+def test_a_channel_declaration_that_is_not_source_to_user_strings_is_refused(tmp_path: Path, channels: str) -> None:
+    clone = _clone(tmp_path, HOST.replace('os = "windows"\n', f'os = "windows"\nchannels = {channels}\n'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert [line for line in found if 'channels' in line], found
+    live = {'agent': {'channels': tomllib.loads(f'c = {channels}')['c']}}
+    with pytest.raises(ValueError, match='channels'):
+        devhost.declared_channels(live)
+
+
+def test_channels_are_one_machine_fact_never_the_family(tmp_path: Path) -> None:
+    family = FAMILY.replace('[dev]\n', '[dev]\nchannels = { "b" = "u" }\n')
+    found = check_family(_write(tmp_path, 'family.toml', family))
+    assert any('channels' in line for line in found), found
