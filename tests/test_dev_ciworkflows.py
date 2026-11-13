@@ -115,7 +115,8 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
     assert granted == {
         'parts': {},
         'part': {'contents': 'write', 'statuses': 'write'},
-        'absent-parts': {'contents': 'read', 'statuses': 'write'},
+        # actions: read -- jobparts.run_jobs lists the run's concluded jobs so a failed part reads error, not absent
+        'absent-parts': {'contents': 'read', 'statuses': 'write', 'actions': 'read'},
         'security': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'head-gates': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
