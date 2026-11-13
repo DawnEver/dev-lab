@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import planrun, sshhold
+from dev_lab.dev import planrun, sshholdwire
 from dev_lab.ops import configdoor
 from dev_lab.ops.config import ConfigSource
 from dev_lab.ops.consent.credential import ConsentRefused
@@ -111,7 +111,7 @@ class _Host:
     def run(self, command: str, _stdin: bytes | None = None) -> tuple[str, int]:
         if self.down:
             msg = 'no held session'
-            raise sshhold.HoldRefused(msg)
+            raise sshholdwire.HoldRefused(msg)
         self.commands.append(command)
         words = shlex.split(command)
         if '--subject' in words:

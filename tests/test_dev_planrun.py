@@ -15,7 +15,7 @@ import pytest
 from _ops_fixtures import NOW as FIXED
 from _ops_fixtures import RFC_KEY, code, config
 
-from dev_lab.dev import planrun, sshhold, walls
+from dev_lab.dev import planrun, sshholdwire, walls
 from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops import configdoor, consentverbs
 from dev_lab.ops.consent import serve
@@ -65,7 +65,7 @@ class FakeHost:
 
     def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
         if self.down:
-            raise sshhold.HoldRefused(self.down)
+            raise sshholdwire.HoldRefused(self.down)
         self.commands.append(command)
         self.stdins.append((command, stdin))
         words = shlex.split(command)

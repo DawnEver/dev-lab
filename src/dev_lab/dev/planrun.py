@@ -82,7 +82,7 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import devhost, forgesecrets, sshhold, walls
+from dev_lab.dev import devhost, forgesecrets, sshholdwire, walls
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.planremote import Remote, remote_for
@@ -286,7 +286,7 @@ def _ready(step: Step, remote: Remote) -> tuple[str | None, bool]:
         said, status = remote.run(
             shlex.join([step.python, '-m', 'dev_lab.ops', '--config', step.config, 'consent', 'ready'])
         )
-    except (sshhold.HoldRefused, OSError) as gone:
+    except (sshholdwire.HoldRefused, OSError) as gone:
         return str(gone), False
     if status == _SSH_UNREACHED:
         last = _last_line(said) or f'ssh exited {status}'
@@ -518,7 +518,7 @@ def _unreachable(steps: Steps, done: set[int], remotes: Remotes) -> list[str]:
     for dest in pending:
         try:
             _, status = remotes(dest).run('true')
-        except (sshhold.HoldRefused, OSError) as gone:
+        except (sshholdwire.HoldRefused, OSError) as gone:
             down.append(f'host {dest}: UNREACHABLE -- {gone}')
             continue
         if status:
@@ -629,7 +629,7 @@ def main(argv: Sequence[str] | None = None, *, readers: Readers | None = None) -
             green, lines = preflight(plan, steps, remote_for)
             if not green:
                 walls.refused_text(Path.cwd(), '\n'.join(lines), reason='preflight', rule=RULE)
-    except (ConsentRefused, sshhold.HoldRefused, OSError, ValueError) as refused:
+    except (ConsentRefused, sshholdwire.HoldRefused, OSError, ValueError) as refused:
         emit(f'planrun: refused: {refused}', err=True)
         return 2
     emit('\n'.join(lines))
