@@ -84,7 +84,7 @@ from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
     from pathlib import Path
 
     from lab_commons.compute.model import Ranked
@@ -141,7 +141,7 @@ TESTS: Final = 'tests'
 UNIT: Final = 'unit'
 
 #: Characters a test path never carries: a glob, or a quote/space that would make it more than one path.
-_NOT_A_PATH: Final = frozenset('*?[]{}"\' \t')
+_NOT_A_PATH: Final = frozenset('*?[]{}"\' \t\r\n')
 
 
 class UndeclaredRequest(ValueError):
@@ -189,25 +189,23 @@ def parse_deadline(body: str) -> datetime | None:
     return when if when.tzinfo is not None else None
 
 
-def placement(root: Path, sha: str, paths: Sequence[str], resources: Sequence[str]) -> frozenset[str]:
-    """The need-set a selection of *paths* at *sha* runs under: ``{linux}``, or its markers plus ``windows``.
+def placement(sources: Mapping[str, bytes], sha: str, resources: Sequence[str]) -> frozenset[str]:
+    """The need-set a selection's *sources* at *sha* run under: ``{linux}``, or its markers plus ``windows``.
 
     Each file's ``pytest.mark.<name>`` spellings among the declared *resources* are read from its source at
-    *sha* (a mark a conftest applies by directory is not seen). A selection holding a ``jmag`` test runs on
-    Windows with every resource its files name; one naming no resource but ``linux`` runs on Linux; any other
-    resource is refused (Linux cannot run it, and Windows serves a selection only for ``jmag``).
+    *sha*, as :func:`_blobs` read it (a mark a conftest applies by directory is not seen). A selection holding
+    a ``jmag`` test runs on Windows with every resource its files name; one naming no resource but ``linux``
+    runs on Linux; any other resource is refused (Linux cannot run it, and Windows serves a selection only
+    for ``jmag``).
 
     Raises:
         UndeclaredRequest: a file is unreadable at *sha*, or the selection names a resource no placement serves.
 
     """
     marks: set[str] = set()
-    for path in paths:
-        shown = _door.run(
-            [_GIT, '-C', str(root), 'show', f'{sha}:{path}'], capture_output=True, check=False, timeout=60
-        )
+    for path, source in sources.items():
         try:
-            marks |= set(mark_names(ast.parse(shown.stdout))) & set(resources)
+            marks |= set(mark_names(ast.parse(source))) & set(resources)
         except (SyntaxError, ValueError) as why:
             msg = f'{path!r} at {sha[:12]} is unreadable as Python: {why}'
             raise UndeclaredRequest(msg) from why
@@ -246,8 +244,36 @@ def _test_roots(text: str) -> tuple[str, ...]:
     return tuple(str(one).strip('/') for one in roots) if isinstance(roots, list) and roots else ()
 
 
-def _path_refusal(root: Path, sha: str, path: str, roots: Sequence[str]) -> str:
-    """Why *path* is not a test file at *sha* under *roots*; ``''`` when it is."""
+def _blobs(root: Path, sha: str, paths: Sequence[str]) -> dict[str, bytes]:
+    """The contents of each of *paths* that is a file at *sha*, read by ONE ``git cat-file --batch``.
+
+    One child for the whole selection, never one per file: per-file reads cost ``forge queue`` ~0.1 s each on
+    Windows, 1,033 children and ~120 s of a 170 s read (measured 2026-11-13). A path that is absent or names
+    a tree is left out. *paths* never hold a line break (:data:`_NOT_A_PATH` refuses one first).
+    """
+    if not paths:
+        return {}
+    asked = ''.join(f'{sha}:{path}\n' for path in paths).encode()
+    done = _door.run([_GIT, '-C', str(root), 'cat-file', '--batch'], input=asked, capture_output=True,
+                     check=False, timeout=60)  # fmt: skip
+    found: dict[str, bytes] = {}
+    out, at = done.stdout, 0
+    for path in paths:  # each answer: ``<oid> <type> <size>\n<content>\n``, or ``<object> missing\n``
+        end = out.find(b'\n', at)
+        if end < 0:
+            break
+        header, at = out[at:end].split(), end + 1
+        if header[-1:] == [b'missing']:
+            continue
+        size = int(header[-1])
+        if header[1] == b'blob':
+            found[path] = out[at : at + size]
+        at += size + 1
+    return found
+
+
+def _path_refusal(path: str, roots: Sequence[str], files: Mapping[str, bytes], sha: str) -> str:
+    """Why *path* is not a test file at *sha* under *roots*; ``''`` when it is. *files*: :func:`_blobs` at *sha*."""
     pure = PurePosixPath(path)
     if not path or path.startswith('-'):
         return f'{path!r} looks like an option, not a test file'
@@ -259,10 +285,7 @@ def _path_refusal(root: Path, sha: str, path: str, roots: Sequence[str]) -> str:
         return f'{path!r} is outside the declared test roots {list(roots)}'
     if pure.suffix != '.py':
         return f'{path!r} is not a test file (.py)'
-    found = _door.run(
-        [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{path}'], capture_output=True, check=False, timeout=60
-    )
-    return '' if found.returncode == 0 else f'{path!r} does not exist at {sha[:12]}'
+    return '' if path in files else f'{path!r} does not exist at {sha[:12]}'
 
 
 def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
@@ -282,7 +305,8 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     if not isinstance(produce, list) or '--part' not in produce or not roots:
         msg = f'{sha[:12]} declares no [tool.lab_commons.tests] produce door with --part, or no pytest testpaths'
         raise UndeclaredRequest(msg)
-    if refused := [why for path in paths if (why := _path_refusal(root, sha, path, roots))]:
+    files = _blobs(root, sha, [path for path in paths if not _NOT_A_PATH & set(path)])
+    if refused := [why for path in paths if (why := _path_refusal(path, roots, files, sha))]:
         msg = f'producer {TESTS!r} refused: ' + '; '.join(refused)
         raise UndeclaredRequest(msg)
     door = [str(one) for one in produce[: produce.index('--part')]]
@@ -295,7 +319,7 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     except ValueError as why:
         msg = f'[tool.lab_commons.tests] resources refused at {sha[:12]}: {why}'
         raise UndeclaredRequest(msg) from why
-    needs = placement(root, sha, paths, resources)
+    needs = placement(files, sha, resources)
     mem_gb = selection_mem_gb(repo, paths, SELECTION_CPU)
     return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
 
