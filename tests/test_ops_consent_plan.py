@@ -19,6 +19,8 @@ from dev_lab.ops.consent.client import grant_plan, redeem
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.ops.consent.plan import DIGEST_SHOWN, load, parsed, show
+from dev_lab.ops.consentrole import Consent
+from dev_lab.ops.consentverbs import issuer as issuer_of
 from dev_lab.ops.totp import STEP
 
 HOST = 'ops@forge.example.org'
@@ -147,7 +149,7 @@ def test_a_reused_credential_is_refused(tmp_path: Path, issuer: Issuer, monkeypa
 @pytest.mark.parametrize(
     ('data', 'match'),
     [
-        ({'host': HOST, 'grants': []}, '1..16'),
+        ({'host': HOST, 'grants': []}, 'non-empty'),
         ({'host': 'forge', 'grants': [APPLY]}, '<user>@<host>'),
         ({'host': HOST, 'grants': [APPLY, APPLY]}, 'twice'),
         ({'host': HOST, 'grants': [APPLY], 'extra': 1}, 'exactly host and grants'),
@@ -221,3 +223,38 @@ def test_two_json_answers_are_refused_rather_than_guessed(
     with pytest.raises(ConsentRefused, match='2 JSON lines'):
         grant_plan(path, shown, code(0), HOST, table=table, send=lambda _t, _p: (0, '[]\n[]\n'),
                    home=tmp_path / 'home', now=lambda: NOW)  # fmt: skip
+
+
+def _grants(count: int) -> list[dict[str, str]]:
+    return [{'action': 'ops.config', 'subject': f'{index:064x}'} for index in range(count)]
+
+
+def test_a_plan_over_the_declared_max_grants_is_refused_naming_the_key(tmp_path: Path) -> None:
+    """The cap is ``[ops.consent] max_grants``, read from the role -- never a constant; one AT the cap passes."""
+    (tmp_path / 'totp').write_text(RFC_KEY + '\n', encoding='utf-8')
+    keygen(tmp_path / 'consent.key')
+    small = Issuer(tmp_path / 'totp', tmp_path / 'consent.key', tmp_path / 'state', 'test', lambda: NOW, max_grants=3)
+    with pytest.raises(ConsentRefused, match=r'\[ops\.consent\] max_grants = 3'):
+        small.issue_plan({'host': HOST, 'grants': _grants(4)}, code(0))
+    assert not small.ledger.exists()  # refused before the code
+    assert len(small.issue_plan({'host': HOST, 'grants': _grants(3)}, code(0))) == 3
+
+
+def test_the_issuer_reads_max_grants_from_its_declared_role() -> None:
+    role = Consent(account='consent', totp='t', key='k', state='s', max_grants=40)
+    assert issuer_of(role, alert=lambda *_: None).max_grants == 40
+    assert Consent(account='consent', totp='t', key='k', state='s').max_grants == 16
+
+
+def test_show_groups_by_host_and_action_and_names_the_boundary_grants(tmp_path: Path) -> None:
+    """PLANTED: a boundary grant (ops.config) is in the summary; a non-boundary one (review.raise-cap) is not."""
+    raise_cap = {'action': 'review.raise-cap', 'subject': 'r' * 8}
+    path, _ = _plan(tmp_path, {'host': HOST, 'grants': [APPLY, raise_cap, REVOKE, APPLY | {'subject': 'd' * 64}]})
+    lines = show(path).splitlines()
+    summary = next(line for line in lines if line.startswith('boundary:'))
+    assert 'ops.config x2' in summary
+    assert 'ops.forge.revoke x1' in summary
+    assert 'review.raise-cap' not in summary
+    assert f'  {HOST}' in lines
+    assert lines.index('    ops.config (2)') < lines.index(f'      {APPLY["subject"]}')
+    assert '    review.raise-cap (1)' in lines

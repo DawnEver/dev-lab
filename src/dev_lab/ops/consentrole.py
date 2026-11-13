@@ -19,7 +19,8 @@ class Consent:
     the cluster's ONE TOTP secret (base32, root 600); ``key`` the Ed25519 private key (PEM, root 600); ``state`` the
     directory of the append-only ledger, the last accepted TOTP step and the lockout. ``issuer`` names it in each
     credential and labels the Authenticator entry; ``lockout_after`` consecutive wrong codes refuse every code for
-    ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`).
+    ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`). ``max_grants`` is the most grants one plan's code may buy: the
+    user approves a plan by the digest of ALL of it, so its length is a declared host value, not a safety constant.
     """
 
     account: str
@@ -30,6 +31,7 @@ class Consent:
     issuer: str = 'forge consent'
     lockout_after: int = 5
     lockout_minutes: float = 15.0
+    max_grants: int = 16
 
 
 @dataclass(frozen=True)

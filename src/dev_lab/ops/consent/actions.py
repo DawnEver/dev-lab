@@ -3,8 +3,10 @@
 The one source of truth (user ruling 2026-11-07): the issuer refuses a request this table does not admit, and every
 verifier reads the same row. A row's ``default_ttl`` is what a request naming no ``ttl`` gets; ``max_ttl`` the
 longest one may ask -- above it the issuer REFUSES, never clamps. ``params`` maps each parameter to its type; a
-request carries exactly those keys. A ``campaign`` credential carries a ``cap`` the issuer debits; a ``single`` one
-is spent by its one use.
+request carries exactly those keys. ``boundary`` says the action changes a SECURITY BOUNDARY -- who or what may
+act on a host or forge (a config, an account, a token, a protection, a secret, an installed revision, a role) -- so
+a shown plan names it in its summary (:func:`dev_lab.ops.consent.plan.show`). A ``campaign`` credential carries
+a ``cap`` the issuer debits; a ``single`` one is spent by its one use.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ class Action:
     scope: str
     default_ttl: float
     max_ttl: float
+    boundary: bool
 
     def __post_init__(self) -> None:
         """Refuse a row that lies: an unknown scope, or a default above its ceiling."""
@@ -49,32 +52,34 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
     row.name: row
     for row in (
         # A budget a campaign spends against; the cap is the budget, debited per use at the issuer.
-        Action('budget.approve', {}, CAMPAIGN, 15 * _MINUTE, 24 * _HOUR),
+        Action('budget.approve', {}, CAMPAIGN, 15 * _MINUTE, 24 * _HOUR, boundary=False),
         # One raise of a review cap to ``cap``.
-        Action('review.raise-cap', {'cap': int}, SINGLE, 15 * _MINUTE, 15 * _MINUTE),
+        Action('review.raise-cap', {'cap': int}, SINGLE, 15 * _MINUTE, 15 * _MINUTE, boundary=False),
         # One break-glass wave: its merge cap (0 = none) and window (user ruling 2026-11-07: up to 24 h).
-        Action('breakglass.wave', {'max_merges': int, 'hours': float}, SINGLE, 15 * _MINUTE, 24 * _HOUR),
+        Action('breakglass.wave', {'max_merges': int, 'hours': float}, SINGLE, 15 * _MINUTE, 24 * _HOUR, boundary=True),
         # One change of a host's security boundary through `ops config apply`; subject = the candidate's SHA-256.
-        Action('ops.config', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        Action('ops.config', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
         # One `ops forge account ensure` (a machine account and its Read grants); subject = the request's digest.
-        Action('ops.forge.account', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        Action('ops.forge.account', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
         # One `ops forge token mint` (one named token of one login); subject = the request's digest.
-        Action('ops.forge.token', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        Action('ops.forge.token', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
         # One `ops forge token mint-batch` (one login's closed, ordered batch); subject = the whole batch's digest.
-        Action('ops.forge.tokens', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        Action('ops.forge.tokens', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
         # One `ops forge token revoke` (one named token of one login, deleted); subject = the request's digest.
-        Action('ops.forge.revoke', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        Action('ops.forge.revoke', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
+        # One `ops upgrade --sha S` (dev-lab installed at S, the declared upgrade ref's tip); subject = S.
+        Action('ops.upgrade', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
         # One `ops forge protect apply` (one repo's declared branch protection at a ref); subject = the repo, the ref
         # and the rendered protection's digest.
-        Action('ops.forge.protect', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        Action('ops.forge.protect', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
         # One `ops secret place` (one declared secret file written); subject = path + the content's SHA-256.
-        Action('ops.secret.place', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR),
+        Action('ops.secret.place', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True),
         # One session holds the integrator role (verification HPC accounts) until expiry; subject = the session id,
         # verified offline on every load (dev_lab.dev.hpcaccount.session); a day at most, never a standing grant.
-        Action('session.integrator', {}, SINGLE, 12 * _HOUR, 24 * _HOUR),
+        Action('session.integrator', {}, SINGLE, 12 * _HOUR, 24 * _HOUR, boundary=True),
         # One TASK holds the integrator role until expiry; subject = the task id `<slug>@<authority>` (the authority the
         # user's own task-open minted). A session inherits it only while the USER's prompt bound it to that task
         # (dev_lab.dev.hpcaccount.session). A week at most: a task outlives its sessions, never its re-consent.
-        Action('task.integrator', {}, SINGLE, 3 * _DAY, 7 * _DAY),
+        Action('task.integrator', {}, SINGLE, 3 * _DAY, 7 * _DAY, boundary=True),
     )
 })  # fmt: skip
