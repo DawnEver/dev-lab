@@ -1328,9 +1328,10 @@ def test_a_selection_declares_the_workers_its_pytest_runs(monkeypatch, xdist, gi
     """Declared == used: the claim's cores ARE the -n the step runs (one interpreter when serial).
 
     PLANTED CONTROLS: without xdist, ``-n0`` and ``-p no:xdist`` all run ONE interpreter and claim one
-    core, never the cap; an explicit width is the caller's and is declared as given.
+    core, never the cap; an explicit width is the caller's and is declared as given. The box has 4 cores, so the
+    width xdist is handed is its cores (:func:`verifybox.selection_width`).
     """
-    _boxed_on(monkeypatch, 16.0, xdist=xdist)
+    _boxed_on(monkeypatch, 4.0, xdist=xdist)
     argv, _record = verifybox.boxed(Path('r'), ['py', '-m', 'pytest', *given], queue_s=5, outcome=Path('o.json'))
     assert _claimed(argv) == (cores, ['py', '-m', 'pytest', *runs])
 
@@ -1359,9 +1360,9 @@ def test_a_producer_inside_the_box_runs_the_width_it_was_admitted_at(monkeypatch
 
 
 def test_a_selection_runs_the_width_its_files_and_free_memory_hold(monkeypatch, tmp_path: Path) -> None:
-    """THE DECLARATION THAT LIED: a 1-file selection asked SELECTION_CPU workers it could never use.
+    """THE DECLARATION THAT LIED: a 1-file selection asked a fixed 4 workers it could never use.
 
-    The width is :func:`learned.fit_width` of SELECTION_CPU, the files selected and the FREE room, and the -n
+    The width is :func:`verifybox.selection_width` of the files selected and the FREE room, and the -n
     the step runs IS the cores it declares. PLANTED CONTROL: a box with plenty runs the full width.
     """
     (tmp_path / 'tests').mkdir()
@@ -1372,11 +1373,31 @@ def test_a_selection_runs_the_width_its_files_and_free_memory_hold(monkeypatch, 
     one, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests/test_a.py'], queue_s=5, outcome=Path('o.json'))
     assert _claimed(one) == ('1', ['py', '-m', 'pytest', 'tests/test_a.py', '-n', '1']), 'one file, one worker'
     full, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests'], queue_s=5, outcome=Path('o.json'))
-    assert _claimed(full)[0] == str(verifybox.SELECTION_CPU), 'PLANTED CONTROL: plenty runs the full width'
+    assert _claimed(full)[0] == '6', 'PLANTED CONTROL: plenty runs one worker a file'
     _boxed_on(monkeypatch, 16.0, xdist=True, free_gb=1.6)
     starved, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests'], queue_s=5, outcome=Path('o.json'))
     assert _claimed(starved) == ('1', ['py', '-m', 'pytest', 'tests', '-n', '1']), '1.6 GB free holds one 1 GB worker'
     assert starved[starved.index('--mem-gb') + 1] == '1', 'declared at the width it runs'
+
+
+@pytest.mark.parametrize(
+    ('cores', 'free_gb', 'per_gb', 'expect'),
+    [
+        (24.0, 63.0, 1.5, 24),  # a 24-core box with ample room: wider than the old fixed 4
+        (4.0, 63.0, 1.5, 4),  # a 4-core box never runs more workers than it has cores
+        (24.0, 20.9, 18.15, 1),  # memory still binds: one 18 GB worker fits, two do not
+        (24.0, 30.0, 1.5, 20),  # memory narrows a wide box below its cores
+    ],
+)
+def test_a_selections_width_is_the_machines_cores_narrowed_by_its_memory(cores, free_gb, per_gb, expect) -> None:
+    """No fixed cap: the width is the FREE cores, narrowed by the free memory at the worker's price.
+
+    Measured 2026-11-10: the fixed ``SELECTION_CPU = 4`` held a 24-core / 63 GB box to 4 workers, the CPU at
+    ~15-20 %. PLANTED CONTROLS: the 4-core box and the memory rows prove the width still says no.
+    """
+    room = Resources(cpu=cores, mem_gb=free_gb)
+    assert verifybox.selection_width(room, files=0, per_gb=per_gb) == expect
+    assert verifybox.selection_width(room, files=3, per_gb=per_gb) == min(3, expect), 'one worker per file at most'
 
 
 _ORDER_DEPENDENT: Final = """

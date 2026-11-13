@@ -59,8 +59,9 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.box import GB, Capacity
 from lab_commons.box.machine import RESOURCE_NAME
-from lab_commons.compute.model import REQUEST
+from lab_commons.compute.model import REQUEST, Resources
 from lab_commons.config import section
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name, read_vocabulary
@@ -81,7 +82,7 @@ from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import Owner, ProducerExit, release_reason
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import running_interpreter
-from dev_lab.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
+from dev_lab.dev.verifybox import SELECTION_WALL_S, selection_files, selection_mem_gb, selection_width
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
@@ -296,8 +297,11 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
         msg = f'[tool.lab_commons.tests] resources refused at {sha[:12]}: {why}'
         raise UndeclaredRequest(msg) from why
     needs = placement(root, sha, paths, resources)
-    mem_gb = selection_mem_gb(repo, paths, SELECTION_CPU)
-    return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
+    size = Capacity.read()
+    room = Resources(cpu=size.cpu, mem_gb=size.mem_bytes / GB)
+    workers = selection_width(room, files=len(paths), per_gb=selection_mem_gb(repo, paths, 1))
+    mem_gb = selection_mem_gb(repo, paths, workers)
+    return Declared(TESTS, (*door, '--', *paths), needs, float(workers), mem_gb, SELECTION_WALL_S / 3600)
 
 
 def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:
