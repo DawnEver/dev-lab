@@ -36,24 +36,37 @@ installed package gets that row's announced skip naming the clone, never a porta
 
 from __future__ import annotations
 
+import argparse
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Final, NamedTuple
 
+from lab_commons.log import emit
+
 __all__ = [
     'CANONICAL_TREE',
+    'INDEX_REL',
     'PAGES',
     'Page',
     'docs_dir',
+    'main',
     'missing_pages',
     'page_path',
     'pointer_table',
     'slugs',
+    'write_pointer_table',
 ]
 
 #: Where the pages live, relative to this repo's root. A consumer reaches them by reading this
 #: repo -- a checkout beside its own, or the file's page on the forge -- and never by copying one in.
 CANONICAL_TREE: Final = 'docs-src/dev'
+
+#: A repo's dev index, the file :func:`write_pointer_table` keeps the family table in.
+INDEX_REL: Final = f'{CANONICAL_TREE}/index.md'
+
+_HEADER: Final = '| page | what it covers |'
+_TARGET: Final = re.compile(r'^\| \[[^\]]+\]\((?P<target>[^)]+)\) \|')
 
 
 class Page(NamedTuple):
@@ -222,4 +235,58 @@ def pointer_table(base: str, pages: Iterable[Page] = PAGES) -> str:
     different tables of contents.
     """
     rows = '\n'.join(f'| [{page.title}]({base.rstrip("/")}/{page.slug}.md) | {page.subject} |' for page in pages)
-    return f'| page | what it covers |\n|---|---|\n{rows}'
+    return f'{_HEADER}\n|---|---|\n{rows}'
+
+
+def _family_span(lines: list[str], base: str) -> tuple[int, int] | None:
+    """The ``[start, end)`` lines of the family table in *lines*: every row links under *base*, or to a page slug.
+
+    The ROWS identify it, never the header: a repo's own table of its own pages has the identical header.
+    """
+    prefix, declared = f'{base.rstrip("/")}/', set(slugs())
+    for start, line in enumerate(lines):
+        if line != _HEADER:
+            continue
+        end = start + 1
+        while end < len(lines) and lines[end].startswith('|'):
+            end += 1
+        targets = [match['target'] for row in lines[start + 2 : end] if (match := _TARGET.match(row))]
+        if targets and all(t.startswith(prefix) or Path(t).stem in declared for t in targets):
+            return start, end
+    return None
+
+
+def write_pointer_table(root: Path, base: str) -> str:
+    """Render :func:`pointer_table` into *root*'s :data:`INDEX_REL`; one line, what happened.
+
+    The family table is replaced in place; an index holding none gets it appended, a repo without an index gets
+    one holding only it. Everything else in the index is the repo's and is kept byte for byte.
+    """
+    path = root / INDEX_REL
+    held = path.read_text(encoding='utf-8') if path.is_file() else ''
+    lines = held.splitlines()
+    table = pointer_table(base).splitlines()
+    if (span := _family_span(lines, base)) is not None:
+        lines[span[0] : span[1]] = table
+    else:
+        lines += ([''] if lines else []) + table
+    text = '\n'.join(lines) + '\n'
+    if text == held:
+        return f'{INDEX_REL}: current'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8', newline='\n')
+    return f'{INDEX_REL}: rendered'
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI: write the family pointer table into a repo's dev index (a renderer of :mod:`dev_lab.dev.famfiles`)."""
+    parser = argparse.ArgumentParser(description='Render the family dev-docs pointer table into a repo`s index.')
+    parser.add_argument('--repo', type=Path, default=Path.cwd())
+    parser.add_argument('--base', required=True, help='how the repo reaches the shared docs-src/dev tree')
+    args = parser.parse_args(argv)
+    emit(f'[devdocs] {write_pointer_table(args.repo.resolve(), args.base)}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

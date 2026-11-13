@@ -68,8 +68,8 @@ def assert_every_managed_file_is_rendered(
 ) -> None:
     """Every famconfig base is declared, no delta forks its base, and every file is base plus delta.
 
-    *rerender_hint* is the repo's own command; ``python -m dev_lab.dev.famfiles --deltas <its
-    module>`` is the family one and renders every artefact at once.
+    *rerender_hint* is the repo's own command; ``python -m dev_lab.dev.famfiles`` is the family one and
+    renders every artefact the repo declares at once.
     """
     assert_every_base_is_accounted_for(deltas=deltas, repo=repo)
     for artefact in sorted(BASES):

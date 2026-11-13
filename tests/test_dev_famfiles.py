@@ -14,6 +14,7 @@ from typing import Final
 import pytest
 from _famconfig_delta import DELTAS, REPO
 
+from dev_lab.dev.devdocs import INDEX_REL, pointer_table, write_pointer_table
 from dev_lab.dev.famconfig import BASES, RENDERED
 from dev_lab.dev.famfiles import (
     MANAGED,
@@ -26,6 +27,7 @@ from dev_lab.dev.famfiles import (
     render_agent_files,
     render_all,
     render_argv,
+    render_repo,
 )
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
@@ -167,7 +169,7 @@ def test_the_renderers_are_derived_from_the_generated_rows() -> None:
     those rows and from nowhere else.
     """
     assert {renderer.name for renderer in RENDERERS} == {
-        'agent_guard', 'autodoors', 'ciworkflows', 'famfiles', 'hook_adoption',
+        'agent_guard', 'autodoors', 'ciworkflows', 'devdocs', 'famfiles', 'hook_adoption',
     }  # fmt: skip
     unrendered = {row.path for row in PROJECT_FILES.values() if row.generated and row.renderer is None}
     assert unrendered == {'uv.lock'}, 'the lock is the door`s, every other generated file names its renderer'
@@ -201,3 +203,80 @@ def test_a_due_renderer_missing_its_declared_input_is_refused_by_name(tmp_path: 
     named = {renderer.name: renderer for renderer in RENDERERS}
     with pytest.raises(ValueError, match=r'\[tool\.dev_lab\.render\] adoption'):
         render_argv(named['hook_adoption'], tmp_path, 'py')
+
+
+# ------------------------------------------------------------------- the one door: every declared artefact
+
+
+_BASE: Final = '../../../lab-commons/docs-src/dev'
+
+
+def _declare(root: Path, table: str) -> None:
+    (root / 'pyproject.toml').write_text(f'[tool.dev_lab.render]\n{table}', encoding='utf-8')
+
+
+def _index(root: Path, text: str) -> Path:
+    index = root / INDEX_REL
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(text, encoding='utf-8')
+    return index
+
+
+def test_a_declared_input_makes_its_renderer_due_and_an_omitted_one_does_not(tmp_path: Path) -> None:
+    """2026-11-13: nothing wrote the docs pointer table, so each repo pasted it by hand.
+
+    PLANTED CONTROL: a repo whose declaration omits ``docs_base`` does not get the table, even holding an index.
+    """
+    _index(tmp_path, '# Dev\n')
+    _declare(tmp_path, 'deltas = "d.py"\n')
+    assert 'devdocs' not in {renderer.name for renderer in due_renderers(tmp_path)}
+    _declare(tmp_path, f'docs_base = "{_BASE}"\n')
+    assert {renderer.name for renderer in due_renderers(tmp_path)} == {'devdocs'}
+
+
+def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path: Path) -> None:
+    """``famfiles`` without ``--deltas`` is the one door: every renderer due, its inputs from the render table.
+
+    2026-11-13: agents ran ciworkflows, famfiles, hook_adoption and agent_guard one by one, and famfiles ignored
+    the declared ``adoption``. PLANTED CONTROL: the same repo minus its hook rules file runs no hook_adoption.
+    """
+    hooks = tmp_path / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    (hooks / 'deny-rules.json').write_text('{}\n', encoding='utf-8')
+    (tmp_path / '.gitignore').write_text('x\n', encoding='utf-8')
+    _declare(tmp_path, f'deltas = "d.py"\nadoption = "scripts/deny_rules.py"\ndocs_base = "{_BASE}"\n')
+    ran: list[list[str]] = []
+    assert render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0) == (
+        'famfiles', 'hook_adoption', 'devdocs',
+    )  # fmt: skip
+    assert ran[1][-2:] == ['--adoption', 'scripts/deny_rules.py']
+    assert ran[2] == ['py', '-m', 'dev_lab.dev.devdocs', '--repo', str(tmp_path), '--base', _BASE]
+    (hooks / 'deny-rules.json').unlink()
+    assert 'hook_adoption' not in render_repo(tmp_path, 'py', lambda _argv, _root: 0)
+    with pytest.raises(ValueError, match='the renderer famfiles exited 3'):
+        render_repo(tmp_path, 'py', lambda _argv, _root: 3)
+
+
+def test_the_door_writes_the_pointer_table_end_to_end(tmp_path: Path) -> None:
+    """The real door in a real subprocess: the declared table lands in the index; an undeclared repo is untouched."""
+    index = _index(tmp_path, '# Dev\n')
+    _declare(tmp_path, 'nothing = "declared"\n')
+    assert main(['--repo', str(tmp_path)]) == 0
+    assert index.read_text(encoding='utf-8') == '# Dev\n', 'the control: no declaration, no table'
+    _declare(tmp_path, f'docs_base = "{_BASE}"\n')
+    assert main(['--repo', str(tmp_path)]) == 0
+    assert pointer_table(_BASE) in index.read_text(encoding='utf-8')
+
+
+def test_the_pointer_table_replaces_the_family_one_and_keeps_the_repos_own(tmp_path: Path) -> None:
+    own = '| page | what it covers |\n|---|---|\n| [Gate](gate.md) | this repo`s gate |'
+    stale = f'| page | what it covers |\n|---|---|\n| [Old]({_BASE}/old.md) | retired |'
+    index = _index(tmp_path, f'# Dev\n\n{stale}\n\nprose\n\n{own}\n')
+    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: rendered'
+    assert index.read_text(encoding='utf-8') == f'# Dev\n\n{pointer_table(_BASE)}\n\nprose\n\n{own}\n'
+    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: current'
+
+
+def test_an_index_without_a_family_table_gets_one_appended(tmp_path: Path) -> None:
+    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: rendered'
+    assert (tmp_path / INDEX_REL).read_text(encoding='utf-8').endswith(f'{pointer_table(_BASE)}\n')

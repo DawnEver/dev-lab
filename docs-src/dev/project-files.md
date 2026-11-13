@@ -15,8 +15,10 @@ re-render; never hand-edit a rendered file.
   (`RENDERED` = byte equality, `REQUIRED` = base lines present); `_famconfig_sections` does the same for a table
   inside a file somebody else owns (`pyproject.toml`, `ruff.toml`); `agent_guard` and `hook_adoption` install
   and render the agent hook files.
-- **One command.** `python -m dev_lab.dev.famfiles --deltas <the repo's DELTAS module> [--check]` re-renders
-  every RENDERED artefact and reports the REQUIRED ones. `--check` writes nothing and exits 1 on any change.
+- **One door.** `python -m dev_lab.dev.famfiles` runs every renderer the repo's `[tool.dev_lab.render]` and its
+  files make due (`famfiles.render_repo`): CI workflows, the base + delta files, principles and rem pages, deny
+  rules, the guard engine and its settings wiring, the door rules, the dev-docs pointer table. `forge sync`'s
+  relock calls the same function. `--deltas <module> [--check]` runs the base + delta renderer alone.
 - **One check.** `dev_lab.dev.famtests.famfiles`:
   `assert_every_project_file_is_accounted_for(root=, owned_here=)` and
   `assert_every_managed_file_is_rendered(root=, deltas=, repo=, rerender_hint=)`.
@@ -67,7 +69,7 @@ re-render; never hand-edit a rendered file.
 
 1. Keep the repo's `DELTAS` module and add a `Delta` for every base the kit publishes; a missing one is refused.
 2. Remove from each delta every line the base now holds; a restatement is refused at render time.
-3. `python -m dev_lab.dev.famfiles --deltas <that module>`; commit the rendered files.
+3. Declare it as `[tool.dev_lab.render] deltas`, run `python -m dev_lab.dev.famfiles`; commit the rendered files.
 4. One test file calling both `famtests.famfiles` bodies, with `owned_here` naming the repo's own files and why.
 
 ## The interpreter spelling

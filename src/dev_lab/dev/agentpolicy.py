@@ -218,13 +218,14 @@ POLICY: Final[tuple[Door, ...]] = (
         "Cancelling the forge's own test jobs of one commit that are confirmed stuck: busy at full CPU with no "
         'new test result for longer than a multiple of their measured duration. Never any other job.',
     ),
-    # ---- publishing
     Door(
         _forge('sync'),
-        MAIN,
-        "Merging the integration branch into this session's own branches through the forge door, with the relock "
-        'of the floated siblings and the re-render of every generated family file it brings.',
+        SUBAGENT,
+        "Merging the integration branch into this agent's own branch through the forge door, with the relock of "
+        'the floated siblings and the re-render of every generated family file it brings, committed locally and '
+        'never pushed: publishing the result stays with the main session.',
     ),
+    # ---- publishing
     Door(
         (),
         MAIN,
