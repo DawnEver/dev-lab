@@ -122,3 +122,14 @@ def test_every_forge_git_call_runs_under_the_machine_env() -> None:
     for module in (forgeautosync, relock):
         source = inspect.getsource(module._git)
         assert 'env=machine_env(root)' in source, module.__name__
+
+
+def test_the_session_trailers_are_read_from_the_launcher_and_the_bridge() -> None:
+    """PLANTED CONTROL: an empty or malformed id stamps nothing."""
+    bridge = 'session_015BVi5YEVzxDoc8t7EkKMds'
+    assert labsession.trailers({labsession.ENV: _ID, labsession.CLAUDE_ENV: bridge}) == (
+        f'Lab-Session: {_ID}',
+        f'Claude-Session: https://claude.ai/code/{bridge}',
+    )
+    assert labsession.trailers({}) == ()
+    assert labsession.trailers({labsession.ENV: 'a b', labsession.CLAUDE_ENV: ''}) == ()
