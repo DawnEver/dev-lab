@@ -155,6 +155,28 @@ declares (`dev_lab.ops.config.load`).
   `status`; `--jump <bastion>` for a host behind a bastion that shares the TOTP secret). The code reaches ssh only
   through `SSH_ASKPASS`, never argv, disk or a log (`dev_lab.dev.sshhold`).
 - A code is the user's own, typed for THIS plan; no host step needing one runs without it.
+- A round needs no extra code for what the plan can carry: an `ops.forge.protect` subject is derived on the
+  workstation (`python -m dev_lab.dev.planrun subject`, the host's own renderer), and an upgrade is the plan step
+  `ops upgrade --sha <tip> --credential` (`ops.upgrade`, subject = the declared ref's tip; idempotent).
+- `consent plan` groups the grants by host and action under a `boundary:` summary of the grants that change a
+  security boundary (the registry row's `boundary`).
+
+### 5.1 Design (not built): one plan, several hosts, one code
+
+Today a plan names ONE `host`, and a step on another host needs that host's own session, hence a second code.
+Every ingredient of one code for N hosts already exists: the cluster shares ONE TOTP secret, each verifier
+(pam_oath per host, the issuer) accepts a code once, and a credential verifies OFFLINE on any host holding the
+issuer's public key (its use registers online at the issuer). What is missing:
+
+1. The plan names `hosts: [...]` and each grant its `host`; the digest covers both, so the user approves where
+   each grant runs. `consent plan` already groups by host.
+2. `sshhold open --plan` opens every host's session with the same code inside ONE TOTP step (or the skew
+   window), issuer grant first; a host whose open misses the window is reported, never retried with the code.
+3. `grant_plan`'s host check becomes "the session host is one of the plan's hosts"; `planrun` keys `dest` from the
+   grant, and `recover` stays per plan digest.
+
+Not small: it changes the signed plan schema (every stored plan migrates once), and the one-step window makes
+opening N sessions a timing contract that needs its own failure path. Build it as its own change.
 
 ## 6. Break-glass waves
 
