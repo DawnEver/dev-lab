@@ -70,7 +70,6 @@ def test_each_granted_main_door_of_the_ruling_is_in_the_table() -> None:
         ('pr', 'create'),
         ('pr', 'ready'),
         ('pr', 'draft'),
-        ('sync',),
         ('pr', 'breakglass'),
         ('breakglass', 'open'),
         ('review', 'takeover'),
@@ -78,6 +77,10 @@ def test_each_granted_main_door_of_the_ruling_is_in_the_table() -> None:
     ):
         assert verb in forge, verb
     assert ('promote',) in module_verbs(MAIN)['dev_lab.dev.integrate']
+    # 2026-11-13: `forge sync` merges, relocks and commits LOCALLY and never pushes, so it is every agent's --
+    # a subagent refused it could not take integration into its own lane.
+    assert ('sync',) in module_verbs(SUBAGENT)['dev_lab.dev.forge']
+    assert ('sync',) not in forge
     granted = {door.argv[2:] for door in POLICY if door.actor != USER and door.argv[:2] == ('python', '-m')}
     assert {('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'status', 'list')} <= granted
     assert ('dev_lab.dev.hook_install', '--install') in granted
