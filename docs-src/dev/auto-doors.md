@@ -3,14 +3,14 @@
 In Claude Code and Codex auto mode, the family's checked doors run without a prompt or a classifier refusal
 (`AUTO-MODE-RUNS-THE-DOORS`). Use the door instead of the raw verb: each re-checks its precondition at the
 moment it acts. The forge PR lifecycle is a door the agent runs itself, never hands to the user
-(`FORGE-DOORS-ARE-CONSENT`). Local cleanup is a door; deleting a branch on origin stays a human's action, and a subagent never
-pushes.
+(`FORGE-DOORS-ARE-CONSENT`). Local cleanup is a door; an origin branch is deleted only through LOSSLESS-DELETE (`branchprune delete`), and
+a subagent never pushes.
 
 ## The doors
 
 | door | does |
 |---|---|
-| `python -m dev_lab.dev.branchset --apply` | Reclaims every reclaimable worktree FIRST (`dev_lab.dev.reclaim.reclaim`, next row), then deletes every merged LOCAL branch: never a declared branch, never one with commits origin lacks, never one still checked out in a worktree. Re-runs `merge-base --is-ancestor` right before each delete and pins it to that sha. Origin candidates are listed with `git push origin --delete <b>` for a human. |
+| `python -m dev_lab.dev.branchset --apply` | Reclaims every reclaimable worktree FIRST (`dev_lab.dev.reclaim.reclaim`, next row), then deletes every merged LOCAL branch: never a declared branch, never one with commits origin lacks, never one still checked out in a worktree. Re-runs `merge-base --is-ancestor` right before each delete and pins it to that sha. Landed origin candidates are listed with their agent door, `python -m dev_lab.dev.branchprune delete <b>` (LOSSLESS-DELETE); unlanded ones with `(merge first)`. |
 | `python -m dev_lab.dev.worktrees [--prune]` | Lists every linked worktree and orphan directory with its verdict. `--prune` reclaims a linked tree only when ALL hold: not `git worktree lock`-ed; no change to a TRACKED file, staged or not (`git status --porcelain --untracked-files=no` empty; untracked and ignored files never block); its content landed on the trunk or a declared session (`git cherry` empty, or its origin ref gone after a squash merge); no process works in, executes from or reads it (LIVE-RUN `occupants`). Its outputs (`archive-outputs`) are moved home and verified first (`worktree_archive.home_outputs`, user ruling 2026-11-12), chained: an unverified move keeps the tree, with the reason; else it is deleted, then its branch via `branchset --apply` where a branch set is declared. A summary line counts every kept tree by reason. An orphan directory is judged the same way. Every kept tree is listed with its reason. The session debris hook runs it. |
 | `python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]` | Stops one identified run and its subtree, children first, never an ancestor or a sibling. A run is identified by its command line: the built-in signatures (verify, a gate runner, pytest) plus regexes in `[tool.dev_lab.stoprun] signatures`. Any other pid is refused (exit 3), naming what it is (its command line), its parent, whether it descends from this session, and the exit: ask the user, or declare a signature. |
 

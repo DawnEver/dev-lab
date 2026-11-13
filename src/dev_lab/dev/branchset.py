@@ -26,9 +26,9 @@ Three questions are asked of it, all through local refs (fetch first; the remote
   branch, pinned to the sha it saw; it refuses a declared branch, the main checkout's branch, a live session, a
   name with no local branch, and an empty approval. Origin is never touched.
 
-The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. Remote deletion is a human
-decision expressed as DATA: ``prune_merged`` (default ``false``) is what lets the forge prune merged origin
-branches (:mod:`dev_lab.dev.branchprune`); an agent never deletes a remote ref by hand.
+The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. ``prune_merged`` (default
+``false``) lets the forge prune merged origin branches (:mod:`dev_lab.dev.branchprune`); an agent never deletes a remote
+ref by hand, only through :data:`ORIGIN_DOOR` (LOSSLESS-DELETE), which ``--apply`` names on every landed origin row.
 """
 
 from __future__ import annotations
@@ -55,6 +55,7 @@ __all__ = [
     'ARCHIVE_PREFIX',
     'EPHEMERAL_OFF',
     'FAMILY_EPHEMERAL',
+    'ORIGIN_DOOR',
     'BranchSet',
     'BranchSetKeyRetired',
     'BranchSetNotDeclared',
@@ -263,6 +264,10 @@ def holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
     return tuple(refs)
 
 
+ORIGIN_DOOR: Final = 'python -m dev_lab.dev.branchprune delete'
+"""The agent's exit for a landed origin branch: LOSSLESS-DELETE re-judges it after a fresh fetch, then lease-deletes."""
+
+
 def _archive_tags(root: Path) -> tuple[str, ...] | None:
     out = git_out(root, 'for-each-ref', '--format=%(refname:short)', f'refs/tags/{ARCHIVE_PREFIX}')
     return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
@@ -308,7 +313,9 @@ def apply_local(
     """THE LOCAL CLEANUP DOOR: delete every deletable LOCAL candidate; one line per branch. ``None``: unread.
 
     User ruling 2026-10-04: local cleanup is a door, but a push or a REMOTE deletion is never automatic.
-    So an origin candidate is only LISTED, with the command a human runs. Each local delete follows a
+    So an origin candidate is only LISTED: a landed one with :data:`ORIGIN_DOOR`, the LOSSLESS-DELETE door an agent
+    runs (ruling 2026-10-21; it lives in :mod:`dev_lab.dev.branchdelete`, which imports this module, so the door is
+    named rather than called), an unlanded one with ``(merge first)``. Each local delete follows a
     FRESH ``merge-base --is-ancestor`` and is pinned to the sha that check saw (``update-ref -d <ref>
     <sha>``), so a branch that moved in between is kept, never lost. A declared branch, a branch with
     commits origin lacks, and a branch checked out in ANY worktree (clean or not -- ruling 2026-10-04:
@@ -327,7 +334,7 @@ def apply_local(
     out: list[str] = list(trees)
     for row in rows:
         if row.where == 'origin':
-            hint = f'(human: git push origin --delete {row.name})' if row.deletable else '(merge first)'
+            hint = f'(agent: {ORIGIN_DOOR} {row.name})' if row.deletable else '(merge first)'
             out.append(f'listed   origin  {row.name}  {hint}')
             continue
         if row.where == 'tag':
@@ -415,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--apply',
         action='store_true',
-        help='reclaim landed worktrees, then delete deletable LOCAL branches; origin is listed only',
+        help='reclaim landed worktrees, then delete deletable LOCAL branches; origin gets its agent door',
     )
     parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
     parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
