@@ -1,4 +1,6 @@
 ---
+name: every-wall-teaches-and-the-walls-of-1113
+description: The every-wall-teaches ruling and the 11-13 walls it closed -- the wall ledger, the exits, the push-door and milestone fixes.
 created: 2026-11-13
 accessed: 2026-11-13
 ---
@@ -28,3 +30,4 @@ never hand the user a command.
 - A command hidden behind a shell variable evaded the deny row; the hook saw only `"$C"`.
 - A permission-classifier denial carries no remedy, so it read as a dead end; the door existed.
 - One `--jump` for a whole plan routed every host through the bastion, which refused the direct host.
+> Amended 2026-11-13: added the name/description frontmatter the memory shape requires -- approved: "同意补全"
