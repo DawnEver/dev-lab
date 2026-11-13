@@ -147,9 +147,9 @@ declares (`dev_lab.ops.config.load`).
   verifiers hold the public key; clients hold nothing. A credential is signed for ONE action of the registry
   (`dev_lab.ops.consent.actions`) and ONE subject (a digest), and an irreversible action registers its single use
   online.
-- A plan (`{"host", "grants": [...]}`, at most `[ops.consent] max_grants` grants, default 16, refused by the issuer before the code) is shown to the user with its digest
-  (`python -m dev_lab.ops.consent plan <plan.json>`); one cluster code from the user buys one credential per grant AND opens
-  the host session. A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
+- A plan (`{"host", "grants": [...]}`, at most `[ops.consent] max_grants` grants -- default 16, refused by the
+  issuer before the code) is shown to the user with its digest (`python -m dev_lab.ops.consent plan <plan.json>`);
+  one cluster code from the user buys one credential per grant AND opens the host session. A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
 - `sshhold` holds that session: one authentication per work session, every later command rides it
   (`python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
   `status`; `--jump <bastion>` for a host behind a bastion that shares the TOTP secret). The code reaches ssh only
