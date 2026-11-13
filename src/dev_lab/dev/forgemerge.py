@@ -23,7 +23,10 @@ auto-merge ``forge pr create`` enabled merges once they are green. GitHub refuse
 that is already mergeable (dev-lab#15), which is why the job that posts ready merges rather than waiting on it.
 The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
-A PR IS MERGED WHEN, and only when, read from the object store and the forge:
+A PR IS MERGED WHEN, and only when, read from the object store and the forge (a repo declaring
+``[tool.dev_lab.integrator] merge_checks`` -- one no serve host serves, user ruling 2026-11-12 -- reads its declared
+checks standing ``success`` (:func:`checks_wait`) IN PLACE of the first, fourth and fifth conditions, which a serve
+host posts):
 
 * its head's HOSTED test parts all stand PASS (:func:`parts_wait`); a hand part is named, never waited on
   (:func:`hand_parts`, user ruling 2026-11-10);
@@ -110,6 +113,7 @@ __all__ = [
     'READY',
     'Decision',
     'auto_merge',
+    'checks_wait',
     'ci_merges',
     'decide',
     'external',
@@ -118,6 +122,7 @@ __all__ = [
     'merge',
     'merge_message',
     'ready',
+    'status_waits',
 ]  # fmt: skip
 
 #: The merge decision's ``pending`` line for a PR the forge never merges (:func:`external`).
@@ -220,6 +225,39 @@ def parts_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
     return '; '.join([f'they stand {parts.reading}', *parts.problems])
 
 
+def checks_wait(checks: Sequence[str], statuses: Sequence[CommitStatus]) -> str | None:
+    """Why the declared *checks* do not all stand ``success`` in *statuses*, or ``None``: each one named.
+
+    A check not yet posted, or posted ``pending``, waits; ``failure`` or ``error`` is red. Nothing else stands in.
+    """
+    latest = {status.context: status for status in statuses}
+    said = []
+    for context in checks:
+        held = latest.get(context)
+        if held is None:
+            said.append(f'{context} is not yet posted')
+        elif held.state != 'success':
+            said.append(f'{context} is {held.state}: {held.description}')
+    return '; '.join(said) or None
+
+
+def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus]) -> list[str]:
+    """What *head*'s posted statuses lack: the repo's declared merge checks, else every serve-posted status.
+
+    User ruling 2026-11-12: a repo declaring ``merge_checks`` waits on them IN PLACE of the test parts,
+    ``tests/security`` and the head gates, which only a serve host posts.
+    """
+    if policy.merge_checks:
+        checked = checks_wait(policy.merge_checks, statuses)
+        return [] if checked is None else [f'its merge checks: {checked}']
+    said = [
+        ('its security check', security_wait(statuses)),
+        ('its head gates', gates_wait(statuses)),
+        ('its test parts', parts_wait(head, statuses)),
+    ]
+    return [f'{what}: {why}' for what, why in said if why is not None]
+
+
 def decide(
     root: Path,
     policy: Policy,
@@ -249,12 +287,8 @@ def decide(
         waived, unreviewed = waiver, None
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
-    if (unsafe := security_wait(statuses)) is not None:
-        missing.append(f'its security check: {unsafe}')
-    if (gated := gates_wait(statuses)) is not None:
-        missing.append(f'its head gates: {gated}')
-    if (red := parts_wait(head, statuses)) is not None:
-        missing.append(f'its test parts: {red}')
+    waits = status_waits(policy, head, statuses)
+    missing += waits
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)
@@ -280,8 +314,7 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    waits = sum(found is not None for found in (unsafe, gated, red))  # the review is a check too, never in missing
-    waiting = len(missing) == waits and not red_checks(statuses)
+    waiting = len(missing) == len(waits) and not red_checks(statuses)  # the review is never in missing
     return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses), waiting)
 
 

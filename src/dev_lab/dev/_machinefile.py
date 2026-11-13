@@ -13,6 +13,7 @@ import difflib
 import re
 import tomllib
 from collections.abc import Mapping
+from datetime import date, datetime, time
 from typing import Any, Final
 
 __all__ = ['diff', 'merged', 'renamed', 'render_value']
@@ -20,7 +21,7 @@ __all__ = ['diff', 'merged', 'renamed', 'render_value']
 #: A ``[table]`` or ``[[array]]`` header line.
 _HEADER: Final = re.compile(r'^\s*(\[\[?)\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
 
-Value = str | int | float | list[str] | dict[str, 'Value']
+Value = str | int | float | date | time | list[str] | dict[str, 'Value']
 
 
 def render_value(value: Value) -> str:
@@ -31,6 +32,8 @@ def render_value(value: Value) -> str:
         return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
     if isinstance(value, list):
         return '[' + ', '.join(render_value(v) for v in value) + ']'
+    if isinstance(value, datetime | date | time):
+        return value.isoformat().replace('+00:00', 'Z')
     if isinstance(value, dict):
         return '{ ' + ', '.join(f'{k} = {render_value(v)}' for k, v in value.items()) + ' }'
     return repr(value)

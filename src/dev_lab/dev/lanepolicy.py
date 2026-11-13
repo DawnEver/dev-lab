@@ -48,6 +48,12 @@ class Policy:
     #: server-side once it is green (:mod:`dev_lab.dev.forgemerge`), and a client push adding any commit to
     #: it is refused (:mod:`dev_lab.dev.sessionbranch`). ``''``: the integrator merges and pushes.
     pr_merges_since: str = ''
+    #: The forge checks the merge decision waits on IN PLACE of the statuses a serve host posts (the test parts,
+    #: ``tests/security``, the head gates): each a status context that must stand ``success`` at the PR head
+    #: (:func:`dev_lab.dev.forgemerge.checks_wait`), and required on the integration branch
+    #: (:func:`dev_lab.dev.forgeprotect.required_contexts`). For a repo no serve host serves -- a config-only repo
+    #: whose Actions workflow is its check (user ruling 2026-11-12). ``()``: the serve-posted statuses gate.
+    merge_checks: tuple[str, ...] = ()
     #: A head committed more recently than this duration is not AUTO-SYNCED (:mod:`dev_lab.dev.forgeautosync`,
     #: on wherever ``pr_merges_since`` is declared): a live author is not raced.
     auto_sync_quiet: str = '10 min'
@@ -87,5 +93,5 @@ def policy_from(text: str, origin: str) -> Policy:
     if not declared.get('integration'):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} names no integration branch; declare integration = "integrate/main"'
         raise ValueError(msg)
-    declared = declared | {key: tuple(declared[key]) for key in ('test_roots',) if key in declared}
+    declared = declared | {key: tuple(declared[key]) for key in ('test_roots', 'merge_checks') if key in declared}
     return Policy(**declared)

@@ -5,6 +5,8 @@
 # deep-merged over the base (tables merge key by key, any other value replaces); it may also render another
 # forge's table, or declare a workflow the base does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
 # parsed back. Re-render with `python -m dev_lab.dev.ciworkflows render`.
+# `@integration@` in any string is the repo's declared integration branch ([tool.dev_lab.integrator] integration),
+# substituted at render (ciworkflows.INTEGRATION_PLACEHOLDER); a literal `integrate/main` is dev-lab's own line.
 
 # ONE PR LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29). ci.yml is GitHub's half of the model Gitea's
 # `forge serve` runs: the same tests/<part> parts, the same review, the same merge decision -- only
@@ -55,7 +57,7 @@ nightly = true
 
 # ONE FLOW (user ruling 2026-10-29, D83): PRs land on integrate/main; main moves only by `promote` below.
 ["ci.yml".on.push]
-branches = ["integrate/main"]
+branches = ["@integration@"]
 
 # ready_for_review (D52/D53): a DRAFT RUNS NOTHING (user ruling 2026-11-05) -- every job of a PR-started workflow is
 # guarded at render by forgedraft.READY_ONLY -- so marking it ready is what starts every job.
@@ -105,7 +107,7 @@ env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { id = "pending", name = "Whether main still lacks the tip", if = "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}", run = 'uv run --no-sync python -m dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' },
+    { id = "pending", name = "Whether main still lacks the tip", if = "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/@integration@' }}", run = 'uv run --no-sync python -m dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' },
     { id = "matrix", name = "The parts and their runners", if = "${{ steps.pending.outputs.pending != 'false' }}", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event "$PARTS_EVENT")" >> "$GITHUB_OUTPUT"' },
 ]
 
@@ -199,7 +201,7 @@ steps = [
     # The door and method install with uv; no cache, so nothing a PR run saved is restored into this job.
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = false } },
     # A dispatched PR run has no pull_request base: its door is the integration tip's, as continue.yml's is.
-    { name = "Name the integration tip", if = "${{ !github.event.pull_request }}", run = 'echo "INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/integrate/main)" >> "$GITHUB_ENV"' },
+    { name = "Name the integration tip", if = "${{ !github.event.pull_request }}", run = 'echo "INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/@integration@)" >> "$GITHUB_ENV"' },
     { use-steps = "door" },
     { use-steps = "method" },
     { use-steps = "forge-tokens" },
@@ -283,7 +285,7 @@ outputs = { due = "${{ steps.ready.outputs.due }}" }
 steps = [
     { use-steps = "setup" },
     { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready)"; echo "$said"; case "$said" in *"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
-    { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
+    { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref @integration@ -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
 ]
 
 ["merge-tick.yml".jobs.merge-tick.permissions]
@@ -351,7 +353,7 @@ setup = [
 # `setup` before it, so a repo that narrows `setup` (document-lab: no `--all-extras`) narrows both -- never a copy.
 merge-ready = [
     { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr "$PR_NUMBER")"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
-    { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref integrate/main -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
+    { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref @integration@ -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
 ]
 
 # A FORK PR HOLDS SECRET-FREE (F-dd353e505b47, dev-lab #38): under Gitea's pull_request_target a fork PR's run is
@@ -542,8 +544,8 @@ git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git fetch -q --no-tags --filter=blob:none origin '+refs/heads/*:refs/remotes/origin/*' "+refs/pull/${{ github.event.pull_request.number || '*' }}/head:refs/remotes/origin/pull/${{ github.event.pull_request.number || '*' }}"
 git sparse-checkout set --cone
-echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"
-git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"
+echo "INTEGRATION_SHA=$(git rev-parse origin/@integration@)" >> "$GITHUB_ENV"
+git checkout -q --detach "${HEAD_SHA:-origin/@integration@}"
 ''' },
 ]
 
@@ -736,7 +738,7 @@ steps = [
 name = "Continue a landed branch"
 
 ["continue.yml".on.push]
-branches-ignore = ["integrate/main", "main"]
+branches-ignore = ["@integration@", "main"]
 
 ["continue.yml".concurrency]
 group = "continue-${{ github.ref_name }}"
@@ -754,7 +756,7 @@ env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
     { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
-    { name = "Fetch the integration branch", run = 'git fetch --no-tags --depth=1 origin "+refs/heads/integrate/main:refs/remotes/origin/integrate/main" && echo "INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/integrate/main)" >> "$GITHUB_ENV"' },
+    { name = "Fetch the integration branch", run = 'git fetch --no-tags --depth=1 origin "+refs/heads/@integration@:refs/remotes/origin/@integration@" && echo "INTEGRATION_SHA=$(git rev-parse refs/remotes/origin/@integration@)" >> "$GITHUB_ENV"' },
     { use-steps = "door" },
     { id = "continue", name = "Open the continuation PR", run = '''said="$("$REVIEW_PYTHON" -I -m dev_lab.dev.forge pr continue --head "$GITHUB_REF_NAME" --sha "$GITHUB_SHA")" || exit $?
 echo "$said"

@@ -263,3 +263,31 @@ def test_a_host_declaring_no_hpc_renders_a_reach_of_none(tmp_path: Path) -> None
         devhost.render(_clone(tmp_path, HOST.replace('hpc = ["research"]\n', '')), 'ws', tomllib.loads(LOCAL))
     )
     assert rendered['hpc']['reach'] == []
+
+
+DATED = """\
+[hpc.clusters.d.slurm_accounts.b.budget]
+since = 2026-09-01
+checked = 2026-11-12T08:30:00Z
+local = 2026-11-12T08:30:00
+at = 08:30:00
+"""
+
+
+def test_toml_dates_round_trip_through_the_render(tmp_path: Path) -> None:
+    clone = _clone(tmp_path)
+    _write(clone, 'family.toml', FAMILY + '\n' + DATED)
+    rendered = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    budget = rendered['hpc']['clusters']['d']['slurm_accounts']['b']['budget']
+    assert budget == tomllib.loads(DATED)['hpc']['clusters']['d']['slurm_accounts']['b']['budget']
+
+
+def test_render_write_refuses_a_render_that_does_not_parse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clone = _clone(tmp_path)
+    machine = _write(tmp_path, 'machine/m.toml', LOCAL)
+    before = machine.read_bytes()
+    monkeypatch.setattr(devhost, 'render', lambda *_: 'since = datetime.date(2026, 9, 1)\n')
+    argv = ['--machine', str(machine), 'render', '--host', 'ws', '--from', str(clone), '--write', '--backups']
+    assert devhost.main([*argv, str(tmp_path / 'backups')]) == 2
+    assert machine.read_bytes() == before
+    assert not (tmp_path / 'backups').exists()

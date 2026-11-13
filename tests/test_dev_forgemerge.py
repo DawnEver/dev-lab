@@ -135,6 +135,44 @@ def test_a_pr_whose_parts_are_absent_or_pending_waits(tmp_path: Path) -> None:
         assert any(one.startswith('its test parts: ') for one in found.missing), (part, found.missing)
 
 
+_CHECK = 'check / check (pull_request)'
+_CHECKED = dataclasses.replace(POLICY, merge_checks=(_CHECK,))
+
+
+def _checked(work: Path, head: str, raw: list[dict[str, object]]) -> Decision:
+    return decide(
+        work, _CHECKED, branch='pr/x', number=4, head=head, statuses=_statuses(raw), reviewed=status_gate(github_posted)
+    )
+
+
+def test_a_repo_declaring_its_merge_check_merges_on_that_check_alone(tmp_path: Path) -> None:
+    """User ruling 2026-11-12: a repo with no serve host declares the forge check its merge waits on.
+
+    Its head carries no ``tests/base``, no ``tests/security`` and no head gates -- nothing posts them -- and it is
+    ready on the declared check's ``success``. PLANTED CONTROL: the same head with that check red or missing waits.
+    """
+    work, head = _work(tmp_path)
+    review = [r for r in _green() if r['context'] == 'tests/review']
+    check = {'id': 9, 'context': _CHECK, 'status': 'success', 'description': 'Successful in 22s'}
+    assert _checked(work, head, [*review, check]).ready, _checked(work, head, [*review, check]).missing
+    red = _checked(work, head, [*review, {**check, 'status': 'failure', 'description': 'Failure'}])
+    assert not red.ready, 'PLANTED CONTROL: a red declared check holds the merge'
+    assert not red.waiting
+    assert any(one.startswith(f'its merge checks: {_CHECK} is failure') for one in red.missing), red.missing
+    absent = _checked(work, head, review)
+    assert not absent.ready, 'PLANTED CONTROL: a missing declared check holds the merge'
+    assert absent.waiting
+    assert any(f'{_CHECK} is not yet posted' in one for one in absent.missing), absent.missing
+
+
+def test_a_declared_merge_check_is_not_satisfied_by_the_serve_parts(tmp_path: Path) -> None:
+    """Every serve-posted status green is no stand-in for the declared check: it still waits on it."""
+    work, head = _work(tmp_path)
+    found = _checked(work, head, _green())
+    assert not found.ready
+    assert any(one.startswith('its merge checks: ') for one in found.missing), found.missing
+
+
 def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_path: Path) -> None:
     """PLANTED control: once integration is merged into the branch, the same PR is ready."""
     work = _tested(tmp_path)
