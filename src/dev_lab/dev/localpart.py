@@ -37,6 +37,7 @@ from dev_lab.dev.forgestatus import verdict_commit
 from dev_lab.dev.jobparts import pytest_collector
 from dev_lab.dev.partrows import needs_of_row, row_part, row_system, this_platform
 from dev_lab.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory
+from dev_lab.dev.producer import Owner, unreachable
 from dev_lab.dev.test_outcomes import outcomes_dir, read_cells
 from dev_lab.dev.verdictenv import verdict_env_record
 
@@ -109,11 +110,18 @@ def local_record(
 
 
 def post_local(root: Path, record: Mapping[str, Any], directory: Path) -> str:
-    """Write *record* under *directory* and post its part; a refused part is one line, never a raise."""
+    """Write *record* under *directory* and post its part; a refused part is one line, never a raise.
+
+    A post the forge refused is also DECLARED to whoever produces this part (:func:`unreachable`): its job or serve
+    releases the row naming the forge's reason, never only "posted no part" (live 2026-11-13: a full records home).
+    """
     path = write_record(dict(record), directory)
     try:
         return post(root, path)
-    except (PartRefusal, PostFailed) as why:
+    except PartRefusal as why:
+        return f'[platformparts] not posted: {why}'
+    except PostFailed as why:
+        unreachable(f'its part was not posted: {why}', Owner.STATUS_PUBLISHING)
         return f'[platformparts] not posted: {why}'
 
 
