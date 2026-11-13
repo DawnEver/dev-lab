@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, runner_labels, workflows, write
+from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, follow_checks, runner_labels, workflows, write
 from dev_lab.dev.forgemerge import CI_MERGER
 
 _GITEA = ('review.yml', CI_MERGER)
@@ -160,3 +160,24 @@ def test_the_light_door_installs_exactly_the_named_locked_lines(tmp_path: Path, 
 
 def _shared(name: str) -> list[dict[str, Any]]:
     return tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))['_steps'][name]
+
+
+def test_the_merge_job_follows_the_check_workflows_the_repo_renders(tmp_path: Path) -> None:
+    """A repo without the Review workflow still fires its merge job: the trigger names ITS OWN check workflows.
+
+    Planted control: a hard-coded "Review" leaves a review-less repo's ready PRs unmerged forever; a workflow on
+    another forge, or one not run by a PR (the merger itself), is never followed.
+    """
+    gitea, github = Path('.gitea/workflows'), Path('.github/workflows')
+    merger = {'name': 'Merge', 'on': {'workflow_run': {'types': ['completed']}, 'schedule': []}}
+    rendered = {
+        CI_MERGER: (gitea, merger),
+        'checks.yml': (gitea, {'name': 'Checks', 'on': {'pull_request_target': {}}}),
+        'ci.yml': (github, {'name': 'CI', 'on': {'pull_request': {}}}),
+    }
+    followed = follow_checks(rendered)
+    assert followed[CI_MERGER][1]['on']['workflow_run'] == {'workflows': ['Checks'], 'types': ['completed']}
+    assert merger['on']['workflow_run'] == {'types': ['completed']}, 'PURE'
+    del rendered['checks.yml']
+    assert set(follow_checks(rendered)[CI_MERGER][1]['on']) == {'schedule'}, 'no check to follow: the schedule'
+    assert _gitea(tmp_path)[CI_MERGER]['on']['workflow_run']['workflows'] == ['Review'], 'a review repo follows it'

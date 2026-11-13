@@ -824,8 +824,9 @@ issues = "write"
 # the ONE decision (dev_lab.dev.forgemergeready.ready) and merges each ready head as the job token -- then the landed PRs
 # are closed (dev_lab.dev.prlanded) and the landed branches swept (branchprune sweep). Declaring this table is the
 # opt-in (forgemerge.ci_merges): the workstation's `forge serve` then merges, closes and sweeps nothing for the repo.
-# TRIGGERS. Gitea 1.27 has no `status` event, so a posted status starts nothing: the Review workflow completing
-# (workflow_run, read from the DEFAULT branch) and a schedule are the triggers; tests/security, posted by a serve,
+# TRIGGERS. Gitea 1.27 has no `status` event, so a posted status starts nothing: a check workflow completing
+# (workflow_run, read from the DEFAULT branch; its `workflows` are DERIVED by ciworkflows.follow_checks from what
+# the repo renders, never named here) and a schedule are the triggers; tests/security, posted by a serve,
 # is caught by the schedule. NEVER a pull_request-family event (pull_request_review included): Gitea runs those from
 # the PR HEAD's workflow file, and this job holds a token that merges.
 # THE TOKEN. The Actions token merges and deletes branches with contents: write (POST pulls/{n}/merge asks
@@ -840,7 +841,6 @@ forge = "gitea"
 name = "Merge"
 
 ["merge.yml".on.workflow_run]
-workflows = ["Review"]
 types = ["completed"]
 
 ["merge.yml".on]
