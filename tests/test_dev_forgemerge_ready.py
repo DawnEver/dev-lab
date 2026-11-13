@@ -10,10 +10,11 @@ import pytest
 from _forge_state import StateForge
 from test_dev_forgemerge import _MANIFEST, _work
 
-from dev_lab.dev import forgecli, forgemerge
+from dev_lab.dev import forgecli, forgemerge, forgemergecall, forgemergeready
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
-from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
+from dev_lab.dev.forgemerge import EXTERNAL, judged
+from dev_lab.dev.forgemergeready import READY, ready
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgestatus import status_list, status_post
@@ -86,8 +87,8 @@ def test_a_pr_into_another_branch_than_integration_is_never_ready(tmp_path: Path
 
 def test_the_merge_noun_is_the_forge_cli_door(tmp_path: Path) -> None:
     work, forge, number, head = _pr(tmp_path)
-    assert forgecli.NOUNS['merge'] is forgemerge.main
-    assert forgemerge.main(['ready', '--pr', str(number)], cwd=work, client=forge) == 0
+    assert forgecli.NOUNS['merge'] is forgemergeready.main
+    assert forgemergeready.main(['ready', '--pr', str(number)], cwd=work, client=forge) == 0
     assert _merge_ready(forge, head)[0] == 'success'
 
 
@@ -108,15 +109,15 @@ def test_on_github_a_created_pr_asks_for_native_auto_merge_as_a_merge_commit_and
     hub = _Asked(
         Forge('github.com', 'o', 'r'), {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'}, 'POST /graphql': {'data': {}}}
     )
-    assert 'auto-merge enabled' in forgemerge.auto_merge(hub, 7)
+    assert 'auto-merge enabled' in forgemergecall.auto_merge(hub, 7)
     method, path, body = hub.sent[-1]
     assert (method, path, body['variables']) == ('POST', '/graphql', {'id': 'PR_n7'})
     assert 'enablePullRequestAutoMerge' in body['query']
     assert 'mergeMethod: MERGE' in body['query']
     hub.answers['POST /graphql'] = {'errors': [{'message': 'Auto merge is not allowed for this repository'}]}
-    assert 'NOT enabled -- Auto merge is not allowed' in forgemerge.auto_merge(hub, 7)
+    assert 'NOT enabled -- Auto merge is not allowed' in forgemergecall.auto_merge(hub, 7)
     tea = _Asked(Forge('forge.example.org', 'o', 'r'), {})
-    assert 'serve tick merges it' in forgemerge.auto_merge(tea, 7)
+    assert 'serve tick merges it' in forgemergecall.auto_merge(tea, 7)
     assert tea.sent == []
 
 
@@ -140,7 +141,7 @@ def test_with_no_pr_the_door_judges_every_open_pr_into_integration(tmp_path: Pat
     work, forge, _number, head = _pr(tmp_path)
     elsewhere = 'e' * 40
     forge.add_pull('pr/y', 'main', sha=elsewhere)
-    assert forgemerge.main(['ready'], cwd=work, client=forge) == 0
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 0
     assert _merge_ready(forge, head)[0] == 'success'
     assert [one for one in status_list(forge, elsewhere) if one.context == MERGE_READY_CONTEXT] == []
 
@@ -165,7 +166,7 @@ def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_j
     work, forge, number, head = _hub_pr(tmp_path)
     hub = _Asked(_HUB, {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'},
                         'POST /graphql': {'errors': [{'message': 'Pull request is in unstable status'}]}})  # fmt: skip
-    assert 'NOT enabled -- Pull request is in unstable status' in forgemerge.auto_merge(hub, 7)
+    assert 'NOT enabled -- Pull request is in unstable status' in forgemergecall.auto_merge(hub, 7)
     said = ready(work, forge, number)
     assert _merge_ready(forge, head) == ('success', f'{READY} ({MESSAGES_NOT_DECLARED})')  # no message row declared
     [(merged, body)] = forge.merges
@@ -209,7 +210,7 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
     stuck = 'b' * 40
     second = forge.add_pull('pr/y', 'integrate/main', sha=stuck)
     third = forge.add_pull('pr/z', 'integrate/main', sha=head)
-    judged, real = [], forgemerge.ready
+    judged, real = [], forgemergeready.ready
 
     def flaky(root: Path, client: Client, number: int) -> str:
         judged.append(number)
@@ -217,8 +218,8 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
             raise subprocess.TimeoutExpired(['git', 'cat-file', '--batch'], 120)
         return real(root, client, number)
 
-    monkeypatch.setattr(forgemerge, 'ready', flaky)
-    assert forgemerge.main(['ready'], cwd=work, client=forge) == 2, 'a failed judgement still fails the tick'
+    monkeypatch.setattr(forgemergeready, 'ready', flaky)
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 2, 'a failed judgement still fails the tick'
     assert judged == [first, second, third]
     [said] = [one for one in status_list(forge, stuck) if one.context == MERGE_READY_CONTEXT]
     assert (said.state, said.description) == (

@@ -19,7 +19,8 @@ from test_dev_githook_scripts import _plant_checker
 from dev_lab.dev import forgeintegration, forgemessages
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import Ticked, tick
-from dev_lab.dev.forgemerge import FORGE_PULL, Decision, decide, merge, merge_message
+from dev_lab.dev.forgemerge import FORGE_PULL, Decision, decide, merge_message
+from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import ACTIONS_BOT

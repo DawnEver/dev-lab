@@ -43,7 +43,8 @@ from dev_lab.dev import (
     forgeintegration,
     forgeissue,
     forgelabel,
-    forgemerge,
+    forgemergecall,
+    forgemergeready,
     forgenotice,
     forgeoutbox,
     forgeprotect,
@@ -99,7 +100,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,
-    'merge': forgemerge.main,
+    'merge': forgemergeready.main,
     'notices': forgenotice.main,
     'review': lambda argv: (forgereview_bundle.main if argv[:1] in (['prepare'], ['judge']) else forgetakeover.main)(
         argv
@@ -283,7 +284,7 @@ def issue_and_pr(
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
-            emit(f'[forge] {forgemerge.auto_merge(client, result.number)}', err=True)
+            emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
                 emit(f'[forge] {pushwatch.arm_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
     except ForgeCallFailed as failed:

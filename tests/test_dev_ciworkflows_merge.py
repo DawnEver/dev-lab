@@ -56,7 +56,7 @@ def test_the_merge_job_runs_the_one_decision_then_closes_landed_prs_then_sweeps(
     job = _merge_job(tmp_path)
     runs = _runs(job)
     merged = next(i for i, run in enumerate(runs) if 'dev_lab.dev.forge merge ready' in run)
-    assert '--pr' not in runs[merged], 'every open PR into integration, judged by forgemerge.ready'
+    assert '--pr' not in runs[merged], 'every open PR into integration, judged by forgemergeready.ready'
     closed = next(i for i, run in enumerate(runs) if 'dev_lab.dev.prlanded' in run)
     swept = next(i for i, run in enumerate(runs) if 'dev_lab.dev.branchprune sweep' in run)
     assert merged < closed < swept
