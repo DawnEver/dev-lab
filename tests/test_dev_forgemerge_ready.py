@@ -20,7 +20,7 @@ from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
-from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.lanepolicy import UNDECLARED_INTEGRATION, load_policy
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.reviewcap import unreviewed_line
 
@@ -85,6 +85,27 @@ def test_a_pr_into_another_branch_than_integration_is_never_ready(tmp_path: Path
     work, forge, number, head = _pr(tmp_path, base='main')
     ready(work, forge, number)
     assert _merge_ready(forge, head) == ('failure', 'waits on: a PR into integrate/main, not main')
+
+
+def test_a_checkout_declaring_no_integrator_still_judges_a_pr_into_the_family_integration(tmp_path: Path) -> None:
+    """cc-market #11: the PR that ADDS the table was judged from a base lacking it -- a wall with no exit."""
+    work, forge, number, head = _pr(tmp_path, manifest=_MANIFEST)
+    said = ready(work, forge, number)
+    state, description = _merge_ready(forge, head)
+    assert state == 'success', description
+    assert UNDECLARED_INTEGRATION in description
+    assert 'could not be judged' not in said
+
+
+def test_a_checkout_declaring_no_integrator_refuses_a_pr_into_another_branch_naming_the_exit(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the test above: only the family's integration name is judged undeclared."""
+    work, forge, number, head = _pr(tmp_path, base='main', manifest=_MANIFEST)
+    assert forgemergeready.main(['ready', '--pr', str(number)], cwd=work, client=forge) == 0
+    state, description = _merge_ready(forge, head)
+    assert state == 'failure'
+    assert 'names no integration branch' in description
+    assert 'declare integration = "integrate/main"' in description
+    assert 'ValueError' not in description
 
 
 def test_the_merge_noun_is_the_forge_cli_door(tmp_path: Path) -> None:

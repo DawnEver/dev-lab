@@ -23,9 +23,31 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.family import declared_table
 
-__all__ = ['Policy', 'load_policy', 'policy_at', 'policy_from']
+__all__ = [
+    'FAMILY_INTEGRATION',
+    'UNDECLARED_INTEGRATION',
+    'IntegrationNotDeclared',
+    'Policy',
+    'load_policy',
+    'policy_at',
+    'policy_from',
+]
 
 _TABLE: Final = 'integrator'
+
+#: The family's integration branch name: what a repo declaring no ``integration`` is told to declare, and the one
+#: PR base a checkout without the table is still judged against (:mod:`dev_lab.dev.forgemergeready`).
+FAMILY_INTEGRATION: Final = 'integrate/main'
+
+#: The note a decision carries when it was judged against :data:`FAMILY_INTEGRATION` for want of a declaration.
+UNDECLARED_INTEGRATION: Final = (
+    f'judged into {FAMILY_INTEGRATION}: the checkout declares no [tool.dev_lab.{_TABLE}] -- declare it '
+    '(docs-src/dev/onboarding.md)'
+)
+
+
+class IntegrationNotDeclared(ValueError):
+    """The manifest names no ``integration`` branch; the message names the declaration that is the exit."""
 
 
 @dataclass(frozen=True)
@@ -91,7 +113,10 @@ def policy_from(text: str, origin: str) -> Policy:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     if not declared.get('integration'):
-        msg = f'[tool.dev_lab.{_TABLE}] in {origin} names no integration branch; declare integration = "integrate/main"'
-        raise ValueError(msg)
+        msg = (
+            f'[tool.dev_lab.{_TABLE}] in {origin} names no integration branch; declare integration = '
+            f'"{FAMILY_INTEGRATION}" there (every piece a member declares: docs-src/dev/onboarding.md)'
+        )
+        raise IntegrationNotDeclared(msg)
     declared = declared | {key: tuple(declared[key]) for key in ('test_roots', 'merge_checks') if key in declared}
     return Policy(**declared)
