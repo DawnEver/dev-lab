@@ -702,12 +702,14 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
         reads.append((forge, repo, ref))
         return GITEA_TEXT
 
-    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, declared=declared)
+    readers = planrun.Readers(declared=declared)
+    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, readers=readers)
     assert green, lines
     assert reads == [('gitea.example', 'owner/alpha', 'integrate/main')]
     assert not any('--subject' in command for command in host.commands)
     other = GITEA_TEXT.replace('promote-bot', 'other-bot')
-    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, declared=lambda *_: other)
+    readers = planrun.Readers(declared=lambda *_: other)
+    green, lines = planrun.preflight(plan, planrun.Steps((step,)), lambda _d: host, readers=readers)
     assert not green
     assert any('derived here' in line and want[:12] in line for line in lines), lines
 
@@ -730,7 +732,8 @@ def test_planrun_subject_prints_the_protect_subject_with_no_host(capsys: pytest.
     from dev_lab.ops import forgeprotection  # noqa: PLC0415
 
     argv = ['subject', '--forge', 'gitea.example', '--repo', 'owner/alpha']
-    assert planrun.main(argv, declared=lambda *_: GITEA_TEXT) == 0
+    readers = planrun.Readers(declared=lambda *_: GITEA_TEXT)
+    assert planrun.main(argv, readers=readers) == 0
     want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
     assert capsys.readouterr().out.strip() == want
-    assert planrun.main([*argv, '--forge', 'unknown.example'], declared=lambda *_: GITEA_TEXT) == 2  # no such row
+    assert planrun.main(['subject', '--forge', 'unknown.example', '--repo', 'owner/alpha'], readers=readers) == 2

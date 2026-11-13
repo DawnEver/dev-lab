@@ -26,6 +26,9 @@ module is the client and the CLI::
 * ``--jump <bastion>``: a host reachable only through a bastion. ssh asks each hop's keyboard-interactive
   prompt through the same ``SSH_ASKPASS``, so ONE code answers both -- valid only where the hops share one TOTP
   secret (each pam_oath records the step it accepted, so the code is spent once per host, never twice on one).
+  A host's route is DECLARED in the machine file -- ``[ssh] jump = {"<dest>" = "<bastion>"}`` (:func:`route`) -- so a
+  plan whose hosts route differently (one direct, one through a bastion) opens each on its own; ``--jump`` names the
+  bastion of every host the table does not.
 * ``--hours`` above the ceiling (``[ssh.hold] max_hours`` in the machine file, default
   :data:`DEFAULT_MAX_HOURS`) is REFUSED, never clamped. A quiet session lives to that ceiling (keepalives hold the
   connection, :func:`dev_lab.dev._sshholder.ssh_argv`); it ends early on idle only when the machine file names
@@ -81,6 +84,7 @@ __all__ = [
     'open_planned',
     'open_session',
     'request',
+    'route',
     'run_command',
     'session_over',
     'split_marker',
@@ -110,6 +114,13 @@ def _table(table: dict[str, Any] | None) -> dict[str, Any]:
         return table
     hold = section('ssh').get('hold', {})
     return hold if isinstance(hold, dict) else {}
+
+
+def route(dest: str, jump: str | None = None, table: dict[str, Any] | None = None) -> tuple[str, ...]:
+    """The ssh words opening *dest*: through its declared bastion (``[ssh] jump``, *table* overrides), else *jump*."""
+    declared = (section('ssh') if table is None else table).get('jump', {})
+    bastion = (declared.get(dest) if isinstance(declared, dict) else None) or jump
+    return ('ssh', '-J', bastion) if bastion else ('ssh',)
 
 
 def ceiling(table: dict[str, Any] | None = None) -> float:
@@ -205,7 +216,7 @@ def open_session(dest: str, hours: float, code: str, *, ssh: tuple[str, ...] = (
 
 
 def open_planned(
-    hours: float, code: str, plan: Path, shown: str, *, ssh: tuple[str, ...] = ('ssh',),
+    hours: float, code: str, plan: Path, shown: str, *, routes: Callable[[str], tuple[str, ...]] = route,
     grant: Callable[[Path, str, str, str], list[Path]] = grant_plan,
     opener: Callable[..., str] = open_session,
     clock: Callable[[], float] = time.monotonic,
@@ -213,7 +224,8 @@ def open_planned(
     """Spend ONE *code* on *plan* (the one *shown*), then on every plan host's session: ``(all open, lines)``.
 
     The issuer grant comes first; then each host opens concurrently, started only inside :data:`OPEN_WINDOW_S` of
-    the code. A host that fails is a line naming it and how to re-open it -- the code is never sent twice.
+    the code, each on its own *routes* (:func:`route`). A host that fails is a line naming it and how to re-open it --
+    the code is never sent twice.
     """
     check_hours(hours, ceiling())  # before the code is spent on the grants
     found = parsed(json.loads(plan.read_text(encoding='utf-8')))
@@ -232,7 +244,7 @@ def open_planned(
 
     def one(dest: str) -> None:
         try:
-            said[dest] = opener(dest, hours, code, ssh=ssh)
+            said[dest] = opener(dest, hours, code, ssh=routes(dest))
         except (HoldRefused, OSError) as refused:
             said[dest] = f'{dest}: NOT opened ({refused})'
 
@@ -382,7 +394,9 @@ def _parser() -> argparse.ArgumentParser:
         '--plan', type=Path, help='a plan the same code consents to (python -m dev_lab.ops.consent plan)'
     )
     opening.add_argument('--digest', default='', help="the plan's digest, as shown to the user")
-    opening.add_argument('--jump', help='a bastion the session rides through (ssh -J); the one code answers both')
+    opening.add_argument(
+        '--jump', help='a bastion (ssh -J) for every host [ssh] jump does not route; the one code answers both'
+    )
     running = verbs.add_parser('run', help='run one command on the held connection')
     running.add_argument('dest')
     running.add_argument('--timeout', type=float, default=DEFAULT_TIMEOUT_S)
@@ -404,12 +418,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.verb == 'open':
-            code, ssh = given_code(args.code), ('ssh', '-J', args.jump) if args.jump else ('ssh',)
+            code, jump = given_code(args.code), args.jump
             if args.plan is not None:
-                opened, lines = open_planned(args.hours, code, args.plan, args.digest, ssh=ssh)
+                opened, lines = open_planned(
+                    args.hours, code, args.plan, args.digest, routes=lambda dest: route(dest, jump)
+                )
                 emit('\n'.join(lines))
                 return 0 if opened else 2
-            emit(open_session(args.dest, args.hours, code, ssh=ssh))
+            emit(open_session(args.dest, args.hours, code, ssh=route(args.dest, jump)))
         elif args.verb == 'run':
             words = args.command[1:] if args.command[:1] == ['--'] else args.command
             output, status = run_command(args.dest, ' '.join(words), args.timeout)
