@@ -55,6 +55,7 @@ from __future__ import annotations
 
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev._deny_commithooks_row import COMMIT_HOOKS_RUN
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
@@ -96,6 +97,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     SUBAGENT_NO_PUSH,
     CONSENT_CODE_FROM_THE_USER,
+    COMMIT_HOOKS_RUN,
     {
         'id': 'BARE-TEST-INVOCATION',
         # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the
@@ -277,7 +279,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'refuses': ('git push --no-verify origin HEAD', 'sh scripts/hooks/with-retry.sh push origin HEAD --no-verify'),
         'permits': (
             'sh scripts/hooks/with-retry.sh push origin HEAD',
-            'git commit --no-verify -m "x"',
+            'git commit -m "x"',
         ),
     },
     {
