@@ -64,6 +64,7 @@ from lab_commons.compute.probe import OS_NAMES
 from lab_commons.hpc.needsets import BASE, need_sets, read_vocabulary
 from lab_commons.hpc.shell import parse_ids
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.family import declared_in
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -371,7 +372,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     sha = head.stdout.strip()
     argv = producer_argv(root, part, sha=sha)
     context = part_context(part)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         outcome = Path(scratch) / 'outcome'
         child = {**given, **producing(context, sha), OUTCOME_VAR: str(outcome)}
         code = _door.run([sys.executable, *argv], cwd=root, env=child, check=False).returncode
