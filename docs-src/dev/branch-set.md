@@ -33,14 +33,14 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 | `census(root, branchset)` | `undeclared_origin` (debt), `local_debt`, `unpushed` (undeclared, holding commits no origin ref has) |
 | `merge_candidates(root, branchset)` | every undeclared branch and parked tag, `deletable` when its tip is in the trunk's authority or a session branch; anything else is merged first |
 | `python -m dev_lab.dev.branchset [--root R]` | prints the candidates as `delete` / `merge` rows; deletes nothing |
-| `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists origin's for a human |
+| `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists landed origin ones with the `branchprune delete` door |
 
 - **Merged means merged into the REMOTE authority.** A local `main` that is ahead and unpushed answers "merged"
   about work whose only published copy is the branch you are about to delete.
 - The question is whether the CHANGE is there, so the instrument is `git cherry` against the remote, which sees
   through cherry-picks and rebases; the ancestor test does not.
-- Deleting a branch on origin BY HAND is a human's action (the forge's automatic prune, below, is the same
-  human decision made once as data): the door prints `git push origin --delete <b>`.
+- An origin branch is never deleted BY HAND: the door prints `python -m dev_lab.dev.branchprune delete <b>`
+  (LOSSLESS-DELETE) on each landed one; the forge's automatic prune, below, is the other deleter.
 
 ## The assertion consumers run
 

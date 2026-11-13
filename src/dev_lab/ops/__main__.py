@@ -13,273 +13,36 @@ Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` r
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import shutil
 import sys
-import time
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import forge_of_url
-from dev_lab.dev.forgework import Client
 from dev_lab.ops import (
-    access,
     alertless,
-    backup,
-    breakglass,
     configverbs,
     consentverbs,
     disk,
     forgeaccounts,
-    forgeprotection,
-    forgewho,
     githubwho,
-    install,
-    judge,
-    offsite,
-    probe,
-    promote,
     secretplace,
-    sshkey,
-    totp,
-    upgrade,
 )
-from dev_lab.ops.config import OpsConfig, load
-from dev_lab.ops.consent.client import redeem
-from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.issuer import Issuer
-from dev_lab.ops.consentrole import Consent
-from dev_lab.supervise.alert import Notifier
-from dev_lab.supervise.notice import Context, Notice, host_label
+from dev_lab.ops.config import load
+from dev_lab.ops.hostverbs import (
+    access_verb,
+    alert,
+    backup_verb,
+    breakglass_verb,
+    install_verb,
+    judge_verb,
+    probe_verb,
+    promote_verb,
+    show,
+)
+from dev_lab.ops.redeemverbs import forge_verb, redeemer, secret_place, upgrade_verb
 
 __all__ = ['main']
-
-
-def _alert(config: OpsConfig, title: str, detail: str) -> bool:
-    """Send through every ``[alerts]`` channel; whether any channel took it."""
-    return any(
-        delivery.ok
-        for delivery in Notifier(config.merged).send(
-            Notice(
-                title,
-                host=host_label(config.merged.get('notify', {})),
-                context=Context(service='dev_lab.ops'),
-                findings=(detail,),
-            )
-        )
-    )
-
-
-def _secret(path: str) -> str:
-    return Path(path).read_text(encoding='utf-8').strip()
-
-
-def _show(link: str, *, uri_only: bool) -> None:
-    """The enrolment to the enrolling terminal only (stdout, never a log): a QR to scan, or the bare URI."""
-    if uri_only:
-        emit(link)
-        return
-    drawn = totp.qr(link)
-    if drawn is None:
-        emit(link)
-        emit('[ops] no QR: install dev-lab[ops] (segno) to draw one; scan or type this URI, it is shown once', err=True)
-        return
-    emit(drawn)
-    emit('[ops] scan this QR into the Authenticator; it is shown once (--uri prints the bare URI instead)', err=True)
-
-
-def _install(config: OpsConfig, root: Path) -> int:
-    as_root = sys.platform != 'win32' and os.geteuid() == 0
-    try:
-        done = install.install(config, root, chown=shutil.chown if as_root else None)
-    except ValueError as refused:
-        emit(f'[ops install] refused: {refused}', err=True)
-        return 2
-    for path, state in done.paths.items():
-        emit(f'{state:9} {path}')
-    emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
-    return 0
-
-
-def _promote(config: OpsConfig) -> int:
-    failed = [o for o in promote.run(config) if o.state == 'failed']
-    for outcome in failed:
-        _alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
-    return 1 if failed else 0
-
-
-def _judge(config: OpsConfig) -> int:
-    if config.judge is None:
-        emit(f'[ops] {config.path} enables no [ops.judge]', err=True)
-        return 2
-    failed = [o for o in judge.run(config) if o.state == 'failed']
-    for outcome in failed:
-        _alert(config, f'judge FAILED {outcome.repo}', outcome.detail)
-    return 1 if failed else 0
-
-
-def _upgrade(config: OpsConfig, args: argparse.Namespace) -> int:
-    if config.upgrade is None:
-        emit(f'[ops] {config.path} enables no [ops.upgrade]', err=True)
-        return 2
-    try:
-        if args.subject:  # what a preflight compares with the plan's ops.upgrade grant; nothing is installed
-            emit(upgrade.subject(config))
-            return 0
-        if args.sha or args.credential:
-            if not (args.sha and args.credential):
-                emit(f'[ops upgrade] refused: --sha and --credential come together ({upgrade.ACTION})', err=True)
-                return 2
-            granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
-            code, said = upgrade.planned(config, args.sha, redeem=_redeemer(config)(upgrade.ACTION), credential=granted)
-        else:
-            code, said = upgrade.run(config)
-    except (ConsentRefused, OSError, ValueError) as refused:
-        emit(f'[ops upgrade] refused: {refused}', err=True)
-        return 2
-    emit(f'[ops upgrade] {said}', err=code != 0)
-    return 0 if code == 0 else 1
-
-
-def _read_input(source: str) -> str:
-    """A secret from a file, or stdin for ``-``: never an argument, which a process listing would show."""
-    return sys.stdin.read() if source == '-' else Path(source).read_text(encoding='utf-8')
-
-
-def _access(config: OpsConfig, action: str, *, force: bool, uri_only: bool, secret_from: str) -> int:
-    if config.access is None:
-        emit(f'[ops] {config.path} enables no [ops.access]', err=True)
-        return 2
-    try:
-        if action == 'adopt':
-            emit(access.adopt(config, _read_input(secret_from)))
-        else:
-            _show(access.enrol(config, force=force), uri_only=uri_only)
-    except (totp.TotpRefused, ValueError, OSError) as refused:
-        emit(f'[ops access] refused: {refused}', err=True)
-        return 2
-    return 0
-
-
-def _backup(config: OpsConfig, verb: str) -> int:
-    role = config.backup
-    if role is None or not (role.dumpers if verb == 'export' else role.source):
-        emit(f'[ops] {config.path} declares no backup {verb} side', err=True)
-        return 2
-    try:
-        if verb == 'export':
-            backup.export(role, sys.stdout.buffer)
-            return 0
-        kept = backup.pull(role, datetime.now(UTC))
-        files = sorted(path for path in kept.iterdir())
-        if role.offsite is not None:
-            offsite.upload(role.offsite, offsite.AwsCli(role.offsite), kept.name, files)
-        emit(f'[ops backup] kept {kept} ({len(files)} file(s))' + (', off-site copied' if role.offsite else ''))
-    except (backup.BackupRefused, OSError, ValueError) as failed:
-        emit(f'[ops backup] {failed}', err=True)
-        _alert(config, f'backup {verb} FAILED', str(failed))
-        return 1
-    return 0
-
-
-def _issuer(config: OpsConfig, role: Consent) -> Issuer:
-    return consentverbs.issuer(role, alert=lambda title, detail: _alert(config, title, detail))
-
-
-def _breakglass(config: OpsConfig, verb: str) -> int:
-    role = config.breakglass
-    if role is None:
-        emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
-        return 2
-    try:
-        verifier, register = consentverbs.ends(config, alert=lambda title, detail: _alert(config, title, detail))
-    except ConsentRefused as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    server = breakglass.Server(
-        config,
-        forge_for=lambda url: breakglass.ClientForge(url, breakglass.credential(role, url, secret=_secret)),
-        alert=lambda title, detail: _alert(config, title, detail),
-        now=time.time,
-        consent_key=verifier,
-        register=register,
-        key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
-    )
-    try:
-        said = server.tick() if verb == 'tick' else server.handle(sys.stdin.readline())
-    except breakglass.BreakglassRefused as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    emit(said)
-    return 0
-
-
-def _redeemer(config: OpsConfig) -> Callable[[str], forgeaccounts.Redeem]:
-    """``action -> redeem(credential, subject)``: the use registered once the credential names *subject*.
-
-    Raises:
-        ConsentRefused: no verifier key is reachable.
-
-    """
-    key, register = consentverbs.ends(config, alert=lambda title, detail: _alert(config, title, detail))
-    return lambda action: (
-        lambda found, subject: redeem(found, action=action, subject=subject, key=key, register=register,
-                                      now=time.time())
-    )  # fmt: skip
-
-
-def _forge(config: OpsConfig, args: argparse.Namespace) -> int:
-    """``forge account ensure`` / ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`), consented here."""
-    if args.kind == 'token' and args.action == 'whoami':
-        return forgewho.run(config, args)
-    if config.forge is None:
-        emit(f'[ops] {config.path} enables no [ops.forge]', err=True)
-        return 2
-    if args.kind == 'protect':  # plan reads no consent key; apply builds its redeemer when it spends
-        return forgeprotection.run(config.forge, args, lambda: _redeemer(config))
-    try:
-        redeem_for = _redeemer(config)
-    except ConsentRefused as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    return forgeaccounts.run_verb(config.forge, args, redeem_for)
-
-
-def _secret_place(config: OpsConfig, args: argparse.Namespace) -> int:
-    """``secret place`` (:mod:`dev_lab.ops.secretplace`): the content on stdin, the consent redeemed here."""
-    if args.subject:  # what a preflight compares with the plan's grant; nothing is placed
-        emit(secretplace.subject(args.path, sys.stdin.buffer.read()))
-        return 0
-    if not args.credential:
-        emit('refused: secret place needs --credential (or --subject)', err=True)
-        return 2
-    try:
-        granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
-        said = secretplace.place(config, args.path, sys.stdin.buffer.read(), redeem=_redeemer(config)(
-            secretplace.ACTION), credential=granted, chown=shutil.chown)  # fmt: skip
-    except (secretplace.SecretRefused, ConsentRefused, OSError, ValueError) as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    emit(said)
-    return 0
-
-
-def _probe(config: OpsConfig) -> int:
-    role = config.probe
-    if role is None:
-        emit(f'[ops] {config.path} enables no [ops.probe]', err=True)
-        return 2
-    for line in probe.run(
-        config,
-        lambda url: Client(forge_of_url(url), _secret(role.token_file(url))),
-        lambda title, detail: _alert(config, title, detail),
-    ):
-        emit(f'[ops probe] {line}')
-    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -332,39 +95,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'[ops] {bad}', err=True)
         return 2
     if args.verb == 'install':
-        return _install(config, args.root)
+        return install_verb(config, args.root)
     if args.verb == 'promote':
-        return _promote(config)
+        return promote_verb(config)
     verbs_of: dict[str, Callable[[], int]] = {
-        'backup': lambda: _backup(config, args.action),
-        'access': lambda: _access(
+        'backup': lambda: backup_verb(config, args.action),
+        'access': lambda: access_verb(
             config, args.action, force=args.force, uri_only=args.uri, secret_from=args.secret_file
         ),
-        'probe': lambda: _probe(config),
-        'breakglass': lambda: _breakglass(config, args.action),
+        'probe': lambda: probe_verb(config),
+        'breakglass': lambda: breakglass_verb(config, args.action),
         'consent': lambda: consentverbs.run(
             config,
             args.action,
             force=args.force,
-            alert=lambda title, detail: _alert(config, title, detail),
-            show=lambda link: _show(link, uri_only=args.uri),
+            alert=lambda title, detail: alert(config, title, detail),
+            show=lambda link: show(link, uri_only=args.uri),
         ),
-        'judge': lambda: _judge(config),
-        'upgrade': lambda: _upgrade(config, args),
+        'judge': lambda: judge_verb(config),
+        'upgrade': lambda: upgrade_verb(config, args),
         'config': lambda: (
-            configverbs.tick(config, alert=lambda title, detail: _alert(config, title, detail))
+            configverbs.tick(config, alert=lambda title, detail: alert(config, title, detail))
             if args.action == 'tick'
             else configverbs.apply(
                 config,
                 args.candidate,
                 args.credential,
-                alert=lambda title, detail: _alert(config, title, detail),
-                redeemer=lambda: _redeemer(config),
+                alert=lambda title, detail: alert(config, title, detail),
+                redeemer=lambda: redeemer(config),
                 subject=args.subject,
             )
         ),
-        'forge': lambda: _forge(config, args),
-        'secret': lambda: _secret_place(config, args),
+        'forge': lambda: forge_verb(config, args),
+        'secret': lambda: secret_place(config, args),
         'github': lambda: githubwho.run(config, args),
     }
     return verbs_of[args.verb]()

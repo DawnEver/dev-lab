@@ -471,8 +471,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
-* :mod:`dev_lab.dev.milestonebase` -- BASE-HOLDS-THE-MILESTONE: a pushed branch contains the highest local
-  ``v*`` tag in the family grammar; VERSION-TAG-NEEDS-APPROVAL: an agent session creates a ``v*`` tag only approved.
+* :mod:`dev_lab.dev.milestonebase` -- BASE-HOLDS-THE-MILESTONE: a pushed branch contains the highest ``v*``
+  tag in the family grammar on ``origin/<integration>`` or ``origin/<trunk>``; VERSION-TAG-NEEDS-APPROVAL: an
+  agent session creates a ``v*`` tag only approved.
 * :mod:`dev_lab.dev.closedpush` -- NO-PUSH-ONTO-A-CLOSED-PR: a push onto a branch whose PR the forge closed
   unmerged, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
 * :mod:`dev_lab.dev.prcontinue` -- LANDED-BRANCH-CONTINUES: a push onto a merged PR's branch gets a continuation PR
@@ -503,7 +504,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
 * :mod:`dev_lab.dev.sshholdstate` -- a held session's state file and the append-only audit of every verb.
+* :mod:`dev_lab.dev.sshholdwire` -- the client's half of the holder's protocol: the request and the marker frame.
+* :mod:`dev_lab.dev.sshholdrun` -- a command, or a forge credential, sent through a held session, and its audit.
 * :mod:`dev_lab.dev.planrun` -- A CODE IS NEVER WASTED: preflight a consent plan's doors on its hosts, then run it.
+* :mod:`dev_lab.dev.planrunsteps` -- a plan's steps file: one step per grant, and how each is invoked.
+* :mod:`dev_lab.dev.planrunpreflight` -- every door of a plan checked on its hosts before the code is spent.
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
