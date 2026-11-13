@@ -4,8 +4,8 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "ai-lab"
-version = "0.0.1.dev362+ga1912f2f2"
-source = { git = "https://github.com/DawnEver/ai-lab.git#a1912f2f284d6917278c88c2806c828cad54cb8c" }
+version = "0.0.1.dev366+ga02128300"
+source = { git = "https://github.com/DawnEver/ai-lab.git#a02128300240930bf687289c926597b157918faa" }
 dependencies = [
     { name = "lab-commons", extra = ["paths"] },
 ]

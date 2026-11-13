@@ -13,8 +13,8 @@ from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'CHANNELS_TABLE', 'CPU_SHARES', 'DETECT_DOOR', 'HELPERS', 'HOST_ONLY', 'MACHINE_TABLES', 'RESOURCES',
-    'RETIRED_KEYS', 'SCHEMA', 'UNFILLED', 'VENDOR', 'HomeUnfilled', 'channel_defects', 'check', 'check_family',
-    'fill_remedy', 'home_of', 'hpc_reach', 'unfilled', 'usable',
+    'RETIRED_KEYS', 'SCHEMA', 'SSH', 'SSH_HOLD', 'UNFILLED', 'VENDOR', 'HomeUnfilled', 'channel_defects', 'check',
+    'check_family', 'fill_remedy', 'home_of', 'hpc_reach', 'ssh_defects', 'unfilled', 'usable',
 ]  # fmt: skip
 
 #: Retired ``[dev]`` keys, each with its remedy (refused by name, never read).
@@ -55,6 +55,12 @@ UNFILLED: Final = 'FILL-ON-THIS-MACHINE'
 REQUIRED: Final = ('ref',)
 #: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys).
 MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation')
+#: The machine file's ``[ssh]`` table as a host file declares it (rendered by :func:`dev_lab.dev.devhost.render`,
+#: read by :mod:`dev_lab.dev.sshhold`): ``jump`` -- destination -> bastion, the declared per-host route; ``hold`` --
+#: :data:`SSH_HOLD`.
+SSH: Final = {'jump': dict, 'hold': dict}
+#: ``[ssh.hold]``: the session ceiling and the idle limit.
+SSH_HOLD: Final = {'max_hours': (int, float), 'idle_minutes': (int, float)}
 #: The door that finds this machine's vendor install homes.
 DETECT_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost detect'
 
@@ -101,6 +107,24 @@ def channel_defects(channels: object, where: str) -> list[str]:
         for source, user in channels.items()
         if not (isinstance(source, str) and source and isinstance(user, str) and user)
     ]
+
+
+def ssh_defects(ssh: object, where: str = 'ssh') -> list[str]:
+    """Defects of an ``[ssh]`` table: only :data:`SSH` keys; ``jump`` maps destinations to bastions, both non-empty."""
+    if not isinstance(ssh, Mapping):
+        return [f'{where} must be a table']
+    found = _typed(ssh, SSH, where)
+    jump = ssh.get('jump')
+    if isinstance(jump, dict):
+        found += [
+            f'{where}.jump.{dest!r} = {bastion!r}: destination and bastion must be non-empty strings'
+            for dest, bastion in jump.items()
+            if not (isinstance(dest, str) and dest and isinstance(bastion, str) and bastion)
+        ]
+    hold = ssh.get('hold')
+    if isinstance(hold, dict):
+        found += _typed(hold, SSH_HOLD, f'{where}.hold')
+    return found
 
 
 def _shape(table: Mapping[str, Any], where: str) -> list[str]:
