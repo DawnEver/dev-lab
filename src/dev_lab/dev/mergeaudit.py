@@ -307,6 +307,8 @@ def _audit(
     if len(parents) != _PARENTS:
         msg = f'{merge}: {len(parents)} parents -- the audit judges a two-parent merge; merge lanes one at a time'
         raise MergeAuditError(msg)
+    if not roots:  # `test_roots = []` DECLARES no tests (a config-only repo gated by its merge_checks): nothing to lose
+        return ()
     bases = _git(root, 'merge-base', '--all', *parents).decode().split()
     shas = (*parents, merged, *bases)
     trees = [_test_blobs(root, sha, roots) for sha in shas]
