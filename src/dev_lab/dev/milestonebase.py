@@ -1,15 +1,16 @@
 """A PUSH BUILDS ON THE NEWEST MILESTONE, and an agent mints no version tag unasked.
 
-User ruling 2026-11-13: a milestone is a version tag. The integration branch carries PEP 440 dev versions
+User ruling 2026-11-13: a milestone is a version tag. The integration branch carries dev versions
 (``v0.2.13.dev1``), a trunk promotion ``vX.Y.Z``; every agent iterates on a base holding the newest one, and a
 version tag is added only on promotion to the trunk or at the user's request. Two pre-push rules, LOCAL reads only
 (no network call beyond the push itself):
 
 * ``BASE-HOLDS-THE-MILESTONE`` -- a branch the push creates or updates must contain (``merge-base
-  --is-ancestor``) the newest milestone held LOCALLY: the highest ``v*`` tag by PEP 440 (:mod:`packaging.version`),
-  dev versions included, a legacy ``-unverified`` suffix read as its base version, a tag that does not parse
-  ignored. The hook reads no remote tags: ``forge sync`` fetches them, so a stale local tag set judges against an
-  older milestone, never a wrong one. No version tag -> nothing to hold. Remedy: ``python -m dev_lab.dev.forge sync``.
+  --is-ancestor``) the newest milestone held LOCALLY: the highest ``v*`` tag in the family grammar
+  ``v<major>.<minor>.<patch>[.dev<N>][-unverified]`` (stdlib regex: the dev layer imports no :mod:`packaging`),
+  a release outranking its dev tags, the legacy suffix read as its base, any other tag ignored. The hook reads
+  no remote tags: ``forge sync`` fetches them, so a stale local tag set judges against an older milestone,
+  never a wrong one. No version tag -> nothing to hold. Remedy: ``python -m dev_lab.dev.forge sync``.
 * ``VERSION-TAG-NEEDS-APPROVAL`` -- in an agent session (:data:`dev_lab.dev.sessionprs.SESSION_ENV` set), a push
   CREATING a ``v*`` tag on origin is refused unless :data:`APPROVED_ENV` holds the user's own words -- the
   ``--approved "<words>"`` pattern of ``branchset --discard``, through the environment because git passes a hook
@@ -19,6 +20,7 @@ version tag is added only on promotion to the trunk or at the user's request. Tw
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 from collections.abc import Mapping, Sequence
@@ -27,7 +29,6 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
-from packaging.version import InvalidVersion, Version
 
 from dev_lab.dev.refspec import pushed_refs
 from dev_lab.dev.sessionprs import SESSION_ENV
@@ -50,7 +51,7 @@ HOOK_ID: Final = 'milestone-base'
 #: The user's own approval words for a version tag pushed from an agent session.
 APPROVED_ENV: Final = 'DEV_LAB_TAG_APPROVED'
 _VERSIONS: Final = 'refs/tags/v'
-_LEGACY: Final = '-unverified'
+_GRAMMAR: Final = re.compile(r'v(\d+)\.(\d+)\.(\d+)(?:\.dev(\d+))?(?:-unverified)?')
 _GIT: Final = shutil.which('git') or 'git'
 
 
@@ -61,18 +62,16 @@ def _git(root: Path, *args: str) -> tuple[int, str]:
     return done.returncode, done.stdout.strip()
 
 
-def milestone_version(tag: str) -> Version | None:
-    """The PEP 440 version a ``v*`` tag names (a legacy ``-unverified`` suffix dropped), or ``None``."""
-    if not tag.startswith('v'):
+def milestone_version(tag: str) -> tuple[int, int, int, tuple[int, int]] | None:
+    """The sort key of a family version tag, or ``None``: ``.devN`` ranks ``(0, N)``, a release ``(1, 0)``."""
+    if (match := _GRAMMAR.fullmatch(tag)) is None:
         return None
-    try:
-        return Version(tag[1:].removesuffix(_LEGACY))
-    except InvalidVersion:
-        return None
+    major, minor, patch, dev = match.groups()
+    return int(major), int(minor), int(patch), (1, 0) if dev is None else (0, int(dev))
 
 
 def newest_milestone(root: Path) -> str | None:
-    """The local ``v*`` tag naming the highest PEP 440 version, or ``None`` when no tag parses."""
+    """The local ``v*`` tag naming the highest family version, or ``None`` when no tag parses."""
     code, out = _git(root, 'for-each-ref', '--format=%(refname:strip=2)', 'refs/tags/')
     parsed = [(version, tag) for tag in (out.splitlines() if code == 0 else []) if (version := milestone_version(tag))]
     return max(parsed)[1] if parsed else None

@@ -293,7 +293,6 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "lab-commons", extra = ["io", "paths", "structured", "units"] },
-    { name = "packaging" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
@@ -325,7 +324,6 @@ requires-dist = [
     { name = "hypothesis", marker = "extra == 'test'" },
     { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://github.com/DawnEver/lab-commons.git" },
     { name = "nodejs-wheel-binaries", marker = "extra == 'test'" },
-    { name = "packaging" },
     { name = "pdoc", marker = "extra == 'test'" },
     { name = "pyright", marker = "extra == 'test'" },
     { name = "pytest" },

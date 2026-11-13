@@ -1,7 +1,7 @@
 """BASE-HOLDS-THE-MILESTONE and VERSION-TAG-NEEDS-APPROVAL, judged on real repositories.
 
-A pushed branch must contain the highest local ``v*`` tag by PEP 440 (dev versions included); an agent session
-creates a ``v*`` tag on origin only with the user's approval words in the environment. Every refusal has its
+A pushed branch must contain the highest local ``v*`` tag in the family grammar (dev versions included); an agent
+session creates a ``v*`` tag on origin only with the user's approval words in the environment. Every refusal has its
 planted control: the same push, made the right way, passes.
 """
 
@@ -72,7 +72,7 @@ def test_a_branch_containing_the_milestone_passes(repo: Path) -> None:
     assert refusals(repo, _branch(repo, 'new'), env={}) == []
 
 
-def test_the_highest_pep440_version_is_the_milestone_not_the_newest_tag(repo: Path) -> None:
+def test_the_highest_family_version_is_the_milestone_not_the_newest_tag(repo: Path) -> None:
     """``v0.2.13.dev10`` outranks ``.dev9`` and ``v0.2.13`` outranks both, whatever order they were made in."""
     _git(repo, 'checkout', '-q', 'main')
     _git(repo, 'commit', '-q', '--allow-empty', '-m', 'feat: four')
@@ -88,6 +88,9 @@ def test_the_highest_pep440_version_is_the_milestone_not_the_newest_tag(repo: Pa
 def test_a_legacy_unverified_tag_reads_as_its_base_version_and_junk_is_ignored() -> None:
     assert milestone_version('v0.2.13-unverified') == milestone_version('v0.2.13')
     assert milestone_version('v0.2.13') > milestone_version('v0.2.13.dev3')  # type: ignore[operator]
+    assert milestone_version('v0.2.13.dev10') > milestone_version('v0.2.13.dev9')  # type: ignore[operator]
+    assert milestone_version('v0.2.13.dev1-unverified') == milestone_version('v0.2.13.dev1')
+    assert milestone_version('v0.2.13rc1') is None
     assert milestone_version('vendor-drop') is None
     assert milestone_version('0.2.13') is None
 

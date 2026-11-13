@@ -147,8 +147,8 @@ run = ["python", "-m", "dev_lab.dev.sessionbranch"]
 always_run = true
 
 # BASE-HOLDS-THE-MILESTONE and VERSION-TAG-NEEDS-APPROVAL (dev_lab.dev.milestonebase, user ruling 2026-11-13): a
-# pushed branch contains the newest local milestone, the highest v* tag by PEP 440 (remedy `forge sync`), and an
-# agent session creates a v* tag on origin only with the user's words in DEV_LAB_TAG_APPROVED. Local reads only.
+# pushed branch contains the newest local milestone, the highest v<major>.<minor>.<patch>[.devN] tag (remedy
+# `forge sync`), and an agent session creates a v* tag on origin only with the user's words in DEV_LAB_TAG_APPROVED. Local reads only.
 [[pre-push]]
 id = "milestone-base"
 run = ["python", "-m", "dev_lab.dev.milestonebase"]
