@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -86,3 +89,74 @@ def test_a_retention_value_that_widens_the_line_is_refused(field: str, value: ob
 def test_a_server_table_without_a_target_is_refused() -> None:
     with pytest.raises(ValueError, match='name and target'):
         declared_servers({'server': [{'name': 'forge'}]})
+
+
+_NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
+_CARDS = {
+    'server': [
+        {'name': 'forge', 'target': 'ops@forge.example', 'status': 'https://forge.example/dev-lab/status.json'},
+        {'name': 'mirror', 'target': 'ops@mirror.example', 'status': 'https://mirror.example/dev-lab/status.json'},
+        {'name': 'dark', 'target': 'ops@dark.example'},
+    ]
+}
+
+
+def _a_card(at: datetime, *, down: bool = False) -> dict:
+    return {
+        'schema': 1,
+        'at': at.isoformat(),
+        'interval_s': 300,
+        'status': 'degraded' if down else 'healthy',
+        'components': {'http_health': 'down' if down else 'up'},
+        'metrics': {},
+        'last_error': None,
+        'dev_lab': 'abc123',
+    }
+
+
+def _cards(argv: list[str], answers: dict[str, tuple[int, object, str]]) -> tuple[int, str, list[str]]:
+    asked: list[str] = []
+    ran: list[Sequence[str]] = []
+
+    def fetch(url: str) -> tuple[int, object, str]:
+        asked.append(url)
+        return answers[url]
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        code = main(
+            argv, file=lambda: _CARDS, runner=lambda line: ran.append(line) or 0, fetch=fetch, clock=lambda: _NOW
+        )
+    assert ran == [], 'reading a card never opens an ssh: no one-time code is asked'
+    return code, out.getvalue(), asked
+
+
+def test_every_declared_card_is_read_over_https_and_a_down_component_shows_down() -> None:
+    answers = {
+        'https://forge.example/dev-lab/status.json': (200, _a_card(_NOW, down=True), ''),
+        'https://mirror.example/dev-lab/status.json': (200, _a_card(_NOW), ''),
+    }
+    code, out, asked = _cards(['all', 'card'], answers)
+    assert code == 0
+    assert asked == list(answers), 'a server with no declared status is not asked'
+    assert 'forge: degraded' in out
+    assert 'down: http_health' in out
+    assert 'mirror: healthy' in out
+
+
+def test_a_stale_or_unreachable_card_says_so_and_exits_one() -> None:
+    """PLANTED CONTROLS: a card nobody rewrote for four cycles, and a host that does not answer."""
+    stale = {'https://forge.example/dev-lab/status.json': (200, _a_card(_NOW - timedelta(minutes=20)), '')}
+    code, out, _ = _cards(['forge', 'card'], stale)
+    assert (code, 'STALE' in out) == (1, True)
+    gone = {'https://forge.example/dev-lab/status.json': (0, None, 'ConnectionRefusedError: refused')}
+    code, out, _ = _cards(['forge', 'card'], gone)
+    assert code == 1
+    assert 'forge: unreachable' in out
+    assert 'ConnectionRefusedError' in out
+
+
+def test_a_server_with_no_declared_card_is_refused_before_any_request() -> None:
+    code, out, asked = _cards(['dark', 'card'], {})
+    assert (code, asked) == (2, [])
+    assert 'status = "https://' in out, 'the refusal names the key to declare'

@@ -41,6 +41,7 @@ from dev_lab.ops.config import Judge, OpsConfig, Probe
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.totp import write_private
+from dev_lab.ops.upgradefollow import AUDIT
 from dev_lab.supervise.daemon import watchdog_seconds
 
 __all__ = ['Rendered', 'files', 'install']
@@ -223,7 +224,17 @@ def _supervise(config: OpsConfig) -> dict[str, str]:
     if role is None:
         return {}
     serve = shlex.join(
-        [config.python, '-m', 'dev_lab.supervise', 'serve', '--project', role.project, '--config', str(config.path)]
+        [
+            config.python,
+            '-m',
+            'dev_lab.supervise',
+            'serve',
+            '--project',
+            role.project,
+            '--config',
+            str(config.path),
+            *(config.status.flags(f'{config.home.as_posix()}/{AUDIT}') if config.status else []),
+        ]
     )
     # THE DAEMON SPEAKS sd_notify (`supervise.notify`): READY once, WATCHDOG once per cycle. Under
     # Type=simple nobody listens, and the timeout is the loop's own cycle, never a second literal.
@@ -304,8 +315,12 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                 f'{_door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
                 f'secret: {_door(config, "access", "adopt", "--secret-file", "-")})'
             )
-    if config.supervise is not None:
-        steps += ['systemctl daemon-reload', f'systemctl enable --now {_SUPERVISE}.service']
+    if (role := config.supervise) is not None:
+        steps += [
+            *([config.status.directory_step(role.user)] if config.status else []),
+            'systemctl daemon-reload',
+            f'systemctl enable --now {_SUPERVISE}.service',
+        ]
     return tuple(steps)
 
 
@@ -357,7 +372,7 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
     private = access.private if access is not None else {}
     rendered |= (access.public if access is not None else {}) | private
     done, prepared = prepare_paths(config, root, chown)
-    prepared += install_caddy(config.caddy, root, rendered)
+    prepared += install_caddy(config.caddy, root, rendered, config.status)
     accounts = (config.breakglass, config.consent, config.access)
     if any(role is not None for role in accounts) or (config.backup and config.backup.dumpers):
         prepared += keys_dir(root, chown, done)
