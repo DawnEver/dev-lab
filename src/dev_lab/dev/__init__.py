@@ -385,7 +385,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`dev_lab.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`dev_lab.dev.forgelanes` -- the origin branches tracked, a PR head fetched, the PR a pushed lane lands by.
-* :mod:`dev_lab.dev.forgemerge` -- the forge's server-side merge of a reviewed, clean PR into integration.
+* :mod:`dev_lab.dev.forgemerge` -- the merge decision: may a reviewed, clean PR merge into integration now.
+* :mod:`dev_lab.dev.forgemergewaits` -- what a PR head's posted statuses lack before it merges.
+* :mod:`dev_lab.dev.forgemergecall` -- the forge's merge calls: merge a judged head, or enable auto-merge.
+* :mod:`dev_lab.dev.forgemergeready` -- ``forge merge ready``: post the decision and merge a ready head.
 * :mod:`dev_lab.dev.forgemessages` -- the merge decision's message condition, judged by the repo's own hook row.
 * :mod:`dev_lab.dev.forgeautosync` -- the serve tick merges integration into a ``pr/*`` head whose lock alone conflicts.
 * :mod:`dev_lab.dev.syncpins` -- a sync never rolls a lane back: each git pin carried to the side containing the other.

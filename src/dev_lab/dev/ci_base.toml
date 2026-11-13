@@ -820,7 +820,7 @@ issues = "write"
 
 # GITEA MERGES IN ITS OWN CI (P3, user ruling 2026-11-02): a PR into integration whose review passed and whose head is
 # safe and clean is merged by THIS job -- `forge merge ready` with no number judges every open PR into integration by
-# the ONE decision (dev_lab.dev.forgemerge.ready) and merges each ready head as the job token -- then the landed PRs
+# the ONE decision (dev_lab.dev.forgemergeready.ready) and merges each ready head as the job token -- then the landed PRs
 # are closed (dev_lab.dev.prlanded) and the landed branches swept (branchprune sweep). Declaring this table is the
 # opt-in (forgemerge.ci_merges): the workstation's `forge serve` then merges, closes and sweeps nothing for the repo.
 # TRIGGERS. Gitea 1.27 has no `status` event, so a posted status starts nothing: the Review workflow completing

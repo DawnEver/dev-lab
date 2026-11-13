@@ -18,7 +18,7 @@ from test_dev_forgereview import _DECLARED, FakeCommand, _can, _forge, _work
 from dev_lab.dev import forgedraft
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgedraft import STALE_DRAFT, NotReady, alarms, mark_draft, mark_ready, opened_line
-from dev_lab.dev.forgemerge import READY, ready
+from dev_lab.dev.forgemergeready import READY, ready
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_job import review_run
