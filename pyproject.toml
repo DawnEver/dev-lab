@@ -28,6 +28,8 @@ dependencies = [
     # dev.forgeapp signs a GitHub App judge's RS256 JWT: the one maintained RSA, never our own. Base, not the ops
     # extra: the dev layer imports it, and dev never reaches up into an ops extra.
     "cryptography",
+    # dev.milestonebase orders version tags by PEP 440: the one maintained comparator, never our own.
+    "packaging",
 ]
 
 [project.optional-dependencies]

@@ -470,6 +470,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
+* :mod:`dev_lab.dev.milestonebase` -- BASE-HOLDS-THE-MILESTONE: a pushed branch contains the highest local
+  ``v*`` tag by PEP 440; VERSION-TAG-NEEDS-APPROVAL: an agent session creates a ``v*`` tag only approved.
 * :mod:`dev_lab.dev.closedpush` -- NO-PUSH-ONTO-A-CLOSED-PR: a push onto a branch whose PR the forge closed
   unmerged, with no open PR for it, is refused at pre-push; an unreadable forge refuses.
 * :mod:`dev_lab.dev.prcontinue` -- LANDED-BRANCH-CONTINUES: a push onto a merged PR's branch gets a continuation PR

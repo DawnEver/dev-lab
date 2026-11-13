@@ -179,6 +179,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02); since
     # 2026-11-07 a merged PR's branch is continued (prcontinue, branchreview) and only a closed one refused.
     'closedpush',
+    # ORIGINAL: no push read the milestone tags before the 2026-11-13 ruling.
+    'milestonebase',
     'prcontinue',
     'branchreview',
     # ORIGINAL: a standing verdict and 'review again' were read inline in forgereview; split out 2026-11-07.

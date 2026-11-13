@@ -146,6 +146,14 @@ id = "session-branch"
 run = ["python", "-m", "dev_lab.dev.sessionbranch"]
 always_run = true
 
+# BASE-HOLDS-THE-MILESTONE and VERSION-TAG-NEEDS-APPROVAL (dev_lab.dev.milestonebase, user ruling 2026-11-13): a
+# pushed branch contains the newest local milestone, the highest v* tag by PEP 440 (remedy `forge sync`), and an
+# agent session creates a v* tag on origin only with the user's words in DEV_LAB_TAG_APPROVED. Local reads only.
+[[pre-push]]
+id = "milestone-base"
+run = ["python", "-m", "dev_lab.dev.milestonebase"]
+always_run = true
+
 # NO-PUSH-ONTO-A-CLOSED-PR (dev_lab.dev.closedpush): a branch whose PR into the integration branch the forge
 # closed UNMERGED, with no open PR for it, takes no new push -- no PR would carry it. A merged PR's branch passes:
 # the forge opens its continuation (dev_lab.dev.prcontinue). An unreadable forge refuses.
