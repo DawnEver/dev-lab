@@ -44,6 +44,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TextIO
 
+from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev.consentguard import state_dir
@@ -91,9 +92,9 @@ def task_id(root: Path, slug: str) -> str:
 
 def _checkout_root(cwd: Path) -> Path:
     """The main checkout of the repository at *cwd* -- where its tasks live, from any of its worktrees."""
-    common = subprocess.run(
+    common = launch.run(
         [shutil.which('git') or 'git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-        cwd=cwd, capture_output=True, text=True, check=True,
+        cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True,
     ).stdout.strip()  # fmt: skip
     return Path(common).parent
 

@@ -72,6 +72,7 @@ import shlex
 import sys
 import time
 from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
 
 from lab_commons.log import emit
@@ -256,7 +257,7 @@ def _subject(args: argparse.Namespace, readers: Readers) -> str:
     if not args.repo:
         msg = '--forge needs --repo owner/name'
         raise ConsentRefused(msg)
-    read = lambda at: readers.declared(args.forge, args.repo, at)  # noqa: E731
+    read = partial(readers.declared, args.forge, args.repo)
     return forgeprotection.local_subject(args.repo, args.ref or forgeprotection.DEFAULT_REF, args.forge, read)
 
 

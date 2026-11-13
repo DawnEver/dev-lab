@@ -258,7 +258,9 @@ actions = "write"
 # PR head's, so the merging token runs no head's code; the schedule catches a status the job token posted (it starts
 # no workflow). merge-ready's own decision and a pending claim start nothing. A merge it makes starts no workflow, so
 # it dispatches the merge's smoke run on integrate/main, as merge-ready does. When the decision calls a head's review
-# due (the review is the last gate), the `review` job below reviews it, and a later tick merges it.
+# due (the review is the last gate), the `review` job below reviews it, and a later tick merges it. The tick is also
+# GitHub's RECORDS PRUNE (`forge records prune`; Gitea's is serve's tick): on the schedule, never per status event,
+# else the records release fills to its 1000-asset cap and every part's post is refused (live 2026-11-13).
 ["merge-tick.yml"]
 name = "Merge tick"
 
@@ -287,6 +289,7 @@ steps = [
     { use-steps = "setup" },
     { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready)"; echo "$said"; case "$said" in *"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
     { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref @integration@ -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
+    { name = "Prune the records home", if = "${{ !cancelled() && github.event_name != 'status' }}", run = "uv run --no-sync python -m dev_lab.dev.forge records prune" },
 ]
 
 ["merge-tick.yml".jobs.merge-tick.permissions]

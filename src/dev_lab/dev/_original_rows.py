@@ -360,6 +360,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'jobparts',
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
+    'planrunpreflight',  # ORIGINAL: split from planrun: every door checked before the code is spent (2026-11-13)
+    'planrunsteps',  # ORIGINAL: split from planrun: the steps file a plan runs (2026-11-13)
+    'sshholdrun',  # ORIGINAL: split from sshhold: a command or credential sent through a held session (2026-11-13)
+    'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
+    'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)
     'pushwatch',
     'pushstop',
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)

@@ -112,10 +112,16 @@ def test_a_milestone_on_the_trunk_alone_is_held(repo: Path) -> None:
     assert 'v0.3.0' in found[0]
 
 
+def _parsed(tag: str) -> tuple[int, int, int, tuple[int, int]]:
+    version = milestone_version(tag)
+    assert version is not None, tag
+    return version
+
+
 def test_a_legacy_unverified_tag_reads_as_its_base_version_and_junk_is_ignored() -> None:
     assert milestone_version('v0.2.13-unverified') == milestone_version('v0.2.13')
-    assert milestone_version('v0.2.13') > milestone_version('v0.2.13.dev3')  # type: ignore[operator]
-    assert milestone_version('v0.2.13.dev10') > milestone_version('v0.2.13.dev9')  # type: ignore[operator]
+    assert _parsed('v0.2.13') > _parsed('v0.2.13.dev3')
+    assert _parsed('v0.2.13.dev10') > _parsed('v0.2.13.dev9')
     assert milestone_version('v0.2.13.dev1-unverified') == milestone_version('v0.2.13.dev1')
     assert milestone_version('v0.2.13rc1') is None
     assert milestone_version('vendor-drop') is None

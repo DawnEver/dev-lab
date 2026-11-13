@@ -10,6 +10,7 @@ import re
 import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Final
 
@@ -17,6 +18,7 @@ from lab_commons.config import section
 
 from dev_lab.dev import devhost, forgesecrets, sshholdwire
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgework import client_for
 from dev_lab.dev.planremote import Remote
 from dev_lab.dev.planrunsteps import (
     CONFIG_ACTION,
@@ -108,15 +110,11 @@ def _no_stdin(step: Step) -> str | None:
 
 def declared_at(forge: str, repo: str, ref: str) -> str:
     """*repo*'s ``pyproject.toml`` at *ref* on *forge*, read here through the forge client (never a working tree)."""
-    from dev_lab.dev.forgework import client_for  # noqa: PLC0415 -- the forge client only a local subject needs
-
     return manifest_at(client_for(Path.cwd(), url=f'https://{forge}/{repo}.git'), ref)
 
 
 def text_at(source: str, path: str, ref: str) -> str:
     """*path* at *ref* of the forge repo at *source* (an https clone URL), read here through the forge client."""
-    from dev_lab.dev.forgework import client_for  # noqa: PLC0415 -- the forge client only a local subject needs
-
     return file_at(client_for(Path.cwd(), url=source), path, ref)
 
 
@@ -156,7 +154,7 @@ def _local_subject(step: Step, readers: Readers) -> tuple[str, str]:
         source = readers.config_source()
         return config_subject(step.config_host, readers.text, source), source
     repo, ref = protect_target(step.argv)
-    read = lambda at: readers.declared(step.forge, repo, at)  # noqa: E731
+    read = partial(readers.declared, step.forge, repo)
     return forgeprotection.local_subject(repo, ref, step.forge, read), step.forge
 
 
