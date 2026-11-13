@@ -31,8 +31,8 @@ from dev_lab.dev.rules import RULES
 #: The always-loaded budget, MEASURED 2026-09-15 and UNCHANGED by the 2026-09-17 swap to a per-page
 #: ratchet. It may only go DOWN, and a new page is paid for out of it rather than added beside it.
 #: The pins below are what says which page spent it; this says nobody may spend more in total.
-#: Raised 60 -> 70 on 2026-10-27 and 70 -> 73 on 2026-11-13 for the rendered principles page, by user ruling.
-RULES_LINE_CEILING = 73  # user rulings 2026-10-27 and 2026-11-13 (every-wall-teaches); may only go down
+#: Raised 60 -> 70 (2026-10-27), 70 -> 73 and 73 -> 76 (2026-11-13) for the principles page, by user ruling.
+RULES_LINE_CEILING = 76  # user rulings 2026-10-27, 2026-11-13 (every-wall-teaches), 2026-11-13 (no-barrier-fan-out)
 
 #: This repo's pages, MEASURED 2026-09-17, to the line count each may not exceed. TWO-SIDED in all
 #: four directions -- grew, shrank, arrived unpinned, pinned and gone -- and the reason the total
@@ -41,7 +41,7 @@ RULES_LINE_CEILING = 73  # user rulings 2026-10-27 and 2026-11-13 (every-wall-te
 #: and that claim belongs in the commit message where a reader can refuse it.
 RULES_PAGE_PINS: dict[str, int] = {
     '.claude/rules/downstream.md': 26,
-    '.claude/rules/principles.md': 21,  # rendered family policy (user rulings 2026-10-27, 2026-11-13)
+    '.claude/rules/principles.md': 24,  # family policy; user rulings 2026-10-27, 2026-11-13 (+ no-barrier-fan-out)
     '.claude/rules/statement-and-mechanism.md': 26,
 }
 

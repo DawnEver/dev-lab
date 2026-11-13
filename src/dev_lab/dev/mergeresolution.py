@@ -91,6 +91,7 @@ UNCLASSED: Final[dict[str, str]] = {
     'layered-decoupling': "a resolution never adds an upward import; each repo's layering tests refuse one",
     'progressive-disclosure': 'a property of a page, not a side; INJECTED-TEXT-IS-PROGRESSIVE budgets the pages',
     'every-wall-teaches': 'a property of the toolchain, not a side; a refusal met while merging is closed as a gap',
+    'no-barrier-fan-out': 'a property of how work is scheduled, not a side; a merge resolves one lane at a time',
 }
 
 CLASSES: Final = frozenset(GROUNDS)
