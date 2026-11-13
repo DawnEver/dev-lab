@@ -22,6 +22,7 @@ from dev_lab.ops import (
     forgewho,
     secretplace,
     upgrade,
+    upgradefollow,
 )
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.client import redeem
@@ -82,11 +83,15 @@ def secret_place(config: OpsConfig, args: argparse.Namespace) -> int:
 
 
 def upgrade_verb(config: OpsConfig, args: argparse.Namespace) -> int:
-    """``upgrade``: install dev-lab at ``[ops.upgrade]``'s tip, its credential redeemed here; or print the subject."""
+    """``upgrade``: install ``[ops.upgrade]``'s tip (a credential redeemed here, or ``--follow``); or the subject."""
     if config.upgrade is None:
         emit(f'[ops] {config.path} enables no [ops.upgrade]', err=True)
         return 2
     try:
+        if args.follow:  # the timer: authorized by the declaration, never a credential
+            code, said = upgradefollow.follow(config, alert=lambda title, detail: alert(config, title, detail))
+            emit(f'[ops upgrade --follow] {said}', err=code != 0)
+            return code
         if args.subject:  # what a preflight compares with the plan's ops.upgrade grant; nothing is installed
             emit(upgrade.subject(config))
             return 0

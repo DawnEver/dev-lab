@@ -22,7 +22,7 @@ with ``C`` holding a ``dev_lab.ops ... --subject`` call passed this row and drew
 
 from __future__ import annotations
 
-from dev_lab.dev.venvpath import PYTHON_SLOT
+from dev_lab.dev.venvpath import PYTHON_SLOT, venv_interpreter
 
 __all__ = ['REMOTE_WRITE']
 
@@ -64,7 +64,10 @@ REMOTE_WRITE: dict[str, object] = {
         'ssh ops@forge.example "${CMD}"',
         'ssh ops@forge.example "$(cat cmd.txt)"',
         'ssh ops@forge.example `cat cmd.txt`',
-        'ssh ops@forge.example /opt/x/.venv/bin/python -m dev_lab.ops --config /etc/x.toml config apply --subject',
+        (
+            f'ssh ops@forge.example /opt/x/{venv_interpreter(os_name="posix")} -m dev_lab.ops --config /etc/x.toml '
+            'config apply --subject'
+        ),
         "ssh ops@forge.example 'cd /opt/x && python3 -m dev_lab.ops consent ready'",
         'ssh -J jump ops@inner "sudo -n /opt/x/bin/python -m dev_lab.ops.consent grant r.json"',
     ),
