@@ -137,6 +137,11 @@ declares (`dev_lab.ops.config.load`).
   sudo narrowed to exactly the listed `commands` (`dev_lab.ops.access`).
 - `ops upgrade` installs dev-lab at the tip of `[ops.upgrade] ref` with the family pins of THAT commit's lock,
   self-checks, and rolls back on failure (`dev_lab.ops.upgrade`).
+- `[ops.upgrade] follow = "<branch>"` (boundary: set only by a consented `config apply`) makes the host follow
+  that branch with no code per upgrade: a root timer (`schedule`, an `OnCalendar`, default every 15 min) runs
+  `ops upgrade --follow`, which installs a moved tip by the same path, refuses one that is not a first-parent
+  fast-forward from the installed sha, and audits every attempt (`dev_lab.ops.upgradefollow`). Absent: consented
+  upgrades only.
 
 ## 5. Consent: one code per shown plan
 
