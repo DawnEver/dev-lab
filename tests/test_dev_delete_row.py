@@ -134,3 +134,16 @@ def test_the_refusal_names_the_scratch_door_and_what_follows_an_approval() -> No
     for text in (rule.remedy, section):
         assert 'dev_lab.dev.scratch clear' in text
         assert 'approv' in text
+
+
+def test_an_unlanded_lane_names_the_discard_door_never_a_move_under_output() -> None:
+    """User ruling 2026-11-13: an approved unlanded lane's door is ``branchset --discard``, never output/.
+
+    WORKTREES-STAY-INSIDE refuses moving a worktree under output/, so the move-under-output exit names that exclusion.
+    """
+    rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
+    section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
+    section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
+    for text in (rule.remedy, section):
+        assert 'dev_lab.dev.branchset --discard <branch> --approved' in text
+        assert 'never a worktree' in text

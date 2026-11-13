@@ -21,6 +21,10 @@ Three questions are asked of it, all through local refs (fetch first; the remote
   ``archive/*`` tag (MERGE-OR-DELETE: a tag nobody reads is not a place to keep work), and whether it may be
   DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
   first. ``python -m dev_lab.dev.branchset [--root R]`` prints this list; it deletes nothing.
+* :func:`discard` -- ``--discard <branch> --approved "<the user's words>"``: the door for ONE UNLANDED lane the user
+  approved dropping (user ruling 2026-11-13). It removes the lane's worktree (outputs moved home first) and its local
+  branch, pinned to the sha it saw; it refuses a declared branch, the main checkout's branch, a live session, a
+  name with no local branch, and an empty approval. Origin is never touched.
 
 The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. Remote deletion is a human
 decision expressed as DATA: ``prune_merged`` (default ``false``) is what lets the forge prune merged origin
@@ -42,9 +46,9 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
-from dev_lab.dev.checkout import authority_for, git_out, origin_branches
+from dev_lab.dev.checkout import authority_for, git_out, origin_branches, worktrees
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.reclaim import QUIET_S, reclaim
+from dev_lab.dev.reclaim import QUIET_S, reclaim, removed_approved
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -63,6 +67,7 @@ __all__ = [
     'census',
     'checked_out',
     'declared_branchset',
+    'discard',
     'holders',
     'main',
     'merge_candidates',
@@ -342,6 +347,53 @@ def apply_local(
     return tuple(out)
 
 
+def discard(
+    root: Path, branchset: BranchSet, branch: str, approved: str, *, quiet_s: float = QUIET_S
+) -> tuple[int, str]:
+    """Drop ONE lane the user approved: its worktree, then its local branch; ``(exit code, the one line)``.
+
+    *approved* is the user's own words, echoed into the line so the record says who decided. Refused (exit 1,
+    nothing touched): no approval, a declared branch (trunk or session), no local branch of that name, the main
+    checkout's branch, a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
+    """
+    ref = f'refs/heads/{branch}'
+    sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
+    trees = worktrees(root)
+    held = [path for path, name in trees or () if name == branch]
+    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees):
+        return 1, f'refused  {branch}  ({why})'
+    for tree in held:
+        if why := removed_approved(root, tree, quiet_s=quiet_s):
+            return 1, f'refused  {branch}  ({tree}: {why})'
+    if git_out(root, 'update-ref', '-d', ref, sha) is None:
+        return 1, f'FAILED   {branch}  (its worktree is gone; the branch delete at {sha[:10]} failed)'
+    where = f'worktree {held[0]} and ' if held else ''
+    return 0, f'discarded {where}local {branch} ({sha[:10]}) -- approved: "{approved.strip()}"'
+
+
+def _discard_refusal(
+    root: Path,
+    branchset: BranchSet,
+    branch: str,
+    approved: str,
+    *,
+    sha: str,
+    trees: tuple[tuple[Path, str], ...] | None,
+) -> str:
+    """Why :func:`discard` touches nothing, read before any delete; ``''`` when it may go on."""
+    if not approved.strip():
+        return '--approved "<the user words>" is required: the user decides a discard'
+    if branch in branchset.declared:
+        return f'declared in {_TABLE}: the trunk and sessions are never discarded'
+    if not sha:
+        return 'no local branch of that name; origin is never discarded here'
+    if trees is None:
+        return f'git could not list the worktrees of {root}'
+    if trees and trees[0][1] == branch:
+        return f'the main checkout holds it at {trees[0][0]}'
+    return ''
+
+
 def _drop_tag(root: Path, row: Candidate, holders: tuple[str, ...]) -> str:
     """A parked ``archive/*`` tag: deleted when merged (fresh ancestry, pinned sha), else listed to MERGE."""
     ref = f'refs/tags/{row.name}'
@@ -365,8 +417,14 @@ def main(argv: list[str] | None = None) -> int:
         action='store_true',
         help='reclaim landed worktrees, then delete deletable LOCAL branches; origin is listed only',
     )
+    parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
+    parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
     args = parser.parse_args(argv)
     root = args.root
+    if args.discard:
+        code, line = discard(root, declared_branchset(root), args.discard, args.approved)
+        emit(line)
+        return code
     if args.apply:
         lines = apply_local(root, declared_branchset(root))
         if lines is None:
