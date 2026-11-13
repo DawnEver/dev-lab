@@ -125,7 +125,7 @@ declares (`dev_lab.ops.config.load`).
 
 | host role | tables it declares | what it runs |
 |---|---|---|
-| forge host | `[ops]`, `[ops.promote]`, `[ops.breakglass]` (+ `.tokens`, `.apps`), `[ops.consent]`, `[ops.backup]` (export), `[ops.forge]` (+ `.accounts.*`), `[ops.caddy]`, `[ops.access]`, `[ops.supervise]`, `[ops.upgrade]`, `[ops.config]` | the Gitea, promotion, the break-glass server and its `tick`, the consent issuer, backup export, the reverse proxy allowlist, supervision |
+| forge host | `[ops]`, `[ops.promote]`, `[ops.breakglass]` (+ `.tokens`, `.apps`), `[ops.consent]`, `[ops.backup]` (export), `[ops.forge]` (+ `.accounts.*`), `[ops.caddy]`, `[ops.status]`, `[ops.access]`, `[ops.supervise]`, `[ops.upgrade]`, `[ops.config]` | the Gitea, promotion, the break-glass server and its `tick`, the consent issuer, backup export, the reverse proxy allowlist, supervision |
 | backup host | `[ops.backup]` (pull, `.offsite`), `[ops.supervise]`, `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | backup pull and offsite copy, mirrors, a health probe of the forge host |
 | judge host | `[ops.judge]` (+ `.tokens`, `.apps`), `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | `forge review judge` per declared repo on its schedule |
 | serve host (workstation) | the machine file's `[serve]`, `[capabilities.*]` | `forge serve` (claims shas, posts parts) -- [the forge](forge.md), [adding a workstation](adding-a-workstation.md) |
@@ -142,6 +142,17 @@ declares (`dev_lab.ops.config.load`).
   `ops upgrade --follow`, which installs a moved tip by the same path, refuses one that is not a first-parent
   fast-forward from the installed sha, and audits every attempt (`dev_lab.ops.upgradefollow`). Absent: consented
   upgrades only.
+
+### 4.1 A host's status card: read without ssh
+
+A host declaring `[ops.status]` (`file`, the card; `site`, the Caddy site; `path`, default `/dev-lab/status.json`;
+boundary keys) has its supervisor rewrite one JSON card after every cycle -- each enabled component up/down, its
+memory against its cgroup cap, every metric (disk free, a queue depth a probe declares), the last error, the
+installed dev-lab sha, the last auto-upgrade audit line (`dev_lab.supervise.card`). Install serves that one file
+read-only behind the `[ops.caddy] allow` list (`dev_lab.ops.caddy.status_routed`; it needs `[ops.caddy]` and
+`[ops.supervise]`). A workstation reads it with no ssh and no cluster code: the machine file's `[[server]]`
+declares `status = "https://<host><path>"`, and `python -m dev_lab.dev.opsserver <server|all> card` renders it --
+exit 1 for a card unreachable or STALE (no rewrite for 3 intervals), 2 for a server declaring none.
 
 ## 5. Consent: one code per shown plan
 
