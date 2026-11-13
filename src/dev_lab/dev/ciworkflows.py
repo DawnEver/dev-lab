@@ -99,6 +99,7 @@ __all__ = [
     'declared_forge',
     'drift',
     'expand',
+    'follow_checks',
     'merge',
     'placed',
     'ready_only',
@@ -342,6 +343,30 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)
         out[name] = (WORKFLOW_DIRS[forge], cast('dict[str, Any]', _named(workflow, integration)))
+    return follow_checks(out)
+
+
+def follow_checks(rendered: dict[str, tuple[Path, dict[str, Any]]]) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """*rendered* with each ``workflow_run`` trigger following the CHECK workflows rendered beside it. PURE.
+
+    A check workflow is one a PR runs (a ``pull_request``-family event) in the same forge directory; the trigger
+    names exactly those, so a repo without the Review workflow fires its merger on its own checks. With none, the
+    ``workflow_run`` trigger is dropped and the workflow's other triggers (the schedule) stand.
+    """
+    out = dict(rendered)
+    for name, (where, workflow) in rendered.items():
+        run = workflow.get('on', {}).get('workflow_run')
+        if run is None:
+            continue
+        checks = sorted(
+            other['name']
+            for key, (there, other) in rendered.items()
+            if key != name and there == where and any(e.startswith('pull_request') for e in other.get('on', {}))
+        )
+        on = {event: value for event, value in workflow['on'].items() if event != 'workflow_run'}
+        if checks:
+            on = {'workflow_run': {'workflows': checks, **run}, **on}
+        out[name] = (where, {**workflow, 'on': on})
     return out
 
 
