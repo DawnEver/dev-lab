@@ -40,6 +40,9 @@ signature, RAW-PROCESS-KILL forbade ``taskkill``, and the memory they held kept 
       orphans = ["designer.exe.* --process-link", "JobSystem.exe -s "]
 
 A refusal names the condition that failed -- a live parent is named, so the run it belongs to is stopped instead.
+A REFUSAL IS NEVER BARE (2026-11-13: an agent got "no signature" and nothing to act on): it says WHAT the pid is
+(its command line), WHO started it (its parent), whether it descends from this session (:func:`whose`), and the
+exit -- ask the user, or declare the run's command line as a signature when it is a run of this repo.
 ``--dry-run`` names the signature that matched.
 
 No new dependency: the process table is :func:`lab_commons.census.processes` (Win32 calls on Windows,
@@ -272,6 +275,44 @@ def _orphan_refusal(
     return None
 
 
+#: The exit every refusal ends with: the two ways forward, never a bare "refused".
+EXIT: Final = (
+    'exit: ask the user to stop it, or -- when it is a run of this repo -- declare its command line as a regex in '
+    '`{table} signatures = [...]` of {manifest}'
+)
+
+
+def whose(table: Mapping[int, Proc], pid: int, me: int) -> str:
+    """Whether *pid* descends from this session: the nearest ancestor it shares with *me* below the tree's root."""
+    mine = [*_chain(table, me)][:-1]  # the topmost process is everyone's root, never a session
+    for ancestor in _chain(table, pid):
+        if ancestor in mine:
+            return f'started from this session (shares ancestor {ancestor}: {table[ancestor][1][:80]!r})'
+    return 'not started from this session (no ancestor in common with it)'
+
+
+def _chain(table: Mapping[int, Proc], pid: int) -> list[int]:
+    """*pid*, its parent, and so on up the table (cycles and absent parents end it)."""
+    seen: list[int] = []
+    while pid in table and pid not in seen and pid > _INIT:
+        seen.append(pid)
+        pid = table[pid][0]
+    return seen
+
+
+def _refusal(table: Mapping[int, Proc], pid: int, why: str, me: int, manifest: str) -> list[str]:
+    """The refusal of *pid*: what it is, who started it, whose it is, and the exit."""
+    ppid = table[pid][0]
+    parent = f'{ppid} {table[ppid][1][:120]!r}' if ppid in table else f'{ppid} (gone)'
+    return [
+        f'refused: {pid} matches no run signature (built-in or {_TABLE}) and {why}',
+        f'what: {table[pid][1][:200]!r}',
+        f'parent: {parent}',
+        f'whose: {whose(table, pid, me)}',
+        EXIT.format(table=_TABLE, manifest=manifest),
+    ]
+
+
 def _kill(pid: int) -> None:
     if os.name == 'nt':
         _door.run(
@@ -318,6 +359,8 @@ def stop(
     orphans: tuple[str, ...] = (),
     claimed: Callable[[], set[int]] = _claimed,
     born: CreationClock = creation_stamp,
+    me: int | None = None,
+    manifest: str = 'the repo`s pyproject.toml',
 ) -> tuple[int, list[str]]:
     """Stop *pid*'s subtree if it is an identifiable run or a stoppable orphan. ``(exit code, lines)``; 3 refused."""
     if never := _never(pid, table):
@@ -325,8 +368,7 @@ def stop(
     matched = _why_stoppable(table, pid, signatures, born)
     if matched is None:
         if why := _orphan_refusal(pid, table, orphans, claimed, born):
-            said = f'refused: {pid} matches no run signature (built-in or {_TABLE}) and {why}'
-            return 3, [f'{said}: {table[pid][1][:200]!r}']
+            return 3, _refusal(table, pid, why, os.getpid() if me is None else me, manifest)
         lines = [f'an orphan: its parent is gone and it holds no box claim: {table[pid][1][:120]!r}']
     else:
         lines = [f'matched signature {matched!r}']
@@ -363,6 +405,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         signatures=declared_signatures(root),
         orphans=declared_orphans(root),
+        manifest=str(root / 'pyproject.toml'),
     )
     for line in lines:
         emit(f'[stoprun] {line}', err=bool(code))

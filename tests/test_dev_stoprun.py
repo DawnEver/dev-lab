@@ -361,3 +361,27 @@ def test_an_orphaned_multiprocessing_worker_is_an_orphan_by_liverun_s_rule() -> 
     code, lines = stop(80, parented, dry_run=True, claimed=_none_claimed, born={80: 200, 7: 100}.get)
     assert code == 3
     assert 'parent 7 is alive' in lines[0]
+
+
+def test_a_refusal_says_what_the_pid_is_who_started_it_whose_it_is_and_the_exit() -> None:
+    """2026-11-13: a bare "no signature" left the agent nothing to act on. PLANTED: one pid of this session, one not."""
+    table = {
+        1: (0, 'init', 100.0),
+        2: (1, 'explorer.exe', 100.0),
+        5: (2, 'claude --session', 100.0),
+        6: (5, 'bash -c agent', 100.0),
+        7: (6, 'python -m dev_lab.dev.stoprun --pid 8', 100.0),
+        8: (5, 'node watcher.js', 100.0),
+        9: (2, 'node other.js', 100.0),
+    }
+    code, lines = stop(8, table, dry_run=True, me=7, manifest='/r/pyproject.toml')
+    said = '\n'.join(lines)
+    assert code == 3
+    assert "what: 'node watcher.js'" in said
+    assert "parent: 5 'claude --session'" in said
+    assert 'started from this session (shares ancestor 5' in said
+    assert 'ask the user' in said
+    assert '[tool.dev_lab.stoprun] signatures' in said
+    assert '/r/pyproject.toml' in said
+    _, other = stop(9, table, dry_run=True, me=7)
+    assert 'not started from this session' in '\n'.join(other)
