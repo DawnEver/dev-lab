@@ -13,6 +13,7 @@ from test_dev_forgemerge import _MANIFEST, _work
 from dev_lab.dev import forgecli, forgemerge, forgemergecall, forgemergeready
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemerge import EXTERNAL, judged
 from dev_lab.dev.forgemergeready import READY, ready
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
@@ -20,6 +21,7 @@ from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.reviewcap import unreviewed_line
 
 _INTEGRATOR = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
@@ -197,11 +199,40 @@ def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_
         return found
 
     monkeypatch.setattr(forge, 'pr_view', moved)
-    said = ready(work, forge, number)
+    with pytest.raises(forgemergeready.NotMerged, match='NOT merged'):
+        ready(work, forge, number)
     assert forge.merges == []
     assert forge.deleted_refs == []
-    assert 'NOT merged' in said
     assert _merge_ready(forge, head)[0] == 'success'
+
+
+def test_a_ready_pr_the_forge_refuses_to_merge_fails_the_tick_and_the_prs_after_it_are_still_judged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """hosts-config #25 (2026-11-13): green, posted ready, never merged -- and the scheduled job still exited 0.
+
+    PLANTED CONTROL: the second PR, which the forge merges, is merged in the same tick.
+    """
+    work, forge, first, head = _hub_pr(tmp_path)
+    second = forge.add_pull('pr/y', 'integrate/main', sha=head)
+    real, calls = forgemergeready.merge, []
+
+    def refusing(client: Client, number: int, **kwargs: object) -> None:
+        calls.append(number)
+        if number == first:
+            raise ForgeCallFailed(
+                Report(('PUT', 'merge'), (Attempt(1, 405, 'User not allowed to merge PR', Diagnosis.UNCLASSIFIED),), 1)
+            )
+        real(client, number, **kwargs)
+
+    monkeypatch.setattr(forgemergeready, 'merge', refusing)
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 2
+    assert calls == [first, second], 'the refusal never stops the tick'
+    assert [one[0] for one in forge.merges] == [second]
+    assert _merge_ready(forge, head)[0] == 'success', 'the decision stands; only the merge was refused'
+    err = capsys.readouterr().err
+    assert f'#{first} ' in err
+    assert 'NOT merged' in err
 
 
 def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

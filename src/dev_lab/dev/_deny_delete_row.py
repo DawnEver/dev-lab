@@ -69,10 +69,8 @@ RECURSIVE_DELETE: dict[str, object] = {
     'matches': 'command',
     'hazard': 'a raw recursive delete judges deletability by hand; on 2026-10-27 one took a MAIN checkout.',
     'remedy': (
-        'scratch/: <venv python> -m dev_lab.dev.scratch clear [--keep NAME ...] --yes. Landed worktrees, branches: '
-        '<venv python> -m dev_lab.dev.branchset --apply. An UNLANDED lane the user approved dropping: '
-        '<venv python> -m dev_lab.dev.branchset --discard <branch> --approved "<their words>". Anything else '
-        '(never a worktree): ask the user; once approved, move it under output/ and delete it there. '
+        'scratch/: dev_lab.dev.scratch clear --yes. Landed lanes: dev_lab.dev.branchset --apply; approved unlanded: '
+        'dev_lab.dev.branchset --discard <branch> --approved "<words>". Else (never a worktree) ask the user. '
         'Temp, output/ not refused.'
     ),
     'needs': None,

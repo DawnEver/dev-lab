@@ -32,10 +32,14 @@ from dev_lab.dev.reviewturn import review_turn
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = ['READY', 'main', 'ready']
+__all__ = ['READY', 'NotMerged', 'main', 'ready']
 
 #: What a ``success`` :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT` says.
 READY: Final = 'ready: every merge condition holds'
+
+
+class NotMerged(Exception):
+    """A head posted ready that the forge refused to merge: its line is the message; the decision stays posted."""
 
 
 def ready(root: Path, client: Client, number: int) -> str:
@@ -48,7 +52,9 @@ def ready(root: Path, client: Client, number: int) -> str:
     limit; the workflow log carries the whole line). A PR into another branch than the PR base is ``failure`` saying
     so. On GitHub, or where the repo :func:`~dev_lab.dev.forgemerge.ci_merges`, a ``success`` is followed by the merge
     of that judged head (:func:`~dev_lab.dev.forgemergecall.merge`); a refusal -- the head
-    moved, a required check still pending -- is said, never raised: the decision stands posted either way.
+    moved, a required check still pending, a token the branch protection does not let merge -- raises
+    :class:`NotMerged` saying it (hosts-config #25, 2026-11-13: a ready PR the job could not merge left the job
+    green): the decision stands posted either way.
     """
     policy, pull = load_policy(root), client.pr_view(number)
     if pull.base != policy.integration:
@@ -77,7 +83,8 @@ def ready(root: Path, client: Client, number: int) -> str:
     try:
         merge(client, number, head=pull.head_sha, message=decision.message, delete_branch=ephemeral)
     except ForgeCallFailed as refused:
-        return f'{said}; NOT merged -- {refused}'
+        refusal = f'{said}; NOT merged -- {refused}'
+        raise NotMerged(refusal) from refused
     if unpassed := decision.unreviewed or decision.review:
         client.issue_comment(number, f'Merged WITHOUT a passing review (advisory) -- {unpassed}')
     return f'{said}; merged'
@@ -108,20 +115,24 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
     failed = [number for number in numbers if not _ready_or_said(root, built, number)]
     if failed:
         emit(
-            f'[merge] refused: {len(failed)} PR(s) could not be judged: {", ".join(f"#{n}" for n in failed)}', err=True
+            f'[merge] refused: {len(failed)} PR(s) could not be judged or merged: {", ".join(f"#{n}" for n in failed)}',
+            err=True,
         )
         return 2
     return 0
 
 
 def _ready_or_said(root: Path, client: Client, number: int) -> bool:
-    """Run :func:`ready` on PR *number*; whether it ran. ONE PR'S FAILURE NEVER STOPS THE TICK.
+    """Run :func:`ready` on PR *number*; whether it ran and, when ready, merged. ONE PR'S FAILURE NEVER STOPS THE TICK.
 
     Any exception judging it (a forge call, an audit's git timing out) is that PR's ``error`` status naming the
     cause, said on stderr; the PRs after it are still judged, and :func:`main` exits non-zero at the end.
     """
     try:
         emit(f'[merge] {ready(root, client, number)}')
+    except NotMerged as refused:  # its decision is posted and stands; the tick fails so the refusal is seen
+        emit(f'[merge] {refused}', err=True)
+        return False
     except Exception as error:  # noqa: BLE001 -- any cause is this PR's, never the tick's
         why = f'could not be judged: {_cause(error)}'
         emit(f'[merge] #{number} {why}', err=True)
