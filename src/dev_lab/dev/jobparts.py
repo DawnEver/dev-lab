@@ -17,6 +17,10 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
   (ruling D50-1, consumer #124: a full Windows run read red only because no job took the row). Every row the
   checkout derives that no job settled is posted ``pending`` saying :data:`ABSENT` and since when, so every reader
   sees its age; a row already absent keeps its first time.
+  A FAILED JOB IS NOT ABSENT (2026-11-13, claude-code-config #6: a ``tests/base@windows`` job exited
+  unreachable and the row read pending for hours). A producer that exits without a part has its job post the
+  row ``error`` naming why (:func:`produce`); a row whose job CONCLUDED failed or cancelled with no record is
+  ``error`` naming that job (:func:`run_jobs`), so a watch reads it red and a merge reads it failed, never waiting.
   It is never a settled part (:func:`dev_lab.dev.platformparts.parts_of`), so merge-ready and promote still
   refuse until every row stands PASS; a re-run job settles it.
 
@@ -49,6 +53,7 @@ import json
 import os
 import shlex
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,11 +66,12 @@ from lab_commons.hpc.shell import parse_ids
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_in
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
 from dev_lab.dev.platformparts import UndeclaredPart, part_context, producer_argv
-from dev_lab.dev.producer import producing
+from dev_lab.dev.producer import OUTCOME_VAR, Owner, outage_said, owned, producing, release_reason
 from dev_lab.dev.taskkeys import loader, secret_name
 from dev_lab.dev.unproduced import unproduced, unproduced_parts
 
@@ -76,8 +82,10 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ABSENT',
+    'FAILED_JOB',
     'HOSTED_RUNNERS',
     'Hosted',
+    'Job',
     'absent',
     'hosted_jobs',
     'hosted_parts',
@@ -87,6 +95,7 @@ __all__ = [
     'produce',
     'pytest_collector',
     'rows',
+    'run_jobs',
     'runner_for',
     'systems_for',
 ]
@@ -197,8 +206,19 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     return {**workflow, 'jobs': {**out, **added}}
 
 
-#: The states a settled part reads back as.
-_SETTLED: Final = frozenset({'success', 'failure'})
+#: The states a part a job settled reads back as: a verdict, or the job's own ``error`` (:func:`produce`).
+_SETTLED: Final = frozenset({'success', 'failure', 'error'})
+
+#: The conclusions of a job that ended without producing (:func:`absent`): it failed, it is not absent.
+FAILED_JOB: Final = frozenset({'failure', 'cancelled', 'timed_out', 'startup_failure'})
+
+
+@dataclass(frozen=True)
+class Job:
+    """An Actions job that concluded: how, and its web page."""
+
+    conclusion: str
+    url: str
 
 
 def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str], list[str]]:
@@ -280,11 +300,38 @@ def matrix(
     return {'include': generic if hosted else every}
 
 
-def absent(client: Client, sha: str, expected: Mapping[str, Any], *, now: datetime | None = None) -> list[str]:
+def run_jobs(client: Client, run: str) -> dict[str, Job]:
+    """The CONCLUDED jobs of Actions *run*, by name (a part job's is its context); ``{}`` when none can be read.
+
+    Unreadable (no run, a forge without the endpoint, no ``actions: read``) is no job concluded: rows read absent.
+    """
+    if not run:
+        return {}
+    try:
+        listed: Any = client.call('GET', f'{client.repo}/actions/runs/{run}/jobs?per_page=100')
+    except ForgeCallFailed:
+        return {}
+    jobs = listed.get('jobs', []) if isinstance(listed, dict) else []
+    return {
+        str(job['name']): Job(str(job['conclusion']), str(job.get('html_url') or ''))
+        for job in jobs
+        if isinstance(job, dict) and job.get('name') and job.get('conclusion')
+    }
+
+
+def absent(
+    client: Client,
+    sha: str,
+    expected: Mapping[str, Any],
+    *,
+    jobs: Mapping[str, Job] | None = None,
+    now: datetime | None = None,
+) -> list[str]:
     """Post each part of *expected* (a :func:`matrix`) no job settled ``pending`` saying :data:`ABSENT`; the lines.
 
-    Settled is a latest ``success`` or ``failure``: a ``pending`` claim left behind is a job that died -- absent.
-    A row already absent is left as it is, keeping when it went absent.
+    Settled is a latest ``success``, ``failure`` or ``error``: a ``pending`` claim left behind is a job that died.
+    A row whose job in *jobs* (:func:`run_jobs`) concluded :data:`FAILED_JOB` is posted ``error`` naming the job:
+    it FAILED, it is not absent. Any other row already absent is left as it is, keeping when it went absent.
     """
     stamp = (now or datetime.now(UTC)).strftime(_STAMP)
     latest = {status.context: status for status in status_list(client, sha)}
@@ -292,6 +339,12 @@ def absent(client: Client, sha: str, expected: Mapping[str, Any], *, now: dateti
     for context in sorted(part_context(one['part']) for one in expected['include']):
         status = latest.get(context)
         if status is not None and status.state in _SETTLED:
+            continue
+        job = (jobs or {}).get(context)
+        if job is not None and job.conclusion in FAILED_JOB:
+            description = owned(Owner.ENVIRONMENT, f'failed: its job concluded {job.conclusion} with no record')
+            status_post(client, sha, context=context, state='error', description=description, target_url=job.url)
+            lines.append(f'{context}: {description} {job.url}'.rstrip())
             continue
         if status is not None and status.description.startswith(ABSENT):
             lines.append(f'{context}: {status.description}')
@@ -302,19 +355,40 @@ def absent(client: Client, sha: str, expected: Mapping[str, Any], *, now: dateti
     return lines
 
 
-def produce(root: Path, part: str) -> int:
+def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | None = None) -> int:
     """Run the one declared producer of *part* at *root*'s HEAD with this interpreter, cwd *root*; its exit code.
 
     The job IS the producer of ``tests/<part>`` at that sha, so the child carries :func:`producing` -- the same
     marker ``forge serve`` hands its producer -- and the full suite it runs is admitted for that part only.
+    A producer that ends with no settled part (unreachable, inconclusive, refused, crashed) leaves no row
+    pending: the job posts it ``error`` on *client* -- the reason the producer declared (:func:`outage_said`),
+    else its exit code's (:func:`release_reason`) -- naming this run, and exits non-zero.
     """
+    given = os.environ if env is None else env
     head = _door.run(
         ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
     )
     sha = head.stdout.strip()
     argv = producer_argv(root, part, sha=sha)
-    env = os.environ | producing(part_context(part), sha)
-    return _door.run([sys.executable, *argv], cwd=root, env=env, check=False).returncode
+    context = part_context(part)
+    with tempfile.TemporaryDirectory() as scratch:
+        outcome = Path(scratch) / 'outcome'
+        child = {**given, **producing(context, sha), OUTCOME_VAR: str(outcome)}
+        code = _door.run([sys.executable, *argv], cwd=root, env=child, check=False).returncode
+        said = outcome.read_text(encoding='utf-8') if outcome.is_file() else ''
+    latest = {status.context: status for status in status_list(client, sha)}
+    if context in latest and latest[context].state in _SETTLED:
+        return code
+    description = outage_said(said) or release_reason(code, outage=None)
+    status_post(client, sha, context=context, state='error', description=description, target_url=_run_url(given))
+    emit(f'[jobparts] {context}: error {description}', err=True)
+    return code or 1
+
+
+def _run_url(env: Mapping[str, str]) -> str:
+    """The web URL of the Actions run *env* names, ``''`` outside one."""
+    parts = (env.get('GITHUB_SERVER_URL', ''), env.get('GITHUB_REPOSITORY', ''), env.get('GITHUB_RUN_ID', ''))
+    return '{}/{}/actions/runs/{}'.format(*parts) if all(parts) else ''
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -339,9 +413,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.verb == 'matrix':
         emit(json.dumps(matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')))
         return 0
+    client = client_for(args.root)
     if args.verb == 'produce':
-        return produce(args.root, args.part)
-    for line in absent(client_for(args.root), args.sha, matrix(args.root, collect=collect, event=args.event)):
+        return produce(args.root, args.part, client)
+    jobs = run_jobs(client, os.environ.get('GITHUB_RUN_ID', ''))
+    for line in absent(client, args.sha, matrix(args.root, collect=collect, event=args.event), jobs=jobs):
         emit(f'[jobparts] {line}')
     return 0
 
