@@ -27,7 +27,7 @@ _CADDYFILE = """gitea.example {
 _HOST = (
     '[ops]\nhome = "/srv/ops"\npython = "/opt/ops/bin/python"\nrepos = []\n'
     '[ops.supervise]\nproject = "/srv/ops"\n'
-    '[ops.caddy]\nfile = "/etc/caddy/Caddyfile"\nallow = ["128.243.0.0/16", "10.0.0.7/32"]\n'
+    '[ops.caddy]\nfile = "/etc/caddy/Caddyfile"\nallow = ["128.243.0.0/16", "192.0.2.7/32"]\n'
 )
 _STATUS = '[ops.status]\nfile = "/var/lib/dev-lab-status/card.json"\nsite = "gitea.example"\n'
 
@@ -48,7 +48,7 @@ def test_a_declared_card_is_written_by_the_supervisor_and_served_only_to_the_all
     assert '--card /var/lib/dev-lab-status/card.json' in unit
     assert '--card-audit /srv/ops/upgrade-follow/audit.jsonl' in unit
     caddy = (root / 'etc/caddy/Caddyfile').read_text(encoding='utf-8')
-    assert '\t\tpath /dev-lab/status.json\n\t\tremote_ip 128.243.0.0/16 10.0.0.7/32\n' in caddy
+    assert '\t\tpath /dev-lab/status.json\n\t\tremote_ip 128.243.0.0/16 192.0.2.7/32\n' in caddy
     assert '\t\troot * /var/lib/dev-lab-status\n\t\trewrite * /card.json\n' in caddy
     assert caddy.index('@dev_lab_status') < caddy.index('@campus'), 'the card route is matched before the proxy'
     assert any('install -d -m 0755 -o root /var/lib/dev-lab-status' in step for step in done.next_steps)
@@ -62,7 +62,7 @@ def test_an_undeclared_card_removes_the_route_and_the_flags(tmp_path: Path) -> N
     path.write_text(_HOST, encoding='utf-8')
     install(load(path), root)
     assert (root / 'etc/caddy/Caddyfile').read_text(encoding='utf-8') == _CADDYFILE.replace(
-        '128.243.0.0/16\n', '128.243.0.0/16 10.0.0.7/32\n'
+        '128.243.0.0/16\n', '128.243.0.0/16 192.0.2.7/32\n'
     )
     assert '--card' not in (root / 'etc/systemd/system/dev-lab-supervise.service').read_text(encoding='utf-8')
 
