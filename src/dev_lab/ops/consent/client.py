@@ -20,6 +20,7 @@ import getpass
 import json
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping
 from importlib import resources
 from pathlib import Path
@@ -169,11 +170,12 @@ def _json_line(line: str) -> object:
 
 def _issued(
     found: Mapping[str, Any], payload: dict[str, Any], *, send: Send, home: Path | None, now: float,
-    within: set[tuple[str, str]] | None = None, plan: str | None = None,
+    within: Counter[tuple[str, str]] | None = None, plan: str | None = None,
 ) -> list[Path]:  # fmt: skip
     """Send *payload* to the issuer; each credential it answered, verified and written private, by path.
 
-    *within*, when given, is the closed set of ``(action, subject)`` pairs an answer may hold, each at most once.
+    *within*, when given, counts the ``(action, subject)`` pairs an answer may hold: each at most as often as the
+    plan grants it (one pair on two hosts is two grants).
     Every answer signs *plan*, the digest of the plan asked for (``None``: a lone request), or it is refused.
     """
     key = public_key(found)
@@ -188,17 +190,17 @@ def _issued(
         raise ConsentRefused(msg)
     answered = answers[0]
     written = []
-    seen: set[tuple[str, str]] = set()
+    seen: Counter[tuple[str, str]] = Counter()
     for credential in answered if isinstance(answered, list) else [answered]:
         issued = verify(credential, key, now=now)
         pair = (issued.action, issued.subject)
-        if within is not None and (pair not in within or pair in seen):
+        if within is not None and seen[pair] >= within[pair]:
             msg = f'the issuer answered a credential the plan does not grant once: {pair[0]} {pair[1][:12]}'
             raise ConsentRefused(msg)
         if issued.plan != plan:
             msg = f'the issuer answered a credential of plan {issued.plan}, not of {plan}: {pair[0]} {pair[1][:12]}'
             raise ConsentRefused(msg)
-        seen.add(pair)
+        seen[pair] += 1
         target = state_dir(home) / f'{issued.id}.json'
         write_private(target, json.dumps(credential, indent=1, sort_keys=True) + '\n')
         written.append(target)
@@ -281,6 +283,6 @@ def recover(
     """
     found = _endpoint(table)
     plan = load_plan(plan_file, shown)
-    within = {(grant_['action'], grant_['subject']) for grant_ in plan.grants}
+    within = Counter((grant_['action'], grant_['subject']) for grant_ in plan.grants)
     payload = {'verb': 'fetch-unspent', 'plan': plan.digest}
     return _issued(found, payload, send=send, home=home, now=now(), within=within, plan=plan.digest)

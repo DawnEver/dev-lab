@@ -105,10 +105,12 @@ def parsed(data: object) -> Plan:
         if grant['host'] not in hosts:
             msg = f'plan grant {index} runs on {grant["host"]}, not one of the plan hosts {hosts}'
             raise ConsentRefused(msg)
-    # A credential binds an action and a subject, not a host: the same pair twice would be two interchangeable ones.
-    pairs = [(grant['action'], grant['subject']) for grant in grants]
-    if twice := sorted({pair for pair in pairs if pairs.count(pair) > 1}):
-        msg = f'plan grants {twice} twice'
+    # A grant is (host, action, subject): one sha upgraded on two hosts is two grants, each its own single-use
+    # credential (a credential binds the pair, so the two are interchangeable -- and each was consented, by host,
+    # in the digest). The same grant twice on ONE host is one consent asked twice.
+    keys = [(grant['host'], grant['action'], grant['subject']) for grant in grants]
+    if twice := sorted({key for key in keys if keys.count(key) > 1}):
+        msg = f'plan grants {twice} twice on one host: drop the repeated grant (and its step) and show the plan again'
         raise ConsentRefused(msg)
     return Plan(tuple(hosts), tuple(grants), digest(data))
 

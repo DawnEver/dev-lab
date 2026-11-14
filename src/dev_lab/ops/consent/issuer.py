@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -217,20 +218,29 @@ class Issuer:
             events = [json.loads(line) for line in lines if line]
             used = {event.get('id') for event in events if event.get('event') == 'used'}
             granted = [event for event in events if event.get('event') == 'granted' and event.get('plan') == plan]
-            done = {(event['action'], event['subject']) for event in granted if event['id'] in used}
-            public, newest = self.public(), {}
+            spent = Counter((event['action'], event['subject']) for event in granted if event['id'] in used)
+            public, live, batches = self.public(), defaultdict(list), Counter()
             for event in granted:
                 pair, kept = (event['action'], event['subject']), self._kept(event['id'])
-                if pair in done or not kept.is_file():
+                if not kept.is_file():
                     continue
                 credential = json.loads(kept.read_text(encoding='utf-8'))
+                batches[pair, credential['issued']] += 1  # one code issues each grant of the pair together
+                if event['id'] in used:
+                    continue
                 try:
                     verify(credential, public, now=self.now())
                 except ConsentRefused:
                     continue  # expired: never revived
-                if pair not in newest or credential['issued'] >= newest[pair]['issued']:
-                    newest[pair] = credential
-            return list(newest.values())
+                live[pair].append(credential)
+            # One pair is granted once per plan grant naming it (one sha on two hosts: twice). The grants still owed
+            # are the most one code issued less the uses registered, so a second code never returns more.
+            owed = {pair: max(n for (p, _), n in batches.items() if p == pair) - spent[pair] for pair in live}
+            return [
+                credential
+                for pair, found in live.items()
+                for credential in sorted(found, key=lambda c: c['issued'], reverse=True)[: max(owed[pair], 0)]
+            ]
 
     def spent(self, ids: object) -> list[str]:
         """Which of *ids* the ledger records a use of: what a runner asks before it deletes a local credential."""

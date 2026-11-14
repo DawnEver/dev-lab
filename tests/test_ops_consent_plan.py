@@ -181,8 +181,7 @@ def test_a_reused_credential_is_refused(tmp_path: Path, issuer: Issuer, monkeypa
         ({'hosts': [], 'grants': [APPLY]}, '<user>@<host>'),
         ({'hosts': ['forge'], 'grants': [APPLY]}, '<user>@<host>'),
         ({'hosts': [HOST, HOST], 'grants': [APPLY]}, 'distinct'),
-        ({'hosts': [HOST], 'grants': [APPLY, APPLY]}, 'twice'),
-        ({'hosts': [HOST, JUDGE], 'grants': [APPLY, APPLY | {'host': JUDGE}]}, 'twice'),
+        ({'hosts': [HOST], 'grants': [APPLY, APPLY]}, 'twice on one host.*drop the repeated grant'),
         ({'hosts': [HOST], 'grants': [{'action': 'ops.config', 'subject': 'a'}]}, 'naming a host'),
         ({'hosts': [HOST], 'grants': [APPLY], 'extra': 1}, 'exactly hosts and grants'),
     ],
@@ -339,3 +338,19 @@ def test_show_groups_by_host_and_action_and_names_the_boundary_grants(tmp_path: 
     assert lines.index('    ops.config (2)') < lines.index(f'      {APPLY["subject"]}')
     assert '    review.raise-cap (1)' in lines
     assert lines.index(f'  {JUDGE}') < lines.index('    review.raise-cap (1)')  # under its own host
+
+
+TWO_HOSTS = {'hosts': [HOST, JUDGE], 'grants': [APPLY, APPLY | {'host': JUDGE}]}
+
+
+def test_one_pair_on_two_hosts_is_two_grants_and_one_code_grants_both(
+    tmp_path: Path, issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A grant is (host, action, subject): one sha upgraded on two hosts is two grants; the same host twice is one."""
+    assert len(parsed(TWO_HOSTS).grants) == 2
+    written = _grant(tmp_path, issuer, *_plan(tmp_path, TWO_HOSTS), monkeypatch)
+    assert len(written) == 2
+    for path in written:  # each single-use credential redeems once
+        _redeem(issuer, path, 'ops.config', APPLY['subject'])
+    with pytest.raises(ConsentRefused, match='twice on one host'):  # the planted control
+        parsed({'hosts': [HOST, JUDGE], 'grants': [APPLY, APPLY]})
