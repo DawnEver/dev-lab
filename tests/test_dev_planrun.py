@@ -771,3 +771,25 @@ def test_a_blocked_preflight_is_this_sessions_wall_and_a_green_one_is_not(
         return
     [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
     assert (line['rule'], line['remedy_present']) == (planrunpreflight.RULE, True)
+
+
+TWIN = parsed({'hosts': [HOST, JUDGE], 'grants': [APPLY, APPLY | {'host': JUDGE}]})
+TWIN_STEPS = planrunsteps.Steps((
+    STEPS.steps[0],
+    planrunsteps.Step(('config', 'apply', '--from', CANDIDATE), JUDGE, CONF, PY),
+))  # fmt: skip
+
+
+def test_one_pair_granted_on_two_hosts_carries_one_distinct_credential_to_each(tmp_path: Path) -> None:
+    """One sha upgraded on two hosts: two grants, two single-use credentials, never the same one twice."""
+    hosts, written = _hosts(), _granted(tmp_path, TWIN)
+
+    def spent(ids: list[str]) -> set[str]:
+        return set(ids) & (hosts[HOST].ledger | hosts[JUDGE].ledger)
+
+    finished, lines = planrun.run_plan(TWIN, TWIN_STEPS, hosts.__getitem__, spent=spent, home=tmp_path,
+                                       now=lambda: NOW)  # fmt: skip
+    assert finished, lines
+    carried = [json.loads(text)['id'] for host in (HOST, JUDGE) for text in hosts[host].carried]
+    assert sorted(carried) == ['id-0', 'id-1']
+    assert not any(path.exists() for path in written)
