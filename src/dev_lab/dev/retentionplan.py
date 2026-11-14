@@ -400,6 +400,9 @@ def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:
         for p in sorted((home / '.cache').glob('lab-forge-*.log'))
         if p.stat().st_size > policy.log_max_mb * _MB
     ]
+    # uv's default cache is retired: every uv on the account shares ``ci/uv-cache`` (spec.uv_cache), so a
+    # default cache is a second copy of the same wheels, ~450 k files (census 2026-11-14). Migrated once.
+    out.append(Doomed(home / '.cache' / 'uv', 'uv-default-cache-retired'))
     return out
 
 
