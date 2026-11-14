@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+from types import SimpleNamespace
+
 import pytest
 from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.hpc.grants import AccessRefused, Grant
@@ -115,17 +118,15 @@ def test_retention_is_an_exit_of_hpc_through_the_door() -> None:
 _HOME = '/srv/acct'
 _FILES_AT = ((40, '/.cargo/bin'), (900, '/.cache/uv'), (300, '/ci/envs'), (50, '/ci/trees'), (950, '/.cache'))
 _FILES = '\n'.join(f'{n} {_HOME}{p}' for n, p in (*_FILES_AT, (420, '/ci'), (60, '/.cargo'), (1430, '')))
-_KIB_AT = ((8, '/.cargo/bin'), (700, '/.cache/uv'), (200, '/ci/envs'), (10, '/ci/trees'), (720, '/.cache'))
-_BYTES = '\n'.join(f'{n} {_HOME}{p}' for n, p in (*_KIB_AT, (230, '/ci'), (9, '/.cargo'), (959, '')))
 
 
-def _census_account(seen: list[str]) -> Runner:
+def _census_account(seen: list[str], *, slow: bool = False) -> Runner:
     def shell(cmd: str, _stdin: str | None = None) -> str:
         seen.append(cmd)
-        if '--inodes' in cmd:
-            return _FILES
         if cmd.startswith('du '):
-            return _BYTES
+            if slow:
+                raise subprocess.TimeoutExpired(cmd, 3600)
+            return _FILES
         if cmd.startswith('crontab'):
             return '2'
         if cmd.startswith('quota'):
@@ -135,18 +136,29 @@ def _census_account(seen: list[str]) -> Runner:
     return shell
 
 
-def test_a_census_counts_files_per_directory_and_deletes_nothing() -> None:
+def _census(*, slow: bool = False) -> tuple[int, list[str], list[str]]:
     seen: list[str] = []
     said: list[str] = []
     code = retention_fleet(
-        _FLEET, ('alice',), apply=False, census=True, say=said.append, connect=lambda _g: _census_account(seen)
+        _FLEET,
+        ('alice',),
+        apply=False,
+        census=True,
+        say=said.append,
+        connect=lambda _g: _census_account(seen, slow=slow),
     )
+    return code, said, seen
+
+
+def test_a_census_counts_files_per_directory_in_one_walk_and_deletes_nothing() -> None:
+    code, said, seen = _census()
     assert code == 0
     # PLANTED: a census is read-only -- no retention run, no apply, no deletion verb reaches the account
     assert not any('dev_lab.dev.retention' in cmd or '--apply' in cmd or 'rm ' in cmd for cmd in seen)
-    rows = said[said.index('alice: census (files, KiB, path; most files first)') + 1 :]
-    assert rows[0].split() == ['1430', '959', '~']
-    assert rows[1].split() == ['950', '720', '~/.cache']  # dotdirs are counted
+    assert [cmd for cmd in seen if cmd.startswith('du ')] == [storage.CENSUS]  # ONE walk of the home
+    rows = said[said.index('alice: census (files, path; most files first)') + 1 :]
+    assert rows[0].split() == ['1430', '~']
+    assert rows[1].split() == ['950', '~/.cache']  # dotdirs are counted
     assert [row.split()[-1] for row in rows] == [
         '~',
         '~/.cache',
@@ -157,6 +169,27 @@ def test_a_census_counts_files_per_directory_and_deletes_nothing() -> None:
         '~/ci/trees',
         '~/.cargo/bin',
     ]
+
+
+def test_a_walk_that_outlasts_the_timeout_is_one_line_naming_the_door() -> None:
+    code, said, _ = _census(slow=True)
+    assert code == 2
+    assert said[-1].startswith('alice: refused -- a remote command ran past its timeout')
+    assert '--timeout' in said[-1]
+
+
+def test_the_timeout_reaches_the_ssh_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    got: list[float] = []
+    monkeypatch.setattr(storage, 'reached_machine', lambda _a: SimpleNamespace(grants=_FLEET))
+    monkeypatch.setattr(storage, 'emit', lambda _line: None)
+
+    def runner(_grant: Grant, timeout: float) -> Runner:
+        got.append(timeout)
+        return _census_account([])
+
+    monkeypatch.setattr(storage, 'runner_for', runner)
+    assert storage.main(['--account', 'alice', '--census', '--timeout', '7200']) == 0
+    assert got == [7200.0]
 
 
 def test_census_and_apply_are_exclusive(monkeypatch: pytest.MonkeyPatch) -> None:

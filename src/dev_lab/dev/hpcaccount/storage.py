@@ -7,10 +7,11 @@ grant's own login hosts (never an agent's own ssh -- HPC-THROUGH-THE-DOOR):
 
 * the account's quota (``quota -s``: blocks AND files -- files are the binding resource of a cluster home);
 * whether its crontab carries the deploy's tick lines (``# lab-commons-deploy:``), i.e. whether serve ticks at all;
-* with ``--census`` instead of a retention run, the FILES and KiB of every top-level entry of the home (dotdirs
+* with ``--census`` instead of a retention run, the FILES of every top-level entry of the home (dotdirs
   included: the uv cache, toolchains, ``~/ci``) and the :data:`CENSUS_DEEP` largest one level below, most files
-  first -- read only (``du -x``, which counts a hard-linked file once: uv links envs from its cache, so an env
-  costs few files of its own);
+  first -- ONE read-only walk (``du --inodes -x``). Files are what binds a cluster home, so bytes, a second walk
+  of the same tree, are not taken. ``du`` counts a hard-linked file once: uv links envs from its cache, so an env
+  costs few files of its own;
 * otherwise the account's OWN ``python -m dev_lab.dev.retention --cluster`` report, run in its declared
   checkout -- a dry run, or the deletion itself with ``--apply`` -- so what is deleted is decided by the code
   that serves there.
@@ -24,6 +25,8 @@ Exit 2 when any account was refused.
 from __future__ import annotations
 
 import argparse
+import functools
+import subprocess
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
@@ -41,7 +44,6 @@ __all__ = [
     'CENSUS_DEEP',
     'QUOTA',
     'UNREACHABLE',
-    'census_commands',
     'census_rows',
     'retention_command',
     'retention_fleet',
@@ -59,13 +61,10 @@ UNREACHABLE: Final = (
 _SECOND: Final = 2
 #: How many second-level directories the census lists (every top-level entry is always listed).
 CENSUS_DEEP: Final = 25
-#: The census's two read-only walks of the home: file counts, then KiB, two levels deep, one filesystem.
-_CENSUS: Final = ('du --inodes -x -d 2 ~ 2>/dev/null || true', 'du -k -x -d 2 ~ 2>/dev/null || true')
-
-
-def census_commands() -> tuple[str, str]:
-    """The census's shell lines: ``du`` file counts and KiB of the home, two levels deep; neither writes."""
-    return _CENSUS
+#: The census's ONE read-only walk of the home: file counts two levels deep, one filesystem.
+CENSUS: Final = 'du --inodes -x -d 2 ~ 2>/dev/null || true'
+#: A remote command's default ceiling: a walk of a home of millions of files on a parallel filesystem is slow.
+TIMEOUT: Final = 3600.0
 
 
 def _sizes(text: str) -> dict[str, int]:
@@ -77,12 +76,12 @@ def _sizes(text: str) -> dict[str, int]:
     return found
 
 
-def census_rows(files_text: str, kib_text: str) -> list[str]:
-    """``files  KiB  path`` per home entry (the home as ``~``), most files first.
+def census_rows(files_text: str) -> list[str]:
+    """``files  path`` per home entry (the home as ``~``), most files first.
 
     Every top-level entry is listed, and the :data:`CENSUS_DEEP` largest second-level ones.
     """
-    files, kib = _sizes(files_text), _sizes(kib_text)
+    files = _sizes(files_text)
     if not files:
         return ['census: du read nothing']
     home = min(files, key=len)
@@ -93,7 +92,14 @@ def census_rows(files_text: str, kib_text: str) -> list[str]:
     deep = sorted((p for p in files if depth(p) == _SECOND), key=lambda p: -files[p])[:CENSUS_DEEP]
     keep = sorted([p for p in files if depth(p) < _SECOND] + deep, key=lambda p: (-files[p], p))
     width = len(str(files[home]))
-    return [f'{files[p]:>{width}}  {kib.get(p, 0):>12}  ~{p[len(home) :]}' for p in keep]
+    return [f'{files[p]:>{width}}  ~{p[len(home) :]}' for p in keep]
+
+
+def _too_slow(slow: subprocess.TimeoutExpired) -> str:
+    return (
+        f'a remote command ran past its timeout ({slow.timeout:.0f} s): the walk had not finished -- '
+        're-run with a larger --timeout'
+    )
 
 
 def ticks_command() -> str:
@@ -117,9 +123,8 @@ def _one(grant: Grant, shell: Runner, *, apply: bool, census: bool) -> tuple[boo
         f'{grant.user}: serve tick lines in crontab: {count}' + ('' if count != '0' else ' -- serve never ticks')
     )
     if census:
-        lines.append(f'{grant.user}: census (files, KiB, path; most files first)')
-        files_cmd, kib_cmd = census_commands()
-        lines.extend(census_rows(shell(files_cmd, None), shell(kib_cmd, None)))
+        lines.append(f'{grant.user}: census (files, path; most files first)')
+        lines.extend(census_rows(shell(CENSUS, None)))
         return True, lines
     lines.append(f'{grant.user}: retention {"--apply" if apply else "(dry run)"}')
     lines.extend(shell(retention_command(target, apply=apply), None).rstrip().splitlines())
@@ -147,6 +152,8 @@ def retention_fleet(
     for user in accounts or sorted(fleet):
         try:
             ok, lines = _one(fleet[user], connect(fleet[user]), apply=apply, census=census)
+        except subprocess.TimeoutExpired as slow:
+            ok, lines = False, [f'{user}: refused -- {_too_slow(slow)}']
         except Unreachable:
             ok, lines = False, [f'{user}: refused -- {UNREACHABLE}']
         except (RuntimeError, OSError, ValueError, IndexError, tomllib.TOMLDecodeError) as failed:
@@ -165,11 +172,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     who.add_argument('--fleet', action='store_true', help='every [[hpc.grant]] account this session reaches')
     what = parser.add_mutually_exclusive_group()
     what.add_argument('--apply', action='store_true', help="run the account's retention for real; default: dry run")
-    what.add_argument('--census', action='store_true', help='files and KiB per home directory, read only')
+    what.add_argument('--census', action='store_true', help='files per home directory, read only, one walk')
+    parser.add_argument('--timeout', type=float, default=TIMEOUT, help='seconds per remote command (default 3600)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         grants = reached_machine(args.account).grants
     except (PermissionError, LookupError, ValueError) as refused:
         emit(f'retention: refused -- {refused}')
         return 2
-    return retention_fleet(grants, args.account, apply=args.apply, census=args.census, say=emit)
+    connect = functools.partial(runner_for, timeout=args.timeout)
+    return retention_fleet(grants, args.account, apply=args.apply, census=args.census, say=emit, connect=connect)
