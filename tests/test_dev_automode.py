@@ -7,6 +7,7 @@ host; a machine file with no registry writes nothing and says why.
 from __future__ import annotations
 
 import io
+import ipaddress
 import json
 import re
 import shutil
@@ -187,6 +188,20 @@ _TREE_SHAPES = re.compile(
     r'|\b[\w-]+(?:\.[\w-]+)*\.(?:ada|ad)\.[\w-]+\.ac\.uk\b',
     re.IGNORECASE,
 )
+_DOTTED_QUAD = re.compile(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.]*\d)')
+
+
+def _public_addresses(text: str) -> list[str]:
+    """Every dotted quad naming a routable address: a public repo quotes only RFC 5737 / private / loopback."""
+    found = []
+    for m in _DOTTED_QUAD.finditer(text):
+        try:
+            routable = ipaddress.ip_address(m.group(0)).is_global
+        except ValueError:
+            continue
+        if routable:
+            found.append(m.group(0))
+    return found
 
 
 def _tree_leaks(texts: dict[str, str], fleet: Fleet | None) -> list[str]:
@@ -200,6 +215,7 @@ def _tree_leaks(texts: dict[str, str], fleet: Fleet | None) -> list[str]:
     found = []
     for path, text in texts.items():
         found += [f'{path}: {m.group(0)}' for m in _TREE_SHAPES.finditer(text)]
+        found += [f'{path}: {a}' for a in _public_addresses(text)]
         found += [f'{path}: {w.pattern}' for w in words if w.search(text)]
     return found
 
@@ -234,7 +250,7 @@ def test_no_tracked_file_carries_a_fleet_fact() -> None:
 
 
 def test_the_tree_scan_sees_a_planted_fleet_fact() -> None:
-    """PLANTED CONTROL: each shape, and a fleet name, is caught; a TEST-NET address and an example host are not."""
+    """PLANTED CONTROL: shapes, routable addresses and fleet names are caught; TEST-NET and example hosts are not."""
     planted = {
         'a': 'reach 10.' + '1.2.3',
         'b': 'reach 172.' + '20.0.1',
@@ -242,9 +258,14 @@ def test_the_tree_scan_sees_a_planted_fleet_fact() -> None:
         'd': 'ssh login1.' + 'ada.uni.ac.uk',
         'e': 'box ws.' + 'ad.uni.ac.uk',
         'f': 'deploy alice9 there',
+        'h': 'allow 128.' + '243.0.0/16',
+        'i': 'allow 8.' + '208.22.233/32',
     }
-    assert len(_tree_leaks(planted, _FLEET)) == 6
-    assert _tree_leaks({'g': 'reach 192.0.2.7 on login1.example'}, _FLEET) == []
+    leaked = _tree_leaks(planted, _FLEET)
+    assert {'h: 128.' + '243.0.0', 'i: 8.' + '208.22.233'} <= set(leaked), 'a routable address is a site fact'
+    assert len(leaked) == 8
+    documented = 'reach 192.0.2.7, 198.51.100.0/24, 203.0.113.9, 127.0.0.1, 0.0.0.0 on login1.example; v1.2.3'
+    assert _tree_leaks({'g': documented}, _FLEET) == []
 
 
 def test_write_outside_a_checkout_says_why_and_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
