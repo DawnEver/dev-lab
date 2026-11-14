@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from _ops_fixtures import git
 
 from dev_lab.dev import devhost, devschema
 from dev_lab.ops.configcheck import check_family, check_host
@@ -380,8 +381,8 @@ def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path:
         devhost.config_source({'devhost': {'host': 'G', 'source': '.'}})
     # the control: an absolute clone with an origin is its origin
     clone = _clone(tmp_path)
-    subprocess.run(['git', 'init', '-q', str(clone)], check=True)  # noqa: S607
-    subprocess.run(['git', '-C', str(clone), 'remote', 'add', 'origin', 'https://forge.example/t/hc.git'], check=True)  # noqa: S607
+    git(tmp_path, 'init', '-q', str(clone))
+    git(clone, 'remote', 'add', 'origin', 'https://forge.example/t/hc.git')
     assert (
         devhost.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
         == 'https://forge.example/t/hc.git'
