@@ -49,10 +49,11 @@ USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
         (
             ('dev_lab.dev.hpcaccount', 'deploy-fleet'),
             ('dev_lab.dev.hpcaccount', 'forget'),
+            ('dev_lab.dev.hpcaccount', 'retention'),
             ('dev_lab.dev.hpcaccount', 'credential'),
             ('dev_lab.dev.hpcaccount', 'deploy'),
         ),
-        '`hpcaccount deploy*|forget|credential`',
+        '`hpcaccount deploy*|forget|retention|credential`',
     ),
     'verify: push,': (
         (('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'run', 'show')),
