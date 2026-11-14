@@ -17,12 +17,15 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Final
+
+from dev_lab.dev import seams
 
 if TYPE_CHECKING:
     import http.client
+    from collections.abc import Mapping
 
-    from dev_lab.dev.forge import Transport
+    from dev_lab.dev.forge import Connection, Transport
 
 __all__ = ['COMPUTE', 'FETCH', 'HTTP', 'LOCAL_GIT', 'Phases']
 
@@ -39,15 +42,23 @@ def _phase_of(argv: object) -> str:
 
 
 class _Timed:
-    """A connection whose life, open to close, is counted as :data:`HTTP` (the request and its whole answer)."""
+    """A :class:`~dev_lab.dev.forge.Connection` whose life, open to close, is counted as :data:`HTTP`."""
 
-    def __init__(self, conn: http.client.HTTPConnection, phases: Phases) -> None:
+    def __init__(self, conn: Connection, phases: Phases) -> None:
         self._conn, self._phases, self._opened = conn, phases, phases.clock()
 
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- the connection's own attributes
-        return getattr(self._conn, name)
+    def request(
+        self, method: str, url: str, body: bytes | None = None, headers: Mapping[str, str] | None = None
+    ) -> None:
+        """Send the request on the timed connection."""
+        self._conn.request(method, url, body=body, headers={} if headers is None else headers)
+
+    def getresponse(self) -> http.client.HTTPResponse:
+        """Its answer; the time to read it counts until :meth:`close`."""
+        return self._conn.getresponse()
 
     def close(self) -> None:
+        """Close the connection and count its life to :data:`HTTP`."""
         try:
             self._conn.close()
         finally:
@@ -84,28 +95,32 @@ class Phases:
     def transport(self, transport: Transport) -> Transport:
         """*transport*, each connection it opens timed as :data:`HTTP` until closed."""
 
-        def opened(host: str, timeout: float) -> http.client.HTTPConnection:
-            return _Timed(transport(host, timeout), self)  # type: ignore[return-value]
+        def opened(host: str, timeout: float) -> Connection:
+            return _Timed(transport(host, timeout), self)
 
         return opened
 
     @contextmanager
     def children(self) -> Iterator[None]:
-        """Within it, every :func:`subprocess.run` (git's door, :mod:`lab_commons.launch`, included) is timed."""
-        real = subprocess.run
+        """Within it, every :func:`subprocess.run` (git's door, :mod:`lab_commons.launch`, included) is timed.
 
-        def timed(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:  # noqa: ANN401
+        The rebinding goes through :func:`dev_lab.dev.seams.rebind`, which records the pristine original; leaving
+        rebinds that original back, so the undo holds even when the block raises.
+        """
+        real: Callable[..., object] = subprocess.run
+
+        def timed(*args: object, **kwargs: object) -> object:
             began = self.clock()
             try:
                 return real(*args, **kwargs)
             finally:
                 self.add(_phase_of(args[0] if args else kwargs.get('args', '')), self.clock() - began)
 
-        subprocess.run = timed  # type: ignore[assignment]
+        seams.rebind(subprocess, 'run', timed)
         try:
             yield
         finally:
-            subprocess.run = real  # type: ignore[assignment]
+            seams.rebind(subprocess, 'run', real)
 
     def totals(self) -> dict[str, float]:
         """Every phase, :data:`COMPUTE` (the wall clock no phase accounts for, never below 0) included."""

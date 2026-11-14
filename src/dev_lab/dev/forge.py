@@ -18,7 +18,7 @@ import pathlib
 import re
 import socket
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credential_for, store_credential
@@ -45,6 +45,7 @@ __all__ = [
     'AUTH_REFUSED',
     'AUTH_REMEDY',
     'AUTH_TRANSIENT',
+    'Connection',
     'Forge',
     'NoCredential',
     'Transport',
@@ -77,10 +78,23 @@ class UnreadableRemote(OSError):
     """``origin`` is absent, or names no owner and repository. Not an empty answer: there is no forge."""
 
 
+class Connection(Protocol):
+    """What a forge call uses of a connection: a request, its answer, the close; an ``HTTPConnection`` is one."""
+
+    def request(self, method: str, url: str, body: bytes | None = ..., headers: Mapping[str, str] = ...) -> None:
+        """Send *method* *url* with *body* and *headers*."""
+
+    def getresponse(self) -> http.client.HTTPResponse:
+        """The answer to the request sent."""
+
+    def close(self) -> None:
+        """Close the connection."""
+
+
 #: How a request reaches the forge: ``(host, timeout) -> connection``. The shipped default speaks
 #: HTTPS and nothing else; a caller substituting one has made that choice in CODE, which is what a
 #: comment asserting that a URL is fine never was.
-type Transport = Callable[[str, float], http.client.HTTPConnection]
+type Transport = Callable[[str, float], Connection]
 
 
 def user_agent(forge: Forge) -> str:
