@@ -345,8 +345,8 @@ def test_the_module_entry_point_reports_JSON_a_shell_caller_can_branch_on(tmp_pa
 @pytest.mark.parametrize(
     ('typed', 'expected'),
     [
-        (['--', 'git', 'push', 'origin', 'HEAD:main'], ['git', 'push', 'origin', 'HEAD:main']),
-        (['--', 'push', 'origin', 'HEAD:main'], ['git', 'push', 'origin', 'HEAD:main']),
+        (['--', 'git', 'push', 'origin', 'HEAD:main'], ['git', 'push', '--no-follow-tags', 'origin', 'HEAD:main']),
+        (['--', 'push', 'origin', 'HEAD:main'], ['git', 'push', '--no-follow-tags', 'origin', 'HEAD:main']),
         (['fetch', '--prune', 'origin'], ['git', 'fetch', '--prune', 'origin']),
         (['--', 'git', 'log', '--', 'x'], ['git', 'log', '--', 'x']),
     ],
@@ -406,6 +406,54 @@ def test_netverb_hands_git_s_ref_lines_to_the_pre_push_hook_and_an_up_to_date_pu
     got.unlink()
     assert run_network_verb(push, attempts=1).attempts[-1].ok
     assert got.read_text(encoding='utf-8') == '', 'an up-to-date push runs pre-push with an empty stdin'
+
+
+def _tagged_pushing_repo(tmp_path: Path) -> Path:
+    """:func:`_pushing_repo` with ``push.followTags`` on and an annotated milestone tag on its commit."""
+    repo, _ = _pushing_repo(tmp_path)
+    git = shutil.which('git') or 'git'
+    for args in (
+        ['config', 'push.followTags', 'true'],
+        ['-c', 'user.name=t', '-c', 'user.email=t@t', 'tag', '-a', 'v0.2.13.dev1', '-m', 'milestone'],
+    ):
+        subprocess.run([git, '-C', str(repo), *args], check=True)
+    return repo
+
+
+def _remote_tags(tmp_path: Path) -> str:
+    git = shutil.which('git') or 'git'
+    bare = tmp_path / 'origin.git'
+    return subprocess.run([git, '-C', str(bare), 'tag'], capture_output=True, text=True, check=True).stdout
+
+
+def test_a_branch_push_through_the_door_carries_no_tag_followtags_would_have(tmp_path: Path) -> None:
+    """THE WALL (2026-11-13): ``push.followTags`` made a branch push carry another session's milestone tag.
+
+    Only the pusher who NAMES a tag decided to push one, so the door pins ``--no-follow-tags``. PLANTED
+    CONTROL: the same branch push typed bare does carry the tag -- the case is real, not a quiet config.
+    """
+    repo = _tagged_pushing_repo(tmp_path)
+    door = spelled(['--', 'git', '-C', str(repo), 'push', '-q', 'origin', 'HEAD:refs/heads/a'])
+    assert run_network_verb(door, attempts=1).attempts[-1].ok
+    assert _remote_tags(tmp_path) == '', 'the door pushed the branch alone'
+    git = shutil.which('git') or 'git'
+    subprocess.run([git, '-C', str(repo), 'push', '-q', 'origin', 'HEAD:refs/heads/b'], check=True)
+    assert 'v0.2.13.dev1' in _remote_tags(tmp_path), 'a bare push with followTags on carries the tag'
+
+
+def test_a_tag_the_push_names_still_goes_through_the_door(tmp_path: Path) -> None:
+    """The pin drops only the tags nobody named: an explicit tag refspec, or ``--follow-tags`` typed, still pushes."""
+    repo = _tagged_pushing_repo(tmp_path)
+    named = spelled(['--', 'git', '-C', str(repo), 'push', '-q', 'origin', 'v0.2.13.dev1'])
+    assert run_network_verb(named, attempts=1).attempts[-1].ok
+    assert 'v0.2.13.dev1' in _remote_tags(tmp_path)
+    assert spelled(['push', '--follow-tags', 'origin']) == [
+        'git',
+        'push',
+        '--no-follow-tags',
+        '--follow-tags',
+        'origin',
+    ]
 
 
 #: THE INCIDENT (consumer-a, 2026-10-19): `dep --bootstrap <worktree>` gave up "after 3 of 3 attempts, last

@@ -147,6 +147,7 @@ def test_an_agent_session_creating_a_version_tag_is_refused(repo: Path) -> None:
     assert len(found) == 1
     assert found[0].startswith(f'{TAG_RULE}:')
     assert APPROVED_ENV in found[0]
+    assert '--no-follow-tags' in found[0], 'a tag push.followTags carried names its exit'
     assert len(found[0]) <= _WIDTH
 
 
