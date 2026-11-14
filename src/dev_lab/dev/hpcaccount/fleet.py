@@ -39,7 +39,7 @@ from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.datedlog import dated_log
-from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
+from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.remote import detached, ssh_argv
@@ -137,6 +137,22 @@ def remote_argv(grant: Grant, target: Target, division: Division | None = None) 
     return ssh_argv(f'{grant.user}@{target.host}', command, batch=True)
 
 
+def _serving_twice(grants: Sequence[Grant], accounts: Sequence[str], division: Division | None) -> list[str]:
+    """The accounts this run DEPLOYS that serve and hold more than one grant -- two grants there are two tick hosts.
+
+    A research account's several grants are several allocations (no tick), and an account outside *accounts* is not
+    deployed by this run, so neither is refused. A role no table names counts as serving: the guard stays on.
+    """
+    roles = division.roles if division is not None else DEFAULT_ROLES
+    selected = set(accounts) or {grant.user for grant in grants}
+    users = [grant.user for grant in grants if grant.user in selected]
+
+    def serves(user: str) -> bool:
+        return any(bool(roles.get(grant.role, {}).get('serves', True)) for grant in grants if grant.user == user)
+
+    return sorted({user for user in users if users.count(user) > 1 and serves(user)})
+
+
 def deploy_fleet(
     grants: Sequence[Grant],
     accounts: Sequence[str],
@@ -149,11 +165,16 @@ def deploy_fleet(
     division: Division | None = None,
 ) -> int:
     """Start each account's deploy on its declared host; 2 when any account was refused."""
-    users = [grant.user for grant in grants]
-    if twice := sorted({user for user in users if users.count(user) > 1}):
-        say(f'deploy-fleet: refused -- {twice} hold more than one [[hpc.grant]]; one account, one deploy host')
+    if twice := _serving_twice(grants, accounts, division):
+        say(
+            f'deploy-fleet: refused -- {twice} serve under more than one [[hpc.grant]]: a serving account ticks from '
+            f'ONE login host. Keep one grant per serving account in the machine file, or deploy the others alone '
+            f'(--account <user>)'
+        )
         return 2
-    fleet = {grant.user: grant for grant in grants}
+    fleet: dict[str, Grant] = {}
+    for grant in grants:  # a non-serving account's further grants are allocations, not hosts: its first one deploys
+        fleet.setdefault(grant.user, grant)
     if unknown := sorted(set(accounts) - set(fleet)):
         say(f'deploy-fleet: refused -- {unknown} not in the declared fleet {sorted(fleet)}')
         return 2
