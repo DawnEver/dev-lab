@@ -75,7 +75,7 @@ from lab_commons.proc import pid_alive
 
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.liverun import SPAWN_WORKER
+from dev_lab.dev.liverun import SPAWN_WORKER, WATCH
 from dev_lab.dev.servelock import note_stopped
 
 __all__ = [
@@ -115,6 +115,7 @@ RUN_SIGNATURES: Final = (
     re.compile(r'dev_lab.dev\.githooks run pre-push\b'),
     re.compile(r'scripts[/\\]gate[/\\]prepush_gate\.py\b'),
     SERVE,
+    WATCH,  # its owner's reader, stopped to free its venv and re-armed (liverun.env_in_use)
 )
 
 #: A one-off under a ``scratch/`` directory (the family's home for probes): an orphan of one is stoppable.

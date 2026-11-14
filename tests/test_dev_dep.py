@@ -317,3 +317,24 @@ def test_a_live_process_executing_from_the_environment_refuses(monkeypatch: pyte
     with pytest.raises(HeldEnvironmentError):
         mutate(_REQS, port=Port(name='x'), run=run, census=lambda: [runner])
     assert run.calls == []
+
+
+def test_a_watch_holding_the_environment_is_named_with_its_stop_and_rearm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A forge watch still refuses -- its interpreter holds the venv's files open -- and names its stop and re-arm.
+
+    A real run beside it keeps the plain refusal.
+    """
+    monkeypatch.setattr(dep_module, 'executing_from', liverun.executing_from)
+    python = str(Path(sys.prefix) / 'python.exe')
+    command = f'{python} -m dev_lab.dev.forge watch --session abc --stream'
+    watch = Process(7, 0, python, command, 3600.0, sys.prefix)
+    with pytest.raises(HeldEnvironmentError) as caught:
+        mutate(_REQS, port=Port(name='x'), run=_Run(), census=lambda: [watch])
+    message = str(caught.value)
+    assert 'pid 7 (a forge watch)' in message
+    assert 'dev_lab.dev.stoprun --pid 7' in message
+    assert 'forge watch --session abc --stream' in message.split('re-arm', 1)[1]
+    runner = Process(8, 0, python, 'python -m pytest', 3600.0, sys.prefix)
+    with pytest.raises(HeldEnvironmentError) as plain:
+        mutate(_REQS, port=Port(name='x'), run=_Run(), census=lambda: [watch, runner])
+    assert 're-arm' not in str(plain.value)

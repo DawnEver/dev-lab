@@ -63,6 +63,7 @@ __all__ = [
     'RULE_ID',
     'RUN_FLOOR_S',
     'SPAWN_WORKER',
+    'WATCH',
     'checkout_of',
     'env_in_use',
     'executing_from',
@@ -269,6 +270,15 @@ def removal_holders(root: Path | str, *, census: Census = processes, me: int | N
 _SESSION: Final = re.compile(r'-m\s+ai_lab\.session\b|(?:^|[\\/\s"])claude(?:\.exe)?(?:"|\s|$)')
 _MODULE: Final = re.compile(r'\s-m\s+([\w.]+)')
 
+#: A ``forge watch``: a READER of the forge, yet its interpreter holds its venv's files open, so it still locks the
+#: venv. Its state lives on the forge, so stopping and re-arming it loses nothing: the refusal names both doors.
+WATCH: Final = re.compile(r'-m\s+dev_lab.dev\.forge\s+watch\b')
+
+
+def is_watch(one: Process) -> bool:
+    """Whether *one* is a ``forge watch``."""
+    return bool(WATCH.search(one.command_line or ''))
+
 
 def is_session(one: Process) -> bool:
     """Whether *one* is an agent session: worked around by another agent, never stopped by it."""
@@ -279,6 +289,8 @@ def label(one: Process) -> str:
     """A short name for *one*: ``a Claude session``, else the module it runs (``app``), else its program."""
     if is_session(one):
         return 'a Claude session'
+    if is_watch(one):
+        return 'a forge watch'
     words = (one.command_line or one.executable or '?').split()
     program = Path(one.executable or words[0]).stem
     module = _MODULE.search(one.command_line or '')
@@ -317,7 +329,19 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
 
 
 def env_in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
-    """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run."""
+    """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run.
+
+    When every holder is a ``forge watch`` the exit is stop, change, re-arm -- the watch's own command line.
+    """
+    if users and all(is_watch(one) for one in users):
+        stops = '; '.join(f'{running_interpreter()} -m dev_lab.dev.stoprun --pid {one.pid}' for one in users)
+        rearm = '\n'.join(f'  {one.command_line}' for one in users)
+        return (
+            f'{name}: {prefix} is the environment of a live forge watch (its interpreter holds the files a change '
+            f'replaces):\n{describe(users)}\nStop it ({stops}), '
+            "run this change, then re-arm it -- from another checkout's interpreter, so it never holds this one:"
+            f'\n{rearm}'
+        )
     return (
         f'{name}: {prefix} is the environment of a live process that holds no seat (2026-10-19: a `deck run` '
         f'held none and was re-synced under):\n{describe(users)}\nWait for it, stop it yourself '

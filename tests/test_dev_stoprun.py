@@ -385,3 +385,10 @@ def test_a_refusal_says_what_the_pid_is_who_started_it_whose_it_is_and_the_exit(
     assert '/r/pyproject.toml' in said
     _, other = stop(9, table, dry_run=True, me=7)
     assert 'not started from this session' in '\n'.join(other)
+
+
+def test_a_forge_watch_is_a_run_its_owner_may_stop() -> None:
+    """A watch holds its checkout's venv (the dep door's VENV LOCK); its owner stops it here and re-arms after."""
+    assert identify('python.exe -m dev_lab.dev.forge watch --session abc --stream')
+    assert identify('python.exe -m dev_lab.dev.forge watch 9fc0cef9a277 --stream')
+    assert not identify('python.exe -m dev_lab.dev.forge status show 9fc0cef9a277')
