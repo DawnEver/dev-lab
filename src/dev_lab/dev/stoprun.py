@@ -114,6 +114,8 @@ RUN_SIGNATURES: Final = (
     # A PUSH MUST NEVER BLOCK: a pre-push hook that hangs is a run this door must be able to stop.
     re.compile(r'dev_lab.dev\.githooks run pre-push\b'),
     re.compile(r'scripts[/\\]gate[/\\]prepush_gate\.py\b'),
+    # ...and the retry wrapper around it is what the agent holds: one network verb, never anything else (2026-11-13).
+    re.compile(r'(?:^|[/\\\s])with-retry\.sh\s+(?:push|fetch|pull|clone|ls-remote)\b'),
     SERVE,
     WATCH,  # its owner's reader, stopped to free its venv and re-armed (liverun.env_in_use)
 )

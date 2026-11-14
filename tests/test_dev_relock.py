@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import pytest
 
-from dev_lab.dev import forgeservesteps, relock
+from dev_lab.dev import forgeservesteps, locklag, relock
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
@@ -629,3 +629,24 @@ def test_the_lag_count_is_the_lines_commits_past_the_pin(tmp_path: Path) -> None
     assert _commits_behind(url, 'integrate/main', git('rev-parse', 'HEAD')) == 0
     with pytest.raises(RelockFailed, match='is not on'):
         _commits_behind(url, 'integrate/main', 'e' * 40)
+
+
+def test_a_lag_count_never_fetches_lazily_from_the_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pin the treeless fetch does not hold must fail locally, never start git's lazy promisor fetch.
+
+    A lazy fetch is a GRANDCHILD network process: a timeout kills the local git, the grandchild keeps the pipe
+    open, and the pre-push hook waited hours (2026-11-13). Only the one declared fetch reaches the network.
+    """
+    seen: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get('env')
+        seen.append((argv, dict(env) if isinstance(env, dict) else {}))
+        return subprocess.CompletedProcess(argv, 0, stdout='0\n', stderr='')
+
+    monkeypatch.setattr(locklag._door, 'run', run)
+    monkeypatch.setattr(locklag, 'run_network_verb', lambda *_a, **_k: SimpleNamespace(ok=True, remedy=''))
+    assert locklag._commits_behind('https://forge.example/t/sib.git', 'integrate/main', 'a' * 40) == 0
+    local = [(argv, env) for argv, env in seen if 'init' not in argv]
+    assert local, 'the local graph reads ran'
+    assert all(env.get('GIT_NO_LAZY_FETCH') == '1' for _argv, env in local)
